@@ -4,6 +4,8 @@
 
 To break down silos to enable scale-free peer 2 peer collaboration on projects and causes, while sharing rewards according to contribution.
 
+**Keywords:** Payment Flows, Liquid Renumeration, Appreciative Rewards, Holocratic Payments, Fractal Dividends, Liquid Pledging
+
 **Definition of Holon**
 
 > A holon is an evolving self-organizing structure, composed of other holons. A holon is simultaneously a whole in itself and at the same time is nested within another holon and so is a part of something much larger than itself. Holons range in size from the smallest subatomic particles and strings, all the way up to the multiverse, comprising many universes. Individual humans, their societies and their cultures are intermediate level holons, created by the interaction of forces working upon us both top-down and bottom-up.A holon is an evolving self-organizing structure, composed of other holons, whose structures exist at a balance point between chaos and order. A holon is simultaneously a whole in itself and at the same time is nested within another holon and so is a part of something much larger than itself. Holons range in size from the smallest subatomic particles and strings, all the way up to the multiverse, comprising many universes. Individual humans, their societies and their cultures are intermediate level holons, created by the interaction of forces working upon us both top-down and bottom-up.
@@ -36,11 +38,12 @@ Holons thus allows users to dish appreciation as a non-scarce subjective quantif
 
 As members cannot give appreciation to themselves, we obtain an altruistic peer to peer signal to highlight the people who have significantly advanced the project or have closely collaborated to the other members. Doing care work for your hack team? If people "appreciate" your efforts you will receive a proportional amount of the income according to the appreciation graph. Same thing goes for design, development, logistics, marketing etc. This setup allows for people to work across multiple teams and work wherever they are appreciated, wherever they are.
 
-Holons can also be nested:  a marketing holon could receive funds from the appreciation sent over from the sales holon, and in turn it would be split the received funds to its members. As people can join different holon, they receive funds from multiple streams within the same organization, and also across different organizations.
-In fact, organizations and projects can also join together into higher-order holons, sending appreciation to each other, and sharing common achievements.
+Holons can also be nested and as people can join different holons, they will receive funds from multiple streams within the same organization, and also across different organizations.
+A marketing holon could receive funds from the appreciation sent over from the sales holon, and in turn it would split the received funds to its own members. 
+Organizations and projects can also join together into higher-order holons, sharing appreciation and joint achievements, without having to merge their identities.
 
+Holons allows for organization and renumeration of open source project in ways unthinkable before.
 It is a completelly new way of thinking about organizations: People will be able to join the causes and projects they care about, contribute and get appreciated. Whenever a payment is received (Eg: a price money, a grant, commercial licenses), it will flow automatically through the entire holonic structure, rewarding the right people.
-
 
 **Contributors:**
 * Roberto Valenti
@@ -48,6 +51,6 @@ It is a completelly new way of thinking about organizations: People will be able
 * Josh Fairhead
 
 **Links:**
-[Holons Prototype](holons.hackalong.io)
+[Holons Prototype](https://holons.hackalong.io)
 
-**Keywords:** Payment Flows, Liquid Renumeration, Appreciative Rewards, Holocratic Payments, Fractal Dividends, Liquid Pledging
+
