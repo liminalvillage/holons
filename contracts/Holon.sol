@@ -31,32 +31,25 @@ contract Holon is Ownable {
     string public version = "0.1";                  //Version of the holon contract
     string public IPFSManifest;                     //IPFS Hash for the JSON containing holon manifest
     address public creator;                         //Link to the holonic parent
+    bool public updated;                            //Bool representing if appreciation was dished but not updated
+    bool public passthecrown;                       //Bool representing if passing the crown was enabled
 
     //======================== Indexing Stuctures
     address payable[] internal _members;            //structure containing the addresses of the members;
    
     mapping (address => bool) public isMember;      //returns true if an address is a member;
     mapping (address => bool) public isContributor; //returns true if an address is a contributor;
-    mapping (string => address) public toAddress;   //maps names to addresses
-    mapping (address => string) public toName;      //maps addresses to names
+    // mapping (string => address) public toAddress;   //maps names to addresses
+    // mapping (address => string) public toName;      //maps addresses to names
    
     //======================== Structures for tracking appreciation
     uint256 public totalappreciation;               // max amount of appreciation in this holon
     mapping (address => uint256) public appreciation; //appreciaton received by a member
     mapping (address => uint8) public remainingappreciation; //appreciation left to give (max=100)
 
-    //======================== Structures for tracking ether rewards
-    mapping (address => uint256) public rewards; // ether received by each member
-    uint256 public totalrewards; //total amount of ether that has been given to this holon
-
-    //======================== Structures to hold appreciation dishing information 
-    mapping (address => mapping (address => uint256)) public dished;
-    mapping (address => uint256) totaldished;
-
     //======================== Events
     event AddedMember (address member, string name);
     event RemovedMember (address member, string name);
-    event ChangedName (string from, string to);
     event HolonRewarded (string name, string token, uint256 amount);
     event MemberRewarded (address member,string token, uint256 amount);
     event Appreciated (address memberfrom, address memberto, uint256 amount);
@@ -64,17 +57,16 @@ contract Holon is Ownable {
     event dishedReset ();
     
     /// @notice Constructor to create an holon
-    /// @param _holonname The address of the HolonFactory contract that
     /// @param _holonfactory The address of the HolonFactory contract that
-    ///  will created the Holon contract, the factory needs to be deployed first
+    ///  created the Holon contract, the factory needs to be deployed first
 
-    constructor( string memory _holonname, address _holonfactory)  
-    public 
+    constructor( address _holonfactory)
+        public
     {
-       name = _holonname;
        totalappreciation = 0;
-       totalrewards = 0;
-       factory = IHolonFactory(_holonfactory);
+       passthecrown = false;
+       updated = false;
+       factory = IHolonFactory (_holonfactory);
     }
 
     //=============================================================
@@ -103,19 +95,7 @@ contract Holon is Ownable {
         payable
         public
     {
-        totalrewards += msg.value;
         uint256 unitReward;
-
-        //Compute % of appreciation from dished 
-        for (uint256 i = 0; i < _members.length; i++) {
-            if (totaldished[_members[i]] > 0 && remainingappreciation[_members[i]] == 100)// verify if  member has dished  but has not manually set any appreciation. 
-            for (uint256 j = 0; j < _members.length; j++) {
-                uint8 percentage =  uint8 (dished[_members[i]][_members[j]].mul(100).div(totaldished[_members[i]]));
-                appreciation[_members[j]] += percentage;
-                totalappreciation+= percentage;
-                remainingappreciation[_members[i]] -= percentage;
-            }
-        }
 
         if (totalappreciation > 0 ) // if appreciation was shared
             unitReward = msg.value.div(totalappreciation);
@@ -123,10 +103,15 @@ contract Holon is Ownable {
             unitReward = msg.value.div(_members.length);
 
         for (uint256 i = 0; i < _members.length; i++) {
-            uint256  amount = appreciation[_members[i]].mul(unitReward);
+            uint256  amount;
+            if (totalappreciation > 0 ) // if appreciation was shared
+                amount = appreciation[_members[i]].mul(unitReward); //multiply given appreciation with unit reward
+            else
+                amount = unitReward; //else use blanket unit reward value.
+
             if (amount > 0){
                 _transfer(_members[i], amount);
-                rewards[_members[i]]+=amount;
+                MemberRewarded(_members[i], "ETHER", amount);
             }
         }
         emit HolonRewarded(name, "ETHER", msg.value);
@@ -141,38 +126,38 @@ contract Holon is Ownable {
         uint256 unitReward;
         //Load ERC20 token
         IERC20 token = IERC20(_tokenaddress);
-        require (token.balanceOf(msg.sender)>= _tokenamount, "Not enough tokens in wallet");
-        require (token.allowance(msg.sender, address(this))>= _tokenamount, "Not enough allowance");
-
-        //Compute % of appreciation from dished 
-        for (uint256 i = 0; i < _members.length; i++) {
-            if (totaldished[_members[i]] > 0 && remainingappreciation[_members[i]] == 100)// verify if  member has dished  but has not manually set any appreciation. 
-            for (uint256 j = 0; j < _members.length; j++) {
-                uint8 percentage =  uint8 (dished[_members[i]][_members[j]].mul(100).div(totaldished[_members[i]]));
-                appreciation[_members[j]] += percentage;
-                totalappreciation+= percentage;
-                remainingappreciation[_members[i]] -= percentage;
-            }
-        }
-
+        require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
+       
         if (totalappreciation > 0 ) // if appreciation was shared
             unitReward = _tokenamount.div(totalappreciation);
-        else //if no appreciation was shared, blanket approach
+        else //if no appreciation was shared, prepare unit reward for blanket approach
             unitReward = _tokenamount.div(_members.length);
+        
+        uint256  amount;
 
         for (uint256 i = 0; i < _members.length; i++) {
-            uint256  amount = appreciation[_members[i]].mul(unitReward);
+            if (totalappreciation > 0 ) // if appreciation was shared
+                amount = appreciation[_members[i]].mul(unitReward); //multiply given appreciation with unit reward
+            else
+                amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+
             if (amount > 1 ){
-                if (factory.isHolon(_members[i])){
-                    //Holon holon = Holon(_members[i]);
-                    //holon.tokenReward(_tokenaddress, _tokenamount.mul(amount).div( 100));
-                } else 
-                    token.transferFrom(msg.sender,_members[i],_tokenamount.mul(amount).div( 100));
-            } 
+                    token.transfer(_members[i],amount);
+                    if (factory.isHolon(_members[i]))  //is holon
+                    { 
+                        Holon holon = Holon(_members[i]);          //load holon
+                        holon.tokenReward(_tokenaddress, amount);  //call reward function 
+                    }
+                    
+                    //   (bool success,) = _members[i].delegatecall(
+                    //     abi.encodeWithSignature("tokenReward(address,uint256)", _tokenaddress, amount)
+                    // );
+                MemberRewarded(_members[i], "ERC20", amount);
+            }
         }
         emit HolonRewarded(name, "ERC20", _tokenamount);
     }
-   
+
     //=============================================================
     //                      Appreciative Functions
     //=============================================================
@@ -183,9 +168,9 @@ contract Holon is Ownable {
     /// @notice A member cannot send appreciation to himself
     /// @notice Sender should have enough appreciation left to give
     /// @param _memberaddress The address of the receiving member
-    /// @param _percentage The amount of the appreciation to give in percentage. 
+    /// @param _percentage The amount of the appreciation to give in percentage.
 
-    function setAppreciation(address _memberaddress, uint8 _percentage)
+    function appreciate(address _memberaddress, uint8 _percentage)
         public
     {
         require (isMember[msg.sender], "Sender is not a Holon member"); // validate sender is a Holon member
@@ -197,48 +182,33 @@ contract Holon is Ownable {
         totalappreciation += _percentage;
     }
 
-    /// @dev Dishes appreciation to other members. The appreciation of the total % will be computed based on total amount shared upon rewards
-    /// @notice Only  holon members (not contributors) can call this function
-    /// @notice A member cannot send appreciation to himself
-    /// @param _memberaddress The address of the receiving member
-    /// @param _amount The amount of the appreciation to give. This is of arbitrary scale 
-
-    function dish(address _memberaddress, uint256 _amount) 
-        public
-    {
-        require (isMember[msg.sender]||isContributor[msg.sender], "Sender is not a Holon member"); // validate sender is a Holon member
-        require (isMember[_memberaddress], "Receiver is not a Holon member"); // validate receiver is a Holon member
-        require (_memberaddress != msg.sender, "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
-        dished[msg.sender][_memberaddress]+= _amount;
-        totaldished[msg.sender] += _amount;
-    }
     
     /// @dev Gives a percentage of appreciation to a specific member on behalf of a specific holon
     /// @notice Only the sending holon lead can call this function
     /// @notice A member cannot send appreciation to himself
     /// @notice Sender should have enough appreciation left to give
-    /// @param _holonaddress The address of the sending holon
-    /// @param _memberaddress The address of the receiving member
-    /// @param _percentage The amount of the appreciation to give in percentage. 
-    
-    function sendHolonAppreciationTo(address payable _holonaddress, address _memberaddress, uint8 _percentage) 
+    /// @param _fromholonaddress The address of the sending holon
+    /// @param _tomemberaddress The address of the receiving member
+    /// @param _percentage The amount of the appreciation to give in percentage.
+
+    function appreciateAsHolon(address payable _fromholonaddress, address _tomemberaddress, uint8 _percentage)
         public
-    {    
-        require (isMember[_holonaddress], "Sender is not a Holon member"); // validate sender is a Holon member
-        require (isMember[_memberaddress], "Receiver is not a Holon member"); // validate receiver is a Holon member
-        require (_memberaddress != _holonaddress, "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
-        require (remainingappreciation[_holonaddress] >= _percentage, "Not enough appreciation remaining");
-        require (Holon(_holonaddress).owner() == msg.sender, "Only the Holon Lead can send appreciation on behalf of his Holon!");
-        
-        remainingappreciation[_holonaddress]-= _percentage;
-        appreciation[_memberaddress] += _percentage;
+    {
+        require (isMember[_fromholonaddress], "Sender is not a Holon member"); // validate sender is a Holon member
+        require (isMember[_tomemberaddress], "Receiver is not a Holon member"); // validate receiver is a Holon member
+        require (_tomemberaddress != _fromholonaddress, "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
+        require (remainingappreciation[_fromholonaddress] >= _percentage, "Not enough appreciation remaining");
+        require (Holon(_fromholonaddress).owner() == msg.sender, "Only the Holon Lead can send appreciation on behalf of his Holon!");
+
+        remainingappreciation[_fromholonaddress] -= _percentage;
+        appreciation[_tomemberaddress] += _percentage;
         totalappreciation += _percentage;
     }
-    
+
 
     /// @dev Resets appreciation of the caller
     /// @notice This is the only way to change already assigned appreciation
-    function resetAppreciation() 
+    function resetAppreciation()
         public
         onlyOwner
     {
@@ -248,6 +218,8 @@ contract Holon is Ownable {
              remainingappreciation[_memberaddress] = 100;
              appreciation[_memberaddress] = 0;
          }
+         if (passthecrown)
+            transferOwnership( _members[block.number % _members.length]);
     }
 
     //=============================================================
@@ -257,15 +229,21 @@ contract Holon is Ownable {
 
     function addMember(address payable _memberaddress, string memory _membername)
         public
-    {
+    {   
         require(isMember[_memberaddress] == false, "Member already added");
-        require(toAddress[_membername] == address(0), "Name is already taken");
+        require((isMember[msg.sender] == true || this.owner() == msg.sender ), "Request submitted by a non-member address");
+        //require(getAddress(_membername) == address(0), "Name is already taken");
         _members.push(_memberaddress);
-        toAddress[_membername] = _memberaddress;
-        toName[_memberaddress] = _membername;
-        isMember[_memberaddress] =  true;
+        factory.changeName(_memberaddress,_membername);
+        // toAddress[_membername] = _memberaddress;
+        // toName[_memberaddress] = _membername;
+        isMember[_memberaddress] = true;
         remainingappreciation[_memberaddress] = 100;
-        transferOwnership(_memberaddress); //Yes, you heard that right. This is not a bug, it is called "Passing the crown". Any new member becomes the owner, and he is going to be the only one allowed to bring in new members, and so on. Make sure you don't add members you don't trust.
+        if (passthecrown)
+            transferOwnership(_memberaddress);
+        //Yes, you heard that right. This is not a bug, it is called "Passing the crown".
+        //Every new member becomes the owner, and he is going to be the only one allowed to bring in new members, and so on.
+        //Make sure you don't add members you don't trust.
 
         emit AddedMember(_memberaddress, name);
     }
@@ -280,13 +258,13 @@ contract Holon is Ownable {
                break;
             }
         }
-        
+
         _members.pop(); // remove last member
-        isMember[_memberaddress] =  false;
-        isContributor[_memberaddress] =  false;
-        toAddress[toName[_memberaddress]] = address(0);
-        
-        emit RemovedMember(_memberaddress,toName[_memberaddress]);
+        isMember[_memberaddress] = false;
+        isContributor[_memberaddress] = false;
+        // toAddress[toName[_memberaddress]] = address(0);
+
+        emit RemovedMember(_memberaddress,getMemberName(_memberaddress));
     }
 
 
@@ -294,8 +272,15 @@ contract Holon is Ownable {
         public
         onlyOwner
     {
-        isContributor[_memberaddress] =  false;
-        isMember[_memberaddress] =  true;
+        isContributor[_memberaddress] = false;
+        isMember[_memberaddress] = true;
+    }
+
+    function passTheCrown()
+        public
+        onlyOwner
+    {
+        passthecrown = true;
     }
 
     //=============================================================
@@ -304,26 +289,26 @@ contract Holon is Ownable {
     // these function will be used by the holon lead to mantain the holon members
 
 
-    function joinHolon(address payable _memberaddress, string memory _membername)
-        public
-    {
-        require(isMember[_memberaddress] == false, "Member was already added");
-        require(toAddress[_membername] == address(0), "Name is already taken");
-        _members.push(_memberaddress);
-        toAddress[_membername] = _memberaddress;
-        toName[_memberaddress] = _membername;
-        isContributor[_memberaddress] =  true;
+    // function joinHolon(address _memberaddress, string memory _membername)
+    //     public
+    // {
+    //     require(isMember[_memberaddress] == false, "Member was already added");
+    //     require(toAddress[_membername] == address(0), "Name is already taken");
+    //     _members.push(address(uint160(_memberaddress)));
+    //     toAddress[_membername] = _memberaddress;
+    //     toName[_memberaddress] = _membername;
+    //     isContributor[_memberaddress] = true;
 
-        emit Joined(_memberaddress, name);
-    }
+    //     emit Joined(_memberaddress, name);
+    // }
 
     // This function should be called to respect the holonic peer production license.
     function forkHolon(string memory _holonname)
          public
     {
-         Holon newholon = Holon(address(uint160(factory.newHolon(_holonname))));
-         newholon.addMember(address(this),"Initiators"); //Link back to origin
-         this.joinHolon(address(newholon), "Fork" );// Link to fork
+         //Holon newholon = Holon(address(uint160(factory.newHolon(_holonname))));
+         //newholon.addMember(address(uint160(address(this))),"Initiators"); //Link back to origin
+         //this.joinHolon(address(newholon),_holonname); // Link to fork
     }
 
     //=============================================================
@@ -331,8 +316,8 @@ contract Holon is Ownable {
     //=============================================================
     // these functions will be used to set and retrieve information about the holon
 
-    // @dev Retrieves the address of the factory that created this Holon.
-    /// @return The address of the factory
+    ///@dev Retrieves the address of the factory that created this Holon.
+    ///@return The address of the factory
     
     function getFactory() 
         public 
@@ -340,19 +325,7 @@ contract Holon is Ownable {
         returns (address)
     {
         return address(factory);
-    }
-    
-    /// @dev Changes the name of the Holon
-    /// @notice only the holon lead (owner) can call this function
-    /// @param _name The new name of the holon
-
-    function changeName(string memory _name)
-        public
-        onlyOwner
-    { 
-        name = _name;
-        emit ChangedName(name, _name);
-    }
+    } 
 
     /// @dev Retrieves the size of the holon in terms of members
     /// @notice contributors are included in this number
@@ -364,6 +337,23 @@ contract Holon is Ownable {
         returns (uint256)
     {
         return _members.length;
+    }
+
+    function changeName(string memory _name) public onlyOwner{
+        factory.changeName(address(this), _name);
+    }
+
+    function changeMemberName(address _memberaddress, string memory _name) public {
+        require (isMember[_memberaddress]);
+        factory.changeName(_memberaddress, _name);
+    }
+
+    function getName() public view returns (string memory){
+        return factory.getName(address(this));
+    }
+
+    function getMemberName(address _memberaddress) public view returns (string memory){
+        return factory.getName(_memberaddress);
     }
 
     /// @dev Retrieves the index of holon members
@@ -400,9 +390,4 @@ contract Holon is Ownable {
         require(success, "Transfer failed");
         
     }
-
-
-    
-    
-    
 }

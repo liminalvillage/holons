@@ -8,28 +8,13 @@ pragma solidity ^0.6;
  * 
  * ----------------------------------------------------
  */
-contract IHolonFactory {
-   
-    mapping (address => bool) public isHolon;
+interface IHolonFactory {
 
-    uint256 public nholons;
+    function newHolon(string calldata _name) external returns (bool);
+    function getName(address _address) external view returns (string memory);
+    function changeName(address _address, string calldata _name) external;
+    function isHolon(address _address) external view returns (bool);
+    function isMember(address _address) external view returns (bool);
 
-   function newHolon(string memory name) public returns (address holon)
-    {}
-
-    function listHolons()
-        external
-        view
-        returns (address payable[] memory)
-    {}
-
-    function listHolonsOf(address member)
-        external
-        view
-        returns (address[] memory)
-    {}
-
-    function getHolon(uint256 holonid) public view returns (address){
-    }
 
 }
