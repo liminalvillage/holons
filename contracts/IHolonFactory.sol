@@ -3,9 +3,9 @@ pragma solidity ^0.6;
 
 /* ---------------------------------------------------
  * This contract handles Holon creation, tracking and listing
- * The Holon initiatior is the Holon lead (owner) and he is able to add and remove members 
+ * The Holon initiatior is the Holon lead (owner) and he is able to add and remove members
  * from within the Holon contract
- * 
+ *
  * ----------------------------------------------------
  */
 interface IHolonFactory {

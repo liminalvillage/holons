@@ -1,7 +1,7 @@
 pragma solidity ^0.6;
 
 import "./Holon.sol";
-import "./Membership.sol";
+import "./Membrane.sol";
 
 /* ---------------------------------------------------
  * This contract handles Holon creation, tracking and listing
@@ -10,56 +10,26 @@ import "./Membership.sol";
  *
  * ----------------------------------------------------
  */
-contract HolonFactory is Membership{
-
-    //mapping (address => bool) private isAHolon;
-    mapping (address => address[]) public holonsOf;
-
-    address[] internal _holons;
-
-    uint256 public nholons;
+contract HolonFactory is Membrane{
 
     event NewHolon(string name, address addr);
 
-    constructor() Membership (address(this))
+    constructor() 
     public
     {
     }
 
    function newHolon(string memory name) public returns (address holon)
     {
-          if (toAddress[name] > address(0x0)) return toAddress[name];
+        if (toAddress[name] > address(0x0)) //An holon with the same name already exists
+            return toAddress[name];
 
-        nholons += 1;
         Holon newholon = new Holon(address(this));
         address addr = address(newholon);
-        _holons.push(addr);
-
-        holonsOf[msg.sender].push(addr);
-        toAddress[name] = addr;
-        toName[addr] = name;
-        //isAHolon[addr] = true;
+        addMember(addr, name);
 
         emit NewHolon(name, addr);
 
         return addr;
     }
-    
-
-    function listHolons()
-        external
-        view
-        returns (address[] memory)
-    {
-        return _holons;
-    }
-
-    function listHolonsOf(address owner)
-        public
-        view
-        returns (address[] memory)
-    {
-        return holonsOf[owner];
-    }
-
 }

@@ -39,31 +39,30 @@ contract("Holon", async accounts => {
             //create first holon
             await factory.newHolon("First", { from: owner });
             holonaddress = await factory.newHolon.call("First");
-            
-            //create second holon
-            await factory.newHolon("Otherholon", { from: firstMember });
+            const size = await factory.getSize();
+            assert.equal(size.toString(), "1", "size not equal to 1");
+        })
+    
+           
+        it("Fails creating a new Holon from an unknown account", async () => {
+         
+            //tries creating a rogue holon
+            try{
+            await factory.newHolon("Otherholon", { from: unknownMember });
             let holonaddress2 = await factory.newHolon.call("Otherholon");
-            
-            //check if both succeeded
-            const size = await factory.nholons();
-            assert.equal(size.toString(), "2", "nholons not equal to 2");
-            
-            //check if holons can be fetched by owners
-            let address = await factory.listHolonsOf(owner);
-            assert.equal(address.toString(),holonaddress.toString(),"address mismatch");
-            
-            let address2 = await factory.listHolonsOf(firstMember);
-            assert.equal(address2.toString(),holonaddress2.toString(),"address 2 mismatch");
+            } catch{_}
+
+            //check if it failed
+            const size = await factory.getSize();
+            assert.equal(size.toString(), "1", "size not equal to 1");
    
         })
-
-        
 
         it("Fails creating a new Holon with the same name ", async () => {
             await factory.newHolon("First", { from: owner });
             const newholonaddress = await factory.newHolon.call("First", { from: owner })
-            const size = await factory.nholons();
-            assert.equal(size.toString(), "2", "nholons not equal to 2")
+            const size = await factory.getSize();
+            assert.equal(size.toString(), "1", "nholons not equal to 1")
             //assert.equal(holonaddress, haddress2, "Holon size is not 0")
         })
 
@@ -71,6 +70,11 @@ contract("Holon", async accounts => {
             holon = await Holon.at(holonaddress);
             const holonsize = await holon.getSize();
             assert.equal(holonsize.toString(), "0", "Holon size not equal to 0");
+        })
+
+        it("Creates a new holon from holon", async () => {
+            await holon.newHolon("asdasd", {from:owner});
+            assert(await factory.isMember(await factory.toAddress("asdasd")));
         })
 
         // it("Changes holon name", async () => {
@@ -161,7 +165,15 @@ contract("Holon", async accounts => {
             const holonsize = await holon.getSize();
             assert.equal(holonsize.toString(), "2", "Holon size not equal to 2");
         })
+
+        // it("Creates a second Holon", async () => {
+        // //check if holons can be fetched by owners
+        // let address = await factory.listMembersOf(owner);
+        // assert.equal(address.toString(),holonaddress.toString(),"address mismatch");
         
+        // //let address2 = await factory.listHolonsOf(firstMember);
+        // //assert.equal(address2.toString(),holonaddress2.toString(),"address 2 mismatch");
+        // })
     })
     
     describe("Holon Appreciation Test", _ => {
@@ -274,29 +286,40 @@ contract("Holon", async accounts => {
         })
             
 
-        // it("Holon shares appreciation to another member", async () => {
-        //     await factory.newHolon("Second", { from: owner });
-        //     secondholonaddress = await factory.newHolon.call("Second"); 
-        //     secondholon = await Holon.at(secondholonaddress);
+        it("Holon shares appreciation to another member", async () => {
+            //Create an second holon from owner
+            await factory.newHolon("Second", { from: owner });
+            secondholonaddress = await factory.newHolon.call("Second"); 
+            secondholon = await Holon.at(secondholonaddress);
+            //add a member to it
+            await secondholon.addMember ( secondMember, "Josh",{ from: owner });
+            const secondholonsize = await secondholon.getSize();
+            assert.equal(secondholonsize.toString(), "1","Second holon size not equal to 1");
+            //add the second holon to the original holon
+            await holon.addMember ( secondholonaddress, "Holon", { from: owner });
+            let size = await holon.getSize();
+            assert.equal(size.toString(), "3", "Holon size not equal to 3");
+            //send appreciation from second holon to first member
+            let appr1 = await holon.appreciation.call(firstMember);
+            await secondholon.appreciateSibling(holonaddress, firstMember,50,{from:owner});
+            let appr2 = await holon.appreciation.call(firstMember);
+            assert.equal(appr1.toString(), appr2.toString() - 50, "Wrong appreciation received");
 
-        //     await secondholon.addMember ( secondMember, "Josh",{ from: owner });
-        //     const secondholonsize = await secondholon.getSize();
-        //     assert.equal(secondholonsize.toString(), "1","Second holon size not equal to 1");
-
-        //     await holon.addMember ( secondholonaddress, "Holon", { from: owner });
-        //     let size = await holon.getSize();
-        //     assert.equal(size.toString(), "3", "Holon size not equal to 3");
+            //second holon fails sending appreciation to themselves
+            appr1 = await holon.appreciation.call(secondholonaddress);
+            try{
+            await secondholon.appreciateSibling(holonaddress, secondholonaddress,50,{from:owner});
+            }catch(_){};
+            appr2 = await holon.appreciation.call(secondholonaddress);
+            assert.equal(appr1.toString(), appr2.toString() , "Wrong appreciation received (holon appreciated themselves)");
             
-        //     let appr1 = await holon.appreciation.call(firstMember);
-        //     holon.appreciateAsHolon(secondholonaddress,firstMember,100,{from:owner});
-        //     let appr2 = await holon.appreciation.call(firstMember);
-        //     assert.equal(appr1.toString(), appr2.toString() - 100, "Wrong appreciation received");
+            let parents = await secondholon.listParents();
+            console.log (parents);
+            console.log (factory.address);
+            console.log (holonaddress);
 
-        // })
-
-        it("Holon shares appreciation to another holon member", async () => {
         })
-    })
 
+    })
   
 })

@@ -17,10 +17,9 @@ pragma solidity ^0.6;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
-import "./IHolonFactory.sol";
-import "./Membership.sol";
+import "./Membrane.sol";
 
-contract Holon is Membership{
+contract Holon is Membrane{
     using SafeMath for uint256;
 
      //======================== Public holon variables
@@ -34,12 +33,12 @@ contract Holon is Membership{
     event MemberRewarded (address member,string token, uint256 amount);
 
     /// @notice Constructor to create an holon
-    
     ///  created the Holon contract, the factory needs to be deployed first
 
-    constructor(address _factoryaddress) Membership(address(_factoryaddress))
+    constructor (address _parent)
         public
     {
+        creator = _parent;
     }
 
     //=============================================================
@@ -75,36 +74,26 @@ contract Holon is Membership{
             etherreward = true;
         }
          else {
-            //Load ERC20 token
+            //Load ERC20 token information
             token = IERC20(_tokenaddress);
             require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
         }
-        
-        uint256 unitReward;
-        if (totalappreciation > 0 ) // if appreciation was shared
-            unitReward = _tokenamount.div(totalappreciation);
-        else //if no appreciation was shared, prepare unit reward for blanket approach
-            unitReward = _tokenamount.div(_members.length);
         
         uint256  amount;
 
         for (uint256 i = 0; i < _members.length; i++) {
             if (totalappreciation > 0 ) // if appreciation was shared
-                amount = appreciation[_members[i]].mul(unitReward); //multiply given appreciation with unit reward
+                amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
             else
                 amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
 
             if (amount > 0 ){
-                if (etherreward)
-                    _transfer(_members[i], amount);
+                if (etherreward){
+                    (bool success, ) = _members[i].call.value(amount)("");
+                    require(success, "Transfer failed");
+                }
                 else {
                     token.transfer(_members[i],amount);
-                    //if (factory.isHolon(_members[i]))  //is holon
-                    // { 
-                    //     Holon holon = Holon(_members[i]);          //load holon
-                    //     holon.tokenReward(_tokenaddress, amount);  //call reward function 
-                    // }
-                    
                     (bool success,) = _members[i].call(
                     abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
                     );
@@ -115,36 +104,17 @@ contract Holon is Membership{
         }
         emit HolonRewarded(address(this), "ERC20", _tokenamount);
     }
-
-   
-    // / @dev Gives a percentage of appreciation to a specific member on behalf of a specific holon
-    // / @notice Only the sending holon lead can call this function
-    // / @notice A member cannot send appreciation to himself
-    // / @notice Sender should have enough appreciation left to give
-    // / @param _fromholonaddress The address of the sending holon
-    // / @param _tomemberaddress The address of the receiving member
-    // / @param _percentage The amount of the appreciation to give in percentage.
-
-    // function appreciateAsHolon(address payable _fromholonaddress, address _tomemberaddress, uint8 _percentage)
-    //     public
-    // {
-    //     require (isMember[_fromholonaddress], "Sender is not a Holon member"); // validate sender is a Holon member
-    //     require (isMember[_tomemberaddress], "Receiver is not a Holon member"); // validate receiver is a Holon member
-    //     require (_tomemberaddress != _fromholonaddress, "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
-    //     require (remainingappreciation[_fromholonaddress] >= _percentage, "Not enough appreciation remaining");
-    //     require (Holon(_fromholonaddress).owner() == msg.sender, "Only the Holon Lead can send appreciation on behalf of his Holon!");
-
-    //     remainingappreciation[_fromholonaddress] -= _percentage;
-    //     appreciation[_tomemberaddress] += _percentage;
-    //     totalappreciation += _percentage;
-    // }
-
  
     //=============================================================
     //                      Holon Merge and Fork Functions
     //=============================================================
     // these function will be used by the holon lead to mantain the holon members
-
+    function newHolon(string calldata _name) external returns (address){
+        (bool success,) = creator.call(
+                    abi.encodeWithSignature("newHolon(string)", _name)
+                    );
+        require (success, "Holon creation failed");
+    }
 
     // function joinHolon(address _memberaddress, string memory _membername)
     //     public
@@ -154,19 +124,25 @@ contract Holon is Membership{
     //     _members.push(address(uint160(_memberaddress)));
     //     toAddress[_membername] = _memberaddress;
     //     toName[_memberaddress] = _membername;
-    //     isContributor[_memberaddress] = true;
+    //     //isContributor[_memberaddress] = true;
 
-    //     emit Joined(_memberaddress, name);
+    //     //emit Joined(_memberaddress, name);
     // }
 
-    // This function should be called to respect the holonic peer production license.
-    function forkHolon(string memory _holonname)
-         public
-    {
-         //Holon newholon = Holon(address(uint160(factory.newHolon(_holonname))));
-         //newholon.addMember(address(uint160(address(this))),"Initiators"); //Link back to origin
-         //this.joinHolon(address(newholon),_holonname); // Link to fork
-    }
+    //This function should be called to respect the holonic peer production license.
+    // function spork(string memory _holonname){
+    //    Holon newholon =fork("newname");
+    //    newholon.spoon(address(this))
+    //}
+
+    //This function should be called to respect the holonic peer production license.
+    // function fork(string memory _holonname)
+    //      public
+    // {
+    //      Holon newholon = Holon(factory.newHolon(_holonname));
+    //      newholon.addMember(address(this),"Initiator"); //Link back to origin
+    //      this.joinHolon(address(newholon),_holonname); // Link to fork
+    // }
 
     //=============================================================
     //                      Getters & Setters
@@ -177,22 +153,10 @@ contract Holon is Membership{
     /// @notice Only the holon lead can change this!
     /// @param _IPFSHash The hash of the IPFS manifest
 
-    function setManifest(string memory _IPFSHash)
-        public
+    function setManifest(string calldata _IPFSHash)
+        external
     {
-        require (msg.sender == lead,"Only lead can change the name");
+        require (msg.sender == lead,"Only lead can set the manifest");
         IPFSManifest = _IPFSHash;
-    }
-
-    /// @dev Internal function for transferring ether
-    /// @param _dst The address of the receiver holon or member
-    /// @param _amount  The amount of the ether to transfer
-
-    function _transfer(address _dst, uint256 _amount)
-        internal
-    {
-        (bool success, ) = _dst.call.value(_amount)("");
-        require(success, "Transfer failed");
-        
     }
 }
