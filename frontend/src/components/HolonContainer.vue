@@ -2,7 +2,7 @@
   <div>
     <router-link  class="holon-link mr-2" :to="`/${homeHolon}`">
       <font-awesome-icon :icon="['far', 'circle']" class="-mr-2" />
-      <font-awesome-icon :icon="['far', 'circle']" />Home
+      <font-awesome-icon :icon="['far', 'circle']" />
     </router-link>
     <router-link
       v-for="(holon, index) in holonList"
@@ -22,13 +22,13 @@
     </div>
     <div class="m-grid-outer -mt-20">
       <div class="m-grid-container" name="gridmove-move">
-        <div class="circle row-4 c-3 c-search-outer" key="fixed-possition">
+        <div class="circle row-4 c-3 c-search-outer" key="fixed-position">
           <div class="c-inner text-white text-2xl">
             {{ holonName }}
             <button
               
               class="v-step-2 bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2"
-              @click="openAddLoveModal(holonaddress, true)"
+              @click="openAddAppreciationModal(holonaddress, true)"
             >Send funds to holon</button>
           </div>
         </div>
@@ -48,16 +48,16 @@
             <div>
               <holon-stats
                 :expanded="false"
-                :love="member.love"
-                :remaining="member.remaininglove"
+                :appreciation="member.appreciation"
+                :remaining="member.remainingappreciation"
                 :recieved="member.rewards"
-                :casted="castedlove"
+                :casted="castedappreciation"
                 :totalrewards="totalrewards"
               />
               <button
                 v-if="member.address !== defaultAccount"
                 class="v-step-1 bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2"
-                @click="openAddLoveModal(index)"
+                @click="openAddAppreciationModal(index)"
               >send ❤️</button>
             </div>
           </div>
@@ -94,61 +94,61 @@
           <div class="max-w-xs">
             <holon-stats
               :expanded="true"
-              :love="member.love"
-              :remaining="member.remaininglove"
+              :appreciation="member.appreciation"
+              :remaining="member.remainingappreciation"
               :rewards="member.rewards"
-              :casted="castedlove"
+              :casted="castedappreciation"
               :totalrewards="totalrewards"
             />
 
             <button
               class="bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2"
-              @click="openAddLoveModal(index)"
+              @click="openAddAppreciationModal(index)"
             >send ❤️</button>
           </div>
         </div>
       </div>
     </div>
     <modal
-      v-if="showAddLoveModal"
-      @close="closeAddLoveModal"
-      :header="`Send to ${addLoveModal.header}`"
+      v-if="showAddAppreciationModal"
+      @close="closeAddAppreciationModal"
+      :header="`Send to ${addAppreciationModal.header}`"
     >
       <div slot="body">
         <span class="text-blue-600 font-extrabold text-3xl">
           {{
-          addLoveModal.amount
+          addAppreciationModal.amount
           }}
         </span>
         <span
-          v-if="addLoveModal.holon"
+          v-if="addAppreciationModal.holon"
           class="text-gray-600 italic text-3xl pl-2"
-        >/ {{ addLoveModal.maxAmount }} ETH</span>
+        >/ {{ addAppreciationModal.maxAmount }} ETH</span>
         <span
           v-else
           class="text-gray-600 italic text-3xl pl-2"
-        >/ {{ addLoveModal.maxAmount - addLoveModal.amount }} ❤️</span>
+        >/ {{ addAppreciationModal.maxAmount - addAppreciationModal.amount }} ❤️</span>
         <div class="slidecontainer">
           <input
             type="range"
             :min="minAmount"
             :step="stepSize"
-            :max="addLoveModal.maxAmount"
-            v-model="addLoveModal.amount"
+            :max="addAppreciationModal.maxAmount"
+            v-model="addAppreciationModal.amount"
             class="slider"
           />
         </div>
       </div>
       <template slot="footer">
         <button
-          v-if="addLoveModal.holon"
+          v-if="addAppreciationModal.holon"
           class="bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2"
-          @click="sendFunds(addLoveModal.target, addLoveModal.amount)"
+          @click="sendFunds(addAppreciationModal.target, addAppreciationModal.amount)"
         >send ❤️</button>
         <button
           v-else
           class="bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2"
-          @click="sendLove(addLoveModal.target, addLoveModal.amount)"
+          @click="sendAppreciation(addAppreciationModal.target, addAppreciationModal.amount)"
         >send ❤️</button>
       </template>
     </modal>
@@ -157,17 +157,17 @@
 <script>
 import web3 from "../libs/web3.js";
 import Identicon from "identicon.js";
-import holonabi from "../data/holonabi.json";
-import factoryabi from "../data/factoryabi.json";
+import holondata from "../data/Holon.json";
+import factorydata from "../data/HolonFactory.json";
 export default {
   name: "HolonContainer",
   props: ["holonNav"],
   data() {
     return {
-      showAddLoveModal: false,
+      showAddAppreciationModal: false,
       showAddField: false,
-      addLoveModal: {
-        holon: false,
+      addAppreciationModal: {
+        holonda: false,
         header: null,
         target: null,
         amount: 0,
@@ -181,14 +181,14 @@ export default {
       holonMembers: [],
       holon: null,
       user: null,
-      holonabi: holonabi,
-      factoryabi: factoryabi,
-      homeHolon: "0x82Aa4dC3E7D85a95cd801394A070AE316b6a668d",
+      holonabi: holondata.abi,
+      factoryabi: factorydata.abi,
+      homeHolon: "0xB393F06145278F3B69B6E23dD403Fc3985f329D4",
+      factoryaddress: factorydata.address,
       holonaddress: null,
-      castedlove: 0,
-      totallove: 0,
+      castedappreciation: 0,
+      totalappreciation: 0,
       totalrewards: 0,
-      factoryaddress: "0xF31e09d6130cd71e286Eb640a1A2930f89b099C7",
       circleClass: [
         "row-3 c-2",
         "row-2 c-3",
@@ -208,37 +208,41 @@ export default {
   },
   computed: {
     minAmount() {
-      return this.addLoveModal.holon ? "0" : "1";
+      return this.addAppreciationModal.holon ? "0" : "1";
     },
     stepSize() {
-      return this.addLoveModal.holon ? "0.0001" : "1";
+      return this.addAppreciationModal.holon ? "0.0001" : "1";
     }
   },
   methods: {
-    connectWeb3() {
-      web3.eth.getAccounts((error, result) => {
+    connectWeb3()  { 
+      web3.eth.getAccounts().then((result,error) =>{
         if (error) {
-          console.log(error);
+          console.log("Error! "+error);
         } else {
           web3.defaultAccount = result[0];
           this.defaultAccount = result[0];
+          console.log(web3.defaultAccount);
+           if (this.defaultAccount >0)
+          {
+            this.makeHolonList();
+
+            this.getTeam();
+          }
         }
-      });
+      })
       this.holon = new web3.eth.Contract(this.holonabi, this.holonaddress);
       this.factory = new web3.eth.Contract(
         this.factoryabi,
         this.factoryaddress
       );
-      this.makeHolonList();
-
-      this.getTeam();
+     
     },
     makeHolonList() {
       this.factory.methods
-        .listHolons()
-        .call()
+        .listHolonsOf(this.defaultAccount)
+        .call( )
         .then(data => {
-          console.log(data);
           if (data) {
             for (var i = 0; i < data.length; i++) {
               this.holonList[i] = {
@@ -260,33 +264,26 @@ export default {
         });
     },
     getTeam() {
-      this.holon.methods
-        .getName()
-        .call()
-        .then(data => {
-          this.holonName = data;
-        });
+      // this.factory.methods
+      //   .toName
+      //   .call()
+      //   .then(data => {
+      //     this.holonName = data;
+      //   });
 
-      this.holon.methods
-        .totallove()
-        .call()
-        .then(data => {
-          this.totallove = data;
-        });
+      // this.holon.methods
+      //   .totalappreciation()
+      //   .call()
+      //   .then(data => {
+      //     this.totalappreciation = data;
+      //   });
 
-      this.holon.methods
-        .totalrewards()
-        .call()
-        .then(data => {
-          this.totalrewards = web3.utils.fromWei(data, "ether");
-        });
-
-      this.holon.methods
-        .castedlove()
-        .call()
-        .then(data => {
-          this.castedlove = data;
-        });
+      // this.holon.methods
+      //   .appreciation()
+      //   .call()
+      //   .then(data => {
+      //     this.castedappreciation = data;
+      //   });
 
       this.holon.methods
         .listMembers()
@@ -301,16 +298,16 @@ export default {
         this.holonMembers.push({
           address: members[i],
           name: "",
-          love: "",
-          remaininglove: "",
+          appreciation: "",
+          remainingappreciation: "",
           rewards: "",
           profile: "",
           img: ""
         });
         this.getName(i);
-        this.getLove(i);
-        this.getRewards(i);
-        this.getRemainingLove(i);
+        this.getAppreciation(i);
+       //  this.getRewards(i);
+        this.getRemainingAppreciation(i);
         this.findMe();
         this.get3boxData(i);
       }
@@ -339,36 +336,35 @@ export default {
         
     },
     getName(index) {
-      this.holon.methods
-        .toName(this.holonMembers[index].address)
+      this.holon.methods.toName(this.holonMembers[index].address)
         .call()
         .then(data => {
           this.holonMembers[index].name = data;
         });
     },
     
-    getRemainingLove(index) {
+    getRemainingAppreciation(index) {
       this.holon.methods
-        .remaininglove(this.holonMembers[index].address)
+        .remainingappreciation(this.holonMembers[index].address)
         .call()
         .then(data => {
-          this.holonMembers[index].remaininglove = data;
+          this.holonMembers[index].remainingappreciation = data;
         });
     },
-    getRewards(index) {
+    // getRewards(index) {
+    //   this.holon.methods
+    //     .rewards(this.holonMembers[index].address)
+    //     .call()
+    //     .then(data => {
+    //       this.holonMembers[index].rewards = web3.utils.fromWei(data, "ether");
+    //     });
+    // },
+    getAppreciation(index) {
       this.holon.methods
-        .rewards(this.holonMembers[index].address)
+        .appreciation(this.holonMembers[index].address)
         .call()
         .then(data => {
-          this.holonMembers[index].rewards = web3.utils.fromWei(data, "ether");
-        });
-    },
-    getLove(index) {
-      this.holon.methods
-        .love(this.holonMembers[index].address)
-        .call()
-        .then(data => {
-          this.holonMembers[index].love = data;
+          this.holonMembers[index].appreciation = data;
         });
     },
     findMe() {
@@ -376,23 +372,26 @@ export default {
         x => x.address === web3.defaultAccount
       );
     },
-    sendLove(address, amount) {
+    sendAppreciation(address, amount) {
       this.holon.methods
-        .sendLoveTo(address, amount)
+        .appreciate(address, amount)
         .send({ from: web3.defaultAccount })
         .then(() => {
-          this.getRemainingLove(this.user);
+          this.getRemainingAppreciation(this.user);
         });
-      this.closeAddLoveModal();
+      this.closeAddAppreciationModal();
     },
     sendFunds(address, amount) {
       console.log(address);
       console.log(amount);
-      this.holon.methods.weightedReward().send({
-        from: web3.defaultAccount,
-        value: web3.utils.toWei(amount, "ether")
-      });
-      this.closeAddLoveModal();
+      web3.eth.sendTransaction({from:web3.defaultAccount ,to:address, value:web3.utils.toWei(amount, "ether")})
+      this.closeAddAppreciationModal();
+    },
+    sendERC20(tokenaddress ,address, amount) {
+      console.log(address);
+      console.log(amount);
+      web3.eth.sendTransaction({from:web3.defaultAccount ,to:address, value:web3.utils.toWei(amount, "ether")})
+      this.closeAddAppreciationModal();
     },
     addMember(address, name) {
       this.holon.methods
@@ -412,33 +411,31 @@ export default {
         });
       this.showAddField = false;
     },
-    openAddLoveModal(index, holon) {
+    openAddAppreciationModal(index, holon) {
       if (holon) {
-        this.addLoveModal.holon = true;
-        this.addLoveModal.target = this.holonaddress;
-        this.addLoveModal.header = this.holonName;
+        this.addAppreciationModal.holon = true;
+        this.addAppreciationModal.target = this.holonaddress;
+        this.addAppreciationModal.header = this.holonName;
         new web3.eth.getBalance(web3.defaultAccount).then(bal => {
           var balance = web3.utils.fromWei(bal, "ether");
-          this.addLoveModal.maxAmount = balance;
+          this.addAppreciationModal.maxAmount = balance;
         });
       } else {
-        this.addLoveModal.holon = false;
-        this.addLoveModal.target = this.holonMembers[index].address;
-        this.addLoveModal.header = this.holonMembers[index].name;
-        this.addLoveModal.maxAmount = this.holonMembers[
-          this.user
-        ].remaininglove;
+        this.addAppreciationModal.holon = false;
+        this.addAppreciationModal.target = this.holonMembers[index].address;
+        this.addAppreciationModal.header = this.holonMembers[index].name;
+        this.addAppreciationModal.maxAmount = this.holonMembers[this.user].remainingappreciation;
       }
 
-      this.showAddLoveModal = true;
+      this.showAddAppreciationModal = true;
     },
-    closeAddLoveModal() {
-      this.addLoveModal.holon = false;
-      this.addLoveModal.target = "";
-      this.addLoveModal.header = "";
-      this.addLoveModal.amount = 0;
-      this.addLoveModal.maxAmount = 100;
-      this.showAddLoveModal = false;
+    closeAddAppreciationModal() {
+      this.addAppreciationModal.holon = false;
+      this.addAppreciationModal.target = "";
+      this.addAppreciationModal.header = "";
+      this.addAppreciationModal.amount = 0;
+      this.addAppreciationModal.maxAmount = 100;
+      this.showAddAppreciationModal = false;
     },
     toggleAddField(e) {
       this.showAddField = e;

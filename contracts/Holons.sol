@@ -1,6 +1,6 @@
 pragma solidity ^0.6;
 
-import "./Holon.sol";
+
 
 /*
     Copyright 2020, Roberto Valenti
@@ -17,9 +17,13 @@ import "./Holon.sol";
     Peer Production License for more details.
  */
 
-contract HolonFactory {
+contract Holons {
 
     event NewHolon (string name, address addr);
+
+   
+    address[] versions;
+    uint public latestversion;
 
     mapping (address => address[]) private holons;
     mapping (string => address) public toAddress;   //NOTE: Remove on deploy
@@ -30,22 +34,9 @@ contract HolonFactory {
 
    function newHolon(string memory _name) public returns (address)
     {
-        //This is required by tests to return the same address. NOTE: it enforces unique names for every holon created.
-        if (toAddress[_name] > address(0x0)) //An holon with the same name already exists
-           return toAddress[_name];
-
-        Holon newholon = new Holon(address(this), _name); //create an holon
-        address addr = address(newholon);
-        holons[address(0)].push(addr); //add to the global holon list
-        holons[msg.sender].push(addr); // add it to the local holon list
-        if (msg.sender != tx.origin)
-            holons[tx.origin].push(addr); //add it to the personal holon list
-        
-        toAddress[_name] = addr; //remove on deploy
-
-        emit NewHolon(_name, addr);
-
-        return addr;
+        (bool success, bytes memory result) = versions[latestversion].delegatecall(abi.encodeWithSignature("newHolon(string)", _name));
+        require (success, "delegate call failed");
+        return abi.decode(result, (address));
     }
 
     /// @dev Lists every holons ever created
@@ -62,5 +53,10 @@ contract HolonFactory {
     function listHolonsOf(address _address) external view returns (address[] memory){
         return holons[_address];
     }
+
+    // function addVersion(address versionaddress) public{
+    //     latestversion += 1;
+    //     versions.push(versionaddress); 
+    // }
 
 }

@@ -15,6 +15,4 @@ interface IHolonFactory {
     function changeName(address _address, string calldata _name) external;
     function isHolon(address _address) external view returns (bool);
     function isMember(address _address) external view returns (bool);
-
-
 }

@@ -120,6 +120,7 @@ License URL: http://creativecommons.org/licenses/by/3.0/
     <!---- And now the funny web3 stuff ... -->
 
     <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js"></script>
+    <script type="text/javascript" src="../frontend/data/Holon.json"></script>
     
     <script>
 
@@ -132,9 +133,9 @@ License URL: http://creativecommons.org/licenses/by/3.0/
         if (!web3.isConnected())
         alert("You need to be connected to an ethereum node to use this page. Please install metamask.")
       }
-
+      var contractdata = JSON.parse(HolonFactory.json);
       //set contract parameters
-      var TEAMABI = ([{ "inputs": [ { "internalType": "string", "name": "_name", "type": "string" }, { "internalType": "uint256", "name": "_uid", "type": "uint256" } ], "stateMutability": "nonpayable", "type": "constructor" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "address", "name": "member", "type": "address" }, { "indexed": false, "internalType": "string", "name": "name", "type": "string" } ], "name": "AddedMember", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "string", "name": "from", "type": "string" }, { "indexed": false, "internalType": "string", "name": "to", "type": "string" } ], "name": "ChangedName", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": true, "internalType": "address", "name": "previousOwner", "type": "address" }, { "indexed": true, "internalType": "address", "name": "newOwner", "type": "address" } ], "name": "OwnershipTransferred", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "address", "name": "member", "type": "address" }, { "indexed": false, "internalType": "string", "name": "name", "type": "string" } ], "name": "RemovedMember", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "string", "name": "name", "type": "string" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "TeamRewarded", "type": "event" }, { "stateMutability": "payable", "type": "fallback" }, { "inputs": [ { "internalType": "address payable", "name": "memberaddress", "type": "address" }, { "internalType": "string", "name": "_name", "type": "string" } ], "name": "addMember", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "blanketReward", "outputs": [], "stateMutability": "payable", "type": "function" }, { "inputs": [ { "internalType": "string", "name": "_name", "type": "string" } ], "name": "changeName", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "getAllMembers", "outputs": [ { "internalType": "address payable[]", "name": "", "type": "address[]" } ], "stateMutability": "view", "type": "function" }, { "inputs": [], "name": "getName", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "isMember", "outputs": [ { "internalType": "bool", "name": "", "type": "bool" } ], "stateMutability": "view", "type": "function" }, { "inputs": [], "name": "name", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "stateMutability": "view", "type": "function" }, { "inputs": [], "name": "owner", "outputs": [ { "internalType": "address", "name": "", "type": "address" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "remainingvotes", "outputs": [ { "internalType": "uint8", "name": "", "type": "uint8" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address payable", "name": "memberaddress", "type": "address" } ], "name": "removeMember", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "renounceOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "resetVoting", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "teamSize", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "string", "name": "", "type": "string" } ], "name": "toAddress", "outputs": [ { "internalType": "address", "name": "", "type": "address" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "toName", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "newOwner", "type": "address" } ], "name": "transferOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "uid", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "memberaddress", "type": "address" }, { "internalType": "uint8", "name": "percentage", "type": "uint8" } ], "name": "voteforMember", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "weight", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" } ])
+      var TEAMABI = contractdata.abi;// ([{ "inputs": [ { "internalType": "string", "name": "_name", "type": "string" }, { "internalType": "uint256", "name": "_uid", "type": "uint256" } ], "stateMutability": "nonpayable", "type": "constructor" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "address", "name": "member", "type": "address" }, { "indexed": false, "internalType": "string", "name": "name", "type": "string" } ], "name": "AddedMember", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "string", "name": "from", "type": "string" }, { "indexed": false, "internalType": "string", "name": "to", "type": "string" } ], "name": "ChangedName", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": true, "internalType": "address", "name": "previousOwner", "type": "address" }, { "indexed": true, "internalType": "address", "name": "newOwner", "type": "address" } ], "name": "OwnershipTransferred", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "address", "name": "member", "type": "address" }, { "indexed": false, "internalType": "string", "name": "name", "type": "string" } ], "name": "RemovedMember", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": false, "internalType": "string", "name": "name", "type": "string" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "TeamRewarded", "type": "event" }, { "stateMutability": "payable", "type": "fallback" }, { "inputs": [ { "internalType": "address payable", "name": "memberaddress", "type": "address" }, { "internalType": "string", "name": "_name", "type": "string" } ], "name": "addMember", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "blanketReward", "outputs": [], "stateMutability": "payable", "type": "function" }, { "inputs": [ { "internalType": "string", "name": "_name", "type": "string" } ], "name": "changeName", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "getAllMembers", "outputs": [ { "internalType": "address payable[]", "name": "", "type": "address[]" } ], "stateMutability": "view", "type": "function" }, { "inputs": [], "name": "getName", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "isMember", "outputs": [ { "internalType": "bool", "name": "", "type": "bool" } ], "stateMutability": "view", "type": "function" }, { "inputs": [], "name": "name", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "stateMutability": "view", "type": "function" }, { "inputs": [], "name": "owner", "outputs": [ { "internalType": "address", "name": "", "type": "address" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "remainingvotes", "outputs": [ { "internalType": "uint8", "name": "", "type": "uint8" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address payable", "name": "memberaddress", "type": "address" } ], "name": "removeMember", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "renounceOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "resetVoting", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "teamSize", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "string", "name": "", "type": "string" } ], "name": "toAddress", "outputs": [ { "internalType": "address", "name": "", "type": "address" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "toName", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "newOwner", "type": "address" } ], "name": "transferOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [], "name": "uid", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "memberaddress", "type": "address" }, { "internalType": "uint8", "name": "percentage", "type": "uint8" } ], "name": "voteforMember", "outputs": [], "stateMutability": "nonpayable", "type": "function" }, { "inputs": [ { "internalType": "address", "name": "", "type": "address" } ], "name": "weight", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" } ])
       var TeamContract = web3.eth.contract(TEAMABI);
 
       // glonbal variables needed for transactions
@@ -171,7 +172,7 @@ License URL: http://creativecommons.org/licenses/by/3.0/
           $('#teamname').html(name.toString())
         })
 
-        team.getAllMembers.call(function(err, members) {
+        team.listMembers.call(function(err, members) {
           if(err) { console.log(err) }
           if(members) { 
             arr = members.toString().split(",");
@@ -181,7 +182,7 @@ License URL: http://creativecommons.org/licenses/by/3.0/
           }
         })
 
-        team.teamSize.call({from: addr}, function(err, size) {
+        team.setSize.call({from: addr}, function(err, size) {
           $('#teamsize').html(size.toString())
         })
 
@@ -194,13 +195,13 @@ License URL: http://creativecommons.org/licenses/by/3.0/
             
         })
 
-        team.weight.call(addr,function(err, appreciation) {
+        team.appreciation.call(addr,function(err, appreciation) {
           if(err) { console.log(err) }
           if(appreciation) { $('#appreciation').html(appreciation.toString() )}
             
         })
 
-        team.remainingvotes.call(addr,function(err, remaining) {
+        team.remainingappreciation.call(addr,function(err, remaining) {
           if(err) { console.log(err) }
           if(remaining) { $('#remaining').html(remaining.toString() ) }
             
@@ -267,7 +268,7 @@ License URL: http://creativecommons.org/licenses/by/3.0/
       });
 
       $("#votebutton").click(function() {
-      team.voteforMember.sendTransaction($("#votememberaddress").val(),$("#votepercentage").val(),{from: addr}, function (error, txHash) {
+      team.appreciate.sendTransaction($("#votememberaddress").val(),$("#votepercentage").val(),{from: addr}, function (error, txHash) {
         console.log('Transaction sent')
         console.dir(txHash)
         $("#spin2").show();

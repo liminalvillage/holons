@@ -3,19 +3,19 @@
     <div
       class="inline-block flex-initial text-xs text-green-500 font-semibold"
       :class="{ 'text-base block p-1 ': expanded }"
-      title="love received"
+      title="appreciation received"
     >
       
 
       <font-awesome-icon :icon="['fas', 'arrow-right']" size="xs" />
       <font-awesome-icon :icon="['far', 'heart']" />
-      {{ love }} ({{ precentage }}%)
+      {{ appreciation }} ({{ precentage }}%)
       <small v-if="expanded"> Recived</small>
     </div>
     <div v-if="expanded"
       class="inline-block flex-1 text-xs text-red-500 font-semibold mr-1"
       :class="{ 'text-base block p-1': expanded }"
-      title="love left to sent"
+      title="appreciation left to sent"
     >
       <font-awesome-icon :icon="['far', 'heart']" />
        <font-awesome-icon :icon="['fas', 'arrow-right']" size="xs" />
@@ -41,7 +41,7 @@
 export default {
   name: "stats",
   props: [
-    "love",
+    "appreciation",
     "remaining",
     "rewards",
     "balance",
@@ -54,8 +54,8 @@ export default {
   },
   computed: {
     precentage() {
-      if (this.love && this.casted) {
-        return Math.floor((this.love / this.casted) * 100);
+      if (this.appreciation && this.casted) {
+        return Math.floor((this.appreciation / this.casted) * 100);
       } else {
         return 0;
       }

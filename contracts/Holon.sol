@@ -23,7 +23,7 @@ contract Holon is Membrane{
     using SafeMath for uint256;
 
      //======================== Public holon variables
-    //string public name;                             //The name of the holon
+    string public name;                             //The name of the holon
     string public version = "0.1";                  //Version of the holon contract
     string public IPFSManifest;                     //IPFS Hash for the JSON containing holon manifest
     address public creator;                         //Link to the holonic parent
@@ -35,10 +35,11 @@ contract Holon is Membrane{
     /// @notice Constructor to create an holon
     ///  created the Holon contract, the factory needs to be deployed first
 
-    constructor (address _parent)
+    constructor (address _creator, string  memory _name)
         public
     {
-        creator = _parent;
+        name = _name;
+        creator = _creator;
     }
 
     //=============================================================
@@ -82,7 +83,7 @@ contract Holon is Membrane{
         uint256  amount;
 
         for (uint256 i = 0; i < _members.length; i++) {
-            if (totalappreciation > 0 ) // if appreciation was shared
+            if (totalappreciation > 0 ) // if any appreciation was shared
                 amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
             else
                 amount = _tokenamount.div(_members.length); //else use blanket unit reward value.

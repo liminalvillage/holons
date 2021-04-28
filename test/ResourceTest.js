@@ -1,5 +1,5 @@
  
-const Holon = artifacts.require("./Holon.sol")
+const Holon = artifacts.require("./ResourceHolon.sol")
 const HolonFactory = artifacts.require("./HolonFactory.sol")
 const TestToken = artifacts.require("./TestToken.sol")
 

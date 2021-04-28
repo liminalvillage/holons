@@ -24,7 +24,6 @@ contract Membrane {
     bool passthecrown;
     address[] internal _members;
     address[] internal _parents;
-    //mapping (address => address[]) public membersOf;
   
     mapping (address => bool) public isMember;      //returns true if an address is a member;
     mapping (string => address) public toAddress;   //maps names to addresses
@@ -84,7 +83,6 @@ contract Membrane {
         Membrane(_parent).appreciate(_sibling,_percentage);
     }
 
-
    /// @dev Resets appreciation of the caller
     /// @notice This is the only way to change already assigned appreciation
     function resetAppreciation()
@@ -97,12 +95,7 @@ contract Membrane {
              remainingappreciation[_memberaddress] = 100;
              appreciation[_memberaddress] = 0;
          }
-        //  if (passthecrown){
-        //      if (_members[block.number % _members.length] != lead)
-        //         lead = _members[block.number % _members.length];  //elects random lead.
-        //     else
-        //         lead = _members[(block.number + 1) % _members.length]; //avoids reelecting the same lead;
-        //  }
+         passTheCrown();
     }
 
     //=============================================================
@@ -135,7 +128,13 @@ contract Membrane {
         
         emit AddedMember(_memberaddress, _membername);
     }
-    
+
+    function addParent(address  _parentaddress)
+        public
+    {
+        _parents.push(_parentaddress);
+    }
+
 
     function removeMember(address _memberaddress)
         external
@@ -154,23 +153,50 @@ contract Membrane {
 
         toAddress[toName[_memberaddress]] = address(0);
         toName[_memberaddress] = "";
+        passTheCrown();
     }
     
-    function addParent(address  _parentaddress)
+     /// @dev Changes the name of the member
+    /// @notice only the lead can call this function
+    /// @param _address The address of the member
+    /// @param _name The new name of the member
+
+    function changeName(address _address, string memory _name)
         public
     {
-        _parents.push(_parentaddress);
+        require (_address == msg.sender ||
+                msg.sender == lead ||
+                _address == tx.origin ,
+                "Name change request not sent from member nor owner");
+        toAddress[_name] = _address;
+        emit ChangedName(toName[_address], _name);
+        toName[_address] = _name;
     }
-
-    function passTheCrown()
+ 
+    function enablePassTheCrown()
         external
     {
-        require(msg.sender == lead, "Only the lead can set pass the crown");
+        require(msg.sender == lead, "Only the lead can enable 'pass the crown'");
         passthecrown = true;
     }
 
+    /// @dev Makes sure the crown is not passed to the same person
+    /// @notice this function is internal
+    /// @return list of the address of the members
+
+    function passTheCrown() 
+        internal 
+    {
+        if (passthecrown){ // checks if the feature is enabled
+             if (_members[block.number % _members.length] != lead)
+                lead = _members[block.number % _members.length];  //elects random lead.
+            else
+                lead = _members[(block.number + 1) % _members.length]; //avoids reelecting the same lead;
+        }
+    }
+
     /// @dev Retrieves the index of  members in the membrane
-    /// @return list of the members 
+    /// @return list of the address of the members
 
     function listMembers()
         external
@@ -179,6 +205,9 @@ contract Membrane {
     {
         return _members;
     }
+
+    /// @dev Retrieves the list of parents of the membrane
+    /// @return the address of the parents of the membrane
 
     function listParents()
         external
@@ -192,24 +221,12 @@ contract Membrane {
     /// @return number of members in the membrane
 
     function getSize()
-        public
+        external
         view
         returns (uint256)
     {
         return _members.length; //+ _contributors.length;
     }
 
-    /// @dev Changes the name of the member
-    /// @notice only the lead can call this function
-    /// @param _address The address of the member
-    /// @param _name The new name of the member
-
-    function changeName(address _address, string memory _name)
-        public
-    {
-        require (_address == msg.sender || msg.sender == lead || _address == tx.origin , "Name change request not sent from member nor owner");
-        toAddress[_name] = _address;
-        emit ChangedName(toName[_address], _name);
-        toName[_address] = _name;
-    }
+   
 }

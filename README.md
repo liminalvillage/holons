@@ -1,73 +1,55 @@
-# Hack-along Holons - aka Team of teams
-
+## Holons
 ### Create and join teams, delegate appreciation, share the rewards!
---------
 
-How can we value a plurality of contributions and encourage open innovation?
-How can we enhance trust in open innovation?
-How can we warp the game from zero sum hackathons to positive sum hackalongs?
+**Purpose**
 
-### Presentation
-![](images/presie4.png)
-![](images/frontend.jpg)
-![](images/presie5.png)
-![](images/presie6.png)
-![](images/presie7.png)
-![](images/presie8.png)
-![](images/presie9.png)
-![](images/presie10.png)
+To break down silos to enable scale-free peer 2 peer collaboration on projects and causes, while sharing rewards according to contribution.
 
---------
-### User Personas
+**Keywords:** Payment Flows, Liquid Renumeration, Appreciative Rewards, Holocratic Payments, Fractal Dividends, Liquid Pledging
 
-1) As a designer, Marko wants to help people perfect their value proposition so that they build something worth while for humanity
+**Definition of Holon**
 
-2) As a care worker, Kris wants to ensure people he cares about have their emotional needs met and create an atmosphere of positivity so that people are content and undistracted
+> A holon is an evolving self-organizing structure, composed of other holons. A holon is simultaneously a whole in itself and at the same time is nested within another holon and so is a part of something much larger than itself. Holons range in size from the smallest subatomic particles and strings, all the way up to the multiverse, comprising many universes. Individual humans, their societies and their cultures are intermediate level holons, created by the interaction of forces working upon us both top-down and bottom-up.A holon is an evolving self-organizing structure, composed of other holons, whose structures exist at a balance point between chaos and order. A holon is simultaneously a whole in itself and at the same time is nested within another holon and so is a part of something much larger than itself. Holons range in size from the smallest subatomic particles and strings, all the way up to the multiverse, comprising many universes. Individual humans, their societies and their cultures are intermediate level holons, created by the interaction of forces working upon us both top-down and bottom-up.
 
-3) As a business developer, Lua wants to round up a network so that when the product is delivered there can be a continuation of group activity
+**Motivation**
 
-4) As a computer scientist, Ome wants to ensure that the logic of whatever is getting built has internal consistancy, is rigerous and robust and anything but sloppy, so that the work once completed can stand on its own
+Open source is all about contributions, but how do we account for them?
+There are two realms of contribution; qualitative (subjective) and quantitive (objective).
 
-5) As a developer, Roberto wants to see a consistent codebase that is modular and reusable so that each module can be recontextualised and upcycled across projects as they develop
+- In the realm of subjective quality; we must acknowledge that qualities are an emergent property of an interrelated schema - which is a potentially infinite list. 
+- In the realm of quantity; Peter Drucker states "what gets measured, gets managed", while Goodharts Law dictates that "when a measure becomes a target, it ceases to be a good measure". 
 
-6) As a security specialist, Ralph wants to see that potential attack surfaces within the app are sealed so that no one looses funds or exploits the application and tarnishes the groups reputation.
+There are pros and cons to both approaches, but since the industrial revolution we've arguably enshrined a bias towards paradigms of objective quantification. This has lead to the creation of accounting tools which continuously shape our mindsets in this tradition. The most obvious of these is fiat currency.
 
-7) As a pollinator, Kay wants to hop about various groups and contribute his tooling talents with in a piecemeal style so that he can meet new people make friends and contribute value in a very breezy style
+The cryptocurrency community has made displacing this outdated system a rally cry, though the paradigm hasn't moved on much as evidenced in continued speculation and the exclusive barter of short term mediums of exchange (tokens). As such, we are potentially just recreating another form of capitalism.
 
-8) As a deep worker, Andrej wants to challenge peoples priorities and help them decide whats actually improtant to work on so that the group can apply their talents in an appropriate direction
+How do we avoid creating a flatland devoid of qualitative meaning? How can we broaden our perspective to be more inclusive of a plurality of values? It's our assertion that an integration of both qualitative and quantitative measures is necessary.
 
-9) As a peace maker, wants to align stakeholder interest in an egalatarian manner so that conflict is minimised
+On the quantitative side, we can build upon the current paradigm, which has also become one of Ethereum's primary use cases - payments. Payments are a specific objective quantification of value, necessary for most people in todays socio-economic climate. Our innovation lies in how we distribute this "payment".
 
-----------
+On the other side, qualifiers (eg:badges, or Gitcoin Kudos) are an emergent property of an action, but these qualities might be too sparse to be considered a useful to turn into a measurable. Therefore, we suggest to use **Appreciation** as a signal which can integrate both the quantitative and qualitative realms. Using this single subjective signal paradoxically allows us to measure all subjective qualities in a very simple way, which can then be used to direct payments.
 
-### Zero sum hackathons
+**Introducing Holons!**
 
-When collaborating at hackathons we've often noticed that the incentivatory power of the extrinsic motivator otherwise known as prize money, creates a zero-sum effect where teams become focused on their own thing and self isolate within their own group identity creating a number of pathologies.
+Holons is a "liquid remuneration" structure built on Ethereum; the mechanism fundementally consists of a stackable payment splitter that weights fund appropriation according to participants "appreciation".
 
-The boundaries go up and silos appear, if you win, then we loose - so why should we help you obtain the prize we want?... This is not what the crypto space was supposed to become - but the incongruency becomes apparent at every hackathon as we prioritise skills and roles that will help "our team" win. In a nutshell a scarcity mentality causes us to close our source and become inhuman silos.
+Each Holon has its own Ethereum address where ether and any ERC20 tokens can be sent. This value will be automatically split across its members. This resembles the way dividends work within a traditional organizations; the fundamental differences is that shares in the holon can't be purchased or are not set in advance, but computed at the moment of payment proportionally to the appreciation received by the holon members.
 
-Should the games we play in this space be zero-sum? We espouse "alignment of interests" at every turn but looking at our track record of hackathons we're completely incongruent.
+Holons thus allows users to dish appreciation as a non-scarce subjective quantifier that acts as a generalised correlate for payment distribution. 
 
-### Positive sum Hackalongs - The appreciative soloution
-Looking at the personas above, its pretty apparent that people want to get out of their silos - its just that the hackathon game needs warping. How can we make these events positive sum?
+As members cannot give appreciation to themselves, we obtain an altruistic peer to peer signal to highlight the people who have significantly advanced the project or have closely collaborated to the other members. Doing care work for your hack team? If people "appreciate" your efforts you will receive a proportional amount of the income according to the appreciation graph. Same thing goes for design, development, logistics, marketing etc. This setup allows for people to work across multiple teams and work wherever they are appreciated, wherever they are.
 
-Our suggestion is to make them Hackalongs, not hackthons. Lets change the incentive model and put emphasis on valuing collaboration over competition!
+Holons can also be nested and as people can join different holons, they will receive funds from multiple streams within the same organization, and also across different organizations.
+A marketing holon could receive funds from the appreciation sent over from the sales holon, and in turn it would split the received funds to its own members. 
+Organizations and projects can also join together into higher-order holons, sharing appreciation and joint achievements, without having to merge their identities.
 
-**How can we do this?** Simple - we tokenise the most general form of value (peoples appreciation for eachother) and distribute prize money along these lines of trust !
+Holons allows for organization and renumeration of open source project in ways unthinkable before.
+It is a completelly new way of thinking about organizations: People will be able to join the causes and projects they care about, contribute and get appreciated. Whenever a payment is received (Eg: a price money, a grant, commercial licenses), it will flow automatically through the entire holonic structure, rewarding the right people.
 
-### Conrete example
-Kay is a part of a team of four. They have decided to incentivise collaboration and assign 20% of their **potential** prize money to this cause.
+**Contributors:**
+* Roberto Valenti
+* Maija Grudule
+* Josh Fairhead
 
-His friend Peter is also part of a team of four. They have also decided to incentivise collaboration and assign 20% of their **potential** prize money to this cause.
-
-While wandering off to grab a beer, Kay meets Peter who's team are lacking an idea still so Kay helps them get the ball rolling with his whacky ideas. The four members of Peters team sends Kay 50% of each members "appreciation budget".
-
-Kay returns to his team and finishes the hack they place first, while Peters team comes second.
-
-If 1st place is $500 then Kays team distributes 20% of that to who ever they assigned their appreciation to. Kay recieves $100 for his efforts there.
-
-If 2nd place is $250 and Peters team bugeted 20% of their prize money for appreciated contributions and Kay was delegated 50% of each members "appreciation allowance", then Kay will recieve 10% of the total prize money - an extra $25!
-
-Kay walks away a happy hacker with $125 total, a quarter more than his team members who just concentrated on their own work.
-
-[![ETH Turin 2020](https://img.shields.io/badge/%CE%9E-ETH%20Turin%202020-F64060.svg)](https://ethturin.com)
+**Links:**
+[Holons Prototype](https://holons.io)

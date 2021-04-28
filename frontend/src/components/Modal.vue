@@ -23,7 +23,7 @@
               class="bg-gray-300 hover:bg-gray-400 rounded-full px-3 py-1 text-sm font-semibold m-2"
               @click="$emit('close')"
             >
-              cancell
+              cancel
             </button>
             <slot name="footer"> </slot>
           </div>
