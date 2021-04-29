@@ -2,9 +2,9 @@
 skill:
   enable : true
   title : Stackable Organizations
-  subtitle : Holons is a digital infrastructure for liquid renumeration. 
+  subtitle : Holons is a digital infrastructure for liquid remuneration. 
   content : "Using with the latest blockchain technologies, holons allows to create companies and split payments across a network of collaborators, according to a dynamic weight. Each Holon has its own Ethereum address where Ether or any ERC20 tokens can be sent.
-  The value will be automatically split across its members."
+  Any received value will be automatically split across its members."
   image : images/paymentsplitter.png
   skill_item :
     # skill item loop

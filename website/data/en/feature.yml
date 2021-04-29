@@ -17,7 +17,7 @@ feature:
       # feature item loop
     - title : Hybrid holon
       icon : ti-panel # themify icon pack : https://themify.me/themify-icons
-      content : The best of both worlds: a percentage of the reward is splitted equally, while the rest is splitted according to the appreciation received.
+      content : "The best of both worlds: a percentage of the reward is splitted equally, while the rest is splitted according to the appreciation received."
       # feature item loop
     - title : Pop up holon
       icon : ti-rocket  # themify icon pack : https://themify.me/themify-icons
