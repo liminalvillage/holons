@@ -1,0 +1,33 @@
+<head>
+	<meta charset="utf-8">
+	<title>{{ .Title }}</title>
+
+	{{ "<!-- mobile responsive meta -->" | safeHTML }}
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+	<meta name="description"
+		content="{{ with .Description }}{{ . }}{{ else }}{{ with .Site.Params.description }}{{ . }}{{ end }}{{ end }}">
+	{{ with .Site.Params.author }}
+	<meta name="author" content="{{ . }}">{{ end }}
+	{{ hugo.Generator }}
+
+	{{ "<!-- plugins -->" | safeHTML }}
+	{{ range .Site.Params.plugins.css }}
+	<link rel="stylesheet" href="{{ .link | relURL }} ">
+	{{ end }}
+
+	{{"<!-- Main Stylesheet -->"|safeHTML}}
+	{{ range .Site.Params.theme_css }}
+			<link rel="stylesheet" href="{{ . | relURL }}" media="screen">
+	{{- end }}
+	{{ range .Site.Params.custom_css }}
+			<link rel="stylesheet" href="{{ . | relURL }}" media="screen">
+	{{- end }}
+	{{ with .Site.Params.animate }}
+			<link rel="stylesheet" href="{{ . | relURL }}" media="screen">
+	{{- end }}
+
+	{{ "<!--Favicon-->" | safeHTML }}
+	<link rel="shortcut icon" href="{{ `images/favicon.png` | relURL }} " type="image/x-icon">
+	<link rel="icon" href="{{ `images/favicon.png` | relURL }} " type="image/x-icon">
+
+</head>

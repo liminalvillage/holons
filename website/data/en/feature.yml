@@ -1,0 +1,30 @@
+############################# feature ###################################
+feature:
+  enable : true
+  image : images/backgrounds/Cymatics5.jpg
+  image_webp : images/backgrounds/Cymatics5.webp
+  title : Holons come in flavours 
+  content : "Depending on the group preferences, every holon can be initialized with different settings, allowing all sorts of organizations and reward structures to arise."
+  feature_item :
+      # feature item loop
+    - title : Blanket holon
+      icon : ti-link # themify icon pack : https://themify.me/themify-icons
+      content : Reward every member equally, no question asked
+      # feature item loop
+    - title : Appreciation holon
+      icon : ti-vector # themify icon pack : https://themify.me/themify-icons
+      content : Share reward according to the level of appreciation received from other members
+      # feature item loop
+    - title : Hybrid holon
+      icon : ti-panel # themify icon pack : https://themify.me/themify-icons
+      content : The best of both worlds: a percentage of the reward is splitted equally, while the rest is splitted according to the appreciation received.
+      # feature item loop
+    - title : Pop up holon
+      icon : ti-rocket  # themify icon pack : https://themify.me/themify-icons
+      content : Set a deadline, noone will be able to make changes to the holon after that. 
+    - title : Time based holon
+      icon : ti-time # themify icon pack : https://themify.me/themify-icons
+      content : Account for the hours spent on the project from each member
+    - title : Add your own ..
+      icon : ti-plus # themify icon pack : https://themify.me/themify-icons
+      content : You can choose to create your own flavour and to upload it to the system. People will pick it up if they find it more useful than others!

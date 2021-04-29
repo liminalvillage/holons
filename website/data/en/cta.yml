@@ -1,0 +1,11 @@
+############################# call to action ##############################
+cta:
+  enable : true
+  bg_image :
+  bg_image_webp :
+  title : "Enter the future of scale-free organizations and collaborations"
+  content : "Every new holon will be tracked forever on the blockchain. Open one now, and be amongst the first movers in the holonic revolution."
+  button:
+    enable : true
+    label : "Go to the demo dApp"
+    link : "https://holons.hackalong.io"
