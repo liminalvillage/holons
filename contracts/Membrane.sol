@@ -20,112 +20,49 @@ import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 contract Membrane {
     using SafeMath for uint256;
 
-    address lead;
-    bool passthecrown;
+
     address[] internal _members;
     address[] internal _parents;
+    address owner;
   
     mapping (address => bool) public isMember;      //returns true if an address is a member;
     mapping (string => address) public toAddress;   //maps names to addresses
     mapping (address => string) public toName;      //maps addresses to names
    
-    //======================== Structures for tracking appreciation
-    uint256 public totalappreciation;               // max amount of appreciation in this holon
-    mapping (address => uint256) public appreciation; //appreciaton received by a member
-    mapping (address => uint8) public remainingappreciation; //appreciation left to give (max=100)
-
-    //======================== Events
     event AddedMember (address member, string name);
     event RemovedMember (address member, string name);
     event ChangedName(string namefrom, string nameto);
 
-    constructor ()
+     constructor ()
         public
     {
-        lead = tx.origin;
+        owner = tx.origin;
     }
 
-      //=============================================================
-    //                      Appreciative Functions
-    //=============================================================
-    //  these function are called to signal appreciation to others
 
-    /// @dev Gives a percentage of appreciation to a specific member
-    /// @notice Only the holon members (not contributors) can call this function
-    /// @notice A member cannot send appreciation to himself
-    /// @notice Sender should have enough appreciation left to give
-    /// @param _memberaddress The address of the receiving member
-    /// @param _percentage The amount of the appreciation to give in percentage.
-
-    function appreciate(address _memberaddress, uint8 _percentage)
-        external
-    {
-        require (isMember[msg.sender] || isMember[_memberaddress], "Sender or Receiver is not a member");
-        require (_memberaddress != msg.sender, "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
-        require (remainingappreciation[msg.sender] >= _percentage, "Not enough appreciation remaining");
-        remainingappreciation[msg.sender] -= _percentage;
-        appreciation[_memberaddress] += _percentage;
-        totalappreciation += _percentage;
-    }
-
-    /// @dev Gives a percentage of appreciation to a specific member
-    /// @notice Only the holon members can call this function
-    /// @notice A member cannot send appreciation to himself
-    /// @notice Sender should have enough appreciation left to give in parent
-    /// @param _parent The address of the receiving member
-    /// @param _sibling The address of the receiving member
-    /// @param _percentage The amount of the appreciation to give in percentage.
-
-    function appreciateSibling(address _parent, address _sibling, uint8 _percentage)
-        external
-    {
-        require (msg.sender == lead,"Only lead can perform this action");
-        Membrane(_parent).appreciate(_sibling,_percentage);
-    }
-
-   /// @dev Resets appreciation of the caller
-    /// @notice This is the only way to change already assigned appreciation
-    function resetAppreciation()
-        external
-    {
-        require(msg.sender == lead, "Only the lead can reset appreciation");
-        totalappreciation = 0;
-         for (uint256 i = 0; i < _members.length; i++) {
-             address _memberaddress = _members[i];
-             remainingappreciation[_memberaddress] = 100;
-             appreciation[_memberaddress] = 0;
-         }
-         passTheCrown();
-    }
-
-    //=============================================================
+    // ====================================================
     //                      Member Management Functions
     //=============================================================
     // these function will be used by the holon lead to mantain the holon members
 
-    function addMember(address  _memberaddress, string memory _membername)
+    function addMember(address  _memberaddress, string memory _membername) virtual
         public
     {
-        require((isMember[msg.sender] == true || lead == msg.sender ), "Request submitted by a non-member address");
+        require((isMember[msg.sender] == true || owner == msg.sender), "Request submitted by a non-member address");
         require(isMember[_memberaddress] == false, "Member already added");
         require(toAddress[_membername] == address(0), "Name is already taken");
         _members.push(_memberaddress);
         toName[_memberaddress] = _membername;
         toAddress[_membername] = _memberaddress;
         isMember[_memberaddress] = true;
-        remainingappreciation[_memberaddress] = 100;
+        
         //Membrane(_memberaddress).addParent(address(this));
         (bool success,) = _memberaddress.call(
                     abi.encodeWithSignature("addParent(address)", address(this))
                     );
         require (success, "Failed to create parent");
         
-        if (passthecrown)
-            lead = _memberaddress;
-        //If "Passing the crown" is enabled.
-        //Every new member becomes the owner, and he is going to be the only one allowed to bring in new members, and so on.
-        //If you are using this pattern, make sure you don't add members you don't trust.
-        
+       
         emit AddedMember(_memberaddress, _membername);
     }
 
@@ -153,7 +90,7 @@ contract Membrane {
 
         toAddress[toName[_memberaddress]] = address(0);
         toName[_memberaddress] = "";
-        passTheCrown();
+   
     }
     
      /// @dev Changes the name of the member
@@ -165,7 +102,7 @@ contract Membrane {
         public
     {
         require (_address == msg.sender ||
-                msg.sender == lead ||
+                msg.sender == owner ||
                 _address == tx.origin ,
                 "Name change request not sent from member nor owner");
         toAddress[_name] = _address;
@@ -173,28 +110,7 @@ contract Membrane {
         toName[_address] = _name;
     }
  
-    function enablePassTheCrown()
-        external
-    {
-        require(msg.sender == lead, "Only the lead can enable 'pass the crown'");
-        passthecrown = true;
-    }
-
-    /// @dev Makes sure the crown is not passed to the same person
-    /// @notice this function is internal
-    /// @return list of the address of the members
-
-    function passTheCrown() 
-        internal 
-    {
-        if (passthecrown){ // checks if the feature is enabled
-             if (_members[block.number % _members.length] != lead)
-                lead = _members[block.number % _members.length];  //elects random lead.
-            else
-                lead = _members[(block.number + 1) % _members.length]; //avoids reelecting the same lead;
-        }
-    }
-
+    
     /// @dev Retrieves the index of  members in the membrane
     /// @return list of the address of the members
 
@@ -228,5 +144,12 @@ contract Membrane {
         return _members.length; //+ _contributors.length;
     }
 
+    function reward(address _tokenaddress, uint256 _tokenamount)
+        public
+        payable
+        virtual
+    {
+        //do nothing
+    }
    
 }

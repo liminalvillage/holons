@@ -26,7 +26,7 @@ contract Holons {
     uint public latestversion;
 
     mapping (address => address[]) private holons;
-    mapping (string => address) public toAddress;   //NOTE: Remove on deploy
+    mapping (string => address) public toAddress;   //TODO: Remove on deploy
  
     /// @dev Creates an new holon and adds it to the global and personal list
     /// @param _name The name of the holon.
@@ -54,9 +54,9 @@ contract Holons {
         return holons[_address];
     }
 
-    // function addVersion(address versionaddress) public{
-    //     latestversion += 1;
-    //     versions.push(versionaddress); 
-    // }
+    function addVersion(address versionaddress) public{
+        latestversion += 1;
+        versions.push(versionaddress); 
+    }
 
 }

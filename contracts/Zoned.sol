@@ -17,9 +17,9 @@ pragma solidity ^0.6;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
-import "./Appreciative.sol";
+import "./Membrane.sol";
 
-contract Holon is Appreciative{
+contract Zoned is Membrane{
     using SafeMath for uint256;
 
      //======================== Public holon variables
@@ -27,6 +27,9 @@ contract Holon is Appreciative{
     string public version = "0.1";                  //Version of the holon contract
     string public IPFSManifest;                     //IPFS Hash for the JSON containing holon manifest
     address public creator;                         //Link to the holonic parent
+    uint public nzones;
+    mapping (uint => address[]) zonemembers;
+    mapping (address => uint) zone;
 
     //======================== Events
     event HolonRewarded (address holon, string token, uint256 amount);
@@ -35,11 +38,13 @@ contract Holon is Appreciative{
     /// @notice Constructor to create an holon
     ///  created the Holon contract, the factory needs to be deployed first
 
-    constructor (address _creator, string  memory _name)
+    constructor (address _creator, string  memory _name, uint _nzones)
         public
     {
         name = _name;
         creator = _creator;
+        nzones = _nzones;
+        zone[owner] = _nzones;
     }
 
     //=============================================================
@@ -61,51 +66,85 @@ contract Holon is Appreciative{
         reward(address(0),msg.value);
     }
 
-    // /// @dev Splits the ERC20 token amount sent to the holon according to the appreciation
-    // /// @notice If appreciation is not shared, it splits it equally across each member (calling BlanketReward)
-    // function reward(address _tokenaddress, uint256 _tokenamount)
-    //     public
-    //     payable
-    // {
-    //     bool etherreward;
-    //     IERC20 token;
+    /// @dev Splits the ERC20 token amount sent to the holon according to the appreciation
+    /// @notice If appreciation is not shared, it splits it equally across each member (calling BlanketReward)
+    function reward(address _tokenaddress, uint256 _tokenamount)
+        public
+        payable
+        override
+    {
+        bool etherreward;
+        IERC20 token;
 
-    //     if (msg.value  > 0 && _tokenaddress == address(0)) {
-    //         _tokenamount = msg.value;
-    //         etherreward = true;
-    //     }
-    //      else {
-    //         //Load ERC20 token information
-    //         token = IERC20(_tokenaddress);
-    //         require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
-    //     }
+        if (msg.value  > 0 && _tokenaddress == address(0)) {
+            _tokenamount = msg.value;
+            etherreward = true;
+        }
+         else {
+            //Load ERC20 token information
+            token = IERC20(_tokenaddress);
+            require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
+        }
         
-    //     uint256  amount;
+        uint256  amount;
+        for (uint256 z = 1;  z < nzones; z++) { //skip zone 0 as unassigned members
+            amount = rewardFunction(z, amount).div(zonemembers[z].length); // divide reward equally for all members in the same zone
+            for (uint256 i = 0; i < zonemembers[z].length; i++) {
+        
+        //     if (totalappreciation > 0 ) // if any appreciation was shared
+        //         amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
+        //     else
+        //         amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
 
-    //     for (uint256 i = 0; i < _members.length; i++) {
-    //         if (totalappreciation > 0 ) // if any appreciation was shared
-    //             amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
-    //         else
-    //             amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+                if (amount > 0 ){
+                    if (etherreward){
+                        (bool success, ) = _members[i].call.value(amount)("");
+                        require(success, "Transfer failed");
+                    }
+                    else {
+                        token.transfer(_members[i],amount);
+                        (bool success,) = _members[i].call(
+                        abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
+                        );
+                        require(success, "Unable to call the reward function" );
+                    }
+                    // MemberRewarded(_members[i], "ERC20", amount); TODO
+                }
+            }
+       // emit HolonRewarded(address(this), "ERC20", _tokenamount);TODO
+        }   
+    }
+    
+    function rewardFunction(uint _zone, uint _totalreward) private returns (uint zonereward)
+    {
 
-    //         if (amount > 0 ){
-    //             if (etherreward){
-    //                 (bool success, ) = _members[i].call.value(amount)("");
-    //                 require(success, "Transfer failed");
-    //             }
-    //             else {
-    //                 token.transfer(_members[i],amount);
-    //                 (bool success,) = _members[i].call(
-    //                 abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
-    //                 );
-    //                 require(success, "Unable to call the reward function" );
-    //             }
-    //             MemberRewarded(_members[i], "ERC20", amount);
-    //         }
-    //     }
-    //     emit HolonRewarded(address(this), "ERC20", _tokenamount);
-    // }
- 
+        return _totalreward / (2 ^ (_zone + 1));
+    }
+
+    function addToZone(address _memberaddress, uint _zone) public/// @notice Explain to an end user what this does
+    /// @dev Explain to a developer any extra details
+    /// @param Documents a parameter just like in doxygen (must be followed by parameter name)) private returns (uint zonereward)
+    {
+        require(zone[msg.sender] > _zone, "members in lower zones cannot promote to higher zones"); // ch
+        // TODO Cooloff period for nominations or validation of nomination
+       
+       
+        if (zone[_memberaddress] > 0) {//if member was already in a zone
+             //search and remove member from current group
+            // fetch correct zone members 
+            uint previouszone = zone[_memberaddress];
+            for (uint256 i = 0; i < zonemembers[previouszone].length; i++) {
+                if (zonemembers[previouszone][i] == _memberaddress) {
+                zonemembers[previouszone][i] = zonemembers[previouszone][zonemembers[previouszone].length]; //swap position with last member
+                break;
+                }
+            }
+            zonemembers[previouszone].pop(); // remove last member
+        }
+        
+        zone[_memberaddress] = _zone;
+        zonemembers[_zone].push(_memberaddress);
+    }
     //=============================================================
     //                      Holon Merge and Fork Functions
     //=============================================================
@@ -157,7 +196,7 @@ contract Holon is Appreciative{
     function setManifest(string calldata _IPFSHash)
         external
     {
-        require (msg.sender == owner,"Only owner can set the manifest");
+        require (msg.sender == owner,"Only lead can set the manifest");
         IPFSManifest = _IPFSHash;
     }
 }
