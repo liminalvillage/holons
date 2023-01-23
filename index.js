@@ -6,6 +6,7 @@ import * as ui from './interface.cjs';
 
 import { create } from 'ipfs'
 import OrbitDB from 'orbit-db'
+import { ConsoleMessage } from 'puppeteer-core';
 
 bot.use(Telegraf.log())
 
@@ -256,16 +257,25 @@ bot.action('cancel_task', ctx => {
   }
 });
 
-bot.action('complete_task', ctx => {
+bot.action('complete_task', async (ctx) => {
   console.log("COMPLETE ACTION");
   // // Get the task index from the callback data
   // console.log(ctx)
   // const taskIndex = taskmap.get(ctx.callbackQuery.message.message_id);
   // // Get the task object
   // const task = tasks[taskIndex];
-  const ID = ctx.callbackQuery.message.message_id;
-  var task = tasksdb.get(ID)
-  if (!task) return;
+  var chatID =  ctx.callbackQuery.message.chat.id;
+  var messageID = ctx.callbackQuery.message.message_id;
+
+  var tasksdb = await orbitdb.docs(chatID.toString(),{ indexBy: '_id' })
+  await tasksdb.load()
+
+  //var task = await tasksdb.query(task => task._id == messageID)
+  var task = await tasksdb.get(messageID)
+  console.log('=============s' +chatID + ' ' + messageID+ ' ' + task)
+  if (!task || task =='') return;
+
+ 
 
   // Handle the reaction to the task
   if (task.users[0].id === ctx.from.id) {
@@ -274,7 +284,7 @@ bot.action('complete_task', ctx => {
     updateTaskMessage(ctx, task);
 
     // Update the db
-    tasksdb.set(ID, task);
+    tasksdb.put(task);
 
   } else {
     ctx.reply(`Only the creator of the task can mark it as completed.`);
@@ -315,9 +325,14 @@ bot.command('reset', async (ctx) => {
 // Create a new task
 bot.command('task', async (ctx) => {
   // Get the message text and sender from the context
+
   var chatID =  ctx.message.chat.id;
+  var messageID = ctx.message.message_id;
   const text = ctx.message.text;
   const sender = ctx.from;
+
+  var tasksdb = await orbitdb.docs(chatID.toString(), { indexBy: '_id' })
+  await tasksdb.load()
 
   const task = text.split(' ').slice(1).join(' ');
 
@@ -328,8 +343,9 @@ bot.command('task', async (ctx) => {
 
   // Create a task object
   var taskObj = {
+    _id : messageID.toString(),
     task: task,
-    date: new Date().getUTCDate(),
+    date: new Date().getTime(),
     users: [],
     approved: [],
     status: 'ongoing'
@@ -337,21 +353,15 @@ bot.command('task', async (ctx) => {
   taskObj.users.push(sender);
 
   // Add the task to the list of tasks
-  var tasks  = await tasksdb.get(chatID);
-  console.log('AAAA' +tasks.toString())
-  if (!tasks) {
-    tasks = []
-  }
-  tasks.push(taskObj)
-  //console.log(tasks)
-  tasksdb.set(chatID, tasks)
+   tasksdb.put(taskObj);
+
 
   // // Add the sender to the list of users
   // tasks[tasks.length - 1].users.push(sender);
 
   ctx.reply(createTaskMessage(taskObj), markup).then((msg) => {
     //taskmap.set(msg.message_id, tasks.length - 1);
-    tasksdb.set(msg.message_id, taskObj)
+    //tasksdb.set(msg.message_id, taskObj)
     //tasksdb.set(ctx.chat.id, msg.message_id)
   });
 });
@@ -404,18 +414,21 @@ bot.command('credits', ctx => {
 })
 
 // Set up a command to display the tasks
-bot.command('tasks', ctx => {
+bot.command('tasks', async (ctx) => {
   // Get a list of incomplete tasks
   var chatID =  ctx.message.chat.id;
   console.log('CID' + chatID)
   // loop through the userlist and get the tasks
-  var tasks =  tasksdb.get(chatID)
-  console.log ('tasks:'+ tasks.toString())
-  // if(userlist) {
+  var tasksdb = await orbitdb.docs(chatID.toString(), { indexBy: '_id' })
+  await tasksdb.load()
+
+  var tasks = await tasksdb.get('').filter(task => task.status === 'ongoing')
+    
+  console.log ('tasks:'+ JSON.stringify(tasks[0])) // if(userlist) {
   // for (let i = 0; i < userlist.length; i++) {
-  if (tasks) {
-  tasks = tasks.filter(task => task.status === 'ongoing')
-  } else { tasks = [] }
+ 
+  //tasks = tasks.filter(task => task.status === 'ongoing')
+  
   //tasks = tasks.filter(task => task.status === 'ongoing')
   // }
 
