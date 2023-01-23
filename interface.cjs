@@ -144,7 +144,7 @@ async function generateTaskTable(tasks) {
     rows.push(row)
   }
 
-  const path = './tasks.png'
+  const path = './images/tasks.png'
   const html = await generateTaskHtml(rows.join('\n'))
   await screenshotHtml(html, path, 'table')
   return path
@@ -169,7 +169,7 @@ async function generateTaskTable(tasks) {
     rows.push(row)
   }
 
-  const path = './credits.png'
+  const path = './images/credits.png'
   const html = await generateCreditsHtml(rows.join('\n'))
   await screenshotHtml(html, path, 'table')
   return path
