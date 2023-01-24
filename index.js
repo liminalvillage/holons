@@ -83,7 +83,7 @@ bot.command('requests', (ctx) => {
 // Create an inline keyboard with a button to reset the counter
 const markup = Markup.inlineKeyboard([[
   Markup.button.callback('❤️ Join', 'join_task'),
-  Markup.button.callback('👍 Approve', 'approve_task')
+  Markup.button.callback('👍 Validate', 'validate_task')
 ], [
   Markup.button.callback('❌ Cancel', 'cancel_task'),
   Markup.button.callback('✔️ Complete', 'complete_task')
@@ -113,7 +113,7 @@ bot.action('join_task', async ctx => {
   const sender = ctx.from;
 
   // Check if the user has already joined the task
-  if (task.users.find(user => user.id === ctx.from.id)) {
+  if (task.users.find(user => user.id === sender.id)) {
     ctx.reply(`${sender.first_name}, you have already joined the task "${task.task}"`);
     return;
   }
@@ -132,8 +132,8 @@ bot.action('join_task', async ctx => {
 
 });
 
-bot.action('approve_task', async (ctx) => {
-  console.log("APPROVE ACTION");
+bot.action('validate_task', async (ctx) => {
+  console.log("validate ACTION");
   // Get the task  from the callback data
   var chatID = ctx.callbackQuery.message.chat.id;
   var messageID = ctx.callbackQuery.message.message_id;
@@ -147,20 +147,20 @@ bot.action('approve_task', async (ctx) => {
 
   // Get the user who sent the credit
   const sender = ctx.from;
-  // Check if the user has already approved the task
-  if (task.approved.find(user => user.id === sender.id)) {
-    ctx.reply(`${sender.first_name}, you have already approved the task "${task.task}"`);
+  // Check if the user has already validated the task
+  if (task.validated.find(user => user.id === sender.id)) {
+    ctx.reply(`${sender.first_name}, you have already validated the task "${task.task}"`);
     return;
   }
   // Check if the user is the task submitter
-  // if (user.id === task.users[0].id) {
-  //   ctx.reply(`${user.first_name}, you cannot approve your own tasks! "${task.task}"`);
+  // if (sender.id === task.users[0].id) {
+  //   ctx.reply(`${user.first_name}, you cannot validate your own tasks! "${task.task}"`);
   //   return;
   // }
   // Add the user to the task
-  task.approved.push(sender);
+  task.validated.push(sender);
 
-  // Update the db to indicate who approved the task
+  // Update the db to indicate who validated the task
   tasksDB.put(task);
   // ================================ CREDITS ========================== 
   var creditsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.credits')
@@ -181,7 +181,7 @@ bot.action('approve_task', async (ctx) => {
 
   // Update the sent credits of the sender
   sendercredits.sent += 1;
-  creditsDB.put(sendercredits)
+  await creditsDB.put(sendercredits)
 
 
   // Calculate the number of credits to send to each user
@@ -333,7 +333,7 @@ bot.command('task', async (ctx) => {
     task: task,
     date: new Date().getTime(),
     users: [],
-    approved: [],
+    validated: [],
     status: 'ongoing'
   }
   // // Add the sender to the list of users
@@ -362,7 +362,7 @@ function createTaskMessage(task) {
   let message = `Task: ${task.task}\n`;
   message += `Created by: ${task.users[0].first_name}\n`;
   message += `Joined by: ${[...task.users].slice(1).map(u => u.first_name).join(', ')}\n`;
-  message += `Approved by: ${[...task.approved].map(u => u.first_name).join(', ')}\n`;
+  message += `validated by: ${[...task.validated].map(u => u.first_name).join(', ')}\n`;
   message += `Status: ${task.status}\n`;
   return message;
 }

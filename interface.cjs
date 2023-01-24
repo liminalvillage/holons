@@ -58,7 +58,7 @@ td {
             <th scope="col">Task</th>
             <th scope="col">Creator</th>
             <th scope="col">Joined</th>
-            <th scope="col">Approved</th>
+            <th scope="col">Validated</th>
         </tr>
     </thead>
     <tbody>
@@ -178,7 +178,7 @@ async function generateTaskImage(task) {
           <tr><th>Task:</th><td>${task.task}</td></tr>
           <tr><th>Creator:</th><td>${task.users[0].first_name}</td></tr>
           <tr><th>Joined by:</th><td>${[...task.users].slice(1).map(u => u.username).join(', ')}</td></tr>
-          <tr><th>Approved by:</th><td>${[...task.approved].slice(1).map(u => u.username).join(', ')}</td></tr>
+          <tr><th>Validated by:</th><td>${[...task.validated].slice(1).map(u => u.username).join(', ')}</td></tr>
     <table>
     </span>
     </body>
@@ -198,7 +198,7 @@ async function generateTaskTable(tasks, chatID) {
         <th>${task.task}</th>
         <th>${task.users[0].first_name}</th>
         <th>${task.users.length}</th>
-        <th>${task.approved.length}</th>
+        <th>${task.validated.length}</th>
       </tr>`
 
     rows.push(row)
