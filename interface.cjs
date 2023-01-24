@@ -129,7 +129,67 @@ td {
   </html>`
 }
 
-async function generateTaskTable(tasks) {
+async function generateTaskImage(task) {
+  const html = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+  <style>
+  thead,
+  tfoot {
+    background-color: #3f87a6;
+    color: #fff;
+  }
+
+  tbody {
+    background-color: #e4f0f5;
+  }
+
+  caption {
+    padding: 10px;
+    caption-side: bottom;
+  }
+
+  table {
+    border-collapse: collapse;
+    border: 2px solid rgb(200, 200, 200);
+    letter-spacing: 1px;
+    font-family: sans-serif;
+    font-size: .8rem;
+  }
+
+  td
+  {
+    border: 0px solid rgb(190, 190, 190);
+    padding: 5px 10px;
+    text-align: left;
+  }
+
+  th {
+    text-align: right;
+  }
+
+    </style>
+    </head>
+    <body>
+
+    <span>
+    <table>
+          <tr><th>Task:</th><td>${task.task}</td></tr>
+          <tr><th>Creator:</th><td>${task.users[0].first_name}</td></tr>
+          <tr><th>Joined by:</th><td>${[...task.users].slice(1).map(u => u.username).join(', ')}</td></tr>
+          <tr><th>Approved by:</th><td>${[...task.approved].slice(1).map(u => u.username).join(', ')}</td></tr>
+    <table>
+    </span>
+    </body>
+  </html>`
+  const path = './images/task' + task._id + '.png'
+  await screenshotHtml(html, path, 'table')
+  return path
+}
+
+
+async function generateTaskTable(tasks, chatID) {
   const rows = []
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i]
@@ -144,13 +204,13 @@ async function generateTaskTable(tasks) {
     rows.push(row)
   }
 
-  const path = './images/tasks.png'
+  const path = './images/tasks' + chatID + '.png'
   const html = await generateTaskHtml(rows.join('\n'))
   await screenshotHtml(html, path, 'table')
   return path
 }
 
-  async function generateCreditsTable(credits) {
+async function generateCreditsTable(credits, chatID) {
   const rows = []
   const sortedUsers = Object.keys(credits).sort((a, b) => {
     return credits[b].received - credits[b].sent - (credits[a].received - credits[a].sent);
@@ -169,7 +229,7 @@ async function generateTaskTable(tasks) {
     rows.push(row)
   }
 
-  const path = './images/credits.png'
+  const path = './images/credits' + chatID + '.png'
   const html = await generateCreditsHtml(rows.join('\n'))
   await screenshotHtml(html, path, 'table')
   return path
@@ -186,4 +246,4 @@ async function screenshotHtml(html, pathToSave, onElement) {
 
 
 
-module.exports = { generateCreditsTable: generateCreditsTable, generateTaskTable: generateTaskTable, init: init}
+module.exports = { generateTaskImage: generateTaskImage, generateCreditsTable: generateCreditsTable, generateTaskTable: generateTaskTable, init: init }
