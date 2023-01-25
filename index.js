@@ -7,8 +7,6 @@ import * as ui from './interface.cjs';
 import { create } from 'ipfs'
 import OrbitDB from 'orbit-db'
 
-bot.use(Telegraf.log())
-
 var orbitdb
 
 async function init() {
@@ -30,6 +28,7 @@ async function init() {
 
   await ui.init();
 
+  //bot.use(Telegraf.log())
   bot.start((ctx) => ctx.reply('Hello!'))
   bot.help((ctx) => ctx.reply('WeQuest can help your communities organize around tasks and to exchange goods and services with each other! click on the menu to see the available options.'))
   bot.launch();
@@ -133,7 +132,7 @@ bot.action('join_task', async ctx => {
 });
 
 bot.action('validate_task', async (ctx) => {
-  console.log("validate ACTION");
+  console.log("VALIDATE ACTION");
   // Get the task  from the callback data
   var chatID = ctx.callbackQuery.message.chat.id;
   var messageID = ctx.callbackQuery.message.message_id;
@@ -146,7 +145,7 @@ bot.action('validate_task', async (ctx) => {
   if (!task || task == '') { console.log('TASK IS NOT FOUND'); return }
 
   // Get the user who sent the credit
-  const sender = ctx.from;
+  const sender = ctx.callbackQuery.from;
   // Check if the user has already validated the task
   if (task.validated.find(user => user.id === sender.id)) {
     ctx.reply(`${sender.first_name}, you have already validated the task "${task.task}"`);
@@ -161,28 +160,28 @@ bot.action('validate_task', async (ctx) => {
   task.validated.push(sender);
 
   // Update the db to indicate who validated the task
-  tasksDB.put(task);
+  await tasksDB.put(task);
   // ================================ CREDITS ========================== 
   var creditsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.credits')
   await creditsDB.load()
   var sendercredits = await creditsDB.get(sender.id)[0]
-  if (!sendercredits) {
-    if (!sendercredits) {
+  if (!sendercredits || sendercredits == '') {
+
       // Initialize the sender's points if they do not exist yet
       sendercredits = {
         _id: sender.id,
-        username: sender.username,
+        username: sender.first_name,
         received: 0,
         sent: 0,
         credits: 0,
-      }
+      
     }
   }
 
   // Update the sent credits of the sender
   sendercredits.sent += 1;
+  // Update the db
   await creditsDB.put(sendercredits)
-
 
   // Calculate the number of credits to send to each user
   const creditsPerUser = 1  // / task.users.length;
@@ -198,10 +197,10 @@ bot.action('validate_task', async (ctx) => {
     // Send the credits to each user
     var recipientcredits = await creditsDB.get(recipient.id)[0]
     // Initialize the receiver's points if they do not exist yet
-    if (!recipientcredits) {
+    if (!recipientcredits || recipientcredits == '') {
       recipientcredits = {
         _id: recipient.id,
-        username: recipient.username,
+        username: recipient.first_name,
         received: 0,
         sent: 0,
         credits: 0
@@ -362,7 +361,7 @@ function createTaskMessage(task) {
   let message = `Task: ${task.task}\n`;
   message += `Created by: ${task.users[0].first_name}\n`;
   message += `Joined by: ${[...task.users].slice(1).map(u => u.first_name).join(', ')}\n`;
-  message += `validated by: ${[...task.validated].map(u => u.first_name).join(', ')}\n`;
+  message += `Validated by: ${[...task.validated].map(u => u.first_name).join(', ')}\n`;
   message += `Status: ${task.status}\n`;
   return message;
 }
