@@ -9,7 +9,7 @@ async function init() {
   });
 }
 
-async function generateTaskHtml(rows) {
+async function generateQuestHtml(rows) {
   return `<!DOCTYPE html>
     <html>
     <head>
@@ -51,14 +51,14 @@ td {
     </head>
     <body>
     <table>
-    <caption>Current tasks</caption>
+    <caption>Active Quests</caption>
     <thead>
         <tr>
             <th scope="col">ID</th>
-            <th scope="col">Task</th>
-            <th scope="col">Creator</th>
+            <th scope="col">Quest</th>
+            <th scope="col">Focalizer</th>
             <th scope="col">Joined</th>
-            <th scope="col">Validated</th>
+            <th scope="col">Appreciated</th>
         </tr>
     </thead>
     <tbody>
@@ -69,7 +69,7 @@ td {
     </html>`
 }
 
-async function generateCreditsHtml(rows) {
+async function generateAppreciationHtml(rows) {
   return `<!DOCTYPE html>
   <html>
   <head>
@@ -111,7 +111,7 @@ td {
   </head>
   <body>
   <table>
-  <caption>Current Rank and Credits</caption>
+  <caption> Appreciation </caption>
   <thead>
       <tr>
           <th scope="col">Rank</th>
@@ -129,7 +129,7 @@ td {
   </html>`
 }
 
-async function generateTaskImage(task) {
+async function getQuestImage(quest) {
   const html = `
   <!DOCTYPE html>
   <html>
@@ -175,62 +175,62 @@ async function generateTaskImage(task) {
 
     <span>
     <table>
-          <tr><th>Task:</th><td>${task.task}</td></tr>
-          <tr><th>Creator:</th><td>${task.users[0].first_name}</td></tr>
-          <tr><th>Joined by:</th><td>${[...task.users].slice(1).map(u => u.username).join(', ')}</td></tr>
-          <tr><th>Validated by:</th><td>${[...task.validated].slice(1).map(u => u.username).join(', ')}</td></tr>
+          <tr><th>Task:</th><td>${quest.task}</td></tr>
+          <tr><th>Creator:</th><td>${quest.users[0].first_name}</td></tr>
+          <tr><th>Joined by:</th><td>${[...quest.users].slice(1).map(u => u.username).join(', ')}</td></tr>
+          <tr><th>Validated by:</th><td>${[...quest.appreciated].slice(1).map(u => u.username).join(', ')}</td></tr>
     <table>
     </span>
     </body>
   </html>`
-  const path = './images/task' + task._id + '.png'
+  const path = './images/quest' + quest._id + '.png'
   await screenshotHtml(html, path, 'table')
   return path
 }
 
 
-async function generateTaskTable(tasks, chatID) {
+async function getQuestsTable(quests, chatID) {
   const rows = []
-  for (let i = 0; i < tasks.length; i++) {
-    const task = tasks[i]
+  for (let i = 0; i < quests.length; i++) {
+    const quest = quests[i]
     const row = `<tr>
         <th scope="row">${i + 1}</th>
-        <th>${task.task}</th>
-        <th>${task.users[0].first_name}</th>
-        <th>${task.users.length}</th>
-        <th>${task.validated.length}</th>
+        <th>${quest.quest}</th>
+        <th>${quest.users[0].first_name}</th>
+        <th>${quest.users.length}</th>
+        <th>${quest.appreciated.length}</th>
       </tr>`
 
     rows.push(row)
   }
 
-  const path = './images/tasks' + chatID + '.png'
-  const html = await generateTaskHtml(rows.join('\n'))
+  const path = './images/quests' + chatID + '.png'
+  const html = await generateQuestHtml(rows.join('\n'))
   await screenshotHtml(html, path, 'table')
   return path
 }
 
-async function generateCreditsTable(credits, chatID) {
+async function getAppreciationTable(appreciation, chatID) {
   const rows = []
-  const sortedUsers = Object.keys(credits).sort((a, b) => {
-    return credits[b].received - credits[b].sent - (credits[a].received - credits[a].sent);
+  const sortedUsers = Object.keys(appreciation).sort((a, b) => {
+    return appreciation[b].received - appreciation[b].sent - (appreciation[a].received - appreciation[a].sent);
   });
 
   for (let i = 0; i < sortedUsers.length; i++) {
-    const credit = credits[sortedUsers[i]]
+    const score = appreciation[sortedUsers[i]]
     const row = `<tr>
       <th scope="row">${i + 1}</th>
-      <th>${credit.username}</th>
-      <th>${credit.sent}</th>
-      <th>${credit.received}</th>
-      <th>${credit.received - credit.sent}</th>
+      <th>${score.username}</th>
+      <th>${score.sent}</th>
+      <th>${score.received}</th>
+      <th>${score.received - score.sent}</th>
     </tr>`
 
     rows.push(row)
   }
 
-  const path = './images/credits' + chatID + '.png'
-  const html = await generateCreditsHtml(rows.join('\n'))
+  const path = './images/appreciation' + chatID + '.png'
+  const html = await generateAppreciationHtml(rows.join('\n'))
   await screenshotHtml(html, path, 'table')
   return path
 }
@@ -246,4 +246,4 @@ async function screenshotHtml(html, pathToSave, onElement) {
 
 
 
-module.exports = { generateTaskImage: generateTaskImage, generateCreditsTable: generateCreditsTable, generateTaskTable: generateTaskTable, init: init }
+module.exports = { init, getQuestImage, getAppreciationTable, getQuestsTable }
