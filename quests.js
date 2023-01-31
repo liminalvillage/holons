@@ -11,28 +11,30 @@ export async function quest(ctx, orbitdb) {
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
 
-    const quest = text.split(' ').slice(1).join(' ');
+    const title = text.split(' ').slice(1).join(' ');
 
-    if (!quest) {
+    if (!title) {
         ctx.reply('Please enter a quest as part of the command. Example: /quest Do the dishes');
         return;
     }
 
     // Create a quest object
 
-    let questObj = {
+    let quest = {
         _id: '',
         initiator: sender,
-        quest: quest,
+        quest: title,
         date: new Date().getTime(),
         users: [],
         appreciation: [],
+        stoppers: [],
+        type: 'quest',
         status: 'ongoing'
     }
     // // Add the sender to the list of users
-    questObj.users.push(sender);
+    quest.users.push(sender);
 
-    // let path = await ui.questImage(questObj)
+    // let path = await ui.questImage(quest)
     // ctx.replyWithPhoto({ source: fs.createReadStream(path) },markup).then((ctx) => {
     //     // Add the message id to the quest
     //     questObj._id = ctx.message_id;
@@ -41,11 +43,11 @@ export async function quest(ctx, orbitdb) {
 
     //   }); 
 
-    ctx.reply(createMessage(questObj), markup (questObj)).then((ctx) => {
+    ctx.reply(createMessage(quest), markup (quest)).then((ctx) => {
         // Add the message id to the quest
-        questObj._id = ctx.message_id;
+        quest._id = ctx.message_id;
 
-        questsDB.put(questObj)
+        questsDB.put(quest)
 
     });
 }
@@ -64,7 +66,7 @@ export async function join(ctx, orbitdb) {
     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
     if (quest.status == 'completed') {
-        ctx.reply(`Quest "${quest.quest}" has already been completed`);
+        ctx.reply(`Quest "${quest.quest}" has already been completed`,{reply_to_message_id : messageID});
         return;
     }
 
@@ -74,20 +76,20 @@ export async function join(ctx, orbitdb) {
     // Check if the user has already joined the quest
     const userindex = quest.users.findIndex(user => user.id === sender.id)
     if (userindex > -1) {
-        ctx.reply(`${sender.first_name}, left the quest "${quest.quest}"`);
+        ctx.reply(`${sender.first_name}, left the quest "${quest.quest}"`,{reply_to_message_id : messageID});
         quest.users.splice(userindex, 1);
     }
     else {
         // Add the user to the quest
         quest.users.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} has joined the quest "${quest.quest}"`);
+        ctx.reply(`${sender.first_name} has joined the quest "${quest.quest}"`,{reply_to_message_id : messageID});
     }
 
     // Check if the user has already appreciated the quest, remove if so
     const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
     if (appreciationindex > -1) {
-        ctx.reply(`${sender.first_name}'s appreciation for "${quest.quest}" has been removed`);
+        ctx.reply(`${sender.first_name}'s appreciation for "${quest.quest}" has been removed`,{reply_to_message_id : messageID});
         quest.appreciation.splice(appreciationindex, 1);
     }
 
@@ -117,18 +119,18 @@ export async function appreciate(ctx, orbitdb) {
     // Check if the user has already appreciated the quest, remove if so
     const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
     if (appreciationindex > -1) {
-        ctx.reply(`${sender.first_name}'s appreciation for "${quest.quest}" has been removed`);
+        ctx.reply(`${sender.first_name}'s appreciation for "${quest.quest}" has been removed`,{reply_to_message_id : messageID});
         quest.appreciation.splice(appreciationindex, 1);
     } else {
         // Add the user to the quest
         quest.appreciation.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} appreciates the quest "${quest.quest}"`);
+        ctx.reply(`${sender.first_name} appreciates the quest "${quest.quest}"`,{reply_to_message_id : messageID});
     }
     // Check if the user has already joined the quest
     const userindex = quest.users.findIndex(user => user.id === sender.id)
     if (userindex > -1) {
-        ctx.reply(`${sender.first_name} has been removed from the quest "${quest.quest}"`);
+        ctx.reply(`${sender.first_name} has been removed from the quest "${quest.quest}"`,{reply_to_message_id : messageID});
         quest.users.splice(userindex, 1);
     }
 
@@ -164,9 +166,50 @@ export async function cancel(ctx, orbitdb) {
         ctx.deleteMessage(messageID.toString())
 
     } else {
-        ctx.reply(`Only the creator of the quest can cancel the quest.`);
+        ctx.reply(`Only the creator of the quest can cancel the quest.`,{reply_to_message_id : messageID})
+
     }
 }
+
+export async function stop(ctx, orbitdb) {
+    console.log("STOP ACTION");
+
+    let chatID = ctx.callbackQuery.message.chat.id;
+    let messageID = ctx.callbackQuery.message.message_id;
+
+    let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+    await questsDB.load()
+
+    let quest = await questsDB.get(messageID.toString())[0]
+
+    if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+
+    // Get the user who reacted
+    const sender = ctx.callbackQuery.from;
+
+    const stopperindex = quest.stoppers.findIndex(user => user.id === sender.id)
+    if (stopperindex > -1) {
+        ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+        quest.stoppers.splice(stopperindex, 1);
+    }
+    else {
+        // Add the user to the quest
+        quest.stoppers.push(sender);
+        // Send a message to confirm that the user joined the quest
+        ctx.reply(`${sender.first_name} has stopped the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+    }
+    if(quest.stoppers.length > 0)
+        quest.status = 'stopped'
+    else
+        quest.status = 'ongoing'
+
+     // Update the message 
+     updateMessage(ctx, quest);
+
+     // Update the db
+     questsDB.put(quest);
+}
+
 
 export async function complete(ctx, orbitdb) {
     console.log("COMPLETE ACTION");
@@ -191,7 +234,7 @@ export async function complete(ctx, orbitdb) {
         questsDB.put(quest);
 
     } else {
-        ctx.reply(`Only the creator of the quest can mark it as completed.`);
+        ctx.reply(`Only the creator of the quest can mark it as completed.`,{reply_to_message_id : messageID});
     }
     // ================================ APPRECIATION ========================== 
     let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
@@ -270,18 +313,23 @@ async function updateMessage(ctx, quest) {
 
 // Function to create the message for a quest TODO 
 function createMessage(quest) {
-    let message = `Quest: ${quest.quest}\n`;
-    message += `Initiated by: ${quest.initiator.first_name}\n`;
-    message += `Participants: ${[...quest.users].map(u => u.first_name).join(', ')}\n`;
-    message += `Appreciated by: ${[...quest.appreciation].map(u => u.first_name).join(', ')}\n`;
-    message += `Status: ${quest.status}\n`;
+    let message = `| Quest: ${quest.quest} \n`;
+    message += `| By: ${quest.initiator.first_name} \n`;
+    if (quest.users.length > 0)
+        message += `| Participants: ${[...quest.users].map(u => u.first_name).join(', ')} \n`;
+    if (quest.appreciation.length > 0)
+        message += `| Appreciated by: ${[...quest.appreciation].map(u => u.first_name).join(', ')} \n`;
+    if (quest.status === "stopped")
+        message += `| Stopped by: ${[...quest.stoppers].map(u => u.first_name).join(', ')} \n`;
+    message += `| Status: ${quest.status}\n`;
     return message;
 }
 
 function markup(quest) {
     let mu = Markup.inlineKeyboard([[
         Markup.button.callback('❤️ Join', 'join_quest'),
-        Markup.button.callback('👍 Appreciate', 'appreciate_quest')
+        Markup.button.callback('👍 Appreciate', 'appreciate_quest'),
+        Markup.button.callback('🛑 Stop', 'stop_quest')
     ], [
         Markup.button.callback('❌ Cancel', 'cancel_quest'),
         Markup.button.callback('✔️ Complete', 'complete_quest')

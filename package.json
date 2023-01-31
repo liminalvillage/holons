@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "debug": "^4.3.4",
+    "i18next": "^22.4.9",
     "ipfs": "^0.66.0",
     "ngeohash": "^0.6.3",
     "orbit-db": "^0.29.0",

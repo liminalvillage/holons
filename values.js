@@ -1,4 +1,4 @@
-[
+let values = [
     {
         "_id": "Accountability/Ethics",
         "description": "To act on personal moral principles even when faced with pressure to do otherwise."

@@ -1,6 +1,8 @@
 "use strict"
 import { Telegraf } from 'telegraf';
 
+//import {i18n} from 'i18next'
+
 const bot = new Telegraf("5965742096:AAGm8_2mq8lST8goLhMKvq57HUaWf5-0LF4");
 
 import fs from 'fs';
@@ -21,7 +23,8 @@ let valuesDB
 let settingsDB
 
 async function init() {
-  // const ipfs = await create({ address:"127.0.0.1", port: 5002, source: 'js-ipfs', repo: 'ipfs-' + Math.random()})
+  // const ipfs = await create({ address:"127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'ipfs-' + Math.random()})
+  
   const ipfs = await create()
   orbitdb = await OrbitDB.createInstance(ipfs)
   requestsDB = await orbitdb.docs('WeQuest.requests')
@@ -42,10 +45,6 @@ async function init() {
       ]
     }
   }
-
-  // await ui.init();
-
-
 }
 
 init();
@@ -61,18 +60,16 @@ bot.command('todo', async (ctx) => quests.quest(ctx, orbitdb))
 bot.command('need', async (ctx) => requests.request(ctx, orbitdb))
 bot.command('request', async (ctx) => requests.request(ctx, orbitdb))
 bot.command('want', async (ctx) => requests.request(ctx, orbitdb))
-
+bot.command('requests',  async (ctx) => requests.requests(ctx, orbitdb))
 //
 
-// ACTIONS ====================================================
+// QUEST ACTIONS ====================================================
 
 bot.action('join_quest', (ctx) => quests.join(ctx, orbitdb));
-
 bot.action('appreciate_quest', (ctx) => quests.appreciate(ctx, orbitdb))
-
 bot.action('cancel_quest', (ctx) => quests.cancel(ctx, orbitdb));
-
 bot.action('complete_quest', (ctx) => quests.complete(ctx, orbitdb));
+bot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
 
 //----------------------------------------------------
 
@@ -101,15 +98,30 @@ bot.command('reset', async (ctx) => {
   let chatID = ctx.message.chat.id;
   let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
   let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
+  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
   await questsDB.drop()
   await appreciationDB.drop()
+  await requestsDB.drop()
   ctx.reply('Bot resetted')
 })
 
 //=========== LIST COMMANDS ===============
 
 //Set up a command to display the appreciation score for each user
-bot.command('leaderboard', async ctx => {
+bot.command('leaderboard', (ctx) => leaderboard (ctx))
+bot.command('appreciation', (ctx) => leaderboard(ctx))
+bot.command('scores', (ctx) => leaderboard(ctx))
+bot.command('score', (ctx) => leaderboard(ctx))
+bot.command('points', (ctx) => leaderboard(ctx))
+
+// Set up a command to display the quests
+bot.command('tasks', (ctx) => handlequests(ctx))
+bot.command('quests', (ctx) => handlequests(ctx))
+bot.command('todos', (ctx) => handlequests(ctx))
+bot.command('proposals', (ctx) => handlequests(ctx))
+
+// Set up a command to display the requests
+async function leaderboard (ctx) {
 
   let chatID = ctx.message.chat.id
   // loop through the userlist and get the quests
@@ -124,10 +136,11 @@ bot.command('leaderboard', async ctx => {
     ctx.replyWithPhoto({ source: fs.createReadStream(path) })
   });
   return;
-})
+}
+
 
 // Set up a command to display the quests
-bot.command('quests', async (ctx) => {
+async function handlequests (ctx) {
   // Get a list of incomplete quests
   let chatID = ctx.message.chat.id
 
@@ -142,6 +155,37 @@ bot.command('quests', async (ctx) => {
     ctx.replyWithPhoto({ source: fs.createReadStream(path) });
   });
   return;
+}
+
+// Set up a command to display the quests
+bot.command('status', async (ctx) => {
+  // Get a list of incomplete quests
+  let chatID = ctx.message.chat.id
+
+  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
+  await requestsDB.load()
+
+  let requests = await requestsDB.get('').filter(rquest => rquest.type === 'request')
+  let offers = await requestsDB.get('').filter(rquest => rquest.type === 'offer')
+
+  // Create a table header
+  ui.getRequestsTable(requests, offers , chatID).then((path) => {
+    //send the image
+    ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+  });
+  return;
+});
+
+
+bot.on("callback_query", (ctx) => {
+  // if (ctx.update.callback_query.data === "List") {
+  // listCommand(ctx);
+  // }
+  // if (ctx.update.callback_query.data === "Win") {
+  // ctx.reply("https://google.com");
+  // } else if (ctx.update.callback_query.data === "gold") {
+  // ctx.reply("https://google.com");
+  // }
 });
 
 //bot.use(Telegraf.log())
