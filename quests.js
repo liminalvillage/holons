@@ -7,7 +7,7 @@ export async function quest(type,ctx, orbitdb) {
     let messageID = ctx.message.message_id;
     const text = ctx.message.text;
     const sender = ctx.from;
-
+    if (!orbitdb) return
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
 

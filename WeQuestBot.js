@@ -23,13 +23,10 @@ import * as ui from './interface.js';
 import { create } from 'ipfs'
 import OrbitDB from 'orbit-db'
 
-import * as requests from './requests.js'
 import * as quests from './quests.js'
 import * as values from './values.js'
 
 let orbitdb
-
-let requestsDB
 
 let valuesDB
 
@@ -40,7 +37,6 @@ async function init() {
   
   const ipfs = await create()
   orbitdb = await OrbitDB.createInstance(ipfs)
-  requestsDB = await orbitdb.docs('WeQuest.requests')
   valuesDB = await orbitdb.docs('WeQuest.values')
   settingsDB = await orbitdb.docs('WeQuest.settings')
   await requestsDB.load()
