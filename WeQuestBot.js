@@ -39,7 +39,6 @@ async function init() {
   orbitdb = await OrbitDB.createInstance(ipfs)
   valuesDB = await orbitdb.docs('WeQuest.values')
   settingsDB = await orbitdb.docs('WeQuest.settings')
-  await requestsDB.load()
   await valuesDB.load()
   await settingsDB.load()
 
