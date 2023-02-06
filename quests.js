@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 
-export async function quest(ctx, orbitdb) {
+export async function quest(type,ctx, orbitdb) {
     // Get the message text and sender from the context
 
     let chatID = ctx.message.chat.id;
@@ -14,7 +14,7 @@ export async function quest(ctx, orbitdb) {
     const title = text.split(' ').slice(1).join(' ');
 
     if (!title) {
-        ctx.reply('Please enter a quest as part of the command. Example: /quest Do the dishes');
+        ctx.reply('Please enter a title as part of the command. Example: /' + type +  ' Do the dishes');
         return;
     }
 
@@ -23,12 +23,12 @@ export async function quest(ctx, orbitdb) {
     let quest = {
         _id: '',
         initiator: sender,
-        quest: title,
+        title: title,
         date: new Date().getTime(),
         users: [],
         appreciation: [],
         stoppers: [],
-        type: 'quest',
+        type: type,
         status: 'ongoing'
     }
     // // Add the sender to the list of users
@@ -66,7 +66,7 @@ export async function join(ctx, orbitdb) {
     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
     if (quest.status == 'completed') {
-        ctx.reply(`Quest "${quest.quest}" has already been completed`,{reply_to_message_id : messageID});
+        ctx.reply(`Quest "${quest.title}" has already been completed`,{reply_to_message_id : messageID});
         return;
     }
 
@@ -76,20 +76,20 @@ export async function join(ctx, orbitdb) {
     // Check if the user has already joined the quest
     const userindex = quest.users.findIndex(user => user.id === sender.id)
     if (userindex > -1) {
-        ctx.reply(`${sender.first_name}, left the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name}, left the quest "${quest.title}"`,{reply_to_message_id : messageID});
         quest.users.splice(userindex, 1);
     }
     else {
         // Add the user to the quest
         quest.users.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} has joined the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has joined the quest "${quest.title}"`,{reply_to_message_id : messageID});
     }
 
     // Check if the user has already appreciated the quest, remove if so
     const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
     if (appreciationindex > -1) {
-        ctx.reply(`${sender.first_name}'s appreciation for "${quest.quest}" has been removed`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`,{reply_to_message_id : messageID});
         quest.appreciation.splice(appreciationindex, 1);
     }
 
@@ -119,18 +119,18 @@ export async function appreciate(ctx, orbitdb) {
     // Check if the user has already appreciated the quest, remove if so
     const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
     if (appreciationindex > -1) {
-        ctx.reply(`${sender.first_name}'s appreciation for "${quest.quest}" has been removed`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`,{reply_to_message_id : messageID});
         quest.appreciation.splice(appreciationindex, 1);
     } else {
         // Add the user to the quest
         quest.appreciation.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} appreciates the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} appreciates the quest "${quest.title}"`,{reply_to_message_id : messageID});
     }
     // Check if the user has already joined the quest
     const userindex = quest.users.findIndex(user => user.id === sender.id)
     if (userindex > -1) {
-        ctx.reply(`${sender.first_name} has been removed from the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has been removed from the quest "${quest.title}"`,{reply_to_message_id : messageID});
         quest.users.splice(userindex, 1);
     }
 
@@ -189,14 +189,14 @@ export async function stop(ctx, orbitdb) {
 
     const stopperindex = quest.stoppers.findIndex(user => user.id === sender.id)
     if (stopperindex > -1) {
-        ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.title}"`,{reply_to_message_id : messageID});
         quest.stoppers.splice(stopperindex, 1);
     }
     else {
         // Add the user to the quest
         quest.stoppers.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} has stopped the quest "${quest.quest}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has stopped the quest "${quest.title}"`,{reply_to_message_id : messageID});
     }
     if(quest.stoppers.length > 0)
         quest.status = 'stopped'
@@ -313,7 +313,7 @@ async function updateMessage(ctx, quest) {
 
 // Function to create the message for a quest TODO 
 function createMessage(quest) {
-    let message = `| Quest: ${quest.quest} \n`;
+    let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title} \n`;
     message += `| By: ${quest.initiator.first_name} \n`;
     if (quest.users.length > 0)
         message += `| Participants: ${[...quest.users].map(u => u.first_name).join(', ')} \n`;
@@ -334,6 +334,15 @@ function markup(quest) {
         Markup.button.callback('❌ Cancel', 'cancel_quest'),
         Markup.button.callback('✔️ Complete', 'complete_quest')
     ]])
+
+    if (quest.type === "request" || quest.type === "offer") {
+        mu = Markup.inlineKeyboard([[
+            Markup.button.callback("Geolocate", 'geolocate',{requestlocation: true}),
+            Markup.button.callback('❤️ Take', 'popup'),
+            Markup.button.callback('❌ Cancel', 'cancel_quest'),
+        ]])
+    }
+
     if (quest.status === "completed") {
         return null
     }

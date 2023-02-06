@@ -1,9 +1,21 @@
 "use strict"
-import { Telegraf } from 'telegraf';
+
+import config from  "./config.json" assert { type: "json" };
+
+//  ------------------------------------ Import the discord.js module
+// import * as Discord from 'discord.js';
+// const discord = new Discord.Client({intents: [Discord.GatewayIntentBits.GUILD_MESSAGES]});
+// discord.login(config.discord);
 
 //import {i18n} from 'i18next'
 
-const bot = new Telegraf("5965742096:AAGm8_2mq8lST8goLhMKvq57HUaWf5-0LF4");
+// ------------------------------------ Import the telegraf module
+import { Telegraf } from 'telegraf';
+const bot = new Telegraf(config.telegram);
+//bot.use(Telegraf.log())
+bot.start((ctx) => ctx.reply('Welcome to WeQuest!'))
+bot.help((ctx) => ctx.reply('WeQuest can help your communities organize around quests and to exchange goods and services with each other! click on the menu to see the available options.'))
+bot.launch();
 
 import fs from 'fs';
 import * as ui from './interface.js';
@@ -13,6 +25,7 @@ import OrbitDB from 'orbit-db'
 
 import * as requests from './requests.js'
 import * as quests from './quests.js'
+import * as values from './values.js'
 
 let orbitdb
 
@@ -49,19 +62,37 @@ async function init() {
 
 init();
 
+// discord.on('message', msg => {
+//   if (msg.content === 'quest') {quests.quest('quest',discord2telegram(msg), orbitdb);
+//     msg.reply('Pong!');
+//   }
+// });
+
+
 // Create a new quest
-bot.command('quest', async (ctx) => quests.quest(ctx, orbitdb))
-bot.command('task', async (ctx) => quests.quest(ctx, orbitdb))
-bot.command('propose', async (ctx) => quests.quest(ctx, orbitdb))
-bot.command('todo', async (ctx) => quests.quest(ctx, orbitdb))
-// list quests
+bot.command('quest', async (ctx) => quests.quest('quest',ctx, orbitdb))
+bot.command('task', async (ctx) => quests.quest('task',ctx, orbitdb))
+bot.command('proposal', async (ctx) => quests.quest('proposal',ctx, orbitdb))
+bot.command('propose', async (ctx) => quests.quest('proposal',ctx, orbitdb))
+bot.command('todo', async (ctx) => quests.quest('todo',ctx, orbitdb))
 
 //create new request
-bot.command('need', async (ctx) => requests.request(ctx, orbitdb))
-bot.command('request', async (ctx) => requests.request(ctx, orbitdb))
-bot.command('want', async (ctx) => requests.request(ctx, orbitdb))
-bot.command('requests',  async (ctx) => requests.requests(ctx, orbitdb))
-//
+bot.command('need', async (ctx) => quests.quest('request', ctx, orbitdb))
+bot.command('request', async (ctx) => quests.quest('request',ctx, orbitdb))
+bot.command('want', async (ctx) => quests.quest('request',ctx, orbitdb))
+bot.command('wish', async (ctx) => quests.quest('request',ctx, orbitdb))
+//create new offer
+bot.command('offer', async (ctx) => quests.quest('offer',ctx, orbitdb))
+bot.command('give', async (ctx) => quests.quest('offer',ctx, orbitdb))
+bot.command('have', async (ctx) => quests.quest('offer',ctx, orbitdb))
+bot.command('gift', async (ctx) => quests.quest('offer',ctx, orbitdb))
+// list requests
+
+bot.command('values', async (ctx) => values.values(ctx, orbitdb))
+bot.command('valuesSelect', async (ctx) => values.valuesSelect(ctx, orbitdb))
+bot.command('valuesAdd', async (ctx) => values.valuesAdd(ctx, orbitdb))
+bot.command('valuesRemove', async (ctx) => values.valuesRemove(ctx, orbitdb))
+
 
 // QUEST ACTIONS ====================================================
 
@@ -70,6 +101,10 @@ bot.action('appreciate_quest', (ctx) => quests.appreciate(ctx, orbitdb))
 bot.action('cancel_quest', (ctx) => quests.cancel(ctx, orbitdb));
 bot.action('complete_quest', (ctx) => quests.complete(ctx, orbitdb));
 bot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
+
+// bot.action('popup', async (ctx) => {ctx.AnswerCallbackQueryAsync(ctx.CallbackQuery.id, "Notification already enabled", true)});
+
+
 
 //----------------------------------------------------
 
@@ -110,6 +145,7 @@ bot.command('reset', async (ctx) => {
 //Set up a command to display the appreciation score for each user
 bot.command('leaderboard', (ctx) => leaderboard (ctx))
 bot.command('appreciation', (ctx) => leaderboard(ctx))
+bot.command('credits', (ctx) => leaderboard(ctx))
 bot.command('scores', (ctx) => leaderboard(ctx))
 bot.command('score', (ctx) => leaderboard(ctx))
 bot.command('points', (ctx) => leaderboard(ctx))
@@ -158,18 +194,35 @@ async function handlequests (ctx) {
 }
 
 // Set up a command to display the quests
-bot.command('status', async (ctx) => {
+bot.command('requests', async (ctx) => {
   // Get a list of incomplete quests
   let chatID = ctx.message.chat.id
 
-  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
+  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
   await requestsDB.load()
 
-  let requests = await requestsDB.get('').filter(rquest => rquest.type === 'request')
-  let offers = await requestsDB.get('').filter(rquest => rquest.type === 'offer')
+  let requests = await requestsDB.get('')
 
   // Create a table header
-  ui.getRequestsTable(requests, offers , chatID).then((path) => {
+  ui.getRequestsTable(requests, chatID).then((path) => {
+    //send the image
+    ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+  });
+  return;
+});
+
+// Set up a command to display the quests
+bot.command('offers', async (ctx) => {
+  // Get a list of incomplete quests
+  let chatID = ctx.message.chat.id
+
+  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+  await requestsDB.load()
+
+  let requests = await requestsDB.get('')
+
+  // Create a table header
+  ui.getOffersTable(requests, chatID).then((path) => {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) });
   });
@@ -177,7 +230,9 @@ bot.command('status', async (ctx) => {
 });
 
 
+
 bot.on("callback_query", (ctx) => {
+  // ctx.AnswerCallbackQueryAsync(ctx.CallbackQuery.id, "Notification already enabled", true)
   // if (ctx.update.callback_query.data === "List") {
   // listCommand(ctx);
   // }
@@ -188,7 +243,25 @@ bot.on("callback_query", (ctx) => {
   // }
 });
 
-//bot.use(Telegraf.log())
-bot.start((ctx) => ctx.reply('Welcome to WeQuest!'))
-bot.help((ctx) => ctx.reply('WeQuest can help your communities organize around quests and to exchange goods and services with each other! click on the menu to see the available options.'))
-bot.launch();
+
+
+
+function discord2telegram(message) {
+  const ctx = {};
+
+  // Map properties from discord.js message to telegraf context
+  ctx.updateType = "message";
+  ctx.message = {
+    message_id: message.id,
+    from: {
+      id: message.author.id,
+      first_name: message.author.username
+    },
+    chat: {
+      id: message.channel.id
+    },
+    text: message.content
+  };
+
+  return ctx;
+}

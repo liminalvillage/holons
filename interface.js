@@ -1,7 +1,6 @@
 import puppetteer  from 'puppeteer-core';
 import { executablePath } from 'puppeteer';
 import fs from 'fs';
-import { request } from 'http';
 
 let theme
 
@@ -17,10 +16,9 @@ const browser  = await puppetteer.launch({
 
 
 export async function getQuestImage(quest) {
-
   const element = `
   <table>
-    <tr><th>Quest:</th><td>${quest.quest}</td></tr>
+    <tr><th>Quest:</th><td>${quest.title}</td></tr>
     <tr><th>Initiator:</th><td>${quest.initiator.first_name}</td></tr>
     <tr><th>Joined by:</th><td>${[...quest.users].slice(1).map(u => u.username).join(', ')}</td></tr>
     <tr><th>Appreciated by:</th><td>${[...quest.appreciation].slice(1).map(u => u.username).join(', ')}</td></tr>
@@ -40,7 +38,7 @@ export async function getQuestsTable(quests, chatID) {
     const quest = quests[i]
     const row = `<tr>
         <th scope="row">${i + 1}</th>
-        <th>${quest.quest}</th>
+        <th>${quest.title}</th>
         <th>${quest.initiator.first_name}</th>
         <th>${quest.users.length}</th>
         <th>${quest.appreciation.length}</th>
@@ -70,28 +68,28 @@ export async function getQuestsTable(quests, chatID) {
   return path
 }
 
-export async function getRequestsTable(requests,offers, chatID) {
+export async function getRequestsTable(requests, chatID) {
+  
+  const needs = requests.filter(request => request.type == 'request')
+  const offers = requests.filter(request => request.type == 'offer')
   
   const rows = []
-  for (let i = 0; i < requests.length; i++) {
-    const request = requests[i]
+  for (let i = 0; i < needs.length; i++) {
+    const request = needs[i]
     const row = `<tr>
-        <th scope="row">${i + 1}</th>
-        <th>${request.initiator.firstname}</th>
+        <th>${request.initiator.first_name}</th>
+        <th>${request.title}</th>
       </tr>`
 
     rows.push(row)
   }
  
   const element = `<table>
-  <caption>Active Quests</caption>
+  <caption>Active Requests</caption>
   <thead>
       <tr>
-          <th scope="col">ID</th>
-          <th scope="col">Quest</th>
-          <th scope="col">Initiator</th>
-          <th scope="col">People</th>
-          <th scope="col">Appreciators</th>
+          <th scope="col">Person</th>
+          <th scope="col">Request</th>
       </tr>
   </thead>
   <tbody>
@@ -104,6 +102,42 @@ export async function getRequestsTable(requests,offers, chatID) {
   await screenshotHtml(html, path, 'table')
   return path
 }
+
+export async function getOffersTable(requests, chatID) {
+  
+
+  const offers = requests.filter(request => request.type == 'offer')
+  
+  const rows = []
+  for (let i = 0; i < offers.length; i++) {
+    const offer = offers[i]
+    const row = `<tr>
+        <th>${offer.initiator.first_name}</th>
+        <th>${offer.title}</th>
+      </tr>`
+
+    rows.push(row)
+  }
+ 
+  const element = `<table>
+  <caption>Active Offers</caption>
+  <thead>
+      <tr>
+          <th scope="col">Person</th>
+          <th scope="col">Offer</th>
+      </tr>
+  </thead>
+  <tbody>
+      ${rows.join('\n')}
+  </tbody>
+</table>`
+
+  const path = './images/offers' + chatID + '.png'
+  const html = await generateHtml(element)
+  await screenshotHtml(html, path, 'table')
+  return path
+}
+
 
 export async function getAppreciationTable(appreciation, chatID) {
   const rows = []

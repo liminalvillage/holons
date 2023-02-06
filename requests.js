@@ -1,9 +1,53 @@
 import { Markup } from 'telegraf';
 import ngeohash from 'ngeohash'
 
+import Validator from 'jsonschema';
+var v = new Validator.Validator();
+
+// Address, to be embedded on Person
+var addressSchema = {
+  "id": "/SimpleAddress",
+  "type": "object",
+  "properties": {
+    "lines": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "zip": {"type": "string"},
+    "city": {"type": "string"},
+    "country": {"type": "string"}
+  },
+  "required": ["country"]
+};
+
+// Person
+var schema = {
+  "id": "/SimplePerson",
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "address": {"$ref": "/SimpleAddress"},
+    "votes": {"type": "integer", "minimum": 1}
+  }
+};
+
+var p = {
+  "name": "Barack Obama",
+  "address": {
+    "lines": [ "1600 Pennsylvania Avenue Northwest" ],
+    "zip": "DC 20500",
+    "city": "Washington",
+    "country": "USA"
+  },
+  "votes": "lots"
+};
+
+v.addSchema(addressSchema, '/SimpleAddress');
+console.log(v.validate(p, schema));
+
 // HANDLES REQUESTS ====================================================
 
-export async function request(ctx, orbitdb) {
+export async function request(type, ctx, orbitdb) {
     // Extract request from command argument
   
     let chatID = ctx.message.chat.id;
@@ -19,10 +63,11 @@ export async function request(ctx, orbitdb) {
         _id: ctx.message.message_id,
         title: ctx.message.text.split(' ').slice(1).join(' '),
         requester: sender,
-        geohash: ngeohash.encode(ctx.location.latitude, ctx.location.longitude),
+        type: type,
+        //geohash: ngeohash.encode(ctx.location.latitude, ctx.location.longitude),
         status: 'requested'
     }
-    ctx.reply(`${ctx.from.username}'s request for "${request.title}" has been added to the list.`) 
+    ctx.reply(`${ctx.from.username}'s ${type} for "${request.title}" has been added to the list.`) 
 
     ctx.reply(createMessage(request), markup).then((ctx) => {
         // Add the message id to the quest
@@ -30,6 +75,7 @@ export async function request(ctx, orbitdb) {
         requestsDB.put(request)
     });
 }
+
 export async function offer(ctx, orbitdb) {
     // Extract request from command argument
   

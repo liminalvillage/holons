@@ -15,7 +15,7 @@ bot.command('getlocation', (msg) => {
   const opts = {
     reply_markup: JSON.stringify({
       Markup.inlineKeyboard: [
-        [{text: 'Location', request_location: true}],
+        [{text: 'Location', }request_location: true],
         [{text: 'Contact', request_contact: true}],
       ],
       resize_keyboard: true,

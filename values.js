@@ -1,4 +1,42 @@
-let values = [
+import { Markup, Telegraf } from "telegraf"
+// Description: Values for the organization
+//
+
+export function values(ctx, orbitdb) {
+    ctx.reply('Values', createButtons(valuesarray))
+}
+
+ export function valuesSelect(ctx, orbitdb) {
+    ctx.reply('Values', createButtons(valuesarray))
+}
+
+export function valuesAdd(ctx, orbitdb) {
+    ctx.reply('Values', createButtons(valuesarray))
+}
+
+export function valuesRemove(ctx, orbitdb) {
+    ctx.reply('Values', createButtons(valuesarray))
+}
+
+
+function createButtons(values){
+    let buttons = []
+    values.forEach((value) => {
+        buttons.push([Markup.button.callback(value._id, 'https://t.me/Bot?task='+value._id),
+                    Markup.button.callback("Positive")])
+    })
+    return Markup.inlineKeyboard(buttons)
+}
+
+const markup = Markup.inlineKeyboard([[
+    Markup.button.locationRequest('Geolocate Request', {requestLocation: true})
+], [
+    Markup.button.callback('❌ Cancel', 'cancel_request'),
+    Markup.button.callback('✔️ Complete', 'complete_request')
+]]
+)
+
+export const valuesarray = [
     {
         "_id": "Accountability/Ethics",
         "description": "To act on personal moral principles even when faced with pressure to do otherwise."
