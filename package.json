@@ -10,12 +10,14 @@
   "author": "Roberto Valenti",
   "license": "ISC",
   "dependencies": {
+    "chatgpt": "^4.4.1",
     "debug": "^4.3.4",
     "discord.js": "^14.7.1",
     "i18next": "^22.4.9",
     "ipfs": "^0.66.0",
     "jsonschema": "^1.4.1",
     "ngeohash": "^0.6.3",
+    "openai": "^3.1.0",
     "orbit-db": "^0.29.0",
     "puppeteer": "^18.1.0",
     "telegraf": "^4.11.2"

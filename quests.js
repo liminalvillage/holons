@@ -1,8 +1,25 @@
 import { Markup } from 'telegraf';
 
-export async function quest(type,ctx, orbitdb) {
-    // Get the message text and sender from the context
 
+import { Configuration, OpenAIApi } from 'openai';
+
+async function generateRoles(ctx) {
+    const AI = new OpenAIApi({
+        apiKey: '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',
+        model: 'davinci',
+    });
+
+    const response = await AI.complete({
+        prompt: ctx.message.text,
+        maxTokens: 50,
+    });
+}
+
+
+export async function quest(type, ctx, orbitdb) {
+    if (!orbitdb) return
+    console.log('NEW QUEST')
+    // Get the message text and sender from the context
     let chatID = ctx.message.chat.id;
     let messageID = ctx.message.message_id;
     const text = ctx.message.text;
@@ -14,7 +31,7 @@ export async function quest(type,ctx, orbitdb) {
     const title = text.split(' ').slice(1).join(' ');
 
     if (!title) {
-        ctx.reply('Please enter a title as part of the command. Example: /' + type +  ' Do the dishes');
+        ctx.reply('Please enter a title as part of the command. Example: /' + type + ' Do the dishes');
         return;
     }
 
@@ -43,7 +60,7 @@ export async function quest(type,ctx, orbitdb) {
 
     //   }); 
 
-    ctx.reply(createMessage(quest), markup (quest)).then((ctx) => {
+    ctx.reply(createMessage(quest), markup(quest)).then((ctx) => {
         // Add the message id to the quest
         quest._id = ctx.message_id;
 
@@ -53,6 +70,7 @@ export async function quest(type,ctx, orbitdb) {
 }
 
 export async function join(ctx, orbitdb) {
+    if (!orbitdb) return
     console.log("JOIN ACTION");
     // Get the index from the callback data
     let chatID = ctx.callbackQuery.message.chat.id;
@@ -66,7 +84,7 @@ export async function join(ctx, orbitdb) {
     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
     if (quest.status == 'completed') {
-        ctx.reply(`Quest "${quest.title}" has already been completed`,{reply_to_message_id : messageID});
+        ctx.reply(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID });
         return;
     }
 
@@ -76,20 +94,20 @@ export async function join(ctx, orbitdb) {
     // Check if the user has already joined the quest
     const userindex = quest.users.findIndex(user => user.id === sender.id)
     if (userindex > -1) {
-        ctx.reply(`${sender.first_name}, left the quest "${quest.title}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name}, left the quest "${quest.title}"`, { reply_to_message_id: messageID });
         quest.users.splice(userindex, 1);
     }
     else {
         // Add the user to the quest
         quest.users.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} has joined the quest "${quest.title}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has joined the quest "${quest.title}"`, { reply_to_message_id: messageID });
     }
 
     // Check if the user has already appreciated the quest, remove if so
     const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
     if (appreciationindex > -1) {
-        ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
         quest.appreciation.splice(appreciationindex, 1);
     }
 
@@ -101,6 +119,7 @@ export async function join(ctx, orbitdb) {
 }
 
 export async function appreciate(ctx, orbitdb) {
+    if (!orbitdb) return
     console.log("APPRECIATE ACTION");
     // Get the quest  from the callback data
     let chatID = ctx.callbackQuery.message.chat.id;
@@ -119,18 +138,18 @@ export async function appreciate(ctx, orbitdb) {
     // Check if the user has already appreciated the quest, remove if so
     const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
     if (appreciationindex > -1) {
-        ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
         quest.appreciation.splice(appreciationindex, 1);
     } else {
         // Add the user to the quest
         quest.appreciation.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} appreciates the quest "${quest.title}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} appreciates the quest "${quest.title}"`, { reply_to_message_id: messageID });
     }
     // Check if the user has already joined the quest
     const userindex = quest.users.findIndex(user => user.id === sender.id)
     if (userindex > -1) {
-        ctx.reply(`${sender.first_name} has been removed from the quest "${quest.title}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has been removed from the quest "${quest.title}"`, { reply_to_message_id: messageID });
         quest.users.splice(userindex, 1);
     }
 
@@ -146,6 +165,7 @@ export async function appreciate(ctx, orbitdb) {
 
 
 export async function cancel(ctx, orbitdb) {
+    if (!orbitdb) return
     console.log("CANCEL ACTION");
 
     let chatID = ctx.callbackQuery.message.chat.id;
@@ -166,12 +186,13 @@ export async function cancel(ctx, orbitdb) {
         ctx.deleteMessage(messageID.toString())
 
     } else {
-        ctx.reply(`Only the creator of the quest can cancel the quest.`,{reply_to_message_id : messageID})
+        ctx.reply(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID })
 
     }
 }
 
 export async function stop(ctx, orbitdb) {
+    if (!orbitdb) return
     console.log("STOP ACTION");
 
     let chatID = ctx.callbackQuery.message.chat.id;
@@ -189,29 +210,30 @@ export async function stop(ctx, orbitdb) {
 
     const stopperindex = quest.stoppers.findIndex(user => user.id === sender.id)
     if (stopperindex > -1) {
-        ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.title}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.title}"`, { reply_to_message_id: messageID });
         quest.stoppers.splice(stopperindex, 1);
     }
     else {
         // Add the user to the quest
         quest.stoppers.push(sender);
         // Send a message to confirm that the user joined the quest
-        ctx.reply(`${sender.first_name} has stopped the quest "${quest.title}"`,{reply_to_message_id : messageID});
+        ctx.reply(`${sender.first_name} has stopped the quest "${quest.title}"`, { reply_to_message_id: messageID });
     }
-    if(quest.stoppers.length > 0)
+    if (quest.stoppers.length > 0)
         quest.status = 'stopped'
     else
         quest.status = 'ongoing'
 
-     // Update the message 
-     updateMessage(ctx, quest);
+    // Update the message 
+    updateMessage(ctx, quest);
 
-     // Update the db
-     questsDB.put(quest);
+    // Update the db
+    questsDB.put(quest);
 }
 
 
 export async function complete(ctx, orbitdb) {
+    if (!orbitdb) return
     console.log("COMPLETE ACTION");
 
     let chatID = ctx.callbackQuery.message.chat.id;
@@ -229,39 +251,22 @@ export async function complete(ctx, orbitdb) {
         quest.status = "completed";
         // Update the message 
         updateMessage(ctx, quest);
-
         // Update the db
         questsDB.put(quest);
 
     } else {
-        ctx.reply(`Only the creator of the quest can mark it as completed.`,{reply_to_message_id : messageID});
+        ctx.reply(`Only the creator of the quest can mark it as completed.`, { reply_to_message_id: messageID });
     }
     // ================================ APPRECIATION ========================== 
     let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
     await appreciationDB.load()
-
+    let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'username' })
+    await usersDB.load()
+    //await saveUserAction(ctx.callbackQuery.from, quest.title, usersDB) //register monouser in debug mode
     //loop through all users and add appreciation to their account
     for (let i = 0; i < quest.appreciation.length; i++) {
         let sender = quest.appreciation[i];
-        let senderappreciation = await appreciationDB.get(sender.id)[0]
-        if (!senderappreciation || senderappreciation == '') {
-
-            // Initialize the sender's points if they do not exist yet
-            senderappreciation = {
-                _id: sender.id,
-                username: sender.first_name,
-                received: 0,
-                sent: 0,
-                appreciation: 0,
-
-            }
-        }
-
-        // Update the sent appreciation of the sender
-        senderappreciation.sent += 1;
-        // Update the db
-        await appreciationDB.put(senderappreciation)
-
+        await sendToken(sender, 1, appreciationDB)
         // Calculate the number of appreciation to send to each user
         const appreciationPerUser = 1  // / quest.users.length;
 
@@ -269,31 +274,145 @@ export async function complete(ctx, orbitdb) {
         for (let i = 0; i < quest.users.length; i++) {
             // Get the recipient
             const recipient = quest.users[i]
-            // // Check if the recipient is the sender
-            // if (recipient.id === sender.id ) {
-            //   continue;
-            // }
-            // Send the appreciation to each user
-            let recipientappreciation = await appreciationDB.get(recipient.id)[0]
-            // Initialize the receiver's points if they do not exist yet
-            if (!recipientappreciation || recipientappreciation == '') {
-                recipientappreciation = {
-                    _id: recipient.id,
-                    username: recipient.first_name,
-                    received: 0,
-                    sent: 0,
-                    appreciation: 0
-                }
+            // Check if the recipient is the sender
+            if (recipient.id === sender.id) {
+                continue;
             }
-            recipientappreciation.received += appreciationPerUser;
-            // Add the received appreciation to the recipient
-            appreciationDB.put(recipientappreciation)
+            // Send the appreciation to each user
+            await recieveToken(recipient, appreciationPerUser, appreciationDB)
+            // save user with action to the database
+            await saveUserAction(recipient, quest.title, usersDB)
         }
     }
     // ================================ APPRECIATION ==========================
 }
 
+export async function sendAppreciation(ctx, orbitdb) {
+    if (!orbitdb) return
+    console.log("SEND APPRECIATION ACTION");
+    const chatID = ctx.message.chat.id;
+    const sender = ctx.from;
+    const entities = ctx.message.entities;
+
+    // Setup the necessary databases
+    const usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'username' })
+    await usersDB.load()
+    let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
+    await appreciationDB.load()
+
+    const mentions = entities.filter((entity) => entity.type === 'mention');
+    if (mentions.length === 0) {
+        ctx.reply(`Please mention the users you want to send appreciation to using '@', followed by the reason.`, { reply_to_message_id: ctx.message.message_id });
+        return
+    }
+
+    const lastMention = mentions[mentions.length - 1];
+    const action = ctx.message.text.substring(lastMention.offset + lastMention.length).trim();
+
+    // Check if the message contains a mention
+    for (let i = 0; i < mentions.length; i++) {
+        const entity = mentions[i];
+        const mention = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
+        // get the user from the database
+        const recipient = await usersDB.get(mention)[0]
+
+        if (!recipient || recipient == '') {
+            ctx.reply(`The user ${mention} is not registered.`, { reply_to_message_id: ctx.message.message_id });
+            return;
+        }
+
+        // Check if the recipient is the sender
+        if (recipient.id === sender.id) {
+            ctx.reply(`You cannot send appreciation to yourself.`, { reply_to_message_id: ctx.message.message_id });
+            return;
+        }
+
+        // Send the appreciation to the recipient
+        await recieveToken(recipient, 1, appreciationDB)
+        // save the user action
+        await saveUserAction(recipient, action, usersDB)
+    }
+
+    // Update the sent appreciation of the sender
+    await sendToken(sender, 1, appreciationDB)
+    ctx.reply(`You have sent 1 appreciation to ${mentions.length} ${mentions.length > 1 ? 'users' : 'user'}.`, { reply_to_message_id: ctx.message.message_id });
+    listUsersActions(usersDB)
+}
+
 // ============== UTILITY FUNCTIONS
+
+async function listUsersActions(db) {
+    if (!db) return
+
+    let users = await db.get('')
+    console.log(users)
+    for (let i = 0; i < users.length; i++) {
+        let user = users[i];
+        if (user.actions && user.actions.length > 0) {
+            console.log(user.first_name + ':' + user.actions.join(', '))
+        }
+    }
+}
+
+// save user action
+async function saveUserAction(userobj, action, db) {
+    console.log('SAVE USER ACTION')
+    if (!db) return
+    let user = await db.get(userobj.username)[0]
+    // Initialize the receiver's points if they do not exist yet
+    if (!user || user == '') {
+        user = {
+            id: userobj.id,
+            username: userobj.username,
+            first_name: userobj.first_name,
+            last_name: userobj.last_name,
+            actions: []
+        }
+    }
+    user.actions.push(action)
+    // Save the user to the database
+    await db.put(user)
+}
+
+// send appreciation 
+async function recieveToken(recipient, amount, db) {
+    if (!db) return
+
+    let recipientinfo = await db.get(recipient.id)[0]
+    // Initialize the receiver's points if they do not exist yet
+    if (!recipientinfo || recipientinfo == '') {
+        recipientinfo = {
+            _id: recipient.id,
+            username: recipient.first_name,
+            received: 0,
+            sent: 0,
+            appreciation: 0
+        }
+    }
+    recipientinfo.received += amount;
+    // Add the received appreciation to the recipient
+    await db.put(recipientinfo)
+}
+
+
+async function sendToken(sender, amount, db) {
+    if (!db) return
+
+    let senderinfo = await db.get(sender.id)[0]
+    // Initialize the receiver's points if they do not exist yet
+    if (!senderinfo || senderinfo == '') {
+        senderinfo = {
+            _id: recipient.id,
+            username: recipient.first_name,
+            received: 0,
+            sent: 0,
+            appreciation: 0
+        }
+    }
+    senderinfo.sent += amount;
+    // Add the received appreciation to the recipient
+    await db.put(senderinfo)
+}
 
 // Function to update messages for a quest
 async function updateMessage(ctx, quest) {
@@ -337,7 +456,7 @@ function markup(quest) {
 
     if (quest.type === "request" || quest.type === "offer") {
         mu = Markup.inlineKeyboard([[
-            Markup.button.callback("Geolocate", 'geolocate',{requestlocation: true}),
+            Markup.button.callback("Geolocate", 'geolocate', { requestlocation: true }),
             Markup.button.callback('❤️ Take', 'popup'),
             Markup.button.callback('❌ Cancel', 'cancel_quest'),
         ]])

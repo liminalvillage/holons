@@ -63,6 +63,8 @@ init();
 //   }
 // });
 
+//send appreciation
+bot.command('appreciate', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
 
 // Create a new quest
 bot.command('quest', async (ctx) => quests.quest('quest',ctx, orbitdb))
@@ -124,8 +126,10 @@ bot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
 
 // ================= ADMIN ===========================
 bot.command('reset', async (ctx) => {
+
   //TODO; check if the user is an admin
   let chatID = ctx.message.chat.id;
+  //ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
   let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
   let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
   let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
@@ -226,17 +230,17 @@ bot.command('offers', async (ctx) => {
 
 
 
-bot.on("callback_query", (ctx) => {
-  // ctx.AnswerCallbackQueryAsync(ctx.CallbackQuery.id, "Notification already enabled", true)
-  // if (ctx.update.callback_query.data === "List") {
-  // listCommand(ctx);
-  // }
-  // if (ctx.update.callback_query.data === "Win") {
-  // ctx.reply("https://google.com");
-  // } else if (ctx.update.callback_query.data === "gold") {
-  // ctx.reply("https://google.com");
-  // }
-});
+// bot.on("callback_query", (ctx) => {
+//   // ctx.AnswerCallbackQueryAsync(ctx.CallbackQuery.id, "Notification already enabled", true)
+//   // if (ctx.update.callback_query.data === "List") {
+//   // listCommand(ctx);
+//   // }
+//   // if (ctx.update.callback_query.data === "Win") {
+//   // ctx.reply("https://google.com");
+//   // } else if (ctx.update.callback_query.data === "gold") {
+//   // ctx.reply("https://google.com");
+//   // }
+// });
 
 
 
