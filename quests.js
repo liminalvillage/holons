@@ -1,21 +1,31 @@
 import { Markup } from 'telegraf';
+import  i18next from 'i18next';
 
 
-import { Configuration, OpenAIApi } from 'openai';
-
-async function generateRoles(ctx) {
-    const AI = new OpenAIApi({
-        apiKey: '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',
-        model: 'davinci',
-    });
-
-    const response = await AI.complete({
-        prompt: ctx.message.text,
-        maxTokens: 50,
-    });
-}
-
-
+i18next.init({
+    lng: 'en',
+    resources: {
+        en: {
+            translation: {
+                join: 'Join',
+                appreciate: 'Appreciate',
+                stop:'🛑 Stop',
+                cancel:'❌ Cancel',
+                complete:'✔️ Complete',
+            }, 
+        },
+        it: {
+            translation: {
+                join: '❤️ Unisciti',
+                appreciate: '👍 Apprezzare',
+                stop:'🛑 Fermare',
+                cancel:'❌ Annulla',
+                complete:'✔️ Completa',
+            },
+        }
+    }
+}); 
+                
 export async function quest(type, ctx, orbitdb) {
     if (!orbitdb) return
     console.log('NEW QUEST')
@@ -299,8 +309,8 @@ export async function sendAppreciation(ctx, orbitdb) {
     await usersDB.load()
     let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
     await appreciationDB.load()
-
-    const mentions = entities.filter((entity) => entity.type === 'mention');
+    console.log(entities)
+    const mentions = entities.filter((entity) => (entity.type === 'mention'|| entity.type === 'text_mention'));
     if (mentions.length === 0) {
         ctx.reply(`Please mention the users you want to send appreciation to using '@', followed by the reason.`, { reply_to_message_id: ctx.message.message_id });
         return
@@ -312,12 +322,17 @@ export async function sendAppreciation(ctx, orbitdb) {
     // Check if the message contains a mention
     for (let i = 0; i < mentions.length; i++) {
         const entity = mentions[i];
-        const mention = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
-        // get the user from the database
-        const recipient = await usersDB.get(mention)[0]
+        let recipient = ''
+
+        if (entity.type === 'text_mention')
+            recipent = await ctx.telegram.users.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
+        if (entity.type === 'mention') {
+            // get the user from the database
+            recipient = await usersDB.get(ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))[0]
+        }
 
         if (!recipient || recipient == '') {
-            ctx.reply(`The user ${mention} is not registered.`, { reply_to_message_id: ctx.message.message_id });
+            ctx.reply(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id });
             return;
         }
 
@@ -363,9 +378,9 @@ async function saveUserAction(userobj, action, db) {
     if (!user || user == '') {
         user = {
             id: userobj.id,
-            username: userobj.username,
-            first_name: userobj.first_name,
-            last_name: userobj.last_name,
+            username: userobj.username? userobj.username : '',
+            first_name: userobj.first_name? userobj.first_name : '',
+            last_name: userobj.last_name ? userobj.last_name : '',
             actions: []
         }
     }
@@ -402,8 +417,8 @@ async function sendToken(sender, amount, db) {
     // Initialize the receiver's points if they do not exist yet
     if (!senderinfo || senderinfo == '') {
         senderinfo = {
-            _id: recipient.id,
-            username: recipient.first_name,
+            _id: sender.id,
+            username: sender.first_name,
             received: 0,
             sent: 0,
             appreciation: 0
@@ -446,12 +461,12 @@ function createMessage(quest) {
 
 function markup(quest) {
     let mu = Markup.inlineKeyboard([[
-        Markup.button.callback('❤️ Join', 'join_quest'),
-        Markup.button.callback('👍 Appreciate', 'appreciate_quest'),
-        Markup.button.callback('🛑 Stop', 'stop_quest')
+        Markup.button.callback(i18next.t('join'), 'join_quest'),
+        Markup.button.callback(i18next.t('appreciate'), 'appreciate_quest'),
+        Markup.button.callback(i18next.t('stop'), 'stop_quest')
     ], [
-        Markup.button.callback('❌ Cancel', 'cancel_quest'),
-        Markup.button.callback('✔️ Complete', 'complete_quest')
+        Markup.button.callback(i18next.t('cancel'), 'cancel_quest'),
+        Markup.button.callback(i18next.t('complete'), 'complete_quest')
     ]])
 
     if (quest.type === "request" || quest.type === "offer") {

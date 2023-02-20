@@ -1,6 +1,8 @@
 import puppetteer  from 'puppeteer-core';
 import { executablePath } from 'puppeteer';
 import fs from 'fs';
+import JSDOM  from 'jsdom';
+
 
 let theme
 
@@ -11,8 +13,6 @@ const browser  = await puppetteer.launch({
   ignoreHTTPSErrors: true,
   executablePath: executablePath(),
 });
-
-
 
 
 export async function getQuestImage(quest) {
@@ -195,6 +195,7 @@ async function generateHtml(element) {
 }
 
 async function screenshotHtml(html, pathToSave, onElement) {
+  console.log(html)
   const page = await browser.newPage();
   await page.setContent(html)
   const element = await page.$(onElement)
@@ -202,3 +203,71 @@ async function screenshotHtml(html, pathToSave, onElement) {
   await page.close()
 }
 
+
+
+export async function showMaslow(layer){
+const path = './images/maslow.png'
+const element = drawMaslow(layer)
+const html = await generateHtml(element)
+await screenshotHtml(html, path, 'svg')
+return path
+}
+
+function drawMaslow(layer) {
+  let dom = new JSDOM.JSDOM();
+  let document = dom.window.document;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 100 100");
+  svg.setAttribute("width", "100");
+  svg.setAttribute("height", "100");
+
+  const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  bgRect.setAttribute("x", "0");
+  bgRect.setAttribute("y", "0");
+  bgRect.setAttribute("width", "100");
+  bgRect.setAttribute("height", "100");
+  bgRect.setAttribute("fill", "black");
+  svg.appendChild(bgRect);
+
+  const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line1.setAttribute("x1", "0");
+  line1.setAttribute("y1", "20");
+  line1.setAttribute("x2", "100");
+  line1.setAttribute("y2", "20");
+  line1.setAttribute("stroke", layer === 1 ? "white" : "gray");
+  svg.appendChild(line1);
+
+  const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line2.setAttribute("x1", "0");
+  line2.setAttribute("y1", "40");
+  line2.setAttribute("x2", "100");
+  line2.setAttribute("y2", "40");
+  line2.setAttribute("stroke", layer === 2 ? "white" : "gray");
+  svg.appendChild(line2);
+
+  const line3 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line3.setAttribute("x1", "0");
+  line3.setAttribute("y1", "60");
+  line3.setAttribute("x2", "100");
+  line3.setAttribute("y2", "60");
+  line3.setAttribute("stroke", layer === 3 ? "white" : "gray");
+  svg.appendChild(line3);
+
+  const line4 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line4.setAttribute("x1", "0");
+  line4.setAttribute("y1", "80");
+  line4.setAttribute("x2", "100");
+  line4.setAttribute("y2", "80");
+  line4.setAttribute("stroke", layer === 4 ? "white" : "gray");
+  svg.appendChild(line4);
+
+  const line5 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line5.setAttribute("x1", "0");
+  line5.setAttribute("y1", "100");
+  line5.setAttribute("x2", "100");
+  line5.setAttribute("y2", "100");
+  line5.setAttribute("stroke", layer === 5 ? "white" : "gray");
+  svg.appendChild(line5);
+  console.log(svg.textContent)
+  return svg
+}

@@ -15,6 +15,7 @@
     "discord.js": "^14.7.1",
     "i18next": "^22.4.9",
     "ipfs": "^0.66.0",
+    "jsdom": "^21.1.0",
     "jsonschema": "^1.4.1",
     "ngeohash": "^0.6.3",
     "openai": "^3.1.0",
