@@ -1,37 +1,17 @@
 import { Markup } from 'telegraf';
 import  i18next from 'i18next';
-
-
-i18next.init({
-    lng: 'en',
-    resources: {
-        en: {
-            translation: {
-                join: 'Join',
-                appreciate: 'Appreciate',
-                stop:'🛑 Stop',
-                cancel:'❌ Cancel',
-                complete:'✔️ Complete',
-            }, 
-        },
-        it: {
-            translation: {
-                join: '❤️ Unisciti',
-                appreciate: '👍 Apprezzare',
-                stop:'🛑 Fermare',
-                cancel:'❌ Annulla',
-                complete:'✔️ Completa',
-            },
-        }
-    }
-}); 
+import {getLanguage} from './settings.js';
+import * as ui from './UI.js';
                 
 export async function quest(type, ctx, orbitdb) {
+ 
     if (!orbitdb) return
     console.log('NEW QUEST')
     // Get the message text and sender from the context
     let chatID = ctx.message.chat.id;
     let messageID = ctx.message.message_id;
+    const language = await getLanguage(chatID)
+    console.log(language)
     const text = ctx.message.text;
     const sender = ctx.from;
     if (!orbitdb) return
@@ -41,7 +21,7 @@ export async function quest(type, ctx, orbitdb) {
     const title = text.split(' ').slice(1).join(' ');
 
     if (!title) {
-        ctx.reply('Please enter a title as part of the command. Example: /' + type + ' Do the dishes');
+        ctx.reply(i18next.t('usage', {type:type, lng: language }))
         return;
     }
 
@@ -70,7 +50,7 @@ export async function quest(type, ctx, orbitdb) {
 
     //   }); 
 
-    ctx.reply(createMessage(quest), markup(quest)).then((ctx) => {
+    ctx.reply(createMessage(quest,language), markup(quest,language)).then((ctx) => {
         // Add the message id to the quest
         quest._id = ctx.message_id;
 
@@ -85,7 +65,7 @@ export async function join(ctx, orbitdb) {
     // Get the index from the callback data
     let chatID = ctx.callbackQuery.message.chat.id;
     let messageID = ctx.callbackQuery.message.message_id;
-
+    const language = await getLanguage(chatID)
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
 
@@ -130,10 +110,12 @@ export async function join(ctx, orbitdb) {
 
 export async function appreciate(ctx, orbitdb) {
     if (!orbitdb) return
+    
     console.log("APPRECIATE ACTION");
     // Get the quest  from the callback data
     let chatID = ctx.callbackQuery.message.chat.id;
     let messageID = ctx.callbackQuery.message.message_id;
+    const language = await getLanguage(chatID)
 
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
@@ -180,6 +162,7 @@ export async function cancel(ctx, orbitdb) {
 
     let chatID = ctx.callbackQuery.message.chat.id;
     let messageID = ctx.callbackQuery.message.message_id;
+    const language = await getLanguage(chatID)
 
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
@@ -207,6 +190,7 @@ export async function stop(ctx, orbitdb) {
 
     let chatID = ctx.callbackQuery.message.chat.id;
     let messageID = ctx.callbackQuery.message.message_id;
+    const language = await getLanguage(chatID)
 
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
@@ -248,6 +232,7 @@ export async function complete(ctx, orbitdb) {
 
     let chatID = ctx.callbackQuery.message.chat.id;
     let messageID = ctx.callbackQuery.message.message_id;
+    const language = await getLanguage(chatID)
 
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
@@ -301,6 +286,7 @@ export async function sendAppreciation(ctx, orbitdb) {
     if (!orbitdb) return
     console.log("SEND APPRECIATION ACTION");
     const chatID = ctx.message.chat.id;
+    const language = await getLanguage(chatID)
     const sender = ctx.from;
     const entities = ctx.message.entities;
 
@@ -338,7 +324,7 @@ export async function sendAppreciation(ctx, orbitdb) {
 
         // Check if the recipient is the sender
         if (recipient.id === sender.id) {
-            ctx.reply(`You cannot send appreciation to yourself.`, { reply_to_message_id: ctx.message.message_id });
+            ctx.reply(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id });
             return;
         }
 
@@ -355,6 +341,8 @@ export async function sendAppreciation(ctx, orbitdb) {
 }
 
 // ============== UTILITY FUNCTIONS
+
+
 
 async function listUsersActions(db) {
     if (!db) return
@@ -430,15 +418,15 @@ async function sendToken(sender, amount, db) {
 }
 
 // Function to update messages for a quest
-async function updateMessage(ctx, quest) {
+async function updateMessage(ctx, quest, language) {
     try {
         // Update the message 
         await ctx.telegram.editMessageText(
             ctx.update.callback_query.message.chat.id,
             ctx.update.callback_query.message.message_id,
             null,
-            createMessage(quest),
-            markup(quest)
+            createMessage(quest,language),
+            markup(quest,language)
         );
     } catch (e) {
         console.log(e);
@@ -446,7 +434,7 @@ async function updateMessage(ctx, quest) {
 }
 
 // Function to create the message for a quest TODO 
-function createMessage(quest) {
+function createMessage(quest,language ) {
     let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title} \n`;
     message += `| By: ${quest.initiator.first_name} \n`;
     if (quest.users.length > 0)
@@ -459,21 +447,21 @@ function createMessage(quest) {
     return message;
 }
 
-function markup(quest) {
+function markup(quest,language) {
     let mu = Markup.inlineKeyboard([[
-        Markup.button.callback(i18next.t('join'), 'join_quest'),
-        Markup.button.callback(i18next.t('appreciate'), 'appreciate_quest'),
-        Markup.button.callback(i18next.t('stop'), 'stop_quest')
+        Markup.button.callback(i18next.t('join',{lng:language}), 'join_quest'),
+        Markup.button.callback(i18next.t('appreciate',{lng:language}), 'appreciate_quest'),
+        Markup.button.callback(i18next.t('stop',{lng:language}), 'stop_quest')
     ], [
-        Markup.button.callback(i18next.t('cancel'), 'cancel_quest'),
-        Markup.button.callback(i18next.t('complete'), 'complete_quest')
+        Markup.button.callback(i18next.t('cancel',{lng:language}), 'cancel_quest'),
+        Markup.button.callback(i18next.t('complete',{lng:language}), 'complete_quest')
     ]])
 
     if (quest.type === "request" || quest.type === "offer") {
         mu = Markup.inlineKeyboard([[
-            Markup.button.callback("Geolocate", 'geolocate', { requestlocation: true }),
-            Markup.button.callback('❤️ Take', 'popup'),
-            Markup.button.callback('❌ Cancel', 'cancel_quest'),
+            Markup.button.callback(i18next.t('Geolocate',{lng:language}), 'geolocate', { requestlocation: true }),
+            Markup.button.callback(i18next.t('❤️ Take',{lng:language}), 'popup'),
+            Markup.button.callback(i18next.t('❌ Cancel',{lng:language}), 'cancel_quest'),
         ]])
     }
 

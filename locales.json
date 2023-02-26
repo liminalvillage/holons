@@ -1,0 +1,67 @@
+{
+    "en": {
+        "translation": {
+            "welcome": "Welcome to WeQuest!",
+            "help": "WeQuest can help your communities organize around quests and to exchange goods and services with each other! click on the menu to see the available options.",
+            "quest": "Quest",
+            "task": "Task",
+            "proposal": "Proposal",
+            "propose": "Propose",
+            "todo": "Todo",
+            "need": "Need",
+            "offer": "Offer",
+            "maslow": "Maslow",
+            "join": "❤️  Join",
+            "appreciate": "👍 Appreciate",
+            "stop": "🛑 Stop",
+            "cancel": "❌ Cancel",
+            "complete": "✔️ Complete",
+            "rank": "Rank",
+            "level": "Level",
+            "name": "Name",
+            "sent": "Sent",
+            "received": "Received",
+            "balance": "Balance",
+            "Quest": "Quest",
+            "Initiator": "Initiator",
+            "Appreciated by": "Appreciated by",
+            "Appreciated": "Appreciated",
+            "Joined by": "Joined by",
+            "Status": "Status",
+            "usage": "Please enter a title as part of the command. Example: /{{type}} do the dishes"
+        }
+    },
+    "it": {
+        "translation": {
+            "welcome": "Benvenuto su WeQuest!",
+            "help": "WeQuest può aiutare le tue comunità a organizzarsi attorno a missioni e a scambiarsi beni e servizi tra loro! clicca sul menu per vedere le opzioni disponibili.",
+            "quest": "Quest",
+            "task": "Task",
+            "proposal": "Proposal",
+            "propose": "Propose",
+            "todo": "Todo",
+            "need": "Need",
+            "offer": "Offer",
+            "maslow": "Maslow",
+            "join": "❤️  Unisciti",
+            "appreciate": "👍 Apprezza",
+            "stop": "🛑 Ferma",
+            "cancel": "❌ Cancella",
+            "complete": "✔️ Completa",
+            "rank": "Posizione",
+            "level": "Livello",
+            "name": "Nome",
+            "sent": "Inviati",
+            "received": "Ricevuti",
+            "balance": "Bilancio",
+            "Quest": "Quest",
+            "Initiator": "Iniziata da",
+            "Appreciated by": "Apprezzata da",
+            "Appreciation": "Apprezzamento",
+            "Joined by": "In collaborazione con",
+            "Status": "Stato",
+            "usage": "Specifica un titolo come parte del comando. Esempio: /{{type}} cucinare la cena"
+            
+        }
+    }
+}

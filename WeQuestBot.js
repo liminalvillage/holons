@@ -1,52 +1,6 @@
 "use strict"
-import i18next from "i18next";
+import * as settings from './settings.js'
 import config from "./config.json" assert { type: "json" };
-
-i18next.init({
-  lng: 'en',
-  resources: {
-    en: {
-      translation: {
-        welcome: "Welcome to WeQuest!",
-        help: "WeQuest can help your communities organize around quests and to exchange goods and services with each other! click on the menu to see the available options.",
-        quest: "Quest",
-        task: "Task",
-        proposal: "Proposal",
-        propose: "Propose",
-        todo: "Todo",
-        need: "Need",
-        offer: "Offer",
-        maslow: "Maslow",
-        join: '❤️  Join',
-        appreciate: '👍 Appreciate',
-        stop: '🛑 Stop',
-        cancel: '❌ Cancel',
-        complete: '✔️ Complete',
-      }
-    },
-    it: {
-      translation: {
-        welcome: "Benvenuto su WeQuest!",
-        help: "WeQuest può aiutare le tue comunità a organizzarsi attorno a missioni e a scambiarsi beni e servizi tra loro! clicca sul menu per vedere le opzioni disponibili.",
-        quest: "Missione",
-        task: "Compito",
-        proposal: "Proposta",
-        propose: "Proporre",
-        todo: "Da fare",
-        need: "Bisogno",
-        offer: "Offerta",
-        maslow: "Maslow",
-        join: '❤️ Unisciti',
-        appreciate: '👍 Apprezza',
-        stop: '🛑 Ferma',
-        cancel: '❌ Annulla',
-        complete: '✔️ Completa',
-      }
-    }
-  }
-});
-
-
 
 
 //  ------------------------------------ Import the discord.js module
@@ -65,7 +19,7 @@ bot.help((ctx) => ctx.reply(i18next.t('help')))
 bot.launch();
 
 import fs from 'fs';
-import * as ui from './interface.js';
+import * as UI from './UI.js';
 import * as AI from './AI.js';
 
 import { create } from 'ipfs'
@@ -76,19 +30,13 @@ import * as values from './values.js'
 
 let orbitdb
 
-let valuesDB
-
-let settingsDB
-
 async function init() {
-  // const ipfs = await create({ address:"127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'ipfs-' + Math.random()})
+  //const ipfs = await create({ address:"127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb'})
 
   const ipfs = await create()
   orbitdb = await OrbitDB.createInstance(ipfs)
-  valuesDB = await orbitdb.docs('WeQuest.values')
-  settingsDB = await orbitdb.docs('WeQuest.settings')
-  await valuesDB.load()
-  await settingsDB.load()
+  settings.init(orbitdb)
+
 
   const options = {
     // Setup write access
@@ -113,7 +61,8 @@ init();
 
 //send appreciation
 bot.command('appreciate', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
-bot.command('maslow', (ctx) => ui.showMaslow(2))
+bot.command('apprezza', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
+bot.command('maslow', (ctx) => UI.showMaslow(2))
 bot.command('ai', (ctx) => AI.assignRoles('asd', 'lol'))
 
 // -------------------------------------------------------------  ENGLISH
@@ -139,13 +88,13 @@ bot.command('gift', async (ctx) => quests.quest('offer', ctx, orbitdb))
 //--------------------------------------------------------------  ITALIAN
 
 bot.command('missione', async (ctx) => quests.quest('quest', ctx, orbitdb))
-bot.command('quest', async (ctx) => quests.quest('quest', ctx, orbitdb))
 bot.command('compito', async (ctx) => quests.quest('task', ctx, orbitdb))
 bot.command('proposta', async (ctx) => quests.quest('proposal', ctx, orbitdb))
 bot.command('propongo', async (ctx) => quests.quest('proposal', ctx, orbitdb))
 bot.command('fare', async (ctx) => quests.quest('todo', ctx, orbitdb))
 
 //create new request
+bot.command('richiedo', async (ctx) => quests.quest('request', ctx, orbitdb))
 bot.command('bisogno', async (ctx) => quests.quest('request', ctx, orbitdb))
 bot.command('richiesta', async (ctx) => quests.quest('request', ctx, orbitdb))
 bot.command('vorrei', async (ctx) => quests.quest('request', ctx, orbitdb))
@@ -176,24 +125,6 @@ bot.command('valuesRemove', async (ctx) => values.valuesRemove(ctx, orbitdb))
 
 //----------------------------------------------------
 
-// bot.on('message', (ctx) => {
-//   // check if the message contains an emoji reaction
-//   if (ctx.message.reactions) {
-//     // iterate through the reactions
-//     for (let i = 0; i < ctx.message.reactions.length; i++) {
-//       let reaction = ctx.message.reactions[i];
-//       let users = reaction.users;
-//       let user_list = users.map(user => user.first_name).join(', ');
-//       reactions.set(reaction.emoji, user_list);
-//     }
-//   }
-// });
-
-// bot.command('list', (ctx) => {
-//   for (let [emoji, users] of reactions) {
-//     ctx.reply(`Emoji: ${emoji} Users: ${users.join(', ')}`);
-//   }
-// });
 
 // ================= ADMIN ===========================
 bot.command('reset', async (ctx) => {
@@ -208,6 +139,21 @@ bot.command('reset', async (ctx) => {
   await appreciationDB.drop()
   await requestsDB.drop()
   ctx.reply('Bot resetted')
+})
+
+bot.command('setLanguage', async (ctx) => {
+  //TODO; check if the user is an admin
+  await settings.setLanguage(ctx)
+})
+
+bot.command('setTheme', async (ctx) => {
+  //TODO; check if the user is an admin
+  await settings.setTheme(ctx)
+})
+
+bot.command('setAdmin', async (ctx) => {
+  //TODO; check if the user is an admin
+  await settings.setAdmin(ctx)
 })
 
 //=========== LIST COMMANDS ===============
@@ -237,7 +183,7 @@ async function leaderboard(ctx) {
   let appreciation = await appreciationDB.get('')//.filter(quest => quest.status === 'ongoing')
 
   // Create a table header
-  ui.getAppreciationTable(appreciation, chatID).then((path) => {
+  UI.getAppreciationTable(appreciation, chatID).then((path) => {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) })
   });
@@ -256,7 +202,7 @@ async function handlequests(ctx) {
   let quests = await questsDB.get('').filter(quest => quest.status === 'ongoing')
 
   // Create a table header
-  ui.getQuestsTable(quests, chatID).then((path) => {
+  UI.getQuestsTable(quests, chatID).then((path) => {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) });
   });
@@ -274,7 +220,7 @@ bot.command('requests', async (ctx) => {
   let requests = await requestsDB.get('')
 
   // Create a table header
-  ui.getRequestsTable(requests, chatID).then((path) => {
+  UI.getRequestsTable(requests, chatID).then((path) => {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) });
   });
@@ -292,7 +238,7 @@ bot.command('offers', async (ctx) => {
   let requests = await requestsDB.get('')
 
   // Create a table header
-  ui.getOffersTable(requests, chatID).then((path) => {
+  UI.getOffersTable(requests, chatID).then((path) => {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) });
   });
