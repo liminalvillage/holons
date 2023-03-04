@@ -33,6 +33,6 @@
   "homepage": "https://github.com/hack-along/hack-along-holons#readme",
   "dependencies": {
     "openzeppelin-solidity": "^3.0.0",
-    "truffle": "^5.1.23"
+    "truffle": "^5.7.9"
   }
 }
