@@ -110,9 +110,9 @@ contract Holon is Appreciative{
     //                      Holon Merge and Fork Functions
     //=============================================================
     // these function will be used by the holon lead to mantain the holon members
-    function newHolon(string calldata _name) external returns (address){
+    function newHolon(string calldata _name, uint _parameter) external returns (address){
         (bool success,) = creator.call(
-                    abi.encodeWithSignature("newHolon(string)", _name)
+                    abi.encodeWithSignature("newHolon(string, uint)", _name, _parameter)
                     );
         require (success, "Holon creation failed");
     }

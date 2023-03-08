@@ -1,5 +1,5 @@
  
-const Holon = artifacts.require("./Holon.sol")
+const Holons = artifacts.require("./Holons.sol")
 const HolonFactory = artifacts.require("./HolonFactory.sol")
 const TestToken = artifacts.require("./TestToken.sol")
 
@@ -12,7 +12,7 @@ contract("Holon", async accounts => {
 
     const initHolon = async (from) => {
         const factory = await HolonFactory.deployed()
-        const holon = await factory.newHolon("First", {from:from});
+        const holon = await factory.newHolon("First", 0, {from:from});
         return holon;
     }
 
@@ -37,8 +37,8 @@ contract("Holon", async accounts => {
         it("Creates a new Holon ", async () => {
             factory = await HolonFactory.deployed();
             //create first holon
-            await factory.newHolon("First", { from: owner });
-            holonaddress = await factory.newHolon.call("First");
+            await factory.newHolon("First", 0, { from: owner });
+            holonaddress = await factory.newHolon.call("First", 0);
             const holonlist = await factory.listHolonsOf(owner);
             assert.equal(holonaddress.toString(), holonlist.toString(), "Address mismatch");
         })
@@ -69,11 +69,11 @@ contract("Holon", async accounts => {
         it("Access the first holon", async () => {
             holon = await Holon.at(holonaddress);
             const holonsize = await holon.getSize();
-            assert.equal(holonsize.toString(), "0", "Holon size not equal to 0");
+            assert.equal(holonsize.toString(), "0", "Holon size not equal to 0"); //TODO: IMPLEMENT BETTER TEST
         })
 
         it("Creates a new holon from holon", async () => {
-            await holon.newHolon("asdasd", {from:owner});
+            await holon.newHolon(0, "asdasd", 0 ,{from:owner});
             assert((await factory.toAddress("asdasd")));
         })
 
@@ -252,12 +252,12 @@ contract("Holon", async accounts => {
 
         it("Tests Recursive Reward", async () => {
             //create two holons
-            await factory.newHolon("A", { from: owner });
-            let A =  await factory.newHolon.call("A");
+            await factory.newHolon("A", 0, { from: owner });
+            let A =  await factory.newHolon.call("A", 0);
             let holonA = await Holon.at(A);
 
-            await factory.newHolon("B", { from: owner });
-            let B = await factory.newHolon.call("B");
+            await factory.newHolon("B", 0, { from: owner });
+            let B = await factory.newHolon.call("B", 0);
             let holonB = await Holon.at(B);
 
             //add holon members and normal members

@@ -22,14 +22,19 @@
     </div>
     <div class="m-grid-outer -mt-20">
       <div class="m-grid-container" name="gridmove-move">
-        <div class="circle row-4 c-3 c-search-outer" key="fixed-position">
-          <div class="c-inner text-white text-2xl">
-            {{ holonName }}
-            <button
-              
-              class="v-step-2 bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2"
-              @click="openAddAppreciationModal(holonaddress, true)"
-            >Send funds to holon</button>
+        <div class="circle v-step-4 row-4 c-3"><div class="c-inner profile-card"><div class="px-6 py-4"><a href="/0x892668b65E46735c8CAE27e7ae8F4FF6066D5317" class=""><h2 title="0x892668b65E46735c8CAE27e7ae8F4FF6066D5317" class="font-bold text-xl text-white">Maija</h2></a></div><div><div recieved="0.611987688822578744"><div title="love received" class="inline-block flex-initial text-xs text-green-500 font-semibold"><svg aria-hidden="true" focusable="false" data-prefix="fas" data-icon="arrow-right" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="svg-inline--fa fa-arrow-right fa-w-14 fa-xs"><path fill="currentColor" d="M190.5 66.9l22.2-22.2c9.4-9.4 24.6-9.4 33.9 0L441 239c9.4 9.4 9.4 24.6 0 33.9L246.6 467.3c-9.4 9.4-24.6 9.4-33.9 0l-22.2-22.2c-9.5-9.5-9.3-25 .4-34.3L311.4 296H24c-13.3 0-24-10.7-24-24v-32c0-13.3 10.7-24 24-24h287.4L190.9 101.2c-9.8-9.3-10-24.8-.4-34.3z" class=""></path></svg><svg aria-hidden="true" focusable="false" data-prefix="far" data-icon="heart" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="svg-inline--fa fa-heart fa-w-16"><path fill="currentColor" d="M458.4 64.3C400.6 15.7 311.3 23 256 79.3 200.7 23 111.4 15.6 53.6 64.3-21.6 127.6-10.6 230.8 43 285.5l175.4 178.7c10 10.2 23.4 15.9 37.6 15.9 14.3 0 27.6-5.6 37.6-15.8L469 285.6c53.5-54.7 64.7-157.9-10.6-221.3zm-23.6 187.5L259.4 430.5c-2.4 2.4-4.4 2.4-6.8 0L77.2 251.8c-36.5-37.2-43.9-107.6 7.3-150.7 38.9-32.7 98.9-27.8 136.5 10.5l35 35.7 35-35.7c37.8-38.5 97.8-43.2 136.5-10.6 51.1 43.1 43.5 113.9 7.3 150.8z" class=""></path></svg> 56 (26%) <!----></div><!----><br><!----></div><button class="v-step-1 bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2">send ❤️</button></div></div></div>
+        
+        
+        <div class="circle row-4 c-3">
+          <div class="c-inner profile-card text-white text-2xl">
+            <div class="px-6 py-4">
+            
+              {{ holonName }}
+              <button
+                class="v-step-2 bg-blue-500 hover:bg-blue-700 text-white rounded-full px-3 py-1 text-sm font-semibold m-2"
+                @click="openAddAppreciationModal(holonaddress, true)"
+              >Send funds to holon</button>
+            </div>
           </div>
         </div>
         <div

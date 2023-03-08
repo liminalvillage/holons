@@ -28,8 +28,8 @@ contract Zoned is Membrane{
     string public IPFSManifest;                     //IPFS Hash for the JSON containing holon manifest
     address public creator;                         //Link to the holonic parent
     uint public nzones;
-    mapping (uint => address[]) zonemembers;
-    mapping (address => uint) zone;
+    mapping (uint => address[]) public zonemembers;
+    mapping  (address => uint) public zone ;
 
     //======================== Events
     event HolonRewarded (address holon, string token, uint256 amount);
@@ -44,7 +44,8 @@ contract Zoned is Membrane{
         name = _name;
         creator = _creator;
         nzones = _nzones;
-        zone[owner] = _nzones;
+        zone[tx.origin]= _nzones;
+        zonemembers[_nzones].push(tx.origin);
     }
 
     //=============================================================
@@ -87,45 +88,47 @@ contract Zoned is Membrane{
         }
         
         uint256  amount;
-        for (uint256 z = 1;  z < nzones; z++) { //skip zone 0 as unassigned members
-            amount = rewardFunction(z, amount).div(zonemembers[z].length); // divide reward equally for all members in the same zone
-            for (uint256 i = 0; i < zonemembers[z].length; i++) {
-        
-        //     if (totalappreciation > 0 ) // if any appreciation was shared
-        //         amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
-        //     else
-        //         amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+        for (uint256 z = 1;  z <= nzones; z++) { //skip zone 0 as unassigned members
+            if (zonemembers[z].length > 0) {
+                amount = rewardFunction(z, _tokenamount).div(zonemembers[z].length); // divide reward equally for all members in the same zone
+                for (uint256 i = 0; i < zonemembers[z].length; i++) {
+            
+            //     if (totalappreciation > 0 ) // if any appreciation was shared
+            //         amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
+            //     else
+            //         amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
 
-                if (amount > 0 ){
-                    if (etherreward){
-                        (bool success, ) = _members[i].call.value(amount)("");
-                        require(success, "Transfer failed");
+                    if (amount > 0 ){
+                        if (etherreward){
+                            (bool success, ) = zonemembers[z][i].call.value(amount)("");
+                            require(success, "Transfer failed");
+                        }
+                        else {
+                            token.transfer(zonemembers[z][i],amount);
+                            (bool success,) = zonemembers[z][i].call(
+                            abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
+                            );
+                            require(success, "Unable to call the reward function" );
+                        }
+                        // MemberRewarded(_members[i], "ERC20", amount); TODO
                     }
-                    else {
-                        token.transfer(_members[i],amount);
-                        (bool success,) = _members[i].call(
-                        abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
-                        );
-                        require(success, "Unable to call the reward function" );
-                    }
-                    // MemberRewarded(_members[i], "ERC20", amount); TODO
                 }
+        // emit HolonRewarded(address(this), "ERC20", _tokenamount);TODO
             }
-       // emit HolonRewarded(address(this), "ERC20", _tokenamount);TODO
-        }   
+        }
     }
     
     function rewardFunction(uint _zone, uint _totalreward) private returns (uint zonereward)
     {
 
-        return _totalreward / (2 ^ (_zone + 1));
+        return _totalreward / nzones;//(2 ^ (_zone + 1));
     }
 
     function addToZone(address _memberaddress, uint _zone) public/// @notice Explain to an end user what this does
     /// @dev Explain to a developer any extra details
     /// @param Documents a parameter just like in doxygen (must be followed by parameter name)) private returns (uint zonereward)
     {
-        require(zone[msg.sender] > _zone, "members in lower zones cannot promote to higher zones"); // ch
+        require(zone[msg.sender] >= _zone, "members in lower zones cannot promote to higher zones"); // ch
         // TODO Cooloff period for nominations or validation of nomination
        
        
@@ -135,23 +138,23 @@ contract Zoned is Membrane{
             uint previouszone = zone[_memberaddress];
             for (uint256 i = 0; i < zonemembers[previouszone].length; i++) {
                 if (zonemembers[previouszone][i] == _memberaddress) {
-                zonemembers[previouszone][i] = zonemembers[previouszone][zonemembers[previouszone].length]; //swap position with last member
+                zonemembers[previouszone][i] = zonemembers[previouszone][zonemembers[previouszone].length - 1]; //swap position with last member
                 break;
                 }
             }
             zonemembers[previouszone].pop(); // remove last member
         }
         
-        zone[_memberaddress] = _zone;
+        zone[_memberaddress]= _zone;
         zonemembers[_zone].push(_memberaddress);
     }
     //=============================================================
     //                      Holon Merge and Fork Functions
     //=============================================================
     // these function will be used by the holon lead to mantain the holon members
-    function newHolon(string calldata _name) external returns (address){
+    function newHolon(string calldata _name, uint _parameter) external returns (address){
         (bool success,) = creator.call(
-                    abi.encodeWithSignature("newHolon(string)", _name)
+                    abi.encodeWithSignature("newHolon(string,uint)", _name, _parameter)
                     );
         require (success, "Holon creation failed");
     }

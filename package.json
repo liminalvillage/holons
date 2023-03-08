@@ -1,22 +1,20 @@
 {
-  "name": "hack-along-holons",
+  "name": "Holons",
   "version": "1.0.0",
   "description": "Create holons, give appreciation, share rewards",
   "main": "index.html",
-
   "scripts": {
-        "test": "truffle test",
-        "deploy": "truffle deploy",
-        "compile": "truffle compile",
-        "install-deps": "npm i && cd frontend && npm i && cd ..",
-        "serve": "cd frontend && npm run serve",
-        "build": "cd frontend && npm run build",
-        "lint": "cd frontend && npm run lint"
+    "test": "truffle test",
+    "deploy": "truffle deploy",
+    "compile": "truffle compile",
+    "install-deps": "npm i && cd frontend && npm i && cd ..",
+    "serve": "cd frontend && npm run serve",
+    "build": "cd frontend && npm run build",
+    "lint": "cd frontend && npm run lint"
   },
-
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hack-along/hack-along-holons.git"
+    "url": "git+https://github.com/liminalvillage/holons.git"
   },
   "keywords": [
     "Team",
@@ -30,14 +28,14 @@
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/hack-along/hack-along-holons/issues"
+    "url": "https://github.com/liminalvillage/holons/issues"
   },
-  "homepage": "https://github.com/hack-along/hack-along-holons#readme",
+  "homepage": "https://holons.io",
   "dependencies": {
-    "@truffle/hdwallet-provider": "^1.0.35",
+    "@truffle/hdwallet-provider": "^1.4.0",
     "fortmatic": "^2.0.6",
     "npm": "^6.14.5",
     "openzeppelin-solidity": "^3.0.0",
-    "truffle": "^5.1.23"
+    "truffle": "^5.3.10"
   }
 }

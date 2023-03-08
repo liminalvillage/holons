@@ -1,5 +1,6 @@
 pragma solidity ^0.6;
-
+import "./IHolonFactory.sol";
+import "./Holon.sol";
 
 
 /*
@@ -22,19 +23,39 @@ contract Holons {
     event NewHolon (string name, address addr);
 
    
-    address[] versions;
+    address[] public versions;
     uint public latestversion;
 
     mapping (address => address[]) private holons;
     mapping (string => address) public toAddress;   //TODO: Remove on deploy
  
+    constructor ()
+        public
+    {
+        latestversion = 0;
+        Holon firstholon = new Holon(address(this), "template");
+        versions.push(address(firstholon));
+    }
+
+
+      /// @dev Creates an new holon and adds it to the global and personal list
+    /// @param _name The name of the holon.
+    /// @return Address of the new holon
+
+   function newHolon(string memory _name, uint _parameter) public returns (address)
+    {
+        (bool success, bytes memory result) = versions[0].delegatecall(abi.encodeWithSignature("newHolon(string,uint)", _name,_parameter));
+        require (success, "delegate call failed");
+        return abi.decode(result, (address));
+    }
+
     /// @dev Creates an new holon and adds it to the global and personal list
     /// @param _name The name of the holon.
     /// @return Address of the new holon
 
-   function newHolon(string memory _name) public returns (address)
+   function newHolon(uint _version, string memory _name, uint _parameter) public returns (address)
     {
-        (bool success, bytes memory result) = versions[latestversion].delegatecall(abi.encodeWithSignature("newHolon(string)", _name));
+        (bool success, bytes memory result) = versions[_version].delegatecall(abi.encodeWithSignature("newHolon(string,uint)", _name,_parameter));
         require (success, "delegate call failed");
         return abi.decode(result, (address));
     }
@@ -55,6 +76,7 @@ contract Holons {
     }
 
     function addVersion(address versionaddress) public{
+        //TODO: Check if community wants it before adding
         latestversion += 1;
         versions.push(versionaddress); 
     }
