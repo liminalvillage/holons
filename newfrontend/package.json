@@ -8,7 +8,7 @@
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint"
   },
-  "keywords": ["holons", "hubs", "liminal", "village", "network", "web3", "ethereum", "dapp", "decentralized", "app",  "blockchain", "crypto", "cryptocurrency", "cryptocurrencies", "cryptoassets", "cryptoeconomics", "liquid","murmorations"],
+  "keywords": ["holons", "hubs", "liminal", "village", "network", "web3", "ethereum", "dapp", "decentralized", "app",  "blockchain", "crypto", "cryptocurrency", "cryptocurrencies", "cryptoassets", "cryptoeconomics", "liquid","murmurations"],
   "dependencies": {
     "babel": "^6.23.0",
     "babel-runtime": "^6.26.0",

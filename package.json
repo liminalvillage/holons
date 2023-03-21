@@ -36,6 +36,6 @@
     "fortmatic": "^2.0.6",
     "npm": "^6.14.5",
     "openzeppelin-solidity": "^3.0.0",
-    "truffle": "^5.3.10"
+    "truffle": "^5.8.1"
   }
 }

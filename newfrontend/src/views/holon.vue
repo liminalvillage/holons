@@ -304,7 +304,7 @@ export default {
         fetchaddress = base + file
       } else if (address.startsWith('http')) { // WEB ADDRESS
         type = 'WEB'
-        if (!address.endsWith('.json')) address += '/murmurations.json'
+        // if (!address.endsWith('.json')) address += '/murmurations.json'
         fetchaddress = 'https://api.allorigins.win/get?url=' + address
       } else if (address.startsWith('0x')) { // ETHEREUM ADDRESS
         type = 'ETHEREUM'
