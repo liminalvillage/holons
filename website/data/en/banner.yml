@@ -9,4 +9,4 @@ banner:
   button:
     enable : true
     label : "Open the App"
-    link : "https://holons.hackalong.io"
+    link : "https://app.holons.io"

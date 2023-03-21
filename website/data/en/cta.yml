@@ -8,4 +8,4 @@ cta:
   button:
     enable : true
     label : "Go to the demo dApp"
-    link : "https://holons.hackalong.io"
+    link : "https://app.holons.io"
