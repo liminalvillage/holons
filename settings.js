@@ -9,7 +9,7 @@ function getDefaultSettings(chatID) {
     return {
       _id: chatID,
       language: 'en',
-      theme: 'light',
+      theme: 'dark',
       level: 0,
       admin: ''
     }

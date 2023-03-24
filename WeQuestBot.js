@@ -14,8 +14,6 @@ import * as request from './requests.js'
 import { Telegraf } from 'telegraf';
 const bot = new Telegraf(config.telegram);
 //bot.use(Telegraf.log())
-bot.start((ctx) => ctx.reply(i18next.t('welcome')))
-bot.help((ctx) => ctx.reply(i18next.t('help')))
 bot.launch();
 
 import fs from 'fs';
