@@ -10,6 +10,7 @@
   "author": "Roberto Valenti",
   "license": "ISC",
   "dependencies": {
+    "@walletconnect/web3wallet": "^1.4.0",
     "chatgpt": "^4.4.1",
     "debug": "^4.3.4",
     "discord.js": "^14.7.1",
@@ -22,6 +23,7 @@
     "openai": "^3.1.0",
     "orbit-db": "^0.29.0",
     "puppeteer": "^18.1.0",
-    "telegraf": "^4.11.2"
+    "telegraf": "^4.11.2",
+    "web3": "^1.8.2"
   }
 }

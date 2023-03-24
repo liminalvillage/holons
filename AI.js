@@ -2,9 +2,14 @@ import { Configuration, OpenAIApi } from 'openai';
 
 const configuration = new Configuration({
     apiKey: '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',
-    model: 'davinci'
+    model: 'gpt-4'
   });
   const AI = new OpenAIApi(configuration);
+
+
+export async function appreciate (prompt){
+    return 
+}
 
 export async function assignRoles(actions, roles) {
 

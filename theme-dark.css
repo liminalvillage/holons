@@ -1,7 +1,12 @@
+body {
+    background-color: #252728;
+    color: #ffffff;
+}
+
 thead,
 tfoot {
-    background-color: #57666c;
-    color: #fff;
+    background-color: #000000;
+    color: #ffffff;
 }
 
 tbody {
@@ -33,7 +38,7 @@ td {
 
 
 :root {
-    --primary-color: white;
+    --primary-color: rgb(0, 0, 0);
     --secondary-color: rgb(61, 68, 73);
     --highlight-color: #3282b8;
   

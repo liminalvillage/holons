@@ -2,6 +2,7 @@ import { Markup } from 'telegraf';
 import ngeohash from 'ngeohash'
 
 import Validator from 'jsonschema';
+import schema from './schemas/offers_wants_prototype-v0.0.2.json' assert { type: "json" };
 var v = new Validator.Validator();
 
 // Address, to be embedded on Person
@@ -21,28 +22,30 @@ var addressSchema = {
 };
 
 // Person
-var schema = {
-  "id": "/SimplePerson",
-  "type": "object",
-  "properties": {
-    "name": {"type": "string"},
-    "address": {"$ref": "/SimpleAddress"},
-    "votes": {"type": "integer", "minimum": 1}
-  }
-};
+// var schema = {
+//   "id": "/SimplePerson",
+//   "type": "object",
+//   "properties": {
+//     "name": {"type": "string"},
+//     "address": {"$ref": "/SimpleAddress"},
+//     "votes": {"type": "integer", "minimum": 1}
+//   }
+// };
 
-var p = {
-  "name": "Barack Obama",
-  "address": {
-    "lines": [ "1600 Pennsylvania Avenue Northwest" ],
-    "zip": "DC 20500",
-    "city": "Washington",
-    "country": "USA"
-  },
-  "votes": "lots"
-};
+// var p = {
+//   "name": "Barack Obama",
+//   "address": {
+//     "lines": [ "1600 Pennsylvania Avenue Northwest" ],
+//     "zip": "DC 20500",
+//     "city": "Washington",
+//     "country": "USA"
+//   },
+//   "votes": "lots"
+// };
 
-v.addSchema(addressSchema, '/SimpleAddress');
+var p = {"linked_schemas":["offers_wants_prototype-v0.0.2"],"profile_url":"https:\/\/hamlets.communityforge.net\/ad\/150\/murmurations.json","primary_url":"https:\/\/hamlets.communityforge.net","geolocation":{"lat":46.8145624,"lon":8.239973599999999},"country":"CH","title":"A traditional stress-tested dolly from the orient.","description":"\u003Cp\u003E\u003Cstrong\u003EDolus euismod \u003C\/strong\u003Ehos luptatum olim paratus similis. Bene gravis in letalis nisl odio pagus qui saluto validus. Abdo antehabeo consectetuer esse exputo os similis voco. Causa ea iaceo incassum macto minim nibh ratis sed. Humo macto nutus populus tum utrum velit vero vulputate zelus.\u003C\/p\u003E\r\n\r\n\u003Cp\u003EBlandit feugiat macto quibus. Elit macto mauris nobis nostrud patria secundum te venio. Commoveo interdico mos neque pagus paulatim scisco. Aliquam diam esse iriure jus magna quibus utrum vindico. Abbas adipiscing at distineo iustum olim velit.\u003C\/p\u003E","exchange_type":"want","item_type":"service","transaction_type":["receive-donate","borrow-lend"],"geographic_scope":"local","expires_at":1702422000,"tags":["Business Services \u0026 Clerical"],"contact_details":{"contact_form":"https:\/\/hamlets.communityforge.net\/user\/28\/contact"}}
+
+//v.addSchema(addressSchema, '/SimpleAddress');
 console.log(v.validate(p, schema));
 
 // HANDLES REQUESTS ====================================================
@@ -97,7 +100,7 @@ export async function offer(ctx, orbitdb) {
     }
     ctx.reply(`${ctx.from.username}'s request for "${request.title}" has been added to the list.`) 
 
-    ctx.reply(createMessage(request), markup).then((ctx) => {
+    ctx.reply(createMessage(request), createProperties()).then((ctx) => {
         // Add the message id to the quest
         request._id = ctx.message_id;
         requestsDB.put(request)
@@ -155,7 +158,8 @@ const markup = Markup.inlineKeyboard([[
 ], [
     Markup.button.callback('❌ Cancel', 'cancel_request'),
     Markup.button.callback('✔️ Complete', 'complete_request')
-]]
+]
+]
 )
 
 
@@ -170,6 +174,15 @@ function createMessage(request) {
     return message;
 }
 
+// create buttons for each field of the schema
+function createProperties( ){
+    let buttons = []
+    Object.keys(schema.properties).forEach((key) => {
+        buttons.push([Markup.button.callback(key, 'https://t.me/Bot?quests='+key), Markup.button.callback("Claim", 'claim_' + key)])
+    })
+    return Markup.inlineKeyboard(buttons)
+}
+    
 
 
     

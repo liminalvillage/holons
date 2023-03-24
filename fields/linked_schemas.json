@@ -1,0 +1,22 @@
+{
+  "title": "Linked Schemas",
+  "description": "A list of schemas against which a profile must be validated (schema names must be alphanumeric with underscore(_) spacers and dash(-) version separator, e.g., my_data_schema-v1.0.0)",
+  "type": "array",
+  "items": {
+    "type": "string",
+    "pattern": "^[a-z][a-z0-9_]{7,97}-v[0-9]+\\.[0-9]+\\.[0-9]+$"
+  },
+  "minItems": 1,
+  "uniqueItems": true,
+  "metadata": {
+    "creator": {
+      "name": "Murmurations Network",
+      "url": "https://murmurations.network"
+    },
+    "field": {
+      "name": "linked_schemas",
+      "version": "0.0.1"
+    },
+    "purpose": "This field is required in all Murmurations schemas to ensure that a profile is valid and can be posted to the Index. It is the only required field in the default-v2.0.0 schema, which is the schema used by the Index to process incoming profiles."
+  }
+}

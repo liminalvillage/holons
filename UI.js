@@ -14,6 +14,7 @@ const browser  = await puppetteer.launch({
 
 
 export async function getQuestImage(quest) {
+  const lang = await getLanguage(chatID)
   const element = `
   <table>
     <tr><th>${i18next.t('Quest')}:</th><td>${quest.title}</td></tr>
@@ -68,6 +69,7 @@ export async function getQuestsTable(quests, chatID) {
 
 export async function getRequestsTable(requests, chatID) {
   
+  const lang = await getLanguage(chatID)
   const needs = requests.filter(request => request.type == 'request')
   const offers = requests.filter(request => request.type == 'offer')
   
@@ -103,7 +105,7 @@ export async function getRequestsTable(requests, chatID) {
 
 export async function getOffersTable(requests, chatID) {
   
-
+  const lang = await getLanguage(chatID)
   const offers = requests.filter(request => request.type == 'offer')
   
   const rows = []
@@ -138,6 +140,7 @@ export async function getOffersTable(requests, chatID) {
 
 
 export async function getAppreciationTable(appreciation, chatID) {
+  
   const rows = []
   const sortedUsers = Object.keys(appreciation).sort((a, b) => {
     return appreciation[b].received - appreciation[b].sent - (appreciation[a].received - appreciation[a].sent);

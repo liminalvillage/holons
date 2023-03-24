@@ -7,7 +7,7 @@ let settingsDB
 
 function getDefaultSettings(chatID) {
     return {
-      _id: 'chatID',
+      _id: chatID,
       language: 'en',
       theme: 'light',
       level: 0,
@@ -18,8 +18,7 @@ function getDefaultSettings(chatID) {
 export async function init (orbitdb){
 i18next
   .init({
-    debug: true,
-    lng: 'it',
+    lng: 'en',
     resources: locales,
     fallbackLng: 'en',
   });

@@ -1,0 +1,23 @@
+{
+  "title": "Tags",
+  "description": "Keywords relevant to this entity and its activities or attributes",
+  "type": "array",
+  "items": {
+    "type": "string"
+  },
+  "uniqueItems": true,
+  "metadata": {
+    "creator": {
+      "name": "Murmurations Network",
+      "url": "https://murmurations.network"
+    },
+    "field": {
+      "name": "tags",
+      "version": "0.0.1"
+    },
+    "context": [
+      "https://schema.org/keywords"
+    ],
+    "purpose": "Tags holds a list of unique keywords that are used to describe any aspect of the entity, such that there is enough information to fit the entity into a variety of data taxonomies."
+  }
+}

@@ -28,7 +28,18 @@
             "Appreciated": "Appreciated",
             "Joined by": "Joined by",
             "Status": "Status",
-            "usage": "Please enter a title as part of the command. Example: /{{type}} do the dishes"
+            "usage": "Please enter a title as part of the command. Example: /{{type}} do the dishes",
+            "Active Quests":  "Active Quests",
+            "ID": "ID",
+            "People": "People",
+            "Appreciators": "Appreciation",
+            "Take": "❤️ Take",
+            "Active Requests": "Active Requests",
+            "Active Offers": "Active Offers",
+            "Person": "Person",
+            "Request": "Request",
+             "Offer": "Offer",
+            "Geolocate": "Geolocate"
         }
     },
     "it": {
@@ -60,7 +71,18 @@
             "Appreciation": "Apprezzamento",
             "Joined by": "In collaborazione con",
             "Status": "Stato",
-            "usage": "Specifica un titolo come parte del comando. Esempio: /{{type}} cucinare la cena"
+            "usage": "Specifica un titolo come parte del comando. Esempio: /{{type}} preparare la cena",
+            "Active Quests":  "Missioni",
+            "ID": "ID",
+            "People": "Partecipanti",
+            "Appreciators": "Apprezzanti",
+            "Take": "❤️ Prendi",
+            "Active Requests": "Richieste",
+            "Active Offers": "Offerte",
+            "Person": "Utente",
+            "Request": "Richiesta",
+            "Offer": "Offerta",
+            "Geolocate": "Geolocalizza"
             
         }
     }

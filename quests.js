@@ -248,6 +248,7 @@ export async function complete(ctx, orbitdb) {
         updateMessage(ctx, quest);
         // Update the db
         questsDB.put(quest);
+  
 
     } else {
         ctx.reply(`Only the creator of the quest can mark it as completed.`, { reply_to_message_id: messageID });
@@ -280,6 +281,7 @@ export async function complete(ctx, orbitdb) {
         }
     }
     // ================================ APPRECIATION ==========================
+    ctx.reply(`Quest "${quest.title}" completed! 🎊 `, { reply_to_message_id: messageID });
 }
 
 export async function sendAppreciation(ctx, orbitdb) {
@@ -460,8 +462,8 @@ function markup(quest,language) {
     if (quest.type === "request" || quest.type === "offer") {
         mu = Markup.inlineKeyboard([[
             Markup.button.callback(i18next.t('Geolocate',{lng:language}), 'geolocate', { requestlocation: true }),
-            Markup.button.callback(i18next.t('❤️ Take',{lng:language}), 'popup'),
-            Markup.button.callback(i18next.t('❌ Cancel',{lng:language}), 'cancel_quest'),
+            Markup.button.callback(i18next.t('Take',{lng:language}), 'join_quest'),
+            Markup.button.callback(i18next.t('Cancel',{lng:language}), 'cancel_quest'),
         ]])
     }
 

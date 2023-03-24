@@ -1,7 +1,7 @@
 "use strict"
 import * as settings from './settings.js'
 import config from "./config.json" assert { type: "json" };
-
+import * as request from './requests.js'
 
 //  ------------------------------------ Import the discord.js module
 // import * as Discord from 'discord.js';
@@ -21,6 +21,7 @@ bot.launch();
 import fs from 'fs';
 import * as UI from './UI.js';
 import * as AI from './AI.js';
+import * as WEB3 from './WEB3.js';
 
 import { create } from 'ipfs'
 import OrbitDB from 'orbit-db'
@@ -30,13 +31,15 @@ import * as values from './values.js'
 
 let orbitdb
 
+let ipfs
+
 async function init() {
-  //const ipfs = await create({ address:"127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb'})
-
-  const ipfs = await create()
+  if (config.mode === 'production ')
+    ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
+  else
+    ipfs = await create()
   orbitdb = await OrbitDB.createInstance(ipfs)
-  settings.init(orbitdb)
-
+  await settings.init(orbitdb)
 
   const options = {
     // Setup write access
@@ -59,7 +62,10 @@ init();
 //   }
 // });
 
+// =========================== bot commands ===========================
+
 //send appreciation
+bot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
 bot.command('appreciate', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
 bot.command('apprezza', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
 bot.command('maslow', (ctx) => UI.showMaslow(2))
@@ -125,13 +131,56 @@ bot.command('valuesRemove', async (ctx) => values.valuesRemove(ctx, orbitdb))
 
 //----------------------------------------------------
 
+//=========== LIST COMMANDS ===============
+
+//Set up a command to display the appreciation score for each user
+bot.command('leaderboard', (ctx) => leaderboard(ctx))
+bot.command('appreciation', (ctx) => leaderboard(ctx))
+bot.command('credits', (ctx) => leaderboard(ctx))
+bot.command('scores', (ctx) => leaderboard(ctx))
+bot.command('score', (ctx) => leaderboard(ctx))
+bot.command('points', (ctx) => leaderboard(ctx))
+
+bot.command('apprezzamento', (ctx) => leaderboard(ctx))
+bot.command('crediti', (ctx) => leaderboard(ctx))
+bot.command('punti', (ctx) => leaderboard(ctx))
+bot.command('punteggio', (ctx) => leaderboard(ctx))
+bot.command('punteggi', (ctx) => leaderboard(ctx))
+bot.command('classifica', (ctx) => leaderboard(ctx))
+
+
+// Set up a command to display the quests
+bot.command('tasks', (ctx) => questboard(ctx))
+bot.command('quests', (ctx) => questboard(ctx))
+bot.command('todos', (ctx) => questboard(ctx))
+bot.command('proposals', (ctx) => questboard(ctx))
+
+bot.command('compiti', (ctx) => questboard(ctx))
+bot.command('missioni', (ctx) => questboard(ctx))
+bot.command('todos', (ctx) => questboard(ctx))
+bot.command('proposte', (ctx) => questboard(ctx))
+
+// Set up a command to display the requests
+bot.command('requests', (ctx) => requestsboard(ctx))
+bot.command('offers', (ctx) => offersboard(ctx))
+bot.command('wishes', (ctx) => requestsboard(ctx))
+bot.command('needs', (ctx) => requestsboard(ctx))
+
+
+bot.command('richieste', (ctx) => requestsboard(ctx))
+bot.command('offerte', (ctx) => offersboard(ctx))
+bot.command('sogni', (ctx) => requestboard(ctx))
+bot.command('bisogni', (ctx) => requestboard(ctx))
 
 // ================= ADMIN ===========================
 bot.command('reset', async (ctx) => {
+  if (!orbitdb) return
 
   //TODO; check if the user is an admin
   let chatID = ctx.message.chat.id;
-  //ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
+  // try{
+  //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
+  // }catch(e){ console.log(e)}
   let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
   let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
   let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
@@ -156,22 +205,6 @@ bot.command('setAdmin', async (ctx) => {
   await settings.setAdmin(ctx)
 })
 
-//=========== LIST COMMANDS ===============
-
-//Set up a command to display the appreciation score for each user
-bot.command('leaderboard', (ctx) => leaderboard(ctx))
-bot.command('appreciation', (ctx) => leaderboard(ctx))
-bot.command('credits', (ctx) => leaderboard(ctx))
-bot.command('scores', (ctx) => leaderboard(ctx))
-bot.command('score', (ctx) => leaderboard(ctx))
-bot.command('points', (ctx) => leaderboard(ctx))
-
-// Set up a command to display the quests
-bot.command('tasks', (ctx) => handlequests(ctx))
-bot.command('quests', (ctx) => handlequests(ctx))
-bot.command('todos', (ctx) => handlequests(ctx))
-bot.command('proposals', (ctx) => handlequests(ctx))
-
 // Set up a command to display the requests
 async function leaderboard(ctx) {
   if (!orbitdb) return
@@ -192,7 +225,8 @@ async function leaderboard(ctx) {
 
 
 // Set up a command to display the quests
-async function handlequests(ctx) {
+async function questboard(ctx) {
+  if (!orbitdb) return
   // Get a list of incomplete quests
   let chatID = ctx.message.chat.id
 
@@ -209,8 +243,8 @@ async function handlequests(ctx) {
   return;
 }
 
-// Set up a command to display the quests
-bot.command('requests', async (ctx) => {
+async function requestsboard(ctx) {
+  if(!orbitdb) return
   // Get a list of incomplete quests
   let chatID = ctx.message.chat.id
 
@@ -225,10 +259,10 @@ bot.command('requests', async (ctx) => {
     ctx.replyWithPhoto({ source: fs.createReadStream(path) });
   });
   return;
-});
+}
 
-// Set up a command to display the quests
-bot.command('offers', async (ctx) => {
+async function offersboard(ctx) {
+  if (!orbitdb) return
   // Get a list of incomplete quests
   let chatID = ctx.message.chat.id
 
@@ -243,7 +277,9 @@ bot.command('offers', async (ctx) => {
     ctx.replyWithPhoto({ source: fs.createReadStream(path) });
   });
   return;
-});
+
+}
+
 
 
 
