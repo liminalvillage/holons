@@ -32,10 +32,16 @@ let orbitdb
 let ipfs
 
 async function init() {
-  if (config.mode === 'production ')
+  if (config.mode === 'production')
+  {
+    console.lgo('production mode')
     ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
+  }
   else
+  {
+    console.lgo('development mode')
     ipfs = await create()
+  }
   orbitdb = await OrbitDB.createInstance(ipfs)
   await settings.init(orbitdb)
 

@@ -153,7 +153,6 @@ export async function getAppreciationTable(appreciation, chatID) {
       <th>${score.username}</th>
       <th>${score.sent}</th>
       <th>${score.received}</th>
-      <th>${score.received - score.sent}</th>
     </tr>`
 
     rows.push(row)
@@ -168,7 +167,6 @@ export async function getAppreciationTable(appreciation, chatID) {
           <th scope="col">${i18next.t('name', {lng:language} )}</th>
           <th scope="col">${i18next.t('sent', {lng:language} )}</th>
           <th scope="col">${i18next.t('received', {lng:language} )}</th>
-          <th scope="col">${i18next.t('balance', {lng:language} )}</th>
       </tr>
   </thead>
   <tbody>
