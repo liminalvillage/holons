@@ -1,6 +1,6 @@
  
 const Holon = artifacts.require("./Zoned.sol")
-const HolonFactory = artifacts.require("./ZonedHolonFactory.sol")
+const Holons = artifacts.require("./Holons.sol")
 const TestToken = artifacts.require("./TestToken.sol")
 
 contract("ZonedHolon", async accounts => {
@@ -14,7 +14,7 @@ contract("ZonedHolon", async accounts => {
     const unknownMember = accounts[5]
 
     const initHolon = async (from) => {
-        const factory = await HolonFactory.deployed()
+        const factory = await Holons.deployed()
         //const holon = await Holon.deployed() // factory.newHolon("First", {from:from});
         return holon;
     }
@@ -41,11 +41,11 @@ contract("ZonedHolon", async accounts => {
         let secondholon;
 
         it("Creates a new Holon ", async () => {
-            factory = await HolonFactory.deployed();
+            factory = await Holons.deployed();
             
             //create first holon
-            await factory.newHolon("First", 5, { from: owner });
-            holonaddress = await factory.newHolon.call("First", 5);
+            await factory.newHolon("Zoned","Zolon", 5,  { from: owner });
+            holonaddress = await factory.newHolon.call("Zoned","Zolon", 5,  { from: owner });
             const holonlist = await factory.listHolonsOf(owner);
             assert.equal(holonaddress.toString(), holonlist.toString(), "Address mismatch");
         })

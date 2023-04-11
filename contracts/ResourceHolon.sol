@@ -1,4 +1,5 @@
-pragma solidity ^0.6;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8;
 pragma experimental ABIEncoderV2;
 
 
@@ -49,7 +50,7 @@ contract ResourceHolon
     event NewRequest(string _label , uint recipeID, uint amount );
     event NewRecipe(string _label);
 
-    constructor (string memory _label, uint _id) public
+    constructor (string memory _label, uint _id) 
     {
         nrequests = 0;
         nrecipes = 0;
@@ -73,7 +74,7 @@ contract ResourceHolon
     function requestRecipe(uint _recipeID, uint _amount, string memory _location) public
     {
         uint[] memory trueprice = getTruePrice(_recipeID); //calculate the cost per unit
-        Request memory order = Request (msg.sender, _recipeID,  trueprice, _amount, _location, 0 , now);
+        Request memory order = Request (msg.sender, _recipeID,  trueprice, _amount, _location, 0 , block.timestamp);
         nrequests += _amount;
         requests.push(order);
 

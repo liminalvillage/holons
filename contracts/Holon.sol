@@ -1,4 +1,5 @@
-pragma solidity ^0.6;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8;
 
 /*
     Copyright 2020, Roberto Valenti
@@ -17,16 +18,17 @@ pragma solidity ^0.6;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
-import "./Appreciative.sol";
+import "./IHolonFactory.sol";
+import "./Membrane.sol";
 
-contract Holon is Appreciative{
+contract Holon is Membrane{
     using SafeMath for uint256;
 
      //======================== Public holon variables
-    string public name;                             //The name of the holon
-    string public version = "0.1";                  //Version of the holon contract
-    string public IPFSManifest;                     //IPFS Hash for the JSON containing holon manifest
-    address public creator;                         //Link to the holonic parent
+    string public name;                      //The name of the holon
+    string public version;                   //Version of the holon contract
+    string public flavor;                    //Type of the holon
+    address public creator;                  //Link to the holonic parent
 
     //======================== Events
     event HolonRewarded (address holon, string token, uint256 amount);
@@ -35,37 +37,13 @@ contract Holon is Appreciative{
     /// @notice Constructor to create an holon
     ///  created the Holon contract, the factory needs to be deployed first
 
-    constructor (address _creator, string  memory _name)
-        public
-    {
-        name = _name;
-        creator = _creator;
-    }
-
-    //=============================================================
-    //                      Reward Functions
-    //=============================================================
-    //these function will be called when a payment is sent to the holon
-
-    receive() 
-        external 
-        payable 
-    {
-        reward(address(0),msg.value);
-    }
-   
-    fallback()
-        external
-        payable
-    {
-        reward(address(0),msg.value);
-    }
 
     // /// @dev Splits the ERC20 token amount sent to the holon according to the appreciation
     // /// @notice If appreciation is not shared, it splits it equally across each member (calling BlanketReward)
-    // function reward(address _tokenaddress, uint256 _tokenamount)
+    //  function reward(address _tokenaddress, uint256 _tokenamount)
     //     public
     //     payable
+    //     override
     // {
     //     bool etherreward;
     //     IERC20 token;
@@ -90,7 +68,7 @@ contract Holon is Appreciative{
 
     //         if (amount > 0 ){
     //             if (etherreward){
-    //                 (bool success, ) = _members[i].call.value(amount)("");
+    //                 (bool success, ) = _members[i].call{value: amount}("");
     //                 require(success, "Transfer failed");
     //             }
     //             else {
@@ -105,16 +83,20 @@ contract Holon is Appreciative{
     //     }
     //     emit HolonRewarded(address(this), "ERC20", _tokenamount);
     // }
- 
+
     //=============================================================
-    //                      Holon Merge and Fork Functions
+    //                      Holon Creation, Fork and Merge Functions
     //=============================================================
     // these function will be used by the holon lead to mantain the holon members
-    function newHolon(string calldata _name, uint _parameter) external returns (address){
-        (bool success,) = creator.call(
-                    abi.encodeWithSignature("newHolon(string, uint)", _name, _parameter)
-                    );
-        require (success, "Holon creation failed");
+    function newHolon(string calldata _flavor, string calldata _name, uint _parameter) external returns (address){
+        IHolonFactory factory = IHolonFactory(creator);
+        return factory.newHolon(_flavor, _name, _parameter);
+        
+        // (bool success, bytes memory data ) = creator.call(
+        //             abi.encodeWithSignature("newHolon(string, uint)", _name, _parameter)
+        //             );
+        // emit Response(success, data);
+        // require (success, "Holon creation failed");
     }
 
     // function joinHolon(address _memberaddress, string memory _membername)
@@ -145,19 +127,57 @@ contract Holon is Appreciative{
     //      this.joinHolon(address(newholon),_holonname); // Link to fork
     // }
 
-    //=============================================================
-    //                      Getters & Setters
-    //=============================================================
-    // these functions will be used to set and retrieve information about the holon
- 
-    /// @dev Sets the hash of the latest IPFS manifest for the holon
-    /// @notice Only the holon lead can change this!
-    /// @param _IPFSHash The hash of the IPFS manifest
-
-    function setManifest(string calldata _IPFSHash)
-        external
+      receive() 
+        external 
+        payable 
     {
-        require (msg.sender == owner,"Only owner can set the manifest");
-        IPFSManifest = _IPFSHash;
+        reward(address(0),msg.value);
+    }
+   
+    fallback()
+        external
+        payable
+    {
+        reward(address(0),msg.value);
+    }
+
+
+    function reward(address _tokenaddress, uint256 _tokenamount)
+        public
+        payable
+        virtual
+    {
+        bool etherreward = false;
+        IERC20 token;
+
+        if (msg.value  > 0 && _tokenaddress == address(0)) {
+            _tokenamount = msg.value;
+            etherreward = true;
+        }
+         else {
+            //Load ERC20 token information
+            token = IERC20(_tokenaddress);
+            require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
+        }
+        
+        uint256 amount = _tokenamount.div(_members.length); // use blanket unit reward value.
+
+        for (uint256 i = 0; i < _members.length; i++) {
+            if (amount > 0 ){
+                if (etherreward){
+                    (bool success, ) = _members[i].call{value: amount}("");
+                    require(success, "Transfer failed");
+                }
+                else {
+                    token.transfer(_members[i],amount);
+                    (bool success,) = _members[i].call(
+                    abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
+                    );
+                    require(success, "Unable to call the reward function" );
+                }
+                MemberRewarded(_members[i],etherreward? "ETHER":"ERC20", amount);
+            }
+        }
+        emit HolonRewarded(address(this), etherreward? "ETHER":"ERC20", _tokenamount);
     }
 }

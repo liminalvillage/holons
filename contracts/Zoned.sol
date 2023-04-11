@@ -1,4 +1,5 @@
-pragma solidity ^0.6;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8;
 
 /*
     Copyright 2020, Roberto Valenti
@@ -17,32 +18,27 @@ pragma solidity ^0.6;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
-import "./Membrane.sol";
+import "./IHolonFactory.sol";
+import "./Holon.sol";
 
-contract Zoned is Membrane{
+ contract Zoned is Holon{
     using SafeMath for uint256;
 
      //======================== Public holon variables
-    string public name;                             //The name of the holon
-    string public version = "0.1";                  //Version of the holon contract
-    string public IPFSManifest;                     //IPFS Hash for the JSON containing holon manifest
-    address public creator;                         //Link to the holonic parent
+  
     uint public nzones;
     mapping (uint => address[]) public zonemembers;
     mapping  (address => uint) public zone ;
-
-    //======================== Events
-    event HolonRewarded (address holon, string token, uint256 amount);
-    event MemberRewarded (address member,string token, uint256 amount);
 
     /// @notice Constructor to create an holon
     ///  created the Holon contract, the factory needs to be deployed first
 
     constructor (address _creator, string  memory _name, uint _nzones)
-        public
     {
         name = _name;
         creator = _creator;
+        flavor = "Zoned";
+
         nzones = _nzones;
         zone[tx.origin]= _nzones;
         zonemembers[_nzones].push(tx.origin);
@@ -52,20 +48,6 @@ contract Zoned is Membrane{
     //                      Reward Functions
     //=============================================================
     //these function will be called when a payment is sent to the holon
-
-    receive() 
-        external 
-        payable 
-    {
-        reward(address(0),msg.value);
-    }
-   
-    fallback()
-        external
-        payable
-    {
-        reward(address(0),msg.value);
-    }
 
     /// @dev Splits the ERC20 token amount sent to the holon according to the appreciation
     /// @notice If appreciation is not shared, it splits it equally across each member (calling BlanketReward)
@@ -100,7 +82,7 @@ contract Zoned is Membrane{
 
                     if (amount > 0 ){
                         if (etherreward){
-                            (bool success, ) = zonemembers[z][i].call.value(amount)("");
+                            (bool success, ) = zonemembers[z][i].call{value: amount}("");
                             require(success, "Transfer failed");
                         }
                         else {
@@ -147,59 +129,5 @@ contract Zoned is Membrane{
         
         zone[_memberaddress]= _zone;
         zonemembers[_zone].push(_memberaddress);
-    }
-    //=============================================================
-    //                      Holon Merge and Fork Functions
-    //=============================================================
-    // these function will be used by the holon lead to mantain the holon members
-    function newHolon(string calldata _name, uint _parameter) external returns (address){
-        (bool success,) = creator.call(
-                    abi.encodeWithSignature("newHolon(string,uint)", _name, _parameter)
-                    );
-        require (success, "Holon creation failed");
-    }
-
-    // function joinHolon(address _memberaddress, string memory _membername)
-    //     public
-    // {
-    //     require(isMember[_memberaddress] == false, "Member was already added");
-    //     require(toAddress[_membername] == address(0), "Name is already taken");
-    //     _members.push(address(uint160(_memberaddress)));
-    //     toAddress[_membername] = _memberaddress;
-    //     toName[_memberaddress] = _membername;
-    //     //isContributor[_memberaddress] = true;
-
-    //     //emit Joined(_memberaddress, name);
-    // }
-
-    //This function should be called to respect the holonic peer production license.
-    // function spork(string memory _holonname){
-    //    Holon newholon =fork("newname");
-    //    newholon.spoon(address(this))
-    //}
-
-    //This function should be called to respect the holonic peer production license.
-    // function fork(string memory _holonname)
-    //      public
-    // {
-    //      Holon newholon = Holon(factory.newHolon(_holonname));
-    //      newholon.addMember(address(this),"Initiator"); //Link back to origin
-    //      this.joinHolon(address(newholon),_holonname); // Link to fork
-    // }
-
-    //=============================================================
-    //                      Getters & Setters
-    //=============================================================
-    // these functions will be used to set and retrieve information about the holon
- 
-    /// @dev Sets the hash of the latest IPFS manifest for the holon
-    /// @notice Only the holon lead can change this!
-    /// @param _IPFSHash The hash of the IPFS manifest
-
-    function setManifest(string calldata _IPFSHash)
-        external
-    {
-        require (msg.sender == owner,"Only lead can set the manifest");
-        IPFSManifest = _IPFSHash;
     }
 }

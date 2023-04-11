@@ -1,4 +1,5 @@
-pragma solidity ^0.6;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8;
 
 /*
     Copyright 2020, Roberto Valenti
@@ -21,9 +22,10 @@ contract Membrane {
     using SafeMath for uint256;
 
 
-    address[] internal _members;
+    address payable[] internal _members;
     address[] internal _parents;
     address owner;
+    string public manifest;                  //IPFS Hash for the JSON containing the manifest of this membrane
   
     mapping (address => bool) public isMember;      //returns true if an address is a member;
     mapping (string => address) public toAddress;   //maps names to addresses
@@ -33,10 +35,10 @@ contract Membrane {
     event RemovedMember (address member, string name);
     event ChangedName(string namefrom, string nameto);
 
-     constructor ()
-        public
+    constructor ()
     {
         owner = tx.origin;
+        
     }
 
 
@@ -51,7 +53,7 @@ contract Membrane {
         require((isMember[msg.sender] == true || owner == msg.sender), "Request submitted by a non-member address");
         require(isMember[_memberaddress] == false, "Member already added");
         require(toAddress[_membername] == address(0), "Name is already taken");
-        _members.push(_memberaddress);
+        _members.push(payable(_memberaddress));
         toName[_memberaddress] = _membername;
         toAddress[_membername] = _memberaddress;
         isMember[_memberaddress] = true;
@@ -117,7 +119,7 @@ contract Membrane {
     function listMembers()
         external
         view
-        returns (address[] memory)
+        returns (address payable[] memory)
     {
         return _members;
     }
@@ -144,12 +146,20 @@ contract Membrane {
         return _members.length; //+ _contributors.length;
     }
 
-    function reward(address _tokenaddress, uint256 _tokenamount)
-        public
-        payable
-        virtual
+        //=============================================================
+    //                      Reward Functions
+    //=============================================================
+    //these function will be called when a payment is sent to the holon
+
+
+    /// @dev Sets the hash of the latest IPFS manifest for this membrane
+    /// @notice Only the holon lead can change this!
+    /// @param _IPFSHash The hash of the IPFS manifest
+
+    function setManifest(string calldata _IPFSHash)
+        external
     {
-        //do nothing
+        require (msg.sender == owner, "Only owner can set the manifest");
+        manifest = _IPFSHash;
     }
-   
 }

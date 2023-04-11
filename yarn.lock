@@ -2788,6 +2788,11 @@
   dependencies:
     "is-obj" "^2.0.0"
 
+"dotenv@^16.0.3":
+  "integrity" "sha512-7GO6HghkA5fYG9TYnNxi14/7K9f5occMlp3zXAuSxn7CKCxt9xbNWG7yF8hTCSUchlfWSe3uLmlPfigevRItzQ=="
+  "resolved" "https://registry.npmjs.org/dotenv/-/dotenv-16.0.3.tgz"
+  "version" "16.0.3"
+
 "dotenv@^5.0.1":
   "resolved" "https://registry.npmjs.org/dotenv/-/dotenv-5.0.1.tgz"
   "version" "5.0.1"
@@ -6020,10 +6025,10 @@
   "resolved" "https://registry.npmjs.org/opener/-/opener-1.5.1.tgz"
   "version" "1.5.1"
 
-"openzeppelin-solidity@^3.0.0":
-  "integrity" "sha512-tDeF+fpu+EmVzFb7IR7XW4bU73V7z3j86GBaPc9ub7nbNqWu32bGnGxgitwFbmybsB7QIPhXTZ+UUlEOQouTOQ=="
-  "resolved" "https://registry.npmjs.org/openzeppelin-solidity/-/openzeppelin-solidity-3.0.1.tgz"
-  "version" "3.0.1"
+"openzeppelin-solidity@^3.4.2":
+  "integrity" "sha512-mpk74A6Bo+/ISfalUqtD8bAfINQgkGH2yInUFn/uBYz1pXbefwMTApjlnCYr+HpQpeOgO7nO8deJYrzBGDFDMA=="
+  "resolved" "https://registry.npmjs.org/openzeppelin-solidity/-/openzeppelin-solidity-3.4.2.tgz"
+  "version" "3.4.2"
 
 "original-require@^1.0.1":
   "integrity" "sha512-5vdKMbE58WaE61uVD+PKyh8xdM398UnjPBLotW2sjG5MzHARwta/+NtMBCBA0t2WQblGYBvq5vsiZpWokwno+A=="

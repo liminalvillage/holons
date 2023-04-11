@@ -1,8 +1,7 @@
-pragma solidity ^0.6;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8;
 
-import "./Holon.sol";
-import "./Appreciative.sol";
-
+import "./Zoned.sol";
 
 /*
     Copyright 2020, Roberto Valenti
@@ -19,24 +18,23 @@ import "./Appreciative.sol";
     Peer Production License for more details.
  */
 
-contract HolonFactory {
-
-    event NewHolon (string name, address addr);
-
+contract ZonedFactory {
     mapping (address => address[]) private holons;
     mapping (string => address) public toAddress;   //NOTE: Remove on deploy
+
+    event NewHolon (string name, address addr);
  
     /// @dev Creates an new holon and adds it to the global and personal list
     /// @param _name The name of the holon.
     /// @return Address of the new holon
 
-   function newHolon(string memory _name, uint  _parameter) public returns (address)
+   function newHolon(string memory _name, uint _parameter) public returns (address)
     {
         //This is required by tests to return the same address. NOTE: it enforces unique names for every holon created.
         if (toAddress[_name] > address(0x0)) //An holon with the same name already exists
            return toAddress[_name];
 
-        Holon newholon = new Holon(address(this), _name); //create an holon
+        Zoned newholon = new Zoned(address(this), _name, _parameter); //create an holon
         address addr = address(newholon);
         holons[address(0)].push(addr); //add to the global holon list
         holons[msg.sender].push(addr); // add it to the local holon list

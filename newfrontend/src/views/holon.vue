@@ -134,6 +134,7 @@ import Home from '../home.json'
 import Web3 from 'web3'
 // import abi from '../abi.json'
 import * as contractdata from '../ContractData.json'
+import { fstat } from 'fs'
 export default {
   watch: {
     // holons: function () {
@@ -225,7 +226,18 @@ export default {
       return r.json()
     },
     async fetchProjectInfo (address) {
+      // parse project.json file
+      var dependencies
+      var json = {}
+      json.holons = dependencies.map((dep, index) => {
+        // var name = holon.methods.toName(dep).call()
+        return { 'id': dep, 'label': name }
+      })
+      json.id = address
+      // check ens
     // assemble info from package / npm
+    // https://opencollective.com/opencollective-oss/members/all.json
+    // https://api.github.com/repos/Ad4m/Ad4m/contributors
     },
     async fetchEthInfo (address) { // compiles a compatible JSON from blockchain information at address
       var json = {}

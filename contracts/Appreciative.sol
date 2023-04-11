@@ -1,4 +1,5 @@
-pragma solidity ^0.6;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8;
 
 /*
     Copyright 2020, Roberto Valenti
@@ -17,16 +18,22 @@ pragma solidity ^0.6;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
-import "./Membrane.sol";
+import "./Holon.sol";
 
-contract Appreciative is Membrane  {
+contract Appreciative is Holon  {
     using SafeMath for uint256;
     //======================== Structures for tracking appreciation
     uint256 public totalappreciation;               // max amount of appreciation in this holon
     mapping (address => uint256) public appreciation; //appreciaton received by a member
     mapping (address => uint8) public remainingappreciation; //appreciation left to give (max=100)
 
-    //======================== Events
+    constructor (address _creator, string  memory _name)
+    {
+        name = _name;
+        creator = _creator;
+        flavor = "Appreciative";
+        totalappreciation = 0;
+    }
 
       //=============================================================
     //                      Appreciative Functions
@@ -63,7 +70,7 @@ contract Appreciative is Membrane  {
         external
     {
         require (msg.sender == owner,"Only lead can perform this action");
-        Appreciative(_parent).appreciate(_sibling,_percentage);
+        Appreciative(payable(_parent)).appreciate(_sibling,_percentage);
     }
 
    /// @dev Resets appreciation of the caller
@@ -115,7 +122,7 @@ contract Appreciative is Membrane  {
 
             if (amount > 0 ){
                 if (etherreward){
-                    (bool success, ) = _members[i].call.value(amount)("");
+                    (bool success, ) = _members[i].call{value: amount}("");
                     require(success, "Transfer failed");
                 }
                 else {

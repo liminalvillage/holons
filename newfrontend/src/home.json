@@ -1,7 +1,6 @@
 {
     "name": "HOLONS",
     "image":"https://www.holons.io/images/holons.png",
-    "description": "Collaborative Socio-Economic Network",
     "holons" : 
     [
     { "id": "http://github.com/robertovalenti/personal/holon", "label": "Roberto Valenti"},
