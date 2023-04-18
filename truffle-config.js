@@ -47,6 +47,11 @@ const { MNEMONIC, PROJECT_ID } = process.env;
 const HDWalletProvider = require('@truffle/hdwallet-provider');
 
 module.exports = {
+
+  solidityLog: {
+    displayPrefix: ' :', // defaults to ""
+    preventConsoleLogMigration: true, // defaults to false
+  },
   /**
    * Networks define how you connect to your ethereum client and let you set the
    * defaults web3 uses to send transactions. If you don't specify one truffle
@@ -80,7 +85,7 @@ module.exports = {
       provider: () => new HDWalletProvider(MNEMONIC, `https://sepolia.infura.io/v3/${PROJECT_ID}`),
       network_id: "11155111",
       confirmations: 2,
-      timeoutBlocks: 200,
+      //timeoutBlocks: 200,
       skipDryRun: true
     },
     // An additional network, but with some advanced options…

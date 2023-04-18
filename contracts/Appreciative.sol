@@ -73,6 +73,20 @@ contract Appreciative is Holon  {
         Appreciative(payable(_parent)).appreciate(_sibling,_percentage);
     }
 
+    /// @dev Sets appreciation for a group of members
+    /// @notice This is the only way to change already assigned appreciation
+    function setAppreciation(address[] memory _memberaddress, uint8[] memory _percentage)
+        external
+    {
+        require(_memberaddress.length == _percentage.length, "Array length mismatch");
+        totalappreciation = 0;
+         for (uint256 i = 0; i < _memberaddress.length; i++) {
+             appreciation[_memberaddress[i]] = _percentage[i];
+             remainingappreciation[_memberaddress[i]] -= _percentage[i];
+             totalappreciation += _percentage[i];
+         }
+    }
+
    /// @dev Resets appreciation of the caller
     /// @notice This is the only way to change already assigned appreciation
     function resetAppreciation()
@@ -99,7 +113,7 @@ contract Appreciative is Holon  {
         payable
         override
     {
-         bool etherreward;
+        bool etherreward;
         IERC20 token;
 
         if (msg.value  > 0 && _tokenaddress == address(0)) {

@@ -78,6 +78,7 @@ contract Membrane {
     function removeMember(address _memberaddress)
         external
     {
+        require(owner == msg.sender, "Request submitted by a non-member address" );
         for (uint256 i = 0; i < _members.length; i++) {
             if (_members[i] == _memberaddress) {
                _members[i] = _members[_members.length]; //swap position with last member

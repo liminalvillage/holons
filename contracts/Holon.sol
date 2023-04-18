@@ -147,6 +147,7 @@ contract Holon is Membrane{
         payable
         virtual
     {
+        require (_members.length > 0, "No members to reward");
         bool etherreward = false;
         IERC20 token;
 

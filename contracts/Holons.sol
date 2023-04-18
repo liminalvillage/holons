@@ -1,27 +1,45 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8;
 
+/*
+    Copyright 2020, Roberto Valenti
+
+    This program is free software: you can use it, redistribute it and/or modify
+    it under the terms of the Peer Production License as published by
+    the P2P Foundation.
+    
+    https://wiki.p2pfoundation.net/Peer_Production_License
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    Peer Production License for more details.
+ */
+
+
 contract Holons {
 
     mapping (address => address[]) private holons;
     mapping (string => address) public toAddress;   //NOTE: Remove on deploy
-    mapping (string => address) private factories;
+    mapping (string => address) private flavors;
+    string[] public knownflavors;
 
 
     event NewHolon (string name, address addr);
-    event NewFactory(address indexed factory, string name);
+    event NewFlavor(address indexed flavor, string name);
     
-    function newFactory(string calldata _name, address _factoryaddress) public {
-        require(factories[_name] == address(0), "Factory with this name already exists");
-        factories[_name] = _factoryaddress;
-        emit NewFactory( _factoryaddress,  _name);
+    function newFlavor(string calldata _flavorname, address _flavoraddress) public {
+        require(flavors[_flavorname] == address(0), "Flavor with this name already exists");
+        flavors[_flavorname] = _flavoraddress;
+        knownflavors.push(_flavorname);
+        emit NewFlavor( _flavoraddress,  _flavorname);
     }
     
     function newHolon(string memory _flavor, string memory _name, uint _parameter) public returns (address) {
-        require(factories[_flavor] != address(0), "Factory with this name does not exist");
-        address factoryAddress = factories[_flavor];
+        require(flavors[_flavor] != address(0), "Flavor with this name does not exist");
+        address flavorAddress = flavors[_flavor];
 
-        (bool success, bytes memory result) = factoryAddress.delegatecall(
+        (bool success, bytes memory result) = flavorAddress.delegatecall(
             abi.encodeWithSignature("newHolon(string,uint256)", _name, _parameter)
         );
         
@@ -32,9 +50,14 @@ contract Holons {
         return holonAddress;
     }
     
-    function getFactory(string memory _name) public view returns (address) {
-        require(factories[_name] != address(0), "Factory with this name does not exist");
-        return factories[_name];
+    function getFlavorAddress(string memory _name) public view returns (address) {
+        require(flavors[_name] != address(0), "Flavor with this name does not exist");
+        return flavors[_name];
+    }
+
+    // returns the list of flavors
+    function listFlavors() public view returns (string [] memory ) {
+        return knownflavors;
     }
 
         /// @dev Lists every holons ever created
@@ -51,64 +74,4 @@ contract Holons {
     function listHolonsOf(address _address) external view returns (address[] memory){
         return holons[_address];
     }
-
-
-
-
-
-/*
-    Copyright 2020, Roberto Valenti
-
-    This program is free software: you can use it, redistribute it and/or modify
-    it under the terms of the Peer Production License as published by
-    the P2P Foundation.
-    
-    https://wiki.p2pfoundation.net/Peer_Production_License
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    Peer Production License for more details.
- */
-
-//     event NewHolon (string name, address addr);
-
-   
-//     address[] public versions;
-//     uint public latestversion;
-
-//     mapping (address => address[]) private holons;
-//     mapping (string => address) public toAddress;   //TODO: Remove on deploy
- 
-//     constructor ()
-//     {
-//         latestversion = 0;
-//         versions.push(address(new HolonFactory()));
-//     }
-
-
-//       /// @dev Creates an new holon and adds it to the global and personal list
-//     /// @param _name The name of the holon.
-//     /// @return Address of the new holon
-
-//    function newHolon(string calldata _name, uint _parameter) public returns (address)
-//     {
-//         IHolonFactory factory = IHolonFactory(versions[latestversion]);
-//         return factory.newHolon(_name, _parameter);
-
-//         // (bool success, bytes memory result) = versions[latestversion].delegatecall(abi.encodeWithSignature("newHolon(string,uint)", _name,_parameter));
-//         // //require (success, "delegate call failed");
-//         // return abi.decode(result, (address));
-//     }
-
-//     /// @dev Creates an new holon and adds it to the global and personal list
-//     /// @param _name The name of the holon.
-//     /// @return Address of the new holon
-
-// //    function newHolon(uint _version, string memory _name, uint _parameter) public returns (address)
-// //     {
-// //         (bool success, bytes memory result) = versions[_version].delegatecall(abi.encodeWithSignature("newHolon(string,uint)", _name,_parameter));
-// //         require (success, "delegate call failed");
-// //         return abi.decode(result, (address));
-// //     }
 }
