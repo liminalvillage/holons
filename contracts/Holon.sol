@@ -1,193 +1,184 @@
-pragma solidity ^0.6;
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8;
 
-import "../node_modules/openzeppelin-solidity/contracts/access/Ownable.sol";
+/*
+    Copyright 2020, Roberto Valenti
+
+    This program is free software: you can use it, redistribute it and/or modify
+    it under the terms of the Peer Production License as published by
+    the P2P Foundation.
+    
+    https://wiki.p2pfoundation.net/Peer_Production_License
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    Peer Production License for more details.
+ */
+
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
+import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
+import "./IHolonFactory.sol";
+import "./Membrane.sol";
 
-contract Holon is Ownable {
+contract Holon is Membrane{
     using SafeMath for uint256;
 
-    //Public holon variables
-    string public name;
-    uint256 public uid;
-    address public creator; // link back to the holonic struc
-    uint256 public totallove; // max amount of love in this holon
-    uint256 public castedlove; // amount of love that has been spread
-    uint256 public totalrewards; // total amount of $ that has been given to this holon
-    
-    address payable[] internal _members;
-    
-    //mapping (address => uint256) toID;
-    mapping (address => bool) public isMember;
-    mapping (string => address) public toAddress;
-    mapping (address => string) public toName;
-    mapping (address => uint8) public remaininglove;
-    mapping (address => uint256) public love;
-    mapping (address => uint256) public rewards;
-    
+     //======================== Public holon variables
+    string public name;                      //The name of the holon
+    string public version;                   //Version of the holon contract
+    string public flavor;                    //Type of the holon
+    address public creator;                  //Link to the holonic parent
+
+    //======================== Events
+    event HolonRewarded (address holon, string token, uint256 amount);
+    event MemberRewarded (address member,string token, uint256 amount);
+
+    /// @notice Constructor to create an holon
+    ///  created the Holon contract, the factory needs to be deployed first
 
 
-    //Events
-    event AddedMember(address member, string name);
-    event RemovedMember(address member, string name);
-    event ChangedName(string from, string to);
-    event HolonRewarded(string name, uint256 amount);
-    
-    constructor( address holonlead, string memory holonname, uint256 holonid) public {
-       creator = msg.sender;
-       transferOwnership( holonlead );
-       name = holonname;
-       uid = holonid;
-       totallove = 0;
-       castedlove = 0;
-       totalrewards = 0;
+    // /// @dev Splits the ERC20 token amount sent to the holon according to the appreciation
+    // /// @notice If appreciation is not shared, it splits it equally across each member (calling BlanketReward)
+    //  function reward(address _tokenaddress, uint256 _tokenamount)
+    //     public
+    //     payable
+    //     override
+    // {
+    //     bool etherreward;
+    //     IERC20 token;
+
+    //     if (msg.value  > 0 && _tokenaddress == address(0)) {
+    //         _tokenamount = msg.value;
+    //         etherreward = true;
+    //     }
+    //      else {
+    //         //Load ERC20 token information
+    //         token = IERC20(_tokenaddress);
+    //         require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
+    //     }
+        
+    //     uint256  amount;
+
+    //     for (uint256 i = 0; i < _members.length; i++) {
+    //         if (totalappreciation > 0 ) // if any appreciation was shared
+    //             amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
+    //         else
+    //             amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+
+    //         if (amount > 0 ){
+    //             if (etherreward){
+    //                 (bool success, ) = _members[i].call{value: amount}("");
+    //                 require(success, "Transfer failed");
+    //             }
+    //             else {
+    //                 token.transfer(_members[i],amount);
+    //                 (bool success,) = _members[i].call(
+    //                 abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
+    //                 );
+    //                 require(success, "Unable to call the reward function" );
+    //             }
+    //             MemberRewarded(_members[i], "ERC20", amount);
+    //         }
+    //     }
+    //     emit HolonRewarded(address(this), "ERC20", _tokenamount);
+    // }
+
+    //=============================================================
+    //                      Holon Creation, Fork and Merge Functions
+    //=============================================================
+    // these function will be used by the holon lead to mantain the holon members
+    function newHolon(string calldata _flavor, string calldata _name, uint _parameter) external returns (address){
+        IHolonFactory factory = IHolonFactory(creator);
+        return factory.newHolon(_flavor, _name, _parameter);
+        
+        // (bool success, bytes memory data ) = creator.call(
+        //             abi.encodeWithSignature("newHolon(string, uint)", _name, _parameter)
+        //             );
+        // emit Response(success, data);
+        // require (success, "Holon creation failed");
     }
 
-    function getName() public view returns (string memory){
-        return name;
-    }
-    
-    function changeName(string memory _name)
-        public
-        onlyOwner
+    // function joinHolon(address _memberaddress, string memory _membername)
+    //     public
+    // {
+    //     require(isMember[_memberaddress] == false, "Member was already added");
+    //     require(toAddress[_membername] == address(0), "Name is already taken");
+    //     _members.push(address(uint160(_memberaddress)));
+    //     toAddress[_membername] = _memberaddress;
+    //     toName[_memberaddress] = _membername;
+    //     //isContributor[_memberaddress] = true;
+
+    //     //emit Joined(_memberaddress, name);
+    // }
+
+    //This function should be called to respect the holonic peer production license.
+    // function spork(string memory _holonname){
+    //    Holon newholon =fork("newname");
+    //    newholon.spoon(address(this))
+    //}
+
+    //This function should be called to respect the holonic peer production license.
+    // function fork(string memory _holonname)
+    //      public
+    // {
+    //      Holon newholon = Holon(factory.newHolon(_holonname));
+    //      newholon.addMember(address(this),"Initiator"); //Link back to origin
+    //      this.joinHolon(address(newholon),_holonname); // Link to fork
+    // }
+
+      receive() 
+        external 
+        payable 
     {
-        emit ChangedName(name, _name);
-        name = _name;
-    }
-
-    receive() external payable {
-        weightedReward();
+        reward(address(0),msg.value);
     }
    
-    // this function will be called when a payment is sent to the holon
-    fallback  ()
+    fallback()
         external
         payable
-        
     {
-        weightedReward();
+        reward(address(0),msg.value);
     }
-    
-    // same as above, but can be called explicitly
-    function weightedReward ()
-        payable
+
+
+    function reward(address _tokenaddress, uint256 _tokenamount)
         public
+        payable
+        virtual
     {
-        totalrewards += msg.value;
-        uint256 unitReward = msg.value.div(castedlove);
+        require (_members.length > 0, "No members to reward");
+        bool etherreward = false;
+        IERC20 token;
+
+        if (msg.value  > 0 && _tokenaddress == address(0)) {
+            _tokenamount = msg.value;
+            etherreward = true;
+        }
+         else {
+            //Load ERC20 token information
+            token = IERC20(_tokenaddress);
+            require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
+        }
+        
+        uint256 amount = _tokenamount.div(_members.length); // use blanket unit reward value.
+
         for (uint256 i = 0; i < _members.length; i++) {
-            address memberaddress = _members[i];
-            uint256  amount = love[memberaddress].mul(unitReward);
-            if (amount > 0){
-                _transfer(memberaddress, amount);
-                rewards[memberaddress]+=amount;
+            if (amount > 0 ){
+                if (etherreward){
+                    (bool success, ) = _members[i].call{value: amount}("");
+                    require(success, "Transfer failed");
+                }
+                else {
+                    token.transfer(_members[i],amount);
+                    (bool success,) = _members[i].call(
+                    abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
+                    );
+                    require(success, "Unable to call the reward function" );
+                }
+                MemberRewarded(_members[i],etherreward? "ETHER":"ERC20", amount);
             }
         }
-        emit HolonRewarded(name, msg.value);
+        emit HolonRewarded(address(this), etherreward? "ETHER":"ERC20", _tokenamount);
     }
-    
-    // splits reward equally across team members
-     function blanketReward()
-        external
-        payable
-    {
-        uint256 memberAmount = msg.value.div(_members.length);
-        for (uint256 i = 0; i < _members.length; i++) {
-            _transfer(_members[i], memberAmount);
-        }
-        emit HolonRewarded(name, msg.value);
-    }
-    
-    //this function is called by members to send love to others. It builds up the weight for the reward.
-    
-    function sendLoveTo(address memberaddress, uint8 percentage) public{
-        require (isMember[msg.sender], "Lover is not a Holon member"); // validate sender is a Holon member
-        require (isMember[memberaddress], "Loved is not a Holon member"); // validate receiver is a Holon member
-        require (memberaddress != msg.sender, "Lover cannot love himself.. that's selfish"); // sender can't vote for himself.
-        require (remaininglove[msg.sender] >= percentage, "Not enough love remaining");
-        remaininglove[msg.sender]-= percentage;
-        love[memberaddress] += percentage;
-        castedlove += percentage;
-    }
-    
-    //This function must be called when the member is a holon, and can only be called by the holon lead on behalf of the entire holon
-    
-     function sendHolonLoveTo(address payable holonaddress, address memberaddress, uint8 percentage) public{
-        
-        require (isMember[holonaddress], "Lover is not a Holon member"); // validate sender is a Holon member
-        require (isMember[memberaddress], "Loved is not a Holon member"); // validate receiver is a Holon member
-        require (memberaddress != holonaddress, "Lover cannot love himself.. that's selfish"); // sender can't vote for himself.
-        require (remaininglove[holonaddress] >= percentage, "Not enough love remaining");
-        require (Holon(holonaddress).owner() == msg.sender, "Only the Holon Lead can send love on behalf of his Holon!");
-        
-        remaininglove[holonaddress]-= percentage;
-        love[memberaddress] += percentage;
-        castedlove += percentage;
-    }
-    
-    function resetLove() onlyOwner public{
-        castedlove = 0;
-         for (uint256 i = 0; i < _members.length; i++) {
-             address memberaddress = _members[i];
-             remaininglove[memberaddress] = 100;
-             love[memberaddress] = 0;
-         }
-    }
-
-    function addMember(address payable memberaddress, string memory _name)
-        public
-        onlyOwner
-    {
-        _members.push(memberaddress);
-        toAddress[_name] = memberaddress;
-        toName[memberaddress] = _name;
-        isMember[memberaddress] =  true;
-        remaininglove[memberaddress] = 100;
-
-        emit AddedMember(memberaddress, _name);
-    }
-    
-    function removeMember(address payable memberaddress)
-        public
-        onlyOwner
-    {
-        for (uint256 i = 0; i < _members.length; i++) {
-            if (_members[i] == memberaddress) {
-               _members[i] = _members[_members.length]; //swap position with last member
-               break;
-            }
-        }
-        
-        _members.pop(); // remove last member
-        isMember[memberaddress] =  false;
-        //NOTE: without isMember it is not necessary to override names and ID, just a waste of ether.
-        
-        emit RemovedMember(memberaddress,toName[memberaddress]);
-        
-        
-    }
-
-    function getHolonSize()
-        public
-        view
-        returns (uint256)
-    {
-        return _members.length;
-    }
-
-    function listMembers()
-        external
-        view
-        returns (address payable[] memory)
-    {
-        return _members;
-    }
-
-    function _transfer(address dst, uint256 amount)
-        internal
-    {
-        (bool success, ) = dst.call.value(amount)("");
-        require(success, "Transfer failed");
-    }
-    
-    
 }

@@ -1,8 +1,15 @@
 const Migrations = artifacts.require("Migrations");
-const HackAlong = artifacts.require("HackAlong");
-const Team = artifacts.require("Team");
+const Holons = artifacts.require("Holons");
+const AppreciativeFactory = artifacts.require("AppreciativeFactory");
+const ZonedFactory = artifacts.require("ZonedFactory");
+const TestToken = artifacts.require("TestToken");
 
 module.exports = function(deployer) {
   deployer.deploy(Migrations);
-  deployer.deploy(HackAlong);
+  deployer.deploy(AppreciativeFactory);
+  deployer.deploy(ZonedFactory);
+  deployer.deploy(Holons).then( async (instance) => {
+    await instance.newFlavor("Appreciative",AppreciativeFactory.address); 
+    await instance.newFlavor("Zoned",ZonedFactory.address)});
+  deployer.deploy(TestToken,100000000);
 };

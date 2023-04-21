@@ -13,7 +13,7 @@ const routes = [
   {
     path: "/:holon",
     component: Home,
-  },
+  }
 ];
 
 const router = new VueRouter({
