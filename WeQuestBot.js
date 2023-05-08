@@ -3,6 +3,19 @@ import * as settings from './settings.js'
 import config from "./config.json" assert { type: "json" };
 import * as request from './requests.js'
 
+// -------------------------check if lockfile exists and delete it
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const repoPath = path.join(os.homedir(), '.jsipfs');
+const lockFilePath = path.join(repoPath, 'repo.lock');
+
+if (fs.existsSync(lockFilePath)) {
+  fs.unlinkSync(lockFilePath);
+}
+// --------------------------------------------------------
+
 //  ------------------------------------ Import the discord.js module
 // import * as Discord from 'discord.js';
 // const discord = new Discord.Client({intents: [Discord.GatewayIntentBits.GUILD_MESSAGES]});
@@ -39,7 +52,7 @@ async function init() {
   }
   else
   {
-    console.lgo('development mode')
+    console.log('development mode')
     ipfs = await create()
   }
   orbitdb = await OrbitDB.createInstance(ipfs)
@@ -299,6 +312,26 @@ async function offersboard(ctx) {
 //   // }
 // });
 
+
+// // Handle uncaught exceptions
+// process.on('uncaughtException', async (err) => {
+//   console.error('Uncaught exception:', err);
+//   await ipfs.stop();
+//   process.exit(1);
+// });
+
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Gracefully shutting down...');
+  await ipfs.stop();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Gracefully shutting down...');
+  await ipfs.stop();
+  process.exit(0);
+});
 
 
 
