@@ -3,16 +3,16 @@ import * as settings from './settings.js'
 import config from "./config.json" assert { type: "json" };
 import * as request from './requests.js'
 
-// -------------------------check if lockfile exists and delete it
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+// -------------------------check if lockfile exists and delete i
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const repoPath = path.join(os.homedir(), '.jsipfs');
 const lockFilePath = path.join(repoPath, 'repo.lock');
 
-if (fs.existsSync(lockFilePath)) {
-  fs.unlinkSync(lockFilePath);
+if (fs.existsSync('./orbitdb/repo.lock')) {
+  fs.rmdirSync('./orbitdb/repo.lock');
 }
 // --------------------------------------------------------
 
@@ -29,7 +29,6 @@ const bot = new Telegraf(config.telegram);
 //bot.use(Telegraf.log())
 bot.launch();
 
-import fs from 'fs';
 import * as UI from './UI.js';
 import * as AI from './AI.js';
 import * as WEB3 from './WEB3.js';
@@ -47,7 +46,7 @@ let ipfs
 async function init() {
   if (config.mode === 'production')
   {
-    console.lgo('production mode')
+    console.log('production mode')
     ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
   }
   else
