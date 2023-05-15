@@ -11,18 +11,23 @@
   "license": "ISC",
   "dependencies": {
     "@walletconnect/web3wallet": "^1.4.0",
+    "axios": "^1.4.0",
     "chatgpt": "^4.4.1",
     "debug": "^4.3.4",
     "discord.js": "^14.7.1",
     "i18next": "^22.4.9",
     "i18next-http-backend": "^2.1.1",
     "ipfs": "^0.66.0",
+    "jimp": "^0.22.7",
     "jsdom": "^21.1.0",
     "jsonschema": "^1.4.1",
+    "jsqr": "^1.4.0",
     "ngeohash": "^0.6.3",
     "openai": "^3.1.0",
     "orbit-db": "^0.29.0",
     "puppeteer": "^18.1.0",
+    "qrcode-reader": "^1.0.4",
+    "sharp": "^0.32.1",
     "telegraf": "^4.11.2",
     "web3": "^1.8.2"
   }

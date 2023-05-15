@@ -13,7 +13,7 @@ const browser  = await puppetteer.launch({
 });
 
 
-export async function getQuestImage(quest) {
+export async function getQuestImage(quest, chatID) {
   const lang = await getLanguage(chatID)
   const element = `
   <table>

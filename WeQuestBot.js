@@ -3,13 +3,13 @@ import * as settings from './settings.js'
 import config from "./config.json" assert { type: "json" };
 import * as request from './requests.js'
 
+import qrReader from 'qrcode-reader';
+import Jimp from 'jimp';
+import axios from 'axios';
+import sharp from 'sharp';
+
 // -------------------------check if lockfile exists and delete i
 import fs from 'fs';
-import path from 'path';
-import os from 'os';
-
-const repoPath = path.join(os.homedir(), '.jsipfs');
-const lockFilePath = path.join(repoPath, 'repo.lock');
 
 if (fs.existsSync('./orbitdb/repo.lock')) {
   fs.rmdirSync('./orbitdb/repo.lock');
@@ -24,10 +24,13 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 //import {i18n} from 'i18next'
 
 // ------------------------------------ Import the telegraf module
-import { Telegraf } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 const bot = new Telegraf(config.telegram);
 //bot.use(Telegraf.log())
 bot.launch();
+
+
+
 
 import * as UI from './UI.js';
 import * as AI from './AI.js';
@@ -80,6 +83,37 @@ init();
 
 // =========================== bot commands ===========================
 
+bot.on('photo', async (ctx) => {
+  if (ctx.message.caption) {
+    const command = ctx.message.caption.split(' ')[0];
+    if (command == '/task')
+    quests.quest('task',ctx, orbitdb)
+  }
+  try {
+    const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+
+    const rawImageBuffer = await sharp(response.data).toBuffer();
+    const jimpImage = await Jimp.read(rawImageBuffer);
+    const qr = new qrReader();
+    qr.callback = (err, value) => {
+      if (err) {
+        return;
+      }
+
+      if (value) {
+        ctx.reply(`${value.result}`);
+      } 
+    };
+    qr.decode(jimpImage.bitmap);
+  } catch (error) {
+    console.error(error);
+    ctx.reply('An error occurred while processing the QR code. Please try again.');
+  }
+});
+
+
 //send appreciation
 bot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
 bot.command('appreciate', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
@@ -96,16 +130,8 @@ bot.command('proposal', async (ctx) => quests.quest('proposal', ctx, orbitdb))
 bot.command('propose', async (ctx) => quests.quest('proposal', ctx, orbitdb))
 bot.command('todo', async (ctx) => quests.quest('todo', ctx, orbitdb))
 
-//create new request
-bot.command('need', async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command('request', async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command('want', async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command('wish', async (ctx) => quests.quest('request', ctx, orbitdb))
-//create new offer
-bot.command('offer', async (ctx) => quests.quest('offer', ctx, orbitdb))
-bot.command('give', async (ctx) => quests.quest('offer', ctx, orbitdb))
-bot.command('have', async (ctx) => quests.quest('offer', ctx, orbitdb))
-bot.command('gift', async (ctx) => quests.quest('offer', ctx, orbitdb))
+bot.command(['need','request','want','wish'], async (ctx) => quests.quest('request', ctx, orbitdb))
+bot.command(['offer','give','have','gift'], async (ctx) => quests.quest('offer', ctx, orbitdb))
 
 //--------------------------------------------------------------  ITALIAN
 
@@ -254,7 +280,9 @@ async function questboard(ctx) {
   // Create a table header
   UI.getQuestsTable(quests, chatID).then((path) => {
     //send the image
-    ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+    ctx.replyWithPhoto({ source: fs.createReadStream(path) },  Markup.inlineKeyboard([
+      Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
+    ]));
   });
   return;
 }
@@ -331,6 +359,8 @@ process.on('SIGTERM', async () => {
   await ipfs.stop();
   process.exit(0);
 });
+
+
 
 
 
