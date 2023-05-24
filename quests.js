@@ -11,14 +11,14 @@ export async function quest(type, ctx, orbitdb) {
     let chatID = ctx.message.chat.id;
     let messageID = ctx.message.message_id;
     const language = await getLanguage(chatID)
-    console.log(language)
-    const text = ctx.message.text;
+    const text = ctx.message.text? ctx.message.text : ctx.message.caption;
     const sender = ctx.from;
     if (!orbitdb) return
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
 
     const title = text.split(' ').slice(1).join(' ');
+    const picture = ctx.message.photo ? ctx.message.photo[0].file_id : null;
 
     if (!title) {
         ctx.reply(i18next.t('usage', {type:type, lng: language }))
@@ -29,8 +29,10 @@ export async function quest(type, ctx, orbitdb) {
 
     let quest = {
         _id: '',
+        chat:'',
         initiator: sender,
         title: title,
+        picture: picture,
         date: new Date().getTime(),
         users: [],
         appreciation: [],
@@ -39,8 +41,8 @@ export async function quest(type, ctx, orbitdb) {
         status: 'ongoing'
     }
     // // Add the sender to the list of users
-    quest.users.push(sender);
-
+    // quest.users.push(sender);
+    
     // let path = await ui.questImage(quest)
     // ctx.replyWithPhoto({ source: fs.createReadStream(path) },markup).then((ctx) => {
     //     // Add the message id to the quest
@@ -49,14 +51,37 @@ export async function quest(type, ctx, orbitdb) {
     //     questsDB.put(questObj)
 
     //   }); 
-
-    ctx.reply(createMessage(quest,language), markup(quest,language)).then((ctx) => {
+    if (picture)
+    ctx.replyWithPhoto(picture,
+        { 
+            caption: createMessage(quest,language), 
+            parse_mode: 'Markdown', 
+            ...markup(quest,language)
+          } ).catch((err) => { console.log(err) }).then((nctx) => {
+            // Add the message id to the quest
+            quest._id = nctx.message_id;
+            quest.chat = nctx.chat.id;
+            questsDB.put(quest)
+            //Pin the message
+            ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
+        });
+    else
+    // let path = await ui.getQuestImage(quest,chatID)
+    // ctx.telegram.editMessageMedia(ctx.chat.id, ctx.message.message_id,null, {
+    //     type: 'photo',
+    //     media: path,
+    //     caption: markup(quest,language)
+    //   });
+    ctx.reply(createMessage(quest,language), markup(quest,language)).then((nctx) => {
         // Add the message id to the quest
-        quest._id = ctx.message_id;
-
+        quest._id = nctx.message_id;
+        quest.chat = nctx.chat.id;
         questsDB.put(quest)
-
+        //Pin the message
+        ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
     });
+    //delete the original message
+    ctx.deleteMessage(messageID.toString())
 }
 
 export async function join(ctx, orbitdb) {
@@ -175,8 +200,11 @@ export async function cancel(ctx, orbitdb) {
     if (quest.initiator.id === ctx.from.id) {
         //delete quest from database
         questsDB.del(messageID.toString())
+         //unpin the message
+        ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => { console.log(err) });
         //delete the telegram message
         ctx.deleteMessage(messageID.toString())
+       
 
     } else {
         ctx.reply(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID })
@@ -248,8 +276,8 @@ export async function complete(ctx, orbitdb) {
         updateMessage(ctx, quest);
         // Update the db
         questsDB.put(quest);
-  
-
+        //unpin the message
+        ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
     } else {
         ctx.reply(`Only the creator of the quest can mark it as completed.`, { reply_to_message_id: messageID });
     }
@@ -457,7 +485,12 @@ function markup(quest,language) {
     ], [
         Markup.button.callback(i18next.t('cancel',{lng:language}), 'cancel_quest'),
         Markup.button.callback(i18next.t('complete',{lng:language}), 'complete_quest')
-    ]])
+    ]
+    // ,[
+    //     Markup.button.webApp(i18next.t('Share',{lng:language}), `https://t.me/WeQuestBot?start=${quest._id}`),
+    //     Markup.button.webApp(i18next.t('Pick a Time',{lng:language}), `https://robertovalenti.github.io/datepicker/index.html`)
+    // ]
+])
 
     if (quest.type === "request" || quest.type === "offer") {
         mu = Markup.inlineKeyboard([[

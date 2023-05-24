@@ -282,7 +282,7 @@ async function questboard(ctx) {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) },  Markup.inlineKeyboard([
       Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
-    ]));
+    ])).then((ctx) => {bot.telegram.pinChatMessage(chatID, ctx.message_id)});
   });
   return;
 }
@@ -360,6 +360,19 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
+bot.on('web_app_data', (ctx) => {
+	var [ timespamp, timezoneOffset ] = ctx.message.web_app_data.data.split('_')
+	timespamp = parseInt(timespamp)
+
+	var clientOffset = parseInt(timezoneOffset) * 60 * 1000
+	var serverOffset = (new Date()).getTimezoneOffset() * 60 * 1000
+	var offset = serverOffset - clientOffset
+
+	var print = 'in user timezone: ' + (new Date(timespamp + offset)).toLocaleString() + '\n'
+	print += 'in server timezone: ' + (new Date(timespamp)).toLocaleString()
+
+	ctx.reply(print)
+})
 
 
 
