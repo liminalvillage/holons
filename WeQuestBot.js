@@ -281,7 +281,7 @@ async function questboard(ctx) {
   UI.getQuestsTable(quests, chatID).then((path) => {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) },  Markup.inlineKeyboard([
-      Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
+    //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
     ])).then((ctx) => {bot.telegram.pinChatMessage(chatID, ctx.message_id)});
   });
   return;
