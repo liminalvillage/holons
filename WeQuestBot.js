@@ -109,7 +109,7 @@ bot.on('photo', async (ctx) => {
     qr.decode(jimpImage.bitmap);
   } catch (error) {
     console.error(error);
-    ctx.reply('An error occurred while processing the QR code. Please try again.');
+    //ctx.reply('An error occurred while processing the QR code. Please try again.');
   }
 });
 

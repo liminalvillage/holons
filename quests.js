@@ -81,7 +81,8 @@ export async function quest(type, ctx, orbitdb) {
         ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
     });
     //delete the original message
-    ctx.deleteMessage(messageID.toString())
+    ctx.deleteMessage(messageID.toString());
+    await questsDB.close()
 }
 
 export async function join(ctx, orbitdb) {
@@ -250,7 +251,7 @@ export async function stop(ctx, orbitdb) {
     updateMessage(ctx, quest);
 
     // Update the db
-    questsDB.put(quest);
+    await questsDB.put(quest);
 }
 
 
@@ -451,6 +452,21 @@ async function sendToken(sender, amount, db) {
 async function updateMessage(ctx, quest, language) {
     try {
         // Update the message 
+        if (quest.picture){
+            console.log("editing image quest")
+            await ctx.telegram.editMessageMedia(
+                ctx.update.callback_query.message.chat.id,
+                ctx.update.callback_query.message.message_id,
+                null,
+                {
+                    type: 'photo',
+                    media: quest.picture,
+                    caption: createMessage(quest,language)
+                },
+                markup(quest,language)
+            );
+        }
+        else
         await ctx.telegram.editMessageText(
             ctx.update.callback_query.message.chat.id,
             ctx.update.callback_query.message.message_id,
