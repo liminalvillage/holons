@@ -82,7 +82,6 @@ export async function quest(type, ctx, orbitdb) {
     });
     //delete the original message
     ctx.deleteMessage(messageID.toString());
-    await questsDB.close()
 }
 
 export async function join(ctx, orbitdb) {
