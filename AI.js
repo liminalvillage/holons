@@ -2,7 +2,7 @@ import { Configuration, OpenAIApi } from 'openai';
 
 const configuration = new Configuration({
     apiKey: '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',
-    model: 'gpt-4'
+    model: 'gpt-3.5'
   });
   const AI = new OpenAIApi(configuration);
 
@@ -15,12 +15,9 @@ export async function assignRoles(actions, roles) {
 
     let prompt = 
         'here is a table of actions that agents took: \n' +
-        'roberto: cook dinner, plant tree, clean pool, cook lunch, cook lunch, cook lunch \
-        laura: play with elea, plant tree, plant tree, cook dinner \
-        josh: play games, write articles, cook lunch \
-        elisa: play with elea, learn java'+
-        '\n the available roles are:'
-        +'gardener, programmer, cook, caretaker' +
+        actions +
+        '\n the available roles are: \n' +
+        roles
         '\n assign each agent to one role. no agent should have the same role. Just show me a json structure with the assigned roles, without any comment. Also assign them to a secondary role. \n'
     
     const response = await AI.createCompletion({

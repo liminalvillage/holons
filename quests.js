@@ -13,7 +13,7 @@ export async function quest(type, ctx, orbitdb) {
     const language = await getLanguage(chatID)
     const text = ctx.message.text? ctx.message.text : ctx.message.caption;
     const sender = ctx.from;
-    if (!orbitdb) return
+
     let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
     await questsDB.load()
 
@@ -41,7 +41,7 @@ export async function quest(type, ctx, orbitdb) {
         status: 'ongoing'
     }
     // // Add the sender to the list of users
-    // quest.users.push(sender);
+
     
     // let path = await ui.questImage(quest)
     // ctx.replyWithPhoto({ source: fs.createReadStream(path) },markup).then((ctx) => {
@@ -280,13 +280,14 @@ export async function complete(ctx, orbitdb) {
         ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
     } else {
         ctx.reply(`Only the creator of the quest can mark it as completed.`, { reply_to_message_id: messageID });
+        return;
     }
     // ================================ APPRECIATION ========================== 
     let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
     await appreciationDB.load()
     let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'username' })
     await usersDB.load()
-    //await saveUserAction(ctx.callbackQuery.from, quest.title, usersDB) //register monouser in debug mode
+    await saveUserAction(ctx.callbackQuery.from, quest.title, usersDB) //register monouser in debug mode
     //loop through all users and add appreciation to their account
     for (let i = 0; i < quest.appreciation.length; i++) {
         let sender = quest.appreciation[i];
@@ -349,13 +350,15 @@ export async function sendAppreciation(ctx, orbitdb) {
 
         if (!recipient || recipient == '') {
             ctx.reply(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id });
-            return;
+            // register the user in the database
+            
+            continue;
         }
 
         // Check if the recipient is the sender
         if (recipient.id === sender.id) {
             ctx.reply(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id });
-            return;
+            continue;
         }
 
         // Send the appreciation to the recipient
@@ -367,24 +370,28 @@ export async function sendAppreciation(ctx, orbitdb) {
     // Update the sent appreciation of the sender
     await sendToken(sender, 1, appreciationDB)
     ctx.reply(`You have sent 1 appreciation to ${mentions.length} ${mentions.length > 1 ? 'users' : 'user'}.`, { reply_to_message_id: ctx.message.message_id });
-    listUsersActions(usersDB)
 }
 
 // ============== UTILITY FUNCTIONS
 
 
 
-async function listUsersActions(db) {
-    if (!db) return
+export async function listUsersActions(ctx, orbitdb)  {
+    if (!orbitdb) return
+    const chatID = ctx.message.chat.id;
+    const usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'username' })
+    await usersDB.load()
 
-    let users = await db.get('')
+    let users = await usersDB.get('')
     console.log(users)
+    let message = ''
     for (let i = 0; i < users.length; i++) {
         let user = users[i];
         if (user.actions && user.actions.length > 0) {
-            console.log(user.first_name + ':' + user.actions.join(', '))
+            message += user.first_name + ':' + user.actions.join(', ')
         }
     }
+    return message
 }
 
 // save user action

@@ -1,6 +1,7 @@
 import i18next from "i18next";
 import fs from 'fs';
 import locales from "./locales.json" assert { type: "json" };
+import exp from "constants";
 
 
 let settingsDB 
@@ -11,7 +12,8 @@ function getDefaultSettings(chatID) {
       language: 'en',
       theme: 'dark',
       level: 0,
-      admin: ''
+      admin: '',
+      roles: ''
     }
 } 
 
@@ -149,28 +151,57 @@ export async function setAdmin(ctx) {
     ctx.reply('Admin changed to ' + admin)
 }
 
+ export async function setRoles(chatID, roles) {
+    let settings = await settingsDB.get(chatID)[0]
+    if (roles === undefined || roles === null) {
+        console.log('Please specify the roles. Example: /setRoles role1 role2')
+        return
+    }
+    if (!settings || settings == '') {
+        settings =  getDefaultSettings(chatID)
+    }
+    settings.roles = roles
+    settingsDB.put(settings)
+    return settings.roles
+}
 
+export async function getRoles(chatID) {
+    let settings = await settingsDB.get(chatID)[0]
+    if (!settings || settings == '') {
+        settings =  getDefaultSettings(chatID)
+        settingsDB.put(settings)
+    }
+    return settings.roles
+}
 
+export async function getSettings(chatID) {
+    let settings = await settingsDB.get(chatID)[0]
+    if (!settings || settings == '') {
+        settings =  getDefaultSettings(chatID)
+        settingsDB.put(settings)
+    }
+    return settings
+}
 
-// if (language === undefined || language === null) {
-//     ctx.reply('Please specify the language. Example: /setLanguage en')
-//     return
-//   }
-//   if ( language !== 'en' && language !== 'it') {
-//     ctx.reply('Please specify it or en. Example: /setLanguage en')
-//     return
-//   }
-//   let settings = settingsDB.get(chatID)[0]
-//   if (settings === undefined || settings === null) { //if the settings are not defined, create them
-//     settings = {
-//       _id: chatID,
-//       language: language,
-//       level: 0,
-//       admin: ''
-//     }
-//   }
-  
-//   settings.language = language
+export async function setSettings(chatID, settings) {
+    settingsDB.put(settings)
+}
 
-//   settingsDB.put(settings)
-//   ctx.reply('Language changed to ' + language)
+export async function setValueEquation(chatID, valueEquation) {
+    let settings = await settingsDB.get(chatID)[0]
+    if (!settings || settings == '') {
+        settings =  getDefaultSettings(chatID)
+    }
+    settings.valueEquation = valueEquation
+    settingsDB.put(settings)
+}
+
+// export async function getSettingsButtons(chatID) {
+//     return [
+//         [{ text: 'Language:'}], [{ text: 'IT', setLanguage(chatID, 'it') }],[{ text: 'EN', setLanguage(ctx, 'en') }]
+//         [{ text: 'Theme' }],
+//         [{ text: 'Level', callback_data: 'level' }],
+//         [{ text: 'Admin', callback_data: 'admin' }],
+//         [{ text: 'Roles', callback_data: 'roles' }]
+//     ]
+// }

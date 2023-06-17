@@ -1,12 +1,15 @@
 "use strict"
-import * as settings from './settings.js'
+
 import config from "./config.json" assert { type: "json" };
-import * as request from './requests.js'
+
 
 import qrReader from 'qrcode-reader';
 import Jimp from 'jimp';
 import axios from 'axios';
 import sharp from 'sharp';
+
+import * as utils from './utilities.js'
+import lunation from "./lunation.js";
 
 // -------------------------check if lockfile exists and delete i
 import fs from 'fs';
@@ -16,21 +19,9 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 }
 // --------------------------------------------------------
 
-//  ------------------------------------ Import the discord.js module
-// import * as Discord from 'discord.js';
-// const discord = new Discord.Client({intents: [Discord.GatewayIntentBits.GUILD_MESSAGES]});
-// discord.login(config.discord);
-
-//import {i18n} from 'i18next'
-
 // ------------------------------------ Import the telegraf module
 import { Telegraf, Markup } from 'telegraf';
-const bot = new Telegraf(config.telegram);
-//bot.use(Telegraf.log())
-bot.launch();
-
-
-
+import {Client, GatewayIntentBits} from 'discord.js';
 
 import * as UI from './UI.js';
 import * as AI from './AI.js';
@@ -39,14 +30,20 @@ import * as WEB3 from './WEB3.js';
 import { create } from 'ipfs'
 import OrbitDB from 'orbit-db'
 
+//import WeQuest Modules
 import * as quests from './quests.js'
 import * as values from './values.js'
+import * as request from './requests.js'
+import * as settings from './settings.js'
 
 let orbitdb
+let telebot
+let discordbot
 
-let ipfs
+let moon
 
 async function init() {
+  let ipfs
   if (config.mode === 'production')
   {
     console.log('production mode')
@@ -71,11 +68,50 @@ async function init() {
       ]
     }
   }
+  telebot = new Telegraf(config.telegram);
+  //telebot.use(Telegraf.log())
+  moon = new lunation(telebot)
+
+  telebot.launch();
+  //telebot.telegram.setMyCommands([ { command: 'start', description: 'Start the bot' }, { command: 'help', description: 'Help' }, { command: 'task', description: 'Task' }, { command: 'quest', description: 'Quest' }, { command: 'setLanguage', description: 'Set language' }, { command: 'setTheme', description: 'Set theme' }, { command: 'setLevel', description: 'Set level' }, { command: 'setAdmin', description: 'Set admin' }, { command: 'getLanguage', description: 'Get language' }, { command: 'getTheme', description: 'Get theme' }, { command: 'getLevel', description: 'Get level' }, { command: 'getAdmin', description: 'Get admin' }, { command: 'getAddress', description: 'Get address' }, { command: 'getBalance', description: 'Get balance' }, { command: 'getQuests', description: 'Get quests' }, { command: 'getTasks', description: 'Get tasks' }, { command: 'getQuest', description: 'Get quest' }, { command: 'getTask', description: 'Get task' }, { command: 'getSettings', description: 'Get settings' }, { command: 'getValues', description: 'Get values' }, { command: 'getInfo', description: 'Get info' }, { command: 'getHelp', description: 'Get help' } ]);
+
+  discordbot = new Client({ intents: [GatewayIntentBits.Guilds,GatewayIntentBits.GuildMessages] });
+  discordbot.on("ready", () => {
+    // This event will run if the bot starts, and logs in, successfully.
+    console.log(`Discrord BOT has started, with ${discordbot.users.cache.size} users, in ${discordbot.channels.cache.size} channels of ${discordbot.guilds.cache.size} guilds.`);
+    // Example of changing the bot's playing game to something useful. `discordbot.user` is what the
+    // docs refer to as the "ClientUser".
+    discordbot.user.setActivity(`Serving ${discordbot.guilds.cache.size} servers`);
+  });
+
+  discordbot.on('message', msg => {
+    console.log("DISCORD MESSAGE: "+msg.content)
+    if (msg.content.charAt(0) === config.prefix) {
+      msg.react('👀')
+        .catch(log => {
+          console.log(error);
+        });
+    };
+    const commandBody = msg.content.substring(config.prefix.length).split(' ');
+    console.log(commandBody);
+    const command = commandBody[0];
+    const args = commandBody.slice(1);
+    if (command === 'quest') {
+      console.log('quest')
+    }
+    if (command === 'task') {
+      console.log('task')
+    }
+  }
+  )
+  
+  discordbot.login(config.discord);
 }
 
-init();
+await init();
 
-// discord.on('message', msg => {
+// discordbot.on('message', msg => {
+//   console.log("DISCORD MESSAGE: "+msg.content)
 //   if (msg.content === 'quest') {quests.quest('quest',discord2telegram(msg), orbitdb);
 //     msg.reply('Pong!');
 //   }
@@ -83,7 +119,7 @@ init();
 
 // =========================== bot commands ===========================
 
-bot.on('photo', async (ctx) => {
+telebot.on('photo', async (ctx) => {
   if (ctx.message.caption) {
     const command = ctx.message.caption.split(' ')[0];
     if (command == '/task')
@@ -113,109 +149,111 @@ bot.on('photo', async (ctx) => {
   }
 });
 
+telebot.on('inline_query', async (ctx) => {
+  // This is a simplified example. In a real-world application, you'd fetch this
+  // data from a database or API.
+  const products = [
+    { id: '1', title: 'Pizza', description: 'Delicious pizza', price: '$10' },
+    { id: '2', title: 'Burger', description: 'Tasty burger', price: '$8' },
+    { id: '3', title: 'huh', description: 'Delicious pizza', price: '$10' },
+    { id: '4', title: 'Bbbuburger', description: 'Tasty burger', price: '$8' },
+    { id: '5', title: 'jjPizza', description: 'Delicious pizza', price: '$10' },
+    { id: '6', title: 'jjuiBurger', description: 'Tasty burger', price: '$8' },
+  ];
 
-//send appreciation
-bot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
-bot.command('appreciate', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
-bot.command('apprezza', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
-bot.command('maslow', (ctx) => UI.showMaslow(2))
-bot.command('ai', (ctx) => AI.assignRoles('asd', 'lol'))
+  const results = products.map((product) =>   ({
+    type: 'article',
+    id: product.id,
+    title: product.title,
+    description: product.description,
+    input_message_content: {
+      message_text: `${product.title}: ${product.description} - ${product.price}`
+  },
+  }));
 
-// -------------------------------------------------------------  ENGLISH
-// Create a new quest
-bot.command('quest', async (ctx) => quests.quest('quest', ctx, orbitdb))
-bot.command('mission', async (ctx) => quests.quest('quest', ctx, orbitdb))
-bot.command('task', async (ctx) => quests.quest('task', ctx, orbitdb))
-bot.command('proposal', async (ctx) => quests.quest('proposal', ctx, orbitdb))
-bot.command('propose', async (ctx) => quests.quest('proposal', ctx, orbitdb))
-bot.command('todo', async (ctx) => quests.quest('todo', ctx, orbitdb))
+  await ctx.answerInlineQuery(results);
+});
 
-bot.command(['need','request','want','wish'], async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command(['offer','give','have','gift'], async (ctx) => quests.quest('offer', ctx, orbitdb))
+telebot.on('chosen_inline_result', (ctx) => {
+  console.log(`Chosen product: ${ctx.chosenInlineResult.result_id}`);
+  // Handle the product selection here. For example, you could send a confirmation
+  // message to the user, or add the product to a shopping cart.
+});
 
-//--------------------------------------------------------------  ITALIAN
 
-bot.command('missione', async (ctx) => quests.quest('quest', ctx, orbitdb))
-bot.command('compito', async (ctx) => quests.quest('task', ctx, orbitdb))
-bot.command('proposta', async (ctx) => quests.quest('proposal', ctx, orbitdb))
-bot.command('propongo', async (ctx) => quests.quest('proposal', ctx, orbitdb))
-bot.command('fare', async (ctx) => quests.quest('todo', ctx, orbitdb))
+//----------------------------- APPRECIATION -----------------------------
+telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
+telebot.command('appreciate', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
+telebot.command('apprezza', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
+telebot.command('maslow', (ctx) => UI.showMaslow(2))
+telebot.command('assignRoles', async (ctx) => ctx.reply(await AI.assignRoles(await quests.listUsersActions(ctx, orbitdb), await settings.getRoles(utils.getChatId(ctx)) )))
+telebot.command('setRoles', async (ctx) => ctx.reply(await settings.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
+telebot.command('getRoles', async (ctx) => ctx.reply(await settings.getRoles(utils.getChatId(ctx))))
+telebot.command('actions',async (ctx) => ctx.reply(await quests.listUsersActions(ctx, orbitdb)))
 
-//create new request
-bot.command('richiedo', async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command('bisogno', async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command('richiesta', async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command('vorrei', async (ctx) => quests.quest('request', ctx, orbitdb))
-bot.command('sogno', async (ctx) => quests.quest('request', ctx, orbitdb))
-//create new offer
-bot.command('offro', async (ctx) => quests.quest('offer', ctx, orbitdb))
-bot.command('dono', async (ctx) => quests.quest('offer', ctx, orbitdb))
-bot.command('ho', async (ctx) => quests.quest('offer', ctx, orbitdb))
-bot.command('regalo', async (ctx) => quests.quest('offer', ctx, orbitdb))
 
-//--------------------------------------------------------------  
+//----------------------------- VALUES -----------------------------
+telebot.command('showvalues', (ctx) => values.showValues(ctx, orbitdb))
+telebot.command('values', async (ctx) => values.values(ctx, orbitdb))
+telebot.command('valuesSelect', async (ctx) => values.valuesSelect(ctx, orbitdb))
+telebot.command('valuesAdd', async (ctx) => values.valuesAdd(ctx, orbitdb))
+telebot.command('valuesRemove', async (ctx) => values.valuesRemove(ctx, orbitdb))
+
+//----------------------------- QUESTS -----------------------------
+telebot.command('quest', async (ctx) => quests.quest('quest', ctx, orbitdb))
+telebot.command('mission', async (ctx) => quests.quest('quest', ctx, orbitdb))
+telebot.command('task', async (ctx) => quests.quest('task', ctx, orbitdb))
+telebot.command('proposal', async (ctx) => quests.quest('proposal', ctx, orbitdb))
+telebot.command('propose', async (ctx) => quests.quest('proposal', ctx, orbitdb))
+telebot.command('todo', async (ctx) => quests.quest('todo', ctx, orbitdb))
+telebot.command('actions', async (ctx) => quests.listUsersActions())
+
+telebot.command(['need','request','want','wish'], async (ctx) => quests.quest('request', ctx, orbitdb))
+telebot.command(['offer','give','have','gift'], async (ctx) => quests.quest('offer', ctx, orbitdb))
+
+// ITALIAN
+telebot.command('missione', async (ctx) => quests.quest('quest', ctx, orbitdb))
+telebot.command('compito', async (ctx) => quests.quest('task', ctx, orbitdb))
+telebot.command('proposta', async (ctx) => quests.quest('proposal', ctx, orbitdb))
+telebot.command('propongo', async (ctx) => quests.quest('proposal', ctx, orbitdb))
+telebot.command('fare', async (ctx) => quests.quest('todo', ctx, orbitdb))
+
+//create new request/offer
+telebot.command(['richiedo','bisogno','vorrei','sogno','richiesta','chiedo'], async (ctx) => quests.quest('request', ctx, orbitdb))
+telebot.command(['offro','dono','regalo','chiedetemi','ho','offerta'], async (ctx) => quests.quest('offer', ctx, orbitdb))
+
 // QUEST ACTIONS ====================================================
 
-bot.action('join_quest', (ctx) => quests.join(ctx, orbitdb));
-bot.action('appreciate_quest', (ctx) => quests.appreciate(ctx, orbitdb))
-bot.action('cancel_quest', (ctx) => quests.cancel(ctx, orbitdb));
-bot.action('complete_quest', (ctx) => quests.complete(ctx, orbitdb));
-bot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
+telebot.action('join_quest', (ctx) => quests.join(ctx, orbitdb));
+telebot.action('appreciate_quest', (ctx) => quests.appreciate(ctx, orbitdb))
+telebot.action('cancel_quest', (ctx) => quests.cancel(ctx, orbitdb));
+telebot.action('complete_quest', (ctx) => quests.complete(ctx, orbitdb));
+telebot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
 
 
 // bot.action('popup', async (ctx) => {ctx.AnswerCallbackQueryAsync(ctx.CallbackQuery.id, "Notification already enabled", true)});
-
-// values
-bot.command('values', async (ctx) => values.values(ctx, orbitdb))
-bot.command('valuesSelect', async (ctx) => values.valuesSelect(ctx, orbitdb))
-bot.command('valuesAdd', async (ctx) => values.valuesAdd(ctx, orbitdb))
-bot.command('valuesRemove', async (ctx) => values.valuesRemove(ctx, orbitdb))
 
 //----------------------------------------------------
 
 //=========== LIST COMMANDS ===============
 
 //Set up a command to display the appreciation score for each user
-bot.command('leaderboard', (ctx) => leaderboard(ctx))
-bot.command('appreciation', (ctx) => leaderboard(ctx))
-bot.command('credits', (ctx) => leaderboard(ctx))
-bot.command('scores', (ctx) => leaderboard(ctx))
-bot.command('score', (ctx) => leaderboard(ctx))
-bot.command('points', (ctx) => leaderboard(ctx))
-
-bot.command('apprezzamento', (ctx) => leaderboard(ctx))
-bot.command('crediti', (ctx) => leaderboard(ctx))
-bot.command('punti', (ctx) => leaderboard(ctx))
-bot.command('punteggio', (ctx) => leaderboard(ctx))
-bot.command('punteggi', (ctx) => leaderboard(ctx))
-bot.command('classifica', (ctx) => leaderboard(ctx))
-
+telebot.command(['leaderboard','appreciation','credits','scores','score','points','rank','status'], (ctx) => leaderboard(ctx))
+telebot.command(['apprezzamento','crediti','punti','punteggio','punteggi','classifica'], (ctx) => leaderboard(ctx))
 
 // Set up a command to display the quests
-bot.command('tasks', (ctx) => questboard(ctx))
-bot.command('quests', (ctx) => questboard(ctx))
-bot.command('todos', (ctx) => questboard(ctx))
-bot.command('proposals', (ctx) => questboard(ctx))
-
-bot.command('compiti', (ctx) => questboard(ctx))
-bot.command('missioni', (ctx) => questboard(ctx))
-bot.command('todos', (ctx) => questboard(ctx))
-bot.command('proposte', (ctx) => questboard(ctx))
+telebot.command(['tasks','quests','todos','proposals'], (ctx) => questboard(ctx))
+telebot.command(['compiti','missioni','proposte'], (ctx) => questboard(ctx))
 
 // Set up a command to display the requests
-bot.command('requests', (ctx) => requestsboard(ctx))
-bot.command('offers', (ctx) => offersboard(ctx))
-bot.command('wishes', (ctx) => requestsboard(ctx))
-bot.command('needs', (ctx) => requestsboard(ctx))
+telebot.command(['requests','wishes','needs'], (ctx) => requestsboard(ctx))
+telebot.command('offers', (ctx) => offersboard(ctx))
 
-
-bot.command('richieste', (ctx) => requestsboard(ctx))
-bot.command('offerte', (ctx) => offersboard(ctx))
-bot.command('sogni', (ctx) => requestboard(ctx))
-bot.command('bisogni', (ctx) => requestboard(ctx))
+telebot.command(['richieste','sogni','bisogni'], (ctx) => requestsboard(ctx))
+telebot.command('offerte', (ctx) => offersboard(ctx))
 
 // ================= ADMIN ===========================
-bot.command('reset', async (ctx) => {
+telebot.command('reset', async (ctx) => {
   if (!orbitdb) return
 
   //TODO; check if the user is an admin
@@ -232,17 +270,17 @@ bot.command('reset', async (ctx) => {
   ctx.reply('Bot resetted')
 })
 
-bot.command('setLanguage', async (ctx) => {
+telebot.command('setLanguage', async (ctx) => {
   //TODO; check if the user is an admin
   await settings.setLanguage(ctx)
 })
 
-bot.command('setTheme', async (ctx) => {
+telebot.command('setTheme', async (ctx) => {
   //TODO; check if the user is an admin
   await settings.setTheme(ctx)
 })
 
-bot.command('setAdmin', async (ctx) => {
+telebot.command('setAdmin', async (ctx) => {
   //TODO; check if the user is an admin
   await settings.setAdmin(ctx)
 })
@@ -282,7 +320,7 @@ async function questboard(ctx) {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) },  Markup.inlineKeyboard([
     //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
-    ])).then((ctx) => {bot.telegram.pinChatMessage(chatID, ctx.message_id)});
+    ])).then((ctx) => {telebot.telegram.pinChatMessage(chatID, ctx.message_id)});
   });
   return;
 }
@@ -360,7 +398,7 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-bot.on('web_app_data', (ctx) => {
+telebot.on('web_app_data', (ctx) => {
 	var [ timespamp, timezoneOffset ] = ctx.message.web_app_data.data.split('_')
 	timespamp = parseInt(timespamp)
 
@@ -378,7 +416,7 @@ bot.on('web_app_data', (ctx) => {
 
 
 function discord2telegram(message) {
-  const ctx = {};
+  const ctx = message;
 
   // Map properties from discord.js message to telegraf context
   ctx.updateType = "message";
