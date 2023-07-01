@@ -32,6 +32,7 @@
     "qrcode-reader": "^1.0.4",
     "sharp": "^0.32.1",
     "telegraf": "^4.11.2",
+    "telegram-inline-calendar": "^2.0.3",
     "web3": "^1.8.2"
   }
 }

@@ -31,15 +31,18 @@ import { create } from 'ipfs'
 import OrbitDB from 'orbit-db'
 
 //import WeQuest Modules
-import * as quests from './quests.js'
+import Quests from './quests.js'
 import * as values from './values.js'
 import * as request from './requests.js'
 import * as settings from './settings.js'
+import { t } from "i18next";
+
+//Initialize modules
 
 let orbitdb
 let telebot
 let discordbot
-
+let quests
 let moon
 
 async function init() {
@@ -71,11 +74,13 @@ async function init() {
   telebot = new Telegraf(config.telegram);
   //telebot.use(Telegraf.log())
   moon = new lunation(telebot)
+  quests = new Quests(telebot, orbitdb)
 
   telebot.launch();
   //telebot.telegram.setMyCommands([ { command: 'start', description: 'Start the bot' }, { command: 'help', description: 'Help' }, { command: 'task', description: 'Task' }, { command: 'quest', description: 'Quest' }, { command: 'setLanguage', description: 'Set language' }, { command: 'setTheme', description: 'Set theme' }, { command: 'setLevel', description: 'Set level' }, { command: 'setAdmin', description: 'Set admin' }, { command: 'getLanguage', description: 'Get language' }, { command: 'getTheme', description: 'Get theme' }, { command: 'getLevel', description: 'Get level' }, { command: 'getAdmin', description: 'Get admin' }, { command: 'getAddress', description: 'Get address' }, { command: 'getBalance', description: 'Get balance' }, { command: 'getQuests', description: 'Get quests' }, { command: 'getTasks', description: 'Get tasks' }, { command: 'getQuest', description: 'Get quest' }, { command: 'getTask', description: 'Get task' }, { command: 'getSettings', description: 'Get settings' }, { command: 'getValues', description: 'Get values' }, { command: 'getInfo', description: 'Get info' }, { command: 'getHelp', description: 'Get help' } ]);
 
-  discordbot = new Client({ intents: [GatewayIntentBits.Guilds,GatewayIntentBits.GuildMessages] });
+  discordbot = new Client({ intents: [GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,GatewayIntentBits.MessageContent] });
   discordbot.on("ready", () => {
     // This event will run if the bot starts, and logs in, successfully.
     console.log(`Discrord BOT has started, with ${discordbot.users.cache.size} users, in ${discordbot.channels.cache.size} channels of ${discordbot.guilds.cache.size} guilds.`);
@@ -84,7 +89,7 @@ async function init() {
     discordbot.user.setActivity(`Serving ${discordbot.guilds.cache.size} servers`);
   });
 
-  discordbot.on('message', msg => {
+  discordbot.on('messageCreate', msg => {
     console.log("DISCORD MESSAGE: "+msg.content)
     if (msg.content.charAt(0) === config.prefix) {
       msg.react('👀')
@@ -97,7 +102,7 @@ async function init() {
     const command = commandBody[0];
     const args = commandBody.slice(1);
     if (command === 'quest') {
-      console.log('quest')
+      quests.quest('quest',discord2telegram(msg), orbitdb);
     }
     if (command === 'task') {
       console.log('task')
@@ -118,7 +123,12 @@ await init();
 // });
 
 // =========================== bot commands ===========================
-
+telebot.command('start', async (ctx) => {
+  ctx.reply("Welcome to WeQuest, a bot developed by Liminal Village. Our quest is to revolutionize community dynamics through AI and blockchain. WeQuest uses gamification to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. Our goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. ")
+});
+telebot.command('help', async (ctx) => {
+  ctx.reply("you can use the following commands: \n /task \n /quest \n /setLanguage \n /setTheme \n /setLevel \n /setAdmin \n /getLanguage \n /getTheme \n /getLevel \n /getAdmin \n /getAddress \n /getBalance \n /getQuests \n /getTasks \n /getQuest \n /getTask \n /getSettings \n /getValues \n /getInfo \n /getHelp")
+})
 telebot.on('photo', async (ctx) => {
   if (ctx.message.caption) {
     const command = ctx.message.caption.split(' ')[0];
@@ -139,7 +149,7 @@ telebot.on('photo', async (ctx) => {
       }
 
       if (value) {
-        ctx.reply(`${value.result}`);
+        ctx.reply(`${value.result.split('/').slice(value.result.split('/').length - 1 )}`,Markup.inlineKeyboard([Markup.button.webApp('Open', `${value.result}`)]));
       } 
     };
     qr.decode(jimpImage.bitmap);
@@ -226,6 +236,7 @@ telebot.command(['offro','dono','regalo','chiedetemi','ho','offerta'], async (ct
 
 telebot.action('join_quest', (ctx) => quests.join(ctx, orbitdb));
 telebot.action('appreciate_quest', (ctx) => quests.appreciate(ctx, orbitdb))
+telebot.action('schedule_quest', (ctx) => quests.schedule(ctx, orbitdb));
 telebot.action('cancel_quest', (ctx) => quests.cancel(ctx, orbitdb));
 telebot.action('complete_quest', (ctx) => quests.complete(ctx, orbitdb));
 telebot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
@@ -252,6 +263,8 @@ telebot.command('offers', (ctx) => offersboard(ctx))
 telebot.command(['richieste','sogni','bisogni'], (ctx) => requestsboard(ctx))
 telebot.command('offerte', (ctx) => offersboard(ctx))
 
+telebot.command('offerswants', (ctx) => offerswantsboard(ctx))
+
 // ================= ADMIN ===========================
 telebot.command('reset', async (ctx) => {
   if (!orbitdb) return
@@ -262,11 +275,13 @@ telebot.command('reset', async (ctx) => {
   //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
   // }catch(e){ console.log(e)}
   let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-  let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
   let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
+  let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+  let settingsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.settings')
   await questsDB.drop()
-  await appreciationDB.drop()
   await requestsDB.drop()
+  await usersDB.drop()
+  await settingsDB.drop()
   ctx.reply('Bot resetted')
 })
 
@@ -285,18 +300,49 @@ telebot.command('setAdmin', async (ctx) => {
   await settings.setAdmin(ctx)
 })
 
+telebot.command('setValueEquation', async (ctx) => {
+  //TODO; check if the user is an admin
+  await settings.setValueEquation(ctx)
+})
+
+telebot.command('getValueEquation', async (ctx) => {
+  //TODO; check if the user is an admin
+  console.log(await settings.getValueEquation(ctx.message.chat.id))
+})
+
 // Set up a command to display the requests
 async function leaderboard(ctx) {
   if (!orbitdb) return
   let chatID = ctx.message.chat.id
   // loop through the userlist and get the quests
-  let appreciationDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.appreciation')
-  await appreciationDB.load()
+  let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+  await usersDB.load()
 
-  let appreciation = await appreciationDB.get('')//.filter(quest => quest.status === 'ongoing')
+  let users = await usersDB.get('')//.filter(quest => quest.status === 'ongoing')
 
   // Create a table header
-  UI.getAppreciationTable(appreciation, chatID).then((path) => {
+  console.log(users)
+  UI.getRankTable(users, await settings.getValueEquation(chatID), chatID).then((path) => {
+  //UI.getAppreciationTable(users, chatID).then((path) => {
+    //send the image
+    ctx.replyWithPhoto({ source: fs.createReadStream(path) })
+  });
+  return;
+}
+
+async function offerswantsboard(ctx) {
+  if (!orbitdb) return
+  let chatID = ctx.message.chat.id
+  // loop through the userlist and get the quests
+  let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+  await usersDB.load()
+
+  let users = await usersDB.get('')//.filter(quest => quest.status === 'ongoing')
+
+  // Create a table header
+  console.log(users)
+  UI.getOffersWantsTable(users, chatID).then((path) => {
+  //UI.getAppreciationTable(users, chatID).then((path) => {
     //send the image
     ctx.replyWithPhoto({ source: fs.createReadStream(path) })
   });
@@ -417,7 +463,7 @@ telebot.on('web_app_data', (ctx) => {
 
 function discord2telegram(message) {
   const ctx = message;
-
+  ctx.deleteMessage = () => message.delete();
   // Map properties from discord.js message to telegraf context
   ctx.updateType = "message";
   ctx.message = {

@@ -28,6 +28,32 @@ export async function getQuestImage(quest, chatID) {
   return path
 }
 
+export async function getOffersWantsTable(users, chatID) {
+  let table = '<table><tr><th>Username</th><th>Wants</th><th>Offers</th></tr>';
+
+  for (let user of users) {
+      table += '<tr><td>' + user.username + '</td>';
+      
+      table += '<td><ul>';
+      for (let want of user.wants) {
+          table += '<li>' + want + '</li>';
+      }
+      table += '</ul></td>';
+
+      table += '<td><ul>';
+      for (let offer of user.offers) {
+          table += '<li>' + offer + '</li>';
+      }
+      table += '</ul></td></tr>';
+  }
+
+  table += '</table>';
+  const path = './images/offersneeds' + chatID + '.png'
+  const html = await generateHtml(table, await getTheme(chatID))
+  await screenshotHtml(html, path, 'table')
+  return path
+}
+
 
 export async function getQuestsTable(quests, chatID) {
 
@@ -139,11 +165,64 @@ export async function getOffersTable(requests, chatID) {
 }
 
 
+export async function getRankTable(users, equation, chatID) {
+  // initiated, completed, ccredits sent, credits received, hours, groupsize?, requested, offered, money
+  const rows = []
+  const sortedUsers = Object.keys(users).sort((a, b) => {
+    return (users[b].initiated.length * equation.initiated + users[b].completed.length * equation.completed + users[b].sent * equation.sent + users[b].received * equation.received + users[b].hours * equation.hours + users[b].groupsize * equation.groupsize + users[b].requested * equation.requested + users[b].offered * equation.offered + users[b].money * equation.money) - 
+           (users[a].initiated.length * equation.initiated + users[a].completed.length * equation.completed + users[a].sent * equation.sent + users[a].received * equation.received + users[a].hours * equation.hours + users[a].groupsize * equation.groupsize + users[a].requested * equation.requested + users[a].offered * equation.offered + users[a].money * equation.money)
+    //return users[b].score - users[a].score
+    });
+
+  for (let i = 0; i < sortedUsers.length; i++) {
+    const user = users[sortedUsers[i]]
+    const score = user.initiated.length * equation.initiated + user.completed.length * equation.completed + user.sent * equation.sent + user.received * equation.received + user.hours * equation.hours + user.groupsize * equation.groupsize + user.requested * equation.requested + user.offered * equation.offered + user.money * equation.money
+    console.log(user.username, score)
+    const row = `<tr>
+      <th scope="row">${i + 1}</th>
+      <th>${user.username}</th>
+      <th>${user.initiated.length}</th>
+      <th>${user.completed.length}</th>
+      <th>${user.sent}</th>
+      <th>${user.received}</th>
+      <th>${score}</th>
+    </tr>`
+
+    rows.push(row)
+  }
+  let language = await getLanguage(chatID);
+  let element  = `<table>
+  <caption> ${i18next.t('Rank', {lng:language})} </caption>
+  <thead>
+      <tr>
+          <th scope="col">${i18next.t('rank', {lng:language} )}</th>
+          <th scope="col">${i18next.t('name', {lng:language} )}</th>
+          <th scope="col">${i18next.t('initiaded', {lng:language} )}</th>
+          <th scope="col">${i18next.t('completed', {lng:language} )}</th>
+          <th scope="col">${i18next.t('sent', {lng:language} )}</th>
+          <th scope="col">${i18next.t('received', {lng:language} )}</th>
+          <th scope="col">${i18next.t('score', {lng:language} )}</th>
+      </tr>
+  </thead>
+  <tbody>
+      ${rows.join('\n')}
+  </tbody>
+</table>`
+
+  const path = './images/rank' + chatID + '.png'
+  const theme =  await getTheme(chatID)
+  const html = await generateHtml(element, theme)
+  await screenshotHtml(html, path, 'table')
+  return path
+}
+
+
 export async function getAppreciationTable(appreciation, chatID) {
   
   const rows = []
   const sortedUsers = Object.keys(appreciation).sort((a, b) => {
     return appreciation[b].received - appreciation[b].sent - (appreciation[a].received - appreciation[a].sent);
+    return 
   });
 
   for (let i = 0; i < sortedUsers.length; i++) {
@@ -158,7 +237,6 @@ export async function getAppreciationTable(appreciation, chatID) {
     rows.push(row)
   }
   let language = await getLanguage(chatID);
-  console.log( language)
   let element  = `<table>
   <caption> ${i18next.t('Appreciation', {lng:language})} </caption>
   <thead>
@@ -176,9 +254,7 @@ export async function getAppreciationTable(appreciation, chatID) {
 
   const path = './images/appreciation' + chatID + '.png'
   const theme =  await getTheme(chatID)
-  console.log(theme)
   const html = await generateHtml(element, theme)
-  
   await screenshotHtml(html, path, 'table')
   return path
 }

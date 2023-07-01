@@ -13,7 +13,19 @@ function getDefaultSettings(chatID) {
       theme: 'dark',
       level: 0,
       admin: '',
-      roles: ''
+      roles: '',
+      valueEquation:
+      { 
+        initiated: 1,
+        completed: 1,
+        sent:1,
+        received: 1,
+        hours: 1,
+        groupsize: 1,
+        requested: 1,
+        offered: 1,
+        money: 1 
+      }
     }
 } 
 
@@ -187,13 +199,37 @@ export async function setSettings(chatID, settings) {
     settingsDB.put(settings)
 }
 
-export async function setValueEquation(chatID, valueEquation) {
+export async function setValueEquation(ctx) {
+    const chatID = ctx.message.chat.id;
+    const weights = ctx.message.text.split(' ').slice(1);
     let settings = await settingsDB.get(chatID)[0]
     if (!settings || settings == '') {
         settings =  getDefaultSettings(chatID)
     }
-    settings.valueEquation = valueEquation
-    settingsDB.put(settings)
+// initiated, completed, credits sent, credits received, hours, groupsize, requested, offered, money
+
+    const equation = {
+        initiated: weights[0],
+        completed: weights[1],
+        sent: weights[2],
+        received: weights[3],
+        hours: weights[4],
+        groupsize: weights[5],
+        requested: weights[6],
+        offered: weights[7],
+        money: weights[8]
+    }
+ 
+    settings.valueEquation = equation
+    await settingsDB.put(settings)
+}
+
+export async function getValueEquation(chatID) {
+    let settings = await settingsDB.get(chatID)[0]
+    if (!settings || settings == '') {
+        settings =  getDefaultSettings(chatID)
+    }
+    return settings.valueEquation
 }
 
 // export async function getSettingsButtons(chatID) {
