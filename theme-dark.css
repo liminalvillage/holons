@@ -36,6 +36,12 @@ td {
     text-align: center;
 }
 
+ul {
+  list-style-type: none;
+  padding: 0;
+  text-align: left;
+}
+
 
 :root {
     --primary-color: rgb(0, 0, 0);

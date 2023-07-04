@@ -177,7 +177,7 @@ export async function cancel(ctx, orbitdb) {
         //delete quest from database
         questsDB.del(messageID.toString())
         //delete the telegram message
-        ctx.deleteMessage(messageID.toString())
+        ctx.deleteMessage(messageID.toString()).catch((error) => { console.log(error) })
 
     } else {
         ctx.reply(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID })

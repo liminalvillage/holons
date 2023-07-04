@@ -21,9 +21,9 @@ function getDefaultSettings(chatID) {
         sent:1,
         received: 1,
         hours: 1,
-        groupsize: 1,
-        requested: 1,
-        offered: 1,
+        collaboration: 1,
+        wants: 1,
+        offers: 1,
         money: 1 
       }
     }
@@ -165,9 +165,8 @@ export async function setAdmin(ctx) {
 
  export async function setRoles(chatID, roles) {
     let settings = await settingsDB.get(chatID)[0]
-    if (roles === undefined || roles === null) {
-        console.log('Please specify the roles. Example: /setRoles role1 role2')
-        return
+    if (roles === undefined || roles === null || roles === '') {
+        return ('Please specify the roles. Example: /setRoles role1 role2')
     }
     if (!settings || settings == '') {
         settings =  getDefaultSettings(chatID)
@@ -195,31 +194,15 @@ export async function getSettings(chatID) {
     return settings
 }
 
-export async function setSettings(chatID, settings) {
+export async function setSettings(settings) {
     settingsDB.put(settings)
 }
 
-export async function setValueEquation(ctx) {
-    const chatID = ctx.message.chat.id;
-    const weights = ctx.message.text.split(' ').slice(1);
+export async function setValueEquation(chatID, equation) {
     let settings = await settingsDB.get(chatID)[0]
     if (!settings || settings == '') {
         settings =  getDefaultSettings(chatID)
     }
-// initiated, completed, credits sent, credits received, hours, groupsize, requested, offered, money
-
-    const equation = {
-        initiated: weights[0],
-        completed: weights[1],
-        sent: weights[2],
-        received: weights[3],
-        hours: weights[4],
-        groupsize: weights[5],
-        requested: weights[6],
-        offered: weights[7],
-        money: weights[8]
-    }
- 
     settings.valueEquation = equation
     await settingsDB.put(settings)
 }

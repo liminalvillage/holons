@@ -33,6 +33,9 @@ class Quests {
     
         let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
         await questsDB.load()
+
+        let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+        await usersDB.load()
     
         const title = text.split(' ').slice(1).join(' ');
         const picture = ctx.message.photo ? ctx.message.photo[0].file_id : null;
@@ -59,7 +62,7 @@ class Quests {
             status: 'ongoing'
         }
         // // Add the sender to the list of users
-    
+        
         
         // let path = await ui.questImage(quest)
         // ctx.replyWithPhoto({ source: fs.createReadStream(path) },markup).then((ctx) => {
@@ -82,6 +85,7 @@ class Quests {
                 questsDB.put(quest)
                 //Pin the message
                 ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
+
             });
         else
         // let path = await ui.getQuestImage(quest,chatID)
@@ -95,12 +99,24 @@ class Quests {
             quest._id = nctx.message_id;
             quest.chat = nctx.chat.id;
             questsDB.put(quest)
+           
             //Pin the message
             ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
+               
             //delete the original message
-            ctx.deleteMessage(messageID.toString());
+            ctx.deleteMessage(messageID.toString()).catch((err) => { console.log(err) });
         });
+        if (type == 'quest' || type == 'task')
+            await saveUserAction(sender, "initiated", quest.title, usersDB)
+        if (type == 'offer')
+            await saveUserAction(sender, "offers", quest.title, usersDB)
+        if (type == 'request')
+            await saveUserAction(sender, "wants", quest.title, usersDB)
+     
     }
+
+    
+    // ========================== ACTIONS ==========================
     
      async join(ctx, orbitdb) {
         if (!orbitdb) return
@@ -196,9 +212,6 @@ class Quests {
         questsDB.put(quest);
     }
     
-    
-    
-    
      async cancel(ctx, orbitdb) {
         if (!orbitdb) return
         console.log("CANCEL ACTION");
@@ -218,11 +231,11 @@ class Quests {
         if (quest.initiator.id === ctx.from.id) {
             //delete quest from database
             questsDB.del(messageID.toString())
-             //unpin the message
+    
+            //unpin the message
             ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => { console.log(err) });
             //delete the telegram message
-            ctx.deleteMessage(messageID.toString())
-           
+            ctx.deleteMessage(messageID.toString()).catch((err) => { console.log(err) });
     
         } else {
             ctx.reply(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID })
@@ -294,8 +307,13 @@ class Quests {
             updateMessage(ctx, quest);
             // Update the db
             questsDB.put(quest);
-            //unpin the message
-            ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
+            try {
+                //unpin the message
+                ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
+            } catch (err) {
+                console.log(err)
+            }
+
         } else {
             ctx.reply(`Only the initiator of the quest can mark it as completed.`, { reply_to_message_id: messageID });
             return;
@@ -307,7 +325,8 @@ class Quests {
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
-            await sendToken(sender, 1, usersDB)
+            //await sendToken(sender, 1, usersDB)
+            await saveUserAction(sender, "sent", quest.title, usersDB)
             // Calculate the number of appreciation to send to each user
             const appreciationPerUser = 1  // / quest.users.length;
     
@@ -316,13 +335,14 @@ class Quests {
                 // Get the recipient
                 const recipient = quest.users[i]
                 // Check if the recipient is the sender
-                if (recipient.id === sender.id) {
-                    continue;
-                }
+                // if (recipient.id === sender.id) {
+                //     continue;
+                // }
                 // Send the appreciation to each user
-                await recieveToken(recipient, appreciationPerUser, usersDB)
+                //await recieveToken(recipient, appreciationPerUser, usersDB)
                 // save user with action to the database
-                await saveUserAction(recipient, quest.title, usersDB)
+                await saveUserAction(recipient, "received", quest.title, usersDB)
+                await saveUserAction(recipient, "completed", quest.title, usersDB)
             }
         }
         // ================================ APPRECIATION ==========================
@@ -374,7 +394,7 @@ class Quests {
         await usersDB.load()
         const mentions = entities.filter((entity) => (entity.type === 'mention'|| entity.type === 'text_mention'));
         if (mentions.length === 0) {
-            ctx.reply(`Please mention the users you want to send appreciation to using '@', followed by the reason.`, { reply_to_message_id: ctx.message.message_id });
+            ctx.reply(`Please mention the name of the user(s) you want to send appreciation to using '@', followed by the reason.`, { reply_to_message_id: ctx.message.message_id });
             return
         }
     
@@ -392,11 +412,13 @@ class Quests {
                 // get the user from the database
                 recipient = await usersDB.get(ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))[0]
             }
-            console.log('recipient',recipient);
+          
             if ( !recipient || recipient == ''|| !recipient.id) { 
                 recipient = {}
                 recipient.id = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
+                recipient.first_name = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
             }
+        
             // if (!recipient || recipient == '') {
             //     ctx.reply(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id });
             //     // register the user in the database
@@ -405,7 +427,6 @@ class Quests {
             // }
     
             // // Check if the recipient is the sender
-            
             // if (recipient.id === sender.id) {
             //     ctx.reply(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id });
             //     continue;
@@ -413,20 +434,18 @@ class Quests {
             
     
             // Send the appreciation to the recipient
-            await recieveToken(recipient, 1, usersDB)
+            //await recieveToken(recipient, 1, usersDB)
             // save the user action
-            await saveUserAction(recipient, action, usersDB)
+            await saveUserAction(recipient, "received", action, usersDB)
         }
     
         // Update the sent appreciation of the sender
-        await sendToken(sender, 1, usersDB)
+       //await sendToken(sender, 1, usersDB)
+       await saveUserAction(sender, "sent", action, usersDB)
         ctx.reply(`You have sent 1 appreciation to ${mentions.length} ${mentions.length > 1 ? 'users' : 'user'}.`, { reply_to_message_id: ctx.message.message_id });
     }
     
     // ============== UTILITY FUNCTIONS
-    
-    
-    
      async  listUsersActions(ctx, orbitdb)  {
         if (!orbitdb) return
         const chatID = ctx.message.chat.id;
@@ -448,14 +467,19 @@ class Quests {
 }
 
  // save user action
- async function saveUserAction(userobj, action, db) {
+ async function saveUserAction(userobj,type, action, db) {
     console.log('SAVE USER ACTION')
     if (!db) return
-    let userinfo = await getUserInfo(userobj.id, db )
-    const type = 'completed';
+    let userinfo = await getUserInfo(userobj, db )
     switch (type) {
+        case 'offers':
+            userinfo.offers.push(action);
+            break;
+        case 'wants':
+            userinfo.wants.push(action);
+            break;
         case 'initiated':
-            userinfo.initiated += 1;
+            userinfo.initiated.push(action);
             break;
         case 'completed':
             userinfo.completed.push(action)
@@ -480,34 +504,37 @@ class Quests {
 // send appreciation 
 async function recieveToken(recipient, amount, db) {
     if (!db) return
-    let recipientinfo = await  getUserInfo(recipient.id,db)
+    let recipientinfo = await  getUserInfo(recipient,db)
     recipientinfo.received += amount;
     await db.put(recipientinfo)
 }
 
 async function sendToken(sender, amount, db) {
     if (!db) return
-    let senderinfo = await getUserInfo(sender.id, db)
+    let senderinfo = await getUserInfo(sender, db)
     senderinfo.sent += amount;
     await db.put(senderinfo)
 }
 
 //gets an existing user or  creates a new one
-async function  getUserInfo(userid, db){
+async function  getUserInfo(user, db){
     if (!db) return
-    let userinfo = await db.get(userid)[0]
+    let userinfo = await db.get(user.id)[0]
     // Initialize the receiver's points if they do not exist yet
     if (!userinfo || userinfo == '') {
         userinfo = {
-            _id: userid,
-            username: userid,
-            initiated: 0,
+            _id: user.id,
+            username: user.username,
+            initiated: [],
             received: 0,
             sent: 0,
             wants:[],
             offers:[],
-            appreciatied: [],
-            completed: []
+            appreciated: [],
+            completed: [],
+            collaboration: [],
+            hours: 0,
+            money: 0 
         }
         await db.put(userinfo)
     }
@@ -581,8 +608,8 @@ function markup(quest,language) {
 
     if (quest.type === "request" || quest.type === "offer") {
         mu = Markup.inlineKeyboard([[
-            Markup.button.callback(i18next.t('Geolocate',{lng:language}), 'geolocate', { requestlocation: true }),
-            Markup.button.callback(i18next.t('Take',{lng:language}), 'join_quest'),
+            Markup.button.callback(i18next.t('schedule',{lng:language}), 'schedule_quest'),
+            Markup.button.callback(i18next.t('participate',{lng:language}), 'join_quest'),
             Markup.button.callback(i18next.t('Cancel',{lng:language}), 'cancel_quest'),
         ]])
     }

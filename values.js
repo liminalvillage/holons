@@ -22,8 +22,7 @@ export function valuesRemove(ctx, orbitdb) {
 function createButtons(values){
     let buttons = []
     values.forEach((value) => {
-        buttons.push([Markup.button.callback(value._id, 'https://t.me/Bot?task='+value._id),
-                    Markup.button.callback("Positive")])
+        buttons.push(Markup.button.callback(value._id, 'https://t.me/WeQuestBot?task='+value._id))
     })
     return Markup.inlineKeyboard(buttons)
 }

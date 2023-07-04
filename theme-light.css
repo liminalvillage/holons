@@ -31,6 +31,11 @@ td {
     text-align: center;
 }
 
+ul {
+    list-style-type: none;
+    padding: 0;
+    text-align: left;
+}
 
 :root {
     --primary-color: white;

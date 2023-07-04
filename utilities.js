@@ -39,4 +39,4 @@ export const underline = (text) => `<u>${text}</u>`;
 export const getUserInput = (ctx) => ctx?.update?.message?.text;
 export const getParameters = (ctx) => ctx?.update?.message?.text.split(" ").slice(1).join(" ");
 
-export const getChatId = (ctx) => ctx?.update?.message?.chat?.id;
+export const getChatId = (ctx) => ctx?.update?.message?.chat?.id || ctx?.update?.callback_query?.message?.chat?.id || 0;

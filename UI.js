@@ -1,17 +1,126 @@
-import puppetteer  from 'puppeteer-core';
+import puppetteer from 'puppeteer-core';
 import { executablePath } from 'puppeteer';
 import i18next from 'i18next';
 import { getLanguage, getTheme } from './settings.js';
+import fs from 'fs';
 
 
-
-
-const browser  = await puppetteer.launch({
+const browser = await puppetteer.launch({
   args: ['--no-sandbox',],
   ignoreHTTPSErrors: true,
   executablePath: executablePath(),
 });
 
+class UI {
+  constructor(bot, orbitdb) {
+    this.bot = bot;
+    this.orbitdb = orbitdb;
+  }
+
+  async init(){
+
+  }
+
+  // Set up a command to display the requests
+  async leaderboard(ctx, valueEquation) {
+    if (!this.orbitdb) return
+    let chatID = ctx.message.chat.id
+    // loop through the userlist and get the quests
+    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+    await usersDB.load()
+
+    let users = await usersDB.get('')//.filter(quest => quest.status === 'ongoing')
+
+    // Create a table header
+    getRankTable(users, valueEquation, chatID).then((path) => {
+      //UI.getAppreciationTable(users, chatID).then((path) => {
+      //send the image
+      ctx.replyWithPhoto({ source: fs.createReadStream(path) })
+    });
+    return;
+  }
+
+  async bulletinboard(ctx) {
+    if (!this.orbitdb) return
+    let chatID = ctx.message.chat.id
+    // loop through the userlist and get the quests
+    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+    await usersDB.load()
+
+    let users = await usersDB.get('')//.filter(quest => quest.status === 'ongoing')
+
+    // Create a table header
+    getBulletinTable(users, chatID).then((path) => {
+      //UI.getAppreciationTable(users, chatID).then((path) => {
+      //send the image
+      ctx.replyWithPhoto({ source: fs.createReadStream(path) })
+    });
+    return;
+  }
+
+
+  // Set up a command to display the quests
+  async questboard(ctx) {
+    if (!this.orbitdb) return
+    // Get a list of incomplete quests
+    let chatID = ctx.message.chat.id
+
+    let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+    await questsDB.load()
+
+    let quests = await questsDB.get('').filter(quest => quest.status === 'ongoing')
+
+    // Create a table header
+    getQuestsTable(quests, chatID).then((path) => {
+      //send the image
+      ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+      // ctx.replyWithPhoto({ source: fs.createReadStream(path) }, Markup.inlineKeyboard([
+      //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
+      // ])).then((ctx) => { telebot.telegram.pinChatMessage(chatID, ctx.message_id) });
+    });
+    return;
+  }
+
+  async requestsboard(ctx) {
+    if (!this.orbitdb) return
+    // Get a list of incomplete quests
+    let chatID = ctx.message.chat.id
+
+    let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+    await offersDB.load()
+
+    let requests = await offersDB.get('')
+
+    // Create a table header
+    getRequestsTable(requests, chatID).then((path) => {
+      //send the image
+      ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+    });
+    return;
+  }
+
+  async offersboard(ctx) {
+    if (!this.orbitdb) return
+    // Get a list of incomplete quests
+    let chatID = ctx.message.chat.id
+
+    let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+    await offersDB.load()
+
+    let requests = await offersDB.get('')
+
+    // Create a table header
+    getOffersTable(requests, chatID).then((path) => {
+      //send the image
+      ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+    });
+    return;
+
+  }
+
+}
+
+export default UI;
 
 export async function getQuestImage(quest, chatID) {
   const lang = await getLanguage(chatID)
@@ -28,23 +137,23 @@ export async function getQuestImage(quest, chatID) {
   return path
 }
 
-export async function getOffersWantsTable(users, chatID) {
+export async function getBulletinTable(users, chatID) {
   let table = '<table><tr><th>Username</th><th>Wants</th><th>Offers</th></tr>';
 
   for (let user of users) {
-      table += '<tr><td>' + user.username + '</td>';
-      
-      table += '<td><ul>';
-      for (let want of user.wants) {
-          table += '<li>' + want + '</li>';
-      }
-      table += '</ul></td>';
+    table += '<tr><td>' + user.username + '</td>';
 
-      table += '<td><ul>';
-      for (let offer of user.offers) {
-          table += '<li>' + offer + '</li>';
-      }
-      table += '</ul></td></tr>';
+    table += '<td><ul>';
+    for (let want of user.wants) {
+      table += '<li>' + want + '</li>';
+    }
+    table += '</ul></td>';
+
+    table += '<td><ul>';
+    for (let offer of user.offers) {
+      table += '<li>' + offer + '</li>';
+    }
+    table += '</ul></td></tr>';
   }
 
   table += '</table>';
@@ -72,14 +181,14 @@ export async function getQuestsTable(quests, chatID) {
   }
 
   const element = `<table>
-  <caption>${i18next.t('Active Quests',{lng:lang})}</caption>
+  <caption>${i18next.t('Active Quests', { lng: lang })}</caption>
   <thead>
       <tr>
-          <th scope="col">${i18next.t('ID',{lng:lang})}</th>
-          <th scope="col">${i18next.t('Quest',{lng:lang})}</th>
-          <th scope="col">${i18next.t('Initiator',{lng:lang})}</th>
-          <th scope="col">${i18next.t('People',{lng:lang})}</th>
-          <th scope="col">${i18next.t('Appreciators',{lng:lang})}</th>
+          <th scope="col">${i18next.t('ID', { lng: lang })}</th>
+          <th scope="col">${i18next.t('Quest', { lng: lang })}</th>
+          <th scope="col">${i18next.t('Initiator', { lng: lang })}</th>
+          <th scope="col">${i18next.t('People', { lng: lang })}</th>
+          <th scope="col">${i18next.t('Appreciators', { lng: lang })}</th>
       </tr>
   </thead>
   <tbody>
@@ -94,11 +203,11 @@ export async function getQuestsTable(quests, chatID) {
 }
 
 export async function getRequestsTable(requests, chatID) {
-  
+
   const lang = await getLanguage(chatID)
   const needs = requests.filter(request => request.type == 'request')
   const offers = requests.filter(request => request.type == 'offer')
-  
+
   const rows = []
   for (let i = 0; i < needs.length; i++) {
     const request = needs[i]
@@ -109,13 +218,13 @@ export async function getRequestsTable(requests, chatID) {
 
     rows.push(row)
   }
- 
+
   const element = `<table>
-  <caption>${i18next.t('Active Requests',{lng:lang})}</caption>
+  <caption>${i18next.t('Active Requests', { lng: lang })}</caption>
   <thead>
       <tr>
-          <th scope="col">${i18next.t('Person',{lng:lang})}</th>
-          <th scope="col">${i18next.t('Request',{lng:lang})}</th>
+          <th scope="col">${i18next.t('Person', { lng: lang })}</th>
+          <th scope="col">${i18next.t('Request', { lng: lang })}</th>
       </tr>
   </thead>
   <tbody>
@@ -130,10 +239,10 @@ export async function getRequestsTable(requests, chatID) {
 }
 
 export async function getOffersTable(requests, chatID) {
-  
+
   const lang = await getLanguage(chatID)
   const offers = requests.filter(request => request.type == 'offer')
-  
+
   const rows = []
   for (let i = 0; i < offers.length; i++) {
     const offer = offers[i]
@@ -144,9 +253,9 @@ export async function getOffersTable(requests, chatID) {
 
     rows.push(row)
   }
- 
+
   const element = `<table>
-  <caption>${i18next.t('Active Offers',{lng:lang})}</caption>
+  <caption>${i18next.t('Active Offers', { lng: lang })}</caption>
   <thead>
       <tr>
           <th scope="col">${i18next.t('Person')}</th>
@@ -169,15 +278,22 @@ export async function getRankTable(users, equation, chatID) {
   // initiated, completed, ccredits sent, credits received, hours, groupsize?, requested, offered, money
   const rows = []
   const sortedUsers = Object.keys(users).sort((a, b) => {
-    return (users[b].initiated.length * equation.initiated + users[b].completed.length * equation.completed + users[b].sent * equation.sent + users[b].received * equation.received + users[b].hours * equation.hours + users[b].groupsize * equation.groupsize + users[b].requested * equation.requested + users[b].offered * equation.offered + users[b].money * equation.money) - 
-           (users[a].initiated.length * equation.initiated + users[a].completed.length * equation.completed + users[a].sent * equation.sent + users[a].received * equation.received + users[a].hours * equation.hours + users[a].groupsize * equation.groupsize + users[a].requested * equation.requested + users[a].offered * equation.offered + users[a].money * equation.money)
+    return (users[b].initiated.length * equation.initiated + users[b].completed.length * equation.completed + users[b].sent * equation.sent + users[b].received * equation.received + users[b].hours * equation.hours + users[b].collaboration * equation.collaboration + users[b].wants.length * equation.wants + users[b].offers.length * equation.offers + users[b].money * equation.money) -
+           (users[a].initiated.length * equation.initiated + users[a].completed.length * equation.completed + users[a].sent * equation.sent + users[a].received * equation.received + users[a].hours * equation.hours + users[a].collaboration * equation.collaboration + users[a].wants.length * equation.wants + users[a].offers.length * equation.offers + users[a].money * equation.money)
     //return users[b].score - users[a].score
-    });
+  });
 
   for (let i = 0; i < sortedUsers.length; i++) {
     const user = users[sortedUsers[i]]
-    const score = user.initiated.length * equation.initiated + user.completed.length * equation.completed + user.sent * equation.sent + user.received * equation.received + user.hours * equation.hours + user.groupsize * equation.groupsize + user.requested * equation.requested + user.offered * equation.offered + user.money * equation.money
-    console.log(user.username, score)
+    const score = user.initiated.length * equation.initiated + 
+                  user.completed.length * equation.completed + 
+                  user.sent * equation.sent + 
+                  user.received * equation.received +
+                  user.hours * equation.hours + 
+                  user.collaboration * equation.collaboration 
+                  user.wants.length * equation.wants + 
+                  user.offers.length * equation.offers  
+                  user.money * equation.money
     const row = `<tr>
       <th scope="row">${i + 1}</th>
       <th>${user.username}</th>
@@ -191,17 +307,17 @@ export async function getRankTable(users, equation, chatID) {
     rows.push(row)
   }
   let language = await getLanguage(chatID);
-  let element  = `<table>
-  <caption> ${i18next.t('Rank', {lng:language})} </caption>
+  let element = `<table>
+  <caption> ${i18next.t('Rank', { lng: language })} </caption>
   <thead>
       <tr>
-          <th scope="col">${i18next.t('rank', {lng:language} )}</th>
-          <th scope="col">${i18next.t('name', {lng:language} )}</th>
-          <th scope="col">${i18next.t('initiaded', {lng:language} )}</th>
-          <th scope="col">${i18next.t('completed', {lng:language} )}</th>
-          <th scope="col">${i18next.t('sent', {lng:language} )}</th>
-          <th scope="col">${i18next.t('received', {lng:language} )}</th>
-          <th scope="col">${i18next.t('score', {lng:language} )}</th>
+          <th scope="col">${i18next.t('rank', { lng: language })}</th>
+          <th scope="col">${i18next.t('name', { lng: language })}</th>
+          <th scope="col">${i18next.t('initiaded', { lng: language })}</th>
+          <th scope="col">${i18next.t('completed', { lng: language })}</th>
+          <th scope="col">${i18next.t('sent', { lng: language })}</th>
+          <th scope="col">${i18next.t('received', { lng: language })}</th>
+          <th scope="col">${i18next.t('score', { lng: language })}</th>
       </tr>
   </thead>
   <tbody>
@@ -210,7 +326,7 @@ export async function getRankTable(users, equation, chatID) {
 </table>`
 
   const path = './images/rank' + chatID + '.png'
-  const theme =  await getTheme(chatID)
+  const theme = await getTheme(chatID)
   const html = await generateHtml(element, theme)
   await screenshotHtml(html, path, 'table')
   return path
@@ -218,11 +334,11 @@ export async function getRankTable(users, equation, chatID) {
 
 
 export async function getAppreciationTable(appreciation, chatID) {
-  
+
   const rows = []
   const sortedUsers = Object.keys(appreciation).sort((a, b) => {
     return appreciation[b].received - appreciation[b].sent - (appreciation[a].received - appreciation[a].sent);
-    return 
+    return
   });
 
   for (let i = 0; i < sortedUsers.length; i++) {
@@ -237,14 +353,14 @@ export async function getAppreciationTable(appreciation, chatID) {
     rows.push(row)
   }
   let language = await getLanguage(chatID);
-  let element  = `<table>
-  <caption> ${i18next.t('Appreciation', {lng:language})} </caption>
+  let element = `<table>
+  <caption> ${i18next.t('Appreciation', { lng: language })} </caption>
   <thead>
       <tr>
-          <th scope="col">${i18next.t('rank', {lng:language} )}</th>
-          <th scope="col">${i18next.t('name', {lng:language} )}</th>
-          <th scope="col">${i18next.t('sent', {lng:language} )}</th>
-          <th scope="col">${i18next.t('received', {lng:language} )}</th>
+          <th scope="col">${i18next.t('rank', { lng: language })}</th>
+          <th scope="col">${i18next.t('name', { lng: language })}</th>
+          <th scope="col">${i18next.t('sent', { lng: language })}</th>
+          <th scope="col">${i18next.t('received', { lng: language })}</th>
       </tr>
   </thead>
   <tbody>
@@ -253,7 +369,7 @@ export async function getAppreciationTable(appreciation, chatID) {
 </table>`
 
   const path = './images/appreciation' + chatID + '.png'
-  const theme =  await getTheme(chatID)
+  const theme = await getTheme(chatID)
   const html = await generateHtml(element, theme)
   await screenshotHtml(html, path, 'table')
   return path
@@ -283,16 +399,16 @@ async function screenshotHtml(html, pathToSave, onElement) {
 
 
 
-export async function showMaslow(layer, chatID){
-const path = './images/maslow.png'
-const element = drawMaslow(layer)
-const html = await generateHtml(element, await getTheme(chatID))
-await screenshotHtml(html, path, 'svg')
-return path
+export async function showMaslow(layer, chatID) {
+  const path = './images/maslow.png'
+  const element = drawMaslow(layer)
+  const html = await generateHtml(element, await getTheme(chatID))
+  await screenshotHtml(html, path, 'svg')
+  return path
 }
 
 function drawMaslow(layer) {
-  const svg  = `
+  const svg = `
   <svg version="1.0" xmlns="http://www.w3.org/2000/svg"
    width="1270.000000pt" height="1044.000000pt" viewBox="0 0 1270.000000 1044.000000"
    preserveAspectRatio="xMidYMid meet">
@@ -337,6 +453,6 @@ function drawMaslow(layer) {
   </g>
   </svg>
   `
-  
+
   return svg
 }

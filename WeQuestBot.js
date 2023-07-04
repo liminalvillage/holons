@@ -23,7 +23,7 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 import { Telegraf, Markup } from 'telegraf';
 import {Client, GatewayIntentBits} from 'discord.js';
 
-import * as UI from './UI.js';
+import UI from './UI.js';
 import * as AI from './AI.js';
 import * as WEB3 from './WEB3.js';
 
@@ -44,6 +44,7 @@ let telebot
 let discordbot
 let quests
 let moon
+let ui
 
 async function init() {
   let ipfs
@@ -75,6 +76,8 @@ async function init() {
   //telebot.use(Telegraf.log())
   moon = new lunation(telebot)
   quests = new Quests(telebot, orbitdb)
+  ui = new UI (telebot, orbitdb)
+  await ui.init()
 
   telebot.launch();
   //telebot.telegram.setMyCommands([ { command: 'start', description: 'Start the bot' }, { command: 'help', description: 'Help' }, { command: 'task', description: 'Task' }, { command: 'quest', description: 'Quest' }, { command: 'setLanguage', description: 'Set language' }, { command: 'setTheme', description: 'Set theme' }, { command: 'setLevel', description: 'Set level' }, { command: 'setAdmin', description: 'Set admin' }, { command: 'getLanguage', description: 'Get language' }, { command: 'getTheme', description: 'Get theme' }, { command: 'getLevel', description: 'Get level' }, { command: 'getAdmin', description: 'Get admin' }, { command: 'getAddress', description: 'Get address' }, { command: 'getBalance', description: 'Get balance' }, { command: 'getQuests', description: 'Get quests' }, { command: 'getTasks', description: 'Get tasks' }, { command: 'getQuest', description: 'Get quest' }, { command: 'getTask', description: 'Get task' }, { command: 'getSettings', description: 'Get settings' }, { command: 'getValues', description: 'Get values' }, { command: 'getInfo', description: 'Get info' }, { command: 'getHelp', description: 'Get help' } ]);
@@ -162,6 +165,7 @@ telebot.on('photo', async (ctx) => {
 telebot.on('inline_query', async (ctx) => {
   // This is a simplified example. In a real-world application, you'd fetch this
   // data from a database or API.
+
   const products = [
     { id: '1', title: 'Pizza', description: 'Delicious pizza', price: '$10' },
     { id: '2', title: 'Burger', description: 'Tasty burger', price: '$8' },
@@ -193,17 +197,15 @@ telebot.on('chosen_inline_result', (ctx) => {
 
 //----------------------------- APPRECIATION -----------------------------
 telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
-telebot.command('appreciate', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
-telebot.command('apprezza', async (ctx) => quests.sendAppreciation(ctx, orbitdb))
+telebot.command(['appreciate','apprezza','apprezziamo'], async (ctx) => quests.sendAppreciation(ctx, orbitdb))
 telebot.command('maslow', (ctx) => UI.showMaslow(2))
 telebot.command('assignRoles', async (ctx) => ctx.reply(await AI.assignRoles(await quests.listUsersActions(ctx, orbitdb), await settings.getRoles(utils.getChatId(ctx)) )))
 telebot.command('setRoles', async (ctx) => ctx.reply(await settings.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
-telebot.command('getRoles', async (ctx) => ctx.reply(await settings.getRoles(utils.getChatId(ctx))))
-telebot.command('actions',async (ctx) => ctx.reply(await quests.listUsersActions(ctx, orbitdb)))
+telebot.command('getRoles', async (ctx) => {let roles = await settings.getRoles(utils.getChatId(ctx)); ctx.reply(roles?roles:'No roles founds')})
+telebot.command('actions',async (ctx) => {let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions?actions:'No actions found')})
 
 
 //----------------------------- VALUES -----------------------------
-telebot.command('showvalues', (ctx) => values.showValues(ctx, orbitdb))
 telebot.command('values', async (ctx) => values.values(ctx, orbitdb))
 telebot.command('valuesSelect', async (ctx) => values.valuesSelect(ctx, orbitdb))
 telebot.command('valuesAdd', async (ctx) => values.valuesAdd(ctx, orbitdb))
@@ -246,24 +248,24 @@ telebot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
 
 //----------------------------------------------------
 
-//=========== LIST COMMANDS ===============
+//=========== UI COMMANDS ===============
 
 //Set up a command to display the appreciation score for each user
-telebot.command(['leaderboard','appreciation','credits','scores','score','points','rank','status'], (ctx) => leaderboard(ctx))
-telebot.command(['apprezzamento','crediti','punti','punteggio','punteggi','classifica'], (ctx) => leaderboard(ctx))
+telebot.command(['leaderboard','appreciation','credits','scores','score','points','rank','status'], async (ctx) => ui.leaderboard(ctx, await settings.getValueEquation(utils.getChatId(ctx))))
+telebot.command(['apprezzamento','crediti','punti','punteggio','punteggi','classifica'], (ctx) => ui.leaderboard(ctx))
 
 // Set up a command to display the quests
-telebot.command(['tasks','quests','todos','proposals'], (ctx) => questboard(ctx))
-telebot.command(['compiti','missioni','proposte'], (ctx) => questboard(ctx))
+telebot.command(['tasks','quests','todos','proposals'], (ctx) => ui.questboard(ctx))
+telebot.command(['compiti','missioni','proposte'], (ctx) => ui.questboard(ctx))
 
 // Set up a command to display the requests
-telebot.command(['requests','wishes','needs'], (ctx) => requestsboard(ctx))
-telebot.command('offers', (ctx) => offersboard(ctx))
+telebot.command(['requests','wishes','needs'], (ctx) => ui.requestsboard(ctx))
+telebot.command('offers', (ctx) => ui.offersboard(ctx))
 
-telebot.command(['richieste','sogni','bisogni'], (ctx) => requestsboard(ctx))
-telebot.command('offerte', (ctx) => offersboard(ctx))
+telebot.command(['richieste','sogni','bisogni'], (ctx) => ui.requestsboard(ctx))
+telebot.command('offerte', (ctx) => ui.offersboard(ctx))
 
-telebot.command('offerswants', (ctx) => offerswantsboard(ctx))
+telebot.command('bulletin', (ctx) => ui.bulletinboard(ctx))
 
 // ================= ADMIN ===========================
 telebot.command('reset', async (ctx) => {
@@ -275,11 +277,11 @@ telebot.command('reset', async (ctx) => {
   //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
   // }catch(e){ console.log(e)}
   let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
+  let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
   let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-  let settingsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.settings')
+  let settingsDB = await orbitdb.docs('WeQuest.settings')
   await questsDB.drop()
-  await requestsDB.drop()
+  await offersDB.drop()
   await usersDB.drop()
   await settingsDB.drop()
   ctx.reply('Bot resetted')
@@ -302,113 +304,68 @@ telebot.command('setAdmin', async (ctx) => {
 
 telebot.command('setValueEquation', async (ctx) => {
   //TODO; check if the user is an admin
-  await settings.setValueEquation(ctx)
+  let weights = await settings.getValueEquation(utils.getChatId(ctx))
+  ctx.reply('Update weights:', equationInlineKeyboard(weights));
 })
 
 telebot.command('getValueEquation', async (ctx) => {
   //TODO; check if the user is an admin
-  console.log(await settings.getValueEquation(ctx.message.chat.id))
+  ctx.reply('Value Equation:',await settings.getValueEquation(utils.getChatId(ctx)))
 })
 
-// Set up a command to display the requests
-async function leaderboard(ctx) {
-  if (!orbitdb) return
-  let chatID = ctx.message.chat.id
-  // loop through the userlist and get the quests
-  let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-  await usersDB.load()
 
-  let users = await usersDB.get('')//.filter(quest => quest.status === 'ongoing')
+telebot.on('callback_query', async (ctx) => {
+  const callbackData = ctx.callbackQuery.data;
+  let chatID = utils.getChatId(ctx)
 
-  // Create a table header
-  console.log(users)
-  UI.getRankTable(users, await settings.getValueEquation(chatID), chatID).then((path) => {
-  //UI.getAppreciationTable(users, chatID).then((path) => {
-    //send the image
-    ctx.replyWithPhoto({ source: fs.createReadStream(path) })
-  });
-  return;
+  // initiated, completed, credits sent, credits received, hours, collaboration, wants, offers, money
+  let weights = await settings.getValueEquation(chatID)
+  // Fetch the current weights from your database
+
+  if (callbackData.startsWith('increment_')) {
+      const weightName = callbackData.substring(10);
+      weights[weightName] = parseInt(weights[weightName]) + 1;
+  } else if (callbackData.startsWith('decrement_')) {
+      const weightName = callbackData.substring(10);
+      weights[weightName] = parseInt(weights[weightName]) - 1;
+  }
+
+  // Save the updated weights back to your database
+  await settings.setValueEquation(chatID, weights);
+
+  // Update the message with the new inline keyboard
+  await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+
+});
+
+  // ... update the inline keyboard ...
+  const equationInlineKeyboard = (weights) => {return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('Initiated:', 'null'),
+      Markup.button.callback('<', 'decrement_initiated'),
+      Markup.button.callback(weights.initiated, 'null'),
+      Markup.button.callback('>', 'increment_initiated')
+    ],
+    [
+      Markup.button.callback('Completed:', 'null'),
+      Markup.button.callback('<', 'decrement_completed'),
+      Markup.button.callback(weights.completed, 'null'),
+      Markup.button.callback('>', 'increment_completed')
+    ],
+    [
+      Markup.button.callback('Sent:', 'null'),
+      Markup.button.callback('<', 'decrement_send'),
+      Markup.button.callback(weights.sent, 'null'),
+      Markup.button.callback('>', 'increment_send')
+    ],
+    [
+      Markup.button.callback('Received:', 'null'),
+      Markup.button.callback('<', 'decrement_received'),
+      Markup.button.callback(weights.received, 'null'),
+      Markup.button.callback('>', 'increment_received')
+    ]
+]);
 }
-
-async function offerswantsboard(ctx) {
-  if (!orbitdb) return
-  let chatID = ctx.message.chat.id
-  // loop through the userlist and get the quests
-  let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-  await usersDB.load()
-
-  let users = await usersDB.get('')//.filter(quest => quest.status === 'ongoing')
-
-  // Create a table header
-  console.log(users)
-  UI.getOffersWantsTable(users, chatID).then((path) => {
-  //UI.getAppreciationTable(users, chatID).then((path) => {
-    //send the image
-    ctx.replyWithPhoto({ source: fs.createReadStream(path) })
-  });
-  return;
-}
-
-
-// Set up a command to display the quests
-async function questboard(ctx) {
-  if (!orbitdb) return
-  // Get a list of incomplete quests
-  let chatID = ctx.message.chat.id
-
-  let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-  await questsDB.load()
-
-  let quests = await questsDB.get('').filter(quest => quest.status === 'ongoing')
-
-  // Create a table header
-  UI.getQuestsTable(quests, chatID).then((path) => {
-    //send the image
-    ctx.replyWithPhoto({ source: fs.createReadStream(path) },  Markup.inlineKeyboard([
-    //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
-    ])).then((ctx) => {telebot.telegram.pinChatMessage(chatID, ctx.message_id)});
-  });
-  return;
-}
-
-async function requestsboard(ctx) {
-  if(!orbitdb) return
-  // Get a list of incomplete quests
-  let chatID = ctx.message.chat.id
-
-  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-  await requestsDB.load()
-
-  let requests = await requestsDB.get('')
-
-  // Create a table header
-  UI.getRequestsTable(requests, chatID).then((path) => {
-    //send the image
-    ctx.replyWithPhoto({ source: fs.createReadStream(path) });
-  });
-  return;
-}
-
-async function offersboard(ctx) {
-  if (!orbitdb) return
-  // Get a list of incomplete quests
-  let chatID = ctx.message.chat.id
-
-  let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-  await requestsDB.load()
-
-  let requests = await requestsDB.get('')
-
-  // Create a table header
-  UI.getOffersTable(requests, chatID).then((path) => {
-    //send the image
-    ctx.replyWithPhoto({ source: fs.createReadStream(path) });
-  });
-  return;
-
-}
-
-
 
 
 // bot.on("callback_query", (ctx) => {

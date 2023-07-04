@@ -5,50 +5,119 @@ import Validator from 'jsonschema';
 import schema from './schemas/offers_wants_prototype-v0.0.2.json' assert { type: "json" };
 var v = new Validator.Validator();
 
-// Address, to be embedded on Person
-var addressSchema = {
-  "id": "/SimpleAddress",
-  "type": "object",
-  "properties": {
-    "lines": {
-      "type": "array",
-      "items": {"type": "string"}
-    },
-    "zip": {"type": "string"},
-    "city": {"type": "string"},
-    "country": {"type": "string"}
-  },
-  "required": ["country"]
-};
-
-// Person
-// var schema = {
-//   "id": "/SimplePerson",
-//   "type": "object",
-//   "properties": {
-//     "name": {"type": "string"},
-//     "address": {"$ref": "/SimpleAddress"},
-//     "votes": {"type": "integer", "minimum": 1}
-//   }
-// };
-
-// var p = {
-//   "name": "Barack Obama",
-//   "address": {
-//     "lines": [ "1600 Pennsylvania Avenue Northwest" ],
-//     "zip": "DC 20500",
-//     "city": "Washington",
-//     "country": "USA"
-//   },
-//   "votes": "lots"
-// };
-
 var p = {"linked_schemas":["offers_wants_prototype-v0.0.2"],"profile_url":"https:\/\/hamlets.communityforge.net\/ad\/150\/murmurations.json","primary_url":"https:\/\/hamlets.communityforge.net","geolocation":{"lat":46.8145624,"lon":8.239973599999999},"country":"CH","title":"A traditional stress-tested dolly from the orient.","description":"\u003Cp\u003E\u003Cstrong\u003EDolus euismod \u003C\/strong\u003Ehos luptatum olim paratus similis. Bene gravis in letalis nisl odio pagus qui saluto validus. Abdo antehabeo consectetuer esse exputo os similis voco. Causa ea iaceo incassum macto minim nibh ratis sed. Humo macto nutus populus tum utrum velit vero vulputate zelus.\u003C\/p\u003E\r\n\r\n\u003Cp\u003EBlandit feugiat macto quibus. Elit macto mauris nobis nostrud patria secundum te venio. Commoveo interdico mos neque pagus paulatim scisco. Aliquam diam esse iriure jus magna quibus utrum vindico. Abbas adipiscing at distineo iustum olim velit.\u003C\/p\u003E","exchange_type":"want","item_type":"service","transaction_type":["receive-donate","borrow-lend"],"geographic_scope":"local","expires_at":1702422000,"tags":["Business Services \u0026 Clerical"],"contact_details":{"contact_form":"https:\/\/hamlets.communityforge.net\/user\/28\/contact"}}
 
-//v.addSchema(addressSchema, '/SimpleAddress');
-console.log(v.validate(p, schema));
+//V ALIDATION ==========================================================
+//console.log(v.validate(p, schema));
 
 // HANDLES REQUESTS ====================================================
+
+class Request {
+    constructor(bot, orbitdb){
+        this.bot = bot;
+        this.orbitdb = orbitdb;
+
+        bot.start((ctx) => {
+          ctx.reply(
+            'Welcome to the Offers/Wants bot! Let\'s create a new offer or want. Please make your selections.',
+            getKeyboard(offer)
+          );
+        });
+        
+        bot.action('OFFER', async (ctx) => {
+          let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+          await offersDB.load()
+          let offer = await offersDB.get('ctx.message.message_id')
+          offer['exchange_type'] = 'offer';
+          await offersDB.put(offer)
+          ctx.editMessageText('You chose: Offer. What\'s next?', getKeyboard(offer));
+        });
+        
+        bot.action('WANT', (ctx) => {
+          offer['exchange_type'] = 'want';
+          ctx.editMessageText('You chose: Want. What\'s next?', getKeyboard(offer));
+        });
+        
+        bot.action('GOOD', (ctx) => {
+          offer['item_type'] = 'good';
+          ctx.editMessageText('You chose: Good. What\'s next?', getKeyboard(offer));
+        });
+        
+        bot.action('SERVICE', (ctx) => {
+          offer['item_type'] = 'service';
+          ctx.editMessageText('You chose: Service. What\'s next?', getKeyboard(offer));
+        });
+        
+
+    bot.action('BORROW_LEND', (ctx) => {
+        offer['transaction_type'] = 'borrow-lend';
+        ctx.editMessageText('You chose: Borrow/Lend. What\'s next?', getKeyboard(offer));
+      });
+      
+      bot.action('RENT_LEASE', (ctx) => {
+        offer['transaction_type'] = 'rent-lease';
+        ctx.editMessageText('You chose: Rent/Lease. What\'s next?', getKeyboard(offer));
+      });
+      
+      bot.action('BUY_SELL', (ctx) => {
+        offer['transaction_type'] = 'buy-sell';
+        ctx.editMessageText('You chose: Buy/Sell. What\'s next?', getKeyboard(offer));
+      });
+      
+      bot.action('RECEIVE_DONATE', (ctx) => {
+        offer['transaction_type'] = 'receive-donate';
+        ctx.editMessageText('You chose: Receive/Donate. What\'s next?', getKeyboard(offer));
+      });
+      
+      bot.action('LOCAL', (ctx) => {
+        offer['geographic_scope'] = 'local';
+        ctx.editMessageText('You chose: Local. What\'s next?', getKeyboard(offer));
+      });
+      
+      bot.action('REGIONAL', (ctx) => {
+        
+        offer['geographic_scope'] = 'regional';
+        ctx.editMessageText('You chose: Regional. What\'s next?', getKeyboard(offer));
+      });
+      
+      bot.action('NATIONAL', (ctx) => {
+        offer['geographic_scope'] = 'national';
+        ctx.editMessageText('You chose: National. What\'s next?', getKeyboard(offer));
+      });
+      
+      bot.action('INTERNATIONAL', (ctx) => {
+        offer['geographic_scope'] = 'international';
+        ctx.editMessageText('You chose: International. What\'s next?', getKeyboard(offer));
+      });
+
+    }
+
+     getKeyboard = (offer) => {
+        return Markup.inlineKeyboard([
+          [
+            Markup.callbackButton(offer['exchange_type'] === 'offer' ? '(selected) Offer' : 'Offer', 'OFFER'),
+            Markup.callbackButton(offer['exchange_type'] === 'want' ? '(selected) Want' : 'Want', 'WANT')
+          ],
+          [
+            Markup.callbackButton(offer['item_type'] === 'good' ? '(selected) Good' : 'Good', 'GOOD'),
+            Markup.callbackButton(offer['item_type'] === 'service' ? '(selected) Service' : 'Service', 'SERVICE')
+          ],
+          [
+            Markup.callbackButton(offer['transaction_type'] === 'borrow-lend' ? '(selected) Borrow/Lend' : 'Borrow/Lend', 'BORROW_LEND'),
+            Markup.callbackButton(offer['transaction_type'] === 'rent-lease' ? '(selected) Rent/Lease' : 'Rent/Lease', 'RENT_LEASE'),
+            Markup.callbackButton(offer['transaction_type'] === 'buy-sell' ? '(selected) Buy/Sell' : 'Buy/Sell', 'BUY_SELL'),
+            Markup.callbackButton(offer['transaction_type'] === 'receive-donate' ? '(selected) Receive/Donate' : 'Receive/Donate', 'RECEIVE_DONATE')
+          ],
+          [
+            Markup.callbackButton(offer['geographic_scope'] === 'local' ? '(selected) Local' : 'Local', 'LOCAL'),
+            Markup.callbackButton(offer['geographic_scope'] === 'regional' ? '(selected) Regional' : 'Regional', 'REGIONAL'),
+            Markup.callbackButton(offer['geographic_scope'] === 'national' ? '(selected) National' : 'National', 'NATIONAL'),
+            Markup.callbackButton(offer['geographic_scope'] === 'international' ? '(selected) International' : 'International', 'INTERNATIONAL')
+          ]
+        ]).extra();
+      };
+}
+
 
 export async function request(type, ctx, orbitdb) {
     // Extract request from command argument
@@ -58,8 +127,8 @@ export async function request(type, ctx, orbitdb) {
     const text = ctx.message.text;
     const sender = ctx.from;
 
-    let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
-    await requestsDB.load()
+    let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+    await offersDB.load()
 
     // Respond to user
     let request = {
@@ -75,7 +144,7 @@ export async function request(type, ctx, orbitdb) {
     ctx.reply(createMessage(request), markup).then((ctx) => {
         // Add the message id to the quest
         request._id = ctx.message_id;
-        requestsDB.put(request)
+        offersDB.put(request)
     });
 }
 
@@ -87,8 +156,8 @@ export async function offer(ctx, orbitdb) {
     const text = ctx.message.text;
     const sender = ctx.from;
 
-    let requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
-    await requestsDB.load()
+    let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+    await offersDB.load()
 
     // Respond to user
     let request = {
@@ -103,7 +172,7 @@ export async function offer(ctx, orbitdb) {
     ctx.reply(createMessage(request), createProperties()).then((ctx) => {
         // Add the message id to the quest
         request._id = ctx.message_id;
-        requestsDB.put(request)
+        offersDB.put(request)
     });
    
 
@@ -137,9 +206,9 @@ export async function requests(ctx, orbitdb) {
     let chatID = ctx.message.chat.id;
     let messageID = ctx.message.message_id;
     // Print list of unfulfilled requests
-    const requestsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.requests')
-    await requestsDB.load()
-    let requests = requestsDB.get('')
+    const offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+    await offersDB.load()
+    let requests = offersDB.get('')
     console.log(requests)
     let message = 'Here are the currently open requests:\n';
     ctx.reply(message, createButtons(requests));
