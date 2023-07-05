@@ -316,7 +316,8 @@ telebot.command('getValueEquation', async (ctx) => {
 
 telebot.on('callback_query', async (ctx) => {
   const callbackData = ctx.callbackQuery.data;
-  let chatID = utils.getChatId(ctx)
+  let chatID = ctx.callbackQuery.message.chat.id;
+  let messageID = ctx.callbackQuery.message.message_id;
 
   // initiated, completed, credits sent, credits received, hours, collaboration, wants, offers, money
   let weights = await settings.getValueEquation(chatID)
@@ -325,16 +326,44 @@ telebot.on('callback_query', async (ctx) => {
   if (callbackData.startsWith('increment_')) {
       const weightName = callbackData.substring(10);
       weights[weightName] = parseInt(weights[weightName]) + 1;
-  } else if (callbackData.startsWith('decrement_')) {
-      const weightName = callbackData.substring(10);
-      weights[weightName] = parseInt(weights[weightName]) - 1;
-  }
-
-  // Save the updated weights back to your database
-  await settings.setValueEquation(chatID, weights);
+        // Save the updated weights back to your database
+      await settings.setValueEquation(chatID, weights);
 
   // Update the message with the new inline keyboard
   await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+  } else if (callbackData.startsWith('decrement_')) {
+      const weightName = callbackData.substring(10);
+      weights[weightName] = parseInt(weights[weightName]) - 1;
+        // Save the updated weights back to your database
+      await settings.setValueEquation(chatID, weights);
+
+      // Update the message with the new inline keyboard
+      await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+  } else {
+    if ( messageID== quests.calendar.chats.get(chatID)) {
+    var res;
+    res = quests.calendar.clickButtonCalendar(ctx);
+    if (res !== -1) {
+    
+        let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+        await questsDB.load()
+    
+        let quest = await questsDB.get(messageID.toString())[0]
+    
+        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        quest.status = "scheduled";
+        quest.when = res;
+        // Update the message
+        updateMessage(ctx, quest);
+        // Update the db
+        questsDB.put(quest);
+    }
+  }
+}
+
+
+
+
 
 });
 
@@ -354,9 +383,9 @@ telebot.on('callback_query', async (ctx) => {
     ],
     [
       Markup.button.callback('Sent:', 'null'),
-      Markup.button.callback('<', 'decrement_send'),
+      Markup.button.callback('<', 'decrement_sent'),
       Markup.button.callback(weights.sent, 'null'),
-      Markup.button.callback('>', 'increment_send')
+      Markup.button.callback('>', 'increment_sent')
     ],
     [
       Markup.button.callback('Received:', 'null'),

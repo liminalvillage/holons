@@ -322,6 +322,11 @@ class Quests {
         let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
         //await saveUserAction(ctx.callbackQuery.from, quest.title, usersDB) //register monouser in debug mode
+        for (let i = 0; i < quest.users.length; i++) {
+            let user = quest.users[i];
+            await saveUserAction(user, "completed", quest.title, usersDB)
+        }
+        
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
@@ -331,9 +336,9 @@ class Quests {
             const appreciationPerUser = 1  // / quest.users.length;
     
             // Send the appreciation to each user
-            for (let i = 0; i < quest.users.length; i++) {
+            for (let j = 0; j< quest.users.length; j++) {
                 // Get the recipient
-                const recipient = quest.users[i]
+                const recipient = quest.users[j]
                 // Check if the recipient is the sender
                 // if (recipient.id === sender.id) {
                 //     continue;
@@ -342,7 +347,6 @@ class Quests {
                 //await recieveToken(recipient, appreciationPerUser, usersDB)
                 // save user with action to the database
                 await saveUserAction(recipient, "received", quest.title, usersDB)
-                await saveUserAction(recipient, "completed", quest.title, usersDB)
             }
         }
         // ================================ APPRECIATION ==========================
