@@ -2,7 +2,7 @@ import { Markup } from 'telegraf';
 import  i18next from 'i18next';
 import {getLanguage} from './settings.js';
 import * as ui from './UI.js';
-import { getUserName,getUser } from './utilities.js';
+import { getUserName,getUser,getChatId,getMessageId } from './utilities.js';
 import {Calendar} from 'telegram-inline-calendar';
 
 class Quests {
@@ -87,31 +87,37 @@ class Quests {
                 ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
 
             });
-        else
+        else {
         // let path = await ui.getQuestImage(quest,chatID)
         // ctx.telegram.editMessageMedia(ctx.chat.id, ctx.message.message_id,null, {
         //     type: 'photo',
         //     media: path,
         //     caption: markup(quest,language)
         //   });
-        ctx.reply(createMessage(quest,language), markup(quest,language)).then((nctx) => {
+        if (type == 'quest' || type == 'task')
+        await saveUserAction(sender, "initiated", quest.title, usersDB)
+        if (type == 'offer'){
+            quest.users.push(sender);
+            await saveUserAction(sender, "offers", quest.title, usersDB)
+        }
+        if (type == 'request'){
+            quest.appreciation.push(sender);
+            await saveUserAction(sender, "wants", quest.title, usersDB)
+        }
+        ctx.reply(createMessage(quest,language), markup(quest,language)).then(async (nctx) => {
             // Add the message id to the quest
             quest._id = nctx.message_id;
             quest.chat = nctx.chat.id;
+
             questsDB.put(quest)
            
             //Pin the message
             ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
-               
+            
             //delete the original message
             ctx.deleteMessage(messageID.toString()).catch((err) => { console.log(err) });
         });
-        if (type == 'quest' || type == 'task')
-            await saveUserAction(sender, "initiated", quest.title, usersDB)
-        if (type == 'offer')
-            await saveUserAction(sender, "offers", quest.title, usersDB)
-        if (type == 'request')
-            await saveUserAction(sender, "wants", quest.title, usersDB)
+    }
      
     }
 
@@ -133,7 +139,7 @@ class Quests {
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
     
         if (quest.status == 'completed') {
-            ctx.reply(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID });
+            ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID })
             return;
         }
     
@@ -143,25 +149,25 @@ class Quests {
         // Check if the user has already joined the quest
         const userindex = quest.users.findIndex(user => user.id === sender.id)
         if (userindex > -1) {
-            ctx.reply(`${sender.first_name}, left the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            ctx.answerCbQuery(`${sender.first_name}, left the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             quest.users.splice(userindex, 1);
         }
         else {
             // Add the user to the quest
             quest.users.push(sender);
             // Send a message to confirm that the user joined the quest
-            ctx.reply(`${sender.first_name} has joined the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            ctx.answerCbQuery(`${sender.first_name} has joined the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
         }
     
         // Check if the user has already appreciated the quest, remove if so
         const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
         if (appreciationindex > -1) {
-            ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
+            //asctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID }).catch(   (err) => { console.log(err) } );
             quest.appreciation.splice(appreciationindex, 1);
         }
     
         // Update the message 
-        updateMessage(ctx, quest);
+        this.updateMessage(ctx, quest);
     
         // Update the db
         questsDB.put(quest);
@@ -189,24 +195,24 @@ class Quests {
         // Check if the user has already appreciated the quest, remove if so
         const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
         if (appreciationindex > -1) {
-            ctx.reply(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
+            ctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
             quest.appreciation.splice(appreciationindex, 1);
         } else {
             // Add the user to the quest
             quest.appreciation.push(sender);
             // Send a message to confirm that the user joined the quest
-            ctx.reply(`${sender.first_name} appreciates the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`, { reply_to_message_id: messageID });
         }
         // Check if the user has already joined the quest
         const userindex = quest.users.findIndex(user => user.id === sender.id)
         if (userindex > -1) {
-            ctx.reply(`${sender.first_name} has been removed from the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            //ctx.answerCbQuery(`${sender.first_name} has been removed from the quest "${quest.title}"`, { reply_to_message_id: messageID });
             quest.users.splice(userindex, 1);
         }
     
     
         // Update the message 
-        updateMessage(ctx, quest);
+        this.updateMessage(ctx, quest);
     
         // Update the db
         questsDB.put(quest);
@@ -238,7 +244,7 @@ class Quests {
             ctx.deleteMessage(messageID.toString()).catch((err) => { console.log(err) });
     
         } else {
-            ctx.reply(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID })
+            ctx.answerCbQuery(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
     
         }
     }
@@ -278,7 +284,7 @@ class Quests {
             quest.status = 'ongoing'
     
         // Update the message 
-        updateMessage(ctx, quest);
+        this.updateMessage(ctx, quest);
     
         // Update the db
         await questsDB.put(quest);
@@ -304,29 +310,27 @@ class Quests {
         if (quest.initiator.id === ctx.from.id) {
             quest.status = "completed";
             // Update the message 
-            updateMessage(ctx, quest);
+            this.updateMessage(ctx, quest);
             // Update the db
             questsDB.put(quest);
-            try {
-                //unpin the message
-                ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
-            } catch (err) {
-                console.log(err)
-            }
+            //unpin the message
+            ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
+         
 
         } else {
-            ctx.reply(`Only the initiator of the quest can mark it as completed.`, { reply_to_message_id: messageID });
+            ctx.answerCbQuery(`Only the initiator of the quest can mark it as completed.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             return;
         }
         // ================================ APPRECIATION ========================== 
         let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
         //await saveUserAction(ctx.callbackQuery.from, quest.title, usersDB) //register monouser in debug mode
+        // loop through all users and add the completed quest to their account
         for (let i = 0; i < quest.users.length; i++) {
             let user = quest.users[i];
             await saveUserAction(user, "completed", quest.title, usersDB)
         }
-        
+
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
@@ -356,33 +360,8 @@ class Quests {
      async  schedule(ctx, orbitdb) { 
         if (!orbitdb) return
         console.log("SCHEDULE ACTION");
-        this.calendar.startNavCalendar(ctx);
- 
-        this.bot.on("callback_query", async (query) =>   {
-            //if (query.update.callback_query.message_id == this.calendar.chats.get(query.update.callback_query.message.chat.id)) {
-                var res;
-                res = this.calendar.clickButtonCalendar(query);
-                if (res !== -1) {
-                    let chatID = ctx.callbackQuery.message.chat.id;
-                    let messageID = ctx.callbackQuery.message.message_id;
-                    const language = await getLanguage(chatID)
-                
-                    let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-                    await questsDB.load()
-                
-                    let quest = await questsDB.get(messageID.toString())[0]
-                
-                    if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-                    quest.status = "scheduled";
-                    quest.when = res;
-                    // Update the message
-                    updateMessage(ctx, quest);
-                    // Update the db
-                    questsDB.put(quest);
-                }
-          //  }
-        });
-        
+        this.calendar.startNavCalendar(ctx);x
+        this.calendar.chats.set(getChatId(ctx)*100, getMessageId(ctx)); //TODO: fix this, use a different method to store the message id
     }
     
      async sendAppreciation(ctx, orbitdb) {
@@ -467,6 +446,35 @@ class Quests {
         return message
     }
     
+    // Function to update messages for a quest
+async  updateMessage(ctx, quest, language) {
+    try {
+        // Update the message 
+        if (quest.picture){
+            await ctx.telegram.editMessageMedia(
+                ctx.update.callback_query.message.chat.id,
+                ctx.update.callback_query.message.message_id,
+                null,
+                {
+                    type: 'photo',
+                    media: quest.picture,
+                    caption: createMessage(quest,language)
+                },
+                markup(quest,language)
+            );
+        }
+        else
+        await ctx.telegram.editMessageText(
+            ctx.update.callback_query.message.chat.id,
+            ctx.update.callback_query.message.message_id,
+            null,
+            createMessage(quest,language),
+            markup(quest,language)
+        );
+    } catch (e) {
+        console.log(e);
+    }
+}
    
 }
 
@@ -546,36 +554,7 @@ async function  getUserInfo(user, db){
 }
 
 
-// Function to update messages for a quest
-async function updateMessage(ctx, quest, language) {
-    try {
-        // Update the message 
-        if (quest.picture){
-            console.log("editing image quest")
-            await ctx.telegram.editMessageMedia(
-                ctx.update.callback_query.message.chat.id,
-                ctx.update.callback_query.message.message_id,
-                null,
-                {
-                    type: 'photo',
-                    media: quest.picture,
-                    caption: createMessage(quest,language)
-                },
-                markup(quest,language)
-            );
-        }
-        else
-        await ctx.telegram.editMessageText(
-            ctx.update.callback_query.message.chat.id,
-            ctx.update.callback_query.message.message_id,
-            null,
-            createMessage(quest,language),
-            markup(quest,language)
-        );
-    } catch (e) {
-        console.log(e);
-    }
-}
+
 
 // Function to create the message for a quest TODO 
  function createMessage(quest,language ) {
@@ -610,13 +589,13 @@ function markup(quest,language) {
     // ]
 ])
 
-    if (quest.type === "request" || quest.type === "offer") {
-        mu = Markup.inlineKeyboard([[
-            Markup.button.callback(i18next.t('schedule',{lng:language}), 'schedule_quest'),
-            Markup.button.callback(i18next.t('participate',{lng:language}), 'join_quest'),
-            Markup.button.callback(i18next.t('Cancel',{lng:language}), 'cancel_quest'),
-        ]])
-    }
+    // if (quest.type === "request" || quest.type === "offer") {
+    //     mu = Markup.inlineKeyboard([[
+    //         Markup.button.callback(i18next.t('schedule',{lng:language}), 'schedule_quest'),
+    //         Markup.button.callback(i18next.t('participate',{lng:language}), 'join_quest'),
+    //         Markup.button.callback(i18next.t('Cancel',{lng:language}), 'cancel_quest'),
+    //     ]])
+    // }
 
     if (quest.status === "completed") {
         return null

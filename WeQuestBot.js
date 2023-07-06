@@ -21,7 +21,7 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 
 // ------------------------------------ Import the telegraf module
 import { Telegraf, Markup } from 'telegraf';
-import {Client, GatewayIntentBits} from 'discord.js';
+import { Client, GatewayIntentBits } from 'discord.js';
 
 import UI from './UI.js';
 import * as AI from './AI.js';
@@ -48,13 +48,11 @@ let ui
 
 async function init() {
   let ipfs
-  if (config.mode === 'production')
-  {
+  if (config.mode === 'production') {
     console.log('production mode')
     ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
   }
-  else
-  {
+  else {
     console.log('development mode')
     ipfs = await create()
   }
@@ -76,44 +74,46 @@ async function init() {
   //telebot.use(Telegraf.log())
   moon = new lunation(telebot)
   quests = new Quests(telebot, orbitdb)
-  ui = new UI (telebot, orbitdb)
+  ui = new UI(telebot, orbitdb)
   await ui.init()
 
   telebot.launch();
   //telebot.telegram.setMyCommands([ { command: 'start', description: 'Start the bot' }, { command: 'help', description: 'Help' }, { command: 'task', description: 'Task' }, { command: 'quest', description: 'Quest' }, { command: 'setLanguage', description: 'Set language' }, { command: 'setTheme', description: 'Set theme' }, { command: 'setLevel', description: 'Set level' }, { command: 'setAdmin', description: 'Set admin' }, { command: 'getLanguage', description: 'Get language' }, { command: 'getTheme', description: 'Get theme' }, { command: 'getLevel', description: 'Get level' }, { command: 'getAdmin', description: 'Get admin' }, { command: 'getAddress', description: 'Get address' }, { command: 'getBalance', description: 'Get balance' }, { command: 'getQuests', description: 'Get quests' }, { command: 'getTasks', description: 'Get tasks' }, { command: 'getQuest', description: 'Get quest' }, { command: 'getTask', description: 'Get task' }, { command: 'getSettings', description: 'Get settings' }, { command: 'getValues', description: 'Get values' }, { command: 'getInfo', description: 'Get info' }, { command: 'getHelp', description: 'Get help' } ]);
 
-  discordbot = new Client({ intents: [GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,GatewayIntentBits.MessageContent] });
-  discordbot.on("ready", () => {
-    // This event will run if the bot starts, and logs in, successfully.
-    console.log(`Discrord BOT has started, with ${discordbot.users.cache.size} users, in ${discordbot.channels.cache.size} channels of ${discordbot.guilds.cache.size} guilds.`);
-    // Example of changing the bot's playing game to something useful. `discordbot.user` is what the
-    // docs refer to as the "ClientUser".
-    discordbot.user.setActivity(`Serving ${discordbot.guilds.cache.size} servers`);
-  });
+  // discordbot = new Client({
+  //   intents: [GatewayIntentBits.Guilds,
+  //   GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  // });
+  // discordbot.on("ready", () => {
+  //   // This event will run if the bot starts, and logs in, successfully.
+  //   console.log(`Discrord BOT has started, with ${discordbot.users.cache.size} users, in ${discordbot.channels.cache.size} channels of ${discordbot.guilds.cache.size} guilds.`);
+  //   // Example of changing the bot's playing game to something useful. `discordbot.user` is what the
+  //   // docs refer to as the "ClientUser".
+  //   discordbot.user.setActivity(`Serving ${discordbot.guilds.cache.size} servers`);
+  // });
 
-  discordbot.on('messageCreate', msg => {
-    console.log("DISCORD MESSAGE: "+msg.content)
-    if (msg.content.charAt(0) === config.prefix) {
-      msg.react('👀')
-        .catch(log => {
-          console.log(error);
-        });
-    };
-    const commandBody = msg.content.substring(config.prefix.length).split(' ');
-    console.log(commandBody);
-    const command = commandBody[0];
-    const args = commandBody.slice(1);
-    if (command === 'quest') {
-      quests.quest('quest',discord2telegram(msg), orbitdb);
-    }
-    if (command === 'task') {
-      console.log('task')
-    }
-  }
-  )
-  
-  discordbot.login(config.discord);
+  // discordbot.on('messageCreate', msg => {
+  //   console.log("DISCORD MESSAGE: " + msg.content)
+  //   if (msg.content.charAt(0) === config.prefix) {
+  //     msg.react('👀')
+  //       .catch(log => {
+  //         console.log(error);
+  //       });
+  //   };
+  //   const commandBody = msg.content.substring(config.prefix.length).split(' ');
+  //   console.log(commandBody);
+  //   const command = commandBody[0];
+  //   const args = commandBody.slice(1);
+  //   if (command === 'quest') {
+  //     quests.quest('quest', discord2telegram(msg), orbitdb);
+  //   }
+  //   if (command === 'task') {
+  //     console.log('task')
+  //   }
+  // }
+  // )
+
+  // discordbot.login(config.discord);
 }
 
 await init();
@@ -136,7 +136,7 @@ telebot.on('photo', async (ctx) => {
   if (ctx.message.caption) {
     const command = ctx.message.caption.split(' ')[0];
     if (command == '/task')
-    quests.quest('task',ctx, orbitdb)
+      quests.quest('task', ctx, orbitdb)
   }
   try {
     const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
@@ -152,8 +152,8 @@ telebot.on('photo', async (ctx) => {
       }
 
       if (value) {
-        ctx.reply(`${value.result.split('/').slice(value.result.split('/').length - 1 )}`,Markup.inlineKeyboard([Markup.button.webApp('Open', `${value.result}`)]));
-      } 
+        ctx.reply(`${value.result.split('/').slice(value.result.split('/').length - 1)}`, Markup.inlineKeyboard([Markup.button.webApp('Open', `${value.result}`)]));
+      }
     };
     qr.decode(jimpImage.bitmap);
   } catch (error) {
@@ -175,14 +175,14 @@ telebot.on('inline_query', async (ctx) => {
     { id: '6', title: 'jjuiBurger', description: 'Tasty burger', price: '$8' },
   ];
 
-  const results = products.map((product) =>   ({
+  const results = products.map((product) => ({
     type: 'article',
     id: product.id,
     title: product.title,
     description: product.description,
     input_message_content: {
       message_text: `${product.title}: ${product.description} - ${product.price}`
-  },
+    },
   }));
 
   await ctx.answerInlineQuery(results);
@@ -197,12 +197,12 @@ telebot.on('chosen_inline_result', (ctx) => {
 
 //----------------------------- APPRECIATION -----------------------------
 telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
-telebot.command(['appreciate','apprezza','apprezziamo'], async (ctx) => quests.sendAppreciation(ctx, orbitdb))
+telebot.command(['appreciate', 'apprezza', 'apprezziamo'], async (ctx) => quests.sendAppreciation(ctx, orbitdb))
 telebot.command('maslow', (ctx) => UI.showMaslow(2))
-telebot.command('assignRoles', async (ctx) => ctx.reply(await AI.assignRoles(await quests.listUsersActions(ctx, orbitdb), await settings.getRoles(utils.getChatId(ctx)) )))
+telebot.command('assignRoles', async (ctx) => ctx.reply(await AI.assignRoles(await quests.listUsersActions(ctx, orbitdb), await settings.getRoles(utils.getChatId(ctx)))))
 telebot.command('setRoles', async (ctx) => ctx.reply(await settings.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
-telebot.command('getRoles', async (ctx) => {let roles = await settings.getRoles(utils.getChatId(ctx)); ctx.reply(roles?roles:'No roles founds')})
-telebot.command('actions',async (ctx) => {let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions?actions:'No actions found')})
+telebot.command('getRoles', async (ctx) => { let roles = await settings.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles founds') })
+telebot.command('actions', async (ctx) => { let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions ? actions : 'No actions found') })
 
 
 //----------------------------- VALUES -----------------------------
@@ -220,8 +220,8 @@ telebot.command('propose', async (ctx) => quests.quest('proposal', ctx, orbitdb)
 telebot.command('todo', async (ctx) => quests.quest('todo', ctx, orbitdb))
 telebot.command('actions', async (ctx) => quests.listUsersActions())
 
-telebot.command(['need','request','want','wish'], async (ctx) => quests.quest('request', ctx, orbitdb))
-telebot.command(['offer','give','have','gift'], async (ctx) => quests.quest('offer', ctx, orbitdb))
+telebot.command(['need', 'request', 'want', 'wish'], async (ctx) => quests.quest('request', ctx, orbitdb))
+telebot.command(['offer', 'give', 'have', 'gift'], async (ctx) => quests.quest('offer', ctx, orbitdb))
 
 // ITALIAN
 telebot.command('missione', async (ctx) => quests.quest('quest', ctx, orbitdb))
@@ -231,8 +231,8 @@ telebot.command('propongo', async (ctx) => quests.quest('proposal', ctx, orbitdb
 telebot.command('fare', async (ctx) => quests.quest('todo', ctx, orbitdb))
 
 //create new request/offer
-telebot.command(['richiedo','bisogno','vorrei','sogno','richiesta','chiedo'], async (ctx) => quests.quest('request', ctx, orbitdb))
-telebot.command(['offro','dono','regalo','chiedetemi','ho','offerta'], async (ctx) => quests.quest('offer', ctx, orbitdb))
+telebot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo'], async (ctx) => quests.quest('request', ctx, orbitdb))
+telebot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => quests.quest('offer', ctx, orbitdb))
 
 // QUEST ACTIONS ====================================================
 
@@ -251,18 +251,18 @@ telebot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
 //=========== UI COMMANDS ===============
 
 //Set up a command to display the appreciation score for each user
-telebot.command(['leaderboard','appreciation','credits','scores','score','points','rank','status'], async (ctx) => ui.leaderboard(ctx, await settings.getValueEquation(utils.getChatId(ctx))))
-telebot.command(['apprezzamento','crediti','punti','punteggio','punteggi','classifica'], (ctx) => ui.leaderboard(ctx))
+telebot.command(['leaderboard', 'appreciation', 'credits', 'scores', 'score', 'points', 'rank', 'status'], async (ctx) => ui.leaderboard(ctx, await settings.getValueEquation(utils.getChatId(ctx))))
+telebot.command(['apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica'], (ctx) => ui.leaderboard(ctx))
 
 // Set up a command to display the quests
-telebot.command(['tasks','quests','todos','proposals'], (ctx) => ui.questboard(ctx))
-telebot.command(['compiti','missioni','proposte'], (ctx) => ui.questboard(ctx))
+telebot.command(['tasks', 'quests', 'todos', 'proposals'], (ctx) => ui.questboard(ctx))
+telebot.command(['compiti', 'missioni', 'proposte'], (ctx) => ui.questboard(ctx))
 
 // Set up a command to display the requests
-telebot.command(['requests','wishes','needs'], (ctx) => ui.requestsboard(ctx))
+telebot.command(['requests', 'wishes', 'needs'], (ctx) => ui.requestsboard(ctx))
 telebot.command('offers', (ctx) => ui.offersboard(ctx))
 
-telebot.command(['richieste','sogni','bisogni'], (ctx) => ui.requestsboard(ctx))
+telebot.command(['richieste', 'sogni', 'bisogni'], (ctx) => ui.requestsboard(ctx))
 telebot.command('offerte', (ctx) => ui.offersboard(ctx))
 
 telebot.command('bulletin', (ctx) => ui.bulletinboard(ctx))
@@ -302,15 +302,15 @@ telebot.command('setAdmin', async (ctx) => {
   await settings.setAdmin(ctx)
 })
 
-telebot.command('setValueEquation', async (ctx) => {
+telebot.command(['setValueEquation','values'], async (ctx) => {
   //TODO; check if the user is an admin
   let weights = await settings.getValueEquation(utils.getChatId(ctx))
-  ctx.reply('Update weights:', equationInlineKeyboard(weights));
+  ctx.reply('Value Equation:', equationInlineKeyboard(weights));
 })
 
 telebot.command('getValueEquation', async (ctx) => {
   //TODO; check if the user is an admin
-  ctx.reply('Value Equation:',await settings.getValueEquation(utils.getChatId(ctx)))
+  ctx.reply('Value Equation:', await settings.getValueEquation(utils.getChatId(ctx)))
 })
 
 
@@ -319,56 +319,58 @@ telebot.on('callback_query', async (ctx) => {
   let chatID = ctx.callbackQuery.message.chat.id;
   let messageID = ctx.callbackQuery.message.message_id;
 
-  // initiated, completed, credits sent, credits received, hours, collaboration, wants, offers, money
-  let weights = await settings.getValueEquation(chatID)
-  // Fetch the current weights from your database
+  if (callbackData.startsWith('removekeyboard')) {
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  }
 
   if (callbackData.startsWith('increment_')) {
-      const weightName = callbackData.substring(10);
-      weights[weightName] = parseInt(weights[weightName]) + 1;
-        // Save the updated weights back to your database
-      await settings.setValueEquation(chatID, weights);
+    let weights = await settings.getValueEquation(chatID)
+    const weightName = callbackData.substring(10);
+    weights[weightName] = parseInt(weights[weightName]) + 1;
+    // Save the updated weights back to your database
+    await settings.setValueEquation(chatID, weights);
 
-  // Update the message with the new inline keyboard
-  await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+    // Update the message with the new inline keyboard
+    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
   } else if (callbackData.startsWith('decrement_')) {
-      const weightName = callbackData.substring(10);
-      weights[weightName] = parseInt(weights[weightName]) - 1;
-        // Save the updated weights back to your database
-      await settings.setValueEquation(chatID, weights);
+    let weights = await settings.getValueEquation(chatID)
+    const weightName = callbackData.substring(10);
+    weights[weightName] = parseInt(weights[weightName]) - 1;
+    // Save the updated weights back to your database
+    await settings.setValueEquation(chatID, weights);
 
-      // Update the message with the new inline keyboard
-      await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+    // Update the message with the new inline keyboard
+    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
   } else {
-    if ( messageID== quests.calendar.chats.get(chatID)) {
-    var res;
-    res = quests.calendar.clickButtonCalendar(ctx);
-    if (res !== -1) {
-    
+    if (messageID == quests.calendar.chats.get(chatID)) {
+      var res;
+      res = quests.calendar.clickButtonCalendar(ctx);
+      if (res !== -1) {
+        let caller = quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
+
         let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
         await questsDB.load()
-    
-        let quest = await questsDB.get(messageID.toString())[0]
-    
+
+        let quest = await questsDB.get(caller)[0]
+
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
         quest.status = "scheduled";
         quest.when = res;
+        let callerctx = ctx;
+        callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
         // Update the message
-        updateMessage(ctx, quest);
+        quests.updateMessage(ctx, quest);
+        
         // Update the db
         questsDB.put(quest);
+      }
     }
   }
-}
-
-
-
-
-
 });
 
-  // ... update the inline keyboard ...
-  const equationInlineKeyboard = (weights) => {return Markup.inlineKeyboard([
+// ... update the inline keyboard ...
+const equationInlineKeyboard = (weights) => {
+  return Markup.inlineKeyboard([
     [
       Markup.button.callback('Initiated:', 'null'),
       Markup.button.callback('<', 'decrement_initiated'),
@@ -392,8 +394,11 @@ telebot.on('callback_query', async (ctx) => {
       Markup.button.callback('<', 'decrement_received'),
       Markup.button.callback(weights.received, 'null'),
       Markup.button.callback('>', 'increment_received')
+    ],
+    [
+      Markup.button.callback('Done', 'removekeyboard'),
     ]
-]);
+  ]);
 }
 
 
@@ -431,17 +436,17 @@ process.on('SIGTERM', async () => {
 });
 
 telebot.on('web_app_data', (ctx) => {
-	var [ timespamp, timezoneOffset ] = ctx.message.web_app_data.data.split('_')
-	timespamp = parseInt(timespamp)
+  var [timespamp, timezoneOffset] = ctx.message.web_app_data.data.split('_')
+  timespamp = parseInt(timespamp)
 
-	var clientOffset = parseInt(timezoneOffset) * 60 * 1000
-	var serverOffset = (new Date()).getTimezoneOffset() * 60 * 1000
-	var offset = serverOffset - clientOffset
+  var clientOffset = parseInt(timezoneOffset) * 60 * 1000
+  var serverOffset = (new Date()).getTimezoneOffset() * 60 * 1000
+  var offset = serverOffset - clientOffset
 
-	var print = 'in user timezone: ' + (new Date(timespamp + offset)).toLocaleString() + '\n'
-	print += 'in server timezone: ' + (new Date(timespamp)).toLocaleString()
+  var print = 'in user timezone: ' + (new Date(timespamp + offset)).toLocaleString() + '\n'
+  print += 'in server timezone: ' + (new Date(timespamp)).toLocaleString()
 
-	ctx.reply(print)
+  ctx.reply(print)
 })
 
 
