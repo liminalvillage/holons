@@ -320,12 +320,11 @@ class Quests {
             ctx.answerCbQuery(`Only the initiator of the quest can mark it as completed.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             return;
         }
-        // ================================ SEND APPRECIATION ========================== 
+        // ================================ RECORD ACTIONS ========================== 
       
-        
         let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
-        //await saveUserAction(ctx.callbackQuery.from, quest.title, usersDB) //register monouser in debug mode
+
         await saveUserAction(quest.initiator, "initiated", quest.title, usersDB)
 
         // loop through all users and add the completed quest to their account
@@ -337,7 +336,6 @@ class Quests {
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
-            //await sendToken(sender, 1, usersDB)
             await saveUserAction(sender, "sent", quest.title, usersDB)
             // Calculate the number of appreciation to send to each user
             const appreciationPerUser = 1  // / quest.users.length;
@@ -406,11 +404,11 @@ class Quests {
                 recipient.first_name = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
             }
         
-            if (!recipient || recipient == '') {
-                ctx.answerCbQuery(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
-                // register the user in the database
-                continue;
-            }
+            // if (!recipient || recipient == '') {
+            //     ctx.answerCbQuery(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+            //     // register the user in the database
+            //     continue;
+            // }
     
             // // Check if the recipient is the sender
             // if (recipient.id === sender.id) {
@@ -422,7 +420,7 @@ class Quests {
             // Send the appreciation to the recipient
             //await recieveToken(recipient, 1, usersDB)
             // save the user action
-            // await saveUserAction(recipient, "received", action, usersDB)
+            await saveUserAction(recipient, "received", action, usersDB)
         }
     
         // Update the sent appreciation of the sender
@@ -438,11 +436,11 @@ class Quests {
         const usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
     
-        let users = await usersDB.get('')[0]
+        let users = await usersDB.get('')
         let message = ''
         for (let i = 0; i < users.length; i++) {
             let user = users[i];
-            if (user.actions && user.actions.length > 0) {
+            if (user?.completed?.length > 0) {
                 message += user.first_name + ':' + user.completed.join(', ')
             }
         }
