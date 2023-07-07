@@ -94,8 +94,7 @@ class Quests {
         //     media: path,
         //     caption: markup(quest,language)
         //   });
-        if (type == 'quest' || type == 'task')
-        await saveUserAction(sender, "initiated", quest.title, usersDB)
+     
         if (type == 'offer'){
             quest.users.push(sender);
             await saveUserAction(sender, "offers", quest.title, usersDB)
@@ -315,16 +314,20 @@ class Quests {
             questsDB.put(quest);
             //unpin the message
             ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
-         
+            
 
         } else {
             ctx.answerCbQuery(`Only the initiator of the quest can mark it as completed.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             return;
         }
-        // ================================ APPRECIATION ========================== 
+        // ================================ SEND APPRECIATION ========================== 
+      
+        
         let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
         //await saveUserAction(ctx.callbackQuery.from, quest.title, usersDB) //register monouser in debug mode
+        await saveUserAction(quest.initiator, "initiated", quest.title, usersDB)
+
         // loop through all users and add the completed quest to their account
         for (let i = 0; i < quest.users.length; i++) {
             let user = quest.users[i];
@@ -360,7 +363,7 @@ class Quests {
      async  schedule(ctx, orbitdb) { 
         if (!orbitdb) return
         console.log("SCHEDULE ACTION");
-        this.calendar.startNavCalendar(ctx);x
+        this.calendar.startNavCalendar(ctx);
         this.calendar.chats.set(getChatId(ctx)*100, getMessageId(ctx)); //TODO: fix this, use a different method to store the message id
     }
     
@@ -382,7 +385,8 @@ class Quests {
         }
     
         const lastMention = mentions[mentions.length - 1];
-        const action = ctx.message.text.substring(lastMention.offset + lastMention.length).trim();
+        let action = ctx.message.text.substring(lastMention.offset + lastMention.length).trim();
+        if (action === '') { action = 'appreciated' }
     
         // Check if the message contains a mention
         for (let i = 0; i < mentions.length; i++) {
@@ -402,12 +406,11 @@ class Quests {
                 recipient.first_name = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
             }
         
-            // if (!recipient || recipient == '') {
-            //     ctx.reply(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id });
-            //     // register the user in the database
-                
-            //     continue;
-            // }
+            if (!recipient || recipient == '') {
+                ctx.answerCbQuery(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+                // register the user in the database
+                continue;
+            }
     
             // // Check if the recipient is the sender
             // if (recipient.id === sender.id) {
@@ -419,13 +422,13 @@ class Quests {
             // Send the appreciation to the recipient
             //await recieveToken(recipient, 1, usersDB)
             // save the user action
-            await saveUserAction(recipient, "received", action, usersDB)
+            // await saveUserAction(recipient, "received", action, usersDB)
         }
     
         // Update the sent appreciation of the sender
        //await sendToken(sender, 1, usersDB)
        await saveUserAction(sender, "sent", action, usersDB)
-        ctx.reply(`You have sent 1 appreciation to ${mentions.length} ${mentions.length > 1 ? 'users' : 'user'}.`, { reply_to_message_id: ctx.message.message_id });
+       ctx.reply(`You have sent 1 appreciation to ${mentions.length} ${mentions.length > 1 ? 'users' : 'user'}.`, { reply_to_message_id: ctx.message.message_id }).catch((error) => console.log(error));
     }
     
     // ============== UTILITY FUNCTIONS
@@ -435,7 +438,7 @@ class Quests {
         const usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
     
-        let users = await usersDB.get('')
+        let users = await usersDB.get('')[0]
         let message = ''
         for (let i = 0; i < users.length; i++) {
             let user = users[i];
@@ -480,9 +483,10 @@ async  updateMessage(ctx, quest, language) {
 
  // save user action
  async function saveUserAction(userobj,type, action, db) {
-    console.log('SAVE USER ACTION')
+    console.log('SAVE USER ACTION: ' + type)
     if (!db) return
     let userinfo = await getUserInfo(userobj, db )
+    console.log(userinfo)
     switch (type) {
         case 'offers':
             userinfo.offers.push(action);
@@ -536,7 +540,7 @@ async function  getUserInfo(user, db){
     if (!userinfo || userinfo == '') {
         userinfo = {
             _id: user.id,
-            username: user.username,
+            username: user.username? user.username : user.id,
             initiated: [],
             received: 0,
             sent: 0,

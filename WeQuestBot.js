@@ -36,6 +36,7 @@ import * as values from './values.js'
 import * as request from './requests.js'
 import * as settings from './settings.js'
 import { t } from "i18next";
+import { checkServerIdentity } from "tls";
 
 //Initialize modules
 
@@ -127,10 +128,10 @@ await init();
 
 // =========================== bot commands ===========================
 telebot.command('start', async (ctx) => {
-  ctx.reply("Welcome to WeQuest, a bot developed by Liminal Village. Our quest is to revolutionize community dynamics through AI and blockchain. WeQuest uses gamification to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. Our goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. ")
+  ctx.reply("Welcome to WeQuest, a community bot developed by Liminal Village. Our quest is to revolutionize community dynamics through AI and blockchain. WeQuest uses gamification to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. Our goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. ")
 });
 telebot.command('help', async (ctx) => {
-  ctx.reply("you can use the following commands: \n /task \n /quest \n /setLanguage \n /setTheme \n /setLevel \n /setAdmin \n /getLanguage \n /getTheme \n /getLevel \n /getAdmin \n /getAddress \n /getBalance \n /getQuests \n /getTasks \n /getQuest \n /getTask \n /getSettings \n /getValues \n /getInfo \n /getHelp")
+  ctx.reply("`you can use the following commands: \n /task \n /request \n /offer /status /bulletin")
 })
 telebot.on('photo', async (ctx) => {
   if (ctx.message.caption) {
@@ -205,12 +206,6 @@ telebot.command('getRoles', async (ctx) => { let roles = await settings.getRoles
 telebot.command('actions', async (ctx) => { let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions ? actions : 'No actions found') })
 
 
-//----------------------------- VALUES -----------------------------
-telebot.command('values', async (ctx) => values.values(ctx, orbitdb))
-telebot.command('valuesSelect', async (ctx) => values.valuesSelect(ctx, orbitdb))
-telebot.command('valuesAdd', async (ctx) => values.valuesAdd(ctx, orbitdb))
-telebot.command('valuesRemove', async (ctx) => values.valuesRemove(ctx, orbitdb))
-
 //----------------------------- QUESTS -----------------------------
 telebot.command('quest', async (ctx) => quests.quest('quest', ctx, orbitdb))
 telebot.command('mission', async (ctx) => quests.quest('quest', ctx, orbitdb))
@@ -243,9 +238,6 @@ telebot.action('cancel_quest', (ctx) => quests.cancel(ctx, orbitdb));
 telebot.action('complete_quest', (ctx) => quests.complete(ctx, orbitdb));
 telebot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
 
-
-// bot.action('popup', async (ctx) => {ctx.AnswerCallbackQueryAsync(ctx.CallbackQuery.id, "Notification already enabled", true)});
-
 //----------------------------------------------------
 
 //=========== UI COMMANDS ===============
@@ -272,7 +264,7 @@ telebot.command('reset', async (ctx) => {
   if (!orbitdb) return
 
   //TODO; check if the user is an admin
-  let chatID = ctx.message.chat.id;
+  let chatID = getChatId(ctx)
   // try{
   //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
   // }catch(e){ console.log(e)}
@@ -283,7 +275,7 @@ telebot.command('reset', async (ctx) => {
   await questsDB.drop()
   await offersDB.drop()
   await usersDB.drop()
-  await settingsDB.drop()
+  await settingsDB.delete(chatID)
   ctx.reply('Bot resetted')
 })
 
