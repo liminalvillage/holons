@@ -305,8 +305,8 @@ class Quests {
     
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
     
-        // Handle the reaction to the quest
-        if (quest.initiator.id === ctx.from.id) {
+        // Handle the reaction to the quest (only initiator or participants can complete the quest)
+        if (quest.initiator.id === ctx.from.id || quest.users.findIndex(user => user.id === ctx.from.id) > -1) {
             quest.status = "completed";
             // Update the message 
             this.updateMessage(ctx, quest);
@@ -314,7 +314,6 @@ class Quests {
             questsDB.put(quest);
             //unpin the message
             ctx.telegram.unpinChatMessage(chatID,  messageID ).catch((err) => console.log(err))
-            
 
         } else {
             ctx.answerCbQuery(`Only the initiator of the quest can mark it as completed.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
@@ -398,23 +397,23 @@ class Quests {
                 recipient = await usersDB.get(ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))[0]
             }
           
-            if ( !recipient || recipient == ''|| !recipient.id) { 
-                recipient = {}
-                recipient.id = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
-                recipient.first_name = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
-            }
+            // if ( !recipient || recipient == ''|| !recipient.id) { 
+            //     recipient = {}
+            //     recipient.id = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
+            //     recipient.first_name = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
+            // }
         
-            // if (!recipient || recipient == '') {
-            //     ctx.answerCbQuery(`The user is not registered. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
-            //     // register the user in the database
-            //     continue;
-            // }
+            if (!recipient || recipient == '') {
+                ctx.answerCbQuery(`The user has not interacted with WeQuest yet. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+                // register the user in the database
+                continue;
+            }
     
-            // // Check if the recipient is the sender
-            // if (recipient.id === sender.id) {
-            //     ctx.reply(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id });
-            //     continue;
-            // }
+            // Check if the recipient is the sender
+            if (recipient.id === sender.id) {
+                ctx.answerCbQuery(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+                continue;
+            }
             
     
             // Send the appreciation to the recipient
@@ -441,7 +440,7 @@ class Quests {
         for (let i = 0; i < users.length; i++) {
             let user = users[i];
             if (user?.completed?.length > 0) {
-                message += user.first_name + ':' + user.completed.join(', ')
+                message += user.username + ':' + user.completed.join(', ') + '\n'
             }
         }
         return message

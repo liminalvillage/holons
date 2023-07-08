@@ -32,6 +32,7 @@ import OrbitDB from 'orbit-db'
 
 //import WeQuest Modules
 import Quests from './quests.js'
+import Shopping from './shopping.js'
 import * as values from './values.js'
 import * as request from './requests.js'
 import * as settings from './settings.js'
@@ -46,6 +47,7 @@ let discordbot
 let quests
 let moon
 let ui
+let shopping
 
 async function init() {
   let ipfs
@@ -74,6 +76,7 @@ async function init() {
   telebot = new Telegraf(config.telegram);
   //telebot.use(Telegraf.log())
   moon = new lunation(telebot)
+  shopping = new Shopping(telebot, orbitdb)
   quests = new Quests(telebot, orbitdb)
   ui = new UI(telebot, orbitdb)
   await ui.init()
@@ -198,7 +201,7 @@ telebot.on('chosen_inline_result', (ctx) => {
 
 //----------------------------- APPRECIATION -----------------------------
 telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
-telebot.command(['appreciate', 'apprezza', 'apprezziamo'], async (ctx) => quests.sendAppreciation(ctx, orbitdb))
+telebot.command(['appreciate', 'praise','kudo' , 'apprezza', 'apprezziamo'], async (ctx) => quests.sendAppreciation(ctx, orbitdb))
 telebot.command('maslow', (ctx) => UI.showMaslow(2))
 telebot.command('assignRoles', async (ctx) => ctx.reply(await AI.assignRoles(await quests.listUsersActions(ctx, orbitdb), await settings.getRoles(utils.getChatId(ctx)))))
 telebot.command('setRoles', async (ctx) => ctx.reply(await settings.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
@@ -264,7 +267,7 @@ telebot.command('reset', async (ctx) => {
   if (!orbitdb) return
 
   //TODO; check if the user is an admin
-  let chatID = getChatId(ctx)
+  let chatID = utils.getChatId(ctx)
   // try{
   //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
   // }catch(e){ console.log(e)}
@@ -306,59 +309,59 @@ telebot.command('getValueEquation', async (ctx) => {
 })
 
 
-telebot.on('callback_query', async (ctx) => {
-  const callbackData = ctx.callbackQuery.data;
-  let chatID = ctx.callbackQuery.message.chat.id;
-  let messageID = ctx.callbackQuery.message.message_id;
+// telebot.on('callback_query', async (ctx) => {
+//   const callbackData = ctx.callbackQuery.data;
+//   let chatID = ctx.callbackQuery.message.chat.id;
+//   let messageID = ctx.callbackQuery.message.message_id;
 
-  if (callbackData.startsWith('removekeyboard')) {
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  }
+//   if (callbackData.startsWith('removekeyboard')) {
+//     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+//   }
 
-  if (callbackData.startsWith('increment_')) {
-    let weights = await settings.getValueEquation(chatID)
-    const weightName = callbackData.substring(10);
-    weights[weightName] = parseInt(weights[weightName]) + 1;
-    // Save the updated weights back to your database
-    await settings.setValueEquation(chatID, weights);
+//   if (callbackData.startsWith('increment_')) {
+//     let weights = await settings.getValueEquation(chatID)
+//     const weightName = callbackData.substring(10);
+//     weights[weightName] = parseInt(weights[weightName]) + 1;
+//     // Save the updated weights back to your database
+//     await settings.setValueEquation(chatID, weights);
 
-    // Update the message with the new inline keyboard
-    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
-  } else if (callbackData.startsWith('decrement_')) {
-    let weights = await settings.getValueEquation(chatID)
-    const weightName = callbackData.substring(10);
-    weights[weightName] = parseInt(weights[weightName]) - 1;
-    // Save the updated weights back to your database
-    await settings.setValueEquation(chatID, weights);
+//     // Update the message with the new inline keyboard
+//     await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+//   } else if (callbackData.startsWith('decrement_')) {
+//     let weights = await settings.getValueEquation(chatID)
+//     const weightName = callbackData.substring(10);
+//     weights[weightName] = parseInt(weights[weightName]) - 1;
+//     // Save the updated weights back to your database
+//     await settings.setValueEquation(chatID, weights);
 
-    // Update the message with the new inline keyboard
-    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
-  } else {
-    if (messageID == quests.calendar.chats.get(chatID)) {
-      var res;
-      res = quests.calendar.clickButtonCalendar(ctx);
-      if (res !== -1) {
-        let caller = quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
+//     // Update the message with the new inline keyboard
+//     await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+//   } else {
+//     if (messageID == quests.calendar.chats.get(chatID)) {
+//       var res;
+//       res = quests.calendar.clickButtonCalendar(ctx);
+//       if (res !== -1) {
+//         let caller = quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
 
-        let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
+//         let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+//         await questsDB.load()
 
-        let quest = await questsDB.get(caller)[0]
+//         let quest = await questsDB.get(caller)[0]
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-        quest.status = "scheduled";
-        quest.when = res;
-        let callerctx = ctx;
-        callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
-        // Update the message
-        quests.updateMessage(ctx, quest);
+//         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+//         quest.status = "scheduled";
+//         quest.when = res;
+//         let callerctx = ctx;
+//         callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
+//         // Update the message
+//         quests.updateMessage(callerctx, quest);
         
-        // Update the db
-        questsDB.put(quest);
-      }
-    }
-  }
-});
+//         // Update the db
+//         questsDB.put(quest);
+//       }
+//     }
+//   }
+// });
 
 // ... update the inline keyboard ...
 const equationInlineKeyboard = (weights) => {
