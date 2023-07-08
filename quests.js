@@ -445,6 +445,12 @@ class Quests {
         }
         return message
     }
+
+    //remind the user that a quest is due
+    async  remind(ctx, quest) {
+        console.log("REMIND ACTION");
+        ctx.reply(`Reminder: The quest "${quest.title}" is due!`, { reply_to_message_id: quest._id });
+    }
     
     // Function to update messages for a quest
 async  updateMessage(ctx, quest, language) {

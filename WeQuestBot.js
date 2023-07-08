@@ -309,59 +309,64 @@ telebot.command('getValueEquation', async (ctx) => {
 })
 
 
-// telebot.on('callback_query', async (ctx) => {
-//   const callbackData = ctx.callbackQuery.data;
-//   let chatID = ctx.callbackQuery.message.chat.id;
-//   let messageID = ctx.callbackQuery.message.message_id;
+telebot.on('callback_query', async (ctx) => {
+  const callbackData = ctx.callbackQuery.data;
+  let chatID = ctx.callbackQuery.message.chat.id;
+  let messageID = ctx.callbackQuery.message.message_id;
 
-//   if (callbackData.startsWith('removekeyboard')) {
-//     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-//   }
+  if (callbackData.startsWith('removekeyboard')) {
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  }
 
-//   if (callbackData.startsWith('increment_')) {
-//     let weights = await settings.getValueEquation(chatID)
-//     const weightName = callbackData.substring(10);
-//     weights[weightName] = parseInt(weights[weightName]) + 1;
-//     // Save the updated weights back to your database
-//     await settings.setValueEquation(chatID, weights);
+  if (callbackData.startsWith('increment_')) {
+    let weights = await settings.getValueEquation(chatID)
+    const weightName = callbackData.substring(10);
+    weights[weightName] = parseInt(weights[weightName]) + 1;
+    // Save the updated weights back to your database
+    await settings.setValueEquation(chatID, weights);
 
-//     // Update the message with the new inline keyboard
-//     await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
-//   } else if (callbackData.startsWith('decrement_')) {
-//     let weights = await settings.getValueEquation(chatID)
-//     const weightName = callbackData.substring(10);
-//     weights[weightName] = parseInt(weights[weightName]) - 1;
-//     // Save the updated weights back to your database
-//     await settings.setValueEquation(chatID, weights);
+    // Update the message with the new inline keyboard
+    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+  } else if (callbackData.startsWith('decrement_')) {
+    let weights = await settings.getValueEquation(chatID)
+    const weightName = callbackData.substring(10);
+    weights[weightName] = parseInt(weights[weightName]) - 1;
+    // Save the updated weights back to your database
+    await settings.setValueEquation(chatID, weights);
 
-//     // Update the message with the new inline keyboard
-//     await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
-//   } else {
-//     if (messageID == quests.calendar.chats.get(chatID)) {
-//       var res;
-//       res = quests.calendar.clickButtonCalendar(ctx);
-//       if (res !== -1) {
-//         let caller = quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
+    // Update the message with the new inline keyboard
+    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
+  } else {
+    if (messageID == quests.calendar.chats.get(chatID)) {
+      var when;
+      when = quests.calendar.clickButtonCalendar(ctx);
+      if (when !== -1) {
+        let caller = quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
 
-//         let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-//         await questsDB.load()
+        let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+        await questsDB.load()
 
-//         let quest = await questsDB.get(caller)[0]
+        let quest = await questsDB.get(caller)[0]
 
-//         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-//         quest.status = "scheduled";
-//         quest.when = res;
-//         let callerctx = ctx;
-//         callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
-//         // Update the message
-//         quests.updateMessage(callerctx, quest);
-        
-//         // Update the db
-//         questsDB.put(quest);
-//       }
-//     }
-//   }
-// });
+        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        quest.status = "scheduled";
+        quest.when = when;
+        let callerctx = ctx;
+        callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
+        //TODO: set a timeout to remind the user of the quest when it's time
+        // setTimeout(() => {
+        //   quests.remind(callerctx, quest)
+        // }, (new Date(when)).getTime() - Date.now())
+    
+        // Update the message
+        quests.updateMessage(callerctx, quest);
+
+        // Update the db
+        questsDB.put(quest);
+      }
+    }
+  }
+});
 
 // ... update the inline keyboard ...
 const equationInlineKeyboard = (weights) => {
