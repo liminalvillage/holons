@@ -203,20 +203,34 @@ telebot.on('chosen_inline_result', (ctx) => {
 telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
 telebot.command(['appreciate', 'praise','kudo' , 'apprezza', 'apprezziamo'], async (ctx) => quests.sendAppreciation(ctx, orbitdb))
 telebot.command('maslow', (ctx) => UI.showMaslow(2))
-telebot.command('assignRoles', async (ctx) => ctx.reply(await AI.assignRoles(await quests.listUsersActions(ctx, orbitdb), await settings.getRoles(utils.getChatId(ctx)))))
-telebot.command('setRoles', async (ctx) => ctx.reply(await settings.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
-telebot.command('getRoles', async (ctx) => { let roles = await settings.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles founds') })
-telebot.command('actions', async (ctx) => { let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions ? actions : 'No actions found') })
+//telebot.command('actions', async (ctx) => { let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions ? actions : 'No actions found') })
+
+//-----------------------------AI -----------------------------
+telebot.command('today', async (ctx) => ctx.reply (await AI.getPrompt(await settings.getValues, moon.progress(), await AI.getActions(await quests.listUsersActions(ctx, orbitdb))).catch(err => console.log(err))))
+telebot.command('roles', async (ctx) => {let roles = await AI.assignRoles(await AI.getActions(await quests.listUsersActions(ctx, orbitdb)), await settings.getRoles(utils.getChatId(ctx)));ctx.reply(roles? roles: "No roles found")})
+telebot.command('actions', async (ctx) => { let actions = await AI.getActions(await quests.listUsersActions(ctx, orbitdb)); ctx.reply(actions ? actions : 'No actions founds') })
+telebot.command('facilitate', async (ctx) => {
+  let prompt =  ctx.message.text.split(' ').slice(1).join(' ');
+  if (prompt)
+    ctx.reply(await AI.facilitate(prompt))
+  else
+    ctx.reply ("Please specify your issue, eg: /facilitate I am having an issue with Josh, he never shuts up")
+})
+
+//testing
+telebot.command('assignRolesTest', async (ctx) => ctx.reply (await AI.assignRoles(await settings.getRoles(utils.getChatId(ctx)), "Roberto: cooked dinner, cleaned the house, and gardened.\nJillian great advice, cooked dinner, \n Laura: take elea to school \n Elea: play games \n stefania:take care of elea")).catch(err => console.log(err)))
+telebot.command('getActionsTest', async (ctx) => ctx.reply (await AI.getActions( "Roberto: cook dinner, clean the house, do a lot of things in the garden like hose the trees and then go to shovel something .\nJillian great advice, cooked dinner, \n Laura take elea to school, clear the porch, take the cat to the vet ")).catch  (err => console.log(err)))  
+
 
 
 //----------------------------- QUESTS -----------------------------
 telebot.command('quest', async (ctx) => quests.quest('quest', ctx, orbitdb))
 telebot.command('mission', async (ctx) => quests.quest('quest', ctx, orbitdb))
 telebot.command('task', async (ctx) => quests.quest('task', ctx, orbitdb))
-telebot.command('proposal', async (ctx) => quests.quest('proposal', ctx, orbitdb))
+telebot.command('proposal', async (ctx) => quests.quest('proposal', ctx, orbitdb)
+)
 telebot.command('propose', async (ctx) => quests.quest('proposal', ctx, orbitdb))
 telebot.command('todo', async (ctx) => quests.quest('todo', ctx, orbitdb))
-telebot.command('actions', async (ctx) => quests.listUsersActions())
 
 telebot.command(['need', 'request', 'want', 'wish'], async (ctx) => quests.quest('request', ctx, orbitdb))
 telebot.command(['offer', 'give', 'have', 'gift'], async (ctx) => quests.quest('offer', ctx, orbitdb))
@@ -303,10 +317,16 @@ telebot.command(['setValueEquation','values'], async (ctx) => {
   ctx.reply('Value Equation:', equationInlineKeyboard(weights));
 })
 
-telebot.command('getValueEquation', async (ctx) => {
+telebot.command('value', async (ctx) => {
   //TODO; check if the user is an admin
   ctx.reply('Value Equation:', await settings.getValueEquation(utils.getChatId(ctx)))
 })
+
+telebot.command('setRoles', async (ctx) => ctx.reply("New roles: "+ await settings.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
+telebot.command('getRoles', async (ctx) => { let roles = await settings.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
+
+telebot.command('setValues', async (ctx) => ctx.reply("New values: "+ await settings.setValues(utils.getChatId(ctx), utils.getParameters(ctx))))
+telebot.command('getValues', async (ctx) => { let values = await settings.getValues(utils.getChatId(ctx)); ctx.reply(values ? values : 'No values specified') })
 
 
 telebot.on('callback_query', async (ctx) => {

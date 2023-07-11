@@ -14,6 +14,7 @@ function getDefaultSettings(chatID) {
       level: 0,
       admin: '',
       roles: '',
+      values:'',
       valueEquation:
       { 
         initiated: 1,
@@ -183,6 +184,28 @@ export async function getRoles(chatID) {
         settingsDB.put(settings)
     }
     return settings.roles
+}
+
+export async function setValues(chatID, values) {
+    let settings = await settingsDB.get(chatID)[0]
+    if (values === undefined || values === null || values === '') {
+        return ('Please specify the values. Example: /setValues collaboration communication pro-activity')
+    }
+    if (!settings || settings == '') {
+        settings =  getDefaultSettings(chatID)
+    }
+    settings.values = values
+    settingsDB.put(settings)
+    return settings.values
+}
+
+export async function getValues(chatID) {
+    let settings = await settingsDB.get(chatID)[0]
+    if (!settings || settings == '') {
+        settings =  getDefaultSettings(chatID)
+        settingsDB.put(settings)
+    }
+    return settings.values
 }
 
 export async function getSettings(chatID) {

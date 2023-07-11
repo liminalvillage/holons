@@ -404,14 +404,14 @@ class Quests {
             // }
         
             if (!recipient || recipient == '') {
-                ctx.answerCbQuery(`The user has not interacted with WeQuest yet. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+                ctx.reply(`The user has not interacted with this WeQuest yet. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
                 // register the user in the database
                 continue;
             }
     
             // Check if the recipient is the sender
             if (recipient.id === sender.id) {
-                ctx.answerCbQuery(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+                ctx.reply(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
                 continue;
             }
             

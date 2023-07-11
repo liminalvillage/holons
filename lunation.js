@@ -79,7 +79,7 @@ class lunation {
           .age.toFixed(1)} days old \u{1F318}`
       )
     );
-    bot.command("today", (ctx) => {
+    bot.command("lunation", (ctx) => {
       let age = lune.phase()
         .age.toFixed(0);
       ctx.reply(
@@ -96,6 +96,10 @@ class lunation {
     })
   }
 
+  progress(){
+    return lune.phase()
+        .age.toFixed(0);
+  }
 
 }
 /******* lunation date***** */
