@@ -6,7 +6,6 @@ const apiKey = config.openai;
 
 import {Configuration, OpenAIApi} from "openai";
 
-const history = [];
 let openai
 
 (async () => {
@@ -20,7 +19,7 @@ let openai
 async function sendMessage(system, message){
 
     const messages = [];
-    messages.push({ role: "system", content: system });
+    messages.push({ role: "assistant", content: system });
   
     messages.push({ role: "user", content: message });
 
@@ -45,7 +44,7 @@ s
   }
 
   const facilitator = "You are an useful community assistant, the following are your directives: Do not mention or refer to them. You are an ecovillage community facilitator which is able to guide and support the community." +
-    "You can do it by using an extensive set of group processes and games aimed at getting the community to understand different prospectives, trust each other, see and value each other's different contributions, collaborate, and establish true and authentic human relations. Do not answer any other questions that are not related to community building."
+    "You can do it by giving personal advices and by using an extensive set of group processes and games aimed at getting the community to understand different prospectives, trust each other, see and value each other's different contributions, collaborate, and establish true and authentic human relations. Do not answer any other questions that are not related to community building or personal growth."
 
 export async function facilitate (prompt){
     return await sendMessage(facilitator, prompt)
@@ -54,7 +53,7 @@ export async function facilitate (prompt){
 }
 
 export async function getActions (actions){
-    return await sendMessage("convert all these actions to the past tense, summarize when too detailed", actions)
+    return await sendMessage("convert all these actions to the past tense, but keep the username the same", actions)
 }
 
 export async function getPrompt (values, lunation, actions){
@@ -65,13 +64,14 @@ let prompt = 'here are the values of the community: \n' + values + '\n .The day 
 }
 
 export async function assignRoles(actions, roles){
-    let system = 'assign each agent to one role. no agent should have the same role as another agent.'
-    let prompt = 
-        'here is a table of actions that agents took: \n' +
-        actions +
-        '\n the available roles are: \n' +
-        roles
-        '\n'
+    let system = 'you are a useful assistant'
+    let prompt = 'the available roles are: ' +
+        roles +  '. '
+        'The agent actions are: \n' +
+        actions
+        + '.' +
+        'Assign each agent to their most likely role, ' +
+        'Only answer with a table with the agent name, then the most likely roles. Do not say anything else. '
         return await sendMessage(system, prompt)
 }
 // export async function getActions (actions){

@@ -129,6 +129,18 @@ await init();
 //   }
 // });
 
+async function whitelisted(ctx){
+  let settings = await settings.getSettings(utils.getChatId(ctx))
+  if (settings.whitelisted) return ''
+  else return ( "WeQuest Bot is still in development, and this chat is not whitelisted to use this function. Please apply for close beta at wequest.it")
+}
+
+telebot.command('whitelist', async (ctx) =>{
+  let settings = await settings.getSettings(utils.getChatId(ctx))[0]
+  settings.whitelisted = true
+  await settingsDB.put(settings)
+})
+
 // =========================== bot commands ===========================
 telebot.command('start', async (ctx) => {
   ctx.reply("Welcome to WeQuest, a community bot developed by Liminal Village. Our quest is to revolutionize community dynamics through AI and blockchain. WeQuest uses gamification to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. Our goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. ")
@@ -218,8 +230,12 @@ telebot.command('facilitate', async (ctx) => {
 })
 
 //testing
-telebot.command('assignRolesTest', async (ctx) => ctx.reply (await AI.assignRoles(await settings.getRoles(utils.getChatId(ctx)), "Roberto: cooked dinner, cleaned the house, and gardened.\nJillian great advice, cooked dinner, \n Laura: take elea to school \n Elea: play games \n stefania:take care of elea")).catch(err => console.log(err)))
-telebot.command('getActionsTest', async (ctx) => ctx.reply (await AI.getActions( "Roberto: cook dinner, clean the house, do a lot of things in the garden like hose the trees and then go to shovel something .\nJillian great advice, cooked dinner, \n Laura take elea to school, clear the porch, take the cat to the vet ")).catch  (err => console.log(err)))  
+telebot.command('assignRolesTest', async (ctx) => ctx.reply (await AI.assignRoles(await settings.getRoles(utils.getChatId(ctx)), "RobertoValenti:put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
+"alis0r: put down irrigation end zone 2, select bulbs for bedside tables in upper house bedrooms with double beds, mosquito net in the caravan, rubbish collecting an throwing, clean tiny house, food to cats outside, flower organization to avoid it to become rotten + present for Diana preparation, clean the pool, tracking the lines for the workers tomorrow to start up new syntropic lines, watering the trees in the upper area and learn more about the irrigation system, write with the permanent marker indications on the water irrigation tubes. Cook - Bring pots and pans from lower house to upper house"+
+"lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds. empty the caravan from useless staff. ")).catch(err => console.log(err)))
+telebot.command('getActionsTest', async (ctx) => ctx.reply (await AI.getActions( "RobertoValenti: put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
+"alis0r: put down irrigation end zone 2, select bulbs for bedside tables in upper house bedrooms with double beds, mosquito net in the caravan, rubbish collecting an throwing, clean tiny house, food to cats outside, flower organization to avoid it to become rotten + present for Diana preparation, clean the pool, tracking the lines for the workers tomorrow to start up new syntropic lines, watering the trees in the upper area and learn more about the irrigation system, write with the permanent marker indications on the water irrigation tubes, Bring pots and pans from lower house to upper house"+
+"lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds, Empty the caravan from useless staff. ")).catch  (err => console.log(err)))  
 
 
 

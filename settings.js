@@ -9,6 +9,7 @@ let settingsDB
 function getDefaultSettings(chatID) {
     return {
       _id: chatID,
+      whitelisted: false,
       language: 'en',
       theme: 'dark',
       level: 0,
