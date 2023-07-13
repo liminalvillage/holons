@@ -219,8 +219,26 @@ telebot.command('maslow', (ctx) => UI.showMaslow(2))
 
 //-----------------------------AI -----------------------------
 telebot.command('today', async (ctx) => ctx.reply (await AI.getPrompt(await settings.getValues, moon.progress(), await AI.getActions(await quests.listUsersActions(ctx, orbitdb))).catch(err => console.log(err))))
-telebot.command('roles', async (ctx) => {let roles = await AI.assignRoles(await AI.getActions(await quests.listUsersActions(ctx, orbitdb)), await settings.getRoles(utils.getChatId(ctx)));ctx.reply(roles? roles: "No roles found")})
-telebot.command('actions', async (ctx) => { let actions = await AI.getActions(await quests.listUsersActions(ctx, orbitdb)); ctx.reply(actions ? actions : 'No actions founds') })
+telebot.command('roles', async (ctx) => {
+  let actions = await quests.listUsersActions(ctx, orbitdb)
+  if (!actions)
+  {ctx.reply("No actions found, please complete tasks before calling this function"); return}
+  let roles = await settings.getRoles(utils.getChatId(ctx));
+  if (!roles)
+  {ctx.reply("No roles found, create them using /setroles"); 
+  return}
+  actions = await AI.getActions(actions); 
+ 
+  ctx.reply( await AI.assignRoles(actions, roles));
+})
+
+telebot.command('actions', async (ctx) => { 
+  let actions = await quests.listUsersActions(ctx, orbitdb)
+  if (actions)
+    actions = await AI.getActions(actions); 
+  ctx.reply(actions ? actions : 'No actions founds') })
+
+
 telebot.command('facilitate', async (ctx) => {
   let prompt =  ctx.message.text.split(' ').slice(1).join(' ');
   if (prompt)
@@ -230,9 +248,9 @@ telebot.command('facilitate', async (ctx) => {
 })
 
 //testing
-telebot.command('assignRolesTest', async (ctx) => ctx.reply (await AI.assignRoles(await settings.getRoles(utils.getChatId(ctx)), "RobertoValenti:put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
+telebot.command('assignRolesTest', async (ctx) => ctx.reply (await AI.assignRoles( "RobertoValenti:put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
 "alis0r: put down irrigation end zone 2, select bulbs for bedside tables in upper house bedrooms with double beds, mosquito net in the caravan, rubbish collecting an throwing, clean tiny house, food to cats outside, flower organization to avoid it to become rotten + present for Diana preparation, clean the pool, tracking the lines for the workers tomorrow to start up new syntropic lines, watering the trees in the upper area and learn more about the irrigation system, write with the permanent marker indications on the water irrigation tubes. Cook - Bring pots and pans from lower house to upper house"+
-"lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds. empty the caravan from useless staff. ")).catch(err => console.log(err)))
+"lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds. empty the caravan from useless staff. ",await settings.getRoles(utils.getChatId(ctx)),)).catch(err => console.log(err)))
 telebot.command('getActionsTest', async (ctx) => ctx.reply (await AI.getActions( "RobertoValenti: put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
 "alis0r: put down irrigation end zone 2, select bulbs for bedside tables in upper house bedrooms with double beds, mosquito net in the caravan, rubbish collecting an throwing, clean tiny house, food to cats outside, flower organization to avoid it to become rotten + present for Diana preparation, clean the pool, tracking the lines for the workers tomorrow to start up new syntropic lines, watering the trees in the upper area and learn more about the irrigation system, write with the permanent marker indications on the water irrigation tubes, Bring pots and pans from lower house to upper house"+
 "lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds, Empty the caravan from useless staff. ")).catch  (err => console.log(err)))  
@@ -304,11 +322,11 @@ telebot.command('reset', async (ctx) => {
   let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
   let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
   let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-  let settingsDB = await orbitdb.docs('WeQuest.settings')
+  //let settingsDB = await orbitdb.docs('WeQuest.settings')
   await questsDB.drop()
   await offersDB.drop()
   await usersDB.drop()
-  await settingsDB.delete(chatID)
+  //await settingsDB.drop()
   ctx.reply('Bot resetted')
 })
 

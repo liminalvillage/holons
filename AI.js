@@ -53,7 +53,7 @@ export async function facilitate (prompt){
 }
 
 export async function getActions (actions){
-    return await sendMessage("convert all these actions to the past tense, but keep the username the same", actions)
+    return await sendMessage("convert all these actions to the past tense, but keep the username and the colons the same", actions)
 }
 
 export async function getPrompt (values, lunation, actions){
@@ -64,14 +64,12 @@ let prompt = 'here are the values of the community: \n' + values + '\n .The day 
 }
 
 export async function assignRoles(actions, roles){
-    let system = 'you are a useful assistant'
-    let prompt = 'the available roles are: ' +
-        roles +  '. '
-        'The agent actions are: \n' +
-        actions
-        + '.' +
-        'Assign each agent to their most likely role, ' +
-        'Only answer with a table with the agent name, then the most likely roles. Do not say anything else. '
+    let system = 'you are an useful assistant'
+    let prompt = '  here is a list of actions that agents did: ' +
+            actions +
+            '. The available roles are: ' +
+            roles +
+            '. Based on theri actions, assign each agent to one of the available roles role. Ao agent should have the same role. Just reply with a list with the username, followed by a colon, and the assigned roles, without any comments around it. Eg: @Roberto: Cook , Gardner'
         return await sendMessage(system, prompt)
 }
 // export async function getActions (actions){
