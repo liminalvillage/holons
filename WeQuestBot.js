@@ -9,7 +9,7 @@ import axios from 'axios';
 import sharp from 'sharp';
 
 import * as utils from './utilities.js'
-import lunation from "./lunation.js";
+import {Lunation} from "./Lunation.js";
 
 // -------------------------check if lockfile exists and delete i
 import fs from 'fs';
@@ -23,6 +23,7 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 import { Telegraf, Markup } from 'telegraf';
 import { Client, GatewayIntentBits } from 'discord.js';
 
+//import Quests from './modules.js';
 import UI from './UI.js';
 import * as AI from './AI.js';
 import * as WEB3 from './WEB3.js';
@@ -31,26 +32,28 @@ import { create } from 'ipfs'
 import OrbitDB from 'orbit-db'
 
 //import WeQuest Modules
-import Quests from './quests.js'
-import Shopping from './shopping.js'
+import Quests from './Quests.js'
+import {Shopping} from './Shopping.js'
+import Settings from './Settings.js'
+import Bigtalk from './Bigtalk.js'
+
 import * as values from './values.js'
 import * as request from './requests.js'
-import * as settings from './settings.js'
 import { t } from "i18next";
 import { checkServerIdentity } from "tls";
+import { get } from "http";
 
-//Initialize modules
+class WeQuest {
+  constructor() {
+  }
 
-let orbitdb
-let telebot
-let discordbot
-let quests
-let moon
-let ui
-let shopping
+  async init() {
 
-async function init() {
-  let ipfs
+    this.telebot = new Telegraf(config.telegram);
+    this.telebot.launch();
+    //this.telebot.use(Telegraf.log())
+
+    let ipfs
   if (config.mode === 'production') {
     console.log('production mode')
     ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
@@ -59,31 +62,32 @@ async function init() {
     console.log('development mode')
     ipfs = await create()
   }
-  orbitdb = await OrbitDB.createInstance(ipfs)
-  await settings.init(orbitdb)
+  this.orbitdb = await OrbitDB.createInstance(ipfs)
 
   const options = {
     // Setup write access
     accessController: {
       write: [
         // Give access to ourselves
-        orbitdb.identity.id,
+        this.orbitdb.identity.id,
         // Give access to the second peer
         //'042c07044e7e51a489c02854db5e09f0191690dc59db0afd95328c9db614a2976e088cab7c86d7e48183191258fc59dc699653508ce25bf0369d67f33d5d77839',
       ]
     }
   }
-  telebot = new Telegraf(config.telegram);
-  //telebot.use(Telegraf.log())
-  moon = new lunation(telebot)
-  shopping = new Shopping(telebot, orbitdb)
-  quests = new Quests(telebot, orbitdb)
-  ui = new UI(telebot, orbitdb)
-  await ui.init()
+  
+  this.settings = new Settings(this.telebot, this.orbitdb)
+  await this.settings.init()
 
-  telebot.launch();
-  //telebot.telegram.setMyCommands([ { command: 'start', description: 'Start the bot' }, { command: 'help', description: 'Help' }, { command: 'task', description: 'Task' }, { command: 'quest', description: 'Quest' }, { command: 'setLanguage', description: 'Set language' }, { command: 'setTheme', description: 'Set theme' }, { command: 'setLevel', description: 'Set level' }, { command: 'setAdmin', description: 'Set admin' }, { command: 'getLanguage', description: 'Get language' }, { command: 'getTheme', description: 'Get theme' }, { command: 'getLevel', description: 'Get level' }, { command: 'getAdmin', description: 'Get admin' }, { command: 'getAddress', description: 'Get address' }, { command: 'getBalance', description: 'Get balance' }, { command: 'getQuests', description: 'Get quests' }, { command: 'getTasks', description: 'Get tasks' }, { command: 'getQuest', description: 'Get quest' }, { command: 'getTask', description: 'Get task' }, { command: 'getSettings', description: 'Get settings' }, { command: 'getValues', description: 'Get values' }, { command: 'getInfo', description: 'Get info' }, { command: 'getHelp', description: 'Get help' } ]);
+  this.lunation = new Lunation(this.telebot)
+  this.shopping = new Shopping(this.telebot, this.orbitdb)
+  this.quests = new Quests(this.telebot, this.orbitdb, this.settings)
+  this.bigtalk = new Bigtalk(this.telebot)
 
+  this.ui = new UI(this.telebot, this.orbitdb, this.settings)
+  await this.ui.init()
+
+  // ========================== DISCORD =============================
   // discordbot = new Client({
   //   intents: [GatewayIntentBits.Guilds,
   //   GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -118,41 +122,49 @@ async function init() {
   // )
 
   // discordbot.login(config.discord);
-}
-
-await init();
-
-// discordbot.on('message', msg => {
-//   console.log("DISCORD MESSAGE: "+msg.content)
-//   if (msg.content === 'quest') {quests.quest('quest',discord2telegram(msg), orbitdb);
-//     msg.reply('Pong!');
-//   }
-// });
-
-async function whitelisted(ctx){
-  let settings = await settings.getSettings(utils.getChatId(ctx))
-  if (settings.whitelisted) return ''
-  else return ( "WeQuest Bot is still in development, and this chat is not whitelisted to use this function. Please apply for close beta at wequest.it")
-}
-
-telebot.command('whitelist', async (ctx) =>{
-  let settings = await settings.getSettings(utils.getChatId(ctx))[0]
-  settings.whitelisted = true
-  await settingsDB.put(settings)
-})
-
-// =========================== bot commands ===========================
-telebot.command('start', async (ctx) => {
-  ctx.reply("Welcome to WeQuest, a community bot developed by Liminal Village. Our quest is to revolutionize community dynamics through AI and blockchain. WeQuest uses gamification to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. Our goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. ")
+    // =========================== bot commands ===========================
+this.telebot.command('start', async (ctx) => {
+  ctx.reply("Welcome to WeQuest, a community bot developed by Liminal Village. We aim to facilitate community dynamics through AI and blockchain, using gamification to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. Our goal is to foster trust, build strong communities, and accelerate our evolution as social organisms.",
+    Markup.keyboard([
+    Markup.button.webApp(
+      "Open Holon",
+      "https://app.holons.io/?id="+utils.getChatId(ctx)
+    ),
+    ])
+  )
 });
-telebot.command('help', async (ctx) => {
+this.telebot.command('help', async (ctx) => {
   ctx.reply("`you can use the following commands: \n /task \n /request \n /offer /status /bulletin")
 })
-telebot.on('photo', async (ctx) => {
+
+this.telebot.command("register", (ctx) => {
+  return ctx.reply(
+    "open webapp",
+    Markup.inlineKeyboard([
+      Markup.button.webApp(
+        "Open",
+        "https://robertovalenti.github.io/webapp/index.html"
+      ),
+    ])
+  );
+});
+     
+this.telebot.command("holons", (ctx) => {
+  return ctx.reply(
+    "open webapp",
+    Markup.keyboard([
+      Markup.button.webApp(
+        "Open Holon",
+        "https://app.holons.io/?id="+utils.getChatId(ctx)
+      ),
+    ])
+  );
+});
+this.telebot.on('photo', async (ctx) => {
   if (ctx.message.caption) {
     const command = ctx.message.caption.split(' ')[0];
     if (command == '/task')
-      quests.quest('task', ctx, orbitdb)
+    this.quests.quest('task', ctx, this.orbitdb)
   }
   try {
     const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
@@ -178,52 +190,85 @@ telebot.on('photo', async (ctx) => {
   }
 });
 
-telebot.on('inline_query', async (ctx) => {
+
+// this.telebot.on('inline_query', async (ctx) => {
+//   const chatID = utils.getChatId(ctx)
+//   let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+//   await questsDB.load()
+//   const recipes = await questsDB.get('').filter(({ type }) => type == 'offer')
+//     // @ts-ignore
+//     .filter(({ thumbnail }) => thumbnail)
+//     // @ts-ignore
+//     .map(({ title, href, thumbnail }) => ({
+//       type: 'article',
+//       id: thumbnail,
+//       title: title,
+//       description: title,
+//       thumb_url: thumbnail,
+//       input_message_content: {
+//         message_text: title
+//       },
+//       reply_markup: Markup.inlineKeyboard([
+//         Markup.button.url('Go to recipe', href)
+//       ])
+//     }))
+//   return await ctx.answerInlineQuery(recipes)
+// })
+
+
+this.telebot.on('inline_query', async (ctx) => {
   // This is a simplified example. In a real-world application, you'd fetch this
   // data from a database or API.
-
-  const products = [
-    { id: '1', title: 'Pizza', description: 'Delicious pizza', price: '$10' },
-    { id: '2', title: 'Burger', description: 'Tasty burger', price: '$8' },
-    { id: '3', title: 'huh', description: 'Delicious pizza', price: '$10' },
-    { id: '4', title: 'Bbbuburger', description: 'Tasty burger', price: '$8' },
-    { id: '5', title: 'jjPizza', description: 'Delicious pizza', price: '$10' },
-    { id: '6', title: 'jjuiBurger', description: 'Tasty burger', price: '$8' },
-  ];
-
-  const results = products.map((product) => ({
+  ///let chatID = utils.getChatId(ctx)
+  let offers = []
+  let chats = await this.settings.getChats()
+  console.log("chats: ", chats)
+  for(const chatID in chats) {
+  let users = await this.ui.getFederatedUsers(chatID)
+  
+  for (let i = 0; i < users.length; i++) {
+    let user = users[i]
+    for (let j = 0; j < user.offers.length; j++) {
+      offers.push({id:i, title: user.offers[j], description: user.username, price: '$10'})
+    }
+  }
+}
+  console.log("offers: ", offers)
+  const results = offers.map((offer) => ({
     type: 'article',
-    id: product.id,
-    title: product.title,
-    description: product.description,
+    id: offer.id,
+    title: offer.title,
+    description: offer.description,
     input_message_content: {
-      message_text: `${product.title}: ${product.description} - ${product.price}`
+      message_text: `${offer.title}: ${offer.description} - ${offer.price}`
     },
   }));
 
   await ctx.answerInlineQuery(results);
 });
 
-telebot.on('chosen_inline_result', (ctx) => {
+this.telebot.on('chosen_inline_result', (ctx) => {
   console.log(`Chosen product: ${ctx.chosenInlineResult.result_id}`);
   // Handle the product selection here. For example, you could send a confirmation
   // message to the user, or add the product to a shopping cart.
 });
 
 
+
+
 //----------------------------- APPRECIATION -----------------------------
-telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
-telebot.command(['appreciate', 'praise','kudo' , 'apprezza', 'apprezziamo'], async (ctx) => quests.sendAppreciation(ctx, orbitdb))
-telebot.command('maslow', (ctx) => UI.showMaslow(2))
-//telebot.command('actions', async (ctx) => { let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions ? actions : 'No actions found') })
+this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
+this.telebot.command(['appreciate', 'praise','kudo' , 'apprezza', 'apprezziamo'], async (ctx) => this.quests.sendAppreciation(ctx))
+this.telebot.command('maslow', (ctx) => this.UI.showMaslow(2))
+//this.telebot.command('actions', async (ctx) => { let actions = await quests.listUsersActions(ctx, orbitdb); ctx.reply(actions ? actions : 'No actions found') })
 
 //-----------------------------AI -----------------------------
-telebot.command('today', async (ctx) => ctx.reply (await AI.getPrompt(await settings.getValues, moon.progress(), await AI.getActions(await quests.listUsersActions(ctx, orbitdb))).catch(err => console.log(err))))
-telebot.command('roles', async (ctx) => {
-  let actions = await quests.listUsersActions(ctx, orbitdb)
+this.telebot.command('today', async (ctx) => ctx.reply (await AI.getPrompt(await this.settings.getValues, this.lunation.progress(), await AI.getActions(await this.quests.listUsersActions(ctx))).catch(err => console.log(err))))
+this.telebot.command('roles', async (ctx) => {
+  let actions = await this.quests.listUsersActions(ctx)
   if (!actions)
   {ctx.reply("No actions found, please complete tasks before calling this function"); return}
-  let roles = await settings.getRoles(utils.getChatId(ctx));
+  let roles = await this.settings.getRoles(utils.getChatId(ctx));
   if (!roles)
   {ctx.reply("No roles found, create them using /setroles"); 
   return}
@@ -232,14 +277,14 @@ telebot.command('roles', async (ctx) => {
   ctx.reply( await AI.assignRoles(actions, roles));
 })
 
-telebot.command('actions', async (ctx) => { 
-  let actions = await quests.listUsersActions(ctx, orbitdb)
+this.telebot.command('actions', async (ctx) => { 
+  let actions = await this.quests.listUsersActions(ctx)
   if (actions)
     actions = await AI.getActions(actions); 
   ctx.reply(actions ? actions : 'No actions founds') })
 
 
-telebot.command('facilitate', async (ctx) => {
+this.telebot.command('facilitate', async (ctx) => {
   let prompt =  ctx.message.text.split(' ').slice(1).join(' ');
   if (prompt)
     ctx.reply(await AI.facilitate(prompt))
@@ -248,122 +293,16 @@ telebot.command('facilitate', async (ctx) => {
 })
 
 //testing
-telebot.command('assignRolesTest', async (ctx) => ctx.reply (await AI.assignRoles( "RobertoValenti:put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
+this.telebot.command('assignRolesTest', async (ctx) => ctx.reply (await AI.assignRoles( "RobertoValenti:put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
 "alis0r: put down irrigation end zone 2, select bulbs for bedside tables in upper house bedrooms with double beds, mosquito net in the caravan, rubbish collecting an throwing, clean tiny house, food to cats outside, flower organization to avoid it to become rotten + present for Diana preparation, clean the pool, tracking the lines for the workers tomorrow to start up new syntropic lines, watering the trees in the upper area and learn more about the irrigation system, write with the permanent marker indications on the water irrigation tubes. Cook - Bring pots and pans from lower house to upper house"+
-"lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds. empty the caravan from useless staff. ",await settings.getRoles(utils.getChatId(ctx)),)).catch(err => console.log(err)))
-telebot.command('getActionsTest', async (ctx) => ctx.reply (await AI.getActions( "RobertoValenti: put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
+"lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds. empty the caravan from useless staff. ",await this.settings.getRoles(utils.getChatId(ctx)),)).catch(err => console.log(err)))
+this.telebot.command('getActionsTest', async (ctx) => ctx.reply (await AI.getActions( "RobertoValenti: put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
 "alis0r: put down irrigation end zone 2, select bulbs for bedside tables in upper house bedrooms with double beds, mosquito net in the caravan, rubbish collecting an throwing, clean tiny house, food to cats outside, flower organization to avoid it to become rotten + present for Diana preparation, clean the pool, tracking the lines for the workers tomorrow to start up new syntropic lines, watering the trees in the upper area and learn more about the irrigation system, write with the permanent marker indications on the water irrigation tubes, Bring pots and pans from lower house to upper house"+
 "lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds, Empty the caravan from useless staff. ")).catch  (err => console.log(err)))  
 
 
 
-//----------------------------- QUESTS -----------------------------
-telebot.command('quest', async (ctx) => quests.quest('quest', ctx, orbitdb))
-telebot.command('mission', async (ctx) => quests.quest('quest', ctx, orbitdb))
-telebot.command('task', async (ctx) => quests.quest('task', ctx, orbitdb))
-telebot.command('proposal', async (ctx) => quests.quest('proposal', ctx, orbitdb)
-)
-telebot.command('propose', async (ctx) => quests.quest('proposal', ctx, orbitdb))
-telebot.command('todo', async (ctx) => quests.quest('todo', ctx, orbitdb))
-
-telebot.command(['need', 'request', 'want', 'wish'], async (ctx) => quests.quest('request', ctx, orbitdb))
-telebot.command(['offer', 'give', 'have', 'gift'], async (ctx) => quests.quest('offer', ctx, orbitdb))
-
-// ITALIAN
-telebot.command('missione', async (ctx) => quests.quest('quest', ctx, orbitdb))
-telebot.command('compito', async (ctx) => quests.quest('task', ctx, orbitdb))
-telebot.command('proposta', async (ctx) => quests.quest('proposal', ctx, orbitdb))
-telebot.command('propongo', async (ctx) => quests.quest('proposal', ctx, orbitdb))
-telebot.command('fare', async (ctx) => quests.quest('todo', ctx, orbitdb))
-
-//create new request/offer
-telebot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo'], async (ctx) => quests.quest('request', ctx, orbitdb))
-telebot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => quests.quest('offer', ctx, orbitdb))
-
-// QUEST ACTIONS ====================================================
-
-telebot.action('join_quest', (ctx) => quests.join(ctx, orbitdb));
-telebot.action('appreciate_quest', (ctx) => quests.appreciate(ctx, orbitdb))
-telebot.action('schedule_quest', (ctx) => quests.schedule(ctx, orbitdb));
-telebot.action('cancel_quest', (ctx) => quests.cancel(ctx, orbitdb));
-telebot.action('complete_quest', (ctx) => quests.complete(ctx, orbitdb));
-telebot.action('stop_quest', (ctx) => quests.stop(ctx, orbitdb));
-
-//----------------------------------------------------
-
-//=========== UI COMMANDS ===============
-
-//Set up a command to display the appreciation score for each user
-telebot.command(['leaderboard', 'appreciation', 'credits', 'scores', 'score', 'points', 'rank', 'status'], async (ctx) => ui.leaderboard(ctx, await settings.getValueEquation(utils.getChatId(ctx))))
-telebot.command(['apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica'], (ctx) => ui.leaderboard(ctx))
-
-// Set up a command to display the quests
-telebot.command(['tasks', 'quests', 'todos', 'proposals'], (ctx) => ui.questboard(ctx))
-telebot.command(['compiti', 'missioni', 'proposte'], (ctx) => ui.questboard(ctx))
-
-// Set up a command to display the requests
-telebot.command(['requests', 'wishes', 'needs'], (ctx) => ui.requestsboard(ctx))
-telebot.command('offers', (ctx) => ui.offersboard(ctx))
-
-telebot.command(['richieste', 'sogni', 'bisogni'], (ctx) => ui.requestsboard(ctx))
-telebot.command('offerte', (ctx) => ui.offersboard(ctx))
-
-telebot.command('bulletin', (ctx) => ui.bulletinboard(ctx))
-
-// ================= ADMIN ===========================
-telebot.command('reset', async (ctx) => {
-  if (!orbitdb) return
-
-  //TODO; check if the user is an admin
-  let chatID = utils.getChatId(ctx)
-  // try{
-  //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
-  // }catch(e){ console.log(e)}
-  let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-  let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-  let usersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-  //let settingsDB = await orbitdb.docs('WeQuest.settings')
-  await questsDB.drop()
-  await offersDB.drop()
-  await usersDB.drop()
-  //await settingsDB.drop()
-  ctx.reply('Bot resetted')
-})
-
-telebot.command('setLanguage', async (ctx) => {
-  //TODO; check if the user is an admin
-  await settings.setLanguage(ctx)
-})
-
-telebot.command('setTheme', async (ctx) => {
-  //TODO; check if the user is an admin
-  await settings.setTheme(ctx)
-})
-
-telebot.command('setAdmin', async (ctx) => {
-  //TODO; check if the user is an admin
-  await settings.setAdmin(ctx)
-})
-
-telebot.command(['setValueEquation','values'], async (ctx) => {
-  //TODO; check if the user is an admin
-  let weights = await settings.getValueEquation(utils.getChatId(ctx))
-  ctx.reply('Value Equation:', equationInlineKeyboard(weights));
-})
-
-telebot.command('value', async (ctx) => {
-  //TODO; check if the user is an admin
-  ctx.reply('Value Equation:', await settings.getValueEquation(utils.getChatId(ctx)))
-})
-
-telebot.command('setRoles', async (ctx) => ctx.reply("New roles: "+ await settings.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
-telebot.command('getRoles', async (ctx) => { let roles = await settings.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
-
-telebot.command('setValues', async (ctx) => ctx.reply("New values: "+ await settings.setValues(utils.getChatId(ctx), utils.getParameters(ctx))))
-telebot.command('getValues', async (ctx) => { let values = await settings.getValues(utils.getChatId(ctx)); ctx.reply(values ? values : 'No values specified') })
-
-
-telebot.on('callback_query', async (ctx) => {
+this.telebot.on('callback_query', async (ctx) => {
   const callbackData = ctx.callbackQuery.data;
   let chatID = ctx.callbackQuery.message.chat.id;
   let messageID = ctx.callbackQuery.message.message_id;
@@ -372,32 +311,14 @@ telebot.on('callback_query', async (ctx) => {
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
   }
 
-  if (callbackData.startsWith('increment_')) {
-    let weights = await settings.getValueEquation(chatID)
-    const weightName = callbackData.substring(10);
-    weights[weightName] = parseInt(weights[weightName]) + 1;
-    // Save the updated weights back to your database
-    await settings.setValueEquation(chatID, weights);
 
-    // Update the message with the new inline keyboard
-    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
-  } else if (callbackData.startsWith('decrement_')) {
-    let weights = await settings.getValueEquation(chatID)
-    const weightName = callbackData.substring(10);
-    weights[weightName] = parseInt(weights[weightName]) - 1;
-    // Save the updated weights back to your database
-    await settings.setValueEquation(chatID, weights);
-
-    // Update the message with the new inline keyboard
-    await ctx.editMessageText('Update weights:', equationInlineKeyboard(weights));
-  } else {
-    if (messageID == quests.calendar.chats.get(chatID)) {
+    if (messageID == this.quests.calendar.chats.get(chatID)) {
       var when;
-      when = quests.calendar.clickButtonCalendar(ctx);
+      when = this.quests.calendar.clickButtonCalendar(ctx);
       if (when !== -1) {
-        let caller = quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
+        let caller = this.quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
 
-        let questsDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
         await questsDB.load()
 
         let quest = await questsDB.get(caller)[0]
@@ -407,67 +328,20 @@ telebot.on('callback_query', async (ctx) => {
         quest.when = when;
         let callerctx = ctx;
         callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
-        //TODO: set a timeout to remind the user of the quest when it's time
-        // setTimeout(() => {
-        //   quests.remind(callerctx, quest)
-        // }, (new Date(when)).getTime() - Date.now())
+
+        setTimeout(() => {
+          this.quests.remind(callerctx, quest)
+        }, (new Date(when)).getTime() - Date.now())
     
         // Update the message
-        quests.updateMessage(callerctx, quest);
+        this.quests.updateMessage(callerctx, quest);
 
         // Update the db
         questsDB.put(quest);
       }
     }
-  }
+  
 });
-
-// ... update the inline keyboard ...
-const equationInlineKeyboard = (weights) => {
-  return Markup.inlineKeyboard([
-    [
-      Markup.button.callback('Initiated:', 'null'),
-      Markup.button.callback('<', 'decrement_initiated'),
-      Markup.button.callback(weights.initiated, 'null'),
-      Markup.button.callback('>', 'increment_initiated')
-    ],
-    [
-      Markup.button.callback('Completed:', 'null'),
-      Markup.button.callback('<', 'decrement_completed'),
-      Markup.button.callback(weights.completed, 'null'),
-      Markup.button.callback('>', 'increment_completed')
-    ],
-    [
-      Markup.button.callback('Sent:', 'null'),
-      Markup.button.callback('<', 'decrement_sent'),
-      Markup.button.callback(weights.sent, 'null'),
-      Markup.button.callback('>', 'increment_sent')
-    ],
-    [
-      Markup.button.callback('Received:', 'null'),
-      Markup.button.callback('<', 'decrement_received'),
-      Markup.button.callback(weights.received, 'null'),
-      Markup.button.callback('>', 'increment_received')
-    ],
-    [
-      Markup.button.callback('Done', 'removekeyboard'),
-    ]
-  ]);
-}
-
-
-// bot.on("callback_query", (ctx) => {
-//   // ctx.AnswerCallbackQueryAsync(ctx.CallbackQuery.id, "Notification already enabled", true)
-//   // if (ctx.update.callback_query.data === "List") {
-//   // listCommand(ctx);
-//   // }
-//   // if (ctx.update.callback_query.data === "Win") {
-//   // ctx.reply("https://google.com");
-//   // } else if (ctx.update.callback_query.data === "gold") {
-//   // ctx.reply("https://google.com");
-//   // }
-// });
-
 
 // // Handle uncaught exceptions
 // process.on('uncaughtException', async (err) => {
@@ -489,7 +363,7 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-telebot.on('web_app_data', (ctx) => {
+this.telebot.on('web_app_data', (ctx) => {
   var [timespamp, timezoneOffset] = ctx.message.web_app_data.data.split('_')
   timespamp = parseInt(timespamp)
 
@@ -505,23 +379,40 @@ telebot.on('web_app_data', (ctx) => {
 
 
 
-
-function discord2telegram(message) {
-  const ctx = message;
-  ctx.deleteMessage = () => message.delete();
-  // Map properties from discord.js message to telegraf context
-  ctx.updateType = "message";
-  ctx.message = {
-    message_id: message.id,
-    from: {
-      id: message.author.id,
-      first_name: message.author.username
-    },
-    chat: {
-      id: message.channel.id
-    },
-    text: message.content
-  };
-
-  return ctx;
+  }
+   discord2telegram(message) {
+    const ctx = message;
+    ctx.deleteMessage = () => message.delete();
+    // Map properties from discord.js message to telegraf context
+    ctx.updateType = "message";
+    ctx.message = {
+      message_id: message.id,
+      from: {
+        id: message.author.id,
+        first_name: message.author.username
+      },
+      chat: {
+        id: message.channel.id
+      },
+      text: message.content
+    };
+  
+    return ctx;
+  }
 }
+
+let wequest = new WeQuest()
+await wequest.init();
+
+// discordbot.on('message', msg => {
+//   console.log("DISCORD MESSAGE: "+msg.content)
+//   if (msg.content === 'quest') {quests.quest('quest',discord2telegram(msg), orbitdb);
+//     msg.reply('Pong!');
+//   }
+// });
+
+
+
+
+
+

@@ -1,7 +1,7 @@
 import { Markup } from 'telegraf';
 
 
-class Shopping {
+export class Shopping {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
@@ -82,4 +82,3 @@ class Shopping {
     }
 }
 
-export default Shopping;

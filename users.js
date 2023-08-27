@@ -6,7 +6,7 @@ class Users {
     this.orbitdb = orbitdb;
   }
 
-  addAction(, action) {
+  addAction(action) {
     
     this._actions[name] = action;
   }

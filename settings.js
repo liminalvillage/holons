@@ -1,26 +1,161 @@
 import i18next from "i18next";
 import fs from 'fs';
 import locales from "./locales.json" assert { type: "json" };
+import * as utils from './utilities.js'
+import { Markup } from 'telegraf';
 import exp from "constants";
 
+export default class Settings{
+    constructor(bot,db){
+        this.orbitdb = db
+        this.bot = bot
+        // ================= ADMIN ===========================
+        this.bot.command('reset', async (ctx) => {
+            //TODO; check if the user is an admin
+            let chatID = utils.getChatId(ctx)
+            // try{
+            //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
+            // }catch(e){ console.log(e)}
+            let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+            let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+            let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+            await questsDB.drop()
+            await offersDB.drop()
+            await usersDB.drop()
+            this.settingsDB.put(this.getDefaultSettings(chatID))
 
-let settingsDB 
+            ctx.reply('Bot resetted')
+        })
+        
+        this.bot.command('federate', async (ctx) => {
+            //TODO; check if the user is an admin
+            this.federate(ctx)
+         }
+        )
 
-function getDefaultSettings(chatID) {
+        this.bot.command('separate', async (ctx) => {
+            //TODO; check if the user is an admin
+            this.separate(ctx)
+         }
+        )
+
+        this.bot.command('setLanguage', async (ctx) => {
+            //TODO; check if the user is an admin
+            await this.setLanguage(ctx)
+        })
+        
+        this.bot.command('setTheme', async (ctx) => {
+            //TODO; check if the user is an admin
+            await this.setTheme(ctx)
+        })
+        
+        this.bot.command('setAdmin', async (ctx) => {
+            //TODO; check if the user is an admin
+            await this.setAdmin(ctx)
+        })
+        
+        this.bot.command(['setValueEquation','values'], async (ctx) => {
+            //TODO; check if the user is an admin
+            let weights = await this.getValueEquation(utils.getChatId(ctx))
+            ctx.reply('Value Equation:', this.equationInlineKeyboard(weights));
+        })
+        
+        this.bot.command('value', async (ctx) => {
+            //TODO; check if the user is an admin
+            ctx.reply('Value Equation:', await this.getValueEquation(utils.getChatId(ctx)))
+        })
+        
+        this.bot.command('setRoles', async (ctx) => ctx.reply("New roles: "+ await this.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
+        this.bot.command('getRoles', async (ctx) => { let roles = await this.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
+        
+        this.bot.command('setValues', async (ctx) => ctx.reply("New values: "+ await this.setValues(utils.getChatId(ctx), utils.getParameters(ctx))))
+        this.bot.command('getValues', async (ctx) => { let values = await this.getValues(utils.getChatId(ctx)); ctx.reply(values ? values : 'No values specified') })
+        
+        this.bot.command('whitelist', async (ctx) =>{
+            let settings = await this.getSettings(utils.getChatId(ctx))[0]
+            settings.whitelisted = true
+            await this.settingsDB.put(settings)
+          })
+
+        this.bot.action(/increment_(.+)/, async (ctx) => {
+            const callbackData = ctx.callbackQuery.data;
+            let chatID = ctx.callbackQuery.message.chat.id;
+            let weights = await this.getValueEquation(chatID)
+            const weightName = callbackData.substring(10);
+            weights[weightName] = parseInt(weights[weightName]) + 1;
+            // Save the updated weights back to your database
+            await this.setValueEquation(chatID, weights);
+        
+            // Update the message with the new inline keyboard
+            await ctx.editMessageText('Update weights:', this.equationInlineKeyboard(weights));
+        })
+
+        this.bot.action(/decrement_(.+)/, async (ctx) => {
+            const callbackData = ctx.callbackQuery.data;
+            let chatID = ctx.callbackQuery.message.chat.id;
+            let weights = await this.getValueEquation(chatID)
+            const weightName = callbackData.substring(10);
+            weights[weightName] = parseInt(weights[weightName]) - 1;
+            // Save the updated weights back to your database
+            await this.setValueEquation(chatID, weights);
+        
+            // Update the message with the new inline keyboard
+            await ctx.editMessageText('Update weights:', this.equationInlineKeyboard(weights)).catch((e)=>{console.log(e)});
+        })
+
+    }
+    // TODO: move to utilities or UI
+     equationInlineKeyboard (weights) {
+        return Markup.inlineKeyboard([
+          [
+            Markup.button.callback('Initiated:', 'null'),
+            Markup.button.callback('<', 'decrement_initiated'),
+            Markup.button.callback(weights.initiated, 'null'),
+            Markup.button.callback('>', 'increment_initiated')
+          ],
+          [
+            Markup.button.callback('Completed:', 'null'),
+            Markup.button.callback('<', 'decrement_completed'),
+            Markup.button.callback(weights.completed, 'null'),
+            Markup.button.callback('>', 'increment_completed')
+          ],
+          [
+            Markup.button.callback('Sent:', 'null'),
+            Markup.button.callback('<', 'decrement_sent'),
+            Markup.button.callback(weights.sent, 'null'),
+            Markup.button.callback('>', 'increment_sent')
+          ],
+          [
+            Markup.button.callback('Received:', 'null'),
+            Markup.button.callback('<', 'decrement_received'),
+            Markup.button.callback(weights.received, 'null'),
+            Markup.button.callback('>', 'increment_received')
+          ],
+          [
+            Markup.button.callback('Done', 'removekeyboard'),
+          ]
+        ]);
+      }
+
+ getDefaultSettings(chatID) {
     return {
       _id: chatID,
+      version: 0.1,
+      name:'',
+      timezone:'',
       whitelisted: false,
       language: 'en',
       theme: 'dark',
       level: 0,
-      admin: '',
-      roles: '',
-      values:'',
+      admin: '', 
+      roles: [], 
+      values:[],
+      federation: [],
       valueEquation:
       { 
         initiated: 1,
         completed: 1,
-        sent:1,
+        sent: 1,
         received: 1,
         hours: 1,
         collaboration: 1,
@@ -31,7 +166,7 @@ function getDefaultSettings(chatID) {
     }
 } 
 
-export async function init (orbitdb){
+async init (){
 i18next
   .init({
     lng: 'en',
@@ -39,46 +174,39 @@ i18next
     fallbackLng: 'en',
   });
 
-
- settingsDB = await orbitdb.docs('WeQuest.settings')
- settingsDB.load()
+ this.settingsDB = await this.orbitdb.docs('WeQuest.settings')
+ await this.settingsDB.load()
 }
 
 // get language from the database
-export async function getLanguage(chatID) {
+async getLanguage(chatID) {
 
-    let settings = await settingsDB.get(chatID)[0]
- 
-    return settings? settings.language : 'en'
+    let settings = await this.getSettings(chatID)
+    return settings.language
 }
 
-export async function setLanguage(ctx) {
+async setLanguage(ctx) {
     const chatID = ctx.message.chat.id;
     const language = ctx.message.text.split(' ')[1];
-    let settings = await settingsDB.get(chatID)[0]
+   
     if (language === undefined || language === null) {
             ctx.reply('Please specify the language. Example: /setLanguage en')
             return
-          }
-          if ( language !== 'en' && language !== 'it') {
-            ctx.reply('Please specify "it" or "en". Example: /setLanguage en')
-            return
-          }
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
     }
+    if ( language !== 'en' && language !== 'it') {
+        ctx.reply('Please specify "it" or "en". Example: /setLanguage en')
+        return
+    }
+
+    let settings = await this.getSettings(chatID)
     settings.language = language
-    settingsDB.put(settings)
+    this.settingsDB.put(settings)
     ctx.reply('Language changed to ' + language)
 }
 
-export async function getTheme(chatID) {
-    let settings = await settingsDB.get(chatID)[0]
-    if (!settings || settings == '') { 
-        settings =  getDefaultSettings(chatID)
-        settingsDB.put(settings)
-    }
-
+async getTheme(chatID) {
+    let settings = await this.getSettings(chatID)
+    
     if (settings.theme === 'light') {
           //return themelight
           return fs.readFileSync('theme-light.css', 'utf8');
@@ -89,157 +217,177 @@ export async function getTheme(chatID) {
 }
 
 
-export async function setTheme(ctx) {
+async setTheme(ctx) {
     const chatID = ctx.message.chat.id; 
     const theme = ctx.message.text.split(' ')[1];
-    let settings = await settingsDB.get(chatID)[0]
+    
     if (theme === undefined || theme === null) {
-            ctx.reply('Please specify the theme. Example: /setTheme light')
-            return
-          }
-          if ( theme !== 'light' && theme !== 'dark') {
-            ctx.reply('Please specify "light" or "dark". Example: /setTheme light')
-            return
-          }
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
+        ctx.reply('Please specify the theme. Example: /setTheme light')
+        return
     }
+    if ( theme !== 'light' && theme !== 'dark') {
+        ctx.reply('Please specify "light" or "dark". Example: /setTheme light')
+        return
+    }
+    let settings = await this.getSettings(chatID)
     settings.theme = theme
-    settingsDB.put(settings)
+    this.settingsDB.put(settings)
     ctx.reply('Theme changed to ' + theme)
 }
 
-export async function getLevel(chatID) {
-    let settings = await settingsDB.get(chatID)[0]
-    if (!settings || settings == '') { 
-        settings =  getDefaultSettings(chatID)
-        settingsDB.put(settings)
-    }
+async getLevel(chatID) {
+    let settings = await this.getSettings(chatID)
     return settings.level
 }
 
-export async function setLevel(ctx) {
+async setLevel(ctx) {
     const chatID = ctx.message.chat.id;
     const level = ctx.message.text.split(' ')[1];
-    let settings = await settingsDB.get(chatID)[0]
+
     if (level === undefined || level === null) {
             ctx.reply('Please specify the level. Example: /setLevel 1')
             return
           }
-          if ( level !== '1' && level !== '2' && level !== '3') {
-            ctx.reply('Please specify "1", "2" or "3". Example: /setLevel 1')
-            return
-          }
-    if (!settings || settings == '') {
-
-        settings =  getDefaultSettings(chatID)
+    if ( level !== '1' && level !== '2' && level !== '3') {
+    ctx.reply('Please specify "1", "2" or "3". Example: /setLevel 1')
+    return
     }
+
+    let settings =  await this.getSettings(chatID)
     settings.level = level
-    settingsDB.put(settings)
+    this.settingsDB.put(settings)
     ctx.reply('Level changed to ' + level)
 
 }
 
-export async function getAdmin(chatID) {
-    let settings = await settingsDB.get(chatID)[0]
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-        settingsDB.put(settings)
-    }
+async getAdmin(chatID) {
+    let settings =  await this.getSettings(chatID)
     return settings.admin
 }
 
-export async function setAdmin(ctx) {
+async setAdmin(ctx) {
     const chatID = ctx.message.chat.id;
     const admin = ctx.message.text.split(' ')[1];
-    let settings = await settingsDB.get(chatID)[0]
     if (admin === undefined || admin === null) {
             ctx.reply('Please specify the admin. Example: /setAdmin @admin')
             return
           }
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-    }
+    let settings =  await this.getSettings(chatID)
     settings.admin = admin
-    settingsDB.put(settings)
+    this.settingsDB.put(settings)
     ctx.reply('Admin changed to ' + admin)
 }
 
- export async function setRoles(chatID, roles) {
-    let settings = await settingsDB.get(chatID)[0]
+async federate(ctx) {
+    const chatID = ctx.message.chat.id;
+    const federationID = ctx.message.text.split(' ')[1];
+
+    if (federationID === undefined || federationID === null) {
+            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456. This chat ID is ' + chatID)
+            return
+    }
+    let settings =  await this.getSettings(chatID)
+    settings.federation.push(federationID)
+    this.settingsDB.put(settings)
+    ctx.reply('This chat has been federated with ' + federationID)
+    return
+}
+
+// get the federation list from the database
+async separate(ctx) {
+    const chatID = ctx.message.chat.id;
+    const federationID = ctx.message.text.split(' ')[1];
+    let settings =  await this.getSettings(chatID)
+    if (federationID === undefined || federationID === null) {
+            ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456. You are currently federated with ' +  settings.federation)
+            return
+    }
+    let newfederation = settings.federation.filter(item => item !== federationID)
+    if (newfederation.length === settings.federation.length) {
+        ctx.reply('You are not federated with ' + federationID)
+        return
+    }
+    await this.settingsDB.put(settings)
+    ctx.reply('Federation with ' + federationID+ ' has been revoked')
+    return
+}
+
+async getFederation(chatID) {
+    let settings =  await this.getSettings(chatID)
+    return settings.federation? settings.federation : []
+}
+
+ async setRoles(chatID, roles) {
+
     if (roles === undefined || roles === null || roles === '') {
         return ('Please specify the roles. Example: /setRoles role1 role2')
     }
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-    }
+    let settings =   await this.getSettings(chatID)
+    
     settings.roles = roles
-    settingsDB.put(settings)
+    this.settingsDB.put(settings)
     return settings.roles
 }
 
-export async function getRoles(chatID) {
-    let settings = await settingsDB.get(chatID)[0]
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-        settingsDB.put(settings)
-    }
+async getRoles(chatID) {
+    let settings = await this.getSettings(chatID)
     return settings.roles
 }
 
-export async function setValues(chatID, values) {
-    let settings = await settingsDB.get(chatID)[0]
+async setValues(chatID, values) {
+   
     if (values === undefined || values === null || values === '') {
         return ('Please specify the values. Example: /setValues collaboration communication pro-activity')
     }
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-    }
-    settings.values = values
-    settingsDB.put(settings)
+    let settings  = await this.getSettings(chatID)
+    settings.values = values.split(' ')
+    this.settingsDB.put(settings)
     return settings.values
 }
 
-export async function getValues(chatID) {
-    let settings = await settingsDB.get(chatID)[0]
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-        settingsDB.put(settings)
-    }
+async getValues(chatID) {
+    let settings = await this.getSettings(chatID)
     return settings.values
 }
 
-export async function getSettings(chatID) {
-    let settings = await settingsDB.get(chatID)[0]
+
+async getChats(){
+    let chats = await this.settingsDB.get('')
+    return chats.map(chat => chat._id)
+}
+
+async getSettings(chatID) {
+    let settings =  await this.settingsDB.get(chatID)[0]
     if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-        settingsDB.put(settings)
+        settings =  this.getDefaultSettings(chatID)
+        this.settingsDB.put(settings)
     }
     return settings
 }
 
-export async function setSettings(settings) {
-    settingsDB.put(settings)
+async setSettings(settings) {
+    this.settingsDB.put(settings)
 }
 
-export async function setValueEquation(chatID, equation) {
-    let settings = await settingsDB.get(chatID)[0]
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-    }
+async setValueEquation(chatID, equation) {
+    let settings = await this.getSettings(chatID)
     settings.valueEquation = equation
-    await settingsDB.put(settings)
+    await this.settingsDB.put(settings)
 }
 
-export async function getValueEquation(chatID) {
-    let settings = await settingsDB.get(chatID)[0]
-    if (!settings || settings == '') {
-        settings =  getDefaultSettings(chatID)
-    }
+async getValueEquation(chatID) {
+    let settings = await this.getSettings(chatID)
     return settings.valueEquation
 }
 
-// export async function getSettingsButtons(chatID) {
+async whitelisted(ctx){
+    let settings = await settings.getSettings(utils.getChatId(ctx))
+    if (settings.whitelisted) return ''
+    else return ( "WeQuest Bot is still in development, and this chat is not whitelisted to use this function. Please apply for close beta at wequest.it")
+  }
+  
+
+// async getSettingsButtons(chatID) {
 //     return [
 //         [{ text: 'Language:'}], [{ text: 'IT', setLanguage(chatID, 'it') }],[{ text: 'EN', setLanguage(ctx, 'en') }]
 //         [{ text: 'Theme' }],
@@ -248,3 +396,4 @@ export async function getValueEquation(chatID) {
 //         [{ text: 'Roles', callback_data: 'roles' }]
 //     ]
 // }
+}

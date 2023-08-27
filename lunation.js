@@ -35,7 +35,7 @@ const prompts = [
 "Day 27: Relaxation Retreat: Have a team day out or a rest day to rejuvenate before the next cycle begins.",
 "Day 28: Gratitude Gathering: Assemble and express your gratitude for each other and for the journey you've completed under the Last Quarter Moon."
 ]
-class lunation {
+export class Lunation {
   
   constructor(bot){
     this.bot = bot;
@@ -89,7 +89,7 @@ class lunation {
     bot.command("prompt" , (ctx) => {
       let age = lune.phase()
         .age.toFixed(0);
-      let prompt = prompts[age-1];
+      let prompt = prompts[age];
       ctx.reply(
         `\u{1F4DC} ${prompt}`
       );
@@ -119,5 +119,3 @@ class lunation {
     int + ordinals[digits[0] - 1] :
     int + ordinals[3];
 }
-
-export default lunation;
