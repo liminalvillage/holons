@@ -222,24 +222,45 @@ export default class Quests {
         // Get the user who reacted
         const sender = ctx.callbackQuery.from;
 
+        // Check if the user has already joined the quest, remove it
+        const userindex = quest.participants.findIndex(user => user.id === sender.id)
+        if (userindex > -1) {
+            //ctx.answerCbQuery(`${sender.first_name} has been removed from the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            if (quest.status === "completed"){
+                ctx.answerCbQuery(`You cannot appreciate a ${quest.type} that you participated in`, { reply_to_message_id: messageID });
+                return;
+            }
+            quest.participants.splice(userindex, 1);
+        }
+      
         // Check if the user has already appreciated the quest, remove if so
         const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
         if (appreciationindex > -1) {
-            ctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
-            quest.appreciation.splice(appreciationindex, 1);
+            if (quest.status === "completed") {
+                ctx.answerCbQuery(`You have already appreciated this ${quest.type}`, { reply_to_message_id: messageID });
+            }
+            else {
+                ctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
+                quest.appreciation.splice(appreciationindex, 1);
+            }
         } else {
             // Add the user to the quest
             quest.appreciation.push(sender);
             // Send a message to confirm that the user joined the quest
             ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            // share appreciation "after the fact"
+            if (quest.status === "completed")
+            {
+                let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+                await usersDB.load()
+                await saveUserAction(sender, "sent", quest.title, usersDB)
+                for (let i = 0; quest.participants.length; i++) {
+                    console.log(quest.participants.length)
+                    await saveUserAction(quest.participants[i], "received", quest.title, usersDB)
+                }
+            }
         }
-        // Check if the user has already joined the quest
-        const userindex = quest.participants.findIndex(user => user.id === sender.id)
-        if (userindex > -1) {
-            //ctx.answerCbQuery(`${sender.first_name} has been removed from the quest "${quest.title}"`, { reply_to_message_id: messageID });
-            quest.participants.splice(userindex, 1);
-        }
-
+  
 
         // Update the message 
         this.updateMessage(ctx, quest);
@@ -363,7 +384,7 @@ export default class Quests {
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
-            appreciation.appreciate(sender, receivers)
+            // appreciation.appreciate(sender, receivers)
             await saveUserAction(sender, "sent", quest.title, usersDB)
             // Calculate the number of appreciation to send to each user
             const appreciationPerUser = 1  // / quest.participants.length;
@@ -388,7 +409,7 @@ export default class Quests {
 
     async schedule(ctx) {
         console.log("SCHEDULE ACTION");
-        this.calendar.startNavCalendar(ctx);
+        this.calendar.startNavCalendar(ctx);//TODO: pass quest information to recreate message
         this.calendar.chats.set(getChatId(ctx) * 100, getMessageId(ctx)); //TODO: fix this, use a different method to store the message id
     }
 
@@ -480,7 +501,7 @@ export default class Quests {
 
     // Function to update messages for a quest
     async updateMessage(ctx, quest, language) {
-        try {
+        
             // Update the message 
             if (quest.picture) {
                 await ctx.telegram.editMessageMedia(
@@ -493,7 +514,7 @@ export default class Quests {
                         caption: createMessage(quest, language)
                     },
                     markup(quest, language)
-                );
+                ).catch((err) => { console.log(err) });
             }
             else
                 await ctx.telegram.editMessageText(
@@ -502,10 +523,7 @@ export default class Quests {
                     null,
                     createMessage(quest, language),
                     markup(quest, language)
-                );
-        } catch (e) {
-            console.log(e);
-        }
+                ).catch((err) => { console.log(err) });
     }
 
 }
@@ -595,16 +613,16 @@ async function getUserInfo(user, db) {
 // Function to create the message for a quest TODO 
 function createMessage(quest, language) {
     let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title} \n`;
-    message += `| 💡: @${quest.initiator.username} \n`;
+    message += `| 💡 : @${quest.initiator.username} \n`;
     if (quest.participants.length > 0)
-        message += `| 🙋‍♂: ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
+        message += `| 🙋‍♂ : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.appreciation.length > 0)
-        message += `| 👍: ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
+        message += `| 👍 : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.when)
-        message += `| 📅: ${quest.when} \n`;
+        message += `| 📅 : ${quest.when} \n`;
     if (quest.status === "stopped")
-        message += `| 🛑: ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
-    message += `| Status: ${quest.status}\n`;
+        message += `| 🛑 : ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
+    message += `| 🚥 : ${quest.status}\n`;
     return message;
 }
 
@@ -625,7 +643,7 @@ function markup(quest, language) {
         // ]
     ])
 
-    if (quest.status == 'completed') // only show appreciation button
+    if (quest.status === "completed") // only show appreciation button
     {
         mu = Markup.inlineKeyboard([
                     Markup.button.callback(i18next.t('appreciate',{lng:language}), 'appreciate_quest')]
@@ -640,10 +658,7 @@ function markup(quest, language) {
     //     ]])
     // }
 
-    if (quest.status === "completed") {
-        return null
-    }
-    else return mu
+    return mu
 }
 // Function to update messages for a quest
 async function updateQuestImage(ctx, quest) {
