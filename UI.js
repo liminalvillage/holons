@@ -207,7 +207,7 @@ class UI {
     <table>
       <tr><th>${i18next.t('Quest')}:</th><td>${quest.title}</td></tr>
       <tr><th>${i18next.t('Initiator')}:</th><td>${quest.initiator.first_name}</td></tr>
-      <tr><th>${i18next.t('Joined by')}:</th><td>${[...quest.users].slice(1).map(u => u.username).join(', ')}</td></tr>
+      <tr><th>${i18next.t('Joined by')}:</th><td>${[...quest.participants].slice(1).map(u => u.username).join(', ')}</td></tr>
       <tr><th>${i18next.t('Appreciated by')}:</th><td>${[...quest.appreciation].slice(1).map(u => u.username).join(', ')}</td></tr>
     <table>`
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
@@ -253,7 +253,7 @@ class UI {
           <th scope="row">${i + 1}</th>
           <th>${quest.title}</th>
           <th>${quest.initiator.first_name}</th>
-          <th>${quest.users.length}</th>
+          <th>${quest.participants.length}</th>
           <th>${quest.appreciation.length}</th>
         </tr>`
       rows.push(row)

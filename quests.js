@@ -2,7 +2,7 @@ import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import UI from './UI.js';
 import { getUserName, getUser, getChatId, getMessageId } from './utilities.js';
-import { Calendar } from 'telegram-inline-calendar';
+import { Calendar } from './Calendar.js';
 
 
 export default class Quests {
@@ -89,7 +89,7 @@ export default class Quests {
             picture: picture,
             date: new Date().getTime(),
             when: '',
-            users: [],
+            participants: [],
             appreciation: [],
             stoppers: [],
             type: type,
@@ -130,7 +130,7 @@ export default class Quests {
             //   });
 
             if (type == 'offer') {
-                quest.users.push(sender);
+                quest.participants.push(sender);
                 await saveUserAction(sender, "offers", quest.title, usersDB)
             }
             if (type == 'request') {
@@ -179,14 +179,14 @@ export default class Quests {
         const sender = ctx.callbackQuery.from;
 
         // Check if the user has already joined the quest
-        const userindex = quest.users.findIndex(user => user.id === sender.id)
+        const userindex = quest.participants.findIndex(user => user.id === sender.id)
         if (userindex > -1) {
             ctx.answerCbQuery(`${sender.first_name}, left the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
-            quest.users.splice(userindex, 1);
+            quest.participants.splice(userindex, 1);
         }
         else {
             // Add the user to the quest
-            quest.users.push(sender);
+            quest.participants.push(sender);
             // Send a message to confirm that the user joined the quest
             ctx.answerCbQuery(`${sender.first_name} has joined the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
         }
@@ -234,10 +234,10 @@ export default class Quests {
             ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`, { reply_to_message_id: messageID });
         }
         // Check if the user has already joined the quest
-        const userindex = quest.users.findIndex(user => user.id === sender.id)
+        const userindex = quest.participants.findIndex(user => user.id === sender.id)
         if (userindex > -1) {
             //ctx.answerCbQuery(`${sender.first_name} has been removed from the quest "${quest.title}"`, { reply_to_message_id: messageID });
-            quest.users.splice(userindex, 1);
+            quest.participants.splice(userindex, 1);
         }
 
 
@@ -334,7 +334,7 @@ export default class Quests {
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
-        if (quest.initiator.id === ctx.from.id || quest.users.findIndex(user => user.id === ctx.from.id) > -1) {
+        if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1) {
             quest.status = "completed";
             // Update the message 
             this.updateMessage(ctx, quest);
@@ -355,8 +355,8 @@ export default class Quests {
         await saveUserAction(quest.initiator, "initiated", quest.title, usersDB)
 
         // loop through all users and add the completed quest to their account
-        for (let i = 0; i < quest.users.length; i++) {
-            let user = quest.users[i];
+        for (let i = 0; i < quest.participants.length; i++) {
+            let user = quest.participants[i];
             await saveUserAction(user, "completed", quest.title, usersDB)
         }
 
@@ -366,12 +366,12 @@ export default class Quests {
             appreciation.appreciate(sender, receivers)
             await saveUserAction(sender, "sent", quest.title, usersDB)
             // Calculate the number of appreciation to send to each user
-            const appreciationPerUser = 1  // / quest.users.length;
+            const appreciationPerUser = 1  // / quest.participants.length;
 
             // Send the appreciation to each user
-            for (let j = 0; j < quest.users.length; j++) {
+            for (let j = 0; j < quest.participants.length; j++) {
                 // Get the recipient
-                const recipient = quest.users[j]
+                const recipient = quest.participants[j]
                 // Check if the recipient is the sender
                 // if (recipient.id === sender.id) {
                 //     continue;
@@ -595,15 +595,15 @@ async function getUserInfo(user, db) {
 // Function to create the message for a quest TODO 
 function createMessage(quest, language) {
     let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title} \n`;
-    message += `| Initiated by: ${quest.initiator.first_name} \n`;
-    if (quest.users.length > 0)
-        message += `| Participants: ${[...quest.users].map(u => u.first_name).join(', ')} \n`;
+    message += `| 💡: @${quest.initiator.username} \n`;
+    if (quest.participants.length > 0)
+        message += `| 🙋‍♂: ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.appreciation.length > 0)
-        message += `| Appreciated by: ${[...quest.appreciation].map(u => u.first_name).join(', ')} \n`;
+        message += `| 👍: ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.when)
-        message += `| When: ${quest.when} \n`;
+        message += `| 📅: ${quest.when} \n`;
     if (quest.status === "stopped")
-        message += `| Stopped by: ${[...quest.stoppers].map(u => u.first_name).join(', ')} \n`;
+        message += `| 🛑: ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
     message += `| Status: ${quest.status}\n`;
     return message;
 }
@@ -628,7 +628,7 @@ function markup(quest, language) {
     if (quest.status == 'completed') // only show appreciation button
     {
         mu = Markup.inlineKeyboard([
-                    Markup.button.callback(i18next.t('appreciate',{lng:language}), 'schedule_quest')]
+                    Markup.button.callback(i18next.t('appreciate',{lng:language}), 'appreciate_quest')]
                     )
     }
 

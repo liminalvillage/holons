@@ -180,7 +180,6 @@ i18next
 
 // get language from the database
 async getLanguage(chatID) {
-
     let settings = await this.getSettings(chatID)
     return settings.language
 }
@@ -323,8 +322,7 @@ async getFederation(chatID) {
         return ('Please specify the roles. Example: /setRoles role1 role2')
     }
     let settings =   await this.getSettings(chatID)
-    
-    settings.roles = roles
+    settings.roles = roles.split(' ')
     this.settingsDB.put(settings)
     return settings.roles
 }
