@@ -164,7 +164,7 @@ export default class Quests {
                     notifyChats = notifyChats.notify
 
                 if (notifyChats && notifyChats.length > 0) {
-                    let id = ''+quest.chat*2+quest._id
+                    let id = ''+quest.chat*2+quest._id //*2 is a hack not to return similar indexes
                     let fedinfo = federationDB.get(id)[0]
                     console.log(fedinfo)
                     if (!fedinfo || fedinfo == ''|| fedinfo == undefined)
