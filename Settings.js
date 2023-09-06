@@ -19,11 +19,12 @@ export default class Settings{
             let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
             let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
             let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+            let federationDB = await this.orbitdb.docs('WeQuest.federation')
             await questsDB.drop()
             await offersDB.drop()
             await usersDB.drop()
+            federationDB.drop()
             this.settingsDB.put(this.getDefaultSettings(chatID))
-
             ctx.reply('Bot resetted')
         })
         
@@ -32,6 +33,13 @@ export default class Settings{
             this.federate(ctx)
          }
         )
+
+        this.bot.command('federation', async (ctx) => {
+            //TODO; check if the user is an admin
+            await this.getFederation(ctx)
+         }
+        )
+
 
         this.bot.command('separate', async (ctx) => {
             //TODO; check if the user is an admin
@@ -150,7 +158,6 @@ export default class Settings{
       admin: '', 
       roles: [], 
       values:[],
-      federation: [],
       valueEquation:
       { 
         initiated: 1,
@@ -285,9 +292,58 @@ async federate(ctx) {
             ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456. This chat ID is ' + chatID)
             return
     }
-    let settings =  await this.getSettings(chatID)
-    settings.federation.push(federationID)
-    this.settingsDB.put(settings)
+
+    let federationDB = await this.orbitdb.docs('WeQuest.federation')
+    await federationDB.load()
+    // Save federation info into the chat database
+    let fedinfo = await federationDB.get(chatID.toString())
+
+    if (fedinfo && fedinfo.federation) {
+        
+        if (fedinfo.federation.includes(federationID)) {
+            ctx.reply('This chat is already federated with ' + federationID)
+            return
+        } else {
+            fedinfo.federation.push(federationID.toString())
+            await federationDB.put(fedinfo)
+        }
+    } else {
+        federationDB.put({
+            _id: chatID.toString(),
+            name: ctx.message.chat.title,
+            federation: [federationID.toString()],
+            notify: []
+        })
+    }
+    // save who needs to be notified in the federation database
+    fedinfo = await federationDB.get(federationID.toString())[0]
+    if (fedinfo) {
+        if (fedinfo.notify.includes(chatID)) {
+            ctx.reply('This chat is already federated with ' + federationID)
+            return
+        } else {
+            fedinfo.notify.push(chatID.toString())
+            await federationDB.put(fedinfo)
+        }
+    } else {
+        federationDB.put({
+            _id: federationID.toString(),
+            name: await utils.getChatName(ctx, federationID),
+            federation: [],
+            notify: [chatID.toString()]
+        })
+    }
+
+
+    // //federate one way
+    // let settings =  await this.getSettings(chatID)
+    // settings.federation.push(federationID)
+    // this.settingsDB.put(settings)
+    //federate the other way
+    // let settings =  await this.getSettings(federationID)
+    // settings.federation.push(chatID)
+    // this.settingsDB.put(settings)
+
     ctx.reply('This chat has been federated with ' + federationID)
     return
 }
@@ -296,24 +352,39 @@ async federate(ctx) {
 async separate(ctx) {
     const chatID = ctx.message.chat.id;
     const federationID = ctx.message.text.split(' ')[1];
-    let settings =  await this.getSettings(chatID)
     if (federationID === undefined || federationID === null) {
-            ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456. You are currently federated with ' +  settings.federation)
+            ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456.')
             return
     }
-    let newfederation = settings.federation.filter(item => item !== federationID)
+    let settings =  await this.getSettings(federationID)
+    let newfederation = settings.federation.filter(item => item !== chatID)
     if (newfederation.length === settings.federation.length) {
         ctx.reply('You are not federated with ' + federationID)
         return
     }
     await this.settingsDB.put(settings)
+
+
     ctx.reply('Federation with ' + federationID+ ' has been revoked')
     return
 }
 
-async getFederation(chatID) {
+async getFederation(ctx) {
+    let chatID = utils.getChatId(ctx)
     let settings =  await this.getSettings(chatID)
-    return settings.federation? settings.federation : []
+    let federationDB = await this.orbitdb.docs('WeQuest.federation')
+    await federationDB.load()
+    console.log(chatID)
+    let federation = await federationDB.get(chatID.toString())
+
+    if (!federation) {
+        ctx.reply('This chat is not federated with anyone')
+        return []
+    }
+    federation = federation.filter(item => item._id === chatID.toString())[0]
+    console.log(federation)
+    console.log('This chat is federated with: ' + federation.federation + ' and will notify: ' + federation.notify)
+    return federation.federation
 }
 
  async setRoles(chatID, roles) {

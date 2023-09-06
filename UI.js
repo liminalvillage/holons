@@ -253,7 +253,7 @@ class UI {
           <th scope="row">${i + 1}</th>
           <th>${quest.title}</th>
           <th>${quest.initiator.first_name}</th>
-          <th>${quest.participants.length}</th>
+          <th>${quest.participants? quest.participants.length : quest.users.length}</th>
           <th>${quest.appreciation.length}</th>
         </tr>`
       rows.push(row)

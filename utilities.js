@@ -8,6 +8,22 @@ export const getUserId = (ctx) =>
 export const getUser = (ctx) =>
   ctx?.update?.message?.from || ctx?.update?.callback_query?.from || 0;
 
+export const getChatName = async (ctx, chatId) => {
+  const chatInfo = await ctx.telegram.getChat(chatId);
+
+  let chatName = '';
+
+  if (chatInfo.type === 'private') {
+    // For private chats, you can use the first and/or last name
+    chatName = `${chatInfo.first_name} ${chatInfo.last_name || ''}`.trim();
+  } else {
+    // For groups, supergroups, and channels, you can use the title
+    chatName = chatInfo.title;
+  }
+  return chatName
+}
+
+
 export const getUserName = (ctx) =>
   ctx?.from?.first_name ||
   ctx?.chat?.first_name ||

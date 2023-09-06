@@ -29,6 +29,8 @@ export default class Quests {
 
         this.bot.command(['need', 'request', 'want', 'wish'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offer', 'give', 'have', 'gift'], async (ctx) => this.quest('offer', ctx))
+
+        this.bot.command(['idea'], async (ctx) => this.quest('idea', ctx))
         
         // ITALIAN
         this.bot.command('missione', async (ctx) => this.quest('quest', ctx))
@@ -42,13 +44,13 @@ export default class Quests {
         this.bot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => this.quest('offer', ctx))
 
         // QUEST ACTIONS ====================================================
-
-        this.bot.action('join_quest', (ctx) => this.join(ctx));
-        this.bot.action('appreciate_quest', (ctx) => this.appreciate(ctx))
-        this.bot.action('schedule_quest', (ctx) => this.schedule(ctx));
-        this.bot.action('cancel_quest', (ctx) => this.cancel(ctx));
-        this.bot.action('complete_quest', (ctx) => this.complete(ctx));
-        this.bot.action('stop_quest', (ctx) => this.stop(ctx));
+       
+        this.bot.action(/join_quest_(.+)/, (ctx) => this.join(ctx));
+        this.bot.action(/appreciate_quest_(.+)/, (ctx) => this.appreciate(ctx))
+        this.bot.action(/schedule_quest_(.+)/, (ctx) => this.schedule(ctx));
+        this.bot.action(/cancel_quest_(.+)/, (ctx) => this.cancel(ctx));
+        this.bot.action(/complete_quest_(.+)/, (ctx) => this.complete(ctx));
+        this.bot.action(/stop_quest_(.+)/, (ctx) => this.stop(ctx));
 
         //----------------------------------------------------
     }
@@ -56,7 +58,6 @@ export default class Quests {
 
     async quest(type, ctx) {
 
-    
         console.log('NEW QUEST')
         // Get the message text and sender from the context
         let chatID = ctx.message.chat.id;
@@ -83,10 +84,12 @@ export default class Quests {
 
         let quest = {
             _id: '',
+            version: '0.1',
             chat: '',
             initiator: sender,
             title: title,
             picture: picture,
+            document: '',
             date: new Date().getTime(),
             when: '',
             participants: [],
@@ -95,8 +98,6 @@ export default class Quests {
             type: type,
             status: 'ongoing'
         }
-        // // Add the sender to the list of users
-
 
         // let path = await ui.questImage(quest)
         // ctx.replyWithPhoto({ source: fs.createReadStream(path) },markup).then((ctx) => {
@@ -142,16 +143,45 @@ export default class Quests {
                 quest._id = nctx.message_id;
                 quest.chat = nctx.chat.id;
 
-                questsDB.put(quest)
+                await questsDB.put(quest)
 
                 //Pin the message
-                ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
-
+                ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { });
+                // update the markup
+                //await ctx.telegram.editMessageRe(quest.chat, quest._id,null, markup(quest, language)).catch((err) => { console.log(err) });
+                await this.updateMessage(ctx, quest)
                 //delete the original message
-                ctx.deleteMessage(messageID.toString()).catch((err) => { console.log(err) });
-            });
-        }
+                ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
+                // REPLICATE IN FEDERATED CHATS
+                let federationDB = await this.orbitdb.docs('WeQuest.federation')
+                await federationDB.load()
+
+                let notifyChats = (await federationDB.get(chatID.toString())[0])
+        
+                if (!notifyChats || notifyChats == '') { console.log('FEDERATION IS NOT FOUND')}
+                else
+                    notifyChats = notifyChats.notify
+
+                if (notifyChats && notifyChats.length > 0) {
+                    let id = ''+quest.chat*2+quest._id
+                    let fedinfo = federationDB.get(id)[0]
+                    console.log(fedinfo)
+                    if (!fedinfo || fedinfo == ''|| fedinfo == undefined)
+                        fedinfo = { _id: id, all: [{chat:quest.chat.toString(),id:quest._id.toString()}], type: 'quest' }  //TODO UPDATE JSON SCHEMA
+                    //TODO CHECK FOR PROMISES TO RETURN
+                    for (let i = 0; i < notifyChats.length; i++) {
+                        const federatedChat = notifyChats[i];
+                        await ctx.telegram.sendMessage(federatedChat, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (fctx) => {
+                            // save the federated message id
+                            fedinfo.all.push({ chat: federatedChat.toString(), id: fctx.message_id.toString() })
+                            })
+                    }
+                    console.log(fedinfo)
+                    await federationDB.put(fedinfo) // Add federated message ids to the DB
+                }
+            })
+        }
     }
 
 
@@ -160,8 +190,11 @@ export default class Quests {
     async join(ctx) {
         console.log("JOIN ACTION");
         // Get the index from the callback data
-        let chatID = ctx.callbackQuery.message.chat.id;
-        let messageID = ctx.callbackQuery.message.message_id;
+        // let chatID = ctx.callbackQuery.message.chat.id;
+        // let messageID = ctx.callbackQuery.message.message_id;
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+ 
         const language = await this.settings.getLanguage(chatID)
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
         await questsDB.load()
@@ -208,8 +241,9 @@ export default class Quests {
     async appreciate(ctx) {
         console.log("APPRECIATE ACTION");
         // Get the quest  from the callback data
-        let chatID = ctx.callbackQuery.message.chat.id;
-        let messageID = ctx.callbackQuery.message.message_id;
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+ 
         const language = await this.settings.getLanguage(chatID)
 
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
@@ -272,8 +306,9 @@ export default class Quests {
     async cancel(ctx) {
         console.log("CANCEL ACTION");
 
-        let chatID = ctx.callbackQuery.message.chat.id;
-        let messageID = ctx.callbackQuery.message.message_id;
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+ 
         const language = await this.settings.getLanguage(chatID)
 
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
@@ -289,9 +324,9 @@ export default class Quests {
             questsDB.del(messageID.toString())
 
             //unpin the message
-            ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { console.log(err) });
+            ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
             //delete the telegram message
-            ctx.deleteMessage(messageID.toString()).catch((err) => { console.log(err) });
+            ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
         } else {
             ctx.answerCbQuery(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
@@ -302,8 +337,9 @@ export default class Quests {
     async stop(ctx,) {
         console.log("STOP ACTION");
 
-        let chatID = ctx.callbackQuery.message.chat.id;
-        let messageID = ctx.callbackQuery.message.message_id;
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+ 
         const language = await this.settings.getLanguage(chatID)
 
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
@@ -318,14 +354,14 @@ export default class Quests {
 
         const stopperindex = quest.stoppers.findIndex(user => user.id === sender.id)
         if (stopperindex > -1) {
-            ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             quest.stoppers.splice(stopperindex, 1);
         }
         else {
             // Add the user to the quest
             quest.stoppers.push(sender);
             // Send a message to confirm that the user joined the quest
-            ctx.reply(`${sender.first_name} has stopped the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            ctx.reply(`${sender.first_name} has stopped the quest "${quest.title}". Please get in touch to address any concerns.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
         }
         if (quest.stoppers.length > 0)
             quest.status = 'stopped'
@@ -343,8 +379,9 @@ export default class Quests {
     async complete(ctx) {
         console.log("COMPLETE ACTION");
 
-        let chatID = ctx.callbackQuery.message.chat.id;
-        let messageID = ctx.callbackQuery.message.message_id;
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+ 
         const language = await this.settings.getLanguage(chatID)
 
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
@@ -353,6 +390,7 @@ export default class Quests {
         let quest = await questsDB.get(messageID.toString())[0]
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!quest.status == 'stopped') {ctx.answerCbQuery(`You cannot complete a quest that has been stopped. Ask to remove the stop before completing the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) }); return }
 
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
         if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1) {
@@ -501,29 +539,66 @@ export default class Quests {
 
     // Function to update messages for a quest
     async updateMessage(ctx, quest, language) {
-        
+            let federationDB = await this.orbitdb.docs('WeQuest.federation')
+            await federationDB.load()
+            let fedinfo = await federationDB.get(''+quest.chat*2+quest._id)[0]
+            let message_id 
+            let chat_id
+            if (!fedinfo || fedinfo == '')
+            {
+                message_id = quest._id
+                chat_id = quest.chat
+                if (quest.picture) {
+                    await ctx.telegram.editMessageMedia(
+                        chat_id,
+                        message_id,
+                        null,
+                        {
+                            type: 'photo',
+                            media: quest.picture,
+                            caption: createMessage(quest, language)
+                        },
+                        markup(quest, language)
+                    ).catch((err) => { console.log(err) });
+                }
+                else
+                    await ctx.telegram.editMessageText(
+                        chat_id,
+                        message_id,
+                        null,
+                        createMessage(quest, language),
+                        markup(quest, language)
+                    ).catch((err) => { console.log(err) }); 
+                
+            } else
+            {
+            for (let i = 0; i < fedinfo.all.length; i++) {
+                message_id = fedinfo.all[i].id
+                chat_id = fedinfo.all[i].chat
             // Update the message 
-            if (quest.picture) {
-                await ctx.telegram.editMessageMedia(
-                    ctx.update.callback_query.message.chat.id,
-                    ctx.update.callback_query.message.message_id,
-                    null,
-                    {
-                        type: 'photo',
-                        media: quest.picture,
-                        caption: createMessage(quest, language)
-                    },
-                    markup(quest, language)
-                ).catch((err) => { console.log(err) });
+                if (quest.picture) {
+                    await ctx.telegram.editMessageMedia(
+                        chat_id,
+                        message_id,
+                        null,
+                        {
+                            type: 'photo',
+                            media: quest.picture,
+                            caption: createMessage(quest, language)
+                        },
+                        markup(quest, language)
+                    ).catch((err) => { console.log(err) });
+                }
+                else
+                    await ctx.telegram.editMessageText(
+                        chat_id,
+                        message_id,
+                        null,
+                        createMessage(quest, language),
+                        markup(quest, language)
+                    ).catch((err) => { console.log(err) }); 
             }
-            else
-                await ctx.telegram.editMessageText(
-                    ctx.update.callback_query.message.chat.id,
-                    ctx.update.callback_query.message.message_id,
-                    null,
-                    createMessage(quest, language),
-                    markup(quest, language)
-                ).catch((err) => { console.log(err) });
+        }
     }
 
 }
@@ -564,6 +639,24 @@ async function saveUserAction(userobj, type, action, db) {
     await db.put(userinfo)
 }
 
+async function notifyFederation(quest, language) {
+    // NOTIFY FEDERATED CHATS
+    let federatedChats = this.settings.getFederatedChats(chatID)
+    if (federatedChats && federatedChats.length > 0) {
+        for (let i = 0; i < federatedChats.length; i++) {
+            const federatedChat = federatedChat[i];
+            await ctx.telegram.editMessageText(
+                federatedChat,
+                ctx.update.callback_query.message.message_id,
+                null,
+                createMessage(quest, language),
+                markup(quest, language)
+            ).catch((err) => { console.log(err) }); 
+            ctx.telegram.sendMessage(federatedChat, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) })
+        }
+    }
+}
+
 // send appreciation 
 async function recieveToken(recipient, amount, db) {
     if (!db) return
@@ -589,6 +682,7 @@ async function getUserInfo(user, db) {
     if (!userinfo || userinfo == '') {
         userinfo = {
             _id: user.id,
+            version: '0.1',
             username: user.username ? user.username : user.id,
             values :[],
             initiated: [],
@@ -596,19 +690,18 @@ async function getUserInfo(user, db) {
             sent: 0,
             wants: [],
             offers: [],
+            values:[],
             appreciated: [],
             completed: [],
             collaboration: [],
             hours: 0,
-            money: 0
+            money: 0,
+            voice: 0
         }
         await db.put(userinfo)
     }
     return userinfo
 }
-
-
-
 
 // Function to create the message for a quest TODO 
 function createMessage(quest, language) {
@@ -627,36 +720,72 @@ function createMessage(quest, language) {
 }
 
 function markup(quest, language) {
-    let mu = Markup.inlineKeyboard([[
-        Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest'),
-        Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest')],
-    [
-        Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest'),
-        Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest')
-    ], [
-        Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest'),
-        Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest')
-    ]
-        // ,[
-        //     Markup.button.webApp(i18next.t('Share',{lng:language}), `https://t.me/WeQuestBot?start=${quest._id}`),
-        //     Markup.button.webApp(i18next.t('Pick a Time',{lng:language}), `https://robertovalenti.github.io/datepicker/index.html`)
-        // ]
-    ])
+
+    let mu
+
+    if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo') {
+         mu = Markup.inlineKeyboard([
+            [
+                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+            ],
+            [
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest._id)
+            ],
+            [
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest._id)
+            ]
+            // ,[
+            //     Markup.button.webApp(i18next.t('Share',{lng:language}), `https://t.me/WeQuestBot?start=${quest._id}`),
+            //     Markup.button.webApp(i18next.t('Pick a Time',{lng:language}), `https://robertovalenti.github.io/datepicker/index.html`)
+            // ]
+        ])
+    }   
+
+    if (quest.type == 'proposal') {
+        mu = Markup.inlineKeyboard([
+            [
+                Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest._id)
+            ],
+            [
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest._id)
+            ]
+        ])
+    }
+
+    if (quest.type == 'idea' )
+        mu = Markup.inlineKeyboard([
+            [
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+            ]
+        ])
+            
+
+    if (quest.type == 'offer' || quest.type == 'request') {
+        mu = Markup.inlineKeyboard([
+            [
+                Markup.button.callback(i18next.t('take', { lng: language }), 'join_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest._id)
+            ],
+            [
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest._id),
+            ]
+        ])
+    }
 
     if (quest.status === "completed") // only show appreciation button
     {
-        mu = Markup.inlineKeyboard([
-                    Markup.button.callback(i18next.t('appreciate',{lng:language}), 'appreciate_quest')]
-                    )
+        mu = Markup.inlineKeyboard(
+            [
+                Markup.button.callback(i18next.t('appreciate',{lng:language}), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+            ]
+        )
     }
-
-    // if (quest.type === "request" || quest.type === "offer") {
-    //     mu = Markup.inlineKeyboard([[
-    //         Markup.button.callback(i18next.t('schedule',{lng:language}), 'schedule_quest'),
-    //         Markup.button.callback(i18next.t('participate',{lng:language}), 'join_quest'),
-    //         Markup.button.callback(i18next.t('Cancel',{lng:language}), 'cancel_quest'),
-    //     ]])
-    // }
 
     return mu
 }

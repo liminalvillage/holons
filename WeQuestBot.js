@@ -304,8 +304,11 @@ this.telebot.command('getActionsTest', async (ctx) => ctx.reply (await AI.getAct
 
 this.telebot.on('callback_query', async (ctx) => {
   const callbackData = ctx.callbackQuery.data;
-  let chatID = ctx.callbackQuery.message.chat.id;
-  let messageID = ctx.callbackQuery.message.message_id;
+  // let chatID = ctx.callbackQuery.message.chat.id;
+  // let messageID = ctx.callbackQuery.message.message_id;
+
+  let chatID = ctx.update.callback_query.message.chat.id
+  let messageID = ctx.update.callback_query.message.message_id
 
   if (callbackData.startsWith('removekeyboard')) {
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
@@ -316,25 +319,25 @@ this.telebot.on('callback_query', async (ctx) => {
       var when;
       when = this.quests.calendar.clickButtonCalendar(ctx);
       if (when !== -1) {
-        let caller = this.quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
+        //let caller = chatID// this.quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
 
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
         await questsDB.load()
 
-        let quest = await questsDB.get(caller)[0]
+        let quest = await questsDB.get(messageID)[0]
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
         quest.status = "scheduled";
         quest.when = when;
-        let callerctx = ctx;
-        callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
+        //let callerctx = ctx;
+       // callerctx.update.callback_query.message.message_id = caller; //adjust message id for the updateMessage function
 
         setTimeout(() => {
-          this.quests.remind(callerctx, quest)
+          this.quests.remind(ctx, quest)
         }, (new Date(when)).getTime() - Date.now())
     
         // Update the message
-        this.quests.updateMessage(callerctx, quest);
+        this.quests.updateMessage(ctx, quest);
 
         // Update the db
         questsDB.put(quest);
