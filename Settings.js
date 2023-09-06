@@ -19,11 +19,11 @@ export default class Settings{
             let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
             let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
             let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-            let federationDB = await this.orbitdb.docs('WeQuest.federation')
+            //let federationDB = await this.orbitdb.docs('WeQuest.federation')
             await questsDB.drop()
             await offersDB.drop()
             await usersDB.drop()
-            federationDB.drop()
+            //await federationDB.drop()
             this.settingsDB.put(this.getDefaultSettings(chatID))
             ctx.reply('Bot resetted')
         })
@@ -369,21 +369,16 @@ async separate(ctx) {
     return
 }
 
-async getFederation(ctx) {
-    let chatID = utils.getChatId(ctx)
-    let settings =  await this.getSettings(chatID)
+async getFederation(chatID) {
     let federationDB = await this.orbitdb.docs('WeQuest.federation')
     await federationDB.load()
-    console.log(chatID)
-    let federation = await federationDB.get(chatID.toString())
+    let federation = await federationDB.get(chatID.toString())[0]
 
     if (!federation) {
-        ctx.reply('This chat is not federated with anyone')
         return []
     }
-    federation = federation.filter(item => item._id === chatID.toString())[0]
-    console.log(federation)
-    console.log('This chat is federated with: ' + federation.federation + ' and will notify: ' + federation.notify)
+    //federation = federation.filter(item => item._id === chatID.toString())[0]
+    //console.log('This chat is federated with: ' + federation.federation + ' and will notify: ' + federation.notify)
     return federation.federation
 }
 

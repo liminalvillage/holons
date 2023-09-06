@@ -61,9 +61,11 @@ class UI {
             users[k].sent += user.sent
             users[k].hours += user.hours
             users[k].money += user.money
+            users[k].voice += user.voice
             users[k].initiated = users[k].initiated.concat(user.initiated);
             users[k].wants = users[k].wants.concat(user.wants);
             users[k].offers = users[k].offers.concat(user.offers);
+            users[k].values = users[k].values.concat(user.values);
             users[k].appreciated = users[k].appreciated.concat(user.appreciated);
             users[k].completed = users[k].completed.concat(user.completed);
             users[k].collaboration = users[k].collaboration.concat(user.collaboration);

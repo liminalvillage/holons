@@ -400,10 +400,10 @@ export default class Quests {
             // Update the db
             questsDB.put(quest);
             //unpin the message
-            ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => console.log(err))
+            ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => {})
 
         } else {
-            ctx.answerCbQuery(`Only the initiator of the quest or a participant can mark it as completed.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+            ctx.answerCbQuery(`Only the initiator of the quest or a participant can mark it as completed.`).catch((err) => { });
             return;
         }
         // ================================ RECORD ACTIONS ========================== 
@@ -442,11 +442,13 @@ export default class Quests {
             }
         }
         // ================================ APPRECIATION ==========================
-        ctx.reply(`Quest "${quest.title}" completed! 🎊 `, { reply_to_message_id: messageID });
+        ctx.reply(`Quest "${quest.title}" completed! 🎊 `, { reply_to_message_id: messageID }).catch((err) => { });
     }
 
     async schedule(ctx) {
         console.log("SCHEDULE ACTION");
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
         this.calendar.startNavCalendar(ctx);//TODO: pass quest information to recreate message
         this.calendar.chats.set(getChatId(ctx) * 100, getMessageId(ctx)); //TODO: fix this, use a different method to store the message id
     }
@@ -490,14 +492,14 @@ export default class Quests {
             // }
 
             if (!recipient || recipient == '') {
-                ctx.reply(`The user has not interacted with this WeQuest yet. Ask the user to complete a task first.`, { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+                ctx.reply(`The user has not interacted with this WeQuest yet. Ask the user to complete a task first.`).catch((err) => {  });
                 // register the user in the database
                 continue;
             }
 
             // Check if the recipient is the sender
             if (recipient.id === sender.id) {
-                ctx.reply(i18next.t(`You cannot send appreciation to yourself.`), { reply_to_message_id: ctx.message.message_id }).catch((err) => { console.log(err) });
+                ctx.reply(i18next.t(`You cannot send appreciation to yourself.`)).catch((err) => { });
                 continue;
             }
 
@@ -559,7 +561,7 @@ export default class Quests {
                             caption: createMessage(quest, language)
                         },
                         markup(quest, language)
-                    ).catch((err) => { console.log(err) });
+                    ).catch((err) => { });
                 }
                 else
                     await ctx.telegram.editMessageText(
@@ -568,7 +570,7 @@ export default class Quests {
                         null,
                         createMessage(quest, language),
                         markup(quest, language)
-                    ).catch((err) => { console.log(err) }); 
+                    ).catch((err) => { }); 
                 
             } else
             {
@@ -587,7 +589,7 @@ export default class Quests {
                             caption: createMessage(quest, language)
                         },
                         markup(quest, language)
-                    ).catch((err) => { console.log(err) });
+                    ).catch((err) => { });
                 }
                 else
                     await ctx.telegram.editMessageText(
@@ -596,7 +598,7 @@ export default class Quests {
                         null,
                         createMessage(quest, language),
                         markup(quest, language)
-                    ).catch((err) => { console.log(err) }); 
+                    ).catch((err) => { }); 
             }
         }
     }
@@ -637,24 +639,6 @@ async function saveUserAction(userobj, type, action, db) {
 
 
     await db.put(userinfo)
-}
-
-async function notifyFederation(quest, language) {
-    // NOTIFY FEDERATED CHATS
-    let federatedChats = this.settings.getFederatedChats(chatID)
-    if (federatedChats && federatedChats.length > 0) {
-        for (let i = 0; i < federatedChats.length; i++) {
-            const federatedChat = federatedChat[i];
-            await ctx.telegram.editMessageText(
-                federatedChat,
-                ctx.update.callback_query.message.message_id,
-                null,
-                createMessage(quest, language),
-                markup(quest, language)
-            ).catch((err) => { console.log(err) }); 
-            ctx.telegram.sendMessage(federatedChat, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) })
-        }
-    }
 }
 
 // send appreciation 

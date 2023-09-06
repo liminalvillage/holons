@@ -18,7 +18,7 @@
     "i18next": "^22.4.9",
     "i18next-http-backend": "^2.1.1",
     "ipfs": "^0.66.0",
-    "jimp": "^0.22.7",
+    "jimp": "^0.3.5",
     "jsdom": "^21.1.0",
     "jsonschema": "^1.4.1",
     "jsqr": "^1.4.0",
@@ -33,6 +33,6 @@
     "sharp": "^0.32.1",
     "telegraf": "^4.11.2",
     "telegram-inline-calendar": "^2.0.3",
-    "web3": "^1.8.2"
+    "web3": "^4.1.1"
   }
 }
