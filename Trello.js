@@ -1,9 +1,10 @@
-const { Telegraf } = require('telegraf');
-const fetch = require('node-fetch');
+import {Telegraf } from 'telegraf';
+import  fetch  from 'node-fetch';
 
-const bot = new Telegraf('YOUR_TELEGRAM_BOT_TOKEN');
-const TRELLO_API_KEY = 'YOUR_TRELLO_API_KEY';
-const TRELLO_TOKEN = 'YOUR_TRELLO_TOKEN';
+import config from "./config.json" assert { type: "json" };
+
+const TRELLO_API_KEY = 'ATATT3xFfGF00WnH6JaK9NJuLlAkEwGNuxd_v2cmdx5d_FcNbqB0SuPKfFi30QSP6zvJvAnLrd6ryvuVIAqm3jNaa5zZEF5WEv0cguCIesWUqi_yk8KwQ3yVWAEUqvHLFF7ojE-7lSIQBAEVuataGutDBdMuiRefnEIk0SVxHQn50yYY3PYJvRU=D7819D2A';
+const TRELLO_TOKEN = 'ATTA8aac49df5ad31d45392e75ac0cd6b65c1cdf5aa177c5fd55a53cae60fb0acc17DC6307AA';
 const BOARD_ID = 'YOUR_BOARD_ID';
 
 class Trello {
@@ -58,3 +59,5 @@ class Trello {
             });
     }
 }
+
+export default Trello

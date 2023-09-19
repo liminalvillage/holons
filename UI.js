@@ -35,12 +35,14 @@ class UI {
 
     this.bot.command('bulletin', (ctx) => this.bulletinboard(ctx))
 
+    this.bot.command('valuescloud', (ctx) => this.valuescloud(ctx))
+
   }
 
   async init(){
 
   }
-
+  
   async  getFederatedUsers(chatID) {
     let federation = await this.settings.getFederation(chatID)
     let usersDB = await this.orbitdb.docs('WeQuest.' + chatID + '.users')
@@ -93,6 +95,16 @@ class UI {
     return quests
   }
 
+  async getFederatedValues(chatID) {
+    let users = await this.getFederatedUsers(chatID)
+    let values 
+    for (let i = 0; i < users.length; i++) {
+      values = values.concat(users.values)
+    }
+    return values
+  }
+
+
   async leaderboard(ctx){
     let chatID = ctx.message.chat.id
     const federation = await  this.settings.getFederation(chatID)
@@ -140,6 +152,57 @@ class UI {
       ctx.replyWithPhoto({ source: fs.createReadStream(path) })
     });
     return;
+  }
+
+  async valuescloud(ctx) {
+    let values = [] // = this.getFederatedValues(chatID)
+    const chatID = ctx.message.chat.id;
+    const usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+    await usersDB.load()
+    
+    let users = await usersDB.get('')
+    for (let i = 0; i < users.length; i++) {
+      values = values.concat(users[i].values)
+    }
+    //let values = ['asd','lol','lol']
+    const page = await browser.newPage();
+    let path = './images/valuecloud' + utils.getChatId(ctx) + '.png'
+    page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
+    page.on('console', msg => {
+      for (let i = 0; i < msg.args().length; ++i) {
+          console.log(`${i}: ${msg.args()[i]}`);
+      }
+  });
+    await page.addScriptTag({
+      content: `
+          const words = ${JSON.stringify(values)};
+          window.myWordCloud.update(getWords(words));
+      `
+  });
+  await page.waitForSelector('svg')
+  
+    // await page.evaluate((values) => {
+    //     const getWords = function (words) {
+    //         const occurrences = words.reduce(function (acc, curr) {
+    //             return acc[curr] ? ++acc[curr] : acc[curr] = 1, acc
+    //         }, {});
+    //         return words.map(function (d) {
+    //             d.replace(/[!\.,:;\?]/g, '')
+    //             return { text: d, size: 10 + occurrences[d] * 20 };
+    //         })
+    //     };
+
+    //     // Assuming myWordCloud is globally accessible
+    //     myWordCloud.update(getWords(values));
+    // }, values);
+    await page.waitForSelector('svg')
+   
+    // Screenshot the word cloud
+    const svgElement = await page.$('svg');
+    await svgElement.screenshot({
+      path: path
+    });
+    await ctx.replyWithPhoto({ source: fs.createReadStream(path) })
   }
 
 

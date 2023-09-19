@@ -3,10 +3,9 @@ import i18next from 'i18next';
 import UI from './UI.js';
 import { getUserName, getUser, getChatId, getMessageId } from './utilities.js';
 import { Calendar } from './Calendar.js';
-import  Users  from './Users.js';
 
 
-export default class Quests {
+export default class Recurring {
 
     constructor(bot, orbitdb, settings) {
 
@@ -19,33 +18,11 @@ export default class Quests {
             bot_api: 'telegraf'
         });
         this.settings = settings
-        this.users = new Users(bot, orbitdb)
         //----------------------------- QUESTS -----------------------------
-        this.bot.command('quest', async (ctx) => this.quest('quest', ctx))
-        this.bot.command('mission', async (ctx) => this.quest('quest', ctx))
-        this.bot.command('task', async (ctx) => this.quest('task', ctx))
-        this.bot.command('proposal', async (ctx) => this.quest('proposal', ctx)
-        )
-        this.bot.command('propose', async (ctx) => this.quest('proposal', ctx))
-        this.bot.command('todo', async (ctx) => this.quest('todo', ctx))
-        this.bot.command('recurring', async (ctx) => this.quest('recurring', ctx))
+        this.bot.command('recurring', async (ctx) => this.quest('quest', ctx))
 
-        this.bot.command(['need', 'request', 'want', 'wish'], async (ctx) => this.quest('request', ctx))
-        this.bot.command(['offer', 'give', 'have', 'gift'], async (ctx) => this.quest('offer', ctx))
-
-        this.bot.command(['idea'], async (ctx) => this.quest('idea', ctx))
-        
         // ITALIAN
-        this.bot.command('missione', async (ctx) => this.quest('quest', ctx))
-        this.bot.command('compito', async (ctx) => this.quest('task', ctx))
-        this.bot.command('proposta', async (ctx) => this.quest('proposal', ctx))
-        this.bot.command('propongo', async (ctx) => this.quest('proposal', ctx))
-        this.bot.command('fare', async (ctx) => this.quest('todo', ctx))
-        this.bot.command('ricorrente', async (ctx) => this.quest('recurring', ctx))
-
-        //create new request/offer
-        this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo'], async (ctx) => this.quest('request', ctx))
-        this.bot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => this.quest('offer', ctx))
+        this.bot.command('ricorrente', async (ctx) => this.quest('quest', ctx))
 
         // QUEST ACTIONS ====================================================
        
@@ -100,7 +77,7 @@ export default class Quests {
             appreciation: [],
             stoppers: [],
             type: type,
-            status: 'ongoing'
+            status: 'recurring'
         }
 
         // let path = await ui.questImage(quest)
@@ -136,11 +113,11 @@ export default class Quests {
 
             if (type == 'offer') {
                 quest.participants.push(sender);
-                await this.users.saveUserAction(sender, "offers", quest.title, usersDB)
+                await saveUserAction(sender, "offers", quest.title, usersDB)
             }
             if (type == 'request') {
                 quest.appreciation.push(sender);
-                await this.users.saveUserAction(sender, "wants", quest.title, usersDB)
+                await saveUserAction(sender, "wants", quest.title, usersDB)
             }
             ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
                 // Add the message id to the quest
@@ -193,6 +170,9 @@ export default class Quests {
 
     async join(ctx) {
         console.log("JOIN ACTION");
+        // Get the index from the callback data
+        // let chatID = ctx.callbackQuery.message.chat.id;
+        // let messageID = ctx.callbackQuery.message.message_id;
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
  
@@ -288,10 +268,10 @@ export default class Quests {
             {
                 let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
                 await usersDB.load()
-                await this.users.saveUserAction(sender, "sent", quest.title, usersDB)
+                await saveUserAction(sender, "sent", quest.title, usersDB)
                 for (let i = 0; quest.participants.length; i++) {
                     console.log(quest.participants.length)
-                    await this.users.saveUserAction(quest.participants[i], "received", quest.title, usersDB)
+                    await saveUserAction(quest.participants[i], "received", quest.title, usersDB)
                 }
             }
         }
@@ -412,19 +392,19 @@ export default class Quests {
         let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
 
-        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, usersDB)
+        await saveUserAction(quest.initiator, "initiated", quest.title, usersDB)
 
         // loop through all users and add the completed quest to their account
         for (let i = 0; i < quest.participants.length; i++) {
             let user = quest.participants[i];
-            await this.users.saveUserAction(user, "completed", quest.title, usersDB)
+            await saveUserAction(user, "completed", quest.title, usersDB)
         }
 
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
             // appreciation.appreciate(sender, receivers)
-            await this.users.saveUserAction(sender, "sent", quest.title, usersDB)
+            await saveUserAction(sender, "sent", quest.title, usersDB)
             // Calculate the number of appreciation to send to each user
             const appreciationPerUser = 1  // / quest.participants.length;
 
@@ -439,7 +419,7 @@ export default class Quests {
                 // Send the appreciation to each user
                 //await recieveToken(recipient, appreciationPerUser, usersDB)
                 // save user with action to the database
-                await this.users.saveUserAction(recipient, "received", quest.title, usersDB)
+                await saveUserAction(recipient, "received", quest.title, usersDB)
             }
         }
         // ================================ APPRECIATION ==========================
@@ -480,7 +460,7 @@ export default class Quests {
             let recipient = {}
 
             if (entity.type === 'text_mention')
-                recipent = await ctx.telegram.this.users.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
+                recipent = await ctx.telegram.users.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
                 // get the user from the database
                 recipient = await usersDB.get(ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))[0]
@@ -508,17 +488,35 @@ export default class Quests {
             // Send the appreciation to the recipient
             //await recieveToken(recipient, 1, usersDB)
             // save the user action
-            await this.users.saveUserAction(recipient, "received", action, usersDB)
+            await saveUserAction(recipient, "received", action, usersDB)
         }
 
         // Update the sent appreciation of the sender
         //await sendToken(sender, 1, usersDB)
-        await this.users.saveUserAction(sender, "sent", action, usersDB)
-        ctx.reply(`${sender} sent appreciation to ${mentions.map(u => '@' + u).join(', ')}.`).catch((error) => console.log(error));
+        await saveUserAction(sender, "sent", action, usersDB)
+        ctx.reply(`${sender} sent appreciation to ${mentions.map(u => '@' + u).join(', ')}.`, Markup.inlineKeyboard([
+            [
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+            ]
+        ])).catch((error) => console.log(error));
     }
 
     // ============== UTILITY FUNCTIONS
-   
+    async listUsersActions(ctx) {
+        const chatID = ctx.message.chat.id;
+        const usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+        await usersDB.load()
+
+        let users = await usersDB.get('')
+        let message = ''
+        for (let i = 0; i < users.length; i++) {
+            let user = users[i];
+            if (user?.completed?.length > 0) {
+                message += user.username + ':' + user.completed.join(', ') + '\n'
+            }
+        }
+        return message
+    }
 
     //remind the user that a quest is due
     async remind(ctx, quest) {
@@ -593,28 +591,91 @@ export default class Quests {
 
 }
 
+// save user action
+async function saveUserAction(userobj, type, action, db) {
+    console.log('SAVE USER ACTION: ' + type)
+    if (!db) return
+    let userinfo = await getUserInfo(userobj, db)
+    console.log(userinfo)
+    switch (type) {
+        case 'offers':
+            userinfo.offers.push(action);
+            break;
+        case 'wants':
+            userinfo.wants.push(action);
+            break;
+        case 'initiated':
+            userinfo.initiated.push(action);
+            break;
+        case 'completed':
+            userinfo.completed.push(action)
+            break;
+        case 'appreciated':
+            userinfo.appreciated.push(action)
+            break;
+        case 'sent':
+            userinfo.sent += 1;
+            break;
+        case 'received':
+            userinfo.received += 1;
+            break;
+        default:
+            break;
+    }
 
+
+    await db.put(userinfo)
+}
 
 // send appreciation 
 async function recieveToken(recipient, amount, db) {
     if (!db) return
-    let recipientinfo = await this.users.getUserInfo(recipient, db)
+    let recipientinfo = await getUserInfo(recipient, db)
     recipientinfo.received += amount;
     await db.put(recipientinfo)
 }
 
 async function sendToken(sender, amount, db) {
     if (!db) return
-    let senderinfo = await this.users.getUserInfo(sender, db)
+    let senderinfo = await getUserInfo(sender, db)
     senderinfo.sent += amount;
     await db.put(senderinfo)
 }
 
 
 
+//gets an existing user or  creates a new one
+async function getUserInfo(user, db) {
+    if (!db) return
+    let userinfo = await db.get(user.id)[0]
+    // Initialize the receiver's points if they do not exist yet
+    if (!userinfo || userinfo == '') {
+        userinfo = {
+            _id: user.id,
+            version: '0.1',
+            username: user.username ? user.username : user.id,
+            values :[],
+            initiated: [],
+            received: 0,
+            sent: 0,
+            wants: [],
+            offers: [],
+            values:[],
+            appreciated: [],
+            completed: [],
+            collaboration: [],
+            hours: 0,
+            money: 0,
+            voice: 0
+        }
+        await db.put(userinfo)
+    }
+    return userinfo
+}
 
 // Function to create the message for a quest TODO 
-function createMessage(quest, language) {
+function createMessage(chatID, language) {
+
     let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title} \n`;
     message += `| 💡 : @${quest.initiator.username} \n`;
     if (quest.participants.length > 0)

@@ -39,7 +39,7 @@ function showValuesPage(ctx) {
   if (page > 0) buttons.push(Markup.button.callback('<', 'prev_page'));
   if (page < Math.ceil(values.length / valuesPerPage) - 1) buttons.push(Markup.button.callback('>', 'next_page'));
 
-  ctx.reply('Please select the values that represent you:', Markup.inlineKeyboard(buttons).extra());
+  ctx.reply('Great! Now Please select the values that represent you the most:', Markup.inlineKeyboard(buttons).extra());
 }
 
 // Handle value selection
