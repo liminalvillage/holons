@@ -10,6 +10,11 @@ export default class Settings{
         this.orbitdb = db
         this.bot = bot
         // ================= ADMIN ===========================
+        this.bot.command('chats', async (ctx) => {
+            //TODO; check if the user is an admin
+            let chats = await this.getChats(ctx)
+            ctx.reply('Chats: ' + chats)
+        })
         this.bot.command('reset', async (ctx) => {
             //TODO; check if the user is an admin
             let chatID = utils.getChatId(ctx)
@@ -28,7 +33,7 @@ export default class Settings{
             ctx.reply('Bot resetted')
         })
         
-        this.bot.command('federate','spoon', async (ctx) => {
+        this.bot.command(['federate','spoon'], async (ctx) => {
             //TODO; check if the user is an admin
             this.federate(ctx)
          }
@@ -41,7 +46,7 @@ export default class Settings{
         )
 
 
-        this.bot.command('separate','fork','spork', async (ctx) => {
+        this.bot.command(['separate','fork','spork'], async (ctx) => {
             //TODO; check if the user is an admin
             this.separate(ctx)
          }
@@ -62,16 +67,11 @@ export default class Settings{
             await this.setAdmin(ctx)
         })
         
-        this.bot.command(['setValueEquation','values'], async (ctx) => {
+        this.bot.command(['setValueEquation','values','weights','equation'], async (ctx) => {
             //TODO; check if the user is an admin
             let weights = await this.getValueEquation(utils.getChatId(ctx))
             ctx.reply('Value Equation:', this.equationInlineKeyboard(weights));
         })
-        
-        // this.bot.command('value', async (ctx) => {
-        //     //TODO; check if the user is an admin
-        //     ctx.reply('Value Equation:', await this.getValueEquation(utils.getChatId(ctx)))
-        // })
         
         this.bot.command('setRoles', async (ctx) => ctx.reply("New roles: "+ await this.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
         this.bot.command('getRoles', async (ctx) => { let roles = await this.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
@@ -215,10 +215,10 @@ async getTheme(chatID) {
     
     if (settings.theme === 'light') {
           //return themelight
-          return fs.readFileSync('theme-light.css', 'utf8');
+          return fs.readFileSync('themes/theme-light.css', 'utf8');
     } else {
         //return themedark
-          return fs.readFileSync('theme-dark.css',  'utf8');
+          return fs.readFileSync('themes/theme-dark.css',  'utf8');
     }
 }
 
@@ -428,9 +428,10 @@ async getValues(chatID) {
 }
 
 
-async getChats(){
+async getChats(ctx){
     let chats = await this.settingsDB.get('')
-    return chats.map(chat => chat._id)
+    
+    return await Promise.all( chats.map( async function (chat) {return chat._id + ' ' + await utils.getChatName(ctx,chat._id)}))
 }
 
 async getSettings(chatID) {

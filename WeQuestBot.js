@@ -132,7 +132,7 @@ class WeQuest {
     // discordbot.login(config.discord);
     // =========================== bot commands ===========================
     this.telebot.command('start', async (ctx) => {
-      ctx.reply("Welcome to WeQuest, a community bot developed by Liminal Village. We aim to facilitate community dynamics through AI and blockchain, using gamification to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. Our goal is to foster trust, build strong communities, and accelerate our evolution as social organisms.",
+      ctx.reply("Welcome to WeQuest, a community bot developed at Liminal Village. It is built to facilitate and gamify community communication and dynamics, to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. The goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. There are many features being developed and tested at the moment, if you wish to be whitelisted get in touch with @RobertoValenti",
         Markup.keyboard([
           Markup.button.webApp(
             "Open Holon",
@@ -142,7 +142,7 @@ class WeQuest {
       )
     });
     this.telebot.command('help', async (ctx) => {
-      ctx.reply("`you can use the following commands: \n /task \n /request \n /offer /status /bulletin")
+      ctx.reply("`Just type / for a list of commands. For instance \n /task \n /request \n /offer /status /bulletin")
     })
 
     this.telebot.command("register", (ctx) => {

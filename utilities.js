@@ -9,7 +9,7 @@ export const getUser = (ctx) =>
   ctx?.update?.message?.from || ctx?.update?.callback_query?.from || 0;
 
 export const getChatName = async (ctx, chatId) => {
-  const chatInfo = await ctx.telegram.getChat(chatId);
+  const chatInfo = await ctx.telegram.getChat(chatId).catch((err) => {return 'unknown'});
 
   let chatName = '';
 
