@@ -19,10 +19,10 @@ export default class Recurring {
         });
         this.settings = settings
         //----------------------------- QUESTS -----------------------------
-        this.bot.command('recurring', async (ctx) => this.quest('quest', ctx))
+        this.bot.command('recurring', async (ctx) => this.quest('recurring', ctx))
 
         // ITALIAN
-        this.bot.command('ricorrente', async (ctx) => this.quest('quest', ctx))
+        this.bot.command('ricorrente', async (ctx) => this.quest('recurring', ctx))
 
         // QUEST ACTIONS ====================================================
        

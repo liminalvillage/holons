@@ -67,7 +67,7 @@ export default class Settings{
             await this.setAdmin(ctx)
         })
         
-        this.bot.command(['setValueEquation','values','weights','equation'], async (ctx) => {
+        this.bot.command(['valueweights','weights','equation'], async (ctx) => {
             //TODO; check if the user is an admin
             let weights = await this.getValueEquation(utils.getChatId(ctx))
             ctx.reply('Value Equation:', this.equationInlineKeyboard(weights));

@@ -2,262 +2,19 @@ import Web3 from 'web3';
 import { ETH_DATA_FORMAT, DEFAULT_RETURN_FORMAT } from "web3";
 import config from "./config.json" assert { type: "json" };
 import * as appreciative from './contracts/Appreciative.json' assert { type: "json" };
+import * as appreciativefactory from './contracts/AppreciativeFactory.json' assert { type: "json" };
 import  * as factory from './contracts/IHolonFactory.json' assert { type: "json" };
+import  * as holonsabi from './contracts/Holons.json' assert { type: "json" };
 const provider = new Web3.providers.HttpProvider(config.web3provider);
 //const provider = config.web3provider;
 //const contractAddress = '0x48252499296B216De59c4E0b6DdB4241e0740a13'; //old contract
 //const contractAddress = '0x9065eF317cA9701BB0fdd90384D0994B897E96eF'; // HOLONS
 const contractAddress = '0x8cFd463158cD16652302b21444E76BccFf3A788C' //Appreciative Factory
 const privateKey = config.web3key;
-const abi = [
-	{
-		"inputs": [],
-		"name": "listHolons",
-		"outputs": [
-			{
-				"internalType": "address[]",
-				"name": "",
-				"type": "address[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "address",
-				"name": "_address",
-				"type": "address"
-			}
-		],
-		"name": "listHolonsOf",
-		"outputs": [
-			{
-				"internalType": "address[]",
-				"name": "",
-				"type": "address[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "string",
-				"name": "_name",
-				"type": "string"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_parameter",
-				"type": "uint256"
-			}
-		],
-		"name": "newHolon",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	}
-]
+//const abi = factory.default.abi;
+//const abi = holonsabi.default.abi;
+const abi = appreciativefactory.default.abi;
 
-//const abi = appreciative.abi;
-// const abi = [
-// 	{
-// 		"inputs": [
-// 			{
-// 				"internalType": "string",
-// 				"name": "_flavorname",
-// 				"type": "string"
-// 			},
-// 			{
-// 				"internalType": "address",
-// 				"name": "_flavoraddress",
-// 				"type": "address"
-// 			}
-// 		],
-// 		"name": "newFlavor",
-// 		"outputs": [],
-// 		"stateMutability": "nonpayable",
-// 		"type": "function"
-// 	},
-// 	{
-// 		"anonymous": false,
-// 		"inputs": [
-// 			{
-// 				"indexed": true,
-// 				"internalType": "address",
-// 				"name": "flavor",
-// 				"type": "address"
-// 			},
-// 			{
-// 				"indexed": false,
-// 				"internalType": "string",
-// 				"name": "name",
-// 				"type": "string"
-// 			}
-// 		],
-// 		"name": "NewFlavor",
-// 		"type": "event"
-// 	},
-// 	{
-// 		"inputs": [
-// 			{
-// 				"internalType": "string",
-// 				"name": "_flavor",
-// 				"type": "string"
-// 			},
-// 			{
-// 				"internalType": "string",
-// 				"name": "_name",
-// 				"type": "string"
-// 			},
-// 			{
-// 				"internalType": "uint256",
-// 				"name": "_parameter",
-// 				"type": "uint256"
-// 			}
-// 		],
-// 		"name": "newHolon",
-// 		"outputs": [
-// 			{
-// 				"internalType": "address",
-// 				"name": "",
-// 				"type": "address"
-// 			}
-// 		],
-// 		"stateMutability": "nonpayable",
-// 		"type": "function"
-// 	},
-// 	{
-// 		"anonymous": false,
-// 		"inputs": [
-// 			{
-// 				"indexed": false,
-// 				"internalType": "string",
-// 				"name": "name",
-// 				"type": "string"
-// 			},
-// 			{
-// 				"indexed": false,
-// 				"internalType": "address",
-// 				"name": "addr",
-// 				"type": "address"
-// 			}
-// 		],
-// 		"name": "NewHolon",
-// 		"type": "event"
-// 	},
-// 	{
-// 		"inputs": [
-// 			{
-// 				"internalType": "string",
-// 				"name": "_name",
-// 				"type": "string"
-// 			}
-// 		],
-// 		"name": "getFlavorAddress",
-// 		"outputs": [
-// 			{
-// 				"internalType": "address",
-// 				"name": "",
-// 				"type": "address"
-// 			}
-// 		],
-// 		"stateMutability": "view",
-// 		"type": "function"
-// 	},
-// 	{
-// 		"inputs": [
-// 			{
-// 				"internalType": "uint256",
-// 				"name": "",
-// 				"type": "uint256"
-// 			}
-// 		],
-// 		"name": "knownflavors",
-// 		"outputs": [
-// 			{
-// 				"internalType": "string",
-// 				"name": "",
-// 				"type": "string"
-// 			}
-// 		],
-// 		"stateMutability": "view",
-// 		"type": "function"
-// 	},
-// 	{
-// 		"inputs": [],
-// 		"name": "listFlavors",
-// 		"outputs": [
-// 			{
-// 				"internalType": "string[]",
-// 				"name": "",
-// 				"type": "string[]"
-// 			}
-// 		],
-// 		"stateMutability": "view",
-// 		"type": "function"
-// 	},
-// 	{
-// 		"inputs": [],
-// 		"name": "listHolons",
-// 		"outputs": [
-// 			{
-// 				"internalType": "address[]",
-// 				"name": "",
-// 				"type": "address[]"
-// 			}
-// 		],
-// 		"stateMutability": "view",
-// 		"type": "function"
-// 	},
-// 	{
-// 		"inputs": [
-// 			{
-// 				"internalType": "address",
-// 				"name": "_address",
-// 				"type": "address"
-// 			}
-// 		],
-// 		"name": "listHolonsOf",
-// 		"outputs": [
-// 			{
-// 				"internalType": "address[]",
-// 				"name": "",
-// 				"type": "address[]"
-// 			}
-// 		],
-// 		"stateMutability": "view",
-// 		"type": "function"
-// 	},
-// 	{
-// 		"inputs": [
-// 			{
-// 				"internalType": "string",
-// 				"name": "",
-// 				"type": "string"
-// 			}
-// 		],
-// 		"name": "toAddress",
-// 		"outputs": [
-// 			{
-// 				"internalType": "address",
-// 				"name": "",
-// 				"type": "address"
-// 			}
-// 		],
-// 		"stateMutability": "view",
-// 		"type": "function"
-// 	}
-// ]
 
 class Holons {
     constructor(provider, contractAddress, abi) {
@@ -290,21 +47,18 @@ class Holons {
        from: this.account.address,
        to: this.holonsContract.options.address,
        //value: this.web3.utils.toWei("0", "ether"),
-       data: this.holonsContract.methods.newFlavor('Appreciative2',"0xAED01C776d98303eE080D25A21f0a42D94a86D9c").encodeABI(),
-       gas: 210000,
+      // data: this.holonsContract.methods.newFlavor('Appreciative3',"0xAED01C776d98303eE080D25A21f0a42D94a86D9c").encodeABI(),
+       data: this.holonsContract.methods.newHolon("testaaa", 0).encodeABI(),
+       gas: 3000000,
        nonce: await this.web3.eth.getTransactionCount(this.account.address),
        maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-       maxFeePerGas: this.web3.utils.toWei("3000", "gwei"),
+       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
        chainId: 11155111,
        type: 0x2
       };
-      return await this.sendSignedTransaction(tx);
+      let signedTx= await this.web3.eth.accounts.signTransaction(tx, this.account.privateKey);
+      return await this.sendSignedTransaction(signedTx);
         
-
-        //
-        //
-        //
-
          tx = this.holonsContract.methods.newFlavor(_flavorname, _flavoraddress);
         const receipt = await tx
           .send({
@@ -337,18 +91,18 @@ class Holons {
          .then((value) => {
            limit = value;
          });
-       const tx = {
-        from: this.account.address,
-        to: this.holonsContract.options.address,
-        value: this.web3.utils.toWei("0", "ether"),
-        data: this.holonsContract.methods.newHolon( 'Test2pp2', 0).encodeABI(),
-        gas: 3000000,
-        nonce: await this.web3.eth.getTransactionCount(this.account.address),
-        maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-        maxFeePerGas: this.web3.utils.toWei("3000", "gwei"),
-        chainId: 11155111,
-        type: 0x2,
-      };
+      //  const tx = {
+      //   from: this.account.address,
+      //   to: this.holonsContract.options.address,
+      //   value: this.web3.utils.toWei("0", "ether"),
+      //   data: this.holonsContract.methods.newHolon( 'Appreciative','Testqwe', 0).encodeABI(),
+      //   gas: 3000000,
+      //   nonce: await this.web3.eth.getTransactionCount(this.account.address),
+      //   maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
+      //   maxFeePerGas: this.web3.utils.toWei("3000", "gwei"),
+      //   chainId: 11155111,
+      //   type: 0x2,
+      // };
         // const tx = {
         //   from: this.account.address,
         //   to: this.holonsContract.options.address,
@@ -357,7 +111,19 @@ class Holons {
         //   noonce: await this.web3.eth.getTransactionCount(this.account.address, 'pending'),
         //   gasPrice: await this.web3.eth.getGasPrice(),
         // };
-        return await this.sendSignedTransaction(tx);
+
+        const gasPrice = await web3.eth.getGasPrice();
+        
+        const tx = {
+            from: this.account.address,
+            to: this.holonsContract.options.address,
+            gas: 3000000, // Adjust gas limit based on your needs
+            gasPrice: gasPrice,
+            data: holonsContract.methods.newHolon('Appreciative','Testest',0).encodeABI()
+        };
+        
+        const signedTx = await web3.eth.accounts.signTransaction(tx, this.account.privateKey);
+        return await this.sendSignedTransaction(signedTx);
     }
 
     async getFlavorAddress(_name) {
@@ -379,8 +145,7 @@ class Holons {
 
     async sendSignedTransaction(tx) {
       
-        const signedTx = await this.web3.eth.accounts.signTransaction(tx, this.account.privateKey);
-        const receipt = await this.web3.eth.sendSignedTransaction(signedTx.raw || signedTx.rawTransaction);
+        const receipt = await this.web3.eth.sendSignedTransaction(tx.raw || tx.rawTransaction);
         return receipt;
 
     }
@@ -405,7 +170,7 @@ class Holons {
 
 // (async () => {
 
-//   const holons = await new Holons(provider, contractAddress, abi);
+  // const holons = await new Holons(provider, contractAddress, abi);
 //  const newholon = await holons.newHolon('Test', 0);
 //  console.log(newholon);
 // // let newholon = await txObject.send({ from: holons.account.address });
@@ -413,10 +178,10 @@ class Holons {
 // //console.log(holonlist);
 // let balance = await holons.web3.eth.getBalance(holons.account.address);
 // console.log(balance);
-// // let flavors = await holons.newFlavor("Appreciative2", "0x9065eF317cA9701BB0fdd90384D0994B897E96eF");
-// // // console.log(flavors);
-// // let flavors = await holons.listFlavors();
-// // console.log(flavors);
+// let flavor = await holons.newFlavor("Appreciative2", "0x9065eF317cA9701BB0fdd90384D0994B897E96eF");
+// console.log(flavor);
+// let flavors = await holons.listFlavors();
+// console.log(flavors);
 // // //let flavoraddress = await holons.getFlavorAddress('Appreciative');
 // // //let newflavor = await holons.new(holons.account.address, 'Appreciative2',flavoraddress)
 // // //console.log(newflavor);

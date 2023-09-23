@@ -1,11 +1,11 @@
 import { t } from "i18next";
+import * as utils from './utilities.js';
 
 class Users {
   constructor(bot, orbitdb) {
     this.bot = bot;
     this.orbitdb = orbitdb;
     this.bot.command('value', (ctx) => this.addValue(ctx));
-    //this.bot.command('values', (ctx) => this.listValues(ctx));
     this.bot.command('paid', (ctx) => this.paid(ctx));
     this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
     this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
@@ -14,6 +14,8 @@ class Users {
     this.bot.command('wallet', (ctx) => this.wallet(ctx));
     
   }
+
+
 
   async gothours(ctx) {
     const chatID = ctx.message.chat.id;
@@ -115,21 +117,22 @@ class Users {
   async addValue(ctx) {
     const chatID = ctx.message.chat.id;
     const user = ctx.message.from;
-    const value = ctx.message.text.split('/value ')[1];
-    if (!value) {
-      ctx.reply('Please specify a value to add. eg: /value freedom');
+    const values = utils.parseList(ctx.message.text);
+    if (!values) {
+      ctx.reply('Please specify a value or list of values to add. eg: /value freedom, non-violence');
       return;
     }
     let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
     await usersDB.load()
 
     let userinfo = await this.getUserInfo(user, usersDB)
-    userinfo.values.push(value)
+    //if (!userinfo.values) userinfo.values = []
+    userinfo.values = values
+    
     await usersDB.put(userinfo)
-    ctx.reply(`Added ${value} to your values.`);
-
-
+    ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
+
 
   async listUsersActions(ctx) {
     const chatID = ctx.message.chat.id;

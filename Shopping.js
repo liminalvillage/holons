@@ -1,4 +1,5 @@
 import { Markup } from 'telegraf';
+import * as utils from './utilities.js';
 
 
 export class Shopping {
@@ -13,17 +14,18 @@ export class Shopping {
 
     async buy(ctx) {
         let chatID = ctx.chat.id;
-        const item = ctx.message.text.split('/buy ')[1];
-        if (!item) {
+        //let item = ctx.message.text.split(' ').slice(1).join(' ')
+        let items = utils.parseList(ctx.message.text)
+        if (!items) {
             ctx.reply('Please specify an item to buy. eg: /buy milk');
             return;
         }
         let shoppingDB = await this.db.docs('WeQuest.' + chatID.toString() + '.shopping')
         await shoppingDB.load()
-
-        await shoppingDB.put({ _id: item, done: false });
-        await shoppingDB.get('')
-        ctx.reply(`Added ${item} to the shopping list.`);
+        for (let item of items)
+            await shoppingDB.put({ _id: item, done: false });
+  
+        ctx.reply(`Added ${items.join(", ")} to the shopping list.`);
     }
 
     async shopping(ctx) {
@@ -65,7 +67,7 @@ export class Shopping {
     getShoppingListKeyboard(list) {
         let mu =[]
         list.forEach(function (item, index) {
-            mu.push([Markup.button.callback(item._id + (item.done?' ✅' :' ➖' ), `toggle_${index}`)])
+            mu.push([Markup.button.callback(item._id + (item.done?' ✅' :'☑️' ), `toggle_${index}`)])
         })
         mu.push([Markup.button.callback('Done Shopping', 'done')])
         return Markup.inlineKeyboard(mu);

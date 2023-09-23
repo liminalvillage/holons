@@ -136,11 +136,11 @@ export default class Quests {
 
             if (type == 'offer') {
                 quest.participants.push(sender);
-                await this.users.saveUserAction(sender, "offers", quest.title, usersDB)
+                await this.users.saveUserAction(sender, "offers", quest.title, 0 , usersDB)
             }
             if (type == 'request') {
                 quest.appreciation.push(sender);
-                await this.users.saveUserAction(sender, "wants", quest.title, usersDB)
+                await this.users.saveUserAction(sender, "wants", quest.title, 0 , usersDB)
             }
             ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
                 // Add the message id to the quest
@@ -288,10 +288,10 @@ export default class Quests {
             {
                 let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
                 await usersDB.load()
-                await this.users.saveUserAction(sender, "sent", quest.title, usersDB)
+                await this.users.saveUserAction(sender, "sent", quest.title, 0 , usersDB)
                 for (let i = 0; quest.participants.length; i++) {
                     console.log(quest.participants.length)
-                    await this.users.saveUserAction(quest.participants[i], "received", quest.title, usersDB)
+                    await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0 , usersDB)
                 }
             }
         }
@@ -412,19 +412,19 @@ export default class Quests {
         let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
         await usersDB.load()
 
-        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, usersDB)
+        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, 0 , usersDB)
 
         // loop through all users and add the completed quest to their account
         for (let i = 0; i < quest.participants.length; i++) {
             let user = quest.participants[i];
-            await this.users.saveUserAction(user, "completed", quest.title, usersDB)
+            await this.users.saveUserAction(user, "completed", quest.title, 0 , usersDB)
         }
 
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
             // appreciation.appreciate(sender, receivers)
-            await this.users.saveUserAction(sender, "sent", quest.title, usersDB)
+            await this.users.saveUserAction(sender, "sent", quest.title, 0 , usersDB)
             // Calculate the number of appreciation to send to each user
             const appreciationPerUser = 1  // / quest.participants.length;
 
@@ -439,7 +439,7 @@ export default class Quests {
                 // Send the appreciation to each user
                 //await recieveToken(recipient, appreciationPerUser, usersDB)
                 // save user with action to the database
-                await this.users.saveUserAction(recipient, "received", quest.title, usersDB)
+                await this.users.saveUserAction(recipient, "received", quest.title, 0 , usersDB)
             }
         }
         // ================================ APPRECIATION ==========================
@@ -508,12 +508,12 @@ export default class Quests {
             // Send the appreciation to the recipient
             //await recieveToken(recipient, 1, usersDB)
             // save the user action
-            await this.users.saveUserAction(recipient, "received", action, usersDB)
+            await this.users.saveUserAction(recipient, "received", action, 0 , usersDB)
         }
 
         // Update the sent appreciation of the sender
         //await sendToken(sender, 1, usersDB)
-        await this.users.saveUserAction(sender, "sent", action, usersDB)
+        await this.users.saveUserAction(sender, "sent", action, 0 , usersDB)
         ctx.reply(`${sender} sent appreciation to ${mentions.map(u => '@' + u).join(', ')}.`).catch((error) => console.log(error));
     }
 

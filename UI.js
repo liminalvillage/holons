@@ -33,9 +33,9 @@ class UI {
     this.bot.command(['richieste', 'sogni', 'bisogni'], (ctx) => this.requestsboard(ctx))
     this.bot.command('offerte', (ctx) => this.offersboard(ctx))
 
-    this.bot.command('bulletin', (ctx) => this.bulletinboard(ctx))
+    this.bot.command(['bulletin','billboard'], (ctx) => this.bulletinboard(ctx))
 
-    this.bot.command('valuescloud', (ctx) => this.valuescloud(ctx))
+    this.bot.command('values', (ctx) => this.valuescloud(ctx))
 
   }
 
@@ -159,12 +159,20 @@ class UI {
     const chatID = ctx.message.chat.id;
     const usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
     await usersDB.load()
-    
+    const entities = ctx.message.entities;
+    let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
+    mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
+  
     let users = await usersDB.get('')
+    //only select the mentioned users
+
+    if  (mentions.length > 0)
+    users = users.filter(user => mentions.includes(user.username))
+    
     for (let i = 0; i < users.length; i++) {
       values = values.concat(users[i].values)
     }
-    //let values = ['asd','lol','lol']
+    
     const page = await browser.newPage();
     let path = './images/valuecloud' + utils.getChatId(ctx) + '.png'
     page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
