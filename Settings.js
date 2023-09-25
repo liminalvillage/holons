@@ -16,11 +16,7 @@ export default class Settings{
             ctx.reply('Chats: ' + chats)
         })
         this.bot.command(['restart','reset'], async (ctx) => {
-            //TODO; check if the user is an admin
-            const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
-        
-            // Check if the user's status is either 'administrator' or 'creator'
-            if (['administrator', 'creator'].includes(chatMember.status)) {
+            if (utils.isAdmin(ctx)) {
                 let chatID = utils.getChatId(ctx)
                 // try{
                 //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
@@ -34,39 +30,40 @@ export default class Settings{
                 await usersDB.drop()
                 //await federationDB.drop()
                 this.settingsDB.put(this.getDefaultSettings(chatID))
-                ctx.reply('Bot resetted')
+                ctx.reply('WeQuest resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
             }
         })
         
         this.bot.command(['federate','spoon'], async (ctx) => {
-            //TODO; check if the user is an admin
-            this.federate(ctx)
+            if (utils.isAdmin(ctx)) this.federate(ctx)
+            else ctx.reply('Only a chat admin can perform this action')
          }
         )
 
         this.bot.command('federation', async (ctx) => {
-            //TODO; check if the user is an admin
+       
             await this.getFederation(ctx)
-         }
+
+         } 
         )
 
 
         this.bot.command(['separate','fork','spork'], async (ctx) => {
-            //TODO; check if the user is an admin
-            this.separate(ctx)
+            if (utils.isAdmin(ctx)) await this.separate(ctx)
+            else ctx.reply('Only a chat admin can perform this action')
          }
         )
 
         this.bot.command('setLanguage', async (ctx) => {
-            //TODO; check if the user is an admin
-            await this.setLanguage(ctx)
+            if (utils.isAdmin(ctx)) await this.setLanguage(ctx)
+            else ctx.reply('Only a chat admin can perform this action')
         })
         
         this.bot.command('setTheme', async (ctx) => {
-            //TODO; check if the user is an admin
-            await this.setTheme(ctx)
+            if (utils.isAdmin(ctx)) this.setTheme(ctx)
+            else ctx.reply('Only a chat admin can perform this action')
         })
         
         this.bot.command('setAdmin', async (ctx) => {
@@ -74,10 +71,14 @@ export default class Settings{
             await this.setAdmin(ctx)
         })
         
-        this.bot.command(['valueweights','weights','equation'], async (ctx) => {
-            //TODO; check if the user is an admin
+        this.bot.command(['valueweights','weights','weight','equation'], async (ctx) => {
+            if (utils.isAdmin(ctx)) {
             let weights = await this.getValueEquation(utils.getChatId(ctx))
             ctx.reply('Value Equation:', this.equationInlineKeyboard(weights));
+            } else {
+                ctx.reply('Only a chat admin can perform this action')
+            }
+
         })
         
         this.bot.command('setroles', async (ctx) => ctx.reply("New roles: "+ await this.setRoles(ctx)))

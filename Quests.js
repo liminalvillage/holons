@@ -1,7 +1,7 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import UI from './UI.js';
-import { getUserName, getUser, getChatId, getMessageId } from './utilities.js';
+import { getUserName, getUser, getChatId, getMessageId , capitalize} from './utilities.js';
 import { Calendar } from './Calendar.js';
 import  Users  from './Users.js';
 
@@ -32,8 +32,9 @@ export default class Quests {
 
         this.bot.command(['need', 'request', 'want', 'wish'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offer', 'give', 'have', 'gift'], async (ctx) => this.quest('offer', ctx))
-
-        this.bot.command(['idea'], async (ctx) => this.quest('idea', ctx))
+        this.bot.command(['idea','lesson','quote','tip','fact','joke','story','thought','question','challenge','trigger','projection','assumption','observation','rule','suggestion','guideline','feature','perspective','opinion','insight','inspiration','motivation','reminder','warning','note','comment','feedback','review','critique','compliment','complaint'], async (ctx) => this.quest('any', ctx)) 
+        this.bot.command(['ideas','lessons','quotes','tips','facts','jokes','stories','thoughts','questions','challenges','triggers','projections','assumptions','observations','rules','suggestions','guidelines','features','perspectives','opinions','insights','inspirations','motivations','reminders','warnings','notes','comments','feedbacks','reviews','critiques','compliments','complaints'], async (ctx) => this.listanytype(ctx)) 
+        this.bot.command('list', async (ctx) => this.list(ctx))
         
         // ITALIAN
         this.bot.command('missione', async (ctx) => this.quest('quest', ctx))
@@ -47,6 +48,8 @@ export default class Quests {
         this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => this.quest('offer', ctx))
 
+        this.bot.command('lista', async (ctx) => this.list(ctx))
+
         // QUEST ACTIONS ====================================================
        
         this.bot.action(/join_quest_(.+)/, (ctx) => this.join(ctx));
@@ -59,6 +62,44 @@ export default class Quests {
         //----------------------------------------------------
     }
 
+    async list(ctx){
+        
+        let type = ctx.message.text.split(' ')[1];
+        if (type && type[type.length - 1] === 's')
+            type = type.slice(0, -1);
+        this.listtype(ctx,type)
+    }
+
+    async listanytype(ctx){
+        let type = ctx.message.text.split(' ')[0].replace('/', '');
+        if (type && type[type.length - 1] === 's')
+        type = type.slice(0, -1);
+        this.listtype(ctx,type)
+    }
+
+    async listtype(ctx, type) {
+  
+       console.log("LIST TYPE: " + type);
+        let chatID = ctx.message.chat.id;
+        let messageID = ctx.message.message_id;
+        const language = await this.settings.getLanguage(chatID)
+        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+        await questsDB.load()
+        let quests = await questsDB.query((doc) => doc.type === type && doc.status === 'ongoing' || doc.status === 'scheduled');
+        if (quests.length === 0) {
+            ctx.reply(`No ${type}s found`);
+            return;
+        }
+        let message = '*'+ capitalize(type)+ 's*:\n\n';
+        for (let i = 0; i < quests.length; i++) {
+            const quest = quests[i];
+            // link to the quest message
+            message += `*${quest.title}* \t 👍:${quest.appreciation.length} \n`;
+            //message += createMessage(quest, language) + '\n';
+        }
+        ctx.reply(message, { parse_mode: 'Markdown' });
+    }
+
 
     async quest(type, ctx) {
 
@@ -68,6 +109,8 @@ export default class Quests {
         let messageID = ctx.message.message_id;
         const language = await this.settings.getLanguage(chatID)
         const text = ctx.message.text ? ctx.message.text : ctx.message.caption;
+        if (type == 'any')
+            type = ctx.message.text.split(' ')[0].replace('/', '');
         const sender = ctx.message.from;
 
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
@@ -667,8 +710,8 @@ function markup(quest, language) {
         ])
     }
 
-    if (quest.type == 'idea' )
-        mu = Markup.inlineKeyboard([
+    if (quest.type == 'idea' || quest.type == 'lesson' || quest.type == 'quote' || quest.type == 'tip' || quest.type == 'fact' || quest.type == 'joke' || quest.type == 'story' || quest.type == 'thought' || quest.type == 'question' || quest.type == 'challenge' || quest.type == 'advice' || quest.type == 'trigger' || quest.type == 'projection' || quest.type == 'assumption' || quest.type == 'observation' || quest.type == 'rule' || quest.type == 'suggestion' || quest.type == 'guideline' || quest.type =='feature' || quest.type == 'perspective' || quest.type == 'opinion' || quest.type == 'insight' || quest.type == 'inspiration' || quest.type == 'motivation' || quest.type == 'reminder' || quest.type == 'warning' || quest.type == 'alert' || quest.type == 'note' || quest.type == 'comment' || quest.type == 'feedback' || quest.type == 'review' || quest.type == 'critique' || quest.type == 'compliment' || quest.type == 'complaint')       
+     mu = Markup.inlineKeyboard([
             [
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
             ]

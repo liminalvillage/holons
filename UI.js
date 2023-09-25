@@ -36,6 +36,7 @@ class UI {
     this.bot.command(['bulletin','billboard','board'], (ctx) => this.bulletinboard(ctx))
 
     this.bot.command('values', (ctx) => this.valuescloud(ctx))
+    this.bot.command('cloud', (ctx) => this.valuescloud(ctx))
 
   }
 
@@ -442,9 +443,9 @@ class UI {
                     user.sent * equation.sent + 
                     user.received * equation.received +
                     user.hours * equation.hours + 
-                    user.collaboration * equation.collaboration 
+                    user.collaboration * equation.collaboration +
                     user.wants.length * equation.wants + 
-                    user.offers.length * equation.offers  
+                    user.offers.length * equation.offers  +
                     user.money * equation.money
       const row = `<tr>
         <th scope="row">${i + 1}</th>

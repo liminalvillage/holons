@@ -65,3 +65,14 @@ export const  parseList = (text) => {
   // Remove empty strings
   return items.filter(x => x);
 }
+
+export const capitalize = (string) => {
+  return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
+export const isAdmin = async (ctx) => {
+  const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
+  if (['administrator', 'creator'].includes(chatMember.status) || (ctx.chat.type === 'private')) {
+      return true;
+  }
+}
