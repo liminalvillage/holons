@@ -59,16 +59,9 @@ export const getChatId = (ctx) => ctx?.chat?.id || ctx?.update?.message?.chat?.i
 export const getMessageId = (ctx) => ctx?.message?.message_id || ctx?.update?.message?.message_id || ctx?.update?.callback_query?.message?.message_id || 0;
 
 export const  parseList = (text) => {
-  // Split by comma first
+  // Split by comma
   text = text.split(' ').slice(1).join(' ')
-  const items = text.split(',');
-  
-  // Further split by spaces
-  const result = [];
-  items.forEach(item => {
-    result.push(...item.trim().split(/\s+/));
-  });
-  
+  const items = text.split(',').map(item => item.trim());
   // Remove empty strings
-  return result.filter(x => x);
+  return items.filter(x => x);
 }

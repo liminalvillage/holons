@@ -262,7 +262,7 @@ export default class Quests {
         if (userindex > -1) {
             //ctx.answerCbQuery(`${sender.first_name} has been removed from the quest "${quest.title}"`, { reply_to_message_id: messageID });
             if (quest.status === "completed"){
-                ctx.answerCbQuery(`You cannot appreciate a ${quest.type} that you participated in`, { reply_to_message_id: messageID });
+                ctx.answerCbQuery(`You cannot appreciate a ${quest.type} that you participated in`);
                 return;
             }
             quest.participants.splice(userindex, 1);
@@ -272,17 +272,17 @@ export default class Quests {
         const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
         if (appreciationindex > -1) {
             if (quest.status === "completed") {
-                ctx.answerCbQuery(`You have already appreciated this ${quest.type}`, { reply_to_message_id: messageID });
+                ctx.answerCbQuery(`You have already appreciated this ${quest.type}`);
             }
             else {
-                ctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID });
+                ctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`);
                 quest.appreciation.splice(appreciationindex, 1);
             }
         } else {
             // Add the user to the quest
             quest.appreciation.push(sender);
             // Send a message to confirm that the user joined the quest
-            ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`, { reply_to_message_id: messageID });
+            ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`);
             // share appreciation "after the fact"
             if (quest.status === "completed")
             {
