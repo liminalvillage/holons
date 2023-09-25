@@ -33,7 +33,7 @@ class UI {
     this.bot.command(['richieste', 'sogni', 'bisogni'], (ctx) => this.requestsboard(ctx))
     this.bot.command('offerte', (ctx) => this.offersboard(ctx))
 
-    this.bot.command(['bulletin','billboard'], (ctx) => this.bulletinboard(ctx))
+    this.bot.command(['bulletin','billboard','board'], (ctx) => this.bulletinboard(ctx))
 
     this.bot.command('values', (ctx) => this.valuescloud(ctx))
 
