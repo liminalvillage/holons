@@ -5,12 +5,10 @@ class Users {
   constructor(bot, orbitdb) {
     this.bot = bot;
     this.orbitdb = orbitdb;
-    this.bot.command('value', (ctx) => this.addValue(ctx));
-    this.bot.command('paid', (ctx) => this.paid(ctx));
+    this.bot.command(['value','ivalue'], (ctx) => this.addValue(ctx));
+    this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
     this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
     this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
-    this.bot.command('gothours', (ctx) => this.gothours(ctx));
-    this.bot.command('spenthours', (ctx) => this.spenthours(ctx));
     this.bot.command('wallet', (ctx) => this.wallet(ctx));
     
   }
@@ -74,22 +72,36 @@ class Users {
   async paid(ctx) {
     const chatID = ctx.message.chat.id;
     const user = ctx.message.from;
+    const command = ctx.message.text.split(' ')[0]
     const amount = ctx.message.text.split(' ')[1]
+    const currentsee = ctx.message.text.split(' ')[2]
     if (!amount) {
-      ctx.reply('Please specify an amount and a reason. eg: /paid 10 for community shopping');
+      ctx.reply('Please specify an amount and a reason. eg: /paid 10 euros for community shopping');
       return;
     }
+
+    if (!currentsee || (!currentsee.startsWith('euro') && !currentsee.startsWith('hour'))) {
+      ctx.reply(`Please specify the currency. eg: ${command} 10 euros for community shopping`);
+      return;
+    }
+
     //check if amount is a number
     if (isNaN(amount)) {
-      ctx.reply('Please specify a number in your currency unit. eg: /paid 10 for community shopping');
+      ctx.reply('Please specify a number in your currency unit. eg: /paid 10 euros for community shopping');
       return;
     }
-    let action = ctx.message.text.split(' ').slice(2).join(' ')
-    console.log (action)
+    let action = ctx.message.text.split(' ').slice(3).join(' ')
+
     let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
     await usersDB.load()
-    this.saveUserAction(user, 'paid', action, parseInt(amount), usersDB)
-    ctx.reply(`You paid ${amount} - ${action}.`);
+    if (currentsee.startsWith('euro')) {
+      this.saveUserAction(user, 'spentmoney', action, parseInt(amount), usersDB)
+    }
+    else if (currentsee.startsWith('hour')) {
+      this.saveUserAction(user, 'spenthours', action, parseInt(amount), usersDB)
+    }
+
+    ctx.reply(`You ${command.substring(1)} ${amount} ${currentsee} - ${action}.`);
   }
 
   async gotpaid(ctx) {
@@ -109,7 +121,7 @@ class Users {
     console.log (action)
     let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
     await usersDB.load()
-    this.saveUserAction(user, 'gotpaid', action, amount, usersDB)
+    this.saveUserAction(user, 'gotmoney', action, amount, usersDB)
     ctx.reply(`You got paid ${amount} - ${action}.`);
   }
 
@@ -178,20 +190,21 @@ class Users {
       case 'received':
         userinfo.received += 1;
         break;
-      case 'paid':
+      case 'spentmoney':
         userinfo.money += amount;
         break;
-      case 'gotpaid':
+      case 'gotmoney':
           userinfo.money -= amount;
         break;
       case 'collaborated':
           userinfo.collaboration.push({action: action, amount: amount});
         break;
-      case 'gothours':
-          userinfo.hours += amount;
-      break;
       case 'spenthours':
+          userinfo.hours += amount;
+      case 'gothours':
           userinfo.hours -= amount;
+      break;
+   
       break;
       default:
         break;

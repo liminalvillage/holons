@@ -133,12 +133,12 @@ class WeQuest {
     // =========================== bot commands ===========================
     this.telebot.command('start', async (ctx) => {
       ctx.reply("Welcome to WeQuest, a community bot developed at Liminal Village. It is built to facilitate and gamify community communication and dynamics, to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. The goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. There are many features being developed and tested at the moment, if you wish to be whitelisted get in touch with @RobertoValenti",
-        Markup.keyboard([
-          Markup.button.webApp(
-            "Open Holon",
-            "https://app.holons.io/?id=" + utils.getChatId(ctx)
-          ),
-        ])
+        // Markup.keyboard([
+        //   Markup.button.webApp(
+        //     "Open Holon",
+        //     "https://app.holons.io/?id=" + utils.getChatId(ctx)
+        //   ),
+        // ])
       )
     });
     this.telebot.command('help', async (ctx) => {
@@ -271,7 +271,7 @@ class WeQuest {
 
     //-----------------------------AI -----------------------------
     this.telebot.command('today', async (ctx) => ctx.reply(await AI.getPrompt(await this.settings.getValues, this.lunation.progress(), await AI.getActions(await this.users.listUsersActions(ctx))).catch(err => console.log(err))))
-    this.telebot.command('roles', async (ctx) => {
+    this.telebot.command('assignroles', async (ctx) => {
       let actions = await this.users.listUsersActions(ctx)
       if (!actions) { ctx.reply("No actions found, please complete tasks before calling this function"); return }
       let roles = await this.settings.getRoles(utils.getChatId(ctx));

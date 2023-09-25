@@ -225,7 +225,7 @@ class UI {
     // let quests = await questsDB.get('').filter(quest => quest.status === 'ongoing')
 
     let quests = await this.getFederatedQuests(chatID)
-    quests = quests.filter(quest => quest.status === 'ongoing')
+    quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled') )
     // Create a table header
     this.getQuestsTable(quests, chatID).then((path) => {
       //send the image

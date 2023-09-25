@@ -15,22 +15,29 @@ export default class Settings{
             let chats = await this.getChats(ctx)
             ctx.reply('Chats: ' + chats)
         })
-        this.bot.command('reset', async (ctx) => {
+        this.bot.command(['restart','reset'], async (ctx) => {
             //TODO; check if the user is an admin
-            let chatID = utils.getChatId(ctx)
-            // try{
-            //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
-            // }catch(e){ console.log(e)}
-            let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-            let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-            let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-            //let federationDB = await this.orbitdb.docs('WeQuest.federation')
-            await questsDB.drop()
-            await offersDB.drop()
-            await usersDB.drop()
-            //await federationDB.drop()
-            this.settingsDB.put(this.getDefaultSettings(chatID))
-            ctx.reply('Bot resetted')
+            const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
+        
+            // Check if the user's status is either 'administrator' or 'creator'
+            if (['administrator', 'creator'].includes(chatMember.status)) {
+                let chatID = utils.getChatId(ctx)
+                // try{
+                //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
+                // }catch(e){ console.log(e)}
+                let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+                let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
+                let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+                //let federationDB = await this.orbitdb.docs('WeQuest.federation')
+                await questsDB.drop()
+                await offersDB.drop()
+                await usersDB.drop()
+                //await federationDB.drop()
+                this.settingsDB.put(this.getDefaultSettings(chatID))
+                ctx.reply('Bot resetted')
+            } else {
+                ctx.reply('Only a chat admin can perform this action')
+            }
         })
         
         this.bot.command(['federate','spoon'], async (ctx) => {
@@ -73,11 +80,11 @@ export default class Settings{
             ctx.reply('Value Equation:', this.equationInlineKeyboard(weights));
         })
         
-        this.bot.command('setRoles', async (ctx) => ctx.reply("New roles: "+ await this.setRoles(utils.getChatId(ctx), utils.getParameters(ctx))))
-        this.bot.command('getRoles', async (ctx) => { let roles = await this.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
+        this.bot.command('setroles', async (ctx) => ctx.reply("New roles: "+ await this.setRoles(ctx)))
+        this.bot.command('getroles', async (ctx) => { let roles = await this.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
         
-        this.bot.command('setValues', async (ctx) => ctx.reply("New values: "+ await this.setValues(utils.getChatId(ctx), utils.getParameters(ctx))))
-        this.bot.command('getValues', async (ctx) => { let values = await this.getValues(utils.getChatId(ctx)); ctx.reply(values ? values : 'No values specified') })
+        this.bot.command('setvalues', async (ctx) => ctx.reply("New values: "+ await this.setValues(utils.getChatId(ctx), utils.getParameters(ctx))))
+        this.bot.command('getvalues', async (ctx) => { let values = await this.getValues(utils.getChatId(ctx)); ctx.reply(values ? values : 'No values specified') })
         
         this.bot.command('whitelist', async (ctx) =>{
             let settings = await this.getSettings(utils.getChatId(ctx))[0]
@@ -395,13 +402,15 @@ async getFederation(chatID) {
     return federation.federation
 }
 
- async setRoles(chatID, roles) {
+ async setRoles(ctx) {
+    const chatID = ctx.message.chat.id;
+    const roles = utils.parseList(ctx.message.text)
 
     if (roles === undefined || roles === null || roles === '') {
         return ('Please specify the roles. Example: /setRoles role1 role2')
     }
     let settings =   await this.getSettings(chatID)
-    settings.roles = roles.split(' ')
+    settings.roles = roles
     this.settingsDB.put(settings)
     return settings.roles
 }
@@ -430,7 +439,6 @@ async getValues(chatID) {
 
 async getChats(ctx){
     let chats = await this.settingsDB.get('')
-    
     return await Promise.all( chats.map( async function (chat) {return chat._id + ' ' + await utils.getChatName(ctx,chat._id)}))
 }
 
