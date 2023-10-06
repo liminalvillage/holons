@@ -35,6 +35,7 @@ export default class Quests {
         this.bot.command(['idea','lesson','quote','tip','fact','joke','story','thought','question','challenge','trigger','projection','assumption','observation','rule','suggestion','guideline','feature','perspective','opinion','insight','inspiration','motivation','reminder','warning','note','comment','feedback','review','critique','compliment','complaint'], async (ctx) => this.quest('any', ctx)) 
         this.bot.command(['ideas','lessons','quotes','tips','facts','jokes','stories','thoughts','questions','challenges','triggers','projections','assumptions','observations','rules','suggestions','guidelines','features','perspectives','opinions','insights','inspirations','motivations','reminders','warnings','notes','comments','feedbacks','reviews','critiques','compliments','complaints'], async (ctx) => this.listanytype(ctx)) 
         this.bot.command('list', async (ctx) => this.list(ctx))
+        this.bot.command('refresh',async (ctx) => this.refresh(ctx))
         
         // ITALIAN
         this.bot.command('missione', async (ctx) => this.quest('quest', ctx))
@@ -60,6 +61,40 @@ export default class Quests {
         this.bot.action(/stop_quest_(.+)/, (ctx) => this.stop(ctx));
 
         //----------------------------------------------------
+    }
+    // resends all active tasks in the chat
+    async refresh(ctx) {
+        let chatID = ctx.message.chat.id;
+        let messageID = ctx.message.message_id;
+        const language = await this.settings.getLanguage(chatID)
+        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+        await questsDB.load()
+        let quests = await questsDB.query((doc) => doc.status === 'ongoing' || doc.status === 'scheduled');
+        if (quests.length === 0) {
+            ctx.reply(`No quests found`);
+            return;
+        }
+        else
+        {
+            for (let i = 0; i < quests.length; i++) {
+                //delete and unpin existing messages
+                await ctx.telegram.unpinChatMessage(chatID, quests[i]._id).catch((err) => { });
+                await ctx.deleteMessage(quests[i]._id.toString()).catch((err) => { });
+                //resend the message
+                const quest = quests[i];
+                await ctx.telegram.sendMessage(chatID, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (nctx) => {
+                    questsDB.del(quest._id.toString())
+                    // Add the message id to the quest
+                    quest._id = nctx.message_id;
+                    quest.chat = nctx.chat.id;
+                    await questsDB.put(quest)
+                    //Pin the message
+                    ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { });
+                    // update the markup
+                    await this.updateMessage(ctx, quest)
+                })
+            }
+        }
     }
 
     async list(ctx){
@@ -94,7 +129,7 @@ export default class Quests {
         for (let i = 0; i < quests.length; i++) {
             const quest = quests[i];
             // link to the quest message
-            message += `*${quest.title}* \t 👍:${quest.appreciation.length} \n`;
+            message += `~${quest.title}~ \t 👍:${quest.appreciation.length} \n`;
             //message += createMessage(quest, language) + '\n';
         }
         ctx.reply(message, { parse_mode: 'Markdown' });
@@ -160,13 +195,18 @@ export default class Quests {
                     caption: createMessage(quest, language),
                     parse_mode: 'Markdown',
                     ...markup(quest, language)
-                }).catch((err) => { console.log(err) }).then((nctx) => {
+                }).catch((err) => { console.log(err) }).then(async (nctx) => {
                     // Add the message id to the quest
                     quest._id = nctx.message_id;
                     quest.chat = nctx.chat.id;
                     questsDB.put(quest)
-                    //Pin the message
-                    ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
+                                    //Pin the message
+                    ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { });
+                    // update the markup
+                    //await ctx.telegram.editMessageRe(quest.chat, quest._id,null, markup(quest, language)).catch((err) => { console.log(err) });
+                    await this.updateMessage(ctx, quest)
+                    //delete the original message
+                    ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
                 });
         else {
