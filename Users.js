@@ -10,7 +10,60 @@ class Users {
     this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
     this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
     this.bot.command('wallet', (ctx) => this.wallet(ctx));
-    
+    this.bot.command('balance', (ctx) => this.balance(ctx));
+  }
+
+ 
+  async balance(ctx) {
+    const chatID = ctx.message.chat.id;
+    const user = ctx.message.from;
+    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+    await usersDB.load()
+    let users = await usersDB.get('')
+    let message = ''
+    let total = 0
+    for (let i = 0; i < users.length; i++) {
+      total += users[i].money 
+    }
+    const peruser = total / users.length
+    message += 'Total spent: ' + total +' euros, ('+ users.length+ ' users, ' + peruser +' euros per user)\n \n'
+    //loop through users and compute the balance with respect to other users
+    for (let i = 0; i < users.length; i++) {
+      let user = users[i];
+      //let balance = 0
+      // for (let j = 0; j < users.length; j++) {
+      //   let otheruser = users[j];
+      //   if (user.username != otheruser.username) {
+      //     balance += this.computeBalance(user, otheruser)
+      //   }
+      // }
+      message += '@'+user.username + ': spent ' + user.money + ' euros ( balance: '+ (user.money - peruser) +' )\n'
+    }
+    ctx.reply(message);
+
+  }
+
+
+  //implments a credit clearing system
+  computeBalance(user, otheruser) {
+    let balance = 0
+    //check if user has received from otheruser
+    if (user.received > 0) {
+      if (otheruser.sent > 0) {
+        if (user.received > otheruser.sent) {
+          balance += user.received - otheruser.sent
+        }
+      }
+    }
+    //check if user has sent to otheruser
+    if (user.sent > 0) {
+      if (otheruser.received > 0) {
+        if (user.sent > otheruser.received) {
+          balance -= otheruser.received - user.sent
+        }
+      }
+    }
+    return balance
   }
 
 

@@ -174,6 +174,7 @@ export default class Quests {
             document: '',
             date: new Date().getTime(),
             when: '',
+            completed:'',
             participants: [],
             appreciation: [],
             stoppers: [],
@@ -698,7 +699,7 @@ async function sendToken(sender, amount, db) {
 
 // Function to create the message for a quest TODO 
 function createMessage(quest, language) {
-    let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title} \n`;
+    let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title.padEnd(30,' ')} \n`;
     message += `| 💡 : @${quest.initiator.username} \n`;
     if (quest.participants.length > 0)
         message += `| 🙋‍♂ : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
