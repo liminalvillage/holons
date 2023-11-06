@@ -567,7 +567,8 @@ export default class Quests {
                 recipent = await ctx.telegram.this.users.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
                 // get the user from the database
-                recipient = await usersDB.get(ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))[0]
+                let username = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
+                recipient= await usersDB.query((user)=> user.username == username)
             }
 
             // if ( !recipient || recipient == ''|| !recipient.id) { 

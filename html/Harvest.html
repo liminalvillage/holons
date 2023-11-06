@@ -775,8 +775,11 @@
                                 }
                     
                                 var shapes = [].concat(...coordinates.map(e => { return h3.polyfill(e, h3res); }));
+                                var  innershapes = [].concat(...coordinates.map(e => { return h3.polyfill(e, h3res + 1); }));
                                 var hexBoundaries = [];
                                 var pentaBoundaries = [];
+                                var innerBoundaries = [];
+
                                 for (var i = 0; i < shapes.length; i++) {
                                     let h = h3.h3ToGeoBoundary(shapes[i], true);
                                     if (h.find((e) => e[0] < -128) !== undefined) {
@@ -789,6 +792,14 @@
                                         hexBoundaries.push(h);
                                     }
                                 }
+                                for (var i = 0; i < innershapes.length; i++) {
+                                    let h = h3.h3ToGeoBoundary(innershapes[i], true);
+                                    if (h.find((e) => e[0] < -128) !== undefined) {
+                                        h = h.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
+                                    }
+                                    innerBoundaries.push(h);
+                                }
+
                                 console.log(`currentZoom: ${currentZoom}, resolution: ${h3res}, shapes: ${hexBoundaries.length}`);
                     
                     
@@ -800,7 +811,16 @@
                     
                                 var featureCollection = {
                                     "type": "FeatureCollection",
-                                    "features": [{
+                                    "features": [
+                                    {
+                                        "type": "Feature",
+                                        "properties": { 'color': 'gray' },
+                                        "geometry": {
+                                            "type": "Polygon",
+                                            "coordinates": innerBoundaries
+                                        }
+                                    },    
+                                    {
                                         "type": "Feature",
                                         "properties": { 'color': 'white' },
                                         "geometry": {
@@ -815,7 +835,9 @@
                                             "type": "Polygon",
                                             "coordinates": pentaBoundaries
                                         }
-                                    }]
+                                    }
+                                   
+                                    ]
                                 };
                     
                                 const hexSource = map.getSource(hexSourceName);

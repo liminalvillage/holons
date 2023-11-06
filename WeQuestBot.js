@@ -64,7 +64,7 @@ class WeQuest {
     }
     else {
       console.log('development mode')
-      ipfs = await create()
+      ipfs = await create({ repo: 'orbitdb' })
     }
     this.orbitdb = await OrbitDB.createInstance(ipfs)
 
