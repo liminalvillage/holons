@@ -24,8 +24,8 @@ export default class Quests {
         this.bot.command('quest', async (ctx) => this.quest('quest', ctx))
         this.bot.command('mission', async (ctx) => this.quest('quest', ctx))
         this.bot.command('task', async (ctx) => this.quest('task', ctx))
-        this.bot.command('proposal', async (ctx) => this.quest('proposal', ctx)
-        )
+        this.bot.command('event', async (ctx) => this.quest('event', ctx))
+        this.bot.command('proposal', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('propose', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('todo', async (ctx) => this.quest('todo', ctx))
         this.bot.command('recurring', async (ctx) => this.quest('recurring', ctx))
@@ -40,6 +40,7 @@ export default class Quests {
         // ITALIAN
         this.bot.command('missione', async (ctx) => this.quest('quest', ctx))
         this.bot.command('compito', async (ctx) => this.quest('task', ctx))
+        this.bot.command('evento', async (ctx) => this.quest('event', ctx))
         this.bot.command('proposta', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('propongo', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('fare', async (ctx) => this.quest('todo', ctx))
@@ -568,7 +569,8 @@ export default class Quests {
             if (entity.type === 'mention') {
                 // get the user from the database
                 let username = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
-                recipient= await usersDB.query((user)=> user.username == username)
+                recipient= await usersDB.query((user)=> user.username == username)[0]
+                console.log(recipient)
             }
 
             // if ( !recipient || recipient == ''|| !recipient.id) { 
@@ -580,26 +582,30 @@ export default class Quests {
             if (!recipient || recipient == '') {
                 ctx.reply(`The user has not interacted with this WeQuest yet. Ask the user to complete a task first.`).catch((err) => {  });
                 // register the user in the database
+                
                 continue;
             }
+
+            if (entity.type === 'mention')
+                    recipient = { id: recipient._id, username: recipient.username, first_name: recipient.username }
 
             // Check if the recipient is the sender
             if (recipient.id === sender.id) {
                 ctx.reply(i18next.t(`You cannot send appreciation to yourself.`)).catch((err) => { });
-                continue;
+                return;
             }
 
 
             // Send the appreciation to the recipient
             //await recieveToken(recipient, 1, usersDB)
             // save the user action
-            await this.users.saveUserAction(recipient, "received", action, 0 , usersDB)
+            await this.users.saveUserAction(recipient, "received", action, 1 , usersDB)
         }
 
         // Update the sent appreciation of the sender
         //await sendToken(sender, 1, usersDB)
-        await this.users.saveUserAction(sender, "sent", action, 0 , usersDB)
-        ctx.reply(`${sender} sent appreciation to ${mentions.map(u => '@' + u).join(', ')}.`).catch((error) => console.log(error));
+        await this.users.saveUserAction(sender, "sent", action, 1 , usersDB)
+        ctx.reply(`${sender.username} sent appreciation to ${mentions.map(u => '@' + u.username).join(', ')}.`).catch((error) => console.log(error));
     }
 
     // ============== UTILITY FUNCTIONS
