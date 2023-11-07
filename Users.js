@@ -6,6 +6,7 @@ class Users {
     this.bot = bot;
     this.orbitdb = orbitdb;
     this.bot.command(['value','ivalue'], (ctx) => this.addValue(ctx));
+    this.bot.command(['need','ineed','weneed'], (ctx) => this.addNeed(ctx));
     this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
     this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
     this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
@@ -191,12 +192,33 @@ class Users {
     await usersDB.load()
 
     let userinfo = await this.getUserInfo(user, usersDB)
-    //if (!userinfo.values) userinfo.values = []
-    userinfo.values = values
+    if (!userinfo.values) userinfo.values = []
+    console.log(userinfo.values)
+    userinfo.values = userinfo.values.concat(values)
     
     await usersDB.put(userinfo)
     ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
+
+  async addNeed(ctx) {
+    const chatID = ctx.message.chat.id;
+    const user = ctx.message.from;
+    const needs = utils.parseList(ctx.message.text);
+    if (!needs) {
+      ctx.reply('Please specify a need or comma separated list of needs to add. eg: /need hugs, massages');
+      return;
+    }
+    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
+    await usersDB.load()
+
+    let userinfo = await this.getUserInfo(user, usersDB)
+    if (!userinfo.needs) userinfo.needs = []
+    userinfo.needs = userinfo.needs.concat(needs)
+    
+    await usersDB.put(userinfo)
+    ctx.reply(`Added ${needs.join(', ')} to your needs.`);
+  }
+
 
 
   async listUsersActions(ctx) {
@@ -285,6 +307,7 @@ class Users {
         sent: 0,
         wants: [],
         offers: [],
+        needs: [],
         values: [],
         appreciated: [],
         completed: [],
