@@ -658,17 +658,29 @@
 
                     
                             function highlightHexagon(map, hex) {
-                                const hexBoundary = h3.h3ToGeoBoundary(hex);
+                                
+                                const kRing = h3.kRing(hex, 3);
+                                // Reduce hexagon list to a map with random values
+                                let hexagons = kRing.reduce((res, hexagon) => ({ ...res, [hexagon]: Math.random() }), {});
+                                
+                                // Get the hexagon boundaries
+                                
+                                const hexBoundary = h3.h3ToGeoBoundary(hex, true);
 
-                                if (hexBoundary.find((e) => e[0] < -128) !== undefined) {
-                                    hexBoundary = hexBoundary.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
-                                    }
+                                let coordinates = [];
+                                for (let i = 0; i < hexBoundary.length; i++) {
+                                    coordinates.push([hexBoundary[i][1], hexBoundary[i][0]]);
+                                }
+
+                                // if (hexBoundary.find((e) => e[0] < -128) !== undefined) {
+                                //     hexBoundary = hexBoundary.map((e) => e[0] > 0 ? [e[0] - 360, e[1]] : e);
+                                //     }
                                 const hexGeoJson = {
                                     type: 'Feature',
                                     properties: {},
                                     geometry: {
                                         type: 'Polygon',
-                                        coordinates: [hexBoundary.concat([hexBoundary[0]])]  // Close the polygon by adding the first point again
+                                        coordinates: [coordinates]  // Close the polygon by adding the first point again
                                     }
                                 };
                     
@@ -803,12 +815,7 @@
                                 console.log(`currentZoom: ${currentZoom}, resolution: ${h3res}, shapes: ${hexBoundaries.length}`);
                     
                     
-                                const centerHex = h3.geoToH3(config.lat, config.lng, 8);
-                                const kRing = h3.kRing(centerHex, 3);
-                                // Reduce hexagon list to a map with random values
-                                let hexagons = kRing.reduce((res, hexagon) => ({ ...res, [hexagon]: Math.random() }), {});
-                    
-                    
+                             
                                 var featureCollection = {
                                     "type": "FeatureCollection",
                                     "features": [

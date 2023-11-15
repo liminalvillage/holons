@@ -565,7 +565,7 @@ export default class Quests {
             let recipient = {}
 
             if (entity.type === 'text_mention')
-                recipent = await ctx.telegram.this.users.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
+                recipent = await ctx.telegram.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
                 // get the user from the database
                 let username = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
@@ -587,7 +587,7 @@ export default class Quests {
             }
 
             if (entity.type === 'mention')
-                    recipient = { id: recipient._id, username: recipient.username, first_name: recipient.username }
+                    recipient = { id: recipient._id?recipient._id:recipient.id, username: recipient.username, first_name: recipient.username }
 
             // Check if the recipient is the sender
             if (recipient.id === sender.id) {
@@ -605,7 +605,7 @@ export default class Quests {
         // Update the sent appreciation of the sender
         //await sendToken(sender, 1, usersDB)
         await this.users.saveUserAction(sender, "sent", action, 1 , usersDB)
-        ctx.reply(`${sender.username} sent appreciation to ${mentions.map(u => '@' + u.username).join(', ')}.`).catch((error) => console.log(error));
+        ctx.reply(`@${sender.username} sent appreciation to ${mentions.length} users`).catch((error) => console.log(error));
     }
 
     // ============== UTILITY FUNCTIONS
@@ -743,7 +743,20 @@ function markup(quest, language) {
             //     Markup.button.webApp(i18next.t('Pick a Time',{lng:language}), `https://robertovalenti.github.io/datepicker/index.html`)
             // ]
         ])
-    }   
+    }
+
+    if( quest.type == 'event'){
+        mu = Markup.inlineKeyboard([
+            [
+                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+            ],
+            [
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest._id)
+            ]
+        ])
+    }
 
     if (quest.type == 'proposal') {
         mu = Markup.inlineKeyboard([

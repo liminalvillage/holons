@@ -67,9 +67,9 @@ export class Shopping {
     getShoppingListKeyboard(list) {
         let mu =[]
         list.forEach(function (item, index) {
-            mu.push([Markup.button.callback(item._id + (item.done?' ✅' :'☑️' ), `toggle_${index}`)])
+            mu.push([Markup.button.callback( (item.done?'✅ ' :'☑️ ' ) + item._id , `toggle_${index}`)])
         })
-        mu.push([Markup.button.callback('Done Shopping', 'done')])
+        mu.push([Markup.button.callback('👍 Done Shopping', 'done')])
         return Markup.inlineKeyboard(mu);
     }
 

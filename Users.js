@@ -1,5 +1,6 @@
 import { t } from "i18next";
 import * as utils from './utilities.js';
+import { Markup } from 'telegraf';
 
 class Users {
   constructor(bot, orbitdb) {
@@ -134,7 +135,7 @@ class Users {
       return;
     }
 
-    if (!currentsee || (!currentsee.startsWith('euro') && !currentsee.startsWith('hour'))) {
+    if (!currentsee || (!currentsee.startsWith('euro') && !currentsee.startsWith('hour') && !currentsee.startsWith('km'))) {
       ctx.reply(`Please specify the currency. eg: ${command} 10 euros for community shopping`);
       return;
     }
@@ -155,7 +156,12 @@ class Users {
       this.saveUserAction(user, 'spenthours', action, parseInt(amount), usersDB)
     }
 
-    ctx.reply(`You ${command.substring(1)} ${amount} ${currentsee} - ${action}.`);
+    // ctx.reply(`@${user.username} ${command.substring(1)} ${amount} ${currentsee} - ${action}.`, Markup.inlineKeyboard(
+    //   [
+    //       Markup.button.callback('split', 'split_cost_' + chatID + '_' + user.id + '_' + amount + '_' + currentsee + '_' + action),
+    //       Markup.button.callback('reject', 'reject_cost_' + chatID + '_' + user.id + '_' + amount + '_' + currentsee + '_' + action)
+    //   ]));
+    ctx.reply(`@${user.username} ${command.substring(1)} ${amount} ${currentsee} - ${action}.`)
   }
 
   async gotpaid(ctx) {
