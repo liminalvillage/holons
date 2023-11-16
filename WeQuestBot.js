@@ -54,7 +54,9 @@ class WeQuest {
   async init() {
 
     this.telebot = new Telegraf(config.telegram);
-    this.telebot.launch();
+    this.telebot.launch({
+      handlerTimeout: Infinity
+    });
     //this.telebot.use(Telegraf.log())
 
     let ipfs
@@ -355,11 +357,11 @@ class WeQuest {
     });
 
     // // Handle uncaught exceptions
-    // process.on('uncaughtException', async (err) => {
-    //   console.error('Uncaught exception:', err);
-    //   await ipfs.stop();
-    //   process.exit(1);
-    // });
+    process.on('uncaughtException', async (err) => {
+      console.error('Uncaught exception:', err);
+      await ipfs.stop();
+      process.exit(1);
+    });
 
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
@@ -373,6 +375,7 @@ class WeQuest {
       await ipfs.stop();
       process.exit(0);
     });
+
 
     this.telebot.on('web_app_data', (ctx) => {
       var [timespamp, timezoneOffset] = ctx.message.web_app_data.data.split('_')

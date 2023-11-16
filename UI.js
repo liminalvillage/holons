@@ -1,4 +1,4 @@
-import puppetteer from 'puppeteer-core';
+import puppetteer from 'puppeteer';
 import { executablePath } from 'puppeteer';
 import i18next from 'i18next';
 import * as utils from './utilities.js'

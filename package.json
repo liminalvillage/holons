@@ -5,13 +5,15 @@
   "main": "WeQuestBot.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node WeQuestBot.js"
   },
   "author": "Roberto Valenti",
   "license": "ISC",
   "dependencies": {
     "axios": "^1.4.0",
     "chatgpt": "^4.4.1",
+    "dayjs": "^1.11.10",
     "debug": "^4.3.4",
     "discord.js": "^14.7.1",
     "dotenv": "^16.3.1",
@@ -27,6 +29,7 @@
     "lune": "^0.4.0",
     "moment": "^2.29.4",
     "ngeohash": "^0.6.3",
+    "node-fetch": "^3.3.2",
     "openai": "^3.1.0",
     "orbit-db": "^0.29.0",
     "puppeteer": "^21.2.1",
