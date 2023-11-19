@@ -1,0 +1,6 @@
+orbitdb/*
+images/*
+templates/*
+config.json
+.env
+yarn.lock

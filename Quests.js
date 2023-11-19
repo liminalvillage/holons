@@ -376,7 +376,11 @@ export default class Quests {
                 await this.users.saveUserAction(sender, "sent", quest.title, 0 , usersDB)
                 for (let i = 0; quest.participants.length; i++) {
                     console.log(quest.participants.length)
-                    await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0 , usersDB)
+                    if (quest.participants[i].id) { //TODO: check why this is needed sometimes otherwise it crashes
+                        await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0 , usersDB)
+                    }else {
+                        console.log('Bug: participant has no id: '+quest.participants[i])
+                    }
                 }
             }
         }
@@ -533,6 +537,7 @@ export default class Quests {
 
     async schedule(ctx) {
         console.log("SCHEDULE ACTION");
+        
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
         this.calendar.startNavCalendar(ctx);//TODO: pass quest information to recreate message
@@ -563,12 +568,11 @@ export default class Quests {
         for (let i = 0; i < mentions.length; i++) {
             const entity = mentions[i];
             let recipient = {}
-
+            let username = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
             if (entity.type === 'text_mention')
                 recipent = await ctx.telegram.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
                 // get the user from the database
-                let username = ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length)
                 recipient= await usersDB.query((user)=> user.username == username)[0]
                 console.log(recipient)
             }
@@ -580,9 +584,8 @@ export default class Quests {
             // }
 
             if (!recipient || recipient == '') {
-                ctx.reply(`The user has not interacted with this WeQuest yet. Ask the user to complete a task first.`).catch((err) => {  });
+                ctx.reply(`The user ${username} has not interacted with this WeQuest yet. Ask the user to complete a task first.`).catch((err) => {  });
                 // register the user in the database
-                
                 continue;
             }
 
@@ -605,7 +608,7 @@ export default class Quests {
         // Update the sent appreciation of the sender
         //await sendToken(sender, 1, usersDB)
         await this.users.saveUserAction(sender, "sent", action, 1 , usersDB)
-        ctx.reply(`@${sender.username} sent appreciation to ${mentions.length} users`).catch((error) => console.log(error));
+        ctx.reply(`@${sender.username} sent appreciation ${action}`).catch((error) => console.log(error));
     }
 
     // ============== UTILITY FUNCTIONS

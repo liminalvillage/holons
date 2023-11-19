@@ -245,10 +245,10 @@ class Users {
 
 
   // save user action
-  async saveUserAction(userobj, type, action, amount , db) {
+  async saveUserAction(user, type, action, amount , db) {
     console.log('SAVE USER ACTION: ' + type)
     if (!db) return
-    let userinfo = await this.getUserInfo(userobj, db)
+    let userinfo = await this.getUserInfo(user, db)
     switch (type) {
       case 'offers':
         userinfo.offers.push(action);

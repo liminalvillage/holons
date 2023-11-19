@@ -49,6 +49,7 @@ import { get } from "http";
 
 class WeQuest {
   constructor() {
+    this.db = {};
   }
 
   async init() {
@@ -60,14 +61,14 @@ class WeQuest {
     //this.telebot.use(Telegraf.log())
 
     let ipfs
-    if (config.mode === 'production') {
+  // if (config.mode === 'production') {
       console.log('production mode')
       ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
-    }
-    else {
-      console.log('development mode')
-      ipfs = await create({ repo: 'orbitdb' })
-    }
+    //}
+    // else {
+    //   console.log('development mode')
+    //   ipfs = await create({ repo: 'orbitdb' })
+    // }
     this.orbitdb = await OrbitDB.createInstance(ipfs)
 
     const options = {
@@ -231,7 +232,7 @@ class WeQuest {
       // data from a database or API.
       ///let chatID = utils.getChatId(ctx)
       let offers = []
-      let chats = await this.settings.getChats()
+      let chats = await this.settings.getChats(ctx)
       console.log("chats: ", chats)
       for (const chatID in chats) {
         let users = await this.ui.getFederatedUsers(chatID)
@@ -356,12 +357,54 @@ class WeQuest {
 
     });
 
-    // // Handle uncaught exceptions
-    process.on('uncaughtException', async (err) => {
-      console.error('Uncaught exception:', err);
-      await ipfs.stop();
-      process.exit(1);
+    // Content tagging
+
+    this.telebot.command('tag', (ctx) => {
+      if (!ctx.message.reply_to_message) {
+        return ctx.reply('Please reply to a message you want to tag.');
+      }
+
+      const tags = ctx.message.text.split(' ').slice(1);
+      if (tags.length === 0) {
+        return ctx.reply('Please provide at least one tag.');
+      }
+
+      const messageId = ctx.message.reply_to_message.message_id;
+      const chatId = ctx.message.chat.id;
+      const messageContent = ctx.message.reply_to_message.text;
+
+      tags.forEach(tag => {
+        if (!this.db[tag]) {
+          this.db[tag] = [];
+        }
+        this.db[tag].push({ chatId, messageId, messageContent });
+      });
+
+      //saveDb();
+      ctx.reply('Message tagged successfully.');
     });
+
+    // Query tagged messages
+    this.telebot.command('gettag', (ctx) => {
+      const tag = ctx.message.text.split(' ')[1];
+      if (!tag) {
+        return ctx.reply('Please specify a tag.');
+      }
+
+      if (!this.db[tag] || this.db[tag].length === 0) {
+        return ctx.reply('No messages found for this tag.');
+      }
+
+      const response = this.db[tag].map(entry => entry.messageLink).join('\n');
+      ctx.reply(response);
+    });
+  
+    // // Handle uncaught exceptions
+    // process.on('uncaughtException', async (err) => {
+    //   console.error('Uncaught exception:', err);
+    //   await ipfs.stop();
+    //   process.exit(1);
+    // });
 
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
