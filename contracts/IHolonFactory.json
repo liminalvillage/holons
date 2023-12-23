@@ -5,6 +5,11 @@
       "inputs": [
         {
           "internalType": "string",
+          "name": "_flavor",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
           "name": "_name",
           "type": "string"
         },
@@ -72,15 +77,15 @@
     "absolutePath": "project:/contracts/IHolonFactory.sol",
     "exportedSymbols": {
       "IHolonFactory": [
-        2032
+        2049
       ]
     },
-    "id": 2033,
+    "id": 2050,
     "license": "MIT",
     "nodeType": "SourceUnit",
     "nodes": [
       {
-        "id": 2006,
+        "id": 2023,
         "literals": [
           "solidity",
           "^",
@@ -95,32 +100,32 @@
         "contractDependencies": [],
         "contractKind": "interface",
         "fullyImplemented": false,
-        "id": 2032,
+        "id": 2049,
         "linearizedBaseContracts": [
-          2032
+          2049
         ],
         "name": "IHolonFactory",
         "nodeType": "ContractDefinition",
         "nodes": [
           {
             "functionSelector": "0babba86",
-            "id": 2017,
+            "id": 2034,
             "implemented": false,
             "kind": "function",
             "modifiers": [],
             "name": "newHolon",
             "nodeType": "FunctionDefinition",
             "parameters": {
-              "id": 2013,
+              "id": 2030,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2008,
+                  "id": 2025,
                   "mutability": "mutable",
                   "name": "_flavor",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2017,
+                  "scope": 2034,
                   "src": "410:23:10",
                   "stateVariable": false,
                   "storageLocation": "calldata",
@@ -129,7 +134,7 @@
                     "typeString": "string"
                   },
                   "typeName": {
-                    "id": 2007,
+                    "id": 2024,
                     "name": "string",
                     "nodeType": "ElementaryTypeName",
                     "src": "410:6:10",
@@ -142,11 +147,11 @@
                 },
                 {
                   "constant": false,
-                  "id": 2010,
+                  "id": 2027,
                   "mutability": "mutable",
                   "name": "_name",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2017,
+                  "scope": 2034,
                   "src": "434:21:10",
                   "stateVariable": false,
                   "storageLocation": "calldata",
@@ -155,7 +160,7 @@
                     "typeString": "string"
                   },
                   "typeName": {
-                    "id": 2009,
+                    "id": 2026,
                     "name": "string",
                     "nodeType": "ElementaryTypeName",
                     "src": "434:6:10",
@@ -168,11 +173,11 @@
                 },
                 {
                   "constant": false,
-                  "id": 2012,
+                  "id": 2029,
                   "mutability": "mutable",
                   "name": "_parameter",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2017,
+                  "scope": 2034,
                   "src": "457:15:10",
                   "stateVariable": false,
                   "storageLocation": "default",
@@ -181,7 +186,7 @@
                     "typeString": "uint256"
                   },
                   "typeName": {
-                    "id": 2011,
+                    "id": 2028,
                     "name": "uint",
                     "nodeType": "ElementaryTypeName",
                     "src": "457:4:10",
@@ -196,16 +201,16 @@
               "src": "409:64:10"
             },
             "returnParameters": {
-              "id": 2016,
+              "id": 2033,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2015,
+                  "id": 2032,
                   "mutability": "mutable",
                   "name": "",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2017,
+                  "scope": 2034,
                   "src": "492:7:10",
                   "stateVariable": false,
                   "storageLocation": "default",
@@ -214,7 +219,7 @@
                     "typeString": "address"
                   },
                   "typeName": {
-                    "id": 2014,
+                    "id": 2031,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
                     "src": "492:7:10",
@@ -229,7 +234,7 @@
               ],
               "src": "491:9:10"
             },
-            "scope": 2032,
+            "scope": 2049,
             "src": "392:109:10",
             "stateMutability": "nonpayable",
             "virtual": false,
@@ -237,29 +242,29 @@
           },
           {
             "functionSelector": "e5c23374",
-            "id": 2023,
+            "id": 2040,
             "implemented": false,
             "kind": "function",
             "modifiers": [],
             "name": "listHolons",
             "nodeType": "FunctionDefinition",
             "parameters": {
-              "id": 2018,
+              "id": 2035,
               "nodeType": "ParameterList",
               "parameters": [],
               "src": "829:2:10"
             },
             "returnParameters": {
-              "id": 2022,
+              "id": 2039,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2021,
+                  "id": 2038,
                   "mutability": "mutable",
                   "name": "",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2023,
+                  "scope": 2040,
                   "src": "855:16:10",
                   "stateVariable": false,
                   "storageLocation": "memory",
@@ -269,7 +274,7 @@
                   },
                   "typeName": {
                     "baseType": {
-                      "id": 2019,
+                      "id": 2036,
                       "name": "address",
                       "nodeType": "ElementaryTypeName",
                       "src": "855:7:10",
@@ -279,7 +284,7 @@
                         "typeString": "address"
                       }
                     },
-                    "id": 2020,
+                    "id": 2037,
                     "nodeType": "ArrayTypeName",
                     "src": "855:9:10",
                     "typeDescriptions": {
@@ -292,7 +297,7 @@
               ],
               "src": "854:18:10"
             },
-            "scope": 2032,
+            "scope": 2049,
             "src": "810:63:10",
             "stateMutability": "view",
             "virtual": false,
@@ -300,23 +305,23 @@
           },
           {
             "functionSelector": "dfee5717",
-            "id": 2031,
+            "id": 2048,
             "implemented": false,
             "kind": "function",
             "modifiers": [],
             "name": "listHolonsOf",
             "nodeType": "FunctionDefinition",
             "parameters": {
-              "id": 2026,
+              "id": 2043,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2025,
+                  "id": 2042,
                   "mutability": "mutable",
                   "name": "_address",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2031,
+                  "scope": 2048,
                   "src": "900:16:10",
                   "stateVariable": false,
                   "storageLocation": "default",
@@ -325,7 +330,7 @@
                     "typeString": "address"
                   },
                   "typeName": {
-                    "id": 2024,
+                    "id": 2041,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
                     "src": "900:7:10",
@@ -341,16 +346,16 @@
               "src": "899:18:10"
             },
             "returnParameters": {
-              "id": 2030,
+              "id": 2047,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2029,
+                  "id": 2046,
                   "mutability": "mutable",
                   "name": "",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2031,
+                  "scope": 2048,
                   "src": "941:16:10",
                   "stateVariable": false,
                   "storageLocation": "memory",
@@ -360,7 +365,7 @@
                   },
                   "typeName": {
                     "baseType": {
-                      "id": 2027,
+                      "id": 2044,
                       "name": "address",
                       "nodeType": "ElementaryTypeName",
                       "src": "941:7:10",
@@ -370,7 +375,7 @@
                         "typeString": "address"
                       }
                     },
-                    "id": 2028,
+                    "id": 2045,
                     "nodeType": "ArrayTypeName",
                     "src": "941:9:10",
                     "typeDescriptions": {
@@ -383,14 +388,14 @@
               ],
               "src": "940:18:10"
             },
-            "scope": 2032,
+            "scope": 2049,
             "src": "878:81:10",
             "stateMutability": "view",
             "virtual": false,
             "visibility": "external"
           }
         ],
-        "scope": 2033,
+        "scope": 2050,
         "src": "361:600:10"
       }
     ],
@@ -401,8 +406,8 @@
     "version": "0.8.0+commit.c7dfd78e.Emscripten.clang"
   },
   "networks": {},
-  "schemaVersion": "3.4.15",
-  "updatedAt": "2023-09-16T11:32:35.960Z",
+  "schemaVersion": "3.4.16",
+  "updatedAt": "2023-12-01T23:12:02.260Z",
   "devdoc": {
     "kind": "dev",
     "methods": {},

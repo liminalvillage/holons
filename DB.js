@@ -2,22 +2,29 @@ const IPFS = require('ipfs');
 const OrbitDB = require('orbit-db');
 const GUN = require('gun');
 
-class DB {
+export default class DB {
     constructor(dbName) {
         this.dbName = dbName;
         this.orbitdb = null;
         this.gun = null;
+
     }
 
     async init() {
-        const ipfsOptions = {
-            EXPERIMENTAL: {
-                pubsub: true,
-            },
-        };
+        let ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
+        this.orbitdb = await OrbitDB.createInstance(ipfs)
 
-        const ipfs = await IPFS.create(ipfsOptions);
-        this.orbitdb = await OrbitDB.createInstance(ipfs);
+        const options = {
+            // Setup write access
+            accessController: {
+                write: [
+                    // Give access to ourselves
+                    this.orbitdb.identity.id,
+                    // Give access to the second peer
+                    //'042c07044e7e51a489c02854db5e09f0191690dc59db0afd95328c9db614a2976e088cab7c86d7e48183191258fc59dc699653508ce25bf0369d67f33d5d77839',
+                ]
+            }
+        }
 
         // Create / Open a OrbitDB doc store
         this.orbitDoc = await this.orbitdb.docstore(this.dbName);

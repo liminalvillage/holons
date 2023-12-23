@@ -440,7 +440,7 @@ async getValues(chatID) {
 
 async getChats(ctx){
     let chats = await this.settingsDB.get('')
-    return await Promise.all( chats.map( async function (chat) {return chat._id + ' ' + await utils.getChatName(ctx,chat._id)}))
+    return await Promise.all( chats.map( async function (chat) {return chat._id}))
 }
 
 async getSettings(chatID) {

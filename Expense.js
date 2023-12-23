@@ -2,10 +2,11 @@ import config from "./config.json" assert { type: "json" };
 import { Telegraf, Markup } from 'telegraf';
 
 class Expense {
-    constructor(bot) {
+    constructor(bot,db) {
         this.bot = bot;
-        this.expenses = [];
-        this.users = new Set();
+        this.db = db;
+        // this.expenses = [];
+        // this.users = new Set();
 
         bot.command('spent', (ctx) => {
             const args = ctx.message.text.split(' ').slice(1);
@@ -16,33 +17,29 @@ class Expense {
             const amount = parseFloat(args[0]);
             const currency = args[1];
             const description = args.slice(2).join(' ');
-            expenseManager.addExpense(amount, currency, description, ctx.from.username);
-            ctx.reply(`Expense recorded: ${amount} ${currency} for ${description}`);
+            const expense = this.addExpense(amount, currency, description, ctx.from.username);
+            ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
+                [{ text: 'Split', callback_data: `split:${expense.id}` },{ text: 'Clear', callback_data: `clear:${expense.id}` }]
+            ));
         });
 
-        bot.command('split', (ctx) => {
-            const keyboard = expenseManager.expenses.map(expense => {
-                return [{
-                    text: `${expense.description} - ${expense.amount} ${expense.currency}`,
-                    callback_data: `split:${expense.id}`
-                }];
-            });
-
-            ctx.reply('Choose an expense to split:', Markup.inlineKeyboard(keyboard));
-        });
-
+    
         bot.action(/split:(.+)/, (ctx) => {
             const expenseId = ctx.match[1];
-            const success = expenseManager.joinSplit(ctx.from.username, expenseId);
+            const success = this.joinSplit(ctx.from.username, expenseId);
+            let expense = this.expenses.find(e => e.id === expenseId)
+            const chatID = ctx.callbackQuery?.message?.chat?.id 
+            const messageID = ctx.callbackQuery.message.message_id;
+            console.log(chatID, messageID);
             if (success) {
-                ctx.reply('You have joined the split.');
+                ctx.telegram.editMessageText(chatID, messageID , null, this.createMessage(expense), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${expense.id}` },{ text: 'Clear', callback_data: `clear:${expense.id}` }]));
             } else {
                 ctx.reply('Unable to join the split. It might not exist, or you are already part of it.');
             }
         });
 
         bot.command('clear', (ctx) => {
-            const { debtMatrix, userArray } = expenseManager.calculateDebts();
+            const { debtMatrix, userArray } = this.calculateDebts();
             let summary = "Debt Matrix:\n   " + userArray.join(" ") + "\n";
             debtMatrix.forEach((row, index) => {
                 summary += userArray[index] + ": " + row.join(" ") + "\n";
@@ -52,7 +49,7 @@ class Expense {
 
     }
 
-    addExpense(amount, currency, description, paidBy) {
+    async addExpense(amount, currency, description, paidBy) {
         const expense = {
             id: Date.now().toString(),
             amount,
@@ -61,17 +58,22 @@ class Expense {
             paidBy,
             splitWith: [paidBy]
         };
-        this.expenses.push(expense);
-        this.users.add(paidBy);
+        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense')
+        expenseDB.put(expense)
+
+        return expense;
     }
 
-    joinSplit(username, expenseId) {
-        const expense = this.expenses.find(e => e.id === expenseId);
-        if (expense && !expense.splitWith.includes(username)) {
+    async joinSplit(username, expenseId) {
+        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
+        await expenseDB.load()
+        let expense = await expenseDB.get(expenseId)
+        
+       //if (expense && !expense.splitWith.includes(username)) {
             expense.splitWith.push(username);
-            this.users.add(username);
+            await expenseDB.put(expense)
             return true;
-        }
+        //}
         return false;
     }
 
@@ -93,7 +95,14 @@ class Expense {
 
         return { debtMatrix, userArray };
     }
+
+    createMessage(expense) {
+        return `Expense: ${expense.amount} ${expense.currency} for ${expense.description}\n`+
+               `Paid by ${expense.paidBy}\n`+
+               `Split with ${expense.splitWith.join(", ")}`;
+    }
 }
+
 const bot = new Telegraf(config.telegram);
 bot.launch();
 const expenseManager = new Expense(bot);

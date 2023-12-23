@@ -25,7 +25,7 @@ import { Client, GatewayIntentBits } from 'discord.js';
 //import Quests from './modules.js';
 import UI from './UI.js';
 import * as AI from './AI.js';
-import * as WEB3 from './WEB3.js';
+import Holons from './Holons.js';
 
 
 import { create } from 'ipfs'
@@ -61,9 +61,9 @@ class WeQuest {
     //this.telebot.use(Telegraf.log())
 
     let ipfs
-  // if (config.mode === 'production') {
-      console.log('production mode')
-      ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
+    // if (config.mode === 'production') {
+    console.log('production mode')
+    ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
     //}
     // else {
     //   console.log('development mode')
@@ -96,6 +96,8 @@ class WeQuest {
     this.library = new Library(this.telebot, this.orbitdb)
     this.trello = new Trello(this.telebot)
     this.users = new Users(this.telebot, this.orbitdb)
+
+    this.holons = new Holons(this.telebot, this.orbitdb, this.settings)
 
 
     // ========================== DISCORD =============================
@@ -171,12 +173,26 @@ class WeQuest {
         ])
       );
     });
+    this.telebot.command("hexamap", (ctx) => {
+      return ctx.reply(
+        "open webapp",
+        Markup.keyboard([
+          Markup.button.webApp(
+            "Open Hexamap",
+            "https://hexamap.holons.io/?id=" + utils.getChatId(ctx)
+          ),
+        ])
+      );
+    });
     this.telebot.on('photo', async (ctx) => {
       if (ctx.message.caption) {
-        const command = ctx.message.caption.split(' ')[0];
-        if (command == '/task')
-          this.quests.quest('task', ctx, this.orbitdb)
+        const command = ctx.message.caption.split(' ')[0]; // TODO: ADD MORE Picture- based commands eg /spent
+        if (command == '/task' || command == '/quest' || command == '/todo' || command == '/offer' || command == '/request')
+          this.quests.quest(command.slice(1), ctx, this.orbitdb)
+        if (command == '/spent')
+          this.shopping.spent(ctx)
       }
+      //Scan QR code
       try {
         const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
         const fileLink = await ctx.telegram.getFileLink(fileId);
@@ -398,7 +414,7 @@ class WeQuest {
       const response = this.db[tag].map(entry => entry.messageLink).join('\n');
       ctx.reply(response);
     });
-  
+
     // // Handle uncaught exceptions
     // process.on('uncaughtException', async (err) => {
     //   console.error('Uncaught exception:', err);

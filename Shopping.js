@@ -23,7 +23,7 @@ export class Shopping {
         let shoppingDB = await this.db.docs('WeQuest.' + chatID.toString() + '.shopping')
         await shoppingDB.load()
         for (let item of items)
-            await shoppingDB.put({ _id: item, done: false });
+            await shoppingDB.put({ _id: item, done: false, from: ctx.from.username });
   
         ctx.reply(`Added ${items.join(", ")} to the shopping list.`);
     }
@@ -69,7 +69,7 @@ export class Shopping {
         list.forEach(function (item, index) {
             mu.push([Markup.button.callback( (item.done?'✅ ' :'☑️ ' ) + item._id , `toggle_${index}`)])
         })
-        mu.push([Markup.button.callback('👍 Done Shopping', 'done')])
+        mu.push([Markup.button.callback('👍 Clear Checked ✅', 'done')])
         return Markup.inlineKeyboard(mu);
     }
 

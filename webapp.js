@@ -5,7 +5,7 @@ const bot = new Telegraf("6152474485:AAFDog3N-JSCgKB4APgrtktyF8WBnKtrDb0");
 bot.command("register", (ctx) => {
   return ctx.reply(
     "open webapp",
-    Markup.inlineKeyboard([
+    Markup.keyboard([
       Markup.button.webApp(
         "Open",
         "https://robertovalenti.github.io/webapp/index.html"
