@@ -23,6 +23,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { Client, GatewayIntentBits } from 'discord.js';
 
 //import Quests from './modules.js';
+import DB  from "./DB.js";
 import UI from './UI.js';
 import * as AI from './AI.js';
 import Holons from './Holons.js';
@@ -60,44 +61,24 @@ class WeQuest {
     });
     //this.telebot.use(Telegraf.log())
 
-    let ipfs
-    // if (config.mode === 'production') {
-    console.log('production mode')
-    ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
-    //}
-    // else {
-    //   console.log('development mode')
-    //   ipfs = await create({ repo: 'orbitdb' })
-    // }
-    this.orbitdb = await OrbitDB.createInstance(ipfs)
+    this.db = new DB('WeQuest')
+    await this.db.init()
 
-    const options = {
-      // Setup write access
-      accessController: {
-        write: [
-          // Give access to ourselves
-          this.orbitdb.identity.id,
-          // Give access to the second peer
-          //'042c07044e7e51a489c02854db5e09f0191690dc59db0afd95328c9db614a2976e088cab7c86d7e48183191258fc59dc699653508ce25bf0369d67f33d5d77839',
-        ]
-      }
-    }
-
-    this.settings = new Settings(this.telebot, this.orbitdb)
+    this.settings = new Settings(this.telebot, this.db)
     await this.settings.init()
 
-    this.ui = new UI(this.telebot, this.orbitdb, this.settings)
+    this.ui = new UI(this.telebot, this.db, this.settings)
     await this.ui.init()
 
     this.lunation = new Lunation(this.telebot)
-    this.shopping = new Shopping(this.telebot, this.orbitdb)
-    this.quests = new Quests(this.telebot, this.orbitdb, this.settings)
+    this.shopping = new Shopping(this.telebot, this.db)
+    this.quests = new Quests(this.telebot, this.db, this.settings)
     this.bigtalk = new Bigtalk(this.telebot)
-    this.library = new Library(this.telebot, this.orbitdb)
+    this.library = new Library(this.telebot, this.db)
     this.trello = new Trello(this.telebot)
-    this.users = new Users(this.telebot, this.orbitdb)
+    this.users = new Users(this.telebot, this.db)
 
-    this.holons = new Holons(this.telebot, this.orbitdb, this.settings)
+    this.holons = new Holons(this.telebot, this.db, this.settings)
 
 
     // ========================== DISCORD =============================
@@ -188,7 +169,7 @@ class WeQuest {
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0]; // TODO: ADD MORE Picture- based commands eg /spent
         if (command == '/task' || command == '/quest' || command == '/todo' || command == '/offer' || command == '/request')
-          this.quests.quest(command.slice(1), ctx, this.orbitdb)
+          this.quests.quest(command.slice(1), ctx, this.db)
         if (command == '/spent')
           this.shopping.spent(ctx)
       }
@@ -348,7 +329,7 @@ class WeQuest {
         if (when !== -1) {
           //let caller = chatID// this.quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
 
-          let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+          let questsDB = await this.db.docs('WeQuest.' + chatID.toString() + '.quests')
           await questsDB.load()
 
           let quest = await questsDB.get(messageID)[0]

@@ -279,6 +279,7 @@ export default class Quests {
         console.log("JOIN ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
+        console.log( ctx.callbackQuery.data)
 
         const language = await this.settings.getLanguage(chatID)
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
@@ -620,44 +621,69 @@ export default class Quests {
     }
 
     // Function to update messages for a quest
+    // Function to update messages for a quest
     async updateMessage(ctx, quest, language) {
-        let federationDB = await this.orbitdb.docs('WeQuest.federation');
-        await federationDB.load();
-        let fedinfo = await federationDB.get('' + quest.chat * 2 + quest._id)[0]; //* 2 hack not to return similar 
-        let message_id;
-        let chat_id;
-        if (!fedinfo || fedinfo == '') {
-            message_id = quest._id;
-            chat_id = quest.chat;
-        } else {
-            for (let i = 0; i < fedinfo.all.length; i++) {
-                message_id = fedinfo.all[i].id;
-                chat_id = fedinfo.all[i].chat;
-                // Update the message 
-                if (quest.picture) {
-                    await ctx.telegram.editMessageMedia(
-                        chat_id,
-                        message_id,
-                        null,
-                        {
-                            type: 'photo',
-                            media: quest.picture,
-                            caption: createMessage(quest, language)
-                        },
-                        markup(quest, language)
-                    ).catch((err) => { });
-                } else {
-                    await ctx.telegram.editMessageText(
-                        chat_id,
-                        message_id,
-                        null,
-                        createMessage(quest, language),
-                        markup(quest, language)
-                    ).catch((err) => { });
-                }
+        let federationDB = await this.orbitdb.docs('WeQuest.federation')
+        await federationDB.load()
+        let fedinfo = await federationDB.get(''+quest.chat*2+quest._id)[0] //* 2 hack not to return similar 
+        let message_id 
+        let chat_id
+        if (!fedinfo || fedinfo == '')
+        {
+            message_id = quest._id
+            chat_id = quest.chat
+            if (quest.picture) {
+                await ctx.telegram.editMessageMedia(
+                    chat_id,
+                    message_id,
+                    null,
+                    {
+                        type: 'photo',
+                        media: quest.picture,
+                        caption: createMessage(quest, language)
+                    },
+                    markup(quest, language)
+                ).catch((err) => { });
             }
+            else
+                await ctx.telegram.editMessageText(
+                    chat_id,
+                    message_id,
+                    null,
+                    createMessage(quest, language),
+                    markup(quest, language)
+                ).catch((err) => { }); 
+            
+        } else
+        {
+        for (let i = 0; i < fedinfo.all.length; i++) {
+            message_id = fedinfo.all[i].id
+            chat_id = fedinfo.all[i].chat
+        // Update the message 
+            if (quest.picture) {
+                await ctx.telegram.editMessageMedia(
+                    chat_id,
+                    message_id,
+                    null,
+                    {
+                        type: 'photo',
+                        media: quest.picture,
+                        caption: createMessage(quest, language)
+                    },
+                    markup(quest, language)
+                ).catch((err) => { });
+            }
+            else
+                await ctx.telegram.editMessageText(
+                    chat_id,
+                    message_id,
+                    null,
+                    createMessage(quest, language),
+                    markup(quest, language)
+                ).catch((err) => { }); 
         }
     }
+}
 }
 
 // Function to create the message for a quest 
