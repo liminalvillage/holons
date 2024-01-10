@@ -1,0 +1,28 @@
+{
+    "enquiries": [
+      {
+        "name": "Sharing",
+        "description": "Including dating/relationships, sharing of interests, and participation in activities."
+      },
+      {
+        "name": "Collaborating in Business",
+        "description": "Involving business partnerships, collectives, ventures, and other collaborative business efforts."
+      },
+      {
+        "name": "Living Arrangements",
+        "description": "Encompassing communities, communes, co-housing projects, ecovillages, and similar living setups."
+      },
+      {
+        "name": "Individual Assistance",
+        "description": "Individuals helping or serving other individuals, including trades and various other services."
+      },
+      {
+        "name": "Joining Groups",
+        "description": "People joining groups such as clubs, associations, religious bodies, etc."
+      },
+      {
+        "name": "Employment",
+        "description": "Employment of people by organisations, which is usually paid but sometimes unpaid."
+      }
+    ]
+  }

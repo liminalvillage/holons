@@ -1,0 +1,36 @@
+{
+    "guilds": [
+      {
+        "name": "Land and Nature Stewardship",
+        "description": "This guild focuses on sustainable land management practices, including soil health, water conservation, and biodiversity preservation."
+      },
+      {
+        "name": "Energy and Climate",
+        "description": "This guild explores renewable energy sources, energy efficiency, and climate change mitigation strategies."
+      },
+      {
+        "name": "Buildings and Infrastructure",
+        "description": "This guild emphasizes eco-friendly building materials, energy-efficient design, and sustainable infrastructure development."
+      },
+      {
+        "name": "Tools and Technology",
+        "description": "This guild incorporates innovative tools and technologies that promote sustainability and efficiency in various aspects of permaculture practices."
+      },
+      {
+        "name": "Health and Spiritual Well-being",
+        "description": "This guild addresses the connection between nature, human health, and spiritual well-being, promoting holistic approaches to wellness within permaculture systems."
+      },
+      {
+        "name": "Finance and Economics",
+        "description": "This guild focuses on sustainable economic models, alternative currencies, and fair trade practices within the permaculture community."
+      },
+      {
+        "name": "Education and Culture",
+        "description": "This guild promotes knowledge-sharing, education, and the preservation of traditional and indigenous practices, while fostering a culture of sustainability and resilience."
+      },
+      {
+        "name": "Land Tenure and Community Governance",
+        "description": "This guild explores land access, tenure systems, and community governance models that support equitable and sustainable land use."
+      }
+    ]
+  }
