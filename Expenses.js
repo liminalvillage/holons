@@ -1,0 +1,161 @@
+import config from "./config.json" assert { type: "json" };
+
+import { Telegraf, Markup } from 'telegraf';
+
+export default class Expenses {
+    constructor(bot, db) {
+        this.bot = bot;
+        this.db = db;
+        // this.expenses = [];
+        // this.users = new Set();
+
+        bot.command('spent', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length < 3) {
+                return ctx.reply('Usage: /spent [amount] [currency] [description]');
+            }
+
+            const amount = parseFloat(args[0]);
+            const currency = args[1];
+            const description = args.slice(2).join(' ');
+            const expense = await this.addExpense(chatID, amount, currency, description, ctx.from.username);
+            ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
+                [{ text: 'Split', callback_data: `split:${expense.id}` }, { text: 'Split All', callback_data: `splitall:${expense.id}` }]
+            ));
+        });
+
+
+        bot.action(/split:(.+)/, async (ctx) => {
+            const chatID = ctx.callbackQuery?.message?.chat?.id
+            const messageID = ctx.callbackQuery.message.message_id;
+            const expenseID = ctx.match[1];
+            const result = await this.joinSplit(chatID, ctx.from.username, expenseID);
+            if (result) {
+                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${result.id}` }, { text: 'Clear', callback_data: `clear:${result.id}` }])).catch(err => console.log(err));
+            } else {
+                ctx.reply('Unable to join the split. It might not exist, or you are already part of it.');
+            }
+        });
+
+        bot.action(/splitall:(.+)/, async (ctx) => {
+            const chatID = ctx.callbackQuery?.message?.chat?.id
+            const messageID = ctx.callbackQuery.message.message_id;
+            const expenseID = ctx.match[1];
+            const result = await this.splitAll(chatID, ctx.from.username, expenseID);
+            if (result) {
+                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
+            } else {
+                ctx.reply('Unable to join the split. Expense might not exist, or you are not part of it.');
+            }
+        });
+
+
+        // bot.action(/clear:(.+)/, async (ctx) => {
+        //     const chatID = ctx.callbackQuery?.message?.chat?.id
+        //     const messageID = ctx.callbackQuery.message.message_id;
+        //     const expenseID = ctx.match[1];
+
+        // });
+
+        bot.command('clear', async (ctx) => {
+            const { debtMatrix, userArray } = await this.calculateDebts(ctx.chat.id);
+            let summary = "Debt Matrix:\n   " + userArray.join(" ") + "\n";
+            debtMatrix.forEach((row, index) => {
+                summary += userArray[index] + ": " + row.join(" ") + "\n";
+            });
+            ctx.reply(summary);
+        });
+
+    }
+
+    async addExpense(chatID, amount, currency, description, paidBy) {
+        const expense = {
+            id: Date.now().toString(),
+            amount,
+            currency,
+            description,
+            paidBy,
+            splitWith: [paidBy]
+        };
+        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
+        await expenseDB.load()
+        await expenseDB.put(expense)
+        return expense;
+    }
+
+    async joinSplit(chatID, username, expenseID) {
+        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
+        await expenseDB.load()
+        let expense = await expenseDB.get(expenseID)[0]
+
+        if (expense) {
+            if (!expense.splitWith.includes(username)) { //add user to split
+                expense.splitWith.push(username);
+            }
+            else {//remove user from split
+                expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != username; });
+            }
+
+            await expenseDB.put(expense)
+            return expense;
+        }
+        return false;
+    }
+
+    async splitAll(chatID, username, expenseID) {
+        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
+        await expenseDB.load()
+        let expense = await expenseDB.get(expenseID)[0]
+        if (expense) {
+            let usersDB = await this.db.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'id' })
+            await usersDB.load()
+            let users = await usersDB.get('')
+            let userArray = users.map(user => user.username)
+            expense.splitWith = userArray;
+            await expenseDB.put(expense)
+            return expense;
+        }
+        return false;
+    }
+
+    async calculateDebts(chatID) {
+        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
+        await expenseDB.load()
+        let expenses = await expenseDB.get('')
+
+
+        let usersDB = await this.db.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'id' })
+        await usersDB.load()
+        let users = await usersDB.get('')
+        let userArray = users.map(user => user.username)
+        let debtMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
+
+        expenses.forEach(expense => {
+            const amountPerPerson = expense.amount / (expense.splitWith.length > 0 ? expense.splitWith.length : 1);
+            const payerIndex = userArray.indexOf(expense.paidBy);
+            expense.splitWith.forEach(member => {
+                const memberIndex = userArray.indexOf(member);
+                console.log(memberIndex, member)
+                if (payerIndex !== memberIndex) {
+                    debtMatrix[payerIndex][memberIndex] += amountPerPerson;
+                    debtMatrix[memberIndex][payerIndex] -= amountPerPerson;
+                }
+            });
+        });
+
+        return { debtMatrix, userArray };
+    }
+
+    createMessage(expense) {
+        return `Expense: ${expense.amount} ${expense.currency} for ${expense.description}\n` +
+            `Paid by ${expense.paidBy}\n` +
+            `Split with ${expense.splitWith.join(", ")}`;
+    }
+}
+
+// const bot = new Telegraf(config.telegram);
+// bot.launch();
+// const expenseManager = new Expense(bot);
+
+
