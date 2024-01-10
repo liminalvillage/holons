@@ -1,16 +1,11 @@
-import config from "./config.json" assert { type: "json" };
-import axios from 'axios';
-
-// Set up your OpenAI API key
-const apiKey = config.openai;
-
-import {OpenAI} from "openai";
+import 'dotenv/config'
+import OpenAI from "openai";
 
 let openai
 
 (async () => {
   openai = new OpenAI({
-    apiKey: config.openai,
+    apiKey: process.env.OPENAI,
   });
 
 })();

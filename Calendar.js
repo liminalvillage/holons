@@ -2,7 +2,7 @@ import { readFile } from 'fs/promises';
 import { createRequire } from "module";
 const lang = JSON.parse(
     await readFile(
-        new URL('./locales.json', import.meta.url)
+        new URL('./data/locales.json', import.meta.url)
     )
 );
 import dayjs from 'dayjs';
@@ -155,7 +155,7 @@ export class Calendar {
         },
         sendMessageCalendar(menu, ctx) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];
-            if(ctx.update.callback_query) //in inline calendar
+            if(!ctx.session) //in inline calendar
             ctx.telegram.editMessageText(
                 ctx.update.callback_query.message.chat.id,
                 ctx.update.callback_query.message.message_id,

@@ -1,5 +1,4 @@
-import config from "./config.json" assert { type: "json" };
-
+// Description: This file contains the Expenses class, which handles all the expenses related commands and actions.
 import { Telegraf, Markup } from 'telegraf';
 
 export default class Expenses {
@@ -154,7 +153,7 @@ export default class Expenses {
     }
 }
 
-// const bot = new Telegraf(config.telegram);
+// const bot = new Telegraf(process.env.TELEGRAM);
 // bot.launch();
 // const expenseManager = new Expense(bot);
 

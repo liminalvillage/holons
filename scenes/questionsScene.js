@@ -3,7 +3,7 @@ import {
   Markup
 } from 'telegraf';
 import { getQuestions  } from "../AI.js";
-import questionsData from "./questions.json" assert { type: "json" };
+import questionsData from "../data/questions.json" assert { type: "json" };
 
 // Create a scene
 export const questionsScene = new Scenes.BaseScene('questions');

@@ -1,6 +1,6 @@
 "use strict"
 
-import config from "./config.json" assert { type: "json" };
+import 'dotenv/config'
 
 import qrReader from 'qrcode-reader';
 import Jimp from 'jimp';
@@ -24,34 +24,42 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import DB from "./DB.js";
 import UI from './UI.js';
 import * as AI from './AI.js';
-import Holons from './Holons.js';
+
 
 //import WeQuest Modules
+import Holons from './Holons.js';
 import Quests from './Quests.js'
-import { Shopping } from './Shopping.js'
-import { Lunation } from "./Lunation.js";
-import Onboarding from "./Onboarding.js";
-import Expenses from "./Expenses.js";
+import Shopping from './Shopping.js'
+import Lunation from "./Lunation.js"
+import Onboarding from "./Onboarding.js"
+import Expenses from "./Expenses.js"
 import Settings from './Settings.js'
 import Bigtalk from './Bigtalk.js'
-import Library from './Library.js';
-import Trello from './Trello.js'
+import Library from './Library.js'
 import Users from './Users.js'
 
 import * as request from './Requests.js'
-import { t } from "i18next";
-import { checkServerIdentity } from "tls";
-import { get } from "http";
-import { on } from "events";
+
 
 class WeQuest {
   constructor() {
-    this.db = {};
+    this.db = null;
+    this.telebot = null;
+    this.settings = null;
+    this.ui = null;
+    this.lunation = null;
+    this.shopping = null;
+    this.quests = null;
+    this.bigtalk = null;
+    this.library = null;
+    this.users = null;
+    this.expenses = null;
+    this.onboarding = null;
+    this.holons = null;
   }
 
   async init() {
-
-    this.telebot = new Telegraf(config.telegram);
+    this.telebot = new Telegraf(process.env.TELEGRAM);
     this.telebot.launch({
       handlerTimeout: Infinity
     });
@@ -71,11 +79,9 @@ class WeQuest {
     this.quests = new Quests(this.telebot, this.db, this.settings)
     this.bigtalk = new Bigtalk(this.telebot)
     this.library = new Library(this.telebot, this.db)
-    this.trello = new Trello(this.telebot)
     this.users = new Users(this.telebot, this.db)
     this.expenses = new Expenses(this.telebot, this.db)
     this.onboarding = new Onboarding(this.telebot, this.db)
-
     this.holons = new Holons(this.telebot, this.db, this.settings)
 
 
@@ -94,13 +100,13 @@ class WeQuest {
 
     // discordbot.on('messageCreate', msg => {
     //   console.log("DISCORD MESSAGE: " + msg.content)
-    //   if (msg.content.charAt(0) === config.prefix) {
+    //   if (msg.content.charAt(0) === process.env.PREFIX) {
     //     msg.react('👀')
     //       .catch(log => {
     //         console.log(error);
     //       });
     //   };
-    //   const commandBody = msg.content.substring(config.prefix.length).split(' ');
+    //   const commandBody = msg.content.substring(process.env.PREFIX.length).split(' ');
     //   console.log(commandBody);
     //   const command = commandBody[0];
     //   const args = commandBody.slice(1);
@@ -113,7 +119,7 @@ class WeQuest {
     // }
     // )
 
-    // discordbot.login(config.discord);
+    // discordbot.login(process.env.DISCORD);
     // =========================== bot commands ===========================
     this.telebot.command('start', async (ctx) => {
 
@@ -265,8 +271,6 @@ class WeQuest {
     });
 
 
-
-
     //----------------------------- APPRECIATION -----------------------------
     this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
     this.telebot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo'], async (ctx) => this.quests.sendAppreciation(ctx))
@@ -323,7 +327,6 @@ class WeQuest {
       if (callbackData.startsWith('removekeyboard')) {
         await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
       }
-
 
       if (messageID == this.quests.calendar.chats.get(chatID)) {
         var when;

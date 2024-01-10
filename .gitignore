@@ -1,6 +1,8 @@
 orbitdb/*
 images/*
 templates/*
-config.json
 .env
 yarn.lock
+package-lock.json
+.DS_Store
+.vscode/

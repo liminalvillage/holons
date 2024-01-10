@@ -50,7 +50,7 @@ export default class Onboarding {
   }
 }
 
-// const bot = new Telegraf(config.telegram);
+// const bot = new Telegraf(process.env.TELEGRAM);
 // const match = new RegenMatch(bot);
 
 // await match.testDB();

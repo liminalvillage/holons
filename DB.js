@@ -1,5 +1,4 @@
-import config from "./config.json" assert { type: "json"};
-
+// Description: This file contains the DB class which is used to interact with the database.
 import {
     create
 } from 'ipfs';
@@ -11,7 +10,7 @@ class DB {
         this.orbitdb = null;
         this.gun = null;
         this.dbName = dbName;
-        this.db = 'gun';
+        this.db = 'orbit';
     }
 
     async init() {
@@ -57,9 +56,9 @@ class DB {
         // }
         // return this.gun.get(table)
         return await this.orbitdb.docs(table, {
-            indexBy: 'id',
-            ...options
-        })
+        indexBy: 'id',
+        ...options
+    })
     }
 
 
@@ -158,29 +157,29 @@ class DB {
     // });
 
 
-async getAllGunDB(table) {
-    console.log('getAllGunDB:', table)
-    return this.gun.get(this.dbName).get(table).once((data, key) => {
-        if (!data) {
-            reject(new Error(`No data found for key: ${key}`));
-        } else {
-            console.log('getAllGunDB - data:', data)
-            return JSON.parse(data);
-        }
-    })
-}
-
-deleteGunDB(table, key) {
-    return new Promise((resolve, reject) => {
-        this.gun.get(table).get(key).put(null, ack => {
-            if (ack.err) {
-                reject(ack.err);
+    async getAllGunDB(table) {
+        console.log('getAllGunDB:', table)
+        return this.gun.get(this.dbName).get(table).once((data, key) => {
+            if (!data) {
+                reject(new Error(`No data found for key: ${key}`));
             } else {
-                resolve(ack.ok);
+                console.log('getAllGunDB - data:', data)
+                return JSON.parse(data);
             }
+        })
+    }
+
+    deleteGunDB(table, key) {
+        return new Promise((resolve, reject) => {
+            this.gun.get(table).get(key).put(null, ack => {
+                if (ack.err) {
+                    reject(ack.err);
+                } else {
+                    resolve(ack.ok);
+                }
+            });
         });
-    });
-}
+    }
 
 
 

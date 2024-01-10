@@ -1,6 +1,7 @@
 import Web3 from 'web3';
 import { ETH_DATA_FORMAT, DEFAULT_RETURN_FORMAT } from "web3";
-import config from "./config.json" assert { type: "json" };
+import 'dotenv/config'
+
 import * as appreciative from './contracts/Appreciative.json' assert { type: "json" };
 import * as appreciativefactory from './contracts/AppreciativeFactory.json' assert { type: "json" };
 import * as managed from './contracts/Managed.json' assert { type: "json" };
@@ -11,13 +12,13 @@ import * as holons from './contracts/Holons.json' assert { type: "json" };
 
 export default class Holons {
   constructor(bot, db, settings) {
-    this.network = config.network;
-    this.chainId = config.chainId;
+    this.network = process.env.NETWORK;
+    this.chainId = process.env.CHAINID;
     this.bot = bot;
     this.db = db;
     this.settings = settings
-    this.privateKey = config.web3key;
-    const provider = new Web3.providers.HttpProvider(config.web3provider);
+    this.privateKey = process.env.WEB3KEY;
+    const provider = new Web3.providers.HttpProvider(process.env.WEB3PROVIDER);
     this.web3 = new Web3(provider);
     this.holonsContract = new this.web3.eth.Contract(holons.default.abi, holons.default.networks[11155111].address);
     this.account = this.web3.eth.accounts.privateKeyToAccount(this.privateKey);

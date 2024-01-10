@@ -2,7 +2,7 @@ import {
   Scenes,
   Markup
 } from 'telegraf';
-import enquiryTypes from "./guilds.json" assert { type: "json" };
+import enquiryTypes from "../data/guilds.json" assert { type: "json" };
 
 import fs from 'fs';
 

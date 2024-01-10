@@ -1,6 +1,6 @@
 import i18next from "i18next";
 import fs from 'fs';
-import locales from "./locales.json" assert { type: "json" };
+import locales from "./data/locales.json" assert { type: "json" };
 import * as utils from './utilities.js'
 import { Markup } from 'telegraf';
 import exp from "constants";

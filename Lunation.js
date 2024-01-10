@@ -35,7 +35,7 @@ const prompts = [
 "Day 27: Relaxation Retreat: Have a team day out or a rest day to rejuvenate before the next cycle begins.",
 "Day 28: Gratitude Gathering: Assemble and express your gratitude for each other and for the journey you've completed under the Last Quarter Moon."
 ]
-export class Lunation {
+class Lunation {
   
   constructor(bot){
     this.bot = bot;
@@ -119,3 +119,5 @@ export class Lunation {
     int + ordinals[digits[0] - 1] :
     int + ordinals[3];
 }
+
+export default Lunation;
