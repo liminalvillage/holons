@@ -261,7 +261,7 @@ class UI {
       //send the image
       ctx.replyWithPhoto({ source: fs.createReadStream(path) });
       // ctx.replyWithPhoto({ source: fs.createReadStream(path) }, Markup.inlineKeyboard([
-      //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0]._id.toString()),
+      //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0].id.toString()),
       // ])).then((ctx) => { this.bot.telegram.pinChatMessage(chatID, ctx.message_id) });
     });
     return;
@@ -314,7 +314,7 @@ class UI {
       <tr><th>${i18next.t('Appreciated by')}:</th><td>${[...quest.appreciation].slice(1).map(u => u.username).join(', ')}</td></tr>
     <table>`
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    const path = './images/quest' + quest._id + '.png'
+    const path = './images/quest' + quest.id + '.png'
     await screenshotHtml(html, path, 'table')
     return path
   }

@@ -155,13 +155,15 @@ export class Calendar {
         },
         sendMessageCalendar(menu, ctx) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];
+            if(ctx.update.callback_query) //in inline calendar
             ctx.telegram.editMessageText(
                 ctx.update.callback_query.message.chat.id,
                 ctx.update.callback_query.message.message_id,
                 null,
                 l,
                 menu).then((msg_promise) => this.chats.set(msg_promise.chat.id, msg_promise.message_id));
-            //ctx.reply(l, menu).then((msg_promise) => this.chats.set(msg_promise.chat.id, msg_promise.message_id));
+            else
+                ctx.reply(l, menu).then((msg_promise) => this.chats.set(msg_promise.chat.id, msg_promise.message_id));
         },
         sendMessageTime(menu, ctx) {
             ctx.reply(lang.selecttime[this.options.language], menu).then((msg_promise) => this.chats.set(msg_promise.chat.id, msg_promise.message_id));

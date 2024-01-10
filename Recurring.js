@@ -64,7 +64,7 @@ export default class Recurring {
         // Create a quest object
 
         let quest = {
-            _id: '',
+            id: '',
             version: '0.1',
             chat: '',
             initiator: sender,
@@ -83,7 +83,7 @@ export default class Recurring {
         // let path = await ui.questImage(quest)
         // ctx.replyWithPhoto({ source: fs.createReadStream(path) },markup).then((ctx) => {
         //     // Add the message id to the quest
-        //     questObj._id = ctx.message_id;
+        //     questObj.id = ctx.message_id;
 
         //     questsDB.put(questObj)
 
@@ -96,11 +96,11 @@ export default class Recurring {
                     ...markup(quest, language)
                 }).catch((err) => { console.log(err) }).then((nctx) => {
                     // Add the message id to the quest
-                    quest._id = nctx.message_id;
+                    quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
                     questsDB.put(quest)
                     //Pin the message
-                    ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { console.log(err) });
+                    ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { console.log(err) });
 
                 });
         else {
@@ -121,15 +121,15 @@ export default class Recurring {
             }
             ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
                 // Add the message id to the quest
-                quest._id = nctx.message_id;
+                quest.id = nctx.message_id;
                 quest.chat = nctx.chat.id;
 
                 await questsDB.put(quest)
 
                 //Pin the message
-                ctx.telegram.pinChatMessage(quest.chat, quest._id, { disable_notification: true }).catch((err) => { });
+                ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                 // update the markup
-                //await ctx.telegram.editMessageRe(quest.chat, quest._id,null, markup(quest, language)).catch((err) => { console.log(err) });
+                //await ctx.telegram.editMessageRe(quest.chat, quest.id,null, markup(quest, language)).catch((err) => { console.log(err) });
                 await this.updateMessage(ctx, quest)
                 //delete the original message
                 ctx.deleteMessage(messageID.toString()).catch((err) => { });
@@ -145,11 +145,11 @@ export default class Recurring {
                     notifyChats = notifyChats.notify
 
                 if (notifyChats && notifyChats.length > 0) {
-                    let id = ''+quest.chat*2+quest._id //*2 is a hack not to return similar indexes
+                    let id = ''+quest.chat*2+quest.id //*2 is a hack not to return similar indexes
                     let fedinfo = federationDB.get(id)[0]
                     console.log(fedinfo)
                     if (!fedinfo || fedinfo == ''|| fedinfo == undefined)
-                        fedinfo = { _id: id, all: [{chat:quest.chat.toString(),id:quest._id.toString()}], type: 'quest' }  //TODO UPDATE JSON SCHEMA
+                        fedinfo = { id: id, all: [{chat:quest.chat.toString(),id:quest.id.toString()}], type: 'quest' }  //TODO UPDATE JSON SCHEMA
                     //TODO CHECK FOR PROMISES TO RETURN
                     for (let i = 0; i < notifyChats.length; i++) {
                         const federatedChat = notifyChats[i];
@@ -496,7 +496,7 @@ export default class Recurring {
         await saveUserAction(sender, "sent", action, usersDB)
         ctx.reply(`${sender} sent appreciation to ${mentions.map(u => '@' + u).join(', ')}.`, Markup.inlineKeyboard([
             [
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
             ]
         ])).catch((error) => console.log(error));
     }
@@ -522,19 +522,19 @@ export default class Recurring {
     async remind(ctx, quest) {
         console.log("REMIND ACTION");
         //TODO Notify federated chats
-        ctx.reply(`⏰ The ${quest.type} "${quest.title}" is starting!`, { reply_to_message_id: quest._id });
+        ctx.reply(`⏰ The ${quest.type} "${quest.title}" is starting!`, { reply_to_message_id: quest.id });
     }
 
     // Function to update messages for a quest
     async updateMessage(ctx, quest, language) {
             let federationDB = await this.orbitdb.docs('WeQuest.federation')
             await federationDB.load()
-            let fedinfo = await federationDB.get(''+quest.chat*2+quest._id)[0] //* 2 hack not to return similar 
+            let fedinfo = await federationDB.get(''+quest.chat*2+quest.id)[0] //* 2 hack not to return similar 
             let message_id 
             let chat_id
             if (!fedinfo || fedinfo == '')
             {
-                message_id = quest._id
+                message_id = quest.id
                 chat_id = quest.chat
                 if (quest.picture) {
                     await ctx.telegram.editMessageMedia(
@@ -651,7 +651,7 @@ async function getUserInfo(user, db) {
     // Initialize the receiver's points if they do not exist yet
     if (!userinfo || userinfo == '') {
         userinfo = {
-            _id: user.id,
+            id: user.id,
             version: '0.1',
             username: user.username ? user.username : user.id,
             values :[],
@@ -697,19 +697,19 @@ function markup(quest, language) {
     if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo') {
          mu = Markup.inlineKeyboard([
             [
-                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest._id),
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
             ],
             [
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest._id),
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
             ],
             [
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest._id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]
             // ,[
-            //     Markup.button.webApp(i18next.t('Share',{lng:language}), `https://t.me/WeQuestBot?start=${quest._id}`),
+            //     Markup.button.webApp(i18next.t('Share',{lng:language}), `https://t.me/WeQuestBot?start=${quest.id}`),
             //     Markup.button.webApp(i18next.t('Pick a Time',{lng:language}), `https://robertovalenti.github.io/datepicker/index.html`)
             // ]
         ])
@@ -718,12 +718,12 @@ function markup(quest, language) {
     if (quest.type == 'proposal') {
         mu = Markup.inlineKeyboard([
             [
-                Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest._id),
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
             ],
             [
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest._id),
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
             ]
         ])
     }
@@ -731,7 +731,7 @@ function markup(quest, language) {
     if (quest.type == 'idea' )
         mu = Markup.inlineKeyboard([
             [
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
             ]
         ])
             
@@ -739,12 +739,12 @@ function markup(quest, language) {
     if (quest.type == 'offer' || quest.type == 'request') {
         mu = Markup.inlineKeyboard([
             [
-                Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest._id),
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
             ],
             [
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest._id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest._id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id),
             ]
         ])
     }
@@ -753,7 +753,7 @@ function markup(quest, language) {
     {
         mu = Markup.inlineKeyboard(
             [
-                Markup.button.callback(i18next.t('appreciate',{lng:language}), 'appreciate_quest_' + quest.chat + '_' + quest._id)
+                Markup.button.callback(i18next.t('appreciate',{lng:language}), 'appreciate_quest_' + quest.chat + '_' + quest.id)
             ]
         )
     }

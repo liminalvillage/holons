@@ -28,7 +28,7 @@ class Library {
             return;
         }
 
-        await libraryDB.put({ _id: item, booked: false });
+        await libraryDB.put({ id: item, booked: false });
         ctx.reply(`Added ${item} to the library.`);
     }
 
@@ -96,7 +96,7 @@ class Library {
     getLibraryKeyboard(list) {
         let mu = [];
         list.forEach(function (item) {
-            mu.push([Markup.button.callback(item._id + (item.booked ? ' (booked)' : ''), item.booked ? `return_${item._id}` : `book_${item._id}`)]);
+            mu.push([Markup.button.callback(item.id + (item.booked ? ' (booked)' : ''), item.booked ? `return_${item.id}` : `book_${item.id}`)]);
         })
         return Markup.inlineKeyboard(mu);
     }
@@ -125,7 +125,7 @@ class Library {
         await libraryDB.load();
 
         let list = await libraryDB.get('')[0];
-        //list.sort((a, b) => a._id.localeCompare(b._id));
+        //list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }
 }

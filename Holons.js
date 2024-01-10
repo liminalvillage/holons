@@ -61,7 +61,7 @@ export default class Holons {
 
     const equation = await this.settings.getValueEquation(id)
 
-    let userids = users.map((user) => { return user._id })
+    let userids = users.map((user) => { return user.id })
     let scores = users.map((user) => {
       return (
         user.initiated.length * equation.initiated +
@@ -163,13 +163,13 @@ export default class Holons {
     const id = ctx.message.chat.id;
     let address = await this.holonsContract.methods.toAddress(id.toString()).call();
     // fetch users and add them to the holon
-    let usersDB = await this.db.docs('WeQuest.' + id.toString() + '.users')
+    let usersDB = await this.db.get('WeQuest.' + id.toString() + '.users')
     await usersDB.load();
     let users = await usersDB.get('')
 
     users.forEach(async (user) => {
-      if (user._id != undefined) {
-        await this.addMember(address, user._id);
+      if (user.id != undefined) {
+        await this.addMember(address, user.id);
       }
     })
   }
@@ -235,17 +235,17 @@ export default class Holons {
     return await this.holonsContract.methods.listHolonsOf(_address).call();
   }
 
-  async addMember(_holonaddress, _id) {
+  async addMember(_holonaddress, id) {
 
     let holon = new this.web3.eth.Contract(managed.default.abi, _holonaddress);
 
-    if (await holon.methods.userIdToAddress(_id) != '0x0000000000000000000000000000000000000000')
+    if (await holon.methods.userIdToAddress(id) != '0x0000000000000000000000000000000000000000')
       return true; // member already exists
 
     const tx = {
       from: this.account.address,
       to: holon.options.address,
-      data: holon.methods.addMember(_id).encodeABI(),
+      data: holon.methods.addMember(id).encodeABI(),
       gas: 3000000,
       //nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),

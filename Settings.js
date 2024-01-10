@@ -155,7 +155,7 @@ export default class Settings{
 
  getDefaultSettings(chatID) {
     return {
-      _id: chatID,
+      id: chatID,
       version: 0.1,
       name:'',
       timezone:'',
@@ -317,7 +317,7 @@ async federate(ctx) {
         }
     } else {
         federationDB.put({
-            _id: chatID.toString(),
+            id: chatID.toString(),
             name: ctx.message.chat.title,
             federation: [federationID.toString()],
             notify: []
@@ -335,7 +335,7 @@ async federate(ctx) {
         }
     } else {
         federationDB.put({
-            _id: federationID.toString(),
+            id: federationID.toString(),
             name: await utils.getChatName(ctx, federationID),
             federation: [],
             notify: [chatID.toString()]
@@ -398,7 +398,7 @@ async getFederation(chatID) {
     if (!federation) {
         return []
     }
-    //federation = federation.filter(item => item._id === chatID.toString())[0]
+    //federation = federation.filter(item => item.id === chatID.toString())[0]
     //console.log('This chat is federated with: ' + federation.federation + ' and will notify: ' + federation.notify)
     return federation.federation
 }
@@ -440,7 +440,7 @@ async getValues(chatID) {
 
 async getChats(ctx){
     let chats = await this.settingsDB.get('')
-    return await Promise.all( chats.map( async function (chat) {return chat._id}))
+    return await Promise.all( chats.map( async function (chat) {return chat.id}))
 }
 
 async getSettings(chatID) {

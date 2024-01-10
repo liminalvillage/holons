@@ -23,7 +23,7 @@ export class Shopping {
         let shoppingDB = await this.db.docs('WeQuest.' + chatID.toString() + '.shopping')
         await shoppingDB.load()
         for (let item of items)
-            await shoppingDB.put({ _id: item, done: false, from: ctx.from.username });
+            await shoppingDB.put({ id: item, done: false, from: ctx.from.username });
   
         ctx.reply(`Added ${items.join(", ")} to the shopping list.`);
     }
@@ -57,7 +57,7 @@ export class Shopping {
         let list = await this.getShoppingList(ctx);
         for (let item of list) {
     
-            if (item.done) await shoppingDB.del(item._id);
+            if (item.done) await shoppingDB.del(item.id);
         }
         
         list = await this.getShoppingList(ctx);
@@ -67,7 +67,7 @@ export class Shopping {
     getShoppingListKeyboard(list) {
         let mu =[]
         list.forEach(function (item, index) {
-            mu.push([Markup.button.callback( (item.done?'✅ ' :'☑️ ' ) + item._id , `toggle_${index}`)])
+            mu.push([Markup.button.callback( (item.done?'✅ ' :'☑️ ' ) + item.id , `toggle_${index}`)])
         })
         mu.push([Markup.button.callback('👍 Clear Checked ✅', 'done')])
         return Markup.inlineKeyboard(mu);
@@ -79,7 +79,7 @@ export class Shopping {
         await shoppingDB.load()
     
         let list = await shoppingDB.get('');
-        list.sort((a, b) => a._id.localeCompare(b._id));
+        list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }
 }

@@ -8,7 +8,7 @@ class Users {
     this.orbitdb = orbitdb;
     this.bot.command(['value','ivalue'], (ctx) => this.addValue(ctx));
     this.bot.command(['need','ineed','weneed'], (ctx) => this.addNeed(ctx));
-    this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
+   //this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
     this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
     this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
     this.bot.command('wallet', (ctx) => this.wallet(ctx));
@@ -304,7 +304,7 @@ class Users {
     // Initialize the receiver's points if they do not exist yet
     if (!userinfo || userinfo == '') {
       userinfo = {
-        _id: user.id,
+        id: user.id,
         version: '0.1',
         username: user.username ? user.username : user.id,
         actions: [],
@@ -324,6 +324,7 @@ class Users {
       }
       await db.put(userinfo)
     }
+    if(userinfo._id)  userinfo.id = userinfo._id // convert older format
     return userinfo
   }
 }

@@ -132,7 +132,7 @@ export async function request(type, ctx, orbitdb) {
 
     // Respond to user
     let request = {
-        _id: ctx.message.message_id,
+        id: ctx.message.message_id,
         title: ctx.message.text.split(' ').slice(1).join(' '),
         requester: sender,
         type: type,
@@ -143,7 +143,7 @@ export async function request(type, ctx, orbitdb) {
 
     ctx.reply(createMessage(request), markup).then((ctx) => {
         // Add the message id to the quest
-        request._id = ctx.message_id;
+        request.id = ctx.message_id;
         offersDB.put(request)
     });
 }
@@ -161,7 +161,7 @@ export async function offer(ctx, orbitdb) {
 
     // Respond to user
     let request = {
-        _id: ctx.message.message_id,
+        id: ctx.message.message_id,
         title: ctx.message.text.split(' ').slice(1).join(' '),
         requester: sender,
         geohash: ngeohash.encode(ctx.location.latitude, ctx.location.longitude),
@@ -171,7 +171,7 @@ export async function offer(ctx, orbitdb) {
 
     ctx.reply(createMessage(request), createProperties()).then((ctx) => {
         // Add the message id to the quest
-        request._id = ctx.message_id;
+        request.id = ctx.message_id;
         offersDB.put(request)
     });
    
@@ -217,7 +217,7 @@ export async function requests(ctx, orbitdb) {
 function createButtons(requests){
     let buttons = []
     requests.forEach((request) => {
-        buttons.push([Markup.button.callback(request.title, 'https://t.me/Bot?quests='+request._id), Markup.button.callback("Claim", 'claim_' + request._id)])
+        buttons.push([Markup.button.callback(request.title, 'https://t.me/Bot?quests='+request.id), Markup.button.callback("Claim", 'claim_' + request.id)])
     })
     return Markup.inlineKeyboard(buttons)
 }

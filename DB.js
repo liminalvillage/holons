@@ -1,6 +1,8 @@
-import config from "./config.json" assert { type: "json" };
+import config from "./config.json" assert { type: "json"};
 
-import { create } from 'ipfs';
+import {
+    create
+} from 'ipfs';
 import OrbitDB from 'orbit-db';
 import GUN from 'gun';
 
@@ -9,13 +11,18 @@ class DB {
         this.orbitdb = null;
         this.gun = null;
         this.dbName = dbName;
-        this.db = 'orbit';
+        this.db = 'gun';
     }
 
     async init() {
         if (this.db === 'orbit') {
-            this.ipfs = await create({ address: "127.0.0.1", port: 5001, source: 'js-ipfs', repo: 'orbitdb' })
-            
+            this.ipfs = await create({
+                address: "127.0.0.1",
+                port: 5001,
+                source: 'js-ipfs',
+                repo: 'orbitdb'
+            })
+
             this.orbitdb = await OrbitDB.createInstance(this.ipfs)
 
             const options = {
@@ -29,10 +36,11 @@ class DB {
                     ]
                 }
             }
-        }
-        else if (this.db === 'gun') {
+        } else if (this.db === 'gun') {
             // Initialize a GUN instance
-            this.gun = GUN({ peers: ['https://59.src.eco/gun'] });
+            this.gun = GUN({
+                peers: ['https://59.src.eco/gun']
+            });
         }
     }
 
@@ -46,14 +54,16 @@ class DB {
     async docs(table, options = {}) {
         //if (this.orbitdb) {
         //    return await this.orbitdb.docs(table, options)
-       // }
+        // }
         // return this.gun.get(table)
-         return await this.orbitdb.docs(table, options)
+        return await this.orbitdb.docs(table, {
+            indexBy: 'id',
+            ...options
+        })
     }
 
 
-    async put(data) {
-        let table = this.dbName + '.settings'
+    async put(table, data) {
         if (this.db === 'gun')
             return this.addGunDB(table, data);
         if (this.db === 'orbit')
@@ -66,6 +76,17 @@ class DB {
                 return this.getGunDB(table, key);
             if (this.db === 'orbit')
                 return this.getOrbitDB(table, key);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async getAll(table) {
+        try {
+            if (this.db === 'gun')
+                return this.getAllGunDB(table);
+            if (this.db === 'orbit')
+                return this.getAllOrbitDB(table);
         } catch (error) {
             throw error;
         }
@@ -85,38 +106,11 @@ class DB {
         return result;
     }
 
-    // Gun Functions
-
-    async addGunDB(table, data) {
-        console.log('addGunDB:', table, data)
-        this.gun.get(table).get(data._id).put(data) //todo store entire object
-
-    }
-
-    getGunDB(table) {
-        console.log('getGunDB:', table)
-        return new Promise((resolve, reject) => {
-            this.gun.get(table).map((data, key) => {
-                if (!data) {
-                    reject(new Error(`No data found for key: ${key}`));
-                } else {
-                    console.log('getGunDB - data:', data)
-                    resolve(data);
-                }
-            });
-        });
-    }
-
-    deleteGunDB(table, key) {
-        return new Promise((resolve, reject) => {
-            this.gun.get(table).get(key).put(null, ack => {
-                if (ack.err) {
-                    reject(ack.err);
-                } else {
-                    resolve(ack.ok);
-                }
-            });
-        });
+    async getAllOrbitDB(table) {
+        var db = await this.orbitdb.docstore(table);
+        await db.load();
+        const result = await this.db.get('');
+        return result;
     }
 
     deleteOrbitDB(table, key) {
@@ -130,6 +124,65 @@ class DB {
             });
         });
     }
+
+    // Gun Functions
+
+    async addGunDB(table, data) {
+        console.log('addGunDB:', table, data)
+        this.gun.get(this.dbName).get(table).put(JSON.stringify(data)) //todo store entire object
+
+    }
+
+    async getGunDB(table, key) {
+        console.log('getGunDB:', table)
+        this.gun.get(this.dbName).get(table).get(key).once((data, key) => {
+            if (!data) {
+                reject(new Error(`No data found for key: ${key}`));
+            } else {
+                console.log('getGunDB - data:', data)
+                return JSON.parse(data);
+            }
+        })
+
+    }
+
+    // new Promise((resolve, reject) => {
+    //     this.gun.get(this.dbName).get(table).get(key).map((data, key) => {
+    //         if (!data) {
+    //             reject(new Error(`No data found for key: ${key}`));
+    //         } else {
+    //             console.log('getGunDB - data:', data)
+    //             resolve(data);
+    //         }
+    //     });
+    // });
+
+
+async getAllGunDB(table) {
+    console.log('getAllGunDB:', table)
+    return this.gun.get(this.dbName).get(table).once((data, key) => {
+        if (!data) {
+            reject(new Error(`No data found for key: ${key}`));
+        } else {
+            console.log('getAllGunDB - data:', data)
+            return JSON.parse(data);
+        }
+    })
+}
+
+deleteGunDB(table, key) {
+    return new Promise((resolve, reject) => {
+        this.gun.get(table).get(key).put(null, ack => {
+            if (ack.err) {
+                reject(ack.err);
+            } else {
+                resolve(ack.ok);
+            }
+        });
+    });
+}
+
+
 
 
 }

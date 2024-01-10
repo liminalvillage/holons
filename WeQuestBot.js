@@ -2,7 +2,6 @@
 
 import config from "./config.json" assert { type: "json" };
 
-
 import qrReader from 'qrcode-reader';
 import Jimp from 'jimp';
 import axios from 'axios';
@@ -22,31 +21,28 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 import { Telegraf, Markup } from 'telegraf';
 import { Client, GatewayIntentBits } from 'discord.js';
 
-//import Quests from './modules.js';
-import DB  from "./DB.js";
+import DB from "./DB.js";
 import UI from './UI.js';
 import * as AI from './AI.js';
 import Holons from './Holons.js';
-
-
-import { create } from 'ipfs'
-import OrbitDB from 'orbit-db'
 
 //import WeQuest Modules
 import Quests from './Quests.js'
 import { Shopping } from './Shopping.js'
 import { Lunation } from "./Lunation.js";
+import Onboarding from "./Onboarding.js";
+import Expenses from "./Expenses.js";
 import Settings from './Settings.js'
 import Bigtalk from './Bigtalk.js'
 import Library from './Library.js';
 import Trello from './Trello.js'
 import Users from './Users.js'
 
-import * as values from './values.js'
 import * as request from './Requests.js'
 import { t } from "i18next";
 import { checkServerIdentity } from "tls";
 import { get } from "http";
+import { on } from "events";
 
 class WeQuest {
   constructor() {
@@ -77,6 +73,8 @@ class WeQuest {
     this.library = new Library(this.telebot, this.db)
     this.trello = new Trello(this.telebot)
     this.users = new Users(this.telebot, this.db)
+    this.expenses = new Expenses(this.telebot, this.db)
+    this.onboarding = new Onboarding(this.telebot, this.db)
 
     this.holons = new Holons(this.telebot, this.db, this.settings)
 
@@ -118,15 +116,18 @@ class WeQuest {
     // discordbot.login(config.discord);
     // =========================== bot commands ===========================
     this.telebot.command('start', async (ctx) => {
-      ctx.reply("Welcome to WeQuest, a community bot developed at Liminal Village. It is built to facilitate and gamify community communication and dynamics, to facilitate decision-making, collaboration, and task management, while also recognizing and incentivizing active involvement. The goal is to foster trust, build strong communities, and accelerate our evolution as social organisms. There are many features being developed and tested at the moment, if you wish to be whitelisted get in touch with @RobertoValenti",
-        // Markup.keyboard([
-        //   Markup.button.webApp(
-        //     "Open Holon",
-        //     "https://app.holons.io/?id=" + utils.getChatId(ctx)
-        //   ),
-        // ])
-      )
+
+      onboarding.start(ctx)
+
+      // Markup.keyboard([
+      //   Markup.button.webApp(
+      //     "Open Holon",
+      //     "https://app.holons.io/?id=" + utils.getChatId(ctx)
+      //   ),
+      // ])
+      //)
     });
+
     this.telebot.command('help', async (ctx) => {
       ctx.reply("`Just type / for a list of commands. For instance \n /task \n /request \n /offer /status /bulletin")
     })
@@ -154,6 +155,7 @@ class WeQuest {
         ])
       );
     });
+
     this.telebot.command("hexamap", (ctx) => {
       return ctx.reply(
         "open webapp",
@@ -165,6 +167,7 @@ class WeQuest {
         ])
       );
     });
+
     this.telebot.on('photo', async (ctx) => {
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0]; // TODO: ADD MORE Picture- based commands eg /spent
@@ -307,7 +310,6 @@ class WeQuest {
     this.telebot.command('getActionsTest', async (ctx) => ctx.reply(await AI.getActions("RobertoValenti: put down irrigation end zone 2, fix ventilator camper, find electric cable (adapter) camper, take a demo picture for gen. \n" +
       "alis0r: put down irrigation end zone 2, select bulbs for bedside tables in upper house bedrooms with double beds, mosquito net in the caravan, rubbish collecting an throwing, clean tiny house, food to cats outside, flower organization to avoid it to become rotten + present for Diana preparation, clean the pool, tracking the lines for the workers tomorrow to start up new syntropic lines, watering the trees in the upper area and learn more about the irrigation system, write with the permanent marker indications on the water irrigation tubes, Bring pots and pans from lower house to upper house" +
       "lauritavw: select bulbs for bedside tables in upper house bedrooms with double beds, Empty the caravan from useless staff. ")).catch(err => console.log(err)))
-
 
 
     this.telebot.on('callback_query', async (ctx) => {

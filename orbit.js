@@ -35,7 +35,7 @@ async function main() {
     // Open the remote database with write access
     const db = await orbitDB.open(remoteDbAddress, {
       // Options for the docstore
-      indexBy: '_id',
+      indexBy: 'id',
       type: 'docstore',
       create: true,
       sync: true,
@@ -47,7 +47,7 @@ async function main() {
     // Fetch all documents from the docstore
     for(let i = 0; i < 100; i++) {
       await db.put({
-        _id: i.toString(),
+        id: i.toString(),
         name: 'Alice',
         address: 'Main St. 1',
       });
