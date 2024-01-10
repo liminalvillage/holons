@@ -4,17 +4,113 @@ import axios from 'axios';
 // Set up your OpenAI API key
 const apiKey = config.openai;
 
-import {Configuration, OpenAIApi} from "openai";
+import {OpenAI} from "openai";
 
 let openai
 
 (async () => {
-  const configuration = new Configuration({
+  openai = new OpenAI({
     apiKey: config.openai,
   });
-    openai = new OpenAIApi(configuration);
 
 })();
+
+export async function onboarding(thread, prompt) {
+  console.log(thread, prompt)
+  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
+  const assistant = await openai.beta.assistants.retrieve("asst_seXN24Wn2Rtc13TvAkpPRHfF")
+  if (!thread?.id) {
+    thread = await openai.beta.threads.create()
+  }
+  
+  const message = await openai.beta.threads.messages.create(thread.id, {
+    role: "user",
+    content: prompt
+  })
+  const run = await openai.beta.threads.runs.create(thread.id, {
+    assistant_id: assistant.id //,
+    //instructions: "What is the meaning of life?",
+  });
+
+  let runStatus = await openai.beta.threads.runs.retrieve(
+    thread.id,
+    run.id
+  );
+  // Polling mechanism to see if runStatus is completed
+  // This should be made more robust.
+  while (runStatus.status !== "completed") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+  }
+  // Get the latest messages from the thread
+  const messages = await openai.beta.threads.messages.list(thread.id)
+  const text = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+  return {
+    thread:thread,
+    text:text
+  }
+
+}
+
+export async function getQuestions(prompt) {
+  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
+  const assistant = await openai.beta.assistants.retrieve("asst_AhWVjx7YkLFS58B7M8LsNLPN")
+  const thread = await openai.beta.threads.create()
+  const message = await openai.beta.threads.messages.create(thread.id, {
+    role: "user",
+    content: prompt
+  })
+  const run = await openai.beta.threads.runs.create(thread.id, {
+    assistant_id: assistant.id //,
+    //instructions: "What is the meaning of life?",
+  });
+
+  let runStatus = await openai.beta.threads.runs.retrieve(
+    thread.id,
+    run.id
+  );
+  // Polling mechanism to see if runStatus is completed
+  // This should be made more robust.
+  while (runStatus.status !== "completed") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+  }
+  // Get the latest messages from the thread
+  const messages = await openai.beta.threads.messages.list(thread.id)
+  const json = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+  return JSON.parse(json)
+}
+
+
+export async function summarize(history) {
+  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
+  const assistant = await openai.beta.assistants.retrieve("asst_qhk79F8wV9BDNuwfOI80TqzC")
+  const thread = await openai.beta.threads.create()
+  const message = await openai.beta.threads.messages.create(thread.id, {
+    role: "user",
+    content: history
+  })
+  const run = await openai.beta.threads.runs.create(thread.id, {
+    assistant_id: assistant.id //,
+    //instructions: "What is the meaning of life?",
+  });
+
+  let runStatus = await openai.beta.threads.runs.retrieve(
+    thread.id,
+    run.id
+  );
+  // Polling mechanism to see if runStatus is completed
+  // This should be made more robust.
+  while (runStatus.status !== "completed") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+  }
+  // Get the latest messages from the thread
+  const messages = await openai.beta.threads.messages.list(thread.id)
+  const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+  return summary
+}
+
 
 async function sendMessage(system, message){
 
@@ -24,12 +120,12 @@ async function sendMessage(system, message){
     messages.push({ role: "user", content: message });
 
     try {
-      const completion = await openai.createChatCompletion({
+      const completion = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: messages,
       });
 
-      const completion_text = completion.data.choices[0].message.content;
+      const completion_text = completion.choices[0].message.content;
       console.log(completion_text)
       return completion_text;
 s
