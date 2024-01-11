@@ -60,23 +60,22 @@ export default class Quests {
         this.bot.action(/cancel_quest_(.+)/, (ctx) => this.cancel(ctx));
         this.bot.action(/complete_quest_(.+)/, (ctx) => this.complete(ctx));
         this.bot.action(/stop_quest_(.+)/, (ctx) => this.stop(ctx));
-        
-        this.bot.on('location', async (ctx) => this.location(ctx));
-        //----------------------------------------------------
-    }
 
-    async location(ctx) {
-        console.log("LOCATION ACTION");
-        let chatID = ctx.message.chat.id;
-        let messageID = ctx.message.message_id;
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-        let quest = await questsDB.get(messageID.toString())[0]
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-        quest.where = ctx.message.location
-        questsDB.put(quest)
-        this.updateMessage(ctx, quest)
+        //--------------------------------------------------------------------
     }
+    // this.bot.on('location', async (ctx) => this.location(ctx));
+    // async location(ctx) {
+    //     console.log("LOCATION ACTION");
+    //     let chatID = ctx.message.chat.id;
+    //     let messageID = ctx.message.message_id;
+    //     let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
+    //     await questsDB.load()
+    //     let quest = await questsDB.get(messageID.toString())[0]
+    //     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+    //     quest.where = ctx.message.location
+    //     questsDB.put(quest)
+    //     this.updateMessage(ctx, quest)
+    // }
 
     // resends all active tasks in the chat
     async refresh(ctx) {
@@ -187,7 +186,7 @@ export default class Quests {
             title: title,
             picture: picture,
             document: '',
-            where: {latitude:'',longitude:''},
+            where: { latitude: '', longitude: '' },
             date: new Date().getTime(),
             when: '',
             completed: '',
@@ -295,7 +294,7 @@ export default class Quests {
         console.log("JOIN ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
-        console.log( ctx.callbackQuery.data)
+        console.log(ctx.callbackQuery.data)
 
         const language = await this.settings.getLanguage(chatID)
         let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
@@ -641,11 +640,10 @@ export default class Quests {
     async updateMessage(ctx, quest, language) {
         let federationDB = await this.orbitdb.docs('WeQuest.federation')
         await federationDB.load()
-        let fedinfo = await federationDB.get(''+quest.chat*2+quest.id)[0] //* 2 hack not to return similar 
-        let message_id 
+        let fedinfo = await federationDB.get('' + quest.chat * 2 + quest.id)[0] //* 2 hack not to return similar 
+        let message_id
         let chat_id
-        if (!fedinfo || fedinfo == '')
-        {
+        if (!fedinfo || fedinfo == '') {
             message_id = quest.id
             chat_id = quest.chat
             if (quest.picture) {
@@ -668,38 +666,37 @@ export default class Quests {
                     null,
                     createMessage(quest, language),
                     markup(quest, language)
-                ).catch((err) => { }); 
-            
-        } else
-        {
-        for (let i = 0; i < fedinfo.all.length; i++) {
-            message_id = fedinfo.all[i].id
-            chat_id = fedinfo.all[i].chat
-        // Update the message 
-            if (quest.picture) {
-                await ctx.telegram.editMessageMedia(
-                    chat_id,
-                    message_id,
-                    null,
-                    {
-                        type: 'photo',
-                        media: quest.picture,
-                        caption: createMessage(quest, language)
-                    },
-                    markup(quest, language)
                 ).catch((err) => { });
+
+        } else {
+            for (let i = 0; i < fedinfo.all.length; i++) {
+                message_id = fedinfo.all[i].id
+                chat_id = fedinfo.all[i].chat
+                // Update the message 
+                if (quest.picture) {
+                    await ctx.telegram.editMessageMedia(
+                        chat_id,
+                        message_id,
+                        null,
+                        {
+                            type: 'photo',
+                            media: quest.picture,
+                            caption: createMessage(quest, language)
+                        },
+                        markup(quest, language)
+                    ).catch((err) => { });
+                }
+                else
+                    await ctx.telegram.editMessageText(
+                        chat_id,
+                        message_id,
+                        null,
+                        createMessage(quest, language),
+                        markup(quest, language)
+                    ).catch((err) => { });
             }
-            else
-                await ctx.telegram.editMessageText(
-                    chat_id,
-                    message_id,
-                    null,
-                    createMessage(quest, language),
-                    markup(quest, language)
-                ).catch((err) => { }); 
         }
     }
-}
 }
 
 // Function to create the message for a quest 
@@ -712,7 +709,7 @@ function createMessage(quest, language) {
         message += `| 👍 : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.when)
         message += `| 📅 : ${quest.when} \n`;
-     if (quest.where?.lat)
+    if (quest.where?.lat)
         message += `| 📍 : ${quest.where.lat} : ${quest.where.lon}   \n`;
     if (quest.status === "stopped")
         message += `| 🛑 : ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;

@@ -11,9 +11,7 @@ locationScene.enter((ctx) => {
 // Handle video submission
 locationScene.on('location', (ctx) => {
   let message_id = ctx.message.message_id;
-  console.log(message_id);
   ctx.session.location = ctx.message.location;
-  //store the video in the db
   ctx.session.stage +=1;
   if (!ctx.session.sequence) ctx.scene.leave();
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');

@@ -92,21 +92,21 @@ class DB {
     }
 
     async addOrbitDB(table, data) {
-        var db = await this.orbitdb.docstore(table);
+        var db = await this.orbitdb.docstore(table,{indexBy: 'id'});
         await db.load();
         const id = await db.put(data);
         return id;
     }
 
     async getOrbitDB(table, key) {
-        var db = await this.orbitdb.docstore(table);
+        var db = await this.orbitdb.docstore(table, {indexBy: 'id'});
         await db.load();
         const result = await this.db.get(key);
         return result;
     }
 
     async getAllOrbitDB(table) {
-        var db = await this.orbitdb.docstore(table);
+        var db = await this.orbitdb.docstore(table, {indexBy: 'id'});
         await db.load();
         const result = await this.db.get('');
         return result;

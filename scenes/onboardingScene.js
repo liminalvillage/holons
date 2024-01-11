@@ -11,8 +11,25 @@ const onboardingScene = new Scenes.BaseScene('onboarding');
 
 // Entry point for the scene
 onboardingScene.enter((ctx) => {
-  ctx.reply('Do you have any questions? Just ask me!');
+  ctx.reply('Do you have any questions? Just ask me! type /done when you are finished.');
   ctx.session.thread = null;
+});
+
+onboardingScene.command('done', async ctx => {
+  try {
+    ctx.session.stage += 1;
+    if (ctx.session.stage === ctx.session.sequence?.length) {
+      ctx.scene.enter('done');
+    } else {
+      if (ctx.session.sequence)
+        ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+      else
+        ctx.scene.leave();
+    }
+  } catch (error) {
+    console.error('Error in summarizing:', error);
+    ctx.reply('An error occurred while summarizing.');
+  }
 });
 
 onboardingScene.on('text', async ctx => {

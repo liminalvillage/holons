@@ -8,7 +8,7 @@ import questionsData from "../data/questions.json" assert { type: "json" };
 // Create a scene
 export const questionsScene = new Scenes.BaseScene('questions');
 
-questionsScene.enter(ctx => ctx.reply('Please type a few sentences describing the place you would be thriving in. Makes sure to be very specific with your requirements.'));
+questionsScene.enter(ctx => ctx.reply('Please type a few sentences describing the ideal place you would be thriving in. Makes sure to be very specific with your requirements.'));
 
 questionsScene.action('done', (ctx) => {
   ctx.session.stage +=1;

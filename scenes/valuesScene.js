@@ -35,7 +35,7 @@ function showValuesKeyboard(ctx) {
   // Add navigation buttons
   if (page > 0) buttons.push([Markup.button.callback('<', 'prev_page')]);
   if (page < Math.ceil(values.length / valuesPerPage) - 1) buttons.push([Markup.button.callback('>', 'next_page')]);
-  buttons.push([Markup.button.callback('Done', 'done')]);
+  buttons.push([Markup.button.callback('Done', 'done_picking')]);
   return Markup.inlineKeyboard(buttons);
  //ctx.editMessageText('Great! Now Please select the values that represent you the most:',  Markup.inlineKeyboard(buttons)).catch((error) => {console.log(error)  });
  
@@ -68,7 +68,7 @@ valuesScene.action('next_page', (ctx) => {
   ctx.editMessageText('Great! Now Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });
 });
 
-valuesScene.action('done', (ctx) => {
+valuesScene.action('done_picking', (ctx) => {
   ctx.session.stage += 1
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);

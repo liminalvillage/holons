@@ -1,4 +1,4 @@
-import { Scenes, Markup } from 'telegraf';
+import { Scenes, Markup, session } from 'telegraf';
 
 // Create a scene for onboarding
 const saveprofileScene = new Scenes.BaseScene('saveprofile');
@@ -35,11 +35,19 @@ saveprofileScene.enter((ctx) => {
 saveprofileScene.action('public', (ctx) => {
   ctx.session.public = true;
   ctx.session.stage +=1;
-  ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+  let db = ctx.session.db
+  ctx.session.db = null
+  ctx.session.id = ctx.from.id
+  console.log(ctx.session)
+  //store data in db
+  //db.put('profile', ctx.session)
+  if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
+  else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
 });
 
 saveprofileScene.action('private', (ctx) => {
   ctx.session.public = false;
+  console.log(ctx.session)
   ctx.session.stage +=1;
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);

@@ -435,10 +435,8 @@ class WeQuest {
 
       ctx.reply(print)
     })
-
-
-
   }
+  
   discord2telegram(message) {
     const ctx = message;
     ctx.deleteMessage = () => message.delete();
@@ -469,9 +467,3 @@ await wequest.init();
 //     msg.reply('Pong!');
 //   }
 // });
-
-
-
-
-
-

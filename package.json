@@ -29,7 +29,6 @@
     "julian": "^0.2.0",
     "lune": "^0.4.0",
     "moment": "^2.29.4",
-    "ngeohash": "^0.6.3",
     "node-fetch": "^3.3.2",
     "openai": "^4.20.1",
     "orbit-db": "^0.29.0",
