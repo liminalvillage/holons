@@ -164,7 +164,7 @@ export default class Holons {
     const id = ctx.message.chat.id;
     let address = await this.holonsContract.methods.toAddress(id.toString()).call();
     // fetch users and add them to the holon
-    let usersDB = await this.db.get('WeQuest.' + id.toString() + '.users')
+    let usersDB = await this.db.docs('WeQuest.' + id.toString() + '.users')
     await usersDB.load();
     let users = await usersDB.get('')
 

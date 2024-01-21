@@ -1,5 +1,4 @@
 import { Markup } from 'telegraf';
-import ngeohash from 'ngeohash'
 
 import Validator from 'jsonschema';
 import schema from './schemas/offers_wants_prototype-v0.0.2.json' assert { type: "json" };

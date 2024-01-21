@@ -21,13 +21,16 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 import { Telegraf, Markup } from 'telegraf';
 import { Client, GatewayIntentBits } from 'discord.js';
 
+// import functional libraries
 import DB from "./DB.js";
 import UI from './UI.js';
 import * as AI from './AI.js';
+import H3 from './H3.js';
 
 
 //import WeQuest Modules
 import Holons from './Holons.js';
+
 import Quests from './Quests.js'
 import Shopping from './Shopping.js'
 import Lunation from "./Lunation.js"
@@ -37,6 +40,7 @@ import Settings from './Settings.js'
 import Bigtalk from './Bigtalk.js'
 import Library from './Library.js'
 import Users from './Users.js'
+import Tags from './Tags.js'
 
 import * as request from './Requests.js'
 
@@ -56,6 +60,8 @@ class WeQuest {
     this.expenses = null;
     this.onboarding = null;
     this.holons = null;
+    this.h3 = null;
+    this.tags = null;
   }
 
   async init() {
@@ -83,6 +89,8 @@ class WeQuest {
     this.expenses = new Expenses(this.telebot, this.db)
     this.onboarding = new Onboarding(this.telebot, this.db)
     this.holons = new Holons(this.telebot, this.db, this.settings)
+    this.h3 = new H3(this.telebot, this.db)
+    this.tags = new Tags(this.telebot, this.db)
 
 
     // ========================== DISCORD =============================
@@ -121,59 +129,97 @@ class WeQuest {
 
     // discordbot.login(process.env.DISCORD);
     // =========================== bot commands ===========================
-    this.telebot.command('start', async (ctx) => {
+    if (process.env.MODE == 'development') {
+      this.telebot.command('start', async (ctx) => {
 
-      onboarding.start(ctx)
+        onboarding.start(ctx)
 
-      // Markup.keyboard([
-      //   Markup.button.webApp(
-      //     "Open Holon",
-      //     "https://app.holons.io/?id=" + utils.getChatId(ctx)
-      //   ),
-      // ])
-      //)
-    });
+        // Markup.keyboard([
+        //   Markup.button.webApp(
+        //     "Open Holon",
+        //     "https://app.holons.io/?id=" + utils.getChatId(ctx)
+        //   ),
+        // ])
+        //)
+      });
 
-    this.telebot.command('help', async (ctx) => {
-      ctx.reply("`Just type / for a list of commands. For instance \n /task \n /request \n /offer /status /bulletin")
-    })
+      this.telebot.command('help', async (ctx) => {
+        ctx.reply("`Just type / for a list of commands. For instance \n /task \n /request \n /offer /status /bulletin")
+      })
 
-    this.telebot.command("register", (ctx) => {
-      return ctx.reply(
-        "open webapp",
-        Markup.inlineKeyboard([
-          Markup.button.webApp(
-            "Open",
-            "https://robertovalenti.github.io/webapp/index.html"
-          ),
-        ])
-      );
-    });
+      this.telebot.command("register", (ctx) => {
+        return ctx.reply(
+          "open webapp",
+          Markup.inlineKeyboard([
+            Markup.button.webApp(
+              "Open",
+              "https://robertovalenti.github.io/webapp/index.html"
+            ),
+          ])
+        );
+      });
 
-    this.telebot.command("holons", (ctx) => {
-      return ctx.reply(
-        "open webapp",
-        Markup.keyboard([
-          Markup.button.webApp(
-            "Open Holon",
-            "https://app.holons.io/?id=" + utils.getChatId(ctx)
-          ),
-        ])
-      );
-    });
+      this.telebot.command("holons", (ctx) => {
+        return ctx.reply(
+          "open webapp",
+          Markup.keyboard([
+            Markup.button.webApp(
+              "Open Holon",
+              "https://app.holons.io/?id=" + utils.getChatId(ctx)
+            ),
+          ])
+        );
+      });
 
-    this.telebot.command("hexamap", (ctx) => {
-      return ctx.reply(
-        "open webapp",
-        Markup.keyboard([
-          Markup.button.webApp(
-            "Open Hexamap",
-            "https://hexamap.holons.io/?id=" + utils.getChatId(ctx)
-          ),
-        ])
-      );
-    });
+      this.telebot.command("hexamap", (ctx) => {
+        return ctx.reply(
+          "open webapp",
+          Markup.keyboard([
+            Markup.button.webApp(
+              "Open Hexamap",
+              "https://hexamap.holons.io/?id=" + utils.getChatId(ctx)
+            ),
+          ])
+        );
+      });
 
+
+
+      this.telebot.on('inline_query', async (ctx) => {
+        let offers = [];
+        let chats = await this.settings.getChats(ctx);
+        let k = 0;
+
+        for (const chatID of chats) {
+          let users = await this.ui.getFederatedUsers(chatID);
+          for (const user of users) {
+            for (let j = 0; j < user.offers.length; j++) {
+              offers.push({ id: k++, title: user.offers[j], description: user.username, price: '$10' });
+            }
+          }
+        }
+
+        const results = offers.map((offer) => ({
+          type: 'article',
+          id: offer.id,
+          title: offer.title,
+          description: offer.description,
+          thumb_url: 'https://picsum.photos/200/300',
+          input_message_content: {
+            message_text: `${offer.title}: ${offer.description} - ${offer.price}`
+          },
+        }));
+
+        await ctx.answerInlineQuery(results);
+      });
+
+      this.telebot.on('chosen_inline_result', (ctx) => {
+        console.log(`Chosen product: ${ctx.chosenInlineResult.result_id}`);
+        // Handle the product selection here. For example, you could send a confirmation
+        // message to the user, or add the product to a shopping cart.
+      });
+
+    }
     this.telebot.on('photo', async (ctx) => {
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0]; // TODO: ADD MORE Picture- based commands eg /spent
@@ -231,44 +277,6 @@ class WeQuest {
     //     }))
     //   return await ctx.answerInlineQuery(recipes)
     // })
-
-
-    this.telebot.on('inline_query', async (ctx) => {
-      // This is a simplified example. In a real-world application, you'd fetch this
-      // data from a database or API.
-      ///let chatID = utils.getChatId(ctx)
-      let offers = []
-      let chats = await this.settings.getChats(ctx)
-      console.log("chats: ", chats)
-      for (const chatID in chats) {
-        let users = await this.ui.getFederatedUsers(chatID)
-
-        for (let i = 0; i < users.length; i++) {
-          let user = users[i]
-          for (let j = 0; j < user.offers.length; j++) {
-            offers.push({ id: i, title: user.offers[j], description: user.username, price: '$10' })
-          }
-        }
-      }
-      console.log("offers: ", offers)
-      const results = offers.map((offer) => ({
-        type: 'article',
-        id: offer.id,
-        title: offer.title,
-        description: offer.description,
-        input_message_content: {
-          message_text: `${offer.title}: ${offer.description} - ${offer.price}`
-        },
-      }));
-
-      await ctx.answerInlineQuery(results);
-    });
-
-    this.telebot.on('chosen_inline_result', (ctx) => {
-      console.log(`Chosen product: ${ctx.chosenInlineResult.result_id}`);
-      // Handle the product selection here. For example, you could send a confirmation
-      // message to the user, or add the product to a shopping cart.
-    });
 
 
     //----------------------------- APPRECIATION -----------------------------
@@ -359,47 +367,6 @@ class WeQuest {
 
     });
 
-    // Content tagging
-
-    this.telebot.command('tag', (ctx) => {
-      if (!ctx.message.reply_to_message) {
-        return ctx.reply('Please reply to a message you want to tag.');
-      }
-
-      const tags = ctx.message.text.split(' ').slice(1);
-      if (tags.length === 0) {
-        return ctx.reply('Please provide at least one tag.');
-      }
-
-      const messageId = ctx.message.reply_to_message.message_id;
-      const chatId = ctx.message.chat.id;
-      const messageContent = ctx.message.reply_to_message.text;
-
-      tags.forEach(tag => {
-        if (!this.db[tag]) {
-          this.db[tag] = [];
-        }
-        this.db[tag].push({ chatId, messageId, messageContent });
-      });
-
-      //saveDb();
-      ctx.reply('Message tagged successfully.');
-    });
-
-    // Query tagged messages
-    this.telebot.command('gettag', (ctx) => {
-      const tag = ctx.message.text.split(' ')[1];
-      if (!tag) {
-        return ctx.reply('Please specify a tag.');
-      }
-
-      if (!this.db[tag] || this.db[tag].length === 0) {
-        return ctx.reply('No messages found for this tag.');
-      }
-
-      const response = this.db[tag].map(entry => entry.messageLink).join('\n');
-      ctx.reply(response);
-    });
 
     // // Handle uncaught exceptions
     // process.on('uncaughtException', async (err) => {
@@ -436,7 +403,7 @@ class WeQuest {
       ctx.reply(print)
     })
   }
-  
+
   discord2telegram(message) {
     const ctx = message;
     ctx.deleteMessage = () => message.delete();

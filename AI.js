@@ -106,6 +106,34 @@ export async function summarize(history) {
   return summary
 }
 
+export async function ontology(history) {
+  //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
+  const assistant = await openai.beta.assistants.retrieve("asst_jxRYRSsU4ukVn2F3E82twHrj")
+  const thread = await openai.beta.threads.create()
+  const message = await openai.beta.threads.messages.create(thread.id, {
+    role: "user",
+    content: history
+  })
+  const run = await openai.beta.threads.runs.create(thread.id, {
+    assistant_id: assistant.id //,
+    //instructions: "What is the meaning of life?",
+  });
+
+  let runStatus = await openai.beta.threads.runs.retrieve(
+    thread.id,
+    run.id
+  );
+  // Polling mechanism to see if runStatus is completed
+  // This should be made more robust.
+  while (runStatus.status !== "completed") {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+  }
+  // Get the latest messages from the thread
+  const messages = await openai.beta.threads.messages.list(thread.id)
+  const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+  return summary
+}
 
 async function sendMessage(system, message){
 
@@ -163,67 +191,3 @@ export async function assignRoles(actions, roles){
             '. Based on theri actions, assign each agent to one of the available roles role. Ao agent should have the same role. Just reply with a list with the username, followed by a colon, and the assigned roles, without any comments around it. Eg: @Roberto: Cook , Gardner'
         return await sendMessage(system, prompt)
 }
-// export async function getActions (actions){
-//     let prompt = 'convert all these actions to the past tense: \n' + actions
-//     let pastactions = await AI.createCompletion({
-//         model: "text-davinci-003",
-//         temperature: 0,
-//         max_tokens: 200,
-//         top_p: 1,
-//         frequency_penalty: 0.5,
-//         presence_penalty: 0,
-//         prompt: prompt
-//     });
-//     return pastactions
-// }
-
-// export async function getPrompt (values, lunation, actions){
-//     let prompt = 'here are the values of the community: \n' + values + '\n here is the day of the lunation : \n' + lunation + '\n here are the actions that agents took: \n' + actions
-//     + 'we are following a 28 days long dragon dreaming process aligned with the lunation. What is the next step we could do today? be as creative and as detailed as possible. Please make key lunar phase moment very significant. \n'
-//     const response = await AI.createCompletion({
-//         model: "text-davinci-003",
-//         temperature: 0,
-//         max_tokens: 200,
-//         top_p: 1,
-//         frequency_penalty: 0.5,
-//         presence_penalty: 0,
-//         prompt: prompt
-//     });
-//     return response.data.choices[0].text
-// }
-
-
-// export async function assignRoles(actions, roles) {
-
-//     let prompt = 
-//         'here is a table of actions that agents took: \n' +
-//         actions +
-//         '\n the available roles are: \n' +
-//         roles
-//         '\n assign each agent to one role. no agent should have the same role. Just show me a json structure with The username and the assigned roles, without any comment. Also assign them to a secondary role. \n'
-    
-//     const response = await AI.createCompletion({
-//         model: "text-davinci-003",
-//         temperature: 0,
-//         max_tokens: 200,
-//         top_p: 1,
-//         frequency_penalty: 0.5,
-//         presence_penalty: 0,
-//         prompt: prompt
-//     });
-//     return response.data.choices[0].text
-// }
-
-// export async function detectMaslow(need) {
-//     let prompt = 'what is the best classification the need '+need + ' according to the maslow hierarchy of needs? do not reply with text, but just  the numbers of the maslow level'
-//     const response = await AI.createCompletion({
-//         model: "text-davinci-003",
-//         temperature: 0,
-//         max_tokens: 200,
-//         top_p: 1,
-//         frequency_penalty: 0.5,
-//         presence_penalty: 0,
-//         prompt: prompt
-//     });
-//     return response.data.choices[0].text
-// }

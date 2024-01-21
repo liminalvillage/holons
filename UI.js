@@ -47,14 +47,17 @@ class UI {
   }
 
   async getFederatedUsers(chatID) {
-    let federation = await this.settings.getFederation(chatID)
+    // get all users from the chat
     let usersDB = await this.orbitdb.docs('WeQuest.' + chatID + '.users')
     await usersDB.load()
     let users = await usersDB.get('')
+
+    // get all users from the federation
+    let federation = await this.settings.getFederation(chatID)
     for (let i = 0; i < federation.length; i++) {
-      let usersDB = await this.orbitdb.docs('WeQuest.' + federation[i] + '.users')
-      await usersDB.load()
-      let federatedusers = await usersDB.get('')
+      let fedusersDB = await this.orbitdb.docs('WeQuest.' + federation[i] + '.users')
+      await fedusersDB.load()
+      let federatedusers = await fedusersDB.get('')
       //check if the user is already in the list
       for (let j = 0; j < federatedusers.length; j++) {
         let user = federatedusers[j]

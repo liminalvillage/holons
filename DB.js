@@ -101,14 +101,14 @@ class DB {
     async getOrbitDB(table, key) {
         var db = await this.orbitdb.docstore(table, {indexBy: 'id'});
         await db.load();
-        const result = await this.db.get(key);
+        const result = await db.get(key);
         return result;
     }
 
     async getAllOrbitDB(table) {
         var db = await this.orbitdb.docstore(table, {indexBy: 'id'});
         await db.load();
-        const result = await this.db.get('');
+        const result = await db.get('');
         return result;
     }
 
