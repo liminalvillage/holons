@@ -10,11 +10,12 @@ class DB {
         this.orbitdb = null;
         this.gun = null;
         this.dbName = dbName;
+        this.preloadedDB = {};
         this.db = 'orbit';
     }
 
     async init() {
-        if (this.db === 'orbit') {
+        //if (this.db === 'orbit') {
             this.ipfs = await create({
                 address: "127.0.0.1",
                 port: 5001,
@@ -35,12 +36,12 @@ class DB {
                     ]
                 }
             }
-        } else if (this.db === 'gun') {
+        //} else if (this.db === 'gun') {
             // Initialize a GUN instance
             this.gun = GUN({
                 peers: ['https://59.src.eco/gun']
             });
-        }
+       // }
     }
 
     async delete(table, key) {
@@ -52,13 +53,24 @@ class DB {
 
     async docs(table, options = {}) {
         //if (this.orbitdb) {
-        //    return await this.orbitdb.docs(table, options)
-        // }
-        // return this.gun.get(table)
-        return await this.orbitdb.docs(table, {
-        indexBy: 'id',
-        ...options
-    })
+           return await this.orbitdb.docs(table, {
+            indexBy: 'id',
+            ...options
+        })
+        //}
+        return this.gun.get(table)
+    }
+
+    async preload(table) {
+        if (this.db === 'gun')
+            return this.gun.get(this.dbName).get(table)
+        if (this.db === 'orbit') {
+            this.preloadedDB[table] = await this.orbitdb.docs(this.dbName + '.' + table, {
+                indexBy: 'id'
+            })
+            await this.preloadedDB[table].load()
+        }
+        return this.preloadedDB[table]
     }
 
 
@@ -92,22 +104,39 @@ class DB {
     }
 
     async addOrbitDB(table, data) {
-        var db = await this.orbitdb.docstore(table,{indexBy: 'id'});
-        await db.load();
+        var db
+        if (this.preloadedDB[table]!==undefined){
+            db = this.preloadedDB[table]
+        }
+        else {
+            db = await this.orbitdb.docstore(this.dbName + '.' + table, { indexBy: 'id' });
+            await db.load();
+        }
         const id = await db.put(data);
         return id;
     }
 
     async getOrbitDB(table, key) {
-        var db = await this.orbitdb.docstore(table, {indexBy: 'id'});
-        await db.load();
-        const result = await db.get(key);
+        var db
+        if (this.preloadedDB[table]!== undefined){
+            db = this.preloadedDB[table]
+        }
+        else {
+            db = await this.orbitdb.docstore(this.dbName + '.' + table, { indexBy: 'id' });
+            await db.load();
+        }
+        const result = await db.get(key)[0];
         return result;
     }
 
     async getAllOrbitDB(table) {
-        var db = await this.orbitdb.docstore(table, {indexBy: 'id'});
-        await db.load();
+        var db
+        if (this.preloadedDB[table])
+            db = this.preloadedDB[table]
+        else {
+            db = await this.orbitdb.docstore(table, { indexBy: 'id' });
+            await db.load();
+        }
         const result = await db.get('');
         return result;
     }
@@ -145,16 +174,6 @@ class DB {
 
     }
 
-    // new Promise((resolve, reject) => {
-    //     this.gun.get(this.dbName).get(table).get(key).map((data, key) => {
-    //         if (!data) {
-    //             reject(new Error(`No data found for key: ${key}`));
-    //         } else {
-    //             console.log('getGunDB - data:', data)
-    //             resolve(data);
-    //         }
-    //     });
-    // });
 
 
     async getAllGunDB(table) {

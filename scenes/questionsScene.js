@@ -19,9 +19,8 @@ questionsScene.action('done', (ctx) => {
 questionsScene.on('text', async ctx => {
   const userId = ctx.from.id;
   //ask ai to select questions from ctx.message.text
-  ctx.session.userResponses[userId] = {
-    initialInput: ctx.message.text
-  };
+  ctx.session.requirements = ctx.message.text
+  
   ctx.session.currentquestion = 0;
   getQuestions(ctx.message.text).then((questions) => {
     ctx.session.question_sequence = questions.questions.map(question => question.id);
@@ -76,14 +75,12 @@ function createScene(question) {
     //should store the requirement and enter the next scene
     const userId = ctx.from.id;
     ctx.answerCbQuery();
-    ctx.session.userResponses[userId] = {
-      lastAnswer: ctx.match[0]
-    };
+    ctx.session.userResponses.push({id: question.questionID, answer: ctx.match[0]})
     // Determine the next question or end the conversation
     //const nextQuestion = questionsData.questions.find(q => q.enablingAnswers.includes(ctx.match[0]));
 
     ctx.session.currentquestion += 1 
-    if (ctx.session.currentquestion != ctx.session.question_sequence.length) {
+    if (ctx.session.currentquestion != ctx.session.question_sequence.length && ctx.session.currentquestion < 4 ) {
       ctx.scene.enter(`question_${ctx.session.question_sequence[ctx.session.currentquestion]}`);
     } else {
       ctx.reply('Thank you for completing the questions!');

@@ -12,21 +12,9 @@ saveprofileScene.enter((ctx) => {
   ctx.session.enquiry? message += 'Enquiry:'+ctx.session.enquiry+'\n':
   ctx.session.category? message += 'Category:'+ctx.session.category+'\n':
   ctx.session.name? message += 'Name:'+ctx.session.name+'\n':
-  ctx.session.video? message +=  'Video:'+ctx.session.video+'\n':
-  ctx.session.email? message += 'Email:'+ctx.session.email+'\n':
-  ctx.session.phone? message += 'Phone:'+ctx.session.phone+'\n':
-  ctx.session.website? message += 'Website:'+ctx.session.website+'\n':
-  ctx.session.twitter? message += 'Twitter:'+ctx.session.twitter+'\n':
-  ctx.session.facebook? message += 'Facebook:'+ctx.session.facebook+'\n':
-  ctx.session.instagram? message += 'Instagram:'+ctx.session.instagram+'\n':
-  ctx.session.linkedin? message += 'Linkedin:'+ctx.session.linkedin+'\n':
-  ctx.session.youtube? message += 'Youtube:'+ctx.session.youtube+'\n':
-  ctx.session.github? message += 'Github:'+ctx.session.github+'\n':
-  ctx.session.medium? message += 'Medium:'+ctx.session.medium+'\n':
-  ctx.session.tiktok? message += 'Tiktok:'+ctx.session.tiktok+'\n':
-  ctx.session.twitch? message += 'Twitch:'+ctx.session.twitch+'\n':
 
-  ctx.reply(ctx.session.toString())
+
+  ctx.reply(message)
   ctx.reply('Would you wish to make your answers public?', Markup.inlineKeyboard([
     [Markup.button.callback('Yes', 'public'), Markup.button.callback('No', 'private')]
   ]));
@@ -35,12 +23,10 @@ saveprofileScene.enter((ctx) => {
 saveprofileScene.action('public', (ctx) => {
   ctx.session.public = true;
   ctx.session.stage +=1;
-  let db = ctx.session.db
-  ctx.session.db = null
   ctx.session.id = ctx.from.id
   console.log(ctx.session)
-  //store data in db
-  //db.put('profile', ctx.session)
+  //store data in the db
+  ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).put(createProfile(ctx.session).toString())
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
 });
@@ -53,6 +39,25 @@ saveprofileScene.action('private', (ctx) => {
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
 });
 
+function createProfile(session){
+  var profile = {}
+  profile.id = session.id
+  profile.username = session.username
+  profile.first_name = session.first_name
+  profile.last_name = session.last_name
+  profile.public = session.public
+  profile.location = session.location
+  profile.values = session.values
+  profile.requirements = session.requirements
+  profile.responses = session.responses
+  profile.category = session.category
+  profile.name = session.name
+  profile.start = session.startwhen
+  profile.end = session.endwhen
+  profile.hex =session.h3
+  console.log(profile)
+  return profile
+}
 
 // Export the scene
 export default saveprofileScene;

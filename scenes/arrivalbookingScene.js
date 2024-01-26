@@ -21,7 +21,7 @@ arrivalbookingScene.on('callback_query', (ctx) => {
     const callbackData = ctx.callbackQuery.data;
  
       var when = calendar.clickButtonCalendar(ctx);
-      ctx.session.when = when;
+      ctx.session.startwhen = when;
       ctx.session.stage +=1;
       if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
       else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);

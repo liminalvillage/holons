@@ -1,5 +1,7 @@
 import { Telegraf, Scenes, session, Markup } from 'telegraf';
 
+
+import h3Scene from './scenes/h3Scene.js';
 import arrivalbookingScene from './scenes/arrivalbookingScene.js';
 import departurebookingScene from './scenes/departurebookingScene.js';
 import videoScene from './scenes/videoScene.js';
@@ -20,7 +22,7 @@ export default class Onboarding {
     this.userResponses = {};
 
     const stage = new Scenes.Stage(
-      [welcomeScene, arrivalbookingScene, departurebookingScene, videoScene, valuesScene, categoriesScene, onboardingScene, locationScene, questionsScene, saveprofileScene, summarizeScene, done].concat(createScenesForQuestions())
+      [welcomeScene, arrivalbookingScene, departurebookingScene, videoScene, valuesScene, categoriesScene, onboardingScene, locationScene, questionsScene, saveprofileScene, summarizeScene, h3Scene, done].concat(createScenesForQuestions())
     );
 
     bot.use(session());
@@ -29,7 +31,7 @@ export default class Onboarding {
     bot.command('start', ctx => {
       const userId = ctx.from.id;
       ctx.session.stage = 0;
-      ctx.session.sequence= ['welcome', 'arrivalbooking','departurebooking','categories', 'values', 'location','questions', 'saveprofile','onboarding'];
+      ctx.session.sequence= ['welcome', 'h3','arrivalbooking','departurebooking','categories', 'values', 'location','questions', 'saveprofile','onboarding'];
       //ctx.session.sequence = ['categories', 'summarize', 'values', 'categories', 'saveprofile'];
 
       ctx.session.userResponses = [];

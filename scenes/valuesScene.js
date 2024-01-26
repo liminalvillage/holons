@@ -70,6 +70,7 @@ valuesScene.action('next_page', (ctx) => {
 
 valuesScene.action('done_picking', (ctx) => {
   ctx.session.stage += 1
+  ctx.session.values = Object.keys(ctx.session.selectedValues)
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
 });
