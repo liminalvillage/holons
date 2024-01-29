@@ -30,7 +30,6 @@ import H3 from './H3.js';
 
 //import WeQuest Modules
 import Holons from './Holons.js';
-
 import Quests from './Quests.js'
 import Shopping from './Shopping.js'
 import Lunation from "./Lunation.js"
@@ -41,6 +40,7 @@ import Bigtalk from './Bigtalk.js'
 import Library from './Library.js'
 import Users from './Users.js'
 import Tags from './Tags.js'
+import Participation from './Participation.js'
 
 import * as request from './Requests.js'
 
@@ -62,6 +62,7 @@ class WeQuest {
     this.holons = null;
     this.h3 = null;
     this.tags = null;
+    this.participation = null;
   }
 
   async init() {
@@ -91,6 +92,7 @@ class WeQuest {
     this.holons = new Holons(this.telebot, this.db, this.settings)
     this.h3 = new H3(this.telebot, this.db)
     this.tags = new Tags(this.telebot, this.db)
+    this.participation = new Participation(this.telebot, this.db)
 
 
     // ========================== DISCORD =============================
@@ -159,6 +161,7 @@ class WeQuest {
         );
       });
 
+
       this.telebot.command("holons", (ctx) => {
         return ctx.reply(
           "open webapp",
@@ -217,9 +220,17 @@ class WeQuest {
         console.log(`Chosen product: ${ctx.chosenInlineResult.result_id}`);
         // Handle the product selection here. For example, you could send a confirmation
         // message to the user, or add the product to a shopping cart.
-      });
-
+        // var payload = Date.now() ;	// you can use your own payload
+        // var prices = [{
+        //   label: "Donation",
+        //   amount: parseInt(param.replace(".", ""))	// if you have a decimal price with . instead of ,
+        // }];
+        // bot.sendInvoice(ctx.message.from.id, "Donation", "Donation of " + param + "€", payload, StripeToken, "pay", "EUR", prices);	// send invoice button to user
+        // remember to save payload and user data in db, it will be useful later
+        // usually i save Payload and Status = WAIT
+          });
     }
+    
     this.telebot.on('photo', async (ctx) => {
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0]; // TODO: ADD MORE Picture- based commands eg /spent

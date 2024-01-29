@@ -127,6 +127,10 @@ export default class Quests {
     }
 
     async listtype(ctx, type) {
+        if (type == undefined){
+            ctx.reply(`Please specify a type of quest to list. eg: /list quest`);
+            return
+        }
 
         console.log("LIST TYPE: " + type);
         let chatID = ctx.message.chat.id;
