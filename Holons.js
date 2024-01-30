@@ -33,7 +33,7 @@ export default class Holons {
     
     this.bot.command("listmembers", async (ctx) => {
       const chatID = ctx.message.chat.id;
-      let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
+      let address = await this.holonsContract.methods.toAddress(chatID).call();
       let holon = new this.web3.eth.Contract(managed.default.abi, address);
       let members = await holon.methods.listMembers().call();
       if (members.length > 0) {
@@ -56,9 +56,7 @@ export default class Holons {
 
   async syncScore(ctx) {
     const id = ctx.message.chat.id;
-    let usersDB = await this.db.docs('WeQuest.' + id.toString() + '.users')
-    await usersDB.load();
-    let users = await usersDB.get('')
+    let users = await this.db.getAll(id.toString() + '.users')
 
     const equation = await this.settings.getValueEquation(id)
 
@@ -101,7 +99,7 @@ export default class Holons {
   async claim(ctx) {
     const chatID = ctx.message.chat.id;
     const userID = ctx.message.from.id;
-    let holonaddress = await this.holonsContract.methods.toAddress(chatID.toString()).call();
+    let holonaddress = await this.holonsContract.methods.toAddress(chatID).call();
     let holon = new this.web3.eth.Contract(managed.default.abi, holonaddress);
     const args = ctx.message.text.split(" ").slice(1);
     if (args.length < 1) {
@@ -164,9 +162,7 @@ export default class Holons {
     const id = ctx.message.chat.id;
     let address = await this.holonsContract.methods.toAddress(id.toString()).call();
     // fetch users and add them to the holon
-    let usersDB = await this.db.docs('WeQuest.' + id.toString() + '.users')
-    await usersDB.load();
-    let users = await usersDB.get('')
+    let users = await this.db.getAll(id.toString() + '.users')
 
     users.forEach(async (user) => {
       if (user.id != undefined) {

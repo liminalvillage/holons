@@ -24,20 +24,17 @@ export default class Tags {
             }
       
             const messageId = ctx.message.reply_to_message.message_id;
-            const chatId = ctx.message.chat.id;
+            const chatID = ctx.message.chat.id;
             const messageContent = ctx.message.reply_to_message.text;
-            
-            let tagsDB = await this.db.docs('WeQuest.'+ chatId +'.tags')
-            await tagsDB.load()
-    
+               
             tags.forEach(tag => {
-              let tagobject = tagsDB.get(tag)[0]
+              let tagobject = this.db.get(chatID + '.tags',tag)
               if (tagobject.content) {
-                tagobject.content.push({ chatId, messageId, messageContent });
+                tagobject.content.push({ chatID, messageId, messageContent });
               } else {
-                tagobject = {'id':tag, 'content':[{ chatId, messageId, messageContent }]};
+                tagobject = {'id':tag, 'content':[{ chatID, messageId, messageContent }]};
               }
-              tagsDB.put(tagobject)
+              this.db.put(chatID + '.tags',tagobject)
 
             });
       
@@ -47,18 +44,13 @@ export default class Tags {
       
           // Query tagged messages
           this.bot.command('gettag', async (ctx) => {
-            const chatId = ctx.message.chat.id;
+            const chatID = ctx.message.chat.id;
             const tag = ctx.message.text.split(' ')[1];
             if (!tag) {
               return ctx.reply('Please specify a tag.');
             }
 
-            let tagsDB = await this.db.docs('WeQuest.'+ chatId +'.tags')
-            await tagsDB.load()
-            let tagobject = await tagsDB.get(tag)[0]
-            console.log(tagobject)
-            
-            
+            let tagobject = await this.db.get(chatID + '.tags',tag)            
       
             if (!tagobject || !tagobject.content ) {
               return ctx.reply('No messages found for this tag.');

@@ -1,4 +1,4 @@
-orbitdb/*
+db/*
 images/*
 templates/*
 .env
@@ -7,3 +7,4 @@ package-lock.json
 .DS_Store
 .vscode/
 radata/
+orbitdb/*

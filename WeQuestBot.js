@@ -121,7 +121,7 @@ class WeQuest {
     //   const command = commandBody[0];
     //   const args = commandBody.slice(1);
     //   if (command === 'quest') {
-    //     quests.quest('quest', discord2telegram(msg), orbitdb);
+    //     quests.quest('quest', discord2telegram(msg), db);
     //   }
     //   if (command === 'task') {
     //     console.log('task')
@@ -267,9 +267,7 @@ class WeQuest {
 
     // this.telebot.on('inline_query', async (ctx) => {
     //   const chatID = utils.getChatId(ctx)
-    //   let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-    //   await questsDB.load()
-    //   const recipes = await questsDB.get('').filter(({ type }) => type == 'offer')
+    //   const recipes = await this.db.getAll(chatID + '.quests').filter(({ type }) => type == 'offer')
     //     // @ts-ignore
     //     .filter(({ thumbnail }) => thumbnail)
     //     // @ts-ignore
@@ -291,7 +289,7 @@ class WeQuest {
 
 
     //----------------------------- APPRECIATION -----------------------------
-    this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, orbitdb))
+    this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, db))
     this.telebot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo'], async (ctx) => this.quests.sendAppreciation(ctx))
     this.telebot.command('maslow', (ctx) => this.UI.showMaslow(2))
 
@@ -353,10 +351,7 @@ class WeQuest {
         if (when !== -1) {
           //let caller = chatID// this.quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
 
-          let questsDB = await this.db.docs('WeQuest.' + chatID.toString() + '.quests')
-          await questsDB.load()
-
-          let quest = await questsDB.get(messageID)[0]
+          let quest = await this.db.get(chatID + '.quests', messageID)
 
           if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
           quest.status = "scheduled";
@@ -372,7 +367,7 @@ class WeQuest {
           this.quests.updateMessage(ctx, quest);
 
           // Update the db
-          questsDB.put(quest);
+          this.db.put(chatID + '.quests', quest);
         }
       }
 
@@ -441,7 +436,7 @@ await wequest.init();
 
 // discordbot.on('message', msg => {
 //   console.log("DISCORD MESSAGE: "+msg.content)
-//   if (msg.content === 'quest') {quests.quest('quest',discord2telegram(msg), orbitdb);
+//   if (msg.content === 'quest') {quests.quest('quest',discord2telegram(msg), db);
 //     msg.reply('Pong!');
 //   }
 // });

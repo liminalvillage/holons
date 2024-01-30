@@ -3,9 +3,9 @@ import * as utils from './utilities.js';
 import { Markup } from 'telegraf';
 
 class Users {
-  constructor(bot, orbitdb) {
+  constructor(bot, db) {
     this.bot = bot;
-    this.orbitdb = orbitdb;
+    this.db = db;
     this.bot.command(['value','ivalue'], (ctx) => this.addValue(ctx));
     this.bot.command(['need','ineed','weneed'], (ctx) => this.addNeed(ctx));
    //this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
@@ -19,9 +19,7 @@ class Users {
   async balance(ctx) {
     const chatID = ctx.message.chat.id;
     const user = ctx.message.from;
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
-    let users = await usersDB.get('')
+    let users = await this.db.getAll(chatID + '.users')
     let message = ''
     let total = 0
     for (let i = 0; i < users.length; i++) {
@@ -85,9 +83,7 @@ class Users {
     }
     let action = ctx.message.text.split(' ').slice(2).join(' ')
     console.log (action)
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
-    this.saveUserAction(user, 'gothours', action, parseInt(amount), usersDB)
+    this.saveUserAction(user, 'gothours', action, parseInt(amount), chatID)
     ctx.send(`You got ${amount} hours - ${action}.`);
   }
 
@@ -106,9 +102,8 @@ class Users {
     }
     let action = ctx.message.text.split(' ').slice(2).join(' ')
     console.log (action)
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
-    this.saveUserAction(user, 'spenthours', action, parseInt(amount), usersDB)
+
+    this.saveUserAction(user, 'spenthours', action, parseInt(amount), chatID)
     ctx.reply(`You spent ${amount} hours - ${action}.`);
   }
   
@@ -116,9 +111,7 @@ class Users {
   async wallet(ctx) {
     const chatID = ctx.message.chat.id;
     const user = ctx.message.from;
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
-    let userinfo = await this.getUserInfo(user, usersDB)
+    let userinfo = await this.getUserInfo(user, chatID)
     let message = `You have ${userinfo.money} currency units and ${userinfo.hours} hours in your wallet.`
     ctx.reply(message);
 
@@ -147,13 +140,11 @@ class Users {
     }
     let action = ctx.message.text.split(' ').slice(3).join(' ')
 
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
     if (currentsee.startsWith('euro')) {
-      this.saveUserAction(user, 'spentmoney', action, parseInt(amount), usersDB)
+      this.saveUserAction(user, 'spentmoney', action, parseInt(amount), chatID)
     }
     else if (currentsee.startsWith('hour')) {
-      this.saveUserAction(user, 'spenthours', action, parseInt(amount), usersDB)
+      this.saveUserAction(user, 'spenthours', action, parseInt(amount), chatID)
     }
 
     // ctx.reply(`@${user.username} ${command.substring(1)} ${amount} ${currentsee} - ${action}.`, Markup.inlineKeyboard(
@@ -179,9 +170,8 @@ class Users {
     }
     let action = ctx.message.text.split(' ').slice(2).join(' ')
     console.log (action)
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
-    this.saveUserAction(user, 'gotmoney', action, amount, usersDB)
+  
+    this.saveUserAction(user, 'gotmoney', action, amount,  chatID)
     ctx.reply(`You got paid ${amount} - ${action}.`);
   }
 
@@ -194,15 +184,13 @@ class Users {
       ctx.reply('Please specify a value or list of values to add. eg: /value freedom, non-violence');
       return;
     }
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
-
-    let userinfo = await this.getUserInfo(user, usersDB)
+   
+    let userinfo = await this.getUserInfo(user, chatID)
     if (!userinfo.values) userinfo.values = []
     console.log(userinfo.values)
     userinfo.values = userinfo.values.concat(values)
     
-    await usersDB.put(userinfo)
+    await this.db.put(chatID + '.users',userinfo)
     ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
 
@@ -214,14 +202,12 @@ class Users {
       ctx.reply('Please specify a need or comma separated list of needs to add. eg: /need hugs, massages');
       return;
     }
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
 
-    let userinfo = await this.getUserInfo(user, usersDB)
+    let userinfo = await this.getUserInfo(user, chatID)
     if (!userinfo.needs) userinfo.needs = []
     userinfo.needs = userinfo.needs.concat(needs)
     
-    await usersDB.put(userinfo)
+    await this.db.put(chatID + '.users',userinfo)
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);
   }
 
@@ -229,10 +215,8 @@ class Users {
 
   async listUsersActions(ctx) {
     const chatID = ctx.message.chat.id;
-    const usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
+    let users = await this.db.getAll(chatID + '.users')
 
-    let users = await usersDB.get('')
     let message = ''
     for (let i = 0; i < users.length; i++) {
       let user = users[i];
@@ -245,10 +229,9 @@ class Users {
 
 
   // save user action
-  async saveUserAction(user, type, action, amount , db) {
+  async saveUserAction(user, type, action, amount , chatID) {
     console.log('SAVE USER ACTION: ' + type)
-    if (!db) return
-    let userinfo = await this.getUserInfo(user, db)
+    let userinfo = await this.getUserInfo(user, chatID)
     switch (type) {
       case 'offers':
         userinfo.offers.push(action);
@@ -293,14 +276,13 @@ class Users {
     if (userinfo.actions == undefined) userinfo.actions = []
     userinfo.actions.push({type: type, action: action, amount: amount});
 
-    await db.put(userinfo)
+    await this.db.put(chatID + '.users', userinfo)
   }
 
 
   //gets an existing user or  creates a new one
-  async getUserInfo(user, db) {
-    if (!db) return
-    let userinfo = await db.get(user.id)[0]
+  async getUserInfo(user, chatID) {
+    let userinfo = await this.db.get(chatID + '.users', user.id)
     // Initialize the receiver's points if they do not exist yet
     if (!userinfo || userinfo == '') {
       userinfo = {
@@ -322,7 +304,7 @@ class Users {
         money: 0,
         voice: 0
       }
-      await db.put(userinfo)
+      await this.db.put(chatID + '.users',userinfo)
     }
     if(userinfo._id)  userinfo.id = userinfo._id // convert older format
     return userinfo

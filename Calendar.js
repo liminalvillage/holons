@@ -277,10 +277,10 @@ export class Calendar {
     };
     Telebot = {
         editMessageReplyMarkupCalendar(date, query) {
-            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatId: query.message.chat.id}, this.replyMarkupObject(this.createNavigationKeyboard(date)));
+            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createNavigationKeyboard(date)));
         },
         editMessageReplyMarkupTime(date, query, from_calendar) {
-            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatId: query.message.chat.id}, this.replyMarkupObject(this.createTimeSelector(date, from_calendar)));
+            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createTimeSelector(date, from_calendar)));
         },
         sendMessageCalendar(menu, msg) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];

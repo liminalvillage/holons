@@ -1,17 +1,16 @@
 import { CronJob } from 'cron'; // You may need to install the 'cron' package
 
 class Scheduler {
-    constructor(bot, orbitdb) {
+    constructor(bot, db) {
         this.bot = bot;
-        this.orbitdb = orbitdb;
-        this.tasksDB = null; // Database for tasks
+        this.db = db;
+        this.this.db = null; // Database for tasks
         this.loadTasks();
     }
 
     async loadTasks() {
         // Initialize or load the tasks database
-        this.tasksDB = await this.orbitdb.docs('WeQuest.Tasks');
-        await this.tasksDB.load();
+  
     }
 
     async addTask(ctx) {
@@ -24,7 +23,7 @@ class Scheduler {
             createdAt: new Date(),
             completed: false
         };
-        await this.tasksDB.put(task);
+        await this.this.db.put(chatID + '.schedule'task);
         this.scheduleTask(task);
         ctx.reply('Task scheduled successfully.');
     }
@@ -66,11 +65,11 @@ class Scheduler {
     async markTaskCompleted(ctx) {
         const chatID = ctx.message.chat.id;
         const taskDetails = ctx.message.text.split(' ').slice(1).join(' ');
-        const tasks = await this.tasksDB.query((doc) => doc.chatID === chatID && doc.taskDetails === taskDetails);
+        const tasks = await this.this.db.query((doc) => doc.chatID === chatID && doc.taskDetails === taskDetails);
         if (tasks.length > 0) {
             let task = tasks[0];
             task.completed = true;
-            await this.tasksDB.put(task);
+            await this.this.db.put(chatID + '.schedule',task);
             ctx.reply('Task marked as completed.');
         } else {
             ctx.reply('Task not found.');

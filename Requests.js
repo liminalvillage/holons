@@ -12,9 +12,9 @@ var p = {"linked_schemas":["offers_wants_prototype-v0.0.2"],"profile_url":"https
 // HANDLES REQUESTS ====================================================
 
 class Request {
-    constructor(bot, orbitdb){
+    constructor(bot, db){
         this.bot = bot;
-        this.orbitdb = orbitdb;
+        this.db = db;
 
         bot.start((ctx) => {
           ctx.reply(
@@ -24,11 +24,10 @@ class Request {
         });
         
         bot.action('OFFER', async (ctx) => {
-          let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-          await offersDB.load()
-          let offer = await offersDB.get('ctx.message.message_id')
+          let chatID = ctx.message.chat.id;
+          let offer = await this.db.get(chatID + '.offers', ctx.message.message_id)
           offer['exchange_type'] = 'offer';
-          await offersDB.put(offer)
+          await this.db.put(chatID + '.offers', offer)
           ctx.editMessageText('You chose: Offer. What\'s next?', getKeyboard(offer));
         });
         
@@ -118,16 +117,13 @@ class Request {
 }
 
 
-export async function request(type, ctx, orbitdb) {
+export async function request(type, ctx, db) {
     // Extract request from command argument
   
     let chatID = ctx.message.chat.id;
     let messageID = ctx.message.message_id;
     const text = ctx.message.text;
     const sender = ctx.from;
-
-    let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-    await offersDB.load()
 
     // Respond to user
     let request = {
@@ -143,11 +139,11 @@ export async function request(type, ctx, orbitdb) {
     ctx.reply(createMessage(request), markup).then((ctx) => {
         // Add the message id to the quest
         request.id = ctx.message_id;
-        offersDB.put(request)
+        this.db.put(chatID + '.offers',request)
     });
 }
 
-export async function offer(ctx, orbitdb) {
+export async function offer(ctx, db) {
     // Extract request from command argument
   
     let chatID = ctx.message.chat.id;
@@ -155,10 +151,7 @@ export async function offer(ctx, orbitdb) {
     const text = ctx.message.text;
     const sender = ctx.from;
 
-    let offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-    await offersDB.load()
-
-    // Respond to user
+  // Respond to user
     let request = {
         id: ctx.message.message_id,
         title: ctx.message.text.split(' ').slice(1).join(' '),
@@ -171,7 +164,7 @@ export async function offer(ctx, orbitdb) {
     ctx.reply(createMessage(request), createProperties()).then((ctx) => {
         // Add the message id to the quest
         request.id = ctx.message_id;
-        offersDB.put(request)
+        this.db.put(chatID + '.offers',request)
     });
    
 
@@ -201,14 +194,11 @@ export async function offer(ctx, orbitdb) {
 //   }
 // });
 
-export async function requests(ctx, orbitdb) {
+export async function requests(ctx, db) {
     let chatID = ctx.message.chat.id;
     let messageID = ctx.message.message_id;
     // Print list of unfulfilled requests
-    const offersDB = await orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-    await offersDB.load()
-    let requests = offersDB.get('')
-    console.log(requests)
+    let requests = this.db.getAll(chatID + '.offers')
     let message = 'Here are the currently open requests:\n';
     ctx.reply(message, createButtons(requests));
 }

@@ -13,9 +13,7 @@ export default class Participation {
     async participation (ctx) {
         // Load all users
         let chatID = ctx.chat.id;
-        let usersDB = await this.db.docs('WeQuest.' + chatID.toString() + '.users');
-        await usersDB.load();
-        let users = await usersDB.get('');
+        let users = await this.db.getAll( chatID + '.users');
         if (!users) {
             ctx.reply('No users found.');
             return;
@@ -34,13 +32,8 @@ export default class Participation {
             return;
         }
 
-        // let participationDB = await this.db.docs('WeQuest.' + chatID.toString() + '.participation');
-        // await participationDB.load();
-        // let participation = await participationDB.get(userID)[0];
-        let usersDB = await this.db.docs('WeQuest.' + chatID.toString() + '.users');
-        await usersDB.load();
-        let users = await usersDB.get('');
-        let user = await usersDB.get(targetuser)[0];
+        let users = await this.db.getAll(chatID + '.users');
+        let user = await this.db.get(chatID + '.users',targetuser);
 
         if (user.participate == undefined) {
             user.participate = false;
@@ -48,7 +41,7 @@ export default class Participation {
 
         user.participate = !user.participate;
 
-        await usersDB.put(user);
+        await this.db.put(chatID + '.users', user);
         ctx.editMessageText('Participation list:',  createList(users)).catch((error) => { console.log(error) });
 
     }

@@ -2,7 +2,7 @@
 
 class Rotation{
 
-    constructor(bot, orbitdb) {
+    constructor(bot, db) {
     
     }
     

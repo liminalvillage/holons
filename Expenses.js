@@ -5,9 +5,7 @@ export default class Expenses {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
-        // this.expenses = [];
-        // this.users = new Set();
-
+ 
         bot.command('spent', async (ctx) => {
             const chatID = ctx.chat.id;
             const args = ctx.message.text.split(' ').slice(1);
@@ -77,16 +75,12 @@ export default class Expenses {
             paidBy,
             splitWith: [paidBy]
         };
-        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
-        await expenseDB.load()
-        await expenseDB.put(expense)
+        await this.db.put(chatID + '.expense', expense)
         return expense;
     }
 
     async joinSplit(chatID, username, expenseID) {
-        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
-        await expenseDB.load()
-        let expense = await expenseDB.get(expenseID)[0]
+        let expense = await this.db.get(chatID + '.expense', expenseID)
 
         if (expense) {
             if (!expense.splitWith.includes(username)) { //add user to split
@@ -96,37 +90,27 @@ export default class Expenses {
                 expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != username; });
             }
 
-            await expenseDB.put(expense)
+            await this.db.put(chatID + '.expense',expense)
             return expense;
         }
         return false;
     }
 
     async splitAll(chatID, username, expenseID) {
-        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
-        await expenseDB.load()
-        let expense = await expenseDB.get(expenseID)[0]
+        let expense = await this.db.get(chatID + '.expense', expenseID)
         if (expense) {
-            let usersDB = await this.db.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'id' })
-            await usersDB.load()
-            let users = await usersDB.get('')
+            let users = await this.db.getAll(chatID + '.users')
             let userArray = users.map(user => user.username)
             expense.splitWith = userArray;
-            await expenseDB.put(expense)
+            await this.db.put(chatID + '.expense',expense)
             return expense;
         }
         return false;
     }
 
     async calculateDebts(chatID) {
-        let expenseDB = await this.db.docs('WeQuest.' + chatID.toString() + '.expense', { indexBy: 'id' })
-        await expenseDB.load()
-        let expenses = await expenseDB.get('')
-
-
-        let usersDB = await this.db.docs('WeQuest.' + chatID.toString() + '.users', { indexBy: 'id' })
-        await usersDB.load()
-        let users = await usersDB.get('')
+        let expenses = await this.db.getAll( chatID + '.expense')
+        let users = await this.db.getAll(chatID + '.users')
         let userArray = users.map(user => user.username)
         let debtMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
 

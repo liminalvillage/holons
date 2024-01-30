@@ -13,9 +13,9 @@ const browser = await puppetteer.launch({
 });
 
 class UI {
-  constructor(bot, orbitdb, settings) {
+  constructor(bot, db, settings) {
     this.bot = bot;
-    this.orbitdb = orbitdb;
+    this.db = db;
     this.settings = settings
     //=========== UI COMMANDS ===============
 
@@ -48,16 +48,13 @@ class UI {
 
   async getFederatedUsers(chatID) {
     // get all users from the chat
-    let usersDB = await this.orbitdb.docs('WeQuest.' + chatID + '.users')
-    await usersDB.load()
-    let users = await usersDB.get('')
+    let users = await this.db.getAll(chatID + '.users')
 
     // get all users from the federation
     let federation = await this.settings.getFederation(chatID)
     for (let i = 0; i < federation.length; i++) {
-      let fedusersDB = await this.orbitdb.docs('WeQuest.' + federation[i] + '.users')
-      await fedusersDB.load()
-      let federatedusers = await fedusersDB.get('')
+
+      let federatedusers = await this.db.getAll(federation[i] + '.users')
       //check if the user is already in the list
       for (let j = 0; j < federatedusers.length; j++) {
         let user = federatedusers[j]
@@ -89,13 +86,9 @@ class UI {
 
   async getFederatedQuests(chatID) {
     let federation = await this.settings.getFederation(chatID)
-    let questsDB = await this.orbitdb.docs('WeQuest.' + chatID + '.quests')
-    await questsDB.load()
-    let quests = await questsDB.get('')//.filter(quest => quest.status === 'ongoing')
+    let quests = await this.db.getAll(chatID + '.quests')//.filter(quest => quest.status === 'ongoing')
     for (let i = 0; i < federation.length; i++) {
-      let questsDB = await this.orbitdb.docs('WeQuest.' + federation[i] + '.quests')
-      await questsDB.load()
-      let federatedquests = await questsDB.get('')
+      let federatedquests = await this.db.getAll(federation[i] + '.quests')
       quests = quests.concat(federatedquests)
     }
     return quests
@@ -126,28 +119,8 @@ class UI {
     return;
   }
 
-  // Set up a command to display the requests
-  // async leaderboard(ctx, valueEquation) {
-  //   if (!this.orbitdb) return
-  //   let chatID = ctx.message.chat.id
-  //   // loop through the userlist and get the quests
-  //   let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-  //   await usersDB.load()
-
-
-  //   let users = await usersDB.get('')//.filter(quest => quest.status === 'ongoing')
-
-  //   // Create a table header
-  //   this.getRankTable(users, valueEquation, chatID).then((path) => {
-  //     //this.getAppreciationTable(users, chatID).then((path) => {
-  //     //send the image
-  //     ctx.replyWithPhoto({ source: fs.createReadStream(path) })
-  //   });
-  //   return;
-  // }
-
   async bulletinboard(ctx) {
-    if (!this.orbitdb) return
+    if (!this.db) return
     let chatID = ctx.message.chat.id
     // loop through the userlist and get the quests
     let users = await this.getFederatedUsers(chatID)
@@ -163,13 +136,11 @@ class UI {
   async valuescloud(ctx) {
     let values = [] // = this.getFederatedValues(chatID)
     const chatID = ctx.message.chat.id;
-    const usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await usersDB.get('')
+    let users = await this.db.getAll(chatID + '.users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -206,13 +177,11 @@ class UI {
   async needscloud(ctx) {
     let needs = [] // = this.getFederatedValues(chatID)
     const chatID = ctx.message.chat.id;
-    const usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-    await usersDB.load()
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await usersDB.get('')
+    let users = await this.db.getAll(chatID + '.users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -249,13 +218,9 @@ class UI {
 
   // Set up a command to display the quests
   async questboard(ctx) {
-    if (!this.orbitdb) return
+    if (!this.db) return
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
-
-    // let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-    // await questsDB.load()
-    // let quests = await questsDB.get('').filter(quest => quest.status === 'ongoing')
 
     let quests = await this.getFederatedQuests(chatID)
     quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled'))
@@ -264,21 +229,18 @@ class UI {
       //send the image
       ctx.replyWithPhoto({ source: fs.createReadStream(path) });
       // ctx.replyWithPhoto({ source: fs.createReadStream(path) }, Markup.inlineKeyboard([
-      //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID.toString()+'/'+quests[0].id.toString()),
+      //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID + '/'+quests[0].id.toString()),
       // ])).then((ctx) => { this.bot.telegram.pinChatMessage(chatID, ctx.message_id) });
     });
     return;
   }
 
   async requestsboard(ctx) {
-    if (!this.orbitdb) return
+    if (!this.db) return
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
 
-    let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-    await offersDB.load()
-
-    let requests = await offersDB.get('')
+    let requests = await this.db.getAll(chatID + '.offers')
 
     // Create a table header
     this.getRequestsTable(requests, chatID).then((path) => {
@@ -289,14 +251,11 @@ class UI {
   }
 
   async offersboard(ctx) {
-    if (!this.orbitdb) return
+    if (!this.db) return
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
 
-    let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-    await offersDB.load()
-
-    let requests = await offersDB.get('')
+    let requests = await this.db.getAll(chatID + '.offers')
 
     // Create a table header
     this.getOffersTable(requests, chatID).then((path) => {

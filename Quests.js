@@ -8,10 +8,10 @@ import Users from './Users.js';
 
 export default class Quests {
 
-    constructor(bot, orbitdb, settings) {
+    constructor(bot, db, settings) {
 
         this.bot = bot;
-        this.orbitdb = orbitdb;
+        this.db = db;
         this.calendar = new Calendar(bot, {
             date_format: 'YYYY/MM/DD HH:mm:ss',
             time_selector_mod: true,
@@ -19,7 +19,7 @@ export default class Quests {
             bot_api: 'telegraf'
         });
         this.settings = settings
-        this.users = new Users(bot, orbitdb)
+        this.users = new Users(bot, db)
         //----------------------------- QUESTS -----------------------------
         this.bot.command('quest', async (ctx) => this.quest('quest', ctx))
         this.bot.command('mission', async (ctx) => this.quest('quest', ctx))
@@ -68,12 +68,10 @@ export default class Quests {
     //     console.log("LOCATION ACTION");
     //     let chatID = ctx.message.chat.id;
     //     let messageID = ctx.message.message_id;
-    //     let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-    //     await questsDB.load()
-    //     let quest = await questsDB.get(messageID.toString())[0]
+    //     let quest = await this.db.get(chatID + '.quests',messageID.toString())
     //     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
     //     quest.where = ctx.message.location
-    //     questsDB.put(quest)
+    //     this.db.put(chatID + '.quests', quest)
     //     this.updateMessage(ctx, quest)
     // }
 
@@ -82,9 +80,8 @@ export default class Quests {
         let chatID = ctx.message.chat.id;
         let messageID = ctx.message.message_id;
         const language = await this.settings.getLanguage(chatID)
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-        let quests = await questsDB.query((doc) => doc.status === 'ongoing' || doc.status === 'scheduled');
+        let quests = await this.db.getAll(chatID + '.quests');
+        //quests = ((doc) => doc.status === 'ongoing' || doc.status === 'scheduled')
         if (quests.length === 0) {
             ctx.reply(`No quests found`);
             return;
@@ -97,11 +94,11 @@ export default class Quests {
                 //resend the message
                 const quest = quests[i];
                 await ctx.telegram.sendMessage(chatID, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (nctx) => {
-                    questsDB.del(quest.id.toString())
+                    this.db.del(chatID + '.quests',quest.id.toString())
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
-                    await questsDB.put(quest)
+                    await this.db.put(chatID + '.quests',quest)
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
@@ -136,9 +133,8 @@ export default class Quests {
         let chatID = ctx.message.chat.id;
         let messageID = ctx.message.message_id;
         const language = await this.settings.getLanguage(chatID)
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-        let quests = await questsDB.query((doc) => doc.type === type && doc.status === 'ongoing' || doc.status === 'scheduled');
+        let quests = await this.db.getAll(chatID + '.quests')
+        // quests = quests.filter((doc) => doc.type === type && doc.status === 'ongoing' || doc.status === 'scheduled');
         if (quests.length === 0) {
             ctx.reply(`No ${type}s found`);
             return;
@@ -165,12 +161,6 @@ export default class Quests {
         if (type == 'any')
             type = ctx.message.text.split(' ')[0].replace('/', '');
         const sender = ctx.message.from;
-
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-
-        let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-        await usersDB.load()
 
         const title = text.split(' ').slice(1).join(' ');
         const picture = ctx.message.photo ? ctx.message.photo[0].file_id : null;
@@ -201,14 +191,6 @@ export default class Quests {
             status: 'ongoing'
         }
 
-        // let path = await ui.questImage(quest)
-        // ctx.replyWithPhoto({ source: fs.createReadStream(path) },markup).then((ctx) => {
-        //     // Add the message id to the quest
-        //     questObj.id = ctx.message_id;
-
-        //     questsDB.put(questObj)
-
-        //   }); 
         if (picture)
             ctx.replyWithPhoto(picture,
                 {
@@ -219,7 +201,7 @@ export default class Quests {
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
-                    questsDB.put(quest)
+                    this.db.put( chatID + '.quests', quest)
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
@@ -239,18 +221,18 @@ export default class Quests {
 
             if (type == 'offer') {
                 quest.participants.push(sender);
-                await this.users.saveUserAction(sender, "offers", quest.title, 0, usersDB)
+                await this.users.saveUserAction(sender, "offers", quest.title, 0, this.db)
             }
             if (type == 'request') {
                 quest.appreciation.push(sender);
-                await this.users.saveUserAction(sender, "wants", quest.title, 0, usersDB)
+                await this.users.saveUserAction(sender, "wants", quest.title, 0, this.db)
             }
             ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
                 // Add the message id to the quest
                 quest.id = nctx.message_id;
                 quest.chat = nctx.chat.id;
 
-                await questsDB.put(quest)
+                this.db.put(chatID + '.quests', quest)
 
                 //Pin the message
                 ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -261,18 +243,16 @@ export default class Quests {
                 ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
                 // REPLICATE IN FEDERATED CHATS
-                let federationDB = await this.orbitdb.docs('WeQuest.federation')
-                await federationDB.load()
 
-                let notifyChats = (await federationDB.get(chatID.toString())[0])
+                let notifyChats = (await this.db.get('federation',chatID))
 
                 if (!notifyChats || notifyChats == '') { console.log('FEDERATION IS NOT FOUND') }
                 else
                     notifyChats = notifyChats.notify
 
                 if (notifyChats && notifyChats.length > 0) {
-                    let id = '' + quest.chat * 2 + quest.id //*2 is a hack not to return similar indexes
-                    let fedinfo = federationDB.get(id)[0]
+                    let id = quest.chat * 2 + quest.id //*2 is a hack not to return similar indexes
+                    let fedinfo = this.db.get('federation',id)
                     console.log(fedinfo)
                     if (!fedinfo || fedinfo == '' || fedinfo == undefined)
                         fedinfo = { id: id, all: [{ chat: quest.chat.toString(), id: quest.id.toString() }], type: 'quest' }  //TODO UPDATE JSON SCHEMA
@@ -285,7 +265,7 @@ export default class Quests {
                         })
                     }
                     console.log(fedinfo)
-                    await federationDB.put(fedinfo) // Add federated message ids to the DB
+                    this.db.put('federation', fedinfo) // Add federated message ids to the DB
                 }
             })
         }
@@ -301,10 +281,8 @@ export default class Quests {
         console.log(ctx.callbackQuery.data)
 
         const language = await this.settings.getLanguage(chatID)
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
 
-        let quest = await questsDB.get(messageID.toString())[0]
+        let quest = await this.db.get(chatID + '.quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
@@ -312,7 +290,7 @@ export default class Quests {
             ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID })
             return;
         }
-
+         console.log("Quest:" ,quest)
         // Get the user who reacted
         const sender = ctx.callbackQuery.from;
 
@@ -340,7 +318,7 @@ export default class Quests {
         this.updateMessage(ctx, quest);
 
         // Update the db
-        questsDB.put(quest);
+        this.db.put(chatID + '.quests', quest);
     }
 
     async appreciate(ctx) {
@@ -351,10 +329,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-
-        let quest = await questsDB.get(messageID.toString())[0]
+        let quest = await this.db.get(chatID + '.quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
@@ -389,13 +364,11 @@ export default class Quests {
             ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`);
             // share appreciation "after the fact"
             if (quest.status === "completed") {
-                let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-                await usersDB.load()
-                await this.users.saveUserAction(sender, "sent", quest.title, 0, usersDB)
+                await this.users.saveUserAction(sender, "sent", quest.title, 0, this.db)
                 for (let i = 0; quest.participants.length; i++) {
                     console.log(quest.participants.length)
                     if (quest.participants[i].id) { //TODO: check why this is needed sometimes otherwise it crashes
-                        await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0, usersDB)
+                        await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0, this.db)
                     } else {
                         console.log('Bug: participant has no id: ' + quest.participants[i])
                     }
@@ -408,7 +381,7 @@ export default class Quests {
         this.updateMessage(ctx, quest);
 
         // Update the db
-        questsDB.put(quest);
+        this.db.put(chatID + '.quests', quest);
     }
 
     async cancel(ctx) {
@@ -419,17 +392,14 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-
-        let quest = await questsDB.get(messageID.toString())[0]
+        let quest = await this.db.get(chatID + '.quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
         // Handle the reaction to the quest
         if (quest.initiator.id === ctx.from.id) {
             //delete quest from database
-            questsDB.del(messageID.toString())
+            this.db.del(chatID +  '.quests', messageID.toString())
 
             //unpin the message
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
@@ -450,10 +420,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-
-        let quest = await questsDB.get(messageID.toString())[0]
+        let quest = await this.db.get(chatID + '.quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
@@ -480,7 +447,7 @@ export default class Quests {
         this.updateMessage(ctx, quest);
 
         // Update the db
-        await questsDB.put(quest);
+        this.db.put(chatID + '.quests', quest);
     }
 
 
@@ -492,10 +459,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-        await questsDB.load()
-
-        let quest = await questsDB.get(messageID.toString())[0]
+        let quest = await this.db.get(chatID + '.quests',messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
         if (!quest.status == 'stopped') { ctx.answerCbQuery(`You cannot complete a quest that has been stopped. Ask to remove the stop before completing the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) }); return }
@@ -506,7 +470,7 @@ export default class Quests {
             // Update the message 
             this.updateMessage(ctx, quest);
             // Update the db
-            questsDB.put(quest);
+            this.db.put(chatID + '.quests', quest);
             //unpin the message
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { })
 
@@ -516,22 +480,19 @@ export default class Quests {
         }
         // ================================ RECORD ACTIONS ========================== 
 
-        let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-        await usersDB.load()
-
-        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, 0, usersDB)
+        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, 0, this.db)
 
         // loop through all users and add the completed quest to their account
         for (let i = 0; i < quest.participants.length; i++) {
             let user = quest.participants[i];
-            await this.users.saveUserAction(user, "completed", quest.title, 0, usersDB)
+            await this.users.saveUserAction(user, "completed", quest.title, 0, this.db)
         }
 
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
             // appreciation.appreciate(sender, receivers)
-            await this.users.saveUserAction(sender, "sent", quest.title, 0, usersDB)
+            await this.users.saveUserAction(sender, "sent", quest.title, 0, this.db)
             // Calculate the number of appreciation to send to each user
             const appreciationPerUser = 1  // / quest.participants.length;
 
@@ -544,9 +505,9 @@ export default class Quests {
                 //     continue;
                 // }
                 // Send the appreciation to each user
-                //await recieveToken(recipient, appreciationPerUser, usersDB)
+                //await recieveToken(recipient, appreciationPerUser, this.db)
                 // save user with action to the database
-                await this.users.saveUserAction(recipient, "received", quest.title, 0, usersDB)
+                await this.users.saveUserAction(recipient, "received", quest.title, 0, this.db)
             }
         }
         // ================================ APPRECIATION ==========================
@@ -570,9 +531,7 @@ export default class Quests {
         const entities = ctx.message.entities;
 
         // Setup the necessary databases
-        const usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-        await usersDB.load()
-        const mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
+      const mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
         if (mentions.length === 0) {
             ctx.reply(`Please mention the name of the user(s) you want to send appreciation to using '@', followed by the reason.`, { reply_to_message_id: ctx.message.message_id });
             return
@@ -591,7 +550,7 @@ export default class Quests {
                 recipent = await ctx.telegram.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
                 // get the user from the database
-                recipient = await usersDB.query((user) => user.username == username)[0]
+                recipient = await this.db.query((user) => user.username == username)[0]
                 console.log(recipient)
             }
 
@@ -618,14 +577,14 @@ export default class Quests {
 
 
             // Send the appreciation to the recipient
-            //await recieveToken(recipient, 1, usersDB)
+            //await recieveToken(recipient, 1, this.db)
             // save the user action
-            await this.users.saveUserAction(recipient, "received", action, 1, usersDB)
+            await this.users.saveUserAction(recipient, "received", action, 1, this.db)
         }
 
         // Update the sent appreciation of the sender
-        //await sendToken(sender, 1, usersDB)
-        await this.users.saveUserAction(sender, "sent", action, 1, usersDB)
+        //await sendToken(sender, 1, this.db)
+        await this.users.saveUserAction(sender, "sent", action, 1, this.db)
         ctx.reply(`@${sender.username} sent appreciation ${action}`).catch((error) => console.log(error));
     }
 
@@ -640,11 +599,8 @@ export default class Quests {
     }
 
     // Function to update messages for a quest
-    // Function to update messages for a quest
     async updateMessage(ctx, quest, language) {
-        let federationDB = await this.orbitdb.docs('WeQuest.federation')
-        await federationDB.load()
-        let fedinfo = await federationDB.get('' + quest.chat * 2 + quest.id)[0] //* 2 hack not to return similar 
+        let fedinfo = await this.db.get('federation', quest.chat * 2 + quest.id) //* 2 hack not to return similar 
         let message_id
         let chat_id
         if (!fedinfo || fedinfo == '') {

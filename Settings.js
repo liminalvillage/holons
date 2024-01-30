@@ -7,7 +7,7 @@ import exp from "constants";
 
 export default class Settings{
     constructor(bot,db){
-        this.orbitdb = db
+        this.db = db
         this.bot = bot
         // ================= ADMIN ===========================
         this.bot.command('chats', async (ctx) => {
@@ -21,15 +21,15 @@ export default class Settings{
                 // try{
                 //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
                 // }catch(e){ console.log(e)}
-                let questsDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.quests')
-                let offersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.offers')
-                let usersDB = await this.orbitdb.docs('WeQuest.' + chatID.toString() + '.users')
-                //let federationDB = await this.orbitdb.docs('WeQuest.federation')
-                await questsDB.drop()
-                await offersDB.drop()
-                await usersDB.drop()
-                //await federationDB.drop()
-                this.settingsDB.put(this.getDefaultSettings(chatID))
+                let quests = await this.db.open(chatID + '.quests')
+                let offers = await this.db.open(chatID + '.offers')
+                let users= await this.db.open(chatID + '.users')
+      
+                await quests.drop()
+                await offers.drop()
+                await users.drop()
+                //await this.db.drop()
+                this.db.put('settings', this.getDefaultSettings(chatID))
                 ctx.reply('WeQuest resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -90,7 +90,7 @@ export default class Settings{
         this.bot.command('whitelist', async (ctx) =>{
             let settings = await this.getSettings(utils.getChatId(ctx))[0]
             settings.whitelisted = true
-            await this.settingsDB.put(settings)
+            this.db.put('settings',settings)
           })
 
         this.bot.action(/increment_(.+)/, async (ctx) => {
@@ -188,9 +188,6 @@ i18next
     resources: locales,
     fallbackLng: 'en',
   });
-
- this.settingsDB = await this.orbitdb.docs('WeQuest.settings')
- await this.settingsDB.load()
 }
 
 // get language from the database
@@ -214,7 +211,7 @@ async setLanguage(ctx) {
 
     let settings = await this.getSettings(chatID)
     settings.language = language
-    this.settingsDB.put(settings)
+    this.db.put('settings',settings)
     ctx.reply('Language changed to ' + language)
 }
 
@@ -245,7 +242,7 @@ async setTheme(ctx) {
     }
     let settings = await this.getSettings(chatID)
     settings.theme = theme
-    this.settingsDB.put(settings)
+    this.db.put('settings',settings)
     ctx.reply('Theme changed to ' + theme)
 }
 
@@ -269,7 +266,7 @@ async setLevel(ctx) {
 
     let settings =  await this.getSettings(chatID)
     settings.level = level
-    this.settingsDB.put(settings)
+    this.db.put('settings',settings)
     ctx.reply('Level changed to ' + level)
 
 }
@@ -288,7 +285,7 @@ async setAdmin(ctx) {
           }
     let settings =  await this.getSettings(chatID)
     settings.admin = admin
-    this.settingsDB.put(settings)
+    this.db.put('settings',settings)
     ctx.reply('Admin changed to ' + admin)
 }
 
@@ -301,10 +298,8 @@ async federate(ctx) {
             return
     }
 
-    let federationDB = await this.orbitdb.docs('WeQuest.federation')
-    await federationDB.load()
     // Save federation info into the chat database
-    let fedinfo = await federationDB.get(chatID.toString())
+    let fedinfo = await this.db.get('federation', chatID)
 
     if (fedinfo && fedinfo.federation) {
         
@@ -313,32 +308,32 @@ async federate(ctx) {
             return
         } else {
             fedinfo.federation.push(federationID.toString())
-            await federationDB.put(fedinfo)
+            this.db.put('federation',fedinfo)
         }
     } else {
-        federationDB.put({
-            id: chatID.toString(),
+        this.db.put('federation',{
+            id: chatID,
             name: ctx.message.chat.title,
             federation: [federationID.toString()],
             notify: []
         })
     }
     // save who needs to be notified in the federation database
-    fedinfo = await federationDB.get(federationID.toString())[0]
+    fedinfo = await this.db.get(federationID.toString())[0]
     if (fedinfo) {
         if (fedinfo.notify.includes(chatID)) {
             ctx.reply('This chat is already federated with ' + federationID)
             return
         } else {
-            fedinfo.notify.push(chatID.toString())
-            await federationDB.put(fedinfo)
+            fedinfo.notify.push(chatID)
+            this.db.put('federation',fedinfo)
         }
     } else {
-        federationDB.put({
+        this.db.put('federation',{
             id: federationID.toString(),
             name: await utils.getChatName(ctx, federationID),
             federation: [],
-            notify: [chatID.toString()]
+            notify: [chatID]
         })
     }
 
@@ -346,11 +341,11 @@ async federate(ctx) {
     // //federate one way
     // let settings =  await this.getSettings(chatID)
     // settings.federation.push(federationID)
-    // this.settingsDB.put(settings)
+    // this.this.db.put(settings)
     //federate the other way
     // let settings =  await this.getSettings(federationID)
     // settings.federation.push(chatID)
-    // this.settingsDB.put(settings)
+    // this.this.db.put(settings)
 
     ctx.reply('This chat has been federated with ' + federationID)
     return
@@ -364,10 +359,8 @@ async separate(ctx) {
             ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456.')
             return
     }
-    let federationDB = await this.orbitdb.docs('WeQuest.federation')
-    await federationDB.load()
     // Save federation info into the chat database
-    let fedinfo = await federationDB.get(chatID.toString())
+    let fedinfo = await this.db.get('federation', chatID)
     if (!fedinfo || !fedinfo.federation) {
         ctx.reply('You are not federated with ' + federationID)
         return
@@ -383,7 +376,7 @@ async separate(ctx) {
     //     ctx.reply('You are not federated with ' + federationID)
     //     return
     // }
-    // await this.settingsDB.put(settings)
+    // await this.this.db.put(settings)
 
 
     ctx.reply('Federation with ' + federationID + ' has been revoked')
@@ -391,14 +384,12 @@ async separate(ctx) {
 }
 
 async getFederation(chatID) {
-    let federationDB = await this.orbitdb.docs('WeQuest.federation')
-    await federationDB.load()
-    let federation = await federationDB.get(chatID.toString())[0]
+    let federation = await this.db.get('federation', chatID)
 
     if (!federation) {
         return []
     }
-    //federation = federation.filter(item => item.id === chatID.toString())[0]
+    //federation = federation.filter(item => item.id === chatID)[0]
     //console.log('This chat is federated with: ' + federation.federation + ' and will notify: ' + federation.notify)
     return federation.federation
 }
@@ -412,7 +403,7 @@ async getFederation(chatID) {
     }
     let settings =   await this.getSettings(chatID)
     settings.roles = roles
-    this.settingsDB.put(settings)
+    this.db.put('settings',settings)
     return settings.roles
 }
 
@@ -428,7 +419,7 @@ async setValues(chatID, values) {
     }
     let settings  = await this.getSettings(chatID)
     settings.values = values.split(' ')
-    this.settingsDB.put(settings)
+    this.db.put('settings',settings)
     return settings.values
 }
 
@@ -439,27 +430,27 @@ async getValues(chatID) {
 
 
 async getChats(ctx){
-    let chats = await this.settingsDB.get('')
+    let chats = await this.db.getAll('settings')
     return await Promise.all( chats.map( async function (chat) {return chat.id}))
 }
 
 async getSettings(chatID) {
-    let settings =  await this.settingsDB.get(chatID)[0]
+    let settings =  await this.db.get('settings', chatID)
     if (!settings || settings == '') {
         settings =  this.getDefaultSettings(chatID)
-        this.settingsDB.put(settings)
+        this.db.put('settings',settings)
     }
     return settings
 }
 
 async setSettings(settings) {
-    this.settingsDB.put(settings)
+    this.db.put('settings', settings)
 }
 
 async setValueEquation(chatID, equation) {
     let settings = await this.getSettings(chatID)
     settings.valueEquation = equation
-    await this.settingsDB.put(settings)
+    await this.db.put('settings', settings)
 }
 
 async getValueEquation(chatID) {

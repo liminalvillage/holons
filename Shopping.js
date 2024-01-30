@@ -20,10 +20,8 @@ class Shopping {
             ctx.reply('Please specify an item to buy. eg: /buy milk');
             return;
         }
-        let shoppingDB = await this.db.docs('WeQuest.' + chatID.toString() + '.shopping')
-        await shoppingDB.load()
         for (let item of items)
-            await shoppingDB.put({ id: item, done: false, from: ctx.from.username });
+            await this.db.put(chatID + '.shopping', { id: item, done: false, from: ctx.from.username });
   
         ctx.reply(`Added ${items.join(", ")} to the shopping list.`);
     }
@@ -42,22 +40,18 @@ class Shopping {
         const index = parseInt(ctx.match[1]);
         const list = await this.getShoppingList(ctx);
         list[index].done = !list[index].done;
-        let shoppingDB = await this.db.docs('WeQuest.' + chatID.toString() + '.shopping')
-        await shoppingDB.load()
-        shoppingDB.put(list[index])
+        this.db.put(chatID + '.shopping', list[index])
         ctx.editMessageText('Here is your shopping list:', this.getShoppingListKeyboard(list)).catch((error) => {console.log(error)  });
     }
 
     async done(ctx) {
         
         let chatID = ctx.chat.id;
-        let shoppingDB = await this.db.docs('WeQuest.' + chatID.toString() + '.shopping')
-        await shoppingDB.load()
-
+       
         let list = await this.getShoppingList(ctx);
         for (let item of list) {
     
-            if (item.done) await shoppingDB.del(item.id);
+            if (item.done) await this.db.del(chatID + '.shopping',item.id);
         }
         
         list = await this.getShoppingList(ctx);
@@ -75,10 +69,7 @@ class Shopping {
 
     async getShoppingList(ctx) {
         let chatID = ctx.chat.id;
-        let shoppingDB = await this.db.docs('WeQuest.' + chatID.toString() + '.shopping')
-        await shoppingDB.load()
-    
-        let list = await shoppingDB.get('');
+        let list = await this.db.getAll(chatID + '.shopping');
         list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }

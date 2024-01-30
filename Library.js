@@ -19,16 +19,12 @@ class Library {
             ctx.reply('Please specify an item to add. eg: /add hammer');
             return;
         }
-
-        let libraryDB = await this.db.docs('Library.' + chatID.toString())
-        await libraryDB.load();
-
-        if(await libraryDB.get(item)[0]) {
+        if(await this.db.get(chatID + '.library',item)) {
             ctx.reply(`${item} is already in the library.`);
             return;
         }
 
-        await libraryDB.put({ id: item, booked: false });
+        await this.db.put(chatID + '.library', { id: item, booked: false });
         ctx.reply(`Added ${item} to the library.`);
     }
 
@@ -40,10 +36,7 @@ class Library {
             return;
         }
 
-        let libraryDB = await this.db.docs('Library.' + chatID.toString());
-        await libraryDB.load();
-
-        let currentItem = await libraryDB.get(item);
+        let currentItem = await this.db.get(chatID + '.library',item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -54,7 +47,7 @@ class Library {
         }
 
         currentItem.booked = true;
-        await libraryDB.put(currentItem);
+        await this.db.put(chatID + '.library',currentItem);
         ctx.reply(`You booked ${item}.`);
     }
 
@@ -66,10 +59,7 @@ class Library {
             return;
         }
 
-        let libraryDB = await this.db.docs('Library.' + chatID.toString());
-        await libraryDB.load();
-
-        let currentItem = await libraryDB.get(item);
+        let currentItem = await this.db.get(item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -80,7 +70,7 @@ class Library {
         }
 
         currentItem.booked = false;
-        await libraryDB.put(currentItem);
+        await this.db.put(chatID + '.library',currentItem);
         ctx.reply(`You returned ${item}.`);
     }
 
@@ -105,26 +95,21 @@ class Library {
         let chatID = ctx.chat.id;
         const itemId = ctx.match[1];
         
-        let libraryDB = await this.db.docs('Library.' + chatID.toString());
-        await libraryDB.load();
 
-        let currentItem = await libraryDB.get(itemId);
+        let currentItem = await this.db.get(chatID + '.library',itemId);
         if (!currentItem) {
             ctx.reply(`${itemId} is not in the library.`);
             return;
         }
 
         currentItem.booked = isBooking;
-        await libraryDB.put(currentItem);
+        await this.db.put(chatID + '.library',currentItem);
         ctx.editMessageText(`${isBooking ? 'Booked' : 'Returned'} ${itemId}`).catch((error) => { console.log(error) });
     }
 
     async getLibraryItems(ctx) {
         let chatID = ctx.chat.id;
-        let libraryDB = await this.db.docs('Library.' + chatID.toString())
-        await libraryDB.load();
-
-        let list = await libraryDB.get('')[0];
+        let list = await this.db.getAll(chatID + '.library');
         //list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }

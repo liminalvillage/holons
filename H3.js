@@ -55,7 +55,7 @@ class H3 {
 
         this.bot.command("summary", async (ctx) => {
             let hex = ctx.message.text.split('/summary ')[1];
-            let summary = await this.db.docs('WeQuest.cells', { indexBy: 'id' }).get(hex)[0].summary
+            let summary = await this.db.get('cells', { indexBy: 'id' }).get(hex)[0].summary
             if (!summary){
                 summary = await this.getChildSummary(hex)
             }
@@ -65,7 +65,7 @@ class H3 {
     }
 
     async init() {
-       await this.db.preload('cell')
+       await this.db.open('cell')
     }
     async delete(id, tag){
         await this.gun.get('WeQuest').get(id).get(tag).put(null)
@@ -223,7 +223,7 @@ class H3 {
             councilWisdom.wisdom.push(answer)
         }
         let summary = await this.summarize(councilWisdom.wisdom.join('\n'))
-        //await this.db.docs('WeQuest.wisdom', { indexBy: 'id' }).put(councilWisdom)
+        //await this.db.open('wisdom', { indexBy: 'id' }).put(councilWisdom)
         console.log(councilWisdom.wisdom)
         console.log('--------------------')
         console.log(summary)
@@ -271,26 +271,26 @@ class H3 {
 
 export default H3;
 
-let db = new DB('WeQuest')
-await db.init()
+// let db = new DB('WeQuest')
+// await db.init()
 
-let hexamap = new H3(new Telegraf(process.env.TELEGRAM), db);
-await hexamap.init()
+// let hexamap = new H3(new Telegraf(process.env.TELEGRAM), db);
+// await hexamap.init()
 
-await hexamap.db.preload('cell');
-await hexamap.db.put('cell',emptycell('802bfffffffffff'))
-var result = await hexamap.db.get('cell','802bfffffffffff')
-console.log('Result:',result)
+// await hexamap.db.open('cell');
+// await hexamap.db.put('cell',emptycell('802bfffffffffff'))
+// var result = await hexamap.db.get('cell','802bfffffffffff')
+// console.log('Result:',result)
 
-let base = await hexamap.getHex(40.689167, -74.044444,14);
-// console.log('Base:',base)
-// //hexamap.delete (base, "thoughts")
- hexamap.put (base, "link", "https://www.youtube.com/watch?v=Qq2XsYX6k3I")
- console.log(await hexamap.get(base, "link"))
+// let base = await hexamap.getHex(40.689167, -74.044444,14);
+// // console.log('Base:',base)
+// // //hexamap.delete (base, "thoughts")
+//  hexamap.put (base, "link", "https://www.youtube.com/watch?v=Qq2XsYX6k3I")
+//  console.log(await hexamap.get(base, "link"))
 
-hexamap.upcast(base, "thoughts", "i am thinking about climate change")
+// hexamap.upcast(base, "thoughts", "i am thinking about climate change")
 
-hexamap.updateParent(base, "i am thinking about climate change")
-hexamap.getChildSummary(base)
-hexamap.askQuestion("What is the meaning of life?", "802bfffffffffff");
-console.log(hexamap.getScalespace(40.689167, -74.044444));
+// hexamap.updateParent(base, "i am thinking about climate change")
+// hexamap.getChildSummary(base)
+// hexamap.askQuestion("What is the meaning of life?", "802bfffffffffff");
+// console.log(hexamap.getScalespace(40.689167, -74.044444));
