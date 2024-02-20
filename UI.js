@@ -48,7 +48,7 @@ class UI {
 
   async getFederatedUsers(chatID) {
     // get all users from the chat
-    let users = await this.db.getAll(chatID + '.users')
+    let users = await this.db.getAll(chatID + '/users')
 
     // get all users from the federation
     let federation = await this.settings.getFederation(chatID)
@@ -86,7 +86,7 @@ class UI {
 
   async getFederatedQuests(chatID) {
     let federation = await this.settings.getFederation(chatID)
-    let quests = await this.db.getAll(chatID + '.quests')//.filter(quest => quest.status === 'ongoing')
+    let quests = await this.db.getAll(chatID + '/quests')//.filter(quest => quest.status === 'ongoing')
     for (let i = 0; i < federation.length; i++) {
       let federatedquests = await this.db.getAll(federation[i] + '.quests')
       quests = quests.concat(federatedquests)
@@ -140,7 +140,7 @@ class UI {
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await this.db.getAll(chatID + '.users')
+    let users = await this.db.getAll(chatID + '/users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -181,7 +181,7 @@ class UI {
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await this.db.getAll(chatID + '.users')
+    let users = await this.db.getAll(chatID + '/users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -223,7 +223,7 @@ class UI {
     let chatID = ctx.message.chat.id
 
     let quests = await this.getFederatedQuests(chatID)
-    quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled'))
+     quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled')) //TODO:Reenable this filter
     // Create a table header
     this.getQuestsTable(quests, chatID).then((path) => {
       //send the image
@@ -240,7 +240,7 @@ class UI {
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
 
-    let requests = await this.db.getAll(chatID + '.offers')
+    let requests = await this.db.getAll(chatID + '/offers')
 
     // Create a table header
     this.getRequestsTable(requests, chatID).then((path) => {
@@ -255,7 +255,7 @@ class UI {
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
 
-    let requests = await this.db.getAll(chatID + '.offers')
+    let requests = await this.db.getAll(chatID + '/offers')
 
     // Create a table header
     this.getOffersTable(requests, chatID).then((path) => {

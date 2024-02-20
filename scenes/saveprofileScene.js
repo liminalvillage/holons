@@ -34,6 +34,13 @@ saveprofileScene.action('public', (ctx) => {
 saveprofileScene.action('private', (ctx) => {
   ctx.session.public = false;
   console.log(ctx.session)
+  if (!ctx.session.wizard) {
+    // save the new data to the database
+    //ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('video').put(ctx.session.video);
+    ctx.session.sceneStack.pop();
+    ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
+    return
+  }
   ctx.session.stage +=1;
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
@@ -52,9 +59,9 @@ function createProfile(session){
   profile.responses = session.responses
   profile.category = session.category
   profile.name = session.name
-  profile.start = session.startwhen
-  profile.end = session.endwhen
-  profile.hex =session.h3
+  profile.arrival = session.arrival
+  profile.departure = session.departure
+  profile.hex =session.hex
   console.log(profile)
   return profile
 }

@@ -13,6 +13,7 @@ import locationScene from './scenes/locationScene.js';
 import saveprofileScene from './scenes/saveprofileScene.js'
 import summarizeScene from './scenes/summarizeScene.js';
 import welcomeScene from './scenes/welcomeScene.js';
+import { dnaScene, createScenesForDNA } from './scenes/dnaScene.js';
 import done from './scenes/doneScene.js';
 
 export default class Onboarding {
@@ -22,7 +23,7 @@ export default class Onboarding {
     this.userResponses = {};
 
     const stage = new Scenes.Stage(
-      [welcomeScene, arrivalbookingScene, departurebookingScene, videoScene, valuesScene, categoriesScene, onboardingScene, locationScene, questionsScene, saveprofileScene, summarizeScene, h3Scene, done].concat(createScenesForQuestions())
+      [welcomeScene, arrivalbookingScene, departurebookingScene, videoScene, valuesScene, categoriesScene, onboardingScene, locationScene, questionsScene, saveprofileScene, summarizeScene, h3Scene, dnaScene, done].concat(createScenesForQuestions()).concat(createScenesForDNA())
     );
 
     bot.use(session());

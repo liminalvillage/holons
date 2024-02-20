@@ -25,9 +25,9 @@ class Request {
         
         bot.action('OFFER', async (ctx) => {
           let chatID = ctx.message.chat.id;
-          let offer = await this.db.get(chatID + '.offers', ctx.message.message_id)
+          let offer = await this.db.get(chatID + '/offers', ctx.message.message_id)
           offer['exchange_type'] = 'offer';
-          await this.db.put(chatID + '.offers', offer)
+          await this.db.put(chatID + '/offers', offer)
           ctx.editMessageText('You chose: Offer. What\'s next?', getKeyboard(offer));
         });
         
@@ -139,7 +139,7 @@ export async function request(type, ctx, db) {
     ctx.reply(createMessage(request), markup).then((ctx) => {
         // Add the message id to the quest
         request.id = ctx.message_id;
-        this.db.put(chatID + '.offers',request)
+        this.db.put(chatID + '/offers',request)
     });
 }
 
@@ -164,7 +164,7 @@ export async function offer(ctx, db) {
     ctx.reply(createMessage(request), createProperties()).then((ctx) => {
         // Add the message id to the quest
         request.id = ctx.message_id;
-        this.db.put(chatID + '.offers',request)
+        this.db.put(chatID + '/offers',request)
     });
    
 
@@ -198,7 +198,7 @@ export async function requests(ctx, db) {
     let chatID = ctx.message.chat.id;
     let messageID = ctx.message.message_id;
     // Print list of unfulfilled requests
-    let requests = this.db.getAll(chatID + '.offers')
+    let requests = this.db.getAll(chatID + '/offers')
     let message = 'Here are the currently open requests:\n';
     ctx.reply(message, createButtons(requests));
 }

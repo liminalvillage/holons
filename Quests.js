@@ -68,10 +68,10 @@ export default class Quests {
     //     console.log("LOCATION ACTION");
     //     let chatID = ctx.message.chat.id;
     //     let messageID = ctx.message.message_id;
-    //     let quest = await this.db.get(chatID + '.quests',messageID.toString())
+    //     let quest = await this.db.get(chatID + '/quests',messageID.toString())
     //     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
     //     quest.where = ctx.message.location
-    //     this.db.put(chatID + '.quests', quest)
+    //     this.db.put(chatID + '/quests', quest)
     //     this.updateMessage(ctx, quest)
     // }
 
@@ -80,7 +80,7 @@ export default class Quests {
         let chatID = ctx.message.chat.id;
         let messageID = ctx.message.message_id;
         const language = await this.settings.getLanguage(chatID)
-        let quests = await this.db.getAll(chatID + '.quests');
+        let quests = await this.db.getAll(chatID + '/quests');
         //quests = ((doc) => doc.status === 'ongoing' || doc.status === 'scheduled')
         if (quests.length === 0) {
             ctx.reply(`No quests found`);
@@ -94,11 +94,11 @@ export default class Quests {
                 //resend the message
                 const quest = quests[i];
                 await ctx.telegram.sendMessage(chatID, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (nctx) => {
-                    this.db.del(chatID + '.quests',quest.id.toString())
+                    this.db.del(chatID + '/quests',quest.id.toString())
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
-                    await this.db.put(chatID + '.quests',quest)
+                    await this.db.put(chatID + '/quests',quest)
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
@@ -133,7 +133,7 @@ export default class Quests {
         let chatID = ctx.message.chat.id;
         let messageID = ctx.message.message_id;
         const language = await this.settings.getLanguage(chatID)
-        let quests = await this.db.getAll(chatID + '.quests')
+        let quests = await this.db.getAll(chatID + '/quests')
         // quests = quests.filter((doc) => doc.type === type && doc.status === 'ongoing' || doc.status === 'scheduled');
         if (quests.length === 0) {
             ctx.reply(`No ${type}s found`);
@@ -184,9 +184,9 @@ export default class Quests {
             date: new Date().getTime(),
             when: '',
             completed: '',
-            participants: [],
-            appreciation: [],
-            stoppers: [],
+            // participants: [],
+            // appreciation: [],
+            // stoppers: [],
             type: type,
             status: 'ongoing'
         }
@@ -201,7 +201,7 @@ export default class Quests {
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
-                    this.db.put( chatID + '.quests', quest)
+                    this.db.put( chatID + '/quests', quest)
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
@@ -232,7 +232,7 @@ export default class Quests {
                 quest.id = nctx.message_id;
                 quest.chat = nctx.chat.id;
 
-                this.db.put(chatID + '.quests', quest)
+                this.db.put(chatID + '/quests', quest)
 
                 //Pin the message
                 ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -282,7 +282,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let quest = await this.db.get(chatID + '.quests', messageID.toString())
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
@@ -318,7 +318,7 @@ export default class Quests {
         this.updateMessage(ctx, quest);
 
         // Update the db
-        this.db.put(chatID + '.quests', quest);
+        this.db.put(chatID + '/quests', quest);
     }
 
     async appreciate(ctx) {
@@ -329,7 +329,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let quest = await this.db.get(chatID + '.quests', messageID.toString())
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
@@ -381,7 +381,7 @@ export default class Quests {
         this.updateMessage(ctx, quest);
 
         // Update the db
-        this.db.put(chatID + '.quests', quest);
+        this.db.put(chatID + '/quests', quest);
     }
 
     async cancel(ctx) {
@@ -392,7 +392,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let quest = await this.db.get(chatID + '.quests', messageID.toString())
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
@@ -420,7 +420,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let quest = await this.db.get(chatID + '.quests', messageID.toString())
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
@@ -447,7 +447,7 @@ export default class Quests {
         this.updateMessage(ctx, quest);
 
         // Update the db
-        this.db.put(chatID + '.quests', quest);
+        this.db.put(chatID + '/quests', quest);
     }
 
 
@@ -459,7 +459,7 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let quest = await this.db.get(chatID + '.quests',messageID.toString())
+        let quest = await this.db.get(chatID + '/quests',messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
         if (!quest.status == 'stopped') { ctx.answerCbQuery(`You cannot complete a quest that has been stopped. Ask to remove the stop before completing the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) }); return }
@@ -470,7 +470,7 @@ export default class Quests {
             // Update the message 
             this.updateMessage(ctx, quest);
             // Update the db
-            this.db.put(chatID + '.quests', quest);
+            this.db.put(chatID + '/quests', quest);
             //unpin the message
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { })
 

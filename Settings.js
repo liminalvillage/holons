@@ -21,13 +21,13 @@ export default class Settings{
                 // try{
                 //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
                 // }catch(e){ console.log(e)}
-                let quests = await this.db.open(chatID + '.quests')
-                let offers = await this.db.open(chatID + '.offers')
-                let users= await this.db.open(chatID + '.users')
+                await this.db.drop(chatID + '/quests')
+                await this.db.drop(chatID + '/offers')
+                await this.db.drop(chatID + '/users')
       
-                await quests.drop()
-                await offers.drop()
-                await users.drop()
+                // await quests.drop()
+                // await offers.drop()
+                // await users.drop()
                 //await this.db.drop()
                 this.db.put('settings', this.getDefaultSettings(chatID))
                 ctx.reply('WeQuest resetted')
@@ -80,6 +80,9 @@ export default class Settings{
             }
 
         })
+
+        this.bot.command('setHex', async (ctx) => ctx.reply("New hex: "+ await this.setHex(ctx)))
+        this.bot.command('getHexContent', async (ctx) => ctx.reply( await this.getHexContent(ctx)))
         
         this.bot.command('setroles', async (ctx) => ctx.reply("New roles: "+ await this.setRoles(ctx)))
         this.bot.command('getroles', async (ctx) => { let roles = await this.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
@@ -120,6 +123,27 @@ export default class Settings{
         })
 
     }
+
+    async setHex(ctx) {
+        const chatID = ctx.message.chat.id;
+        const hex = ctx.message.text.split(' ')[1];
+        let settings =  await this.getSettings(chatID)
+        settings.hex = hex
+        console.log("hex: " + hex)
+        this.db.put('settings',settings)
+        return hex
+    }
+
+    async getHexContent(ctx){
+    const chatID = ctx.message.chat.id;
+    let settings =  await this.getSettings(chatID)
+    let hex = settings.hex
+    let content = await this.db.getAll(hex+'.tags')
+    //console.log(content)
+    return content?content[0].id:'not found'
+    }
+
+
     // TODO: move to utilities or UI
      equationInlineKeyboard (weights) {
         return Markup.inlineKeyboard([
@@ -156,6 +180,7 @@ export default class Settings{
  getDefaultSettings(chatID) {
     return {
       id: chatID,
+      hex: chatID,
       version: 0.1,
       name:'',
       timezone:'',

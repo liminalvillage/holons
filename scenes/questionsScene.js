@@ -84,6 +84,13 @@ function createScene(question) {
       ctx.scene.enter(`question_${ctx.session.question_sequence[ctx.session.currentquestion]}`);
     } else {
       ctx.reply('Thank you for completing the questions!');
+      if (!ctx.session.wizard) {
+        // save the new data to the database
+        ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('questions').put(ctx.session.questions);
+        ctx.session.sceneStack.pop();
+        ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
+        return
+      }
       ctx.session.stage +=1;
       if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
       else

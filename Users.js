@@ -19,7 +19,7 @@ class Users {
   async balance(ctx) {
     const chatID = ctx.message.chat.id;
     const user = ctx.message.from;
-    let users = await this.db.getAll(chatID + '.users')
+    let users = await this.db.getAll(chatID + '/users')
     let message = ''
     let total = 0
     for (let i = 0; i < users.length; i++) {
@@ -190,7 +190,7 @@ class Users {
     console.log(userinfo.values)
     userinfo.values = userinfo.values.concat(values)
     
-    await this.db.put(chatID + '.users',userinfo)
+    await this.db.put(chatID + '/users',userinfo)
     ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
 
@@ -207,7 +207,7 @@ class Users {
     if (!userinfo.needs) userinfo.needs = []
     userinfo.needs = userinfo.needs.concat(needs)
     
-    await this.db.put(chatID + '.users',userinfo)
+    await this.db.put(chatID + '/users',userinfo)
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);
   }
 
@@ -215,7 +215,7 @@ class Users {
 
   async listUsersActions(ctx) {
     const chatID = ctx.message.chat.id;
-    let users = await this.db.getAll(chatID + '.users')
+    let users = await this.db.getAll(chatID + '/users')
 
     let message = ''
     for (let i = 0; i < users.length; i++) {
@@ -276,13 +276,13 @@ class Users {
     if (userinfo.actions == undefined) userinfo.actions = []
     userinfo.actions.push({type: type, action: action, amount: amount});
 
-    await this.db.put(chatID + '.users', userinfo)
+    await this.db.put(chatID + '/users', userinfo)
   }
 
 
   //gets an existing user or  creates a new one
   async getUserInfo(user, chatID) {
-    let userinfo = await this.db.get(chatID + '.users', user.id)
+    let userinfo = await this.db.get(chatID + '/users', user.id)
     // Initialize the receiver's points if they do not exist yet
     if (!userinfo || userinfo == '') {
       userinfo = {
@@ -304,7 +304,7 @@ class Users {
         money: 0,
         voice: 0
       }
-      await this.db.put(chatID + '.users',userinfo)
+      await this.db.put(chatID + '/users',userinfo)
     }
     if(userinfo._id)  userinfo.id = userinfo._id // convert older format
     return userinfo

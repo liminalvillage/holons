@@ -12,6 +12,15 @@ videoScene.enter((ctx) => {
 videoScene.on('video', (ctx) => {
   //store the video in the db
   ctx.session.video = ctx.message.video;
+  
+  if (!ctx.session.wizard) {
+    // save the new data to the database
+    ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('values').put(ctx.session.video);
+    ctx.session.sceneStack.pop();
+    ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
+    return
+  }
+
   ctx.session.stage +=1;
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);

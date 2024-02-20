@@ -18,6 +18,14 @@ summarizeScene.command('done', async ctx => {
   try {
     const summary = await summarize(ctx.session.messages);
     ctx.reply(summary);
+
+    if (!ctx.session.wizard) {
+      // save the new data to the database
+      ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('sunnary').put(summary);
+      ctx.scene.leave();
+      return
+    }
+
     ctx.session.stage += 1;
     if (ctx.session.stage === ctx.session.sequence?.length) {
       ctx.scene.enter('done'); // Ensure 'done' is a valid scene or handle this case

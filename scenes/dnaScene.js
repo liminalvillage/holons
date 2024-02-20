@@ -62,7 +62,7 @@ function createScene(question,index) {
     ctx.session.userResponses[userId] = {
       lastAnswer: ctx.match[0]
     };
-
+    
     ctx.session.currentdna += 1 
     if (ctx.session.currentdna != ctx.session.dna_sequence.length) {
       ctx.scene.enter(`dna_${ctx.session.currentdna}`);

@@ -15,7 +15,7 @@ class DB {
     }
 
     async init() {
-        //if (this.db === 'orbit') {
+        if (this.db === 'orbit') {
         this.ipfs = await create({
             address: "127.0.0.1",
             port: 5001,
@@ -36,12 +36,12 @@ class DB {
                 ]
             }
         }
-        //} else if (this.db === 'gun') {
+        } else if (this.db === 'gun') {
         // Initialize a GUN instance
         this.gun = GUN({
             peers: ['https://59.src.eco/gun']
         });
-        // }
+         }
     }
 
     async del(table, key) {

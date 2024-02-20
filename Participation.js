@@ -13,7 +13,7 @@ export default class Participation {
     async participation (ctx) {
         // Load all users
         let chatID = ctx.chat.id;
-        let users = await this.db.getAll( chatID + '.users');
+        let users = await this.db.getAll( chatID + '/users');
         if (!users) {
             ctx.reply('No users found.');
             return;
@@ -32,8 +32,8 @@ export default class Participation {
             return;
         }
 
-        let users = await this.db.getAll(chatID + '.users');
-        let user = await this.db.get(chatID + '.users',targetuser);
+        let users = await this.db.getAll(chatID + '/users');
+        let user = await this.db.get(chatID + '/users',targetuser);
 
         if (user.participate == undefined) {
             user.participate = false;
@@ -41,7 +41,7 @@ export default class Participation {
 
         user.participate = !user.participate;
 
-        await this.db.put(chatID + '.users', user);
+        await this.db.put(chatID + '/users', user);
         ctx.editMessageText('Participation list:',  createList(users)).catch((error) => { console.log(error) });
 
     }

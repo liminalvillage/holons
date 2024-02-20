@@ -75,12 +75,12 @@ export default class Expenses {
             paidBy,
             splitWith: [paidBy]
         };
-        await this.db.put(chatID + '.expense', expense)
+        await this.db.put(chatID + '/expense', expense)
         return expense;
     }
 
     async joinSplit(chatID, username, expenseID) {
-        let expense = await this.db.get(chatID + '.expense', expenseID)
+        let expense = await this.db.get(chatID + '/expense', expenseID)
 
         if (expense) {
             if (!expense.splitWith.includes(username)) { //add user to split
@@ -90,27 +90,27 @@ export default class Expenses {
                 expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != username; });
             }
 
-            await this.db.put(chatID + '.expense',expense)
+            await this.db.put(chatID + '/expense',expense)
             return expense;
         }
         return false;
     }
 
     async splitAll(chatID, username, expenseID) {
-        let expense = await this.db.get(chatID + '.expense', expenseID)
+        let expense = await this.db.get(chatID + '/expense', expenseID)
         if (expense) {
-            let users = await this.db.getAll(chatID + '.users')
+            let users = await this.db.getAll(chatID + '/users')
             let userArray = users.map(user => user.username)
             expense.splitWith = userArray;
-            await this.db.put(chatID + '.expense',expense)
+            await this.db.put(chatID + '/expense',expense)
             return expense;
         }
         return false;
     }
 
     async calculateDebts(chatID) {
-        let expenses = await this.db.getAll( chatID + '.expense')
-        let users = await this.db.getAll(chatID + '.users')
+        let expenses = await this.db.getAll( chatID + '/expense')
+        let users = await this.db.getAll(chatID + '/users')
         let userArray = users.map(user => user.username)
         let debtMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
 

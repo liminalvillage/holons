@@ -267,7 +267,7 @@ class WeQuest {
 
     // this.telebot.on('inline_query', async (ctx) => {
     //   const chatID = utils.getChatId(ctx)
-    //   const recipes = await this.db.getAll(chatID + '.quests').filter(({ type }) => type == 'offer')
+    //   const recipes = await this.db.getAll(chatID + '/quests').filter(({ type }) => type == 'offer')
     //     // @ts-ignore
     //     .filter(({ thumbnail }) => thumbnail)
     //     // @ts-ignore
@@ -351,7 +351,7 @@ class WeQuest {
         if (when !== -1) {
           //let caller = chatID// this.quests.calendar.chats.get(chatID*100)  //*100 is a hack to get the originating quest message id
 
-          let quest = await this.db.get(chatID + '.quests', messageID)
+          let quest = await this.db.get(chatID + '/quests', messageID)
 
           if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
           quest.status = "scheduled";
@@ -367,7 +367,7 @@ class WeQuest {
           this.quests.updateMessage(ctx, quest);
 
           // Update the db
-          this.db.put(chatID + '.quests', quest);
+          this.db.put(chatID + '/quests', quest);
         }
       }
 
@@ -394,20 +394,6 @@ class WeQuest {
       process.exit(0);
     });
 
-
-    this.telebot.on('web_app_data', (ctx) => {
-      var [timespamp, timezoneOffset] = ctx.message.web_app_data.data.split('_')
-      timespamp = parseInt(timespamp)
-
-      var clientOffset = parseInt(timezoneOffset) * 60 * 1000
-      var serverOffset = (new Date()).getTimezoneOffset() * 60 * 1000
-      var offset = serverOffset - clientOffset
-
-      var print = 'in user timezone: ' + (new Date(timespamp + offset)).toLocaleString() + '\n'
-      print += 'in server timezone: ' + (new Date(timespamp)).toLocaleString()
-
-      ctx.reply(print)
-    })
   }
 
   discord2telegram(message) {

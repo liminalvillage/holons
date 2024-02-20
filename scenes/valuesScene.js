@@ -69,6 +69,15 @@ valuesScene.action('next_page', (ctx) => {
 });
 
 valuesScene.action('done_picking', (ctx) => {
+  if (!ctx.session.wizard) {
+    // save the new data to the database
+    ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('values').put(ctx.session.values);
+    valuesScene.leave();
+    ctx.session.sceneStack.pop();
+    ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
+    return
+  }
+
   ctx.session.stage += 1
   ctx.session.values = Object.keys(ctx.session.selectedValues)
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');

@@ -23,7 +23,7 @@ class Scheduler {
             createdAt: new Date(),
             completed: false
         };
-        await this.this.db.put(chatID + '.schedule'task);
+        await this.this.db.put(chatID + '/schedule'task);
         this.scheduleTask(task);
         ctx.reply('Task scheduled successfully.');
     }
@@ -69,7 +69,7 @@ class Scheduler {
         if (tasks.length > 0) {
             let task = tasks[0];
             task.completed = true;
-            await this.this.db.put(chatID + '.schedule',task);
+            await this.this.db.put(chatID + '/schedule',task);
             ctx.reply('Task marked as completed.');
         } else {
             ctx.reply('Task not found.');

@@ -21,7 +21,7 @@ class Shopping {
             return;
         }
         for (let item of items)
-            await this.db.put(chatID + '.shopping', { id: item, done: false, from: ctx.from.username });
+            await this.db.put(chatID + '/shopping', { id: item, done: false, from: ctx.from.username });
   
         ctx.reply(`Added ${items.join(", ")} to the shopping list.`);
     }
@@ -40,7 +40,7 @@ class Shopping {
         const index = parseInt(ctx.match[1]);
         const list = await this.getShoppingList(ctx);
         list[index].done = !list[index].done;
-        this.db.put(chatID + '.shopping', list[index])
+        this.db.put(chatID + '/shopping', list[index])
         ctx.editMessageText('Here is your shopping list:', this.getShoppingListKeyboard(list)).catch((error) => {console.log(error)  });
     }
 
@@ -51,7 +51,7 @@ class Shopping {
         let list = await this.getShoppingList(ctx);
         for (let item of list) {
     
-            if (item.done) await this.db.del(chatID + '.shopping',item.id);
+            if (item.done) await this.db.del(chatID + '/shopping',item.id);
         }
         
         list = await this.getShoppingList(ctx);
@@ -69,7 +69,7 @@ class Shopping {
 
     async getShoppingList(ctx) {
         let chatID = ctx.chat.id;
-        let list = await this.db.getAll(chatID + '.shopping');
+        let list = await this.db.getAll(chatID + '/shopping');
         list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }

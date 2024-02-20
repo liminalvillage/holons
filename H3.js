@@ -23,10 +23,7 @@ let council = [
 function emptycell(id){
     return {
         id:id,
-        threads:[],
         content:{},
-        wisdom:[],
-        summary:''
     }
 
 }
@@ -36,7 +33,8 @@ class H3 {
         this.bot = bot;
         this.db = db;    
         this.gun = GUN({
-            peers: ['https://59.src.eco/gun']
+            peers: ['http://localhost:8765/gun','https://59.src.eco/gun'],
+            axe:false
         });
 
 
@@ -46,6 +44,72 @@ class H3 {
             });
 
         })();
+        this.bot.command('resethex', async (ctx) => {
+            let chatID = ctx.message.chat.id;
+            let hex = (await this.db.get('settings', chatID)).hex
+            this.delete(hex, ctx.message.text.split(' ')[1])
+        })
+
+        this.bot.command('get', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            const tag = ctx.message.text.split(' ')[1];
+            if (!tag) {
+                return ctx.reply('Please specify a tag.');
+            }
+            let hex = (await this.db.get('settings', chatID)).hex
+            //let hex = settings.hex
+            console.log('hex',hex)
+          
+            let data = await this.get(ctx, hex, tag)
+            
+        }
+        )
+
+        this.bot.command('cast', async (ctx) => {
+            if (!ctx.message.reply_to_message) {
+                return ctx.reply('Please reply to a message you want to tag.');
+              }
+              const tags = ctx.message.text.split(' ').slice(1);
+              if (tags.length === 0) {
+                return ctx.reply('Please provide at least one tag.');
+              }
+        
+              const messageID = ctx.message.reply_to_message.message_id;
+              const chatID = ctx.message.chat.id;
+              const messageContent = ctx.message.reply_to_message.text;
+              let settings = await this.db.get('settings', chatID)
+              let id = settings.hex
+              //create root node for the item
+              let node = await this.gun.get(chatID+'/'+messageID).put({ id: chatID+'/'+messageID, content: messageContent })
+              for (let tag of tags) {
+               await this.gun.get(id).get(tag).set(node)
+               this.upcast(id, tag, node)
+              }
+        })
+
+        this.bot.command('publish', async (ctx) => {
+            if (!ctx.message.reply_to_message) {
+              return ctx.reply('Please reply to a message you want to tag.');
+            }
+            const tags = ctx.message.text.split(' ').slice(1);
+            if (tags.length === 0) {
+              return ctx.reply('Please provide at least one tag.');
+            }
+      
+            const messageID = ctx.message.reply_to_message.message_id;
+            const chatID = ctx.message.chat.id;
+            const messageContent = ctx.message.reply_to_message.text;
+            let settings = await this.db.get('settings', chatID)
+            let id = settings.hex
+      
+            for (let tag of tags) {
+                
+             await this.put(id,tag,{ content: messageContent, done:false })
+            }
+    
+            ctx.reply('Tag published.');
+          });
+      
 
         this.bot.command("wisdom", async (ctx) => {
             let question = ctx.message.text.split('/wisdom ')[1];
@@ -68,47 +132,92 @@ class H3 {
        await this.db.open('cell')
     }
     async delete(id, tag){
-        await this.gun.get('WeQuest').get(id).get(tag).put(null)
+        await this.gun.get('WeQuestDebug').get(id).get(tag).put(null)
     }
 
-    async put(id, tag, content){
-        let res = h3.getResolution(id)
-        let info = await this.getCellInfo(id)
-        if (!info.content[tag]) {
-            info.content[tag] = {}
-        }
-        if (!info.content[tag][content]) {
-            info.content[tag][content] = 1
-        }
-        else   
-            info.content[tag][content] += 1
-        // let item = this.gun.get('WeQuest').get(id).get('content').put(content)
-        // this.gun.get('WeQuest').get(id).get(tag).set(item)
+    async put(id, tag, content) {
+        // Assuming 'this.gun' is properly initialized and available
+       // return new Promise((resolve, reject) => {
+          // Reference to the tag node where multiple contents will be added
+          console.log(id, tag, content.content)
+        // this.gun.get(id.toString()).get(tag).set(content.content).put(content);
+         await this.gun.get(id).get(tag).set(content);
+          // Adding the content object to the set under the specified tag
+        //   tagRef.set(content, ack => {
+        //     if (ack.err) {
+        //       console.error('Failed to add content:', ack.err);
+        //       reject(ack.err); // Reject the promise on error
+        //     } else {
+        //       console.log('Content added successfully under tag:', tag);
+        //       resolve(ack); // Resolve the promise on success
+        //     }
+        //   });
+      //  });
+      }
 
-        await this.db.put('cell',info)
-    }
+    //async put(id, tag, content){
+    //    return this.gun.get('WeQuestDebug').get(id).set(tag).put(content)
+        // let info = await this.getCellInfo(id)
+        // if (!info.content[tag]) {
+        //     info.content[tag] = {}
+        // }
+        // if (!info.content[tag][content.id]) {
+        //     info.content[tag][content.id] = content
+        //     info.content[tag][content.id].count = 1
+        // }
+        // else   
+        //     info.content[tag][content.id].count += 1
+        // // let item = this.gun.get('WeQuestDebug').get(id).get('content').put(content)
+        // // this.gun.get('WeQuestDebug').get(id).get(tag).set(item)
 
-    async get(id, tag){
-        // await this.gun.get('WeQuest').get(id).get(tag).on((data) => {console.log(data)})
-        let info = await this.getCellInfo(id)
-        return info.content[tag]
+        // await this.db.put('cell',info)
+   // }
+
+    async get(ctx,id, tag){           
+            this.gun.get(id.toString()).get(tag).map().once((data,key) => {
+                // if (!data?.content)
+                // this.gun.get('WeQuestDebug').get(id).get(tag).get(key).put(null)
+                //if (data) {
+                    ctx.reply(JSON.stringify(data))
+                    console.log('data', data); // Optional: log the data content if needed
+                   
+                //}
+            }
+            
+            )
+
+        // await this.gun.get('WeQuestDebug').get(id).get(tag).on((data) => {
+        //     console.log(data)
+        //     return data = info.content[tag]
+        // })
+        // let info = await this.getCellInfo(id)
+        // return info.content[tag]?info.content[tag]:null
+        
     }
 
 
    async  upcast(id, tag, content){
+  
         let res = h3.getResolution(id)
+        if (res == 0)
+            return content
+
+        console.log('upcasting ', id, tag, content)
         let parent = h3.cellToParent(id, res-1)
-        let info = await this.getCellInfo(parent)
-        if (!info.content[tag]) {
-            info.content[tag] = {}
-        }
-        if (!info.content[tag][content]) {
-            info.content[tag][content] = 1
-        }
-        else   
-            info.content[tag][content] += 1
+        this.gun.get(parent).get(tag).set(content)
+        return this.upcast(parent, tag, content)
+        // let info = await this.getCellInfo(parent)
+        // if (!info.content[tag]) {
+        //     info.content[tag] = {}
+        // }
+        // if (!info.content[tag][content]) {
+        //     info.content[tag][content] = 1
+        // }
+        // else   
+        //     info.content[tag][content] += 1
         
-        await this.db.put('cell', info)
+        // await this.put(parent, tag, info.content[tag])
+
         return info
 
     }
@@ -153,7 +262,6 @@ class H3 {
         return
     }
 
-    
     async  summarize(history) {
         //const run = await this.openai.beta.threads.runs.retrieve(thread.id,run.id)
         const assistant = await this.openai.beta.assistants.retrieve("asst_qhk79F8wV9BDNuwfOI80TqzC")
@@ -183,76 +291,6 @@ class H3 {
         return summary
       }
 
-    async askQuestion(question, councilID) {
-        let assistant = await this.openai.beta.assistants.retrieve("asst_wMvKw4yfH8rn0Uv9yAPn1UMb")
-        let councilWisdom = await this.getCouncilWisdom(councilID)
-        //for each thread, create a message
-        for (let i = 0; i < councilWisdom.threads.length; i++) {
-            let message = await this.openai.beta.threads.messages.create(councilWisdom.threads[i].id, {
-                role: "user",
-                content: question
-            })
-        }
-        let runs = []
-        for (let i = 0; i < councilWisdom.threads.length; i++) {
-                runs[i] = await this.openai.beta.threads.runs.create(councilWisdom.threads[i].id, {
-                assistant_id: assistant.id ,
-                instructions:council[i]
-            });
-        }
-        let runStatus;
-        // Polling mechanism to see if runStatus is completed
-        // This should be made more robust.
-        while (true) {
-            let returned = 0
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            for (let i = 0; i < councilWisdom.threads.length; i++) {
-                runStatus = await this.openai.beta.threads.runs.retrieve(councilWisdom.threads[i].id, runs[i].id);
-                if (runStatus.status == "completed")
-                    returned += 1
-            }
-            console.log(returned)
-            if (returned == councilWisdom.threads.length)
-                break
-        }
-
-        for (let i = 0; i < councilWisdom.threads.length; i++) {
-            // Get the latest messages from the thread
-            const messages = await this.openai.beta.threads.messages.list(councilWisdom.threads[i].id)
-            const answer = messages.data[0].content[0].text.value
-            councilWisdom.wisdom.push(answer)
-        }
-        let summary = await this.summarize(councilWisdom.wisdom.join('\n'))
-        //await this.db.open('wisdom', { indexBy: 'id' }).put(councilWisdom)
-        console.log(councilWisdom.wisdom)
-        console.log('--------------------')
-        console.log(summary)
-        return summary
-    }
-
-    async getCellInfo(id){
-        let cellInfo = await this.db.get('cell',id)
-        if (!cellInfo) {
-            cellInfo = emptycell(id)
-            await this.db.put('cell', cellInfo)
-        }
-        return cellInfo
-        
-    }
-
-    async getCouncilWisdom(id) {
-       let cell = await this.getCellInfo(id)
-        if (!cell.threads) {
-            //create 12 threads
-            let threads = []
-            for (let i = 0; i < 12; i++) {
-                threads.push(await this.openai.beta.threads.create())
-            }
-            cell.threads = threads
-        }
-        return cell
-    }
-
 
     async getHex(lat, lng, resolution) {
         return h3.latLngToCell(lat, lng, resolution);
@@ -271,26 +309,25 @@ class H3 {
 
 export default H3;
 
-// let db = new DB('WeQuest')
+// let db = new DB('WeQuestDebug')
 // await db.init()
 
 // let hexamap = new H3(new Telegraf(process.env.TELEGRAM), db);
 // await hexamap.init()
 
-// await hexamap.db.open('cell');
 // await hexamap.db.put('cell',emptycell('802bfffffffffff'))
 // var result = await hexamap.db.get('cell','802bfffffffffff')
 // console.log('Result:',result)
 
-// let base = await hexamap.getHex(40.689167, -74.044444,14);
+// let base = '801ffffffffffff'// await hexamap.getHex(40.689167, -74.044444,14);
 // // console.log('Base:',base)
 // // //hexamap.delete (base, "thoughts")
-//  hexamap.put (base, "link", "https://www.youtube.com/watch?v=Qq2XsYX6k3I")
-//  console.log(await hexamap.get(base, "link"))
+//  //await hexamap.put (base, "link", "https://www.youtube.com/watch?v=Qq2XsYX6k3I")
+//  console.log(await hexamap.get(base, "gibberish"))
 
-// hexamap.upcast(base, "thoughts", "i am thinking about climate change")
+//hexamap.upcast(base, "thoughts", "i am thinking about climate change")
 
-// hexamap.updateParent(base, "i am thinking about climate change")
-// hexamap.getChildSummary(base)
-// hexamap.askQuestion("What is the meaning of life?", "802bfffffffffff");
-// console.log(hexamap.getScalespace(40.689167, -74.044444));
+//hexamap.updateParent(base, "i am thinking about climate change")
+//hexamap.getChildSummary(base)
+//hexamap.askQuestion("What is the meaning of life?", "802bfffffffffff");
+//console.log(hexamap.getScalespace(40.689167, -74.044444));

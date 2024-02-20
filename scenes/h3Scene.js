@@ -3,6 +3,7 @@ import {
   Markup
 } from 'telegraf';
 import categoryTypes from "../data/guilds.json" assert { type: "json" };
+import  {getChatId } from '../utilities.js';
 
 import fs from 'fs';
 
@@ -18,7 +19,7 @@ h3Scene.enter(async (ctx) => {
    Markup.keyboard([
           Markup.button.webApp(
             "Select Hexagon",
-            "https://hexamap.holons.io/select.html?id=" + ctx.message.chat.id
+            "https://hexamap.holons.io/index.html?id=" + getChatId(ctx)
           ),
         ])
         ).catch((err) => console.log(err)); 
@@ -37,7 +38,13 @@ h3Scene.on("message", async (ctx) => {
     console.error('Web app data is not a string');
     return;
   }
-  ctx.session.h3 = ctx.message.web_app_data.data
+  ctx.session.hex = ctx.message.web_app_data.data
+  if (!ctx.session.wizard) {
+    // save the new data to the database
+    ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('hex').put(ctx.session.hex);
+    h3Scene.leave();
+    return
+  }
   if (!ctx.session.sequence) ctx.scene.leave();
   ctx.session.stage +=1;
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
