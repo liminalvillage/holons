@@ -45,7 +45,7 @@ categoriesScene.action(/category_(.+)/, ctx => {
   ctx.session.category = ctx.callbackQuery.data.split('_')[1]
   if (!ctx.session.wizard) {
     // save the new data to the database
-    ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('category').put(ctx.session.category);
+    ctx.session.db.gun.get(ctx.from.id.toString()).get('category').put(ctx.session.category);
     ctx.session.sceneStack.pop();
     ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
     return

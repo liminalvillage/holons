@@ -1,0 +1,501 @@
+{
+  "title": "Holons Schema",
+  "description": "A schema to define holons.",
+  "type": "object",
+  "properties": {
+    "linked_schemas": {
+      "title": "Linked Schemas",
+      "description": "A list of schemas against which a profile must be validated (schema names must be alphanumeric with underscore(_) spacers and dash(-) version separator, e.g., my_data_schema-v1.0.0)",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{7,97}-v[0-9]+\\.[0-9]+\\.[0-9]+$"
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "linked_schemas",
+          "version": "0.0.1"
+        },
+        "purpose": "This field is required in all Murmurations schemas to ensure that a profile is valid and can be posted to the Index. It is the only required field in the default-v2.0.0 schema, which is the schema used by the Index to process incoming profiles."
+      }
+    },
+    
+    "name": {
+      "title": "Name",
+      "description": "The name of the entity, organization, project, item, etc.",
+      "type": "string",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "name",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/name"
+        ],
+        "purpose": "The common name that is generally used to refer to the entity, organization, project, item, etc., which can be a living being, a legal entity, an object (real or virtual) or even a good or service."
+      }
+    },
+    "primary_url": {
+      "title": "Primary URL",
+      "description": "The primary URL of the entity or item (i.e., its unique, canonical and definitive website address)",
+      "type": "string",
+      "maxLength": 2000,
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "primary_url",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/url"
+        ],
+        "purpose": "The primary URL is used to uniquely identify the entity or item, and is usually represented as a website address or specific web page that is well-known to be linked to the entity. It can be used to link to the entity or item from other entities or items."
+      }
+    }
+    ,
+    "urls": {
+      "title": "Website Addresses/URLs",
+      "description": "URLs for website(s), social media, etc.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "title": "URL Name",
+            "description": "The name of what this URL is for (e.g., the name of the social media provider, website, etc.)",
+            "type": "string"
+          },
+          "url": {
+            "title": "URL",
+            "description": "The URL (starting with http:// or https://) that links to the entity or further describes the item",
+            "type": "string",
+            "maxLength": 2000,
+            "pattern": "^https?://.*"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "uniqueItems": true,
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "urls",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/url"
+        ],
+        "purpose": "URLs can be used to link the named entity to its presence on the web. In the case of an item or service, URLs can provide further information."
+      }
+    },
+    "description": {
+      "title": "Description",
+      "description": "A description of the item, entity, organization, project, etc.",
+      "type": "string",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "description",
+          "version": "0.0.1"
+        },
+        "context": [
+          "http://schema.org/description"
+        ],
+        "purpose": "The Description field can be used to provided a description of the item, entity, organization, project, etc. We have chosen not to add a maximum length but aggregators may snip the first ~160 characters of this field to provide a summary in directory listings or maps, so make sure the first sentence provides a good overview of the entity you are describing."
+      }
+    },
+    "mission": {
+      "title": "Mission Statement",
+      "description": "A short statement of why the entity exists and its goals",
+      "type": "string",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "mission",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://en.wikipedia.org/wiki/Mission_statement"
+        ],
+        "purpose": ":The mission describes the purpose of the entity: what kind of product or service it provides (for profit or not), its primary customers or market, and its geographical region of operation."
+      }
+    },
+    "locality": {
+      "title": "Locality",
+      "description": "The locality (city, town, village, etc.) where the entity is located",
+      "type": "string",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "locality",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/addressLocality"
+        ]
+      }
+    },
+    "region": {
+      "title": "Region",
+      "description": "The region (state, county, province, etc.) where the entity is located",
+      "type": "string",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "region",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/addressRegion"
+        ]
+      }
+    }
+    ,
+    "country_name": {
+      "title": "Country name",
+      "description": "The name of country where the entity is based",
+      "type": "string",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "country_name",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/Country"
+        ],
+        "purpose": "A free form field to enter a country's name. The Index will try to match that text to a country's name and will store the country's ISO code in the Index database to enable searching by country for the entity. The name-to-ISO mapping is here: https://github.com/MurmurationsNetwork/MurmurationsLibrary/blob/main/countries/map.json"
+      }
+    },
+    "geolocation": {
+      "title": "Geolocation Coordinates",
+      "description": "The geo-coordinates (latitude & longitude) of the primary location of the entity or item",
+      "type": "object",
+      "properties": {
+        "lat": {
+          "title": "Latitude",
+          "description": "A decimal amount between -90 and 90",
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "metadata": {
+            "creator": {
+              "name": "Murmurations Network",
+              "url": "https://murmurations.network"
+            },
+            "field": {
+              "name": "latitude",
+              "version": "0.0.1"
+            },
+            "context": [
+              "https://schema.org/latitude"
+            ]
+          }
+        }
+        ,
+        "lon": {
+          "title": "Longitude",
+          "description": "A decimal amount between -180 and 180",
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180,
+          "metadata": {
+            "creator": {
+              "name": "Murmurations Network",
+              "url": "https://murmurations.network"
+            },
+            "field": {
+              "name": "longitude",
+              "version": "0.0.1"
+            },
+            "context": [
+              "https://schema.org/longitude"
+            ]
+          }
+        }        
+      },
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "geolocation",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/latitude",
+          "https://schema.org/longitude",
+          "https://schema.org/GeoCoordinates"
+        ]
+      }
+    },
+    "image": {
+      "title": "Image",
+      "description": "The URL of an image or logo starting with http:// or https://",
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^https?://.*",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "image",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/image"
+        ],
+        "purpose": "An image that is generally used to refer to the entity, organization, project, etc."
+      }
+    }
+    ,
+    "rss": {
+      "title": "RSS Feed",
+      "description": "The URL for the entity's RSS feed (e.g., yoursite.org/rss or yoursite.org/feed) starting with http:// or https://",
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^https?://.*",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "rss",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://en.wikipedia.org/wiki/RSS"
+        ]
+      }
+    }
+    ,
+    "tags": {
+      "title": "Tags",
+      "description": "Keywords relevant to this entity and its activities or attributes",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "tags",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/keywords"
+        ],
+        "purpose": "Tags holds a list of unique keywords that are used to describe any aspect of the entity, such that there is enough information to fit the entity into a variety of data taxonomies."
+      }
+    }
+    ,
+    "geographic_scope": {
+      "title": "Geographic Scope",
+      "description": "The geographic scope of the entity is defined by the geographic extent of the entity's activities or the availability of an item",
+      "type": "string",
+      "enum": [
+        "local",
+        "regional",
+        "national",
+        "international"
+      ],
+      "enumNames": [
+        "Local",
+        "Regional",
+        "National",
+        "International"
+      ],
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "geographic_scope",
+          "version": "0.0.1"
+        },
+        "purpose": "An entity will generally have a scope in which it operates from a local up to a global range. An item will generally be available within a specific scope as well. For example, perishable food will be available in a local or possibly regional market, but not in a national or international market."
+      }
+    },
+    "founding_date": {
+      "title": "Founding Date",
+      "description": "The date the entity was founded (as a Unix timestamp, e.g., 1651848477).",
+      "type": "integer",
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "founding_date",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://schema.org/foundingDate"
+        ],
+        "purpose": "The date and approximate time the entity was established. To specify just the year, assume a date of 1 January at the beginning of the day (e.g., 1672531200 for Sun 01 Jan 2023 00:00:00 GMT+0000)."
+      }
+    },
+    "status": {
+      "title": "Status",
+      "description": "The current state of the entity.",
+      "type": "string",
+      "enum": [
+        "active",
+        "completed",
+        "cancelled",
+        "on_hold",
+        "in_planning"
+      ],
+      "enumNames": [
+        "Active",
+        "Completed",
+        "Cancelled",
+        "On hold",
+        "In planning"
+      ],
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "status",
+          "version": "0.0.1"
+        },
+        "purpose": "Status defines the current state of a project, organization, event, etc."
+      }
+    }
+    ,
+    "relationships": {
+      "title": "Relationships",
+      "description": "Defines a relationship between a subject and an object, acting as the predicate in a triple (Alice follows Bob, Charlie is a dog, etc.). In Graph database terminology, the relationship defines an edge between two nodes.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "title": "Relationship Type",
+            "description": "A declaration, action or link that describes the relationship (e.g., is a, has a, trusts, \"follows\", <https://schema.org/knows>, etc.)",
+            "type": "string"
+          },
+          "provisions": {
+            "title": "Provisions",
+            "description": "Description that qualifies the relationship (e.g., adjectives (\"is a _good_ programmer\") or prepositional phrases such as \"Alice follows Bob _on Twitter_\" or \"Bob trusts Alice _to hold his keys_\")",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "title": "Type of Provision",
+                  "description": "Adjective, prepositional phrase, etc.",
+                  "type": "string"
+                },
+                "condition": {
+                  "title": "Provision Condition",
+                  "description": "Condition that qualifies the provision (e.g., \"Bob trusts Alice to hold his keys _until the end of the year_\", \"Bob trusts Alice to return his keys _when locked out of the house_\")",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "condition"
+              ]
+            }
+          },
+          "object_url": {
+            "title": "Object URL",
+            "description": "The URL (starting with http:// or https://) of the primary URL or Murmurations Profile URL for the person.",
+            "type": "string",
+            "maxLength": 2000,
+            "pattern": "^https?://.*"
+          },
+          "id": {
+            "title": "Unique Identifier",
+            "description": "A unique ID for the subject created by the object (e.g., your member ID in an organization, login name to a website, etc.)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "object_url"
+        ]
+      },
+      "uniqueItems": true,
+      "metadata": {
+        "creator": {
+          "name": "Murmurations Network",
+          "url": "https://murmurations.network"
+        },
+        "field": {
+          "name": "relationship",
+          "version": "0.0.1"
+        },
+        "context": [
+          "https://docs.murmurations.network/faqs/schema.html#what-is-a-relationship"
+        ],
+        "purpose": "Defines and quantifies a relationship between two entities."
+      }
+    }
+  },
+  "required": [
+    "linked_schemas",
+    "name",
+    "primary_url"
+  ],
+  "metadata": {
+    "creator": {
+      "name": "Murmurations Network",
+      "url": "https://murmurations.network/"
+    },
+    "schema": {
+      "name": "projects_schema-v0.1.0",
+      "purpose": "To map projects within the regenerative economy.",
+      "url": "https://murmurations.network"
+    }
+  }
+}

@@ -17,15 +17,23 @@ summarizeScene.command('done', async ctx => {
   console.log('done detected');
   try {
     const summary = await summarize(ctx.session.messages);
-    ctx.reply(summary);
-
-    if (!ctx.session.wizard) {
+    ctx.session.summary = summary
+    if (!ctx.session.wizard) { 
       // save the new data to the database
-      ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('sunnary').put(summary);
+      ctx.session.db.gun.get(ctx.from.id.toString()).get('summary').put(summary);
+      ctx.reply(summary);
       ctx.scene.leave();
+
+      if (ctx.session.sceneStack){
+        ctx.session.sceneStack.pop();
+        ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
+      }
+      
       return
     }
 
+    ctx.reply(summary);
+    // wizard mode
     ctx.session.stage += 1;
     if (ctx.session.stage === ctx.session.sequence?.length) {
       ctx.scene.enter('done'); // Ensure 'done' is a valid scene or handle this case
@@ -42,8 +50,7 @@ summarizeScene.command('done', async ctx => {
 });
 
 summarizeScene.on('text', async ctx => {
-  console.log('message received');
-  ctx.session.messages += "\n" + ctx.from.username + ": " + ctx.message.text;
+  ctx.session.messages += ctx.message.text + '\n';
 });
 
 export default summarizeScene;

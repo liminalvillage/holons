@@ -632,18 +632,6 @@
                                     }
                                 });
 
-
-                                map.addLayer({
-                                    'id': 'hex-fill-layer',
-                                    'source': hexSourceName,
-                                    'type': 'fill',
-                                    'layout': {},
-                                    'paint': {
-                                        'fill-color': ['get', 'color'],
-                                        'fill-opacity': 0.5
-                                    }
-                                });
-
                             });
 
                             map.addControl(
@@ -903,17 +891,18 @@
                                     <div id="upcoming-task" class="pb-1 task-list">
                                         <script src="https://cdn.jsdelivr.net/npm/gun@0.2020.1239/gun.js"></script>
                                         <script>
-                                            gun = Gun({ peers: ['https://59.src.eco/gun'] });
-                                            var quests = gun.get('WeQuest').get('235114395').get('quests')
+                                            gun = Gun({ peers: ['https://59.src.eco/gun'], axe:false });
+                                            var quests = gun.get('WeQuestDebug').get('235114395/quests')
                                             ul = document.getElementById('upcoming-task');
 
                                             quests.map().on((data, id) => {
+                                                console.log(data)
                                                 var li = $('#' + id)
                                                 if (!li.get(0)) {
                                                     li = $('<div class="card task-box">').attr('id', id).appendTo(ul)
                                                 }
                                                 if (data) {
-                                                    object = JSON.parse(data.payload)
+                                                    object = JSON.parse(data)
                                                     if (object.status == 'ongoing') {
                                                         html = `
                                                             <div class="card-body">

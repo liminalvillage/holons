@@ -26,7 +26,7 @@ saveprofileScene.action('public', (ctx) => {
   ctx.session.id = ctx.from.id
   console.log(ctx.session)
   //store data in the db
-  ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).put(createProfile(ctx.session).toString())
+  ctx.session.db.gun.get(ctx.from.id.toString()).put(createProfile(ctx.session).toString())
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
 });
@@ -36,7 +36,7 @@ saveprofileScene.action('private', (ctx) => {
   console.log(ctx.session)
   if (!ctx.session.wizard) {
     // save the new data to the database
-    //ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('video').put(ctx.session.video);
+    //ctx.session.db.gun.get(ctx.from.id.toString()).get('video').put(ctx.session.video);
     ctx.session.sceneStack.pop();
     ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
     return

@@ -14,7 +14,7 @@ export default class Participation {
         // Load all users
         let chatID = ctx.chat.id;
         let users = await this.db.getAll( chatID + '/users');
-        if (!users) {
+        if (users.lenght == 0) {
             ctx.reply('No users found.');
             return;
         }

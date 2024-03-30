@@ -56,8 +56,8 @@ export default class Holons {
 
   async syncScore(ctx) {
     const id = ctx.message.chat.id;
-    let users = await this.db.getAll(id.toString() + '.users')
-
+    let users = await this.db.getAll(id.toString() + '/users')
+    if (!users) return ctx.reply("No users found");
     const equation = await this.settings.getValueEquation(id)
 
     let userids = users.map((user) => { return user.id })
@@ -162,7 +162,7 @@ export default class Holons {
     const id = ctx.message.chat.id;
     let address = await this.holonsContract.methods.toAddress(id.toString()).call();
     // fetch users and add them to the holon
-    let users = await this.db.getAll(id.toString() + '.users')
+    let users = await this.db.getAll(id.toString() + '/users')
 
     users.forEach(async (user) => {
       if (user.id != undefined) {

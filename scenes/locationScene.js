@@ -14,7 +14,7 @@ locationScene.on('location', (ctx) => {
   ctx.session.location = ctx.message.location;
   if (!ctx.session.wizard) {
     // save the new data to the database
-    ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('location').put(ctx.session.location);
+    ctx.session.db.gun.get(ctx.from.id.toString()).get('location').put(ctx.session.location);
     ctx.session.sceneStack.pop();
     ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
     return

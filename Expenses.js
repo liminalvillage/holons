@@ -1,10 +1,12 @@
 // Description: This file contains the Expenses class, which handles all the expenses related commands and actions.
 import { Telegraf, Markup } from 'telegraf';
+import fs from 'fs';
 
 export default class Expenses {
-    constructor(bot, db) {
+    constructor(bot, db, ui) {
         this.bot = bot;
         this.db = db;
+        this.ui = ui;
  
         bot.command('spent', async (ctx) => {
             const chatID = ctx.chat.id;
@@ -29,7 +31,7 @@ export default class Expenses {
             const expenseID = ctx.match[1];
             const result = await this.joinSplit(chatID, ctx.from.username, expenseID);
             if (result) {
-                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${result.id}` }, { text: 'Clear', callback_data: `clear:${result.id}` }])).catch(err => console.log(err));
+                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
             } else {
                 ctx.reply('Unable to join the split. It might not exist, or you are already part of it.');
             }
@@ -56,12 +58,20 @@ export default class Expenses {
         // });
 
         bot.command('clear', async (ctx) => {
-            const { debtMatrix, userArray } = await this.calculateDebts(ctx.chat.id);
-            let summary = "Debt Matrix:\n   " + userArray.join(" ") + "\n";
-            debtMatrix.forEach((row, index) => {
-                summary += userArray[index] + ": " + row.join(" ") + "\n";
-            });
-            ctx.reply(summary);
+            const chatID = ctx.chat.id;
+            const currency = ctx.message.text.split(' ').slice(1);
+            if (currency == null || currency.length == 0) 
+                return ctx.reply('Usage: /clear [currency]');
+            const { creditMatrix, userArray } = await this.calculateCredits(chatID, currency);
+            this.ui.getCreditTable(creditMatrix, userArray, chatID).then((path) => {
+                //send the image
+                ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+              }); 
+            // let summary = "Credit Matrix:\n   " + userArray.join(" ") + "\n";
+            // creditMatrix.forEach((row, index) => {
+            //     summary += userArray[index] + ": " + row.join(" ") + "\n";
+            // });
+            // ctx.reply(summary);
         });
 
     }
@@ -75,12 +85,12 @@ export default class Expenses {
             paidBy,
             splitWith: [paidBy]
         };
-        await this.db.put(chatID + '/expense', expense)
+        await this.db.put(chatID + '/expenses', expense)
         return expense;
     }
 
     async joinSplit(chatID, username, expenseID) {
-        let expense = await this.db.get(chatID + '/expense', expenseID)
+        let expense = await this.db.get(chatID + '/expenses', expenseID)
 
         if (expense) {
             if (!expense.splitWith.includes(username)) { //add user to split
@@ -90,44 +100,46 @@ export default class Expenses {
                 expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != username; });
             }
 
-            await this.db.put(chatID + '/expense',expense)
+            await this.db.put(chatID + '/expenses',expense)
             return expense;
         }
         return false;
     }
 
     async splitAll(chatID, username, expenseID) {
-        let expense = await this.db.get(chatID + '/expense', expenseID)
+        let expense = await this.db.get(chatID + '/expenses', expenseID)
         if (expense) {
             let users = await this.db.getAll(chatID + '/users')
             let userArray = users.map(user => user.username)
             expense.splitWith = userArray;
-            await this.db.put(chatID + '/expense',expense)
+            await this.db.put(chatID + '/expenses',expense)
             return expense;
         }
         return false;
     }
 
-    async calculateDebts(chatID) {
-        let expenses = await this.db.getAll( chatID + '/expense')
+    async calculateCredits(chatID, currency) {
+        let expenses = await this.db.getAll( chatID + '/expenses')
         let users = await this.db.getAll(chatID + '/users')
         let userArray = users.map(user => user.username)
-        let debtMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
+        let creditMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
 
         expenses.forEach(expense => {
+            //if (expense.currency == currency){ 
             const amountPerPerson = expense.amount / (expense.splitWith.length > 0 ? expense.splitWith.length : 1);
             const payerIndex = userArray.indexOf(expense.paidBy);
             expense.splitWith.forEach(member => {
                 const memberIndex = userArray.indexOf(member);
                 console.log(memberIndex, member)
                 if (payerIndex !== memberIndex) {
-                    debtMatrix[payerIndex][memberIndex] += amountPerPerson;
-                    debtMatrix[memberIndex][payerIndex] -= amountPerPerson;
+                    creditMatrix[payerIndex][memberIndex] += amountPerPerson;
+                    creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
                 }
             });
+           // }
         });
 
-        return { debtMatrix, userArray };
+        return { creditMatrix, userArray };
     }
 
     createMessage(expense) {

@@ -41,7 +41,7 @@ h3Scene.on("message", async (ctx) => {
   ctx.session.hex = ctx.message.web_app_data.data
   if (!ctx.session.wizard) {
     // save the new data to the database
-    ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('hex').put(ctx.session.hex);
+    ctx.session.db.gun.get(ctx.from.id.toString()).get('hex').put(ctx.session.hex);
     h3Scene.leave();
     return
   }

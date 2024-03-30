@@ -72,8 +72,13 @@ export async function getQuestions(prompt) {
   }
   // Get the latest messages from the thread
   const messages = await openai.beta.threads.messages.list(thread.id)
-  const json = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
-  return JSON.parse(json)
+  let json = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+  try{
+    json = JSON.parse(json)
+  } catch (e){
+    console.log(e)
+  }
+  return json
 }
 
 

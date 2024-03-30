@@ -21,15 +21,14 @@ export default class Settings{
                 // try{
                 //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
                 // }catch(e){ console.log(e)}
+                await this.db.drop(chatID + '/shopping')
                 await this.db.drop(chatID + '/quests')
                 await this.db.drop(chatID + '/offers')
                 await this.db.drop(chatID + '/users')
+                await this.db.drop(chatID + '/tags')
+                await this.db.drop(chatID + '/expenses')
       
-                // await quests.drop()
-                // await offers.drop()
-                // await users.drop()
-                //await this.db.drop()
-                this.db.put('settings', this.getDefaultSettings(chatID))
+               // this.db.put('settings', this.getDefaultSettings(chatID))
                 ctx.reply('WeQuest resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -130,7 +129,10 @@ export default class Settings{
         let settings =  await this.getSettings(chatID)
         settings.hex = hex
         console.log("hex: " + hex)
-        this.db.put('settings',settings)
+        this.db.put(chatID+'/settings',settings)
+
+        this.db.holosphere.put(hex,'chats', {id:chatID})
+
         return hex
     }
 
@@ -138,7 +140,7 @@ export default class Settings{
     const chatID = ctx.message.chat.id;
     let settings =  await this.getSettings(chatID)
     let hex = settings.hex
-    let content = await this.db.getAll(hex+'.tags')
+    let content = await this.db.getAll(hex+'/tags')
     //console.log(content)
     return content?content[0].id:'not found'
     }
@@ -410,10 +412,11 @@ async separate(ctx) {
 
 async getFederation(chatID) {
     let federation = await this.db.get('federation', chatID)
-
-    if (!federation) {
+    console.log('federation',federation)
+    if (!federation || federation == []) {
         return []
     }
+    else
     //federation = federation.filter(item => item.id === chatID)[0]
     //console.log('This chat is federated with: ' + federation.federation + ' and will notify: ' + federation.notify)
     return federation.federation

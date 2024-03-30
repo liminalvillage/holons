@@ -22,6 +22,8 @@ export default class Onboarding {
     this.bot = bot;
     this.userResponses = {};
 
+
+
     const stage = new Scenes.Stage(
       [welcomeScene, arrivalbookingScene, departurebookingScene, videoScene, valuesScene, categoriesScene, onboardingScene, locationScene, questionsScene, saveprofileScene, summarizeScene, h3Scene, dnaScene, done].concat(createScenesForQuestions()).concat(createScenesForDNA())
     );
@@ -32,15 +34,14 @@ export default class Onboarding {
     bot.command('start', ctx => {
       const userId = ctx.from.id;
       ctx.session.stage = 0;
-      ctx.session.sequence= ['welcome', 'h3','arrivalbooking','departurebooking','categories', 'values', 'location','questions', 'saveprofile','onboarding'];
-      //ctx.session.sequence = ['categories', 'summarize', 'values', 'categories', 'saveprofile'];
-
-      ctx.session.userResponses = [];
+      ctx.session.sequence= ['welcome','arrivalbooking','departurebooking','categories', 'values', 'location','questions', 'saveprofile','onboarding'];
       ctx.session.db = this.db;
+      //ctx.session.sequence = ['categories', 'summarize', 'values', 'categories', 'saveprofile'];
+      ctx.session.userResponses = [];
       ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
     });
 
-    bot.command('summarize', ctx => { ctx.scene.enter('summarize') });
+    bot.command('summarize', ctx => { ctx.session.db = this.db; ctx.scene.enter('summarize') });
   }
 
   async testDB() {

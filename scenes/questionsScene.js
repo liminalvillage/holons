@@ -86,7 +86,7 @@ function createScene(question) {
       ctx.reply('Thank you for completing the questions!');
       if (!ctx.session.wizard) {
         // save the new data to the database
-        ctx.session.db.gun.get('Holons').get(ctx.from.id.toString()).get('questions').put(ctx.session.questions);
+        ctx.session.db.gun.get(ctx.from.id.toString()).get('questions').put(ctx.session.questions);
         ctx.session.sceneStack.pop();
         ctx.scene.enter(ctx.session.sceneStack[ctx.session.sceneStack.length-1]);
         return

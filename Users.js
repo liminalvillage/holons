@@ -230,7 +230,7 @@ class Users {
 
   // save user action
   async saveUserAction(user, type, action, amount , chatID) {
-    console.log('SAVE USER ACTION: ' + type)
+    console.log('SAVE USER ACTION: ' + type, action, amount, user, chatID)
     let userinfo = await this.getUserInfo(user, chatID)
     switch (type) {
       case 'offers':
@@ -289,6 +289,8 @@ class Users {
         id: user.id,
         version: '0.1',
         username: user.username ? user.username : user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
         actions: [],
         initiated: [],
         received: 0,

@@ -102,7 +102,7 @@ export default class Quests {
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
-                    await this.updateMessage(ctx, quest)
+                    await this.updateMessage(ctx, quest, language)
                 })
             }
         }
@@ -184,9 +184,9 @@ export default class Quests {
             date: new Date().getTime(),
             when: '',
             completed: '',
-            // participants: [],
-            // appreciation: [],
-            // stoppers: [],
+            participants: [],
+            appreciation: [],
+            stoppers: [],
             type: type,
             status: 'ongoing'
         }
@@ -206,7 +206,7 @@ export default class Quests {
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
                     //await ctx.telegram.editMessageRe(quest.chat, quest.id,null, markup(quest, language)).catch((err) => { console.log(err) });
-                    await this.updateMessage(ctx, quest)
+                    await this.updateMessage(ctx, quest,language)
                     //delete the original message
                     ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
@@ -221,24 +221,24 @@ export default class Quests {
 
             if (type == 'offer') {
                 quest.participants.push(sender);
-                await this.users.saveUserAction(sender, "offers", quest.title, 0, this.db)
+                await this.users.saveUserAction(sender, "offers", quest.title, 0, chatID)
             }
             if (type == 'request') {
                 quest.appreciation.push(sender);
-                await this.users.saveUserAction(sender, "wants", quest.title, 0, this.db)
+                await this.users.saveUserAction(sender, "wants", quest.title, 0, chatID)
             }
             ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
                 // Add the message id to the quest
                 quest.id = nctx.message_id;
                 quest.chat = nctx.chat.id;
 
-                this.db.put(chatID + '/quests', quest)
+                await this.db.put(chatID + '/quests', quest)
 
                 //Pin the message
                 ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                 // update the markup
                 //await ctx.telegram.editMessageRe(quest.chat, quest.id,null, markup(quest, language)).catch((err) => { console.log(err) });
-                await this.updateMessage(ctx, quest)
+                await this.updateMessage(ctx, quest, language)
                 //delete the original message
                 ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
@@ -315,7 +315,7 @@ export default class Quests {
         }
 
         // Update the message 
-        this.updateMessage(ctx, quest);
+        this.updateMessage(ctx, quest, language);
 
         // Update the db
         this.db.put(chatID + '/quests', quest);
@@ -364,11 +364,11 @@ export default class Quests {
             ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`);
             // share appreciation "after the fact"
             if (quest.status === "completed") {
-                await this.users.saveUserAction(sender, "sent", quest.title, 0, this.db)
+                await this.users.saveUserAction(sender, "sent", quest.title, 0, chatID)
                 for (let i = 0; quest.participants.length; i++) {
                     console.log(quest.participants.length)
                     if (quest.participants[i].id) { //TODO: check why this is needed sometimes otherwise it crashes
-                        await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0, this.db)
+                        await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0, chatID)
                     } else {
                         console.log('Bug: participant has no id: ' + quest.participants[i])
                     }
@@ -378,7 +378,7 @@ export default class Quests {
 
 
         // Update the message 
-        this.updateMessage(ctx, quest);
+        this.updateMessage(ctx, quest, language);
 
         // Update the db
         this.db.put(chatID + '/quests', quest);
@@ -399,7 +399,7 @@ export default class Quests {
         // Handle the reaction to the quest
         if (quest.initiator.id === ctx.from.id) {
             //delete quest from database
-            this.db.del(chatID +  '.quests', messageID.toString())
+            this.db.del(chatID +  '/quests', messageID.toString())
 
             //unpin the message
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
@@ -444,7 +444,7 @@ export default class Quests {
             quest.status = 'ongoing'
 
         // Update the message 
-        this.updateMessage(ctx, quest);
+        this.updateMessage(ctx, quest, language);
 
         // Update the db
         this.db.put(chatID + '/quests', quest);
@@ -468,7 +468,7 @@ export default class Quests {
         if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1) {
             quest.status = "completed";
             // Update the message 
-            this.updateMessage(ctx, quest);
+            this.updateMessage(ctx, quest, language);
             // Update the db
             this.db.put(chatID + '/quests', quest);
             //unpin the message
@@ -480,19 +480,19 @@ export default class Quests {
         }
         // ================================ RECORD ACTIONS ========================== 
 
-        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, 0, this.db)
+        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, 0, chatID)
 
         // loop through all users and add the completed quest to their account
         for (let i = 0; i < quest.participants.length; i++) {
             let user = quest.participants[i];
-            await this.users.saveUserAction(user, "completed", quest.title, 0, this.db)
+            await this.users.saveUserAction(user, "completed", quest.title, 0, chatID)
         }
 
         //loop through all users and add appreciation to their account
         for (let i = 0; i < quest.appreciation.length; i++) {
             let sender = quest.appreciation[i];
             // appreciation.appreciate(sender, receivers)
-            await this.users.saveUserAction(sender, "sent", quest.title, 0, this.db)
+            await this.users.saveUserAction(sender, "sent", quest.title, 0, chatID)
             // Calculate the number of appreciation to send to each user
             const appreciationPerUser = 1  // / quest.participants.length;
 
@@ -505,9 +505,9 @@ export default class Quests {
                 //     continue;
                 // }
                 // Send the appreciation to each user
-                //await recieveToken(recipient, appreciationPerUser, this.db)
+                //await recieveToken(recipient, appreciationPerUser, chatID)
                 // save user with action to the database
-                await this.users.saveUserAction(recipient, "received", quest.title, 0, this.db)
+                await this.users.saveUserAction(recipient, "received", quest.title, 0, chatID)
             }
         }
         // ================================ APPRECIATION ==========================
@@ -577,14 +577,14 @@ export default class Quests {
 
 
             // Send the appreciation to the recipient
-            //await recieveToken(recipient, 1, this.db)
+            //await recieveToken(recipient, 1, chatID)
             // save the user action
-            await this.users.saveUserAction(recipient, "received", action, 1, this.db)
+            await this.users.saveUserAction(recipient, "received", action, 1, chatID)
         }
 
         // Update the sent appreciation of the sender
-        //await sendToken(sender, 1, this.db)
-        await this.users.saveUserAction(sender, "sent", action, 1, this.db)
+        //await sendToken(sender, 1, chatID)
+        await this.users.saveUserAction(sender, "sent", action, 1, chatID)
         ctx.reply(`@${sender.username} sent appreciation ${action}`).catch((error) => console.log(error));
     }
 
@@ -603,6 +603,9 @@ export default class Quests {
         let fedinfo = await this.db.get('federation', quest.chat * 2 + quest.id) //* 2 hack not to return similar 
         let message_id
         let chat_id
+        if (language == undefined || language == '') {
+            language = await this.settings.getLanguage(quest.chat)
+        }
         if (!fedinfo || fedinfo == '') {
             message_id = quest.id
             chat_id = quest.chat

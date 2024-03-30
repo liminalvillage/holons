@@ -52,9 +52,10 @@ class UI {
 
     // get all users from the federation
     let federation = await this.settings.getFederation(chatID)
+    if (federation)
     for (let i = 0; i < federation.length; i++) {
 
-      let federatedusers = await this.db.getAll(federation[i] + '.users')
+      let federatedusers = await this.db.getAll(federation[i] + '/users')
       //check if the user is already in the list
       for (let j = 0; j < federatedusers.length; j++) {
         let user = federatedusers[j]
@@ -87,8 +88,9 @@ class UI {
   async getFederatedQuests(chatID) {
     let federation = await this.settings.getFederation(chatID)
     let quests = await this.db.getAll(chatID + '/quests')//.filter(quest => quest.status === 'ongoing')
+    console.log("All Quests:", quests)
     for (let i = 0; i < federation.length; i++) {
-      let federatedquests = await this.db.getAll(federation[i] + '.quests')
+      let federatedquests = await this.db.getAll(federation[i] + '/quests')
       quests = quests.concat(federatedquests)
     }
     return quests
@@ -307,6 +309,37 @@ class UI {
     return path
   }
 
+  async getCreditTable(creditMatrix, userArray, chatID) {
+    const lang = await this.settings.getLanguage(chatID);
+    const rows = [];
+    userArray.forEach((user, index) => {
+      const credits = creditMatrix[index].map((credit, creditIndex) => `<td>${credit}</td>`).join('');
+      const row = `<tr>
+          <td>${user}</td>
+          ${credits}
+        </tr>`;
+      rows.push(row);
+    });
+  
+    const headers = userArray.map((user, index) => `<th scope="col">${user}</th>`).join('');
+    const element = `<table>
+    <caption>${i18next.t('Credit Matrix', { lng: lang })}</caption>
+    <thead>
+        <tr>
+            <th scope="col">${i18next.t('User', { lng: lang })}</th>
+            ${headers}
+        </tr>
+    </thead>
+    <tbody>
+        ${rows.join('\n')}
+    </tbody>
+  </table>`;
+  
+    const path = './images/creditMatrix' + chatID + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    await this.screenshotHtml(html, path, 'table');
+    return path;
+  }
 
   async getQuestsTable(quests, chatID) {
 

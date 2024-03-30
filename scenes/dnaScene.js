@@ -39,7 +39,6 @@ export function createScenesForDNA(){
 }
 
 function createScene(question,index) {
-  console.log(question,index)
   const scene = new Scenes.BaseScene(`dna_${index}`);
 
   scene.enter(ctx => {
