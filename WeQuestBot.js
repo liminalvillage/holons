@@ -41,7 +41,7 @@ import Bigtalk from './Bigtalk.js'
 import Library from './Library.js'
 import Users from './Users.js'
 import Tags from './Tags.js'
-import Participation from './Participation.js'
+import Participation from './RSVP.js'
 import Council from './Council.js';
 
 import * as request from './Requests.js'

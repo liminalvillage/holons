@@ -107,7 +107,7 @@ class H3 {
             //create root node for the item
             let node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
             for (let tag of tags) {
-                await this.holosphere.gun.get(id).get(tag).set(node)
+                await this.holosphere.put(id,tag, node)
                 this.holosphere.upcast(id, tag, node)
             }
         })

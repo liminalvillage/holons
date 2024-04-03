@@ -30,6 +30,7 @@ export default class Holons {
     this.bot.command("addmembers", async (ctx) => { this.addMembers(ctx) });
     this.bot.command("syncscore", async (ctx) => { this.syncScore(ctx) });
     this.bot.command("claim", async (ctx) => { this.claim(ctx) });
+    this.bot.command("ethbalance", async (ctx) => { this.ethBalance(ctx) });
     
     this.bot.command("listmembers", async (ctx) => {
       const chatID = ctx.message.chat.id;
@@ -52,6 +53,18 @@ export default class Holons {
 
     this.bot.command("claim", async (ctx) => { this.claim(ctx) });
 
+  }
+
+  //pick up the balance from the holon
+  async ethBalance(ctx) {
+    const userID = ctx.message.from.id;
+    const id = ctx.message.chat.id;
+    let address = await this.holonsContract.methods.toAddress(id.toString()).call();
+    let holon = new this.web3.eth.Contract(managed.default.abi, address);
+    let balance = await holon.methods.etherBalance(userID).call();
+    //let balance = await this.web3.eth.getBalance(this.account.address);
+
+    ctx.reply("Eth Balance: " + balance);
   }
 
   async syncScore(ctx) {
@@ -99,7 +112,7 @@ export default class Holons {
   async claim(ctx) {
     const chatID = ctx.message.chat.id;
     const userID = ctx.message.from.id;
-    let holonaddress = await this.holonsContract.methods.toAddress(chatID).call();
+    let holonaddress = await this.holonsContract.methods.toAddress(chatID.toString()).call();
     let holon = new this.web3.eth.Contract(managed.default.abi, holonaddress);
     const args = ctx.message.text.split(" ").slice(1);
     if (args.length < 1) {

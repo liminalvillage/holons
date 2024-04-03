@@ -88,8 +88,8 @@ class DB {
                 axe: false
             });
 
-            this.gun = gun.get(this.dbName)
-
+            this.gun = gun;
+            
             if (this.db === 'orbit') {
                 this.ipfs = await create({
                     address: "127.0.0.1",
@@ -109,7 +109,7 @@ class DB {
         try {
             if (!this.preloadedDB[table]) {
                 if (this.db === 'gun') {
-                    //this.preloadedDB[table] = this.gun.get(table); //store table reference
+                    //this.preloadedDB[table] = this.gun.get(this.dbName + '/' + table); //store table reference
                 } else if (this.db === 'orbit') {
                     this.preloadedDB[table] = await this.orbitdb.docs(this.dbName + '/' + table, {
                         indexBy: 'id'
@@ -141,10 +141,10 @@ class DB {
     async drop(table) {
         try {
             if (this.db === 'gun') {
-                this.gun.get(table).map().once((data, key) => {
-                    this.gun.get(table).get(key).put(null); // Delete each key in the table                }
+                this.gun.get(this.dbName + '/' + table).map().once((data, key) => {
+                    this.gun.get(this.dbName + '/' + table).get(key).put(null); // Delete each key in the table                }
                 })
-                this.gun.get(table).put(null); // Delete the table
+                this.gun.get(this.dbName + '/' + table).put(null); // Delete the table
                 this.preloadedDB[table] = null;
             } else if (this.db === 'orbit' && this.preloadedDB[table] !== undefined) {
                 console.log('Dropping ', table);
@@ -256,7 +256,7 @@ class DB {
 
     async addGunDB(table, data) {
         return new Promise((resolve) => {
-            this.gun.get(table).get(data.id).put(JSON.stringify(data), ack => {
+            this.gun.get(this.dbName + '/' + table).get(data.id).put(JSON.stringify(data), ack => {
                 if (ack.err) {
                     console.error("Error adding data to GunDB:", ack.err);
                     resolve(null);
@@ -270,7 +270,7 @@ class DB {
     async getGunDB(table, key) {
         return new Promise((resolve) => {
             // Use Gun to get the data
-            this.gun.get(table).get(key).once((data, key) => {
+            this.gun.get(this.dbName + '/' + table).get(key).once((data, key) => {
                 if (data) {
                     resolve(JSON.parse(data)); // Resolve the promise with the data if data is found
                 } else {
@@ -287,10 +287,10 @@ class DB {
         return new Promise(async (resolve, reject) => {
             let output = []
             let counter = 0
-            this.gun.get(table).once((data, key) => {
+            this.gun.get(this.dbName + '/' + table).once((data, key) => {
                 if (data) {
                     const maplenght = Object.keys(data).length - 1
-                    this.gun.get(table).map().once(async (itemdata, key) => {
+                    this.gun.get(this.dbName + '/' + table).map().once(async (itemdata, key) => {
                         counter += 1
                         if (itemdata) {
                             var parsed = {}
@@ -318,7 +318,7 @@ class DB {
     //     console.log('getAllGunDB:', table);
     //     return new Promise((resolve, reject) => {
     //         let allData = [];
-    //         let dataStream = this.gun.get(table).map();
+    //         let dataStream = this.gun.get(this.dbName + '/' + table).map();
     //         let hasData = false;
     
     //         dataStream.once((data, key) => {
@@ -350,7 +350,7 @@ class DB {
 
     deleteGunDB(table, key) {
         return new Promise((resolve, reject) => {
-            this.gun.get(table).get(key).put(null, ack => {
+            this.gun.get(this.dbName + '/' + table).get(key).put(null, ack => {
                 if (ack.err) {
                     reject(ack.err);
                 } else {
