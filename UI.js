@@ -21,7 +21,7 @@ class UI {
 
     //Set up a command to display the appreciation score for each user
     this.bot.command(['leaderboard', 'appreciation', 'credits', 'scores', 'score', 'points', 'rank', 'status'], async (ctx) => this.leaderboard(ctx))
-    this.bot.command(['apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica', 'stato'], async (ctx) => this.leaderboard(ctx))
+    this.bot.command(['fiorino','apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica', 'stato'], async (ctx) => this.leaderboard(ctx))
 
     // Set up a command to display the quests
     this.bot.command(['tasks', 'quests', 'todos', 'proposals'], (ctx) => this.questboard(ctx))
@@ -35,6 +35,7 @@ class UI {
     this.bot.command('offerte', (ctx) => this.offersboard(ctx))
 
     this.bot.command(['bulletin', 'billboard', 'board'], (ctx) => this.bulletinboard(ctx))
+    this.bot.command(['bacheca', 'lavagna'], (ctx) => this.bulletinboard(ctx))
 
     this.bot.command('values', (ctx) => this.valuescloud(ctx))
     this.bot.command('needs', (ctx) => this.needscloud(ctx))
@@ -284,7 +285,8 @@ class UI {
   }
 
   async getBulletinTable(users, chatID) {
-    let table = '<table><tr><th>Username</th><th>Wants</th><th>Offers</th></tr>';
+    const lang = await this.settings.getLanguage(chatID)
+    let table = `<table><tr><th>${i18next.t('Username',{ lng: lang })}</th><th>${i18next.t('Wants',{ lng: lang })}</th><th>${i18next.t('Offers',{ lng: lang })}</th></tr>`;
 
     for (let user of users) {
       table += '<tr><td>' + user.username + '</td>';
@@ -313,7 +315,7 @@ class UI {
     const lang = await this.settings.getLanguage(chatID);
     const rows = [];
     userArray.forEach((user, index) => {
-      const credits = creditMatrix[index].map((credit, creditIndex) => `<td>${credit}</td>`).join('');
+      const credits = creditMatrix[index].map((credit, creditIndex) => `<td >${credit}</td>`).join('');
       const row = `<tr>
           <td>${user}</td>
           ${credits}
@@ -321,7 +323,8 @@ class UI {
       rows.push(row);
     });
   
-    const headers = userArray.map((user, index) => `<th scope="col">${user}</th>`).join('');
+    const headers = userArray.map((user, index) => `<th scope="col" style = "writing-mode: vertical-rl;
+    text-orientation: mixed;">${user}</th>`).join('');
     const element = `<table>
     <caption>${i18next.t('Credit Matrix', { lng: lang })}</caption>
     <thead>
@@ -490,7 +493,7 @@ class UI {
         <tr>
             <th scope="col">${i18next.t('rank', { lng: language })}</th>
             <th scope="col">${i18next.t('name', { lng: language })}</th>
-            <th scope="col">${i18next.t('initiaded', { lng: language })}</th>
+            <th scope="col">${i18next.t('initiated', { lng: language })}</th>
             <th scope="col">${i18next.t('completed', { lng: language })}</th>
             <th scope="col">${i18next.t('sent', { lng: language })}</th>
             <th scope="col">${i18next.t('received', { lng: language })}</th>

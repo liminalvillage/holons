@@ -47,10 +47,10 @@ export default class Quests {
         this.bot.command('ricorrente', async (ctx) => this.quest('recurring', ctx))
 
         //create new request/offer
-        this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo'], async (ctx) => this.quest('request', ctx))
+        this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo','cerco'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => this.quest('offer', ctx))
 
-        this.bot.command('lista', async (ctx) => this.list(ctx))
+        //this.bot.command('lista', async (ctx) => this.list(ctx))
 
         // QUEST ACTIONS ====================================================
 

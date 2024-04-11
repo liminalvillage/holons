@@ -8,7 +8,7 @@ export default class Expenses {
         this.db = db;
         this.ui = ui;
  
-        bot.command('spent', async (ctx) => {
+        bot.command(['spent','speso'], async (ctx) => {
             const chatID = ctx.chat.id;
             const args = ctx.message.text.split(' ').slice(1);
             if (args.length < 3) {
@@ -57,21 +57,15 @@ export default class Expenses {
 
         // });
 
-        bot.command('clear', async (ctx) => {
+        bot.command(['clear','balance','credit','bilancio'], async (ctx) => {
             const chatID = ctx.chat.id;
             const currency = ctx.message.text.split(' ').slice(1);
             if (currency == null || currency.length == 0) 
                 return ctx.reply('Usage: /clear [currency]');
             const { creditMatrix, userArray } = await this.calculateCredits(chatID, currency);
             this.ui.getCreditTable(creditMatrix, userArray, chatID).then((path) => {
-                //send the image
                 ctx.replyWithPhoto({ source: fs.createReadStream(path) });
               }); 
-            // let summary = "Credit Matrix:\n   " + userArray.join(" ") + "\n";
-            // creditMatrix.forEach((row, index) => {
-            //     summary += userArray[index] + ": " + row.join(" ") + "\n";
-            // });
-            // ctx.reply(summary);
         });
 
     }
@@ -149,8 +143,5 @@ export default class Expenses {
     }
 }
 
-// const bot = new Telegraf(process.env.TELEGRAM);
-// bot.launch();
-// const expenseManager = new Expense(bot);
 
 

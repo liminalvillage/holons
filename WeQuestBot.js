@@ -88,7 +88,7 @@ class WeQuest {
     await this.ui.init()
 
     this.lunation = new Lunation(this.telebot)
-    this.shopping = new Shopping(this.telebot, this.db)
+    this.shopping = new Shopping(this.telebot, this.db, this.settings)
     this.quests = new Quests(this.telebot, this.db, this.settings)
     this.bigtalk = new Bigtalk(this.telebot)
     this.library = new Library(this.telebot, this.db)
@@ -156,42 +156,42 @@ class WeQuest {
         ctx.reply("`Just type / for a list of commands. For instance \n /task \n /request \n /offer /status /bulletin")
       })
 
-      this.telebot.command("register", (ctx) => {
-        return ctx.reply(
-          "open webapp",
-          Markup.inlineKeyboard([
-            Markup.button.webApp(
-              "Open",
-              "https://robertovalenti.github.io/webapp/index.html"
-            ),
-          ])
-        );
-      });
+      // this.telebot.command("register", (ctx) => {
+      //   return ctx.reply(
+      //     "open webapp",
+      //     Markup.inlineKeyboard([
+      //       Markup.button.webApp(
+      //         "Open",
+      //         "https://robertovalenti.github.io/webapp/index.html"
+      //       ),
+      //     ])
+      //   );
+      // });
 
 
-      this.telebot.command("holons", (ctx) => {
-        return ctx.reply(
-          "open webapp",
-          Markup.keyboard([
-            Markup.button.webApp(
-              "Open Holon",
-              "https://app.holons.io/?id=" + utils.getChatId(ctx)
-            ),
-          ])
-        );
-      });
+      // this.telebot.command("holons", (ctx) => {
+      //   return ctx.reply(
+      //     "open webapp",
+      //     Markup.keyboard([
+      //       Markup.button.webApp(
+      //         "Open Holon",
+      //         "https://app.holons.io/?id=" + utils.getChatId(ctx)
+      //       ),
+      //     ])
+      //   );
+      // });
 
-      this.telebot.command("hexamap", (ctx) => {
-        return ctx.reply(
-          "open webapp",
-          Markup.keyboard([
-            Markup.button.webApp(
-              "Open Hexamap",
-              "https://hexamap.holons.io/?id=" + utils.getChatId(ctx)
-            ),
-          ])
-        );
-      });
+      // this.telebot.command("hexamap", (ctx) => {
+      //   return ctx.reply(
+      //     "open webapp",
+      //     Markup.keyboard([
+      //       Markup.button.webApp(
+      //         "Open Hexamap",
+      //         "https://hexamap.holons.io/?id=" + utils.getChatId(ctx)
+      //       ),
+      //     ])
+      //   );
+      // });
 
 
 
@@ -301,6 +301,7 @@ class WeQuest {
     this.telebot.command('maslow', (ctx) => this.UI.showMaslow(2))
 
     //-----------------------------AI -----------------------------
+    this.telebot.command('speech', async (ctx) => { let output = await AI.text2speech(ctx.message.text.split(' ').slice(1).join(' '), './output.mp3'); ctx.replyWithAudio({ source: './output.mp3'}).catch(err => {console.log(err); ctx.reply(JSON.stringify)})  })
     this.telebot.command('today', async (ctx) => ctx.reply(await AI.getPrompt(await this.settings.getValues, this.lunation.progress(), await AI.getActions(await this.users.listUsersActions(ctx))).catch(err => console.log(err))))
     this.telebot.command('assignroles', async (ctx) => {
       let actions = await this.users.listUsersActions(ctx)

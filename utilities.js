@@ -1,3 +1,7 @@
+import i18next from "i18next";
+
+export { i18next };
+
 // Use format "functionName_callbackData" with callback functions
 export const getCallbackData = (ctx) => ctx.match[0].split("_")[1];
 

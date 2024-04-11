@@ -6,174 +6,174 @@ class Users {
   constructor(bot, db) {
     this.bot = bot;
     this.db = db;
-    this.bot.command(['value','ivalue'], (ctx) => this.addValue(ctx));
-    this.bot.command(['need','ineed','weneed'], (ctx) => this.addNeed(ctx));
-   //this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
-    this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
+    this.bot.command(['value', 'ivalue'], (ctx) => this.addValue(ctx));
+    this.bot.command(['need', 'ineed', 'weneed'], (ctx) => this.addNeed(ctx));
+    //this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
+    //this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
     this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
-    this.bot.command('wallet', (ctx) => this.wallet(ctx));
-    this.bot.command('balance', (ctx) => this.balance(ctx));
-  }
-
- 
-  async balance(ctx) {
-    const chatID = ctx.message.chat.id;
-    const user = ctx.message.from;
-    let users = await this.db.getAll(chatID + '/users')
-    let message = ''
-    let total = 0
-    for (let i = 0; i < users.length; i++) {
-      total += users[i].money 
-    }
-    const peruser = total / users.length
-    message += 'Total spent: ' + total +' euros, ('+ users.length+ ' users, ' + peruser +' euros per user)\n \n'
-    //loop through users and compute the balance with respect to other users
-    for (let i = 0; i < users.length; i++) {
-      let user = users[i];
-      //let balance = 0
-      // for (let j = 0; j < users.length; j++) {
-      //   let otheruser = users[j];
-      //   if (user.username != otheruser.username) {
-      //     balance += this.computeBalance(user, otheruser)
-      //   }
-      // }
-      message += '@'+user.username + ': spent ' + user.money + ' euros ( balance: '+ (user.money - peruser) +' )\n'
-    }
-    ctx.reply(message);
-
+    // this.bot.command('wallet', (ctx) => this.wallet(ctx));
+    // this.bot.command('balance', (ctx) => this.balance(ctx));
   }
 
 
-  //implments a credit clearing system
-  computeBalance(user, otheruser) {
-    let balance = 0
-    //check if user has received from otheruser
-    if (user.received > 0) {
-      if (otheruser.sent > 0) {
-        if (user.received > otheruser.sent) {
-          balance += user.received - otheruser.sent
-        }
-      }
-    }
-    //check if user has sent to otheruser
-    if (user.sent > 0) {
-      if (otheruser.received > 0) {
-        if (user.sent > otheruser.received) {
-          balance -= otheruser.received - user.sent
-        }
-      }
-    }
-    return balance
-  }
+  // async balance(ctx) {
+  //   const chatID = ctx.message.chat.id;
+  //   const user = ctx.message.from;
+  //   let users = await this.db.getAll(chatID + '/users')
+  //   let message = ''
+  //   let total = 0
+  //   for (let i = 0; i < users.length; i++) {
+  //     total += users[i].money 
+  //   }
+  //   const peruser = total / users.length
+  //   message += 'Total spent: ' + total +' euros, ('+ users.length+ ' users, ' + peruser +' euros per user)\n \n'
+  //   //loop through users and compute the balance with respect to other users
+  //   for (let i = 0; i < users.length; i++) {
+  //     let user = users[i];
+  //     //let balance = 0
+  //     // for (let j = 0; j < users.length; j++) {
+  //     //   let otheruser = users[j];
+  //     //   if (user.username != otheruser.username) {
+  //     //     balance += this.computeBalance(user, otheruser)
+  //     //   }
+  //     // }
+  //     message += '@'+user.username + ': spent ' + user.money + ' euros ( balance: '+ (user.money - peruser) +' )\n'
+  //   }
+  //   ctx.reply(message);
+
+  // }
+
+
+  // //implments a credit clearing system
+  // computeBalance(user, otheruser) {
+  //   let balance = 0
+  //   //check if user has received from otheruser
+  //   if (user.received > 0) {
+  //     if (otheruser.sent > 0) {
+  //       if (user.received > otheruser.sent) {
+  //         balance += user.received - otheruser.sent
+  //       }
+  //     }
+  //   }
+  //   //check if user has sent to otheruser
+  //   if (user.sent > 0) {
+  //     if (otheruser.received > 0) {
+  //       if (user.sent > otheruser.received) {
+  //         balance -= otheruser.received - user.sent
+  //       }
+  //     }
+  //   }
+  //   return balance
+  // }
 
 
 
-  async gothours(ctx) {
-    const chatID = ctx.message.chat.id;
-    const user = ctx.message.from;
-    const amount = ctx.message.text.split(' ')[1]
-    if (!amount) {
-      ctx.reply('Please specify an amount and a reason. eg: /gothours 10 for community shopping');
-      return;
-    }
-    //check if amount is a number
-    if (isNaN(amount)) {
-      ctx.reply('Please specify a number in your currency unit. eg: /gothours 10 for building a website');
-      return;
-    }
-    let action = ctx.message.text.split(' ').slice(2).join(' ')
-    console.log (action)
-    this.saveUserAction(user, 'gothours', action, parseInt(amount), chatID)
-    ctx.send(`You got ${amount} hours - ${action}.`);
-  }
+  // async gothours(ctx) {
+  //   const chatID = ctx.message.chat.id;
+  //   const user = ctx.message.from;
+  //   const amount = ctx.message.text.split(' ')[1]
+  //   if (!amount) {
+  //     ctx.reply('Please specify an amount and a reason. eg: /gothours 10 for community shopping');
+  //     return;
+  //   }
+  //   //check if amount is a number
+  //   if (isNaN(amount)) {
+  //     ctx.reply('Please specify a number in your currency unit. eg: /gothours 10 for building a website');
+  //     return;
+  //   }
+  //   let action = ctx.message.text.split(' ').slice(2).join(' ')
+  //   console.log (action)
+  //   this.saveUserAction(user, 'gothours', action, parseInt(amount), chatID)
+  //   ctx.send(`You got ${amount} hours - ${action}.`);
+  // }
 
-  async spenthours(ctx) {
-    const chatID = ctx.message.chat.id;
-    const user = ctx.message.from;
-    const amount = ctx.message.text.split(' ')[1]
-    if (!amount) {
-      ctx.reply('Please specify an amount and a reason. eg: /spenthours 10 for community shopping');
-      return;
-    }
-    //check if amount is a number
-    if (isNaN(amount)) {
-      ctx.reply('Please specify a number in your currency unit. eg: /spenthours 10 for building a website');
-      return;
-    }
-    let action = ctx.message.text.split(' ').slice(2).join(' ')
-    console.log (action)
+  // async spenthours(ctx) {
+  //   const chatID = ctx.message.chat.id;
+  //   const user = ctx.message.from;
+  //   const amount = ctx.message.text.split(' ')[1]
+  //   if (!amount) {
+  //     ctx.reply('Please specify an amount and a reason. eg: /spenthours 10 for community shopping');
+  //     return;
+  //   }
+  //   //check if amount is a number
+  //   if (isNaN(amount)) {
+  //     ctx.reply('Please specify a number in your currency unit. eg: /spenthours 10 for building a website');
+  //     return;
+  //   }
+  //   let action = ctx.message.text.split(' ').slice(2).join(' ')
+  //   console.log (action)
 
-    this.saveUserAction(user, 'spenthours', action, parseInt(amount), chatID)
-    ctx.reply(`You spent ${amount} hours - ${action}.`);
-  }
-  
+  //   this.saveUserAction(user, 'spenthours', action, parseInt(amount), chatID)
+  //   ctx.reply(`You spent ${amount} hours - ${action}.`);
+  // }
 
-  async wallet(ctx) {
-    const chatID = ctx.message.chat.id;
-    const user = ctx.message.from;
-    let userinfo = await this.getUserInfo(user, chatID)
-    let message = `You have ${userinfo.money} currency units and ${userinfo.hours} hours in your wallet.`
-    ctx.reply(message);
 
-  }
+  // async wallet(ctx) {
+  //   const chatID = ctx.message.chat.id;
+  //   const user = ctx.message.from;
+  //   let userinfo = await this.getUserInfo(user, chatID)
+  //   let message = `You have ${userinfo.money} currency units and ${userinfo.hours} hours in your wallet.`
+  //   ctx.reply(message);
 
-  async paid(ctx) {
-    const chatID = ctx.message.chat.id;
-    const user = ctx.message.from;
-    const command = ctx.message.text.split(' ')[0]
-    const amount = ctx.message.text.split(' ')[1]
-    const currentsee = ctx.message.text.split(' ')[2]
-    if (!amount) {
-      ctx.reply('Please specify an amount and a reason. eg: /paid 10 euros for community shopping');
-      return;
-    }
+  // }
 
-    if (!currentsee || (!currentsee.startsWith('euro') && !currentsee.startsWith('hour') && !currentsee.startsWith('km'))) {
-      ctx.reply(`Please specify the currency. eg: ${command} 10 euros for community shopping`);
-      return;
-    }
+  // async paid(ctx) {
+  //   const chatID = ctx.message.chat.id;
+  //   const user = ctx.message.from;
+  //   const command = ctx.message.text.split(' ')[0]
+  //   const amount = ctx.message.text.split(' ')[1]
+  //   const currentsee = ctx.message.text.split(' ')[2]
+  //   if (!amount) {
+  //     ctx.reply('Please specify an amount and a reason. eg: /paid 10 euros for community shopping');
+  //     return;
+  //   }
 
-    //check if amount is a number
-    if (isNaN(amount)) {
-      ctx.reply('Please specify a number in your currency unit. eg: /paid 10 euros for community shopping');
-      return;
-    }
-    let action = ctx.message.text.split(' ').slice(3).join(' ')
+  //   if (!currentsee || (!currentsee.startsWith('euro') && !currentsee.startsWith('hour') && !currentsee.startsWith('km'))) {
+  //     ctx.reply(`Please specify the currency. eg: ${command} 10 euros for community shopping`);
+  //     return;
+  //   }
 
-    if (currentsee.startsWith('euro')) {
-      this.saveUserAction(user, 'spentmoney', action, parseInt(amount), chatID)
-    }
-    else if (currentsee.startsWith('hour')) {
-      this.saveUserAction(user, 'spenthours', action, parseInt(amount), chatID)
-    }
+  //   //check if amount is a number
+  //   if (isNaN(amount)) {
+  //     ctx.reply('Please specify a number in your currency unit. eg: /paid 10 euros for community shopping');
+  //     return;
+  //   }
+  //   let action = ctx.message.text.split(' ').slice(3).join(' ')
 
-    // ctx.reply(`@${user.username} ${command.substring(1)} ${amount} ${currentsee} - ${action}.`, Markup.inlineKeyboard(
-    //   [
-    //       Markup.button.callback('split', 'split_cost_' + chatID + '_' + user.id + '_' + amount + '_' + currentsee + '_' + action),
-    //       Markup.button.callback('reject', 'reject_cost_' + chatID + '_' + user.id + '_' + amount + '_' + currentsee + '_' + action)
-    //   ]));
-    ctx.reply(`@${user.username} ${command.substring(1)} ${amount} ${currentsee} - ${action}.`)
-  }
+  //   if (currentsee.startsWith('euro')) {
+  //     this.saveUserAction(user, 'spentmoney', action, parseInt(amount), chatID)
+  //   }
+  //   else if (currentsee.startsWith('hour')) {
+  //     this.saveUserAction(user, 'spenthours', action, parseInt(amount), chatID)
+  //   }
 
-  async gotpaid(ctx) {
-    const chatID = ctx.message.chat.id;
-    const user = ctx.message.from;
-    const amount = ctx.message.text.split(' ')[1]
-    if (!amount) {
-      ctx.reply('Please specify an amount and a reason. eg: /gotpaid 10 for building a website');
-      return;
-    }
-    //check if amount is a number
-    if (isNaN(amount)) {
-      ctx.reply('Please specify a number in your currency unit. eg: /gotpaid 10 for building a website');
-      return;
-    }
-    let action = ctx.message.text.split(' ').slice(2).join(' ')
-    console.log (action)
-  
-    this.saveUserAction(user, 'gotmoney', action, amount,  chatID)
-    ctx.reply(`You got paid ${amount} - ${action}.`);
-  }
+  //   // ctx.reply(`@${user.username} ${command.substring(1)} ${amount} ${currentsee} - ${action}.`, Markup.inlineKeyboard(
+  //   //   [
+  //   //       Markup.button.callback('split', 'split_cost_' + chatID + '_' + user.id + '_' + amount + '_' + currentsee + '_' + action),
+  //   //       Markup.button.callback('reject', 'reject_cost_' + chatID + '_' + user.id + '_' + amount + '_' + currentsee + '_' + action)
+  //   //   ]));
+  //   ctx.reply(`@${user.username} ${command.substring(1)} ${amount} ${currentsee} - ${action}.`)
+  // }
+
+  // async gotpaid(ctx) {
+  //   const chatID = ctx.message.chat.id;
+  //   const user = ctx.message.from;
+  //   const amount = ctx.message.text.split(' ')[1]
+  //   if (!amount) {
+  //     ctx.reply('Please specify an amount and a reason. eg: /gotpaid 10 for building a website');
+  //     return;
+  //   }
+  //   //check if amount is a number
+  //   if (isNaN(amount)) {
+  //     ctx.reply('Please specify a number in your currency unit. eg: /gotpaid 10 for building a website');
+  //     return;
+  //   }
+  //   let action = ctx.message.text.split(' ').slice(2).join(' ')
+  //   console.log (action)
+
+  //   this.saveUserAction(user, 'gotmoney', action, amount,  chatID)
+  //   ctx.reply(`You got paid ${amount} - ${action}.`);
+  // }
 
 
   async addValue(ctx) {
@@ -184,13 +184,13 @@ class Users {
       ctx.reply('Please specify a value or list of values to add. eg: /value freedom, non-violence');
       return;
     }
-   
+
     let userinfo = await this.getUserInfo(user, chatID)
     if (!userinfo.values) userinfo.values = []
     console.log(userinfo.values)
     userinfo.values = userinfo.values.concat(values)
-    
-    await this.db.put(chatID + '/users',userinfo)
+
+    await this.db.put(chatID + '/users', userinfo)
     ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
 
@@ -206,8 +206,8 @@ class Users {
     let userinfo = await this.getUserInfo(user, chatID)
     if (!userinfo.needs) userinfo.needs = []
     userinfo.needs = userinfo.needs.concat(needs)
-    
-    await this.db.put(chatID + '/users',userinfo)
+
+    await this.db.put(chatID + '/users', userinfo)
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);
   }
 
@@ -229,7 +229,7 @@ class Users {
 
 
   // save user action
-  async saveUserAction(user, type, action, amount , chatID) {
+  async saveUserAction(user, type, action, amount, chatID) {
     console.log('SAVE USER ACTION: ' + type, action, amount, user, chatID)
     let userinfo = await this.getUserInfo(user, chatID)
     switch (type) {
@@ -254,27 +254,14 @@ class Users {
       case 'received':
         userinfo.received += 1;
         break;
-      case 'spentmoney':
-        userinfo.money += amount;
-        break;
-      case 'gotmoney':
-          userinfo.money -= amount;
-        break;
       case 'collaborated':
-          userinfo.collaboration.push({action: action, amount: amount});
+        userinfo.collaboration.push({ action: action, amount: amount });
         break;
-      case 'spenthours':
-          userinfo.hours += amount;
-      case 'gothours':
-          userinfo.hours -= amount;
-      break;
-   
-      break;
       default:
         break;
     }
     if (userinfo.actions == undefined) userinfo.actions = []
-    userinfo.actions.push({type: type, action: action, amount: amount});
+    userinfo.actions.push({ type: type, action: action, amount: amount });
 
     await this.db.put(chatID + '/users', userinfo)
   }
@@ -307,9 +294,9 @@ class Users {
         money: 0,
         voice: 0
       }
-      await this.db.put(chatID + '/users',userinfo)
+      await this.db.put(chatID + '/users', userinfo)
     }
-    if(userinfo._id)  userinfo.id = userinfo._id // convert older format
+    if (userinfo._id) userinfo.id = userinfo._id // convert older format
     return userinfo
   }
 }

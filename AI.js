@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import OpenAI from "openai";
+import fs from 'fs';
 
 let openai
 
@@ -195,4 +196,17 @@ export async function assignRoles(actions, roles){
             roles +
             '. Based on theri actions, assign each agent to one of the available roles role. Ao agent should have the same role. Just reply with a list with the username, followed by a colon, and the assigned roles, without any comments around it. Eg: @Roberto: Cook , Gardner'
         return await sendMessage(system, prompt)
+}
+
+export async function text2speech(prompt, filename){
+
+  let mp3 = await openai.audio.speech.create({
+    model: "tts-1",
+    voice: "echo",
+    input: prompt,
+  });
+
+  const buffer = Buffer.from(await mp3.arrayBuffer());
+  await fs.promises.writeFile(filename, buffer);
+  return buffer
 }

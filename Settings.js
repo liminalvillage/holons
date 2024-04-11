@@ -231,7 +231,7 @@ async setLanguage(ctx) {
             ctx.reply('Please specify the language. Example: /setLanguage en')
             return
     }
-    if ( language !== 'en' && language !== 'it') {
+    if ( language !== 'en' && language !== 'it' && language !== 'fiobbo') {
         ctx.reply('Please specify "it" or "en". Example: /setLanguage en')
         return
     }
