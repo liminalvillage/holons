@@ -301,7 +301,7 @@ class WeQuest {
     this.telebot.command('maslow', (ctx) => this.UI.showMaslow(2))
 
     //-----------------------------AI -----------------------------
-    this.telebot.command('speech', async (ctx) => { let output = await AI.text2speech(ctx.message.text.split(' ').slice(1).join(' '), './output.mp3'); ctx.replyWithAudio({ source: './output.mp3'}).catch(err => {console.log(err); ctx.reply(JSON.stringify)})  })
+    this.telebot.command('speech', async (ctx) => { let output = await AI.text2speech(ctx.message.text.split(' ').slice(1).join(' '), `./audio/${ctx.message.chat.id}_${ctx.message.messageid}.mp3`); ctx.replyWithAudio({ source:  `./audio/${ctx.message.chat.id}_${ctx.message.messageid}.mp3`}).catch(err => {console.log(err); ctx.reply(JSON.stringify)})  })
     this.telebot.command('today', async (ctx) => ctx.reply(await AI.getPrompt(await this.settings.getValues, this.lunation.progress(), await AI.getActions(await this.users.listUsersActions(ctx))).catch(err => console.log(err))))
     this.telebot.command('assignroles', async (ctx) => {
       let actions = await this.users.listUsersActions(ctx)
