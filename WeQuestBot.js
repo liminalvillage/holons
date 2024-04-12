@@ -68,16 +68,21 @@ class WeQuest {
     this.council = null
   }
 
-  async init() {
-    this.telebot = new Telegraf(process.env.TELEGRAM);
+  async init(appname = 'WeQuest', telegramtoken = null, discordtoken = null) {
+
+    this.telebot = new Telegraf(telegramtoken ? telegramtoken : process.env.TELEGRAM);
     this.telebot.launch({
       handlerTimeout: Infinity
     });
     //this.telebot.use(Telegraf.log())
-    if (process.env.MODE == 'development') 
-      this.db = new DB('WeQuestDebug')
-    else 
-      this.db = new DB('WeQuest')
+    if (process.env.MODE == 'development') {
+      console.log('Development Mode')
+      this.db = new DB(appname + 'Debug')
+    }
+    else {
+      console.log('Production Mode')
+      this.db = new DB(appname)
+    }
 
     await this.db.init()
 
@@ -136,7 +141,7 @@ class WeQuest {
     // }
     // )
 
-    // discordbot.login(process.env.DISCORD);
+    // discordbot.login(discordtoken?discordtoken:process.env.DISCORD);
     // =========================== bot commands ===========================
     if (process.env.MODE == 'development') {
       this.telebot.command('start', async (ctx) => {
@@ -235,9 +240,9 @@ class WeQuest {
         // bot.sendInvoice(ctx.message.from.id, "Donation", "Donation of " + param + "€", payload, StripeToken, "pay", "EUR", prices);	// send invoice button to user
         // remember to save payload and user data in db, it will be useful later
         // usually i save Payload and Status = WAIT
-          });
+      });
     }
-    
+
     this.telebot.on('photo', async (ctx) => {
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0]; // TODO: ADD MORE Picture- based commands eg /spent
@@ -301,7 +306,7 @@ class WeQuest {
     this.telebot.command('maslow', (ctx) => this.UI.showMaslow(2))
 
     //-----------------------------AI -----------------------------
-    this.telebot.command('speech', async (ctx) => { let output = await AI.text2speech(ctx.message.text.split(' ').slice(1).join(' '), `./audio/${ctx.message.chat.id}_${ctx.message.messageid}.mp3`); ctx.replyWithAudio({ source:  `./audio/${ctx.message.chat.id}_${ctx.message.messageid}.mp3`}).catch(err => {console.log(err); ctx.reply(JSON.stringify)})  })
+    this.telebot.command('speech', async (ctx) => { let output = await AI.text2speech(ctx.message.text.split(' ').slice(1).join(' '), `./audio/${ctx.message.chat.id}_${ctx.message.messageid}.mp3`); ctx.replyWithAudio({ source: `./audio/${ctx.message.chat.id}_${ctx.message.messageid}.mp3` }).catch(err => { console.log(err); ctx.reply(JSON.stringify) }) })
     this.telebot.command('today', async (ctx) => ctx.reply(await AI.getPrompt(await this.settings.getValues, this.lunation.progress(), await AI.getActions(await this.users.listUsersActions(ctx))).catch(err => console.log(err))))
     this.telebot.command('assignroles', async (ctx) => {
       let actions = await this.users.listUsersActions(ctx)
@@ -425,8 +430,12 @@ class WeQuest {
   }
 }
 
-let wequest = new WeQuest()
-await wequest.init();
+console.log(process.argv[2], process.argv[3])
+
+// Start the bot
+//read the bot token from the command line, togheter with the app name
+let wequest = new WeQuest();
+await wequest.init(process.argv[2], process.argv[3],process.argv[4]);
 
 // discordbot.on('message', msg => {
 //   console.log("DISCORD MESSAGE: "+msg.content)
