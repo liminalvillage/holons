@@ -4,6 +4,7 @@
     "holons" : 
     [
     { "id": "http://github.com/robertovalenti/personal/holon", "label": "Roberto Valenti"},
+    { "id": "WeQuest.-1001949585888.users", "label": "Telegram"},
     { "id": "http://github.com/liminalvillage/local/", "label": "Liminal Village" },
     { "id": "http://github.com/robertovalenti/worldmandala/holon", "label": "World Mandala" },
     { "id": "http://github.com/liminalvillage/hubs", "label": "Hubs Network" },

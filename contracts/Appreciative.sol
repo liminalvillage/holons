@@ -16,16 +16,16 @@ pragma solidity ^0.8;
     Peer Production License for more details.
  */
 
-import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./IHolonFactory.sol";
 import "./Holon.sol";
 
 contract Appreciative is Holon  {
-    using SafeMath for uint256;
     //======================== Structures for tracking appreciation
     uint256 public totalappreciation;               // max amount of appreciation in this holon
-    mapping (address => uint256) public appreciation; //appreciaton received by a member
+    mapping (address => uint256) public receivedappreciation; //appreciaton received by a member
     mapping (address => uint8) public remainingappreciation; //appreciation left to give (max=100)
+    mapping (address => mapping (address => uint8)) public appreciation; //appreciation given to a member by another member
 
     constructor (address _creator, string  memory _name)
     {
@@ -51,10 +51,10 @@ contract Appreciative is Holon  {
         external
     {
         require (isMember[msg.sender] || isMember[_memberaddress], "Sender or Receiver is not a member");
-        require (_memberaddress != msg.sender, "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
+        require (_memberaddress != msg.sender || !(_memberaddress == msg.sender && _percentage > 0), "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
         require (remainingappreciation[msg.sender] >= _percentage, "Not enough appreciation remaining");
         remainingappreciation[msg.sender] -= _percentage;
-        appreciation[_memberaddress] += _percentage;
+        appreciation[msg.sender][_memberaddress] += _percentage;
         totalappreciation += _percentage;
     }
 
@@ -73,31 +73,66 @@ contract Appreciative is Holon  {
         Appreciative(payable(_parent)).appreciate(_sibling,_percentage);
     }
 
-    /// @dev Sets appreciation for a group of members
-    /// @notice This is the only way to change already assigned appreciation
-    function setAppreciation(address[] memory _memberaddress, uint8[] memory _percentage)
+    /// @dev Sets appreciation for all members at once
+    /// @notice all members should be listed, and the sum of the percentages should be 100
+    /// @notice Only the holon members can call this function
+    /// @notice A member cannot send appreciation to himself (should send 0)
+    function setMembersAppreciation(address[] memory _memberaddress, uint8[] memory _percentage)
         external
     {
-        require(_memberaddress.length == _percentage.length, "Array length mismatch");
-        totalappreciation = 0;
+        require(_memberaddress.length == _percentage.length && _memberaddress.length == _members.length, "Array length mismatch");
+        totalappreciation -= 100 - remainingappreciation[msg.sender];
+        remainingappreciation[msg.sender] = 100;
+
          for (uint256 i = 0; i < _memberaddress.length; i++) {
-             appreciation[_memberaddress[i]] = _percentage[i];
-             remainingappreciation[_memberaddress[i]] -= _percentage[i];
-             totalappreciation += _percentage[i];
+            require (remainingappreciation[msg.sender] >= _percentage[i], "Not enough appreciation remaining");
+            require (isMember[msg.sender] || isMember[_memberaddress[i]], "Sender or Receiver is not a member");
+            require ( !(_memberaddress[i] == msg.sender && _percentage[i] > 0), "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
+            remainingappreciation[msg.sender] -= _percentage[i];
+            if (appreciation[msg.sender][_memberaddress[i]] >0)
+                totalappreciation -= appreciation[msg.sender][_memberaddress[i]];
+            appreciation[msg.sender][_memberaddress[i]] = _percentage[i];
+            totalappreciation += _percentage[i];
          }
+    }
+     /// @dev Sets appreciation for a single member
+    /// @notice Only the holon members can call this function
+    /// @notice A member cannot send appreciation to himself (should send 0)
+    /// @notice Sender should have enough appreciation left to give
+    /// @param _memberaddress The address of the receiving member
+    /// @param _percentage The amount of the appreciation to give in percentage.
+        function setAppreciation(address  _memberaddress, uint8  _percentage)
+        external
+    {
+        require (isMember[msg.sender] || isMember[_memberaddress], "Sender or Receiver is not a member");
+        require ( !(_memberaddress == msg.sender && _percentage > 0), "Sender cannot appreciate himself.. that's selfish"); // sender can't vote for himself.
+
+        //recuperate previous appreciation
+        if (appreciation[msg.sender][_memberaddress] > 0) {
+            totalappreciation -= appreciation[msg.sender][_memberaddress];
+            remainingappreciation[msg.sender] += appreciation[msg.sender][_memberaddress];
+            appreciation[msg.sender][_memberaddress] = 0;
+        }
+        
+        require (remainingappreciation[msg.sender] >= _percentage, "Not enough appreciation remaining");
+        appreciation[msg.sender][_memberaddress] = _percentage;
+        remainingappreciation[msg.sender] -= _percentage;
+        totalappreciation += _percentage;
+         
     }
 
    /// @dev Resets appreciation of the caller
-    /// @notice This is the only way to change already assigned appreciation
+    /// @notice Only the holon members can call this function
+    /// @notice Appreciation of all members is reset to 0
+    /// @notice Appreciation left to give is reset to 100
     function resetAppreciation()
         external
     {
-        require(msg.sender == owner, "Only the lead can reset appreciation");
-        totalappreciation = 0;
-         for (uint256 i = 0; i < _members.length; i++) {
-             address _memberaddress = _members[i];
-             remainingappreciation[_memberaddress] = 100;
-             appreciation[_memberaddress] = 0;
+        require(isMember[msg.sender], "Only members can reset their appreciation");
+         totalappreciation -= 100 - remainingappreciation[msg.sender];
+         remainingappreciation[msg.sender] = 100;
+         for (uint256 i = 0; i < _members.length; i++) {  
+             appreciation[msg.sender][_members[i]] = 0;
          }
     }
 
@@ -130,9 +165,9 @@ contract Appreciative is Holon  {
 
         for (uint256 i = 0; i < _members.length; i++) {
             if (totalappreciation > 0 ) // if any appreciation was shared
-                amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
+                amount = receivedappreciation[_members[i]] * ( _tokenamount / totalappreciation); //multiply given appreciation with unit reward
             else
-                amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+                amount = _tokenamount / _members.length; //else use blanket unit reward value.
 
             if (amount > 0 ){
                 if (etherreward){
@@ -146,7 +181,7 @@ contract Appreciative is Holon  {
                     );
                     require(success, "Unable to call the reward function" );
                 }
-                // MemberRewarded(_members[i], "ERC20", amount); TODO
+                 //emit MemberRewarded(_members[i], "ERC20", amount); 
             }
         }
        // emit HolonRewarded(address(this), "ERC20", _tokenamount);TODO

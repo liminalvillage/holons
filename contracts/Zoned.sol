@@ -16,14 +16,12 @@ pragma solidity ^0.8;
     Peer Production License for more details.
  */
 
-import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./IHolonFactory.sol";
 import "./Holon.sol";
 
  contract Zoned is Holon{
-    using SafeMath for uint256;
-
      //======================== Public holon variables
   
     uint public nzones;
@@ -72,13 +70,13 @@ import "./Holon.sol";
         uint256  amount;
         for (uint256 z = 1;  z <= nzones; z++) { //skip zone 0 as unassigned members
             if (zonemembers[z].length > 0) {
-                amount = rewardFunction(z, _tokenamount).div(zonemembers[z].length); // divide reward equally for all members in the same zone
+                amount = rewardFunction(z, _tokenamount) / zonemembers[z].length; // divide reward equally for all members in the same zone
                 for (uint256 i = 0; i < zonemembers[z].length; i++) {
             
             //     if (totalappreciation > 0 ) // if any appreciation was shared
-            //         amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
+            //         amount = appreciation[_members[i]] * ( _tokenamount / totalappreciation); //multiply given appreciation with unit reward
             //     else
-            //         amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+            //         amount = _tokenamount / _members.length ; //else use blanket unit reward value.
 
                     if (amount > 0 ){
                         if (etherreward){
@@ -100,10 +98,10 @@ import "./Holon.sol";
         }
     }
     
-    function rewardFunction(uint _zone, uint _totalreward) private returns (uint zonereward)
+    function rewardFunction(uint _zone, uint _totalreward) private view returns (uint zonereward)
     {
-
-        return _totalreward / nzones;//(2 ^ (_zone + 1));
+        
+        return _totalreward / nzones ;//(2 ^ (_zone + 1));
     }
 
     function addToZone(address _memberaddress, uint _zone) public/// @notice Explain to an end user what this does
