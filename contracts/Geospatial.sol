@@ -136,7 +136,7 @@ contract Geospatial is Holon{
 
         for (uint256 i = 0; i < hexs.length; i++) {
                 if (totalappreciation > 0 ) // if any appreciation was shared
-                    amount = appreciation[hexs[i]] * ( _tokenamount / totalappreciation); //multiply given appreciation with unit reward
+                    amount = (appreciation[hexs[i]] *  _tokenamount) / totalappreciation; //multiply given appreciation with unit reward
                 else
                 amount = _tokenamount / hexs.length; //else use blanket unit reward value.
 

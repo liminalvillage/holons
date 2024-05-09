@@ -1,3 +1,4 @@
+const assert = require('assert');
  
 const Holon = artifacts.require("./Managed.sol")
 const Holons = artifacts.require("./Holons.sol")
@@ -113,7 +114,7 @@ contract("ManagedHolon", async accounts => {
         it("Tries creating the first member from an unknown account", async () => {
             
             try {
-                await holon.addMember ( 1,{ from: unknownMember });
+                await holon.addMember ( "1",{ from: unknownMember });
             } catch (_) {}
 
             const holonsize = await holon.getSize();
@@ -123,7 +124,7 @@ contract("ManagedHolon", async accounts => {
 
         it("Creates the first member", async () => {
             //await holon.passTheCrown();
-            await holon.addMember ( 1,{ from: owner });
+            await holon.addMember ( "1",{ from: owner });
             const holonsize = await holon.getSize();
             assert.equal(holonsize.toString(), "1", "Holon size not equal to 1");
         })
@@ -132,7 +133,7 @@ contract("ManagedHolon", async accounts => {
 
         it("Tries to add the same member ", async () => {
             try {
-                await holon.addMember ( 1 ,{ from: owner });
+                await holon.addMember ( "1" ,{ from: owner });
             } catch (_) {}
 
             const holonsize = await holon.getSize();
@@ -168,7 +169,7 @@ contract("ManagedHolon", async accounts => {
         it("Adds a second member", async () => {
             
             try {
-                await holon.addMember ( 2, { from: owner });
+                await holon.addMember ( "2", { from: owner });
             } catch (_){}
 
             const holonsize = await holon.getSize();
@@ -207,10 +208,10 @@ contract("ManagedHolon", async accounts => {
             factory = await Holons.deployed();
             holonaddress = await factory.toAddress.call("ManagedTest");
             holon = await Holon.at(holonaddress);
-            await holon.setUserAppreciation(1, 100)
+            await holon.setUserAppreciation("1", 100)
             // await holon.setAppreciation(2, 100)
             
-            const appreciation = await holon.appreciation.call(1);
+            const appreciation = await holon.appreciation.call("1");
             assert.equal(appreciation.toString(), "100", "Wrong appreciation received");
             // const appr2 = await holon.appreciation.call(firstMember,secondMember);
             // assert.equal(appr1.toString(), "9", "Wrong appreciation received");
@@ -224,91 +225,127 @@ contract("ManagedHolon", async accounts => {
             holonaddress = await factory.toAddress.call("ManagedTest");
             holon = await Holon.at(holonaddress);
             let  total = await holon.totalappreciation.call();
-            await holon.setUserAppreciation(2, 100)
-
-            
+            await holon.setUserAppreciation("2", 100);            
             const total2 = await holon.totalappreciation.call();
             assert.equal(total2.toString(), (parseInt(total) + 100 ).toString(), "Wrong appreciation received");
 
-            // const appr2 = await holon.appreciation.call(firstMember,secondMember);
-            // assert.equal(appr1.toString(), "9", "Wrong appreciation received");
-            // assert.equal(appr2.toString(), "10", "Wrong appreciation received");
-
         })
 
-        it("rewards current users, based on appreciation", async () => {
+        it("Ether rewards current users, based on appreciation", async () => {
             factory = await Holons.deployed();
             holonaddress = await factory.toAddress.call("ManagedTest");
             holon = await Holon.at(holonaddress);
+            let  balancebefore = await holon.etherBalance.call("1");
             await holon.sendTransaction({ value: web3.utils.toWei("1", "ether"), from: owner })
             let  total = await holon.totalappreciation.call();
-            //assert.equal(total2.toString(), (parseInt(total) - 100 ).toString(), "Wrong appreciation received");
-            let  balance1 = await holon.etherBalance.call(1);
-            let balance2 = await holon.etherBalance.call(2);
+            let  balance1 = await holon.etherBalance.call("1");
+            let balance2 = await holon.etherBalance.call("2");
+
+            assert.equal(new web3.utils.BN(balance1).toString(),new web3.utils.BN (balancebefore).add(new web3.utils.BN(web3.utils.toWei("0.5", "ether"))).toString(), "Wrong ether reward received")
             assert.equal(new web3.utils.BN(balance1).toString(),new web3.utils.BN (balance2).toString(), "Wrong ether reward received")
-            //assert.equal((Math.ceil(balance1 / 10000000000)).toString(), Math.ceil((balance2 - web3.utils.toWei("0.5", "ether")) / 10000000000).toString(), "Recieved different rewards");
-            // const appr2 = await holon.appreciation.call(firstMember,secondMember);
-            // assert.equal(appr1.toString(), "9", "Wrong appreciation received");
-            // assert.equal(appr2.toString(), "10", "Wrong appreciation received");
+          
         })
 
-        it("Claims rewarded ether", async () => {
+        it("Token rewards current users, based on appreciation", async () => {
             factory = await Holons.deployed();
             holonaddress = await factory.toAddress.call("ManagedTest");
             holon = await Holon.at(holonaddress);
-            let  balance1 = await holon.etherBalance.call(1);
-            let etherbalancebefore = await web3.eth.getBalance(firstMember);
-            await holon.claim(1, firstMember,{from:owner});
-            //await holon.claim.call(1, firstMember,{from:owner});
-            let balance2 = await holon.etherBalance.call(1);
-            let etherbalance = await web3.eth.getBalance(firstMember);
-            assert.equal(balance2.toString(),0, "Wrong deposited claimed ether remaining")
-            assert.equal((etherbalance - etherbalancebefore).toString(),balance1.toString() , "Wrong ether reward received")
+            let token = await TestToken.deployed();
+
+              //check if received tokens are correct
+            let  userbalancebefore = await holon.tokenBalance.call("1", token.address);
+            await token.transfer(holon.address, 10, { from: owner });
+            await holon.reward(token.address, 10, { from: owner });
+            let  userbalanceafter = await holon.tokenBalance.call("1", token.address);
+        
+            assert.equal(new web3.utils.BN(userbalanceafter).toString(),new web3.utils.BN (userbalancebefore).add(new web3.utils.BN(10/2)).toString(), "Wrong token reward received")
         })
 
+        it ("calls reward multiple times", async () => {
+            factory = await Holons.deployed();
+            holonaddress = await factory.toAddress.call("ManagedTest");
+            holon = await Holon.at(holonaddress);
+            let token = await TestToken.deployed();
+            let balancebefore = await holon.tokenBalance("1", token.address);
+            await token.transfer(holon.address, 100, { from: owner });
+
+            await holon.reward(token.address, 100, { from: owner });
+            try {
+                await holon.reward(token.address, 100, { from: owner });
+                await holon.reward(token.address, 100, { from: owner });
+            } catch (_){}
+
+            let balanceafter = await holon.tokenBalance("1", token.address);
+            
+            assert.equal((balanceafter-balancebefore).toString(), "50", "Wrong token reward received");
+
+        })
+
+        it("Claims rewarded ether and tokens", async () => {
+            factory = await Holons.deployed();
+            holonaddress = await factory.toAddress.call("ManagedTest");
+            holon = await Holon.at(holonaddress);
+            let token = await TestToken.deployed();
+
+            // check for remaining tokens and ethers to be claimed
+            let  storedtokens= await holon.tokenBalance.call("1", token.address);
+            assert.notEqual(storedtokens.toString(),"0", "No deposited claimed token remaining")
+            let  storedeth = await holon.etherBalance.call("1");
+            assert.notEqual(storedeth.toString(),"0", "No deposited claimed ether remaining")
+
+            // check for current balances
+            let etherbalancebefore = await web3.eth.getBalance(firstMember);
+            let tokenbalancebefore = await  token.balanceOf(firstMember);
+            // claim the rewards
+            await holon.claim("1", firstMember,{from:owner});
+
+            // makes sure nothins is stored
+            let newstoredtokens = await holon.tokenBalance.call("1", token.address);
+            assert.equal(newstoredtokens.toString(),"0", "Tokens still stored")
+            let newstoredeth = await holon.etherBalance.call("1");
+            assert.equal(newstoredeth.toString(),"0", "Ether still stored")
+
+            // check for new balances 
+            let etherbalanceafter = await web3.eth.getBalance(firstMember);
+            let tokenbalanceafter = await token.balanceOf(firstMember);
+            
+            // check if the balances differ by the rewards
+            assert.equal((tokenbalanceafter - tokenbalancebefore).toString(),storedtokens.toString() , "Wrong token reward received")
+            assert.equal((etherbalanceafter - etherbalancebefore).toString(),storedeth.toString() , "Wrong ether reward received")
         
-        // it("Sends rewards according to appreciation", async () => {
-        //     // make appreciation equal
-        //     await holon.appreciate(firstMember, 1, { from: secondMember }) // appreciation should now be equal to firstMember            
-        //     const appr1 = await holon.appreciation.call(secondMember,firstMember);
-        //     const appr2 = await holon.appreciation.call(firstMember,secondMember);
-        //     assert.equal(appr1.toString(), appr2.toString(), "Appreciation not equal");
+        })
 
-        //     // check consistent holon size
-        //     const size = await holon.getSize();
-        //     assert.equal(size.toString(), "2", "Wrong holon size");
 
-        //     // check balance prior to transaction
-        //     let balance1 = await web3.eth.getBalance(firstMember);
-        //     await holon.sendTransaction({ value: web3.utils.toWei("1", "ether"), from: owner })
-        //     balance2 = await web3.eth.getBalance(firstMember);
-        //     assert.equal((Math.ceil(balance1 / 10000000000)).toString(), Math.ceil((balance2 - web3.utils.toWei("0.5", "ether")) / 10000000000).toString(), "Recieved different rewards");
+        it("Directly forwards rewarded ether to claimed account", async () => {
+            factory = await Holons.deployed();
+            holonaddress = await factory.toAddress.call("ManagedTest");
+            holon = await Holon.at(holonaddress);
+            
+            let etherbalancebefore = await web3.eth.getBalance(firstMember);
+            await holon.sendTransaction({from:owner, value:web3.utils.toWei("1", "ether")});
+            let etherbalanceafter = await web3.eth.getBalance(firstMember);
+            assert.equal((etherbalanceafter - etherbalancebefore).toString(),web3.utils.toWei("0.5", "ether").toString() , "Wrong ether reward received")
+        })
 
-        // })
 
-        // it("Sends Token rewards according to appreciation", async () => {
-        //     //transfer 10 tokens to a member
-        //     let token = await TestToken.deployed();
-        //     await token.transfer(firstMember, 10, { from: owner });
+        it("Directly forwards rewarded tokens to claimed account", async () => {
+            factory = await Holons.deployed();
+            holonaddress = await factory.toAddress.call("ManagedTest");
+            holon = await Holon.at(holonaddress);
+            let token = await TestToken.deployed();
 
-        //     // check consistent holon size
-        //     const size = await holon.getSize();
-        //     assert.equal(size.toString(), "2", "Wrong holon size");
+            let balancebefore = await holon.tokenBalance("1", token.address);
+            let tokenbalancebefore = await token.balanceOf(firstMember);
+            await token.transfer(holon.address, 100, { from: owner });
+            await holon.reward(token.address, 100, { from: owner });
+            let balanceafter = await holon.tokenBalance("1", token.address);
+            let tokenbalanceafter = await token.balanceOf(firstMember);
+            assert.equal(balanceafter.toString(),balancebefore.toString() , "No token reward received");
+            assert.equal((tokenbalanceafter-50).toString(),tokenbalancebefore.toString() , "No token reward received");
+        })
+        
 
-        //     // check balance prior to transaction
-        //     balance1 = await token.balanceOf(firstMember);
-        //     assert.equal(balance1.toString(), "10", "token transaction not functioning correctly")
-
-        //     //approve contract to spend 1000 tokens 
-        //     await token.transfer(holon.address, 1000, { from: owner });
-        //     // allowance = await token.allowance(owner, holon.address);
-        //     // assert.equal(allowance.toString(), "1000" .toString(), "Contract token allowance is not correct");
-        //     await holon.reward(token.address, 1000, { from: owner });
-        //     balance2 = await token.balanceOf(firstMember);
-        //     //assert.equal((balance1+eval(500)).toString(), balance2.toString(), "Recieved different amount of reward for same appreciation");
-        //     assert.equal(balance2.toString(),(parseInt(500.) + parseInt(balance1) ).toString(), "Recieved different amount of reward for same appreciation")
-        // })
-
+        
         // it("Tests Recursive Reward", async () => {
         //     //create two holons
         //     await factory.newHolon("Appreciative", "A", 0, { from: owner });

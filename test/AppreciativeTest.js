@@ -3,19 +3,19 @@ const Holon = artifacts.require("./Appreciative.sol")
 const Holons = artifacts.require("./Holons.sol")
 const TestToken = artifacts.require("./TestToken.sol")
 
-contract("AppreciativeHolon", async accounts => {
+contract("Holon", async accounts => {
 
     const owner = accounts[0]
     const firstMember = accounts[1]
     const secondMember = accounts[2]
     const unknownMember = accounts[3]
 
-    // const initHolon = async (from) => {
-    //     const factory = await Holons.deployed()
-    //     await factory.newHolon("Appreciative", "First", 0, { from: from });
-    //     const holon = await Holon.at(await factory.newHolon.call("Appreciative", "First", 0, { from: from }));
-    //     return holon;
-    // }
+    const initHolon = async (from) => {
+        const factory = await Holons.deployed()
+        await factory.newHolon("Appreciative", "First", 0, { from: from });
+        const holon = await Holon.at(await factory.newHolon.call("Appreciative", "First", 0, { from: from }));
+        return holon;
+    }
 
     before(async function () {
         try {
@@ -184,7 +184,7 @@ contract("AppreciativeHolon", async accounts => {
         let holon;
 
         // it("Member dishes appreciation to another member", async () => {
-        //     factory = await Holons.deployed();
+        //     factory = await HolonFactory.deployed();
         //     holonaddress = await factory.toAddress.call("First");
         //     holon = await Holon.at(holonaddress);
 
@@ -204,37 +204,31 @@ contract("AppreciativeHolon", async accounts => {
 
             await holon.appreciate(firstMember, 9, { from: secondMember });
             await holon.appreciate(secondMember, 10, { from: firstMember });
-            const appr1 = await holon.appreciation.call(secondMember,firstMember);
-            const appr2 = await holon.appreciation.call(firstMember,secondMember);
+            const appr1 = await holon.appreciation.call(firstMember);
+            const appr2 = await holon.appreciation.call(secondMember);
             assert.equal(appr1.toString(), "9", "Wrong appreciation received");
             assert.equal(appr2.toString(), "10", "Wrong appreciation received");
 
         })
 
-        // it("Sends rewards according to appreciation", async () => {
-            
-        //     factory = await Holons.deployed();
-        //     holonaddress = await factory.toAddress.call("First");
-        //     holon = await Holon.at(holonaddress);
-        //     // make appreciation equal
-        //     await holon.appreciate(firstMember, 1, { from: secondMember }) // appreciation should now be equal to firstMember            
-        //     const appr1 = await holon.appreciation.call(secondMember,firstMember);
-        //     const appr2 = await holon.appreciation.call(firstMember,secondMember);
-        //     console.log(appr1.toString(), appr2.toString());
-        //     assert.equal(appr1.toString(), appr2.toString(), "Appreciation not equal");
+        it("Sends rewards according to appreciation", async () => {
+            // make appreciation equal
+            await holon.appreciate(firstMember, 1, { from: secondMember }) // appreciation should now be equal to firstMember            
+            const appr1 = await holon.appreciation.call(firstMember);
+            const appr2 = await holon.appreciation.call(secondMember);
+            assert.equal(appr1.toString(), appr2.toString(), "Appreciation not equal");
 
-        //     // check consistent holon size
-        //     const size = await holon.getSize();
-        //     assert.equal(size.toString(), "2", "Wrong holon size");
+            // check consistent holon size
+            const size = await holon.getSize();
+            assert.equal(size.toString(), "2", "Wrong holon size");
 
-        //     // check balance prior to transaction
-        //     let balance1 = await web3.eth.getBalance(firstMember);
-        //     await web3.eth.sendTransaction({ value: web3.utils.toWei("1", "ether"), from: owner, to:holonaddress })
-        //     balance2 = await web3.eth.getBalance(firstMember);
-        //     console.log(balance1 + ' - ' + balance2 +' = '+ (balance2 - balance1) );
-        //     assert.equal((Math.ceil(balance1 / 10000000000)).toString(), Math.ceil((balance2 - web3.utils.toWei("0.5", "ether")) / 10000000000).toString(), "Recieved different rewards");
+            // check balance prior to transaction
+            let balance1 = await web3.eth.getBalance(firstMember);
+            await holon.sendTransaction({ value: web3.utils.toWei("1", "ether"), from: owner })
+            balance2 = await web3.eth.getBalance(firstMember);
+            assert.equal((Math.ceil(balance1 / 10000000000)).toString(), Math.ceil((balance2 - web3.utils.toWei("0.5", "ether")) / 10000000000).toString(), "Recieved different rewards");
 
-        // })
+        })
 
         it("Sends Token rewards according to appreciation", async () => {
             //transfer 10 tokens to a member
@@ -251,12 +245,11 @@ contract("AppreciativeHolon", async accounts => {
 
             //approve contract to spend 1000 tokens 
             await token.transfer(holon.address, 1000, { from: owner });
-            // allowance = await token.allowance(owner, holon.address);
-            // assert.equal(allowance.toString(), "1000" .toString(), "Contract token allowance is not correct");
+            //allowance = await token.allowance(owner, holon.address);
+            //assert.equal(allowance.toString(), "1000" .toString(), "Contract token allowance is not correct");
             await holon.reward(token.address, 1000, { from: owner });
             balance2 = await token.balanceOf(firstMember);
-            //assert.equal((balance1+eval(500)).toString(), balance2.toString(), "Recieved different amount of reward for same appreciation");
-            assert.equal(balance2.toString(),(parseInt(500.) + parseInt(balance1) ).toString(), "Recieved different amount of reward for same appreciation")
+            assert.equal(balance1.toString(), (eval(balance2) - eval(500)).toString(), "Recieved different amount of reward for same appreciation");
         })
 
         it("Tests Recursive Reward", async () => {
@@ -281,7 +274,7 @@ contract("AppreciativeHolon", async accounts => {
             //reward the holons and see what happens ;)
             await holonA.sendTransaction({ value: web3.utils.toWei("1", "ether"), from: owner });
             let balance2 = await web3.eth.getBalance(firstMember);
-            console.log(balance1 + ' - ' + balance2 +' = '+ (balance2 - balance1) );
+            console.log(balance1 + ' ' + balance2);
 
             //now try with tokens
             let token = await TestToken.deployed();
@@ -289,7 +282,7 @@ contract("AppreciativeHolon", async accounts => {
             await token.transfer(holonB.address, 1000, { from: owner });
             await holonB.reward(token.address, 1000, { from: owner });
             balance2 = await token.balanceOf(firstMember);
-            console.log(balance1 + ' - ' + balance2 +' = '+ (balance2 - balance1));
+            console.log(balance1 + ' ' + balance2);
             //assert(false);
 
         })
@@ -309,20 +302,23 @@ contract("AppreciativeHolon", async accounts => {
             let size = await holon.getSize();
             assert.equal(size.toString(), "3", "Holon size not equal to 3");
             //send appreciation from second holon to first member
-            let appr1 = await holon.appreciation.call(secondholonaddress, firstMember);
+            let appr1 = await holon.appreciation.call(firstMember);
             await secondholon.appreciateSibling(holonaddress, firstMember, 50, { from: owner });
-            let appr2 = await holon.appreciation.call(secondholonaddress, firstMember);
+            let appr2 = await holon.appreciation.call(firstMember);
             assert.equal(appr1.toString(), appr2.toString() - 50, "Wrong appreciation received");
 
             //second holon fails sending appreciation to themselves
-            appr1 = await holon.appreciation.call(secondholonaddress,secondholonaddress);
+            appr1 = await holon.appreciation.call(secondholonaddress);
             try {
                 await secondholon.appreciateSibling(holonaddress, secondholonaddress, 50, { from: owner });
             } catch (_) { };
-            appr2 = await holon.appreciation.call(secondholonaddress,secondholonaddress);
+            appr2 = await holon.appreciation.call(secondholonaddress);
             assert.equal(appr1.toString(), appr2.toString(), "Wrong appreciation received (holon appreciated themselves)");
 
             let parents = await secondholon.listParents();
+            console.log(parents);
+            console.log(factory.address);
+            console.log(holonaddress);
 
         })
 

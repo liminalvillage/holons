@@ -1,4 +1,4 @@
- 
+
 const Holon = artifacts.require("./Zoned.sol")
 const Holons = artifacts.require("./Holons.sol")
 const TestToken = artifacts.require("./TestToken.sol")
@@ -27,13 +27,13 @@ contract("ZonedHolon", async accounts => {
             await web3.eth.personal.unlockAccount(thirdMember, "", 1000)
             await web3.eth.personal.unlockAccount(fourthMember, "", 1000)
             await web3.eth.personal.unlockAccount(fifthMember, "", 1000)
-        } catch(error) {
+        } catch (error) {
             console.warn(`error in unlocking wallet: ${JSON.stringify(error)}`)
         }
     })
 
     describe("Holon Creation test", _ => {
-     
+
         let factory;
         let holonaddress;
         let holon;
@@ -42,17 +42,17 @@ contract("ZonedHolon", async accounts => {
 
         it("Creates a new Holon ", async () => {
             factory = await Holons.deployed();
-            
+
             //create first holon
-            await factory.newHolon("Zoned","Zolon", 5,  { from: owner });
-            holonaddress = await factory.newHolon.call("Zoned","Zolon", 5,  { from: owner });
+            await factory.newHolon("Zoned", "Zolon", 5, { from: owner });
+            holonaddress = await factory.newHolon.call("Zoned", "Zolon", 5, { from: owner });
             const holonlist = await factory.listHolonsOf(owner);
             assert.equal(holonaddress.toString(), holonlist.toString(), "Address mismatch");
         })
-    
-           
+
+
         // it("Fails creating a new Holon from an unknown account", async () => {
-         
+
         //     //tries creating a rogue holon
         //     try{
         //     await factory.newHolon("Otherholon", { from: unknownMember });
@@ -62,7 +62,7 @@ contract("ZonedHolon", async accounts => {
         //     //check if it failed
         //     const size = await factory.getSize();
         //     assert.equal(size.toString(), "1", "size not equal to 1");
-   
+
         // })
 
         // it("Fails creating a new Holon with the same name ", async () => {
@@ -89,7 +89,7 @@ contract("ZonedHolon", async accounts => {
 
         //     let name = await holon.toName.call(holonaddress);
         //     assert.equal(name.toString(), "First", "Wrong Holon Name Retrieved");
-            
+
         //     try {
         //     await holon.changeName("Changed",{from:unknownMember});
         //     } catch (_) {}
@@ -101,39 +101,39 @@ contract("ZonedHolon", async accounts => {
         //         } catch (_) {}
         //         name = await holon.toName.call(holonaddress);
         //         assert.equal(name.toString(), "First", "An unauthorized member has changed holon name");
-            
+
         //     await holon.changeName("Changed",{from:owner});
         //     name = await holon.toName.call(holonaddress);
         //     assert.equal(name.toString(), "Changed", "Wrong Holon Name Retrieved");
         // })
 
 
- 
+
 
         it("Tries creating the first member from an unknown account", async () => {
-            
+
             try {
-                await holon.addMember ( firstMember, "Roberto",{ from: unknownMember });
-            } catch (_) {}
+                await holon.addMember(firstMember, "Roberto", { from: unknownMember });
+            } catch (_) { }
 
             const holonsize = await holon.getSize();
             assert.equal(holonsize.toString(), "0", "Holon size not equal to 0");
-            
+
         })
 
         it("Creates the first member", async () => {
             //await holon.passTheCrown();
-            await holon.addMember ( firstMember, "Roberto",{ from: owner });
+            await holon.addMember(firstMember, "Roberto", { from: owner });
             const holonsize = await holon.getSize();
             assert.equal(holonsize.toString(), "1", "Holon size not equal to 1");
         })
 
-        
+
 
         it("Tries to add the same member ", async () => {
             try {
-                await holon.addMember ( firstMember, "Roberto",{ from: owner });
-            } catch (_) {}
+                await holon.addMember(firstMember, "Roberto", { from: owner });
+            } catch (_) { }
 
             const holonsize = await holon.getSize();
             assert.equal(holonsize.toString(), "1", "Holon size not equal to 1");
@@ -147,28 +147,28 @@ contract("ZonedHolon", async accounts => {
         //     const holonsize = await holon.getSize();
         //     assert.equal(holonsize.toString(), "1", "Holon size not equal to 1");
         // })
-        
+
         it("Changes member name", async () => {
             // validates right name
             let name = await holon.toName(firstMember);
             assert.equal(name.toString(), "Roberto", "Wrong Member Name Retrieved");
             // tries changing the name from an unkown Member
-             try{
-                await holon.changeName(firstMember,"Changed", {from:unknownMember});
-            } catch (_) {}
+            try {
+                await holon.changeName(firstMember, "Changed", { from: unknownMember });
+            } catch (_) { }
             name = await holon.toName.call(firstMember);
             assert.equal(name.toString(), "Roberto", "An unauthorized member has changed holon name");
             // Member changinges his name
-            await holon.changeName(firstMember,"RobertoChanged",{from:firstMember});
+            await holon.changeName(firstMember, "RobertoChanged", { from: firstMember });
             name = await holon.toName.call(firstMember);
             assert.equal(name.toString(), "RobertoChanged", "Wrong Holon Name Retrieved");
         })
 
         it("Adds a second member", async () => {
-            
+
             try {
-                await holon.addMember ( secondMember, "Josh",{ from: owner });
-            } catch (_){}
+                await holon.addMember(secondMember, "Josh", { from: owner });
+            } catch (_) { }
 
             const holonsize = await holon.getSize();
             assert.equal(holonsize.toString(), "2", "Holon size not equal to 2");
@@ -181,41 +181,41 @@ contract("ZonedHolon", async accounts => {
         })
 
         it("Promotes a member", async () => {
-            
+
             try {
-                await holon.addToZone ( firstMember, 3 ,{ from: owner });
-            } catch (_){}
+                await holon.addToZone(firstMember, 3, { from: owner });
+            } catch (_) { }
 
             const memberzone = await holon.zone(firstMember);
             assert.equal(memberzone.toString(), "3", "Member did not get promoted ");
         })
 
         it("Fails to promote a member", async () => {
-            
+
             try {
-                await holon.addToZone ( secondMember, 4 ,{ from: firstMember });
-            } catch (_){}
+                await holon.addToZone(secondMember, 4, { from: firstMember });
+            } catch (_) { }
 
             const memberzone = await holon.zone.call(secondMember);
             assert.equal(memberzone.toString(), "0", "Member got wrongly promoted");
         })
 
         it("Another member successfuly promotes a new member", async () => {
-            
+
             try {
-                await holon.addToZone ( secondMember, 3 ,{ from: firstMember });
-            } catch (_){}
+                await holon.addToZone(secondMember, 3, { from: firstMember });
+            } catch (_) { }
 
             const memberzone = await holon.zone.call(secondMember);
             assert.equal(memberzone.toString(), "3", "Member did not get promoted");
         })
 
         it("Moves a member zone", async () => {
-            
+
             try {
-                await holon.addToZone ( firstMember, 1 ,{ from: owner });
-                await holon.addToZone ( secondMember, 2 ,{ from: owner });
-            } catch (_){}
+                await holon.addToZone(firstMember, 1, { from: owner });
+                await holon.addToZone(secondMember, 2, { from: owner });
+            } catch (_) { }
 
             memberzone = await holon.zone.call(firstMember);
             assert.equal(memberzone.toString(), "1", "Member zone incorrect (not moved)");
@@ -224,65 +224,44 @@ contract("ZonedHolon", async accounts => {
         })
 
         it("Rewards zones", async () => {
-            await holon.addToZone ( thirdMember, 3 ,{ from: owner });
-            await holon.addToZone ( fourthMember, 4 ,{ from: owner });
-            await holon.addToZone ( fifthMember, 5 ,{ from: owner });
-            console.log(await web3.eth.getBalance(holonaddress));
+            await holon.addToZone(thirdMember, 3, { from: owner });
+            await holon.addToZone(fourthMember, 4, { from: owner });
+            //await holon.addToZone ( fifthMember, 5 ,{ from: owner });
             let balanceFirstBefore = await web3.eth.getBalance(firstMember);
-            let balanceSecondBefore = await web3.eth.getBalance(secondMember);
-            let balanceThirdBefore = await web3.eth.getBalance(thirdMember);
-            let balanceFourthBefore = await web3.eth.getBalance(fourthMember);
-            let balanceFifthBefore = await web3.eth.getBalance(fifthMember);
-            let balanceUnknownBefore = await web3.eth.getBalance(unknownMember);
-            await  holon.sendTransaction({value: web3.utils.toWei("1", "ether"), from: owner})
+            await holon.sendTransaction({ value: web3.utils.toWei("1", "ether"), from: owner })
             let balanceFirstAfter = await web3.eth.getBalance(firstMember);
-            let balanceSecondAfter = await web3.eth.getBalance(secondMember);
-            let balanceThirdAfter= await web3.eth.getBalance(thirdMember);
-            let balanceFourthAfter = await web3.eth.getBalance(fourthMember);
-            let balanceFifthAfter = await web3.eth.getBalance(fifthMember);
-            let balanceUnknownAfter = await web3.eth.getBalance(unknownMember);
-       
-            console.log( balanceFirstBefore - balanceFirstAfter );
-            console.log( balanceSecondBefore - balanceSecondAfter );
-            console.log( balanceThirdBefore - balanceThirdAfter );
-            console.log( balanceFourthBefore - balanceFourthAfter );
-            console.log( balanceFifthBefore - balanceFifthAfter );
-            console.log( balanceUnknownBefore - balanceUnknownAfter );
-            console.log( balanceFourthBefore , balanceFourthAfter );
-            console.log( balanceFifthBefore,  balanceFifthAfter );
-            console.log(await web3.eth.getBalance(holonaddress));
-            // assert.equal((Math.ceil(balance1/10000000000)).toString(), Math.ceil((balance2 -  web3.utils.toWei("0.5", "ether"))/10000000000) .toString(), "Recieved different rewards");
 
-            // const memberzone = await holon.zone.call(firstMember);
-            // assert.equal(memberzone.toString(), "0", "Member got wrongly promoted");
+            const zones = await holon.nzones()
+            assert.equal(balanceFirstBefore.toString(), (balanceFirstAfter - web3.utils.toWei((1.0 / zones).toString())).toString(), "Recieved different rewards");
+
         })
 
         it("Checks if a member has been moved correctly", async () => {
-            await holon.addToZone ( thirdMember, 4 ,{ from: owner });
-            await holon.addToZone ( thirdMember, 3 ,{ from: owner });
+            await holon.addToZone(thirdMember, 4, { from: owner });
+            await holon.addToZone(thirdMember, 3, { from: owner });
 
         })
 
-        // it("Rewards zones", async () => {
-            
-        //     let balance1 = await web3.eth.getBalance(firstMember);
-        //     await  holon.sendTransaction({value: web3.utils.toWei("1", "ether"), from: owner})
-        //     let balance2 = await web3.eth.getBalance(firstMember);
-        //     console.log( balance1 - balance2 );
-        //     // assert.equal((Math.ceil(balance1/10000000000)).toString(), Math.ceil((balance2 -  web3.utils.toWei("0.5", "ether"))/10000000000) .toString(), "Recieved different rewards");
+        it ("Rewards zones with a token", async () => {
+            const token = await TestToken.deployed();
+            let balanceFirstBefore = await token.balanceOf(firstMember);
+            let balanceSecondBefore = await token.balanceOf(secondMember);
+            let balanceThirdBefore = await token.balanceOf(thirdMember);
+            let balanceFourthBefore = await token.balanceOf(fourthMember);
+            let balanceFifthBefore = await token.balanceOf(fifthMember);
+            let balanceUnknownBefore = await token.balanceOf(unknownMember);
+            await token.transfer(holon.address, 100, { from: owner });
+            await holon.reward(token.address, 100, { from: owner });
 
-        //     // const memberzone = await holon.zone.call(firstMember);
-        //     // assert.equal(memberzone.toString(), "0", "Member got wrongly promoted");
-        // })
-        
-        // it("Creates a second Holon", async () => {
-        // //check if holons can be fetched by owners
-        // let address = await factory.listMembersOf(owner);
-        // assert.equal(address.toString(),holonaddress.toString(),"address mismatch");
-        
-        // //let address2 = await factory.listHolonsOf(firstMember);
-        // //assert.equal(address2.toString(),holonaddress2.toString(),"address 2 mismatch");
-        // })
+            let balanceFirstAfter = await token.balanceOf(firstMember);
+            let balanceSecondAfter = await token.balanceOf(secondMember);
+            let balanceThirdAfter= await token.balanceOf(thirdMember);
+            let balanceFourthAfter = await token.balanceOf(fourthMember);
+            let balanceFifthAfter = await token.balanceOf(fifthMember);
+            let balanceUnknownAfter = await token.balanceOf(unknownMember);         
+            const zones = await holon.nzones()
+            assert.equal(balanceFirstBefore.toString(),(balanceFirstAfter - (100/zones)).toString() , "Recieved different rewards");
+        })
     })
-  
+
 })
