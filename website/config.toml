@@ -1,5 +1,5 @@
 ################################# Default configuration ###################
-baseURL = "https://holonssite.netlify.com"
+baseURL = "https://www.holons.io"
 title = "Holons"
 theme = "meghna-hugo"
 # post pagination
