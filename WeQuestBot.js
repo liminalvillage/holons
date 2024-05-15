@@ -43,6 +43,7 @@ import Users from './Users.js'
 import Tags from './Tags.js'
 import Participation from './RSVP.js'
 import Council from './Council.js';
+import Slots from './Roles.js';
 
 import * as request from './Requests.js'
 
@@ -66,6 +67,7 @@ class WeQuest {
     this.tags = null;
     this.participation = null;
     this.council = null
+    this.slots = null
   }
 
   async init(appname = 'WeQuest', telegramtoken = null, discordtoken = null) {
@@ -105,6 +107,7 @@ class WeQuest {
     this.tags = new Tags(this.telebot, this.db)
     this.participation = new Participation(this.telebot, this.db)
     this.council = new Council(this.telebot, this.db)
+    this.slots =  new Slots(this.telebot, this.db)
 
 
     // ========================== DISCORD =============================
@@ -302,7 +305,7 @@ class WeQuest {
 
     //----------------------------- APPRECIATION -----------------------------
     this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, db))
-    this.telebot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo'], async (ctx) => this.quests.sendAppreciation(ctx))
+    this.telebot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo','fiorino'], async (ctx) => this.quests.sendAppreciation(ctx))
     this.telebot.command('maslow', (ctx) => this.UI.showMaslow(2))
 
     //-----------------------------AI -----------------------------

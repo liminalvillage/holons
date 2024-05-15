@@ -21,7 +21,7 @@ class UI {
 
     //Set up a command to display the appreciation score for each user
     this.bot.command(['leaderboard', 'appreciation', 'credits', 'scores', 'score', 'points', 'rank', 'status'], async (ctx) => this.leaderboard(ctx))
-    this.bot.command(['fiorino','apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica', 'stato'], async (ctx) => this.leaderboard(ctx))
+    this.bot.command(['fiorini','apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica', 'stato'], async (ctx) => this.leaderboard(ctx))
 
     // Set up a command to display the quests
     this.bot.command(['tasks', 'quests', 'todos', 'proposals'], (ctx) => this.questboard(ctx))
@@ -493,8 +493,8 @@ class UI {
         <tr>
             <th scope="col">${i18next.t('rank', { lng: language })}</th>
             <th scope="col">${i18next.t('name', { lng: language })}</th>
-            <th scope="col">${i18next.t('initiated', { lng: language })}</th>
-            <th scope="col">${i18next.t('completed', { lng: language })}</th>
+            <th scope="col">${i18next.t('tasksinitiated', { lng: language })}</th>
+            <th scope="col">${i18next.t('taskscompleted', { lng: language })}</th>
             <th scope="col">${i18next.t('sent', { lng: language })}</th>
             <th scope="col">${i18next.t('received', { lng: language })}</th>
             <th scope="col">${i18next.t('score', { lng: language })}</th>

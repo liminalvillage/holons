@@ -153,8 +153,8 @@ export class Calendar {
         editMessageReplyMarkupTime(date, ctx, from_calendar) {
             ctx.editMessageReplyMarkup(this.createTimeSelector(date, from_calendar))
         },
-        sendMessageCalendar(menu, ctx) {
-            var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];
+        sendMessageCalendar(menu, ctx, language) {
+            var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[language] : lang.select[language];
             if(!ctx.session) //in inline calendar
             ctx.telegram.editMessageText(
                 ctx.update.callback_query.message.chat.id,
@@ -262,14 +262,14 @@ export class Calendar {
             }
             return res;
         },
-        startNavCalendar(ctx) {
+        startNavCalendar(ctx, language) {
             var now = new Date();
             now.setDate(1);
             now.setHours(0);
             now.setMinutes(0);
             now.setSeconds(0);
             //this.chats.set(ctx.callbackQuery.message.chat.id*100, ctx.callbackQuery.message.message_id);
-            this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), ctx);
+            this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), ctx, language);
         },
         startTimeSelector(ctx) {
             this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector()), ctx);

@@ -261,7 +261,7 @@ class Users {
         break;
     }
     if (userinfo.actions == undefined) userinfo.actions = []
-    userinfo.actions.push({ type: type, action: action, amount: amount });
+    userinfo.actions.push({ type: type, action: action, amount: amount, timestamp: new Date()});
 
     await this.db.put(chatID + '/users', userinfo)
   }

@@ -144,7 +144,7 @@ class DB {
                 this.gun.get(this.dbName + '/' + table).map().once((data, key) => {
                     this.gun.get(this.dbName + '/' + table).get(key).put(null); // Delete each key in the table                }
                 })
-                this.gun.get(this.dbName + '/' + table).put(null); // Delete the table
+                //this.gun.get(this.dbName + '/' + table).put(null); // Delete the table
                 this.preloadedDB[table] = null;
             } else if (this.db === 'orbit' && this.preloadedDB[table] !== undefined) {
                 console.log('Dropping ', table);
@@ -348,11 +348,28 @@ class DB {
     //     });
     // }
 
+    // deleteAllGunDB(table) {
+    //     return new Promise((resolve, reject) => {
+    //             this.gun.get(this.dbName + '/'+ table).map().once((data, key) => {
+    //                 //entities = data;
+    //                 //const id = Object.keys(entities)[0] // since this would be in object form, you can manipulate it as you would like. 
+    //                 this.gun.get(this.dbName + '/'+ table).put({ [key]: null })
+    //             }).then(() => {
+    //                 resolve(true)
+    //             }
+    //             ).catch((error) => {
+    //                 console.log('Error deleting all data:', error)
+    //                 resolve(false)
+    //             } 
+    //     );
+    // }
+    // )}
+    
     deleteGunDB(table, key) {
         return new Promise((resolve, reject) => {
             this.gun.get(this.dbName + '/' + table).get(key).put(null, ack => {
                 if (ack.err) {
-                    reject(ack.err);
+                    resolve(ack.err);
                 } else {
                     resolve(ack.ok);
                 }

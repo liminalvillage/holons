@@ -39,7 +39,7 @@ export default class Quests {
 
         // ITALIAN
         this.bot.command('missione', async (ctx) => this.quest('quest', ctx))
-        this.bot.command('compito', async (ctx) => this.quest('task', ctx))
+        this.bot.command('compito', async (ctx) => this.quest('compito', ctx))
         this.bot.command('evento', async (ctx) => this.quest('event', ctx))
         this.bot.command('proposta', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('propongo', async (ctx) => this.quest('proposal', ctx))
@@ -516,15 +516,16 @@ export default class Quests {
 
     async schedule(ctx) {
         console.log("SCHEDULE ACTION");
-
+        let language = await this.settings.getLanguage(ctx.callbackQuery.message.chat.id)
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
-        this.calendar.startNavCalendar(ctx);//TODO: pass quest information to recreate message
+        this.calendar.startNavCalendar(ctx,language);//TODO: pass quest information to recreate message
         this.calendar.chats.set(getChatId(ctx) * 100, getMessageId(ctx)); //TODO: fix this, use a different method to store the message id
     }
 
     async sendAppreciation(ctx) {
         console.log("SEND APPRECIATION ACTION");
+        
         const chatID = ctx.message.chat.id;
         const language = await this.settings.getLanguage(chatID)
         const sender = getUser(ctx);
@@ -533,7 +534,7 @@ export default class Quests {
         // Setup the necessary databases
       const mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
         if (mentions.length === 0) {
-            ctx.reply(`Please mention the name of the user(s) you want to send appreciation to using '@', followed by the reason.`, { reply_to_message_id: ctx.message.message_id });
+            ctx.reply(i18next.t('appreciationusage',{lng:language}), { reply_to_message_id: ctx.message.message_id });
             return
         }
 
@@ -561,7 +562,7 @@ export default class Quests {
             // }
 
             if (!recipient || recipient == '') {
-                ctx.reply(`The user ${username} has not interacted with this WeQuest yet. Ask the user to complete a task first.`).catch((err) => { });
+                ctx.reply(i18next.t(`The user ${username} has not interacted with this WeQuest yet. Ask the user to complete a task first.`,{ lng: language })).catch((err) => { });
                 // register the user in the database
                 continue;
             }
@@ -571,7 +572,7 @@ export default class Quests {
 
             // Check if the recipient is the sender
             if (recipient.id === sender.id) {
-                ctx.reply(i18next.t(`You cannot send appreciation to yourself.`)).catch((err) => { });
+                ctx.reply(i18next.t("appreciationself",{ lng: language })).catch((err) => { });
                 return;
             }
 
@@ -594,8 +595,9 @@ export default class Quests {
     //remind the user that a quest is due
     async remind(ctx, quest) {
         console.log("REMIND ACTION");
+        let language = await this.settings.getLanguage(ctx.callbackQuery.message.chat.id)
         //TODO Notify federated chats
-        ctx.reply(`⏰ The ${quest.type} "${quest.title}" is starting!`, { reply_to_message_id: quest.id });
+        ctx.reply(i18next.t("taskstarting",{quest:quest,lng:language}), { reply_to_message_id: quest.id });
     }
 
     // Function to update messages for a quest
@@ -664,19 +666,19 @@ export default class Quests {
 
 // Function to create the message for a quest 
 function createMessage(quest, language) {
-    let message = `| ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}: ${quest.title.padEnd(30, ' ')} \n`;
-    message += `| 💡 : @${quest.initiator.username} \n`;
+    let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), {lng:language})}: ${quest.title.padEnd(30, ' ')} \n`;
+    message += `| ${i18next.t('💡',{lng:language})} : @${quest.initiator.username} \n`;
     if (quest.participants.length > 0)
-        message += `| 🙋‍♂ : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
+        message += `| ${i18next.t('🙋‍♂',{lng:language})} : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.appreciation.length > 0)
-        message += `| 👍 : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
+        message += `| ${i18next.t('👍',{lng:language})} : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.when)
-        message += `| 📅 : ${quest.when} \n`;
+        message += `| ${i18next.t('📅',{lng:language})} : ${quest.when} \n`;
     if (quest.where?.lat)
-        message += `| 📍 : ${quest.where.lat} : ${quest.where.lon}   \n`;
+        message += `| ${i18next.t('📍 ',{lng:language})}: ${quest.where.lat} : ${quest.where.lon}   \n`;
     if (quest.status === "stopped")
-        message += `| 🛑 : ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
-    message += `| 🚥 : ${quest.status}\n`;
+        message += `| ${i18next.t('🛑',{lng:language})} : ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
+    message += `| ${i18next.t('🚥',{lng:language})} : ${i18next.t(quest.status,{lng:language})}\n`;
     return message;
 }
 
@@ -684,7 +686,7 @@ function markup(quest, language) {
 
     let mu
 
-    if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo') {
+    if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' ||  quest.type == 'mission' || quest.type == 'compito') {
         mu = Markup.inlineKeyboard([
             [
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),

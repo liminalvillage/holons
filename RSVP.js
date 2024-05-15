@@ -14,13 +14,19 @@ export default class RSVP {
         // Load all users
         let chatID = ctx.chat.id;
         let topic = ctx.message.text.split(' ').slice(1).join(' '); // TODO: Save topic in db (under chat/usermessage) so it can be retrieved later
+        if (!topic) {
+            ctx.reply('Please provide a title for the RSVP.');
+            return;
+        }
         let users = await this.db.getAll( chatID + '/users');
         if (users.lenght == 0) {
             ctx.reply('No users found.');
             return;
         }
         // Create participation list
-        ctx.reply(topic, Markup.inlineKeyboard(createList(users)) ).catch((error) => { console.log(error) });
+        ctx.reply(topic, Markup.inlineKeyboard(createList(users)) ).catch((error) => { console.log(error) }).then((message) => {
+            ctx.pinChatMessage(message.message_id)}).catch((error) => { console.log(error) });
+        
 
     }
 
