@@ -16,8 +16,9 @@ export default class Expenses {
             const chatID = ctx.chat.id;
             const args = ctx.message.text.split(' ').slice(1);
             const language = await this.settings.getLanguage(chatID)
+            const command = ctx.message.text.split(' ')[0].replace('/', '');
             if (args.length < 3) {
-                return ctx.reply(i18next.t('expenseusage', { lng: language })); 
+                return ctx.reply(i18next.t('expenseusage', { command:command, lng: language })); 
             }
 
             const amount = parseFloat(args[0]);
