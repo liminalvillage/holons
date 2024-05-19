@@ -1,6 +1,5 @@
 // Description: This file contains the Expenses class, which handles all the expenses related commands and actions.
 import { Telegraf, Markup } from 'telegraf';
-import Settings from './Settings.js';
 import fs from 'fs';
 import i18next from 'i18next';
 
@@ -15,6 +14,7 @@ export default class Expenses {
         bot.command(['spent','speso'], async (ctx) => {
             const chatID = ctx.chat.id;
             const args = ctx.message.text.split(' ').slice(1);
+            console.log(this.settings)
             const language = await this.settings.getLanguage(chatID)
             const command = ctx.message.text.split(' ')[0].replace('/', '');
             if (args.length < 3) {

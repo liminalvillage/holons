@@ -100,7 +100,7 @@ class WeQuest {
     this.bigtalk = new Bigtalk(this.telebot)
     this.library = new Library(this.telebot, this.db)
     this.users = new Users(this.telebot, this.db)
-    this.expenses = new Expenses(this.telebot, this.db, this.ui,this.settings)
+    this.expenses = new Expenses(this.telebot, this.db, this.ui, this.settings)
     this.onboarding = new Onboarding(this.telebot, this.db)
     this.holons = new Holons(this.telebot, this.db, this.settings)
     this.h3 = new H3(this.telebot, this.db)

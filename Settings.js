@@ -464,6 +464,7 @@ async getChats(ctx){
 
 async getSettings(chatID) {
     let settings =  await this.db.get('settings', chatID)
+    console.log('settings',settings)
     if (!settings || settings == '') {
         settings =  this.getDefaultSettings(chatID)
         this.db.put('settings',settings)
