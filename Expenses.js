@@ -1,18 +1,23 @@
 // Description: This file contains the Expenses class, which handles all the expenses related commands and actions.
 import { Telegraf, Markup } from 'telegraf';
+import Settings from './Settings.js';
 import fs from 'fs';
+import i18next from 'i18next';
+
 
 export default class Expenses {
-    constructor(bot, db, ui) {
+    constructor(bot, db, ui, settings) {
         this.bot = bot;
         this.db = db;
         this.ui = ui;
+        this.settings = settings;
  
         bot.command(['spent','speso'], async (ctx) => {
             const chatID = ctx.chat.id;
             const args = ctx.message.text.split(' ').slice(1);
+            const language = await this.settings.getLanguage(chatID)
             if (args.length < 3) {
-                return ctx.reply('Usage: /spent [amount] [currency] [description]');
+                return ctx.reply(i18next.t('expenseusage', { lng: language })); 
             }
 
             const amount = parseFloat(args[0]);
@@ -20,7 +25,7 @@ export default class Expenses {
             const description = args.slice(2).join(' ');
             const expense = await this.addExpense(chatID, amount, currency, description, ctx.from.username);
             ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
-                [{ text: 'Split', callback_data: `split:${expense.id}` }, { text: 'Split All', callback_data: `splitall:${expense.id}` }]
+                [{ text: i18next.t('Split',{lng:language}), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All',{lng:language}), callback_data: `splitall:${expense.id}` }]
             ));
         });
 
@@ -29,11 +34,12 @@ export default class Expenses {
             const chatID = ctx.callbackQuery?.message?.chat?.id
             const messageID = ctx.callbackQuery.message.message_id;
             const expenseID = ctx.match[1];
+            const language = await this.settings.getLanguage(chatID)
             const result = await this.joinSplit(chatID, ctx.from.username, expenseID);
             if (result) {
-                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
+                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: i18next.t('Split',{lng:language}), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
             } else {
-                ctx.reply('Unable to join the split. It might not exist, or you are already part of it.');
+                ctx.reply(i18next.t('expensejoinfail',{lng:language}));
             }
         });
 
@@ -41,11 +47,12 @@ export default class Expenses {
             const chatID = ctx.callbackQuery?.message?.chat?.id
             const messageID = ctx.callbackQuery.message.message_id;
             const expenseID = ctx.match[1];
+            const language = await this.settings.getLanguage(chatID)
             const result = await this.splitAll(chatID, ctx.from.username, expenseID);
             if (result) {
                 ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
             } else {
-                ctx.reply('Unable to join the split. Expense might not exist, or you are not part of it.');
+                ctx.reply(i18next.t('expensejoinfail',{lng:language}));
             }
         });
 
@@ -60,8 +67,9 @@ export default class Expenses {
         bot.command(['clear','balance','credit','bilancio'], async (ctx) => {
             const chatID = ctx.chat.id;
             const currency = ctx.message.text.split(' ').slice(1);
+            const language = await this.settings.getLanguage(chatID)
             if (currency == null || currency.length == 0) 
-                return ctx.reply('Usage: /clear [currency]');
+                return ctx.reply(i18next.t('balanceusage', { lng: language }));
             const { creditMatrix, userArray } = await this.calculateCredits(chatID, currency);
             this.ui.getCreditTable(creditMatrix, userArray, chatID).then((path) => {
                 ctx.replyWithPhoto({ source: fs.createReadStream(path) });
@@ -137,9 +145,13 @@ export default class Expenses {
     }
 
     createMessage(expense) {
-        return `Expense: ${expense.amount} ${expense.currency} for ${expense.description}\n` +
-            `Paid by ${expense.paidBy}\n` +
-            `Split with ${expense.splitWith.join(", ")}`;
+        const amount = expense.amount;
+        const currency = expense.currency;
+        const description = expense.description;
+        const paidBy = expense.paidBy;
+        const splitWith = expense.splitWith.join(", ");
+
+        return i18next.t('expensemessage', { amount, currency, description, paidBy, splitWith });
     }
 }
 

@@ -44,10 +44,9 @@ export default class Roles {
             return;
         }
         
-        let messageID = ctx.message.message_id;
         let role = {
             title: title,
-            id: messageID,
+            id: title,
             participants: []
         }
         await this.db.put(chatID + '/roles', role);
@@ -66,10 +65,18 @@ export default class Roles {
             //TODO: save actions for currrent settings before removing them
             role.participants.forEach(user => {
                 this.db.get(chatID + '/users', user).then(user => {
+                    console.log(user);
                     if (user) {
+                        if (!user.roles) {
+                            user.roles = {};
+                        }
+                        if (!user.roles[role]) {
+                            userroles[role] = 0;
+                        }
                         user[role] += 1;
                         this.db.put(chatID + '/users', user);
                     }
+                    console.log(user);
                 }
                 )
 
@@ -129,7 +136,7 @@ export default class Roles {
 
         let role = await this.db.get(chatID + '/roles', roleid);
 
-        if (role.participants.includes(username)) {
+        if (role.participants?.includes(username)) {
             role.participants = role.participants.filter(user => user != username);
             ctx.answerCbQuery('You have removed yourself from this role');
         }
@@ -160,7 +167,7 @@ export default class Roles {
 function createroles(roles, messageID) {
     let mu = []
     roles.forEach(function (role) {
-        mu.push([Markup.button.callback((role.title + (role.participants.length ? ':' + role.participants.map(user => '@' + user).join(',') : ' ')), `joinrole_${role.id}`)])
+        mu.push([Markup.button.callback((role.title + (role.participants.length ? ' : ' + role.participants.map(user => '@' + user).join(',') : ' ')), `joinrole_${role.id}`)])
     })
     mu.push([Markup.button.callback('🧹 Clear all roles 🧹', `clearroles_${messageID}`)])
     return mu;

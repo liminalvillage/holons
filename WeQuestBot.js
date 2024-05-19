@@ -43,7 +43,7 @@ import Users from './Users.js'
 import Tags from './Tags.js'
 import Participation from './RSVP.js'
 import Council from './Council.js';
-import Slots from './Roles.js';
+import Roles from './Roles.js';
 
 import * as request from './Requests.js'
 
@@ -67,7 +67,7 @@ class WeQuest {
     this.tags = null;
     this.participation = null;
     this.council = null
-    this.slots = null
+    this.roles = null
   }
 
   async init(appname = 'WeQuest', telegramtoken = null, discordtoken = null) {
@@ -100,14 +100,14 @@ class WeQuest {
     this.bigtalk = new Bigtalk(this.telebot)
     this.library = new Library(this.telebot, this.db)
     this.users = new Users(this.telebot, this.db)
-    this.expenses = new Expenses(this.telebot, this.db, this.ui)
+    this.expenses = new Expenses(this.telebot, this.db, this.ui,this.settings)
     this.onboarding = new Onboarding(this.telebot, this.db)
     this.holons = new Holons(this.telebot, this.db, this.settings)
     this.h3 = new H3(this.telebot, this.db)
     this.tags = new Tags(this.telebot, this.db)
     this.participation = new Participation(this.telebot, this.db)
     this.council = new Council(this.telebot, this.db)
-    this.slots =  new Slots(this.telebot, this.db)
+    this.roles =  new Roles(this.telebot, this.db)
 
 
     // ========================== DISCORD =============================

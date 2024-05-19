@@ -18,7 +18,7 @@ class Shopping {
         let chatID = ctx.chat.id;
         const language = await this.settings.getLanguage(chatID)
         let items = utils.parseList(ctx.message.text)
-        if (!items) {
+        if (!items || items.length === 0) {
             ctx.reply(utils.i18next.t('shoppingusage', { type: type, lng: language }));
             return;
         }

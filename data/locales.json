@@ -75,7 +75,15 @@
             "ongoing": "Ongoing",
             "scheduled": "Scheduled",
             "stopped": "Stopped",
-            "completed": "Completed"
+            "completed": "Completed",
+            "expensemessage": "Expense: {{amount}} {{currency}} for {{description}}\nPaid by: {{paidBy}}\nSplit with: {{splitWith}}",
+            "expenseusage": "Usage: /spent [amount] [currency] [description] (es. /spent 100 euros lunch @ restaurant)",
+            "expenseadded": "Expense added: {{amount}} {{currency}} for {{description}}",
+            "expenseempty": "There are no recorded expenses, use /spent to add expenses ",
+            "expensejoinfail": "Unable to join the split. It might not exist, or you are already part of it.",
+            "balanceusage": "Usage: /balance [currency] (es. /balance euro)",
+            "Split": "Split Expense",
+            "Split All": "Split with All"
 
         }
     },
@@ -147,7 +155,14 @@
             "ongoing": "Attivo",
             "scheduled": "Programmato",
             "stopped": "Fermato",
-            "completed": "Completato"
+            "completed": "Completato",
+            "expenseusage": "Utilizzo: /speso [importo] [valuta] [descrizione] (es. /speso 10 EUR per il pranzo)",
+            "expenseadded": "Spesa aggiunta: {{amount}} {{currency}} per {{description}}",
+            "expenseempty": "Non ci sono spese registrate",
+            "expensejoinfail": "Impossibile condividere questa spesa. Potrebbe non esistere o potresti già farne parte.",
+            "balanceusage": "Utilizzo: /bilancio [valuta] (es. /bilancio euro)",
+            "Split": "Dividi spesa",
+            "Split All": "Dividi tra tutti"
             
         }
     },
@@ -219,7 +234,14 @@
             "ongoing": "Attivo",
             "scheduled": "Programmato",
             "stopped": "Fermato",
-            "completed": "Completato"
+            "completed": "Completato",
+            "expenseusage": "Utilizzo: /speso [importo] [valuta] [descrizione] (es. /speso 10 EUR per il pranzo)",
+            "expenseadded": "Spesa aggiunta: {{amount}} {{currency}} per {{description}}",
+            "expenseempty": "Non ci sono spese registrate",
+            "expensejoinfail": "Impossibile condividere questa spesa. Potrebbe non esistere o potresti già farne parte.",
+            "balanceusage": "Utilizzo: /bilancio [valuta] (es. /bilancio euro)",
+            "Split": "Dividi spesa",
+            "Split All": "Dividi tra tutti"
         }
     },
     "week": {
