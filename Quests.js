@@ -21,8 +21,8 @@ export default class Quests {
         this.settings = settings
         this.users = new Users(bot, db)
         //----------------------------- QUESTS -----------------------------
-        this.bot.command('quest', async (ctx) => this.quest('quest', ctx))
-        this.bot.command('mission', async (ctx) => this.quest('quest', ctx))
+        this.bot.command('quest', async (ctx) => this.quest('task', ctx))
+        this.bot.command('mission', async (ctx) => this.quest('task', ctx))
         this.bot.command('task', async (ctx) => this.quest('task', ctx))
         this.bot.command('event', async (ctx) => this.quest('event', ctx))
         this.bot.command('proposal', async (ctx) => this.quest('proposal', ctx))
@@ -38,8 +38,8 @@ export default class Quests {
         this.bot.command('refresh', async (ctx) => this.refresh(ctx))
 
         // ITALIAN
-        this.bot.command('missione', async (ctx) => this.quest('quest', ctx))
-        this.bot.command('compito', async (ctx) => this.quest('compito', ctx))
+        this.bot.command('missione', async (ctx) => this.quest('task', ctx))
+        this.bot.command('compito', async (ctx) => this.quest('task', ctx))
         this.bot.command('evento', async (ctx) => this.quest('event', ctx))
         this.bot.command('proposta', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('propongo', async (ctx) => this.quest('proposal', ctx))
@@ -719,10 +719,10 @@ function markup(quest, language) {
             [
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.webApp(i18next.t('Set Location', { lng: language }), `https://hexamap.holons.io?quest=${quest.id}`)
-            ]
+             ]
+            // [
+            //     Markup.button.webApp(i18next.t('Set Location', { lng: language }), `https://hexamap.holons.io?quest=${quest.id}`)
+            // ]
         ])
     }
 
