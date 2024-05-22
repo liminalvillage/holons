@@ -400,7 +400,8 @@ class WeQuest {
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
       console.log('Gracefully shutting down...');
-      await ipfs.stop();
+      if (this.db.type == 'orbitdb')
+        await ipfs.stop();
       process.exit(0);
     });
 
