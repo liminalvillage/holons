@@ -178,7 +178,7 @@ class Users {
 
 
   async join(ctx) {
-    let userinfo =  this.getUserInfo(ctx.message.from, ctx.message.chat.id)
+    let userinfo =  await this.getUserInfo(ctx.message.from, ctx.message.chat.id)
     if (userinfo.username == undefined) {
       ctx.reply('Please set a username in your telegram settings to join the group.');
     }
