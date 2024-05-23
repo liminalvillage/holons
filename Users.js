@@ -8,6 +8,7 @@ class Users {
     this.db = db;
     this.bot.command(['value', 'ivalue'], (ctx) => this.addValue(ctx));
     this.bot.command(['need', 'ineed', 'weneed'], (ctx) => this.addNeed(ctx));
+    this.bot.command("join", (ctx) => this.join(ctx));
     //this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
     //this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
     this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
@@ -176,6 +177,17 @@ class Users {
   // }
 
 
+  async join(ctx) {
+    let userinfo =  this.getUserInfo(ctx.message.from, ctx.message.chat.id)
+    if (userinfo.username == undefined) {
+      ctx.reply('Please set a username in your telegram settings to join the group.');
+    }
+    else{
+      ctx.reply('🎉 Welcome '+ ctx.message.from.first_name +'! 🎉');
+    }
+  }
+
+
   async addValue(ctx) {
     const chatID = ctx.message.chat.id;
     const user = ctx.message.from;
@@ -187,8 +199,7 @@ class Users {
 
     let userinfo = await this.getUserInfo(user, chatID)
     if (!userinfo.values) userinfo.values = []
-    console.log(userinfo.values)
-    userinfo.values = userinfo.values.concat(values)
+    userinfo.values = Array.from(new Set(userinfo.values.concat(values)))
 
     await this.db.put(chatID + '/users', userinfo)
     ctx.reply(`Added ${values.join(', ')} to your values.`);
@@ -205,7 +216,7 @@ class Users {
 
     let userinfo = await this.getUserInfo(user, chatID)
     if (!userinfo.needs) userinfo.needs = []
-    userinfo.needs = userinfo.needs.concat(needs)
+    userinfo.needs =  Array.from(new Set(userinfo.needs.concat(needs)))
 
     await this.db.put(chatID + '/users', userinfo)
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);

@@ -45,9 +45,9 @@ export default class Holons {
     })
 
     this.bot.command("sync", async (ctx) => {
-      this.createHolon(ctx)
-      this.addMembers(ctx);
-      this.syncScore(ctx);
+      await this.createHolon(ctx)
+      await this.addMembers(ctx);
+      await this.syncScore(ctx);
     }
     );
 
