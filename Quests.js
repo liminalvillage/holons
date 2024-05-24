@@ -589,7 +589,7 @@ export default class Quests {
         //await sendToken(sender, 1, chatID)
         if (receivers > 0){
             await this.users.saveUserAction(sender, "sent", action, 1, chatID)
-            ctx.reply(i18next.t('appreciationsuccess', { lng:language, sender: sender.username, recievers: recievers, action:action})).catch((error) => console.log(error));
+            ctx.reply(i18next.t('appreciationsuccess', { lng:language, sender: sender.username, receivers: receivers, action:action})).catch((error) => console.log(error));
         }
         else
             ctx.reply(i18next.t('appreciationfailed',{lng:language}), { reply_to_message_id: ctx.message.message_id });
