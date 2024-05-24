@@ -277,6 +277,9 @@ class Users {
     await this.db.put(chatID + '/users', userinfo)
   }
 
+  async getUsers(chatID){
+    return this.db.getAll(chatID + '/users')
+  }
 
   //gets an existing user or  creates a new one
   async getUserInfo(user, chatID) {

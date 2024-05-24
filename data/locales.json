@@ -83,8 +83,10 @@
             "expensejoinfail": "Unable to join the split. It might not exist, or you are already part of it.",
             "balanceusage": "Usage: /balance [currency] (es. /balance euro)",
             "Split": "Split Expense",
-            "Split All": "Split with All"
-
+            "Split All": "Split with All",
+            "appreciationunknownuser": "The user {{user}} is not subscribed. Ask the user to complete a task or type /join to subscribe.",
+            "appreciationfailed": "Appreciation failed. The user(s) might not exist or might not be subscribed.",
+            "appreciationsuccess": "{{sender}} has sent appreciation to {{revieves}} for {{action}}"
         }
     },
     "it": {
@@ -162,7 +164,8 @@
             "expensejoinfail": "Impossibile condividere questa spesa. Potrebbe non esistere o potresti già farne parte.",
             "balanceusage": "Utilizzo: /bilancio [valuta] (es. /bilancio euro)",
             "Split": "Dividi spesa",
-            "Split All": "Dividi tra tutti"
+            "Split All": "Dividi tra tutti",
+            "unknownuser": "L'utente {{user}} non è iscritto. Chiedi all'utente di completare un compito o di digitare /join per iscriversi."
             
         }
     },
@@ -241,7 +244,8 @@
             "expensejoinfail": "Impossibile condividere questa spesa. Potrebbe non esistere o potresti già farne parte.",
             "balanceusage": "Utilizzo: /bilancio [valuta] (es. /bilancio euro)",
             "Split": "Dividi spesa",
-            "Split All": "Dividi tra tutti"
+            "Split All": "Dividi tra tutti",
+            "unknownuser": "L'utente {{user}} non è iscritto. Chiedi all'utente di completare un compito o di digitare /join per iscriversi."
         }
     },
     "week": {

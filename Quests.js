@@ -541,7 +541,7 @@ export default class Quests {
         const lastMention = mentions[mentions.length - 1];
         let action = ctx.message.text.substring(lastMention.offset + lastMention.length).trim();
         if (action === '') { action = 'appreciated' }
-
+        let receivers = mentions.length
         // Check if the message contains a mention
         for (let i = 0; i < mentions.length; i++) {
             const entity = mentions[i];
@@ -551,8 +551,8 @@ export default class Quests {
                 recipent = await ctx.telegram.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
                 // get the user from the database
-                recipient = await this.db.query((user) => user.username == username)[0]
-                console.log(recipient)
+                recipient = await this.users.getUsers(chatID).then (users => users.filter(user => user.username === username)[0])
+               // recipient = await this.db.query((user) => user.username == username)[0]
             }
 
             // if ( !recipient || recipient == ''|| !recipient.id) { 
@@ -562,9 +562,10 @@ export default class Quests {
             // }
 
             if (!recipient || recipient == '') {
-                ctx.reply(i18next.t(`The user ${username} has not interacted with this WeQuest yet. Ask the user to complete a task first.`,{ lng: language })).catch((err) => { });
+                ctx.reply(i18next.t(`appreciationunknownuser`,{ lng: language, user:username })).catch((err) => { });
+                receivers -= 1;
                 // register the user in the database
-                continue;
+                return;
             }
 
             if (entity.type === 'mention')
@@ -573,6 +574,7 @@ export default class Quests {
             // Check if the recipient is the sender
             if (recipient.id === sender.id) {
                 ctx.reply(i18next.t("appreciationself",{ lng: language })).catch((err) => { });
+                receivers -= 1;
                 return;
             }
 
@@ -585,8 +587,12 @@ export default class Quests {
 
         // Update the sent appreciation of the sender
         //await sendToken(sender, 1, chatID)
-        await this.users.saveUserAction(sender, "sent", action, 1, chatID)
-        ctx.reply(`@${sender.username} sent appreciation ${action}`).catch((error) => console.log(error));
+        if (receivers > 0){
+            await this.users.saveUserAction(sender, "sent", action, 1, chatID)
+            ctx.reply(i18next.t('appreciationsuccess', { lng:language, sender: sender.username, recievers: recievers, action:action})).catch((error) => console.log(error));
+        }
+        else
+            ctx.reply(i18next.t('appreciationfailed',{lng:language}), { reply_to_message_id: ctx.message.message_id });
     }
 
     // ============== UTILITY FUNCTIONS
