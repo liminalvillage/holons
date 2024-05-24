@@ -86,7 +86,7 @@
             "Split All": "Split with All",
             "appreciationunknownuser": "The user {{user}} is not subscribed. Ask the user to complete a task or type /join to subscribe.",
             "appreciationfailed": "Appreciation failed. The user(s) might not exist or might not be subscribed.",
-            "appreciationsuccess": "{{sender}} has sent appreciation to {{revieves}} for {{action}}"
+            "appreciationsuccess": "{{sender}} has sent appreciation to {{receivers}} for {{action}}"
         }
     },
     "it": {

@@ -540,6 +540,11 @@ export default class Quests {
 
         const lastMention = mentions[mentions.length - 1];
         let action = ctx.message.text.substring(lastMention.offset + lastMention.length).trim();
+
+        if (action.startsWith('for')) {
+            action = action.substring(3).trim();
+        }
+        
         if (action === '') { action = 'appreciated' }
         let receivers = mentions.length
         // Check if the message contains a mention
