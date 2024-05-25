@@ -104,7 +104,51 @@ class DB {
             console.error("Error initializing database:", error);
         }
     }
+    //migrates chats and settings from orbit to gun
+    // migrate(id){
+    //     //settings
+    //     //quests
+    //     //shopping
 
+    //     this.getOrbitDB('settings',id).then((orbitSettings) => {
+    //         orbitSettings.forEach((orbitSetting) => {
+    //             this.putGunDB('settings', orbitSetting);
+    //         })
+    //     }
+    //     );
+
+    //     this.getAllOrbitDB(id+'/quests').then((orbitChats) => {
+    //         orbitChats.forEach((orbitChat) => {
+    //             this.putGunDB('quests', orbitChat);
+    //         })
+    //     }
+    //     );
+
+    //     this.getAllOrbitDB('expenses').then((orbitChats) => {
+    //         orbitChats.forEach((orbitChat) => {
+    //             this.putGunDB('expenses', orbitChat);
+    //         })
+    //     }
+    //     );
+
+    //     this.getAllGunDB('quests').then((gunChats) => {
+    //         gunChats.forEach((gunChat) => {
+    //             this.putGunDB('quests', gunChat);
+    //         })
+
+    //     this.orbitdb.docstore(this.dbName + '/chats', { indexBy: 'id' }).load().then((orbitChats) => {
+    //         orbitChats.forEach((orbitChat) => {
+    //             this.gun.get(this.dbName + '/chats').get(orbitChat.id).put(orbitChat);
+    //         });
+    //     });
+    //     this.orbitdb.docstore(this.dbName + '/settings', { indexBy: 'id' }).load().then((orbitSettings) => {
+    //         orbitSettings.forEach((orbitSetting) => {
+    //             this.gun.get(this.dbName + '/settings').get(orbitSetting.id).put(orbitSetting);
+    //         });
+    //     });
+    // }
+
+    
     async open(table) {
         try {
             if (!this.preloadedDB[table]) {

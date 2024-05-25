@@ -142,6 +142,12 @@ export default class Holons {
 
   async createHolon(ctx) {
     const id = ctx.message.chat.id;
+    //extract parameters from ctx
+    let flavor = ctx.message.text.split(" ").slice(1).join(" ");
+    if (flavor == "") {
+      flavor = "Managed";
+    }
+    console.log(flavor);
     // check if holon already exists
     let address = await this.holonsContract.methods.toAddress(id.toString()).call();
     if (address != '0x0000000000000000000000000000000000000000') {
@@ -151,7 +157,7 @@ export default class Holons {
       const tx = {
         from: this.account.address,
         to: this.holonsContract.options.address,
-        data: this.holonsContract.methods.newHolon("Managed", id.toString(), 0).encodeABI(),
+        data: this.holonsContract.methods.newHolon(flavor, id.toString(), 0).encodeABI(),
         gas: 3000000,
         nonce: await this.web3.eth.getTransactionCount(this.account.address),
         maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
@@ -161,10 +167,10 @@ export default class Holons {
       };
       let result = await this.sendSignedTransaction(tx);
       if (result.status == false) {
-        return ctx.reply("Holon Creation Failed: " + result.message);
+        return ctx.reply("Holon creation failed: " + result.message);
       }
       else {
-        address = result.address;
+        address = await this.holonsContract.methods.toAddress(id.toString()).call();
         ctx.reply("Holon address on " + this.network + ": " + address);
       }
       return address

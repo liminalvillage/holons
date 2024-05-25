@@ -141,13 +141,12 @@ export default class Expenses {
     async calculateCredits(chatID, currency) {
         if (currency == null || currency.length == 0)
             return false;
-        console.log(currency)
         if (typeof currency === 'string' || currency instanceof String) {
             currency = currency.toLowerCase().replace(/s$/, '');
         } else {
             console.error('currency is not a string:', currency);
         }
-        // currency = currency.toLowerCase().replace(/s$/, '');
+
         currency = currency.replace(/[^a-z]/g, '');
 
         let expenses = await this.db.getAll(chatID + '/expenses')
@@ -161,7 +160,7 @@ export default class Expenses {
                 const payerIndex = userArray.indexOf(expense.paidBy);
                 expense.splitWith.forEach(member => {
                     const memberIndex = userArray.indexOf(member);
-                    if (memberIndex === -1)
+                    if (memberIndex === -1 || payerIndex === -1)
                         return
                     if (payerIndex !== memberIndex) {
                         creditMatrix[payerIndex][memberIndex] += amountPerPerson;
