@@ -167,7 +167,7 @@ export default class Roles {
 function createroles(roles, messageID) {
     let mu = []
     roles.forEach(function (role) {
-        mu.push([Markup.button.callback((role.title + (role.participants.length ? ' : ' + role.participants.map(user => '@' + user).join(',') : ' ')), `joinrole_${role.id}`)])
+        mu.push([Markup.button.callback((role.title + (role.participants.length ? ' : ' + role.participants.map(user => '@' + user).join('\n') : ' ')), `joinrole_${role.id}`)])
     })
     mu.push([Markup.button.callback('🧹 Clear all roles 🧹', `clearroles_${messageID}`)])
     return mu;
