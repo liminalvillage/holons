@@ -250,9 +250,11 @@ class WeQuest {
       if (ctx.message.caption) {
         const command = ctx.message.caption.split(' ')[0]; // TODO: ADD MORE Picture- based commands eg /spent
         if (command == '/task' || command == '/quest' || command == '/todo' || command == '/offer' || command == '/request')
-          this.quests.quest(command.slice(1), ctx, this.db)
-        if (command == '/spent')
-          this.shopping.spent(ctx)
+          this.quests.quest(command.slice(1), ctx)
+        if (command == '/spent' || command == '/expense' || command == '/speso')
+          ctx.message['text'] = {} 
+          ctx.message.text = ctx.message.caption;
+          this.expenses.spent(ctx);
       }
       //Scan QR code
       try {

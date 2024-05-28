@@ -11,25 +11,7 @@ export default class Expenses {
         this.ui = ui;
         this.settings = settings;
 
-        bot.command(['spent', 'speso'], async (ctx) => {
-            const chatID = ctx.chat.id;
-            const args = ctx.message.text.split(' ').slice(1);
-            console.log(this.settings)
-            const language = await this.settings.getLanguage(chatID)
-            const command = ctx.message.text.split(' ')[0].replace('/', '');
-            if (args.length < 3) {
-                return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
-            }
-
-            const amount = parseFloat(args[0]);
-            const currency = args[1];
-            const description = args.slice(2).join(' ');
-            const expense = await this.addExpense(chatID, amount, currency, description, ctx.from.username);
-            ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
-                [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-            ));
-        });
-
+        bot.command(['expense','spent','speso'], async (ctx) => { this.spent (ctx)});
 
         bot.action(/split:(.+)/, async (ctx) => {
             const chatID = ctx.callbackQuery?.message?.chat?.id
@@ -57,14 +39,6 @@ export default class Expenses {
             }
         });
 
-
-        // bot.action(/clear:(.+)/, async (ctx) => {
-        //     const chatID = ctx.callbackQuery?.message?.chat?.id
-        //     const messageID = ctx.callbackQuery.message.message_id;
-        //     const expenseID = ctx.match[1];
-
-        // });
-
         bot.command(['clear', 'balance', 'credit', 'bilancio'], async (ctx) => {
             const chatID = ctx.chat.id;
             const currency = ctx.message.text.split(' ').slice(1)[0];
@@ -78,6 +52,25 @@ export default class Expenses {
         });
 
     }
+
+    async spent (ctx) {
+        const chatID = ctx.chat.id;
+        const args = ctx.message.text.split(' ').slice(1);
+        console.log(this.settings)
+        const language = await this.settings.getLanguage(chatID)
+        const command = ctx.message.text.split(' ')[0].replace('/', '');
+        if (args.length < 3) {
+            return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
+        }
+
+        const amount = parseFloat(args[0]);
+        const currency = args[1];
+        const description = args.slice(2).join(' ');
+        const expense = await this.addExpense(chatID, amount, currency, description, ctx.from.username);
+        ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
+            [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
+        ));
+    };
 
     async addExpense(chatID, amount, currency, description, paidBy) {
         //do health check on currency: remove uppercase, check if it's a valid currency, remove plural

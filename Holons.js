@@ -31,6 +31,7 @@ export default class Holons {
     this.bot.command("syncscore", async (ctx) => { this.syncScore(ctx) });
     this.bot.command("claim", async (ctx) => { this.claim(ctx) });
     this.bot.command("ethbalance", async (ctx) => { this.ethBalance(ctx) });
+    this.bot.command("sendCommand", async (ctx) => { this.sendCommand(ctx) });
     
     this.bot.command("listmembers", async (ctx) => {
       const chatID = ctx.message.chat.id;
@@ -189,6 +190,24 @@ export default class Holons {
       }
     })
   }
+
+  //send a command to the holon
+  async sendCommand(_holonaddress, _command, _args) {
+    let holon = new this.web3.eth.Contract(managed.default.abi, _holonaddress);
+    let tx = {
+      from: this.account.address,
+      to: holon.options.address,
+      data: holon.methods[_command](_args).encodeABI(),
+      gas: 3000000,
+      nonce: await this.web3.eth.getTransactionCount(this.account.address),
+      maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
+      maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
+      chainId: 11155111,
+      type: 0x2
+    };
+    return await this.sendSignedTransaction(tx);
+  }
+
 
   async newFlavor(_flavorname, _flavoraddress) {
     let limit;

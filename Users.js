@@ -9,9 +9,10 @@ class Users {
     this.bot.command(['value', 'ivalue'], (ctx) => this.addValue(ctx));
     this.bot.command(['need', 'ineed', 'weneed'], (ctx) => this.addNeed(ctx));
     this.bot.command("join", (ctx) => this.join(ctx));
+    this.bot.command("leave", (ctx) => this.leave(ctx));
     //this.bot.command(['spent','paid'], (ctx) => this.paid(ctx));
     //this.bot.command('gotpaid', (ctx) => this.gotpaid(ctx));
-    this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
+    //this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
     // this.bot.command('wallet', (ctx) => this.wallet(ctx));
     // this.bot.command('balance', (ctx) => this.balance(ctx));
   }
@@ -185,6 +186,13 @@ class Users {
     else{
       ctx.reply('🎉 Welcome '+ ctx.message.from.first_name +'! 🎉');
     }
+  }
+
+  async leave(ctx){
+    const chatID = ctx.message.chat.id;
+    const user = ctx.message.from;
+    await this.db.del(chatID + '/users', user.id)
+    ctx.reply('Goodbye ' + user.first_name + '!');
   }
 
 
