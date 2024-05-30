@@ -478,7 +478,7 @@ class UI {
         //user.money * equation.money
       const row = `<tr>
         <th scope="row">${i + 1}</th>
-        <th>${user.username}</th>
+        <th>${user.first_name} ${user.last_name}</th>
         <th>${user.initiated.length}</th>
         <th>${user.completed.length}</th>
         <th>${user.sent}</th>
