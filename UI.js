@@ -8,11 +8,8 @@ import fs from 'fs';
 const browser = await puppetteer.launch({
   args: ['--no-sandbox',],
   ignoreHTTPSErrors: true,
-  headless: "new",
   executablePath: executablePath(),
 });
-
-const page = await browser.newPage();
 
 class UI {
   constructor(bot, db, settings) {
@@ -317,7 +314,7 @@ class UI {
     const lang = await this.settings.getLanguage(chatID);
     const rows = [];
     userArray.forEach((user, index) => {
-      const credits = creditMatrix[index].map((credit, creditIndex) => `<td >${credit}</td>`).join('');
+      const credits = creditMatrix[index].map((credit, creditIndex) => `<td >${credit.toFixed(2)}</td>`).join('');
       const row = `<tr>
           <td>${user}</td>
           ${credits}
@@ -572,9 +569,11 @@ class UI {
   }
 
   async screenshotHtml(html, pathToSave, onElement) {
+    const page = await browser.newPage()
     await page.setContent(html)
     const element = await page.$(onElement)
     await element.screenshot({ path: pathToSave })
+    page.close()
   }
 
 }
