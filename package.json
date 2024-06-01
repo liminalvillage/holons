@@ -34,12 +34,14 @@
     "mattermost-client": "^6.5.0",
     "moment": "^2.29.4",
     "node-fetch": "^3.3.2",
+    "node-schedule": "^2.1.1",
     "openai": "^4.20.1",
     "orbit-db": "^0.29.0",
-    "puppeteer": "^22.10.0",
+    "puppeteer": "^21.2.1",
+    "puppeteer-core": "^21.5.2",
     "qrcode-reader": "^1.0.4",
     "sharp": "^0.32.1",
-    "telegraf": "^4.11.2",
+    "telegraf": "^4.16.3",
     "telegram-inline-calendar": "^2.0.3",
     "web3": "^4.1.1"
   }

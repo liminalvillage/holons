@@ -367,7 +367,7 @@ export default class Quests {
                 await this.users.saveUserAction(sender, "sent", quest.title, 0, chatID)
                 for (let i = 0; quest.participants.length; i++) {
                     console.log(quest.participants.length)
-                    if (quest.participants[i].id) { //TODO: check why this is needed sometimes otherwise it crashes
+                    if (quest.participants[i]?.id) { //TODO: check why this is needed sometimes otherwise it crashes
                         await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0, chatID)
                     } else {
                         console.log('Bug: participant has no id: ' + quest.participants[i])

@@ -26,6 +26,7 @@ import Participation from './RSVP.js';
 import Council from './Council.js';
 import Roles from './Roles.js';
 import * as request from './Requests.js';
+import OneOnOne from './OneOnOne.js';
 
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {
@@ -52,6 +53,7 @@ class WeQuest {
     this.participation = null;
     this.council = null;
     this.roles = null;
+    this.rounds = null;
   }
 
   async init(appname = 'WeQuest', telegramtoken = null, discordtoken = null) {
@@ -102,6 +104,7 @@ class WeQuest {
     this.participation = new Participation(this.telebot, this.db);
     this.council = new Council(this.telebot, this.db);
     this.roles = new Roles(this.telebot, this.db);
+    this.rounds = new OneOnOne(this.telebot, this.db, this.settings);
   }
 
   setupTelegramCommands() {
