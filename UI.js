@@ -1,16 +1,10 @@
-import puppetteer from 'puppeteer-core';
-import { executablePath } from 'puppeteer';
+import puppetteer from 'puppeteer';
 import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
 
 
-const browser = await puppetteer.launch({
-  args: ['--no-sandbox',],
-  ignoreHTTPSErrors: true,
-  headless: "new",
-  executablePath: executablePath(),
-});
+const browser = await puppetteer.launch();
 
 class UI {
   constructor(bot, db, settings) {
