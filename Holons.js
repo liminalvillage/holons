@@ -35,7 +35,7 @@ export default class Holons {
     
     this.bot.command("listmembers", async (ctx) => {
       const chatID = ctx.message.chat.id;
-      let address = await this.holonsContract.methods.toAddress(chatID).call();
+      let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
       let holon = new this.web3.eth.Contract(managed.default.abi, address);
       let members = await holon.methods.listMembers().call();
       if (members.length > 0) {
@@ -59,22 +59,22 @@ export default class Holons {
   //pick up the balance from the holon
   async ethBalance(ctx) {
     const userID = ctx.message.from.id;
-    const id = ctx.message.chat.id;
-    let address = await this.holonsContract.methods.toAddress(id.toString()).call();
+    const chatID = ctx.message.chat.id;
+    let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
     let holon = new this.web3.eth.Contract(managed.default.abi, address);
-    let balance = await holon.methods.etherBalance(userID).call();
+    let balance = await holon.methods.etherBalance(userID.toString()).call();
     //let balance = await this.web3.eth.getBalance(this.account.address);
 
     ctx.reply("Eth Balance: " + balance);
   }
 
   async syncScore(ctx) {
-    const id = ctx.message.chat.id;
-    let users = await this.db.getAll(id.toString() + '/users')
+    const chatID = ctx.message.chat.id;
+    let users = await this.db.getAll(chatID.toString() + '/users')
     if (!users) return ctx.reply("No users found");
-    const equation = await this.settings.getValueEquation(id)
+    const equation = await this.settings.getValueEquation(chatID)
 
-    let userids = users.map((user) => { return user.id })
+    let userids = users.map((user) => { return user.id.toString() })
     let scores = users.map((user) => {
       return (
         user.initiated.length * equation.initiated +
@@ -87,13 +87,13 @@ export default class Holons {
         user.offers.length * equation.offers)
     })
 
-    let address = await this.holonsContract.methods.toAddress(id.toString()).call();
+    let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
     let holon = new this.web3.eth.Contract(managed.default.abi, address);
     //let size = await holon.methods.getSize().call();
     const tx = {
       from: this.account.address,
       to: holon.options.address,
-      data: holon.methods.setAppreciation(userids, scores).encodeABI(),
+      data: holon.methods.setAppreciation(userids.toString(), scores).encodeABI(),
       gas: 3000000,
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
@@ -123,7 +123,7 @@ export default class Holons {
     const tx = {
       from: this.account.address,
       to: holon.options.address,
-      data: holon.methods.claim(userID, address).encodeABI(),
+      data: holon.methods.claim(userID.toSting(), address).encodeABI(),
       gas: 3000000,
       nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
@@ -142,7 +142,7 @@ export default class Holons {
   }
 
   async createHolon(ctx) {
-    const id = ctx.message.chat.id;
+    const chatID = ctx.message.chat.id;
     //extract parameters from ctx
     let flavor = ctx.message.text.split(" ").slice(1).join(" ");
     if (flavor == "") {
@@ -150,7 +150,7 @@ export default class Holons {
     }
     console.log(flavor);
     // check if holon already exists
-    let address = await this.holonsContract.methods.toAddress(id.toString()).call();
+    let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
     if (address != '0x0000000000000000000000000000000000000000') {
       ctx.reply("Holon address on " + this.network + ": " + address);
     } else {
@@ -158,7 +158,7 @@ export default class Holons {
       const tx = {
         from: this.account.address,
         to: this.holonsContract.options.address,
-        data: this.holonsContract.methods.newHolon(flavor, id.toString(), 0).encodeABI(),
+        data: this.holonsContract.methods.newHolon(flavor, chatID.toString(), 0).encodeABI(),
         gas: 3000000,
         nonce: await this.web3.eth.getTransactionCount(this.account.address),
         maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
@@ -171,7 +171,7 @@ export default class Holons {
         return ctx.reply("Holon creation failed: " + result.message);
       }
       else {
-        address = await this.holonsContract.methods.toAddress(id.toString()).call();
+        address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
         ctx.reply("Holon address on " + this.network + ": " + address);
       }
       return address
@@ -302,13 +302,13 @@ web3.eth.sendTransaction(transaction)
 
     let holon = new this.web3.eth.Contract(managed.default.abi, _holonaddress);
 
-    if (await holon.methods.userIdToAddress(_userid) != '0x0000000000000000000000000000000000000000')
+    if (await holon.methods.userIdToAddress(_userid.toString()) != '0x0000000000000000000000000000000000000000')
       return true; // member already exists
 
     const tx = {
       from: this.account.address,
       to: holon.options.address,
-      data: holon.methods.addMember(_userid).encodeABI(),
+      data: holon.methods.addMember(_userid.toString()).encodeABI(),
       gas: 3000000,
       //nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
