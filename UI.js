@@ -4,7 +4,12 @@ import * as utils from './utilities.js'
 import fs from 'fs';
 
 
-const browser = await puppetteer.launch();
+const browser = await puppetteer.launch(
+  { 
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  }
+)
 
 class UI {
   constructor(bot, db, settings) {
@@ -310,9 +315,11 @@ class UI {
     const rows = [];
     userArray.forEach((user, index) => {
       const credits = creditMatrix[index].map((credit, creditIndex) => `<td >${credit.toFixed(2)}</td>`).join('');
+      const total = creditMatrix[index].reduce((a, b) => a + b, 0).toFixed(2);
       const row = `<tr>
           <td>${user}</td>
           ${credits}
+          <td>${total}</td>
         </tr>`;
       rows.push(row);
     });
@@ -325,6 +332,7 @@ class UI {
         <tr>
             <th scope="col">${i18next.t('User', { lng: lang })}</th>
             ${headers}
+            <th scope="col">${i18next.t('Total', { lng: lang })}</th>
         </tr>
     </thead>
     <tbody>

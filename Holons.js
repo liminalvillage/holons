@@ -180,15 +180,43 @@ export default class Holons {
 
   async addMembers(ctx) {
     const id = ctx.message.chat.id;
-    let address = await this.holonsContract.methods.toAddress(id.toString()).call();
+    let holonaddress = await this.holonsContract.methods.toAddress(id.toString()).call();
     // fetch users and add them to the holon
     let users = await this.db.getAll(id.toString() + '/users')
 
     users.forEach(async (user) => {
       if (user.id != undefined) {
-        await this.addMember(address, user.id);
+        await this.addMember(holonaddress, user.id.toString());
       }
     })
+  }
+
+  async sendFunction(funct, param1, param1type, param2, param2type) {
+    const functionSignature = web3.utils.sha3(funct).substr(0, 10);
+
+// Encode parameters
+const eparam1 = web3.eth.abi.encodeParameter('uint256', 123).substr(2);
+const eparam2 = web3.eth.abi.encodeParameter('address', '0xYourAddress').substr(2);
+
+// Concatenate the function signature and parameters
+const data = functionSignature + eparam1 + eparam2;
+
+// Prepare the transaction object
+const transaction = {
+    to: '0xContractAddress',
+    from: '0xYourAddress',
+    data: data,
+    gas: 2000000
+};
+
+// Send the transaction
+web3.eth.sendTransaction(transaction)
+    .then(receipt => {
+        console.log('Transaction receipt:', receipt);
+    })
+    .catch(error => {
+        console.error('Error sending transaction:', error);
+    });
   }
 
   //send a command to the holon
@@ -270,17 +298,17 @@ export default class Holons {
     return await this.holonsContract.methods.listHolonsOf(_address).call();
   }
 
-  async addMember(_holonaddress, id) {
+  async addMember(_holonaddress, _userid) {
 
     let holon = new this.web3.eth.Contract(managed.default.abi, _holonaddress);
 
-    if (await holon.methods.userIdToAddress(id) != '0x0000000000000000000000000000000000000000')
+    if (await holon.methods.userIdToAddress(_userid) != '0x0000000000000000000000000000000000000000')
       return true; // member already exists
 
     const tx = {
       from: this.account.address,
       to: holon.options.address,
-      data: holon.methods.addMember(id).encodeABI(),
+      data: holon.methods.addMember(_userid).encodeABI(),
       gas: 3000000,
       //nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),

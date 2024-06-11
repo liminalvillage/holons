@@ -56,7 +56,6 @@ export default class Expenses {
     async spent (ctx) {
         const chatID = ctx.chat.id;
         const args = ctx.message.text.split(' ').slice(1);
-        console.log(this.settings)
         const language = await this.settings.getLanguage(chatID)
         const command = ctx.message.text.split(' ')[0].replace('/', '');
         if (args.length < 3) {
@@ -64,7 +63,13 @@ export default class Expenses {
         }
 
         const amount = parseFloat(args[0]);
-        const currency = args[1];
+        let currency = args[1];
+        // valid currency check
+        currency = currency.toLowerCase().replace(/s$/, '');
+        currency = currency.replace(/[^a-z]/g, '');
+        if (!(currency =='euro' || currency == 'hour' || currency == 'dollar'))
+            return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
+       
         const description = args.slice(2).join(' ');
         const expense = await this.addExpense(chatID, amount, currency, description, ctx.from.username);
         ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
