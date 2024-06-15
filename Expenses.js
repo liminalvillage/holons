@@ -12,7 +12,7 @@ export default class Expenses {
         this.settings = settings;
 
         bot.command(['expense','spent','speso'], async (ctx) => { this.spent (ctx)});
-
+        bot.command(['ledger'], async (ctx) => { this.ledger(ctx) });
         bot.action(/split:(.+)/, async (ctx) => {
             const chatID = ctx.callbackQuery?.message?.chat?.id
             const messageID = ctx.callbackQuery.message.message_id;
@@ -52,7 +52,22 @@ export default class Expenses {
         });
 
     }
+    // show all transactions in the ledger
+    async ledger(ctx) {
+        const chatID = ctx.chat.id;
+        const expenses = await this.db.getAll(chatID + '/expenses');
+        const language = await this.settings.getLanguage(chatID)
+        if (expenses.length === 0) {
+            ctx.reply(i18next.t('ledgerempty', { lng: language }));
+            return;
+        }
+        let message = i18next.t('ledgerheader', { lng: language });
+        expenses.forEach(expense => {
+            message += this.createMessage(expense) + '\n';
+        });
+        ctx.reply(message);
 
+    }
     async spent (ctx) {
         const chatID = ctx.chat.id;
         const args = ctx.message.text.split(' ').slice(1);

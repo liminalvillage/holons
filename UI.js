@@ -39,7 +39,6 @@ class UI {
     this.bot.command('values', (ctx) => this.valuescloud(ctx))
     this.bot.command('needs', (ctx) => this.needscloud(ctx))
     this.bot.command('cloud', (ctx) => this.valuescloud(ctx))
-
   }
 
   async init() {
@@ -234,7 +233,7 @@ class UI {
       //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID + '/'+quests[0].id.toString()),
       // ])).then((ctx) => { this.bot.telegram.pinChatMessage(chatID, ctx.message_id) });
     });
-    return;
+    return path;
   }
 
   async requestsboard(ctx) {
@@ -384,6 +383,38 @@ class UI {
     return path
   }
 
+  async getRolesTable(roles, chatID) {
+    const lang = await this.settings.getLanguage(chatID)
+    const rows = []
+    for (let i = 0; i < roles.length; i++) {
+      const role = roles[i]
+      const row = `<tr>
+          <th scope="row">${role.title}</th>
+          <th>${role.participants ? role.participants.join(","):''}</th>
+        </tr>`
+      rows.push(row)
+    }
+
+    const element = `<table>
+    <caption>${i18next.t('Roles', { lng: lang })}</caption>
+    <thead>
+        <tr>
+            <th scope="col">${i18next.t('Roles', { lng: lang })}</th>
+            <th scope="col">${i18next.t('People', { lng: lang })}</th>
+        </tr>
+    </thead>
+    <tbody>
+        ${rows.join('\n')}
+    </tbody>
+  </table>`
+
+    const path = './images/roles' + chatID + '.png'
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
+    await this.screenshotHtml(html, path, 'table')
+    return path
+  }
+
+
   async getRequestsTable(requests, chatID) {
 
     const lang = await this.settings.getLanguage(chatID)
@@ -513,6 +544,7 @@ class UI {
     await this.screenshotHtml(html, path, 'table')
     return path
   }
+
 
 
   async getAppreciationTable(appreciation, chatID) {

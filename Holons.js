@@ -93,7 +93,7 @@ export default class Holons {
     const tx = {
       from: this.account.address,
       to: holon.options.address,
-      data: holon.methods.setAppreciation(userids.toString(), scores).encodeABI(),
+      data: holon.methods.setAppreciation(userids, scores).encodeABI(),
       gas: 3000000,
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),

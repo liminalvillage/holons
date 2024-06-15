@@ -1,6 +1,5 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import UI from './UI.js';
 import { getUserName, getUser, getChatId, getMessageId, capitalize } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import Users from './Users.js';

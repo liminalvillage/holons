@@ -103,7 +103,7 @@ class WeQuest {
     this.tags = new Tags(this.telebot, this.db);
     this.participation = new Participation(this.telebot, this.db);
     this.council = new Council(this.telebot, this.db);
-    this.roles = new Roles(this.telebot, this.db);
+    this.roles = new Roles(this.telebot, this.db, this.ui, this.settings);
     this.rounds = new OneOnOne(this.telebot, this.db, this.settings);
   }
 

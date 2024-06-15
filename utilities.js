@@ -13,7 +13,7 @@ export const getUser = (ctx) =>
   ctx?.update?.message?.from || ctx?.update?.callback_query?.from || 0;
 
 export const getChatName = async (ctx, chatID) => {
-  const chatInfo = await ctx.telegram.getChat(chatID).catch((err) => {return 'unknown'});
+  const chatInfo = await ctx.telegram.getChat(chatID).catch((err) => { return 'unknown' });
 
   let chatName = '';
 
@@ -62,7 +62,7 @@ export const getParameters = (ctx) => ctx?.update?.message?.text.split(" ").slic
 export const getChatId = (ctx) => ctx?.chat?.id || ctx?.update?.message?.chat?.id || ctx?.update?.callback_query?.message?.chat?.id || 0;
 export const getMessageId = (ctx) => ctx?.message?.message_id || ctx?.update?.message?.message_id || ctx?.update?.callback_query?.message?.message_id || 0;
 
-export const  parseList = (text) => {
+export const parseList = (text) => {
   // Split by comma
   text = text.split(' ').slice(1).join(' ')
   const items = text.split(',').map(item => item.trim());
@@ -76,7 +76,9 @@ export const capitalize = (string) => {
 
 export const isAdmin = async (ctx) => {
   const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
-  if (['administrator', 'creator'].includes(chatMember.status) || (ctx.chat.type === 'private')) {
-      return true;
-  }
+  if (['administrator', 'creator'].includes(chatMember.status) || (ctx.chat.type === 'private'))
+    return true;
+  else
+    return false;
+
 }

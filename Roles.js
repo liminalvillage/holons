@@ -1,12 +1,13 @@
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
-import Users from './Users.js';
+import fs from 'fs';
 
 export default class Roles {
 
-    constructor(bot, db) {
+    constructor(bot, db, ui) {
         this.bot = bot;
         this.db = db;
+        this.ui = ui;
 
         this.bot.command('roles', async (ctx) => await this.roles(ctx));
         bot.action(/joinrole_(.+)/, async (ctx) => { this.joinrole(ctx) });
@@ -26,8 +27,16 @@ export default class Roles {
             ctx.reply('No roles found, use /addrole to create one.');
             return;
         }
+        this.ui.getRolesTable(roles, chatID).then((path) => {
+            //send the image
+             ctx.replyWithPhoto({ source: fs.createReadStream(path) }, Markup.inlineKeyboard(createroles(roles))).catch((error) => { console.log(error) });
+            // ctx.replyWithPhoto({ source: fs.createReadStream(path) }, Markup.inlineKeyboard([
+            //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID + '/'+quests[0].id.toString()),
+            // ])).then((ctx) => { this.bot.telegram.pinChatMessage(chatID, ctx.message_id) });
+          });
+          
         // Create participation list
-        ctx.reply("Today's roles:", Markup.inlineKeyboard(createroles(roles))).catch((error) => { console.log(error) });
+        //ctx.reply("Today's roles:", Markup.inlineKeyboard(createroles(roles))).catch((error) => { console.log(error) });
 
     }
 
@@ -63,9 +72,9 @@ export default class Roles {
         let roles = await this.db.getAll(chatID + '/roles');
         roles.forEach(role => {
             //TODO: save actions for currrent settings before removing them
+
             role.participants.forEach(user => {
                 this.db.get(chatID + '/users', user).then(user => {
-                    console.log(user);
                     if (user) {
                         if (!user.roles) {
                             user.roles = {};
@@ -76,7 +85,6 @@ export default class Roles {
                         user[role] += 1;
                         this.db.put(chatID + '/users', user);
                     }
-                    console.log(user);
                 }
                 )
 
@@ -87,12 +95,12 @@ export default class Roles {
 
          roles = await this.db.getAll(chatID + '/roles');
 
-        ctx.editMessageReplyMarkup({
-            chat_id: chatID,
-            message_id: messageID,
-            inline_keyboard: createroles(roles, messageID)
+        //update picture:
+        this.ui.getRolesTable(roles, chatID).then((path) => {
+            //send the image
+            ctx.editMessageMedia({ type: 'photo', media: { source: path } }, Markup.inlineKeyboard(createroles(roles, messageID))).catch((error) => { console.log(error) });
+        }) //update message
 
-        }).catch((error) => { console.log(error) });
         ctx.answerCbQuery('All roles cleared');
     }
     // finds role by its title and removes it
@@ -154,12 +162,11 @@ export default class Roles {
 
         let roles = await this.db.getAll(chatID + '/roles');
 
-        ctx.editMessageReplyMarkup({
-            chat_id: chatID,
-            message_id: messageID,
-            inline_keyboard: createroles(roles, messageID)
-
-        }).catch((error) => { console.log(error) });
+        //update picture and markup:
+        this.ui.getRolesTable(roles, chatID).then((path) => {
+            //send the image
+            ctx.editMessageMedia({ type: 'photo', media: { source: path } }, Markup.inlineKeyboard(createroles(roles, messageID))).catch((error) => { console.log(error) });
+        })
 
     }
 }
@@ -167,7 +174,7 @@ export default class Roles {
 function createroles(roles, messageID) {
     let mu = []
     roles.forEach(function (role) {
-        mu.push([Markup.button.callback((role.title + (role.participants.length ? ' : ' + role.participants.map(user => '@' + user).join('\n') : ' ')), `joinrole_${role.id}`)])
+        mu.push([Markup.button.callback((role.title + (role.participants.length ? ' : ✅ (' + role.participants.length +')' : ': ☑️')), `joinrole_${role.id}`)])
     })
     mu.push([Markup.button.callback('🧹 Clear all roles 🧹', `clearroles_${messageID}`)])
     return mu;
