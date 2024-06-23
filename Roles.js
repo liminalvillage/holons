@@ -98,7 +98,7 @@ export default class Roles {
         //update picture:
         this.ui.getRolesTable(roles, chatID).then((path) => {
             //send the image
-            ctx.editMessageMedia({ type: 'photo', media: { source: path } }, Markup.inlineKeyboard(createroles(roles, messageID))).catch((error) => { console.log(error) });
+            ctx.editMessageMedia({ type: 'photo', media: { source: path } }, Markup.inlineKeyboard(createroles(roles, messageID))).catch((error) => { });
         }) //update message
 
         ctx.answerCbQuery('All roles cleared');

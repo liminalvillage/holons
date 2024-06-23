@@ -4,7 +4,7 @@ class Library {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
-        this.bot.command('add', (ctx) => this.add(ctx));
+        this.bot.command('additem', (ctx) => this.add(ctx));
         this.bot.command('book', (ctx) => this.book(ctx));
         this.bot.command('return', (ctx) => this.return(ctx));
         this.bot.command('inventory', (ctx) => this.inventory(ctx));

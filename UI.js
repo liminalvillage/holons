@@ -233,7 +233,6 @@ class UI {
       //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID + '/'+quests[0].id.toString()),
       // ])).then((ctx) => { this.bot.telegram.pinChatMessage(chatID, ctx.message_id) });
     });
-    return path;
   }
 
   async requestsboard(ctx) {

@@ -11,7 +11,9 @@ export default class Expenses {
         this.ui = ui;
         this.settings = settings;
 
-        bot.command(['expense','spent','speso'], async (ctx) => { this.spent (ctx)});
+        bot.command(['expense', 'spent', 'speso'], async (ctx) => { this.spent(ctx) });
+        bot.command(['remove'], async (ctx) => { this.removeFromSplit(ctx) });
+        bot.command(['add'], async (ctx) => { this.addToSplit(ctx) });
         bot.command(['ledger'], async (ctx) => { this.ledger(ctx) });
         bot.action(/split:(.+)/, async (ctx) => {
             const chatID = ctx.callbackQuery?.message?.chat?.id
@@ -61,15 +63,18 @@ export default class Expenses {
             ctx.reply(i18next.t('ledgerempty', { lng: language }));
             return;
         }
-        let message = i18next.t('ledgerheader', { lng: language });
+        let message = ""//i18next.t('ledgerheader', { lng: language });
         expenses.forEach(expense => {
-            message += this.createMessage(expense) + '\n';
+            message += 'id: ' + expense.id + ' \n' + this.createMessage(expense) + '\n\n';
         });
         ctx.reply(message);
 
     }
-    async spent (ctx) {
+
+
+    async spent(ctx) {
         const chatID = ctx.chat.id;
+        const messageID = ctx.message.message_id;
         const args = ctx.message.text.split(' ').slice(1);
         const language = await this.settings.getLanguage(chatID)
         const command = ctx.message.text.split(' ')[0].replace('/', '');
@@ -82,17 +87,18 @@ export default class Expenses {
         // valid currency check
         currency = currency.toLowerCase().replace(/s$/, '');
         currency = currency.replace(/[^a-z]/g, '');
-        if (!(currency =='euro' || currency == 'hour' || currency == 'dollar'))
+        if (!(currency == 'euro' || currency == 'hour' || currency == 'dollar'))
             return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
-       
+
         const description = args.slice(2).join(' ');
-        const expense = await this.addExpense(chatID, amount, currency, description, ctx.from.username);
+        // TODO WARNING!!: messageID+1 is a dirty hack to get the id of the reply message as id of the expense. This will break if another message is sent at the same time
+        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.username);
         ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
             [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
         ));
     };
 
-    async addExpense(chatID, amount, currency, description, paidBy) {
+    async addExpense(messageID, chatID, amount, currency, description, paidBy) {
         //do health check on currency: remove uppercase, check if it's a valid currency, remove plural
         if (isNaN(amount) || amount <= 0 || currency == null || currency.length == 0) {
             return false;
@@ -111,7 +117,8 @@ export default class Expenses {
         description = description.replace(/^pour /, '');
 
         const expense = {
-            id: Date.now().toString(),
+            id: messageID,
+            date: Date.now().toString(),
             amount,
             currency,
             description,
@@ -119,6 +126,7 @@ export default class Expenses {
             splitWith: [paidBy]
         };
         await this.db.put(chatID + '/expenses', expense)
+        console.log('added expense', expense.id)
         return expense;
     }
 
@@ -134,6 +142,58 @@ export default class Expenses {
             }
 
             await this.db.put(chatID + '/expenses', expense)
+            return expense;
+        }
+        return false;
+    }
+
+    async removeFromSplit(ctx) {
+        const language = await this.settings.getLanguage(ctx.chat.id)
+
+        if (!ctx.message.reply_to_message && ctx.message.text.split(' ').length < 2){
+            ctx.reply('Please specify the expense ID or reply to the expense message you want to remove a user from');
+            return;
+        }
+        let chatID = ctx.chat.id;//
+        // extract username from the text
+       // let username = ctx.message.text.split(' ').slice(1).join(' ');
+        // let expenseID = ctx.message.reply_to_message.message_id; 
+        //get the expense as first word in the reply message
+        let expenseID = ctx.message.text.split(' ').slice(1)[0];
+        let username = ctx.message.text.split(' ').slice(1)[1];
+        //get expense id from the replied message
+        let expense = await this.db.get(chatID + '/expenses', expenseID)
+        if (expense) {
+            expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != username; });
+            await this.db.put(chatID + '/expenses', expense)
+            ctx.telegram.editMessageText(chatID, expenseID, null, this.createMessage(expense), Markup.inlineKeyboard(
+                [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
+            )).catch(err => console.log(err))
+            return expense;
+        }
+        return false;
+    }
+
+    async addToSplit(ctx) {
+        const language = await this.settings.getLanguage(ctx.chat.id)
+        if (!ctx.message.reply_to_message) {
+            ctx.reply('Please reply to the expense message you want to add a user to');
+            return
+        }
+        let chatID = ctx.chat.id;
+        let username = ctx.message.text.split(' ').slice(1).join(' ');
+        let expenseID = ctx.message.reply_to_message.message_id;
+        //get expense id from the replied message
+        let expense = await this.db.get(chatID + '/expenses', expenseID)
+        if (expense) {
+            if (!expense.splitWith)
+                expense.splitWith = [];
+            if (!expense.splitWith.includes(username))
+                expense.splitWith.push(username);
+            await this.db.put(chatID + '/expenses', expense)
+            ctx.telegram.editMessageText(chatID, expenseID, null, this.createMessage(expense), Markup.inlineKeyboard(
+                [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
+            ));
             return expense;
         }
         return false;
@@ -191,7 +251,7 @@ export default class Expenses {
         const currency = expense.currency;
         const description = expense.description;
         const paidBy = expense.paidBy;
-        const splitWith = expense.splitWith.join(", ");
+        const splitWith = expense.splitWith.length > 0 ? expense.splitWith.join(", ") : "";
 
         return i18next.t('expensemessage', { amount, currency, description, paidBy, splitWith });
     }
