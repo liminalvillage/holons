@@ -68,7 +68,13 @@ export default class Expenses {
         expenses.forEach(expense => {
             message += 'id: ' + expense.id + ' \n' + this.createMessage(expense) + '\n\n';
         });
-        ctx.reply(message);
+        //split message if too long
+        if (message.length > 4096) {
+            const messages = message.match(/[\s\S]{1,4096}/g) || [];
+            messages.forEach(msg => ctx.reply(msg).catch(err => console.log(err));
+        } else {
+            ctx.reply(message).catcn(err => console.log(err));
+        }
 
     }
 
