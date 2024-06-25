@@ -2,6 +2,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import fs from 'fs';
 import i18next from 'i18next';
+import * as utils from './utilities.js';
 
 
 export default class Expenses {
@@ -160,6 +161,8 @@ export default class Expenses {
         // let expenseID = ctx.message.reply_to_message.message_id; 
         //get the expense as first word in the reply message
         let expenseID = ctx.message.text.split(' ').slice(1)[0];
+        if ( ctx.message.reply_to_message)
+            expenseID = ctx.message.reply_to_message.message_id;
         let username = ctx.message.text.split(' ').slice(1)[1];
         //get expense id from the replied message
         let expense = await this.db.get(chatID + '/expenses', expenseID)
@@ -176,14 +179,19 @@ export default class Expenses {
 
     async addToSplit(ctx) {
         const language = await this.settings.getLanguage(ctx.chat.id)
-        if (!ctx.message.reply_to_message) {
-            ctx.reply('Please reply to the expense message you want to add a user to');
-            return
+        if (!ctx.message.reply_to_message && ctx.message.text.split(' ').length < 2){
+            ctx.reply('Please specify the expense ID or reply to the expense message you want to remove a user from');
+            return;
         }
         let chatID = ctx.chat.id;
-        let username = ctx.message.text.split(' ').slice(1).join(' ');
-        let expenseID = ctx.message.reply_to_message.message_id;
+        let expenseID = ctx.message.text.split(' ').slice(1)[0];
+        let username = ctx.message.text.split(' ').slice(1)[1];
         //get expense id from the replied message
+        if ( ctx.message.reply_to_message)
+            expenseID = ctx.message.reply_to_message.message_id;
+        // let username = ctx.message.text.split(' ').slice(1).join(' ');
+        // let expenseID = ctx.message.reply_to_message.message_id;
+
         let expense = await this.db.get(chatID + '/expenses', expenseID)
         if (expense) {
             if (!expense.splitWith)
@@ -193,7 +201,7 @@ export default class Expenses {
             await this.db.put(chatID + '/expenses', expense)
             ctx.telegram.editMessageText(chatID, expenseID, null, this.createMessage(expense), Markup.inlineKeyboard(
                 [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-            ));
+            )).catch(err => console.log(err));
             return expense;
         }
         return false;
