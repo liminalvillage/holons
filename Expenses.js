@@ -71,7 +71,7 @@ export default class Expenses {
         //split message if too long
         if (message.length > 4096) {
             const messages = message.match(/[\s\S]{1,4096}/g) || [];
-            messages.forEach(msg => ctx.reply(msg).catch(err => console.log(err));
+            messages.forEach(msg => ctx.reply(msg).catch(err => console.log(err)));
         } else {
             ctx.reply(message).catcn(err => console.log(err));
         }
@@ -157,19 +157,19 @@ export default class Expenses {
     async removeFromSplit(ctx) {
         const language = await this.settings.getLanguage(ctx.chat.id)
 
-        if (!ctx.message.reply_to_message && ctx.message.text.split(' ').length < 2){
-            ctx.reply('Please specify the expense ID or reply to the expense message you want to remove a user from');
+        if (!ctx.message.reply_to_message){
+            ctx.reply('Please reply to the expense message you want to remove a user from');
             return;
         }
-        let chatID = ctx.chat.id;//
-        // extract username from the text
-       // let username = ctx.message.text.split(' ').slice(1).join(' ');
-        // let expenseID = ctx.message.reply_to_message.message_id; 
-        //get the expense as first word in the reply message
-        let expenseID = ctx.message.text.split(' ').slice(1)[0];
-        if ( ctx.message.reply_to_message)
-            expenseID = ctx.message.reply_to_message.message_id;
-        let username = ctx.message.text.split(' ').slice(1)[1];
+
+        let username = ctx.message.text.split(' ').slice(1)[0];
+        if (username == null || username.length == 0) {
+            return ctx.reply(i18next.t('expenseremoveusage', { lng: language }));
+        }
+
+        let chatID = ctx.chat.id;
+        let expenseID = ctx.message.reply_to_message.message_id; 
+
         //get expense id from the replied message
         let expense = await this.db.get(chatID + '/expenses', expenseID)
         if (expense) {
@@ -185,18 +185,18 @@ export default class Expenses {
 
     async addToSplit(ctx) {
         const language = await this.settings.getLanguage(ctx.chat.id)
-        if (!ctx.message.reply_to_message && ctx.message.text.split(' ').length < 2){
-            ctx.reply('Please specify the expense ID or reply to the expense message you want to remove a user from');
+        if (!ctx.message.reply_to_message){
+            ctx.reply('Please reply to the expense message you want to remove a user from');
             return;
         }
+        let username = ctx.message.text.split(' ').slice(1)[0];
+        if (username == null || username.length == 0) {
+            return ctx.reply(i18next.t('expenseaddusage', { lng: language }));
+        }
+
         let chatID = ctx.chat.id;
-        let expenseID = ctx.message.text.split(' ').slice(1)[0];
-        let username = ctx.message.text.split(' ').slice(1)[1];
-        //get expense id from the replied message
-        if ( ctx.message.reply_to_message)
-            expenseID = ctx.message.reply_to_message.message_id;
-        // let username = ctx.message.text.split(' ').slice(1).join(' ');
-        // let expenseID = ctx.message.reply_to_message.message_id;
+        let expenseID = ctx.message.reply_to_message.message_id;
+       
 
         let expense = await this.db.get(chatID + '/expenses', expenseID)
         if (expense) {
