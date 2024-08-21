@@ -10,7 +10,7 @@
 		content="This is meta description">
 	
 	<meta name="author" content="Roberto Valenti">
-	<meta name="generator" content="Hugo 0.123.8">
+	<meta name="generator" content="Hugo 0.129.0">
 
 	<!-- plugins -->
 	
@@ -80,6 +80,9 @@
 					<li class="nav-item"><a class="nav-link" href="/#about">About</a>
 					</li>
 					
+					<li class="nav-item"><a class="nav-link" href="/#contact">Contact</a>
+					</li>
+					
 					
 				</ul>
 
@@ -126,9 +129,12 @@ Then run the command</p>
 </code></pre><p>Go to <code>http://localhost:1313</code></p>
 <p>Or you can check this video documentation for installing this template:
 
-<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;">
-  <iframe src="https://www.youtube.com/embed/3O3qvDoVp5g" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border:0;" allowfullscreen title="YouTube Video"></iframe>
-</div>
+
+    
+    <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+      <iframe allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen="allowfullscreen" loading="eager" referrerpolicy="strict-origin-when-cross-origin" src="https://www.youtube.com/embed/3O3qvDoVp5g?autoplay=0&controls=1&end=0&loop=0&mute=0&start=0" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border:0;" title="YouTube video"
+      ></iframe>
+    </div>
 </p>
 <h3 id="step-5--basic-configuration">STEP-5 : Basic configuration</h3>
 <p>When building the website, you can set a theme by using <code>--theme</code> option. However, we suggest you modify the configuration file (<code>config.toml</code>) and set the theme as the default.</p>
@@ -318,6 +324,22 @@ hugo--minify
 
 
 <!-- google analitycs -->
+
+<script>
+  (function (i, s, o, g, r, a, m) {
+    i['GoogleAnalyticsObject'] = r;
+    i[r] = i[r] || function () {
+      (i[r].q = i[r].q || []).push(arguments)
+    }, i[r].l = 1 * new Date();
+    a = s.createElement(o),
+      m = s.getElementsByTagName(o)[0];
+    a.async = 1;
+    a.src = g;
+    m.parentNode.insertBefore(a, m)
+  })(window, document, 'script', '//www.google-analytics.com/analytics.js', 'ga');
+  ga('create', 'G-70HH3YTRXN', 'auto');
+  ga('send', 'pageview');
+</script>
 
 </body>
 

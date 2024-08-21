@@ -4,7 +4,7 @@
     <title>Blogs on Holons</title>
     <link>http://localhost:1313/blog/</link>
     <description>Recent content in Blogs on Holons</description>
-    <generator>Hugo -- gohugo.io</generator>
+    <generator>Hugo</generator>
     <language>en-us</language>
     <lastBuildDate>Wed, 12 Sep 2018 14:51:12 +0600</lastBuildDate>
     <atom:link href="http://localhost:1313/blog/index.xml" rel="self" type="application/rss+xml" />
