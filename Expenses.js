@@ -73,7 +73,7 @@ export default class Expenses {
             const messages = message.match(/[\s\S]{1,4096}/g) || [];
             messages.forEach(msg => ctx.reply(msg).catch(err => console.log(err)));
         } else {
-            ctx.reply(message).catcn(err => console.log(err));
+            ctx.reply(message).catch(err => console.log(err));
         }
 
     }

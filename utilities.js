@@ -75,10 +75,13 @@ export const capitalize = (string) => {
 }
 
 export const isAdmin = async (ctx) => {
-  const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
-  if (['administrator', 'creator'].includes(chatMember.status) || (ctx.chat.type === 'private'))
-    return true;
-  else
-    return false;
+  if (ctx.telegram) { // TODO: HANDLE DISCORD CASE
+    const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
+    if (['administrator', 'creator'].includes(chatMember.status) || (ctx.chat.type === 'private'))
+      return true;
+    else
+      return false;
+  }
+  return false
 
 }

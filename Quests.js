@@ -227,9 +227,15 @@ export default class Quests {
                 await this.users.saveUserAction(sender, "wants", quest.title, 0, chatID)
             }
             ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
-                // Add the message id to the quest
+                if (ctx.platform !== 'discord') {
                 quest.id = nctx.message_id;
                 quest.chat = nctx.chat.id;
+                }
+                if (ctx.platform == 'discord'){
+                    quest.id = nctx.id;
+                    quest.chat = nctx.channel.id;
+                    return //TODO: remove this by fixing below for multi platforms
+                }
 
                 await this.db.put(chatID + '/quests', quest)
 

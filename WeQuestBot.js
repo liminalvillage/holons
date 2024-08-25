@@ -54,6 +54,7 @@ class WeQuest {
     this.council = null;
     this.roles = null;
     this.rounds = null;
+    this.userVoiceData = {};
   }
 
   async init(appname = 'WeQuest', telegramtoken = null, discordtoken = null) {
@@ -75,7 +76,7 @@ class WeQuest {
 
       this.setupTelegramCommands();
       this.setupTelegramHandlers();
-      this.setupDiscordBot(discordtoken);
+      this.setupDiscordBot(discordtoken || process.env.DISCORD);
 
       this.handleProcessEvents();
     } catch (error) {
@@ -128,7 +129,7 @@ class WeQuest {
 
     this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, this.db));
     this.telebot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo', 'fiorino'], async (ctx) => this.quests.sendAppreciation(ctx));
-  
+
   }
 
   setupTelegramHandlers() {
@@ -243,8 +244,11 @@ class WeQuest {
     const discordbot = new Client({
       intents: [
         GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates,
+
       ],
     });
 
@@ -253,44 +257,189 @@ class WeQuest {
       discordbot.user.setActivity(`Serving ${discordbot.guilds.cache.size} servers`);
     });
 
+    
+
+    // discordbot.on('speaking', (user, speaking) => {
+    //     const userId = user.id;
+
+    //     if (speaking) {
+    //        this.userVoiceData[userId].speakingStart = new Date();
+    //         console.log(`${userId} started speaking`);
+    //     } else {
+    //         const speakingTime = new Date() -this.userVoiceData[userId].speakingStart;
+    //        this.userVoiceData[userId].speakingTime += speakingTime;
+    //         console.log(`${userId} stopped speaking. Total speaking time: ${this.this.userVoiceData[userId].speakingTime} ms`);
+
+    //         // Reset speaking start time
+    //         deletethis.userVoiceData[userId].speakingStart;
+    //     }
+    // });
+
+
     discordbot.on('messageCreate', (msg) => {
       console.log("DISCORD MESSAGE:", msg.content);
       if (msg.content.charAt(0) === process.env.PREFIX) {
         msg.react('👀').catch(console.error);
       }
-      const commandBody = msg.content.substring(process.env.PREFIX.length).split(' ');
-      const command = commandBody[0];
-      const args = commandBody.slice(1);
-
-      if (command === 'quest') {
-        this.quests.quest('quest', this.discord2telegram(msg), this.db);
-      }
-      if (command === 'task') {
-        console.log('task');
-      }
+     
+   
+     
     });
 
     discordbot.login(discordtoken || process.env.DISCORD);
   }
 
-  discord2telegram(message) {
-    const ctx = message;
-    ctx.deleteMessage = () => message.delete();
-    ctx.updateType = "message";
-    ctx.message = {
-      message_id: message.id,
-      from: {
-        id: message.author.id,
-        first_name: message.author.username,
-      },
-      chat: {
-        id: message.channel.id,
-      },
-      text: message.content,
-    };
 
+  handleCommand(msg) {
+    const commandBody = msg.content.substring(process.env.PREFIX.length).split(' ');
+    const command = commandBody[0];
+    switch (command) {
+      case 'quest':
+        this.quests.quest('quest', this.discord2telegram(msg), this.db);
+        break;
+      case 'task':
+        console.log('task');
+        break;
+      // Add more cases as needed
+      default:
+        console.log(`Unknown command: ${command}`);
+    }
+  }  
+  
+  discord2telegram(interaction) {
+    const ctx = {
+      interaction,
+      chat: { id: interaction.guild.id },
+      message: {
+        message_id: interaction.id,
+        from: {
+          id: interaction.author.id,
+          first_name: interaction.author.username,
+        },
+        chat: {
+          id: interaction.channel.id,
+        },
+        text: interaction.content,
+      },
+
+      from: {
+        id : interaction.author.id,
+        username : interaction.author.username,
+        first_name : interaction.author.username,
+      },
+        
+        reply: async (message, buttons = []) => {
+        // if (interaction.type === InteractionType.ApplicationCommand) {
+        {
+          if (buttons.length > 0) {
+            const components = new ActionRowBuilder().addComponents(
+              buttons.map(button => new ButtonBuilder()
+                .setCustomId(button.callback_data)
+                .setLabel(button.text)
+                .setStyle(ButtonStyle.Primary))
+            );
+            await interaction.reply({ content: message, components: [components] });
+          } else {
+            await interaction.reply(message);
+          }
+          // } else if (interaction.type === InteractionType.MessageComponent) {
+          //     if (buttons.length > 0) {
+          //         const components = new ActionRowBuilder().addComponents(
+          //             buttons.map(button => new ButtonBuilder()
+          //                 .setCustomId(button.callback_data)
+          //                 .setLabel(button.text)
+          //                 .setStyle(ButtonStyle.Primary))
+          //         );
+          //         await interaction.update({ content: message, components: [components] });
+          //     } else {
+          //       await interaction.followUp({ content: message, ephemeral: true });
+          // }
+        }
+      },
+      pinChatMessage: async (messageId) => {
+        if (interaction.channel) {
+          const message = await interaction.channel.messages.fetch(messageId);
+          await message.pin();
+        }
+      },
+      editMessageReplyMarkup: async (options) => {
+        if (interaction.message) {
+          await interaction.update(options);
+        }
+      },
+      answerCbQuery: async (message) => {
+        await interaction.reply({ content: message, ephemeral: true });
+      }
+    };
     return ctx;
   }
+
+
+
+
+  // discord2telegram(message) {
+  //   const ctx = message;
+  //   ctx.source = 'discord';
+  //   ctx.chat = {};
+  //   ctx.chat.id = message.channel.id;
+
+  //   ctx.from = {};
+  //   ctx.from.id = message.author.id;
+  //   ctx.from.username = message.author.username;
+  //   ctx.from.first_name = message.author.username;
+
+  //   ctx.deleteMessage = () => message.delete();
+  //   ctx.updateType = "message";
+  //   ctx.reply = (text, markup) => {
+  //     if (markup && markup.inline_keyboard) {
+  //       const rows = markup.inline_keyboard.map(row => {
+  //         const buttons = row.map(button => new ButtonBuilder()
+  //           .setCustomId(button.callback_data)
+  //           .setLabel(button.text)
+  //           .setStyle(ButtonStyle.Primary) // Default to 'Primary' style, change as needed
+  //         );
+  //         return new ActionRowBuilder().addComponents(buttons);
+  //       });
+
+  //       return message.channel.send({ content: text, components: rows });
+  //     } else {
+  //       return message.channel.send(text);
+  //     }
+  //   };
+
+  //   ctx.Markup = {
+  //     inlineKeyboard: (buttons) => ({ inline_keyboard: buttons })
+  //   };
+
+  //   pinChatMessage: async (messageId) => {
+  //     if (interaction.channel) {
+  //       const message = await interaction.channel.messages.fetch(messageId);
+  //       await message.pin();
+  //     }
+  //   },
+  //     editMessageReplyMarkup: async (options) => {
+  //       if (interaction.message) {
+  //         await interaction.update(options);
+  //       }
+  //     },
+  //       answerCbQuery: async (message) => {
+  //         await interaction.reply({ content: message, ephemeral: true });
+  //       }
+
+  //   ctx.message = {
+  //     message_id: message.id,
+  //     from: {
+  //       id: message.author.id,
+  //       first_name: message.author.username,
+  //     },
+  //     chat: {
+  //       id: message.channel.id,
+  //     },
+  //     text: message.content,
+  //   };
+
+  //   return ctx;
+  // }
 
   handleProcessEvents() {
     process.on('SIGINT', async () => {
@@ -309,7 +458,7 @@ class WeQuest {
   }
 }
 
-console.log(process.argv[2], process.argv[3]);
+console.log('Args:', process.argv[2], process.argv[3]);
 
 const wequest = new WeQuest();
 await wequest.init(process.argv[2], process.argv[3], process.argv[4]);

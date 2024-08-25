@@ -23,7 +23,7 @@ class Scheduler {
             createdAt: new Date(),
             completed: false
         };
-        await this.this.db.put(chatID + '/schedule'task);
+        await this.this.db.put(chatID + '/schedule',task);
         this.scheduleTask(task);
         ctx.reply('Task scheduled successfully.');
     }

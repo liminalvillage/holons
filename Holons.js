@@ -20,8 +20,9 @@ export default class Holons {
     this.privateKey = process.env.WEB3KEY;
     const provider = new Web3.providers.HttpProvider(process.env.WEB3PROVIDER);
     this.web3 = new Web3(provider);
-    this.holonsContract = new this.web3.eth.Contract(holons.default.abi, holons.default.networks[11155111].address);
+    this.holonsContract = new this.web3.eth.Contract(holons.default.abi, holons.default.networks[this.chainId].address);
     this.account = this.web3.eth.accounts.privateKeyToAccount(this.privateKey);
+    console.log(this.account);
     //unlock account 
     this.web3.eth.accounts.wallet.add(this.account);
     this.web3.eth.defaultAccount = this.account.address;
@@ -97,7 +98,7 @@ export default class Holons {
       gas: 3000000,
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: 11155111,
+      chainId: this.chainId,
       type: 0x2
     };
     const receipt = await this.sendSignedTransaction(tx);
@@ -128,7 +129,7 @@ export default class Holons {
       nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: 11155111,
+      chainId: this.chainId,
       type: 0x2
     };
     const receipt = await this.sendSignedTransaction(tx);
@@ -163,7 +164,7 @@ export default class Holons {
         nonce: await this.web3.eth.getTransactionCount(this.account.address),
         maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
         maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-        chainId: 11155111,
+        chainId: this.chainId,
         type: 0x2
       };
       let result = await this.sendSignedTransaction(tx);
@@ -230,7 +231,7 @@ web3.eth.sendTransaction(transaction)
       nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: 11155111,
+      chainId: this.chainId,
       type: 0x2
     };
     return await this.sendSignedTransaction(tx);
@@ -260,7 +261,7 @@ web3.eth.sendTransaction(transaction)
       nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: 11155111,
+      chainId: this.chainId,
       type: 0x2
     };
 
@@ -276,7 +277,7 @@ web3.eth.sendTransaction(transaction)
       //nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: 11155111,
+      chainId: this.chainId,
       type: 0x2
     };
     return await this.sendSignedTransaction(tx);
@@ -313,7 +314,7 @@ web3.eth.sendTransaction(transaction)
       //nonce: await this.web3.eth.getTransactionCount(this.account.address),
       maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
       maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: 11155111,
+      chainId: this.chainId,
       type: 0x2
     };
  
