@@ -22,7 +22,8 @@ export default class Holons {
     this.web3 = new Web3(provider);
     this.holonsContract = new this.web3.eth.Contract(holons.default.abi, holons.default.networks[this.chainId].address);
     this.account = this.web3.eth.accounts.privateKeyToAccount(this.privateKey);
-    console.log(this.account);
+    console.log("Wallet address:", this.account.address);
+    console.log("Wallet Network:", this.network); 
     //unlock account 
     this.web3.eth.accounts.wallet.add(this.account);
     this.web3.eth.defaultAccount = this.account.address;

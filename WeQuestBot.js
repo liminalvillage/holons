@@ -76,7 +76,7 @@ class WeQuest {
 
       this.setupTelegramCommands();
       this.setupTelegramHandlers();
-      this.setupDiscordBot(discordtoken || process.env.DISCORD);
+      //this.setupDiscordBot(discordtoken || process.env.DISCORD);
 
       this.handleProcessEvents();
     } catch (error) {
