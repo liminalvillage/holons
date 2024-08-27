@@ -1,34 +1,55 @@
 ################################# Service #################################
 service:
   enable : false
-  title : Our Services
+  title : Holonic Infrastructure
   service_item :
     # service item loop
-    - name : Design
+    - name : Cultural Values and Worldview
       icon : ti-brush # themify icon pack : https://themify.me/themify-icons
       content : Speak to the creative collective and find a design scientist who understands the right questions to elucid from you to shape your project.
 
     # service item loop
-    - name : Development
+    - name : Health and Wellbeing
       icon : ti-ruler-alt # themify icon pack : https://themify.me/themify-icons
       content : End to end distributed application development - discuss, design, deploy... and keep iterating! We embody principles of simplicity oriented design.
 
     # service item loop
-    - name : Pedagogical work
+    - name : Business and Trade
       icon : ti-blackboard # themify icon pack : https://themify.me/themify-icons
       content : We learn by doing and can teach teams how to move faster by adopting new patterns and practices that create space for emergent knowledge and deep work.
 
     # service item loop
-    - name : Medicine & Animals
+    - name : Energy and Earth Resources
       icon : ti-pulse # themify icon pack : https://themify.me/themify-icons
       content : Sometimes its best to just speak with people that know your industry. We can point you to effective facilitators familiar in navigating more regulated industries.
 
     # service item loop
-    - name : Energy & Aviation
+    - name : Climate Change Intensity
       icon : ti-bolt # themify icon pack : https://themify.me/themify-icons
       content : There are many sectors we can work across but in particular, we have a strong knowledge base around the electricity and aviation industries.
 
     # service item loop
-    - name : Physical Internet
+    - name : Ecosystem Services
       icon : ti-world # themify icon pack : https://themify.me/themify-icons
       content : Self-owning objects - cars, trucks, shipping containers, houses, internet of things and all flavors of secure internet identity AKA "digital twins".
+   
+  #  - name : Water Availability
+  #     icon : ti-world # themify icon pack : https://themify.me/themify-icons
+  #     content : Self-owning objects - cars, trucks, shipping containers, houses, internet of things and all flavors of secure internet identity AKA "digital twins".
+
+  #  - name : Habitat and Infrastructure
+  #     icon : ti-world # themify icon pack : https://themify.me/themify-icons
+  #     content : Self-owning objects - cars, trucks, shipping containers, houses, internet of things and all flavors of secure internet identity AKA "digital twins".
+
+  #  - name : Economy and Wealth
+  #     icon : ti-world # themify icon pack : https://themify.me/themify-icons
+  #     content : Self-owning objects - cars, trucks, shipping containers, houses, internet of things and all flavors of secure internet identity AKA "digital twins".
+
+  #  - name : Governance and Institutions
+  #     icon : ti-world # themify icon pack : https://themify.me/themify-icons
+  #     content : Self-owning objects - cars, trucks, shipping containers, houses, internet of things and all flavors of secure internet identity AKA "digital twins".
+
+  #  - name : Community and Resilience
+  #     icon : ti-world # themify icon pack : https://themify.me/themify-icons
+  #     content : Self-owning objects - cars, trucks, shipping containers, houses, internet of things and all flavors of secure internet identity AKA "digital twins".
+

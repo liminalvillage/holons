@@ -19,9 +19,21 @@
           Close
         </z-spot>
         <!-- default slot-->
-        Not implemented (yet!)
-        Please copy an holon.json file from existing holons and save it in your own location (e.g. github)
-
+        <!-- creates a form and saves it using gundb -->
+        <z-form :fields="[
+          {type: 'text', label: 'Name', model: 'name'},
+          {type: 'text', label: 'Description', model: 'description'},
+          {type: 'text', label: 'URL', model: 'url'},
+          {type: 'text', label: 'Quote', model: 'quote'},
+          {type: 'text', label: 'Quote Author', model: 'quoteauthor'},
+          {type: 'text', label: 'Image', model: 'image'},
+          {type: 'text', label: 'Holons', model: 'holons'},
+          {type: 'text', label: 'Holons Labels', model: 'holonslabels'},
+          {type: 'text', label: 'Holons Images', model: 'holonsimages'},
+          {type: 'text', label: 'Holons Values', model: 'holonsvalues'}
+        ]" @submit="dialog = false; console.log('submitted!')"></z-form>
+        Please copy an holon.json file from existing holons, modify it and save it in your own location (e.g. github/ftp/ipfs)
+        
       </z-dialog>
       <z-spot v-if="type == 'PROJECT'" label="Contributors" :distance="100" :angle="100" label-pos="bottom">
       </z-spot>

@@ -1,6 +1,6 @@
 ############################## Contact #############################
 contact:
-  enable : true
+  enable : false
   title : Contact Us
   subtitle : Contact Details
   content : Would you like to know more or join in the fractal organism ?
@@ -11,7 +11,7 @@ contact:
       info : "Italy, 63100 Ascoli Piceno"
       
     - icon : ti-mobile # themify icon pack : https://themify.me/themify-icons
-      info : "Phone: +3207012290"
+      info : "Phone: +39 3207012290"
       
     - icon : ti-email # themify icon pack : https://themify.me/themify-icons
-      info : "Email: hello@holons.io"
+      info : "Email: info@liminalvillage.com"

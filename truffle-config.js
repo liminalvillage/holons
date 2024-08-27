@@ -75,11 +75,15 @@ module.exports = {
      network_id: "*",       // Any network (default: none)
     },
     gnosis: {
-      provider: () => new HDWalletProvider(MNEMONIC, `https://rpc.gnosischain.com/`),
+      provider: () => new HDWalletProvider({ mnemonic: {
+        phrase: `${MNEMONIC}`
+        }}, "https://rpc.gnosischain.com/"),
       network_id: "100",
-      confirmations: 2,
-      timeoutBlocks: 200,
-      skipDryRun: true
+      confirmations: 1,
+      timeoutBlocks: 2000,
+      skipDryRun: true,
+      gas: 5000000,
+      gasPrice: 10000000000
     },
     sepolia: {
       provider: () => new HDWalletProvider({

@@ -11,5 +11,5 @@ deployer.deploy(Holons).then( async (instance) => {
     await instance.newFlavor("Appreciative",AppreciativeFactory.address); 
     await instance.newFlavor("Zoned",ZonedFactory.address);
     await instance.newFlavor("Managed",ManagedFactory.address)});
-  deployer.deploy(TestToken,10000000000000000000);
+  //deployer.deploy(TestToken,10000000000000000000);
 }
