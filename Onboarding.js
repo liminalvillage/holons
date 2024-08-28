@@ -22,8 +22,6 @@ export default class Onboarding {
     this.bot = bot;
     this.userResponses = {};
 
-
-
     const stage = new Scenes.Stage(
       [welcomeScene, arrivalbookingScene, departurebookingScene, videoScene, valuesScene, categoriesScene, onboardingScene, locationScene, questionsScene, saveprofileScene, summarizeScene, h3Scene, dnaScene, done].concat(createScenesForQuestions()).concat(createScenesForDNA())
     );
@@ -31,12 +29,11 @@ export default class Onboarding {
     bot.use(session());
     bot.use(stage.middleware());
 
-    bot.command('start', ctx => {
+    bot.command('onboarding', ctx => {
       const userId = ctx.from.id;
       ctx.session.stage = 0;
-      ctx.session.sequence= ['welcome','arrivalbooking','departurebooking','categories', 'values', 'location','questions', 'saveprofile','onboarding'];
+      ctx.session.sequence = ['welcome', 'arrivalbooking', 'departurebooking', 'categories', 'values', 'location', 'questions', 'saveprofile', 'onboarding'];
       ctx.session.db = this.db;
-      //ctx.session.sequence = ['categories', 'summarize', 'values', 'categories', 'saveprofile'];
       ctx.session.userResponses = [];
       ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
     });
@@ -44,25 +41,4 @@ export default class Onboarding {
     bot.command('summarize', ctx => { ctx.session.db = this.db; ctx.scene.enter('summarize') });
   }
 
-  async testDB() {
-    await this.db.put('enquiries', enquiryTypes)
-
-    //let data = await this.db.getAll('enquiries')//.then((enquiries) => {
-    //   console.log(enquiries)
-    // }
-    // )
-    console.log(await this.db.gun.get('RegenMatch').get('enquiries'))
-  }
 }
-
-// const bot = new Telegraf(process.env.TELEGRAM);
-// const match = new RegenMatch(bot);
-
-// await match.testDB();
-
-// bot.launch()
-//   .then(() => console.log('Bot started'))
-//   .catch(err => console.error('Bot launch failed', err));
-
-// process.once('SIGINT', () => bot.stop('SIGINT'));
-// process.once('SIGTERM', () => bot.stop('SIGTERM'));

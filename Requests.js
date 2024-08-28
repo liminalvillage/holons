@@ -15,13 +15,6 @@ class Request {
     constructor(bot, db){
         this.bot = bot;
         this.db = db;
-
-        bot.start((ctx) => {
-          ctx.reply(
-            'Welcome to the Offers/Wants bot! Let\'s create a new offer or want. Please make your selections.',
-            getKeyboard(offer)
-          );
-        });
         
         bot.action('OFFER', async (ctx) => {
           let chatID = ctx.message.chat.id;

@@ -111,11 +111,11 @@ class WeQuest {
   setupTelegramCommands() {
     if (process.env.MODE === 'development') {
       this.telebot.command('start', async (ctx) => {
-        onboarding.start(ctx);
+        ctx.reply('Hey there! Just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n');
       });
 
       this.telebot.command('help', async (ctx) => {
-        ctx.reply('Just type / for a list of commands. For instance \n /task \n /request \n /offer /status /bulletin');
+        ctx.reply('Just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n');
       });
 
       this.telebot.on('inline_query', async (ctx) => {
