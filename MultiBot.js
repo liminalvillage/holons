@@ -16,7 +16,6 @@ import { platform } from 'os';
 class MultiBot extends Telegraf {
     constructor() {
         super(process.env.TELEGRAM);
-
         this.telegramBot = null;
         this.discordBot = null;
         this.mattermostClient = null;
@@ -36,7 +35,8 @@ class MultiBot extends Telegraf {
             ]
         });
         this.mattermostClient = new MattermostClient(process.env.MATTERMOST);
-        this.telegramBot.launch(); // Start the bot    
+        this.telegramBot.launch(); // Start the bot  
+        this.telegramBot.command('start', (ctx) => ctx.reply('Welcome'));
         
         this.discordBot.on('ready', () => {
             console.log(`Logged in as ${this.discordBot.user.tag}!`);

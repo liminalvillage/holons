@@ -15,6 +15,7 @@ export default class Settings {
             let chats = await this.getChats(ctx)
             ctx.reply('Chats: ' + chats)
         })
+       
         this.bot.command(['restart', 'reset'], async (ctx) => {
             if (utils.isAdmin(ctx)) {
                 let chatID = utils.getChatId(ctx)

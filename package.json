@@ -1,15 +1,15 @@
 {
-  "name": "WeQuestBot",
+  "name": "HolonsBot",
   "version": "1.0.0",
   "description": "Stigmergic Tool for Computer Aided Communities",
-  "main": "WeQuestBot.js",
+  "main": "HolonsBot.js",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node WeQuestBot.js"
+    "start": "node HolonsBot.js"
   },
   "author": "Roberto Valenti",
-  "license": "ISC",
+  "license": "GPL-3.0-only",
   "dependencies": {
     "@discordjs/builders": "^1.8.2",
     "@discordjs/opus": "^0.9.0",
