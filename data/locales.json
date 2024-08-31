@@ -145,7 +145,7 @@
             "shoppinglist":"Ecco la tua lista della spesa:",
             "shoppingclear":"👍 Finito / Rimuovi selezionati ✅",
             "shoppingcompleted":" Spesa completata ({{remaining}} articoli rimanenti)",
-            "appreciationusage":"Indica il nome degli utenti a cui vuoi inviare un fiorino, utilizzando '@', e specifica il motivo.",
+            "appreciationusage":"Indica il nome degli utenti a cui vuoi apprezzare, utilizzando '@', e specifica il motivo.",
             "appreciationself":"Non puoi apprezzare te stesso!",
             "taskstarting": "⏰ Il {{quest.type}} {{quest.title}} è iniziato !",
             "💡": "💡 Idea",
