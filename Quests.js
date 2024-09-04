@@ -33,7 +33,7 @@ export default class Quests {
         this.bot.command(['offer', 'give', 'have', 'gift'], async (ctx) => this.quest('offer', ctx))
         this.bot.command(['idea', 'lesson', 'quote', 'tip', 'fact', 'joke', 'story', 'thought', 'question', 'challenge', 'trigger', 'projection', 'assumption', 'observation', 'rule', 'suggestion', 'guideline', 'feature', 'perspective', 'opinion', 'insight', 'inspiration', 'motivation', 'reminder', 'warning', 'note', 'comment', 'feedback', 'review', 'critique', 'compliment', 'complaint'], async (ctx) => this.quest('any', ctx))
         this.bot.command(['ideas', 'lessons', 'quotes', 'tips', 'facts', 'jokes', 'stories', 'thoughts', 'questions', 'challenges', 'triggers', 'projections', 'assumptions', 'observations', 'rules', 'suggestions', 'guidelines', 'features', 'perspectives', 'opinions', 'insights', 'inspirations', 'motivations', 'reminders', 'warnings', 'notes', 'comments', 'feedbacks', 'reviews', 'critiques', 'compliments', 'complaints'], async (ctx) => this.listanytype(ctx))
-        this.bot.command('list', async (ctx) => this.list(ctx))
+        this.bot.command('listtype', async (ctx) => this.listtype(ctx))
         this.bot.command('refresh', async (ctx) => this.refresh(ctx))
 
         // ITALIAN
@@ -116,15 +116,16 @@ export default class Quests {
     }
 
     async listanytype(ctx) {
+     
+    }
+
+    async listtype(ctx) {
         let type = ctx.message.text.split(' ')[0].replace('/', '');
         if (type && type[type.length - 1] === 's')
             type = type.slice(0, -1);
-        this.listtype(ctx, type)
-    }
 
-    async listtype(ctx, type) {
         if (type == undefined){
-            ctx.reply(`Please specify a type of quest to list. eg: /list quest`);
+            ctx.reply(`Please specify a type of quest to list. eg: /listtype quest`);
             return
         }
 
@@ -141,6 +142,7 @@ export default class Quests {
         let message = '*' + capitalize(type) + 's*:\n\n';
         for (let i = 0; i < quests.length; i++) {
             const quest = quests[i];
+            if (quest.type == type)
             // link to the quest message
             message += `~${quest.title}~ \t 👍:${quest.appreciation.length} \n`;
             //message += createMessage(quest, language) + '\n';

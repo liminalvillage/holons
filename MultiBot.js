@@ -14,17 +14,29 @@ import sharp from 'sharp';
 import { platform } from 'os';
 
 class MultiBot extends Telegraf {
-    constructor() {
-        super(process.env.TELEGRAM);
+    constructor(telegramtoken, discordtoken, mattermosttoken) {
+        super(telegramtoken);
+        this.telegramtoken = telegramtoken
+        this.discordtoken = discordtoken
+        this.mattermosttoken = mattermosttoken
+
         this.telegramBot = null;
         this.discordBot = null;
         this.mattermostClient = null;
+        
         this.commands = {}
         this.userVoiceData = {};
     }
 
     async start() {
+        //---------------------------------------- TELEGRAM
         this.telegramBot = this //new Telegraf(process.env.TELEGRAM);
+        this.telegramBot.launch(); // Start the bot  
+        this.telegramBot.command('start', (ctx) => ctx.reply('Welcome, please type / for  a list of commands'));
+        this.setupTelegramCommands();
+
+
+        // -------------------------------------- DISCORD
         this.discordBot = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
@@ -34,10 +46,6 @@ class MultiBot extends Telegraf {
                 GatewayIntentBits.GuildVoiceStates,
             ]
         });
-        this.mattermostClient = new MattermostClient(process.env.MATTERMOST);
-        this.telegramBot.launch(); // Start the bot  
-        this.telegramBot.command('start', (ctx) => ctx.reply('Welcome'));
-        
         this.discordBot.on('ready', () => {
             console.log(`Logged in as ${this.discordBot.user.tag}!`);
         });
@@ -48,10 +56,11 @@ class MultiBot extends Telegraf {
         //         message.reply('Pong!');
         //     }
         // });
+        this.discordBot.login(this.discordtoken);
+        this.setupDiscordCommands()
 
-        this.discordBot.login(process.env.DISCORD);
-         this.setupDiscordCommands();
-        this.setupTelegramCommands();
+        // ------------------------------------ MATTERMOST       
+        this.mattermostClient = new MattermostClient(this.mattermosttoken);
         this.setupMattermostCommands();
     }
 

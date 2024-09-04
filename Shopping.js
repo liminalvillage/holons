@@ -8,7 +8,7 @@ class Shopping {
         this.bot = bot;
         this.db = db;
         this.settings = settings;
-        this.bot.command(['buy','comprare','compra'], (ctx) => this.buy(ctx));
+        this.bot.command(['buy','comprare','compra','bring'], (ctx) => this.buy(ctx));
         this.bot.command(['shopping','shop','spesa','lista','listaspesa'], (ctx) => this.shopping(ctx));
         this.bot.action(/toggle_(.+)/, (ctx) => this.toggle(ctx));
         this.bot.action('done', (ctx) => this.done(ctx));
