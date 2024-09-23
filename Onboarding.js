@@ -32,7 +32,7 @@ export default class Onboarding {
     bot.command('onboarding', ctx => {
       const userId = ctx.from.id;
       ctx.session.stage = 0;
-      ctx.session.sequence = ['welcome', 'arrivalbooking', 'departurebooking', 'categories', 'values', 'location', 'questions', 'saveprofile', 'onboarding'];
+      ctx.session.sequence = ['welcome', 'arrivalbooking', 'departurebooking', 'categories', 'values', 'location', 'saveprofile', 'onboarding'];
       ctx.session.db = this.db;
       ctx.session.userResponses = [];
       ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);

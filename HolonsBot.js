@@ -1,6 +1,5 @@
 "use strict";
 
-import 'dotenv/config';
 import qrReader from 'qrcode-reader';
 import Jimp from 'jimp';
 import axios from 'axios';
@@ -59,7 +58,7 @@ class HolonsBot {
 
   async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
     try {
-      this.telebot = new Telegraf(telegramtoken || process.env.TELEGRAM);
+      this.telebot = new Telegraf(telegramtoken);
       this.telebot.launch({ handlerTimeout: Infinity });
 
       if (process.env.MODE === 'development') {
@@ -76,11 +75,11 @@ class HolonsBot {
 
       this.setupTelegramCommands();
       this.setupTelegramHandlers();
-      //this.setupDiscordBot(discordtoken || process.env.DISCORD);
+      //this.setupDiscordBot(discordtoken);
 
       this.handleProcessEvents();
     } catch (error) {
-      console.error('Error initializing WeQuest:', error);
+      console.error('Error initializing:', error);
     }
   }
 
@@ -286,7 +285,7 @@ class HolonsBot {
      
     });
 
-    discordbot.login(discordtoken || process.env.DISCORD);
+    discordbot.login(discordtoken);
   }
 
 
@@ -458,7 +457,7 @@ class HolonsBot {
   }
 }
 
-console.log('Args:', process.argv[2], process.argv[3]);
+console.log('Holon name: ', process.env.APPNAME)
 
 const holons = new HolonsBot();
-await holons.init(process.argv[2], process.argv[3], process.argv[4]);
+await holons.init(process.argv[2]||process.env.APPNAME, process.argv[3]||process.env.TELEGRAM, process.argv[4]||process.env.DISCORD);

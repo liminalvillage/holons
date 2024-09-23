@@ -15,10 +15,24 @@ export default class Settings {
             let chats = await this.getChats(ctx)
             ctx.reply('Chats: ' + chats)
         })
-       
+
+        this.bot.command(['getChatNames'], async (ctx) => {
+            let chats = ctx.message.text.split(',')
+            let chatnames = ''
+            for (let i = 0 ; i < chats.length; i++) {
+                let name = await utils.getChatName(ctx, chats[i])
+                if (name)
+                    chatnames += name +','
+                console.log(chats[i], name)
+            };
+            ctx.reply(chatnames)
+
+        })
+
         this.bot.command(['restart', 'reset'], async (ctx) => {
             if (utils.isAdmin(ctx)) {
                 let chatID = utils.getChatId(ctx)
+                let chatName = utils.getChatName(ctx, chatID)
                 // try{
                 //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
                 // }catch(e){ console.log(e)}
@@ -29,7 +43,7 @@ export default class Settings {
                 await this.db.drop(chatID + '/tags')
                 await this.db.drop(chatID + '/expenses')
 
-                this.db.put('settings', this.getDefaultSettings(chatID))
+                this.db.put('settings', this.getDefaultSettings(chatID, chatName))
                 ctx.reply('Bot resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -178,15 +192,15 @@ export default class Settings {
         ]);
     }
 
-    getDefaultSettings(chatID) {
+    getDefaultSettings(chatID, chatName) {
         return {
             id: chatID,
             hex: chatID,
             version: 0.1,
-            name: '',
+            name: chatName||'unknown',
             timezone: '',
             whitelisted: false,
-            language: 'en',
+            language: process.env.LANGUAGE || 'en',
             theme: 'dark',
             level: 0,
             admin: '',
@@ -488,7 +502,7 @@ export default class Settings {
     async whitelisted(ctx) {
         let settings = await settings.getSettings(utils.getChatId(ctx))
         if (settings.whitelisted) return ''
-        else return ("WeQuest Bot is still in development, and this chat is not whitelisted to use this function. Please apply for close beta at wequest.it")
+        else return ("This bot is still in development, and this chat is not whitelisted to use this function.")
     }
 
 

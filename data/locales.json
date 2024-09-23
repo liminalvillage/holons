@@ -2,7 +2,7 @@
     "en": {
         "translation": {
             "welcome": "Welcome!",
-            "help": "WeQuest can help your communities organize around quests and to exchange goods and services with each other! click on the menu to see the available options.",
+            "help": "This bot can help your communities organize around quests and to exchange goods and services with each other! click on the menu to see the available options.",
             "quest": "Quest",
             "task": "Task",
             "proposal": "Proposal",

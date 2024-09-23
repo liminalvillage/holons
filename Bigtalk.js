@@ -5,7 +5,7 @@ class Bigtalk {
     constructor(bot){
         this.bot = bot
         this.bot.command('bigtalk',(ctx) => this.pickQuestion(ctx))
-        const gameShortName = 'wequest'
+        const gameShortName = 'holons'
         const gameUrl = 'https://bigtalk.com'
 
         const markup = Markup.inlineKeyboard([
