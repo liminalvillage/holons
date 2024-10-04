@@ -179,16 +179,16 @@ class Users {
 
 
   async join(ctx) {
-    let userinfo =  await this.getUserInfo(ctx.message.from, ctx.message.chat.id)
+    let userinfo = await this.getUserInfo(ctx.message.from, ctx.message.chat.id)
     if (userinfo.username == undefined) {
       ctx.reply('Please set a username in your telegram settings to join the group.');
     }
-    else{
-      ctx.reply('🎉 Welcome '+ ctx.message.from.first_name +'! 🎉');
+    else {
+      ctx.reply('🎉 Welcome ' + ctx.message.from.first_name + '! 🎉');
     }
   }
 
-  async leave(ctx){
+  async leave(ctx) {
     const chatID = ctx.message.chat.id;
     const user = ctx.message.from;
     await this.db.del(chatID + '/users', user.id)
@@ -224,7 +224,7 @@ class Users {
 
     let userinfo = await this.getUserInfo(user, chatID)
     if (!userinfo.needs) userinfo.needs = []
-    userinfo.needs =  Array.from(new Set(userinfo.needs.concat(needs)))
+    userinfo.needs = Array.from(new Set(userinfo.needs.concat(needs)))
 
     await this.db.put(chatID + '/users', userinfo)
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);
@@ -280,13 +280,29 @@ class Users {
         break;
     }
     if (userinfo.actions == undefined) userinfo.actions = []
-    userinfo.actions.push({ type: type, action: action, amount: amount, timestamp: new Date()});
+    userinfo.actions.push({ type: type, action: action, amount: amount, timestamp: new Date() });
 
     await this.db.put(chatID + '/users', userinfo)
   }
 
-  async getUsers(chatID){
+  async getUsers(chatID) {
     return this.db.getAll(chatID + '/users')
+  }
+  async getUserPicture(userID) {
+    try {
+      const photos = await this.bot.telegram.getUserProfilePhotos(userID);
+
+      if (photos.total_count > 0) {
+        const photo = photos.photos[0].pop();  // Get the highest resolution photo
+        const fileId = photo.file_id;
+        const fileUrl = await this.bot.telegram.getFileLink(fileId);
+
+        return fileUrl.href || '';
+      }
+    } catch (error) {
+      console.error('Error retrieving the profile photo:', error);
+      return ''; 
+    }
   }
 
   //gets an existing user or  creates a new one
@@ -300,6 +316,7 @@ class Users {
         username: user.username ? user.username : user.id,
         first_name: user.first_name,
         last_name: user.last_name,
+        picture: await this.getUserPicture(user.id),
         participated: {},
         actions: [],
         initiated: [],

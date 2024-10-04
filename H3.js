@@ -1,4 +1,3 @@
-import 'dotenv/config'
 import h3 from 'h3-js';
 import './node_modules/gun/lib/then.js';
 import offerschema from './schemas/offers_wants_schema-v0.0.2.json' assert { type: "json" };
@@ -37,16 +36,19 @@ var holon = {
             { "id": "zucchini", "label": "Zucchini", "value": "5" }
         ]
 }
-//V ALIDATION ==========================================================
-//console.log();
-
-
+// WRAPPER CLASS FOR HOLOSPHERE
 class H3 {
     constructor(bot, db) {
-        this.holosphere = new HoloSphere('WeQuestDebug')
-        //this.bot.command('sethex', async (ctx) => { this.setHex(ctx) }) TODO: MOVE HERE FROM SETTINGS
         this.db = db
+        this.holosphere = db.holosphere
         this.bot = bot
+
+        this.bot.command('sethex', async (ctx) => {
+            let chatID = ctx.message.chat.id;
+            let hex = await this.setHex(ctx)
+            ctx.reply('Hex set to :', hex);
+        })
+
 
         this.bot.command('resethex', async (ctx) => {
             let chatID = ctx.message.chat.id;
@@ -65,6 +67,7 @@ class H3 {
             console.log('hex', hex)
 
             let data = await this.holosphere.get(hex, tag)
+            ctx.reply(JSON.stringify(data, null, 2))
 
         })
 
@@ -113,7 +116,6 @@ class H3 {
         })
 
         this.bot.command('publish', async (ctx) => {
-            console.log(ctx.message)
             if (!ctx.message.reply_to_message) {
                 return ctx.reply('Please reply to a message you want to tag.');
             }

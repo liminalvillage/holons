@@ -1,8 +1,7 @@
 
-import DB from './DB.js';
 import OpenAI from 'openai';
-import 'dotenv/config'
-import { Telegraf } from 'telegraf';
+import h3 from 'h3-js';
+
 
 let council = [
     'Answer the questions from the embodied perspective of Values and Worldview',

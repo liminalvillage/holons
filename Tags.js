@@ -1,7 +1,6 @@
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 
-
 export default class Tags {
   /**
    * Creates a new instance of the Tags class.
@@ -26,16 +25,16 @@ export default class Tags {
       const chatID = ctx.message.chat.id;
       const messageContent = ctx.message.reply_to_message.text;
 
-      tags.forEach(tag => {
-        let tagobject = this.db.get(chatID + '/tags', tag)
-        if (tagobject.content) {
+      for (let i = 0; i < tags.length; i++) {
+        let tagobject = await this.db.get(chatID + '/tags', tags[i])
+        if (tagobject?.content) {
           tagobject.content.push({ chatID, messageId, messageContent });
         } else {
-          tagobject = { 'id': tag, 'content': [{ chatID, messageId, messageContent }] };
+          tagobject = { 'id': tags[i], 'content': [{ chatID, messageId, messageContent }] };
         }
-        this.db.put(chatID + '/tags', tagobject)
+        await this.db.put(chatID + '/tags', tagobject)
 
-      });
+      };
 
       //saveDb();
       ctx.reply('Message tagged successfully.');

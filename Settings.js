@@ -141,12 +141,17 @@ export default class Settings {
         if (utils.isAdmin(ctx)) {
             const chatID = ctx.message.chat.id;
             const hex = ctx.message.text.split(' ')[1];
+            console.log(ctx.message.text)
+            console.log('newHex',hex)
             let settings = await this.getSettings(chatID)
             settings.hex = hex
             this.db.put(chatID + '/settings', settings)
             this.db.holosphere.put(hex, 'chats', { id: chatID })
+            return hex
         }
         else ctx.reply("Only admins can set the hex")
+
+     
     }
 
     async getHexContent(ctx) {

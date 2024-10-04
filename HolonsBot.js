@@ -93,7 +93,7 @@ class HolonsBot {
     this.lunation = new Lunation(this.telebot);
     this.shopping = new Shopping(this.telebot, this.db, this.settings);
     this.quests = new Quests(this.telebot, this.db, this.settings);
-    this.bigtalk = new Bigtalk(this.telebot);
+    this.bigtalk = new Bigtalk(this.telebot, this.settings);
     this.library = new Library(this.telebot, this.db);
     this.users = new Users(this.telebot, this.db);
     this.expenses = new Expenses(this.telebot, this.db, this.ui, this.settings);
@@ -108,14 +108,16 @@ class HolonsBot {
   }
 
   setupTelegramCommands() {
-    if (process.env.MODE === 'development') {
-      this.telebot.command('start', async (ctx) => {
-        ctx.reply('Hey there! Just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n');
-      });
 
-      this.telebot.command('help', async (ctx) => {
-        ctx.reply('Just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n');
-      });
+    this.telebot.command('start', async (ctx) => {
+      ctx.reply('Hello! To start giving your groups coordination superpowers, just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n  ATTENTION: THIS IS A PREVIEW VERSION. ALL YOUR DATA MIGHT BE LOST AT ANY MOMENT, WITHOUT PRIOR NOTICE. PLEASE REPORT ANY BUGS OR ISSUES TO @RobertoValenti');
+    });
+
+    this.telebot.command('help', async (ctx) => {
+      ctx.reply('Just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n');
+    });
+
+    if (process.env.MODE === 'development') {
 
       this.telebot.on('inline_query', async (ctx) => {
         await this.handleInlineQuery(ctx);
@@ -256,7 +258,7 @@ class HolonsBot {
       discordbot.user.setActivity(`Serving ${discordbot.guilds.cache.size} servers`);
     });
 
-    
+
 
     // discordbot.on('speaking', (user, speaking) => {
     //     const userId = user.id;
@@ -280,9 +282,9 @@ class HolonsBot {
       if (msg.content.charAt(0) === process.env.PREFIX) {
         msg.react('👀').catch(console.error);
       }
-     
-   
-     
+
+
+
     });
 
     discordbot.login(discordtoken);
@@ -303,8 +305,8 @@ class HolonsBot {
       default:
         console.log(`Unknown command: ${command}`);
     }
-  }  
-  
+  }
+
   discord2telegram(interaction) {
     const ctx = {
       interaction,
@@ -322,12 +324,12 @@ class HolonsBot {
       },
 
       from: {
-        id : interaction.author.id,
-        username : interaction.author.username,
-        first_name : interaction.author.username,
+        id: interaction.author.id,
+        username: interaction.author.username,
+        first_name: interaction.author.username,
       },
-        
-        reply: async (message, buttons = []) => {
+
+      reply: async (message, buttons = []) => {
         // if (interaction.type === InteractionType.ApplicationCommand) {
         {
           if (buttons.length > 0) {
@@ -460,4 +462,4 @@ class HolonsBot {
 console.log('Holon name: ', process.env.APPNAME)
 
 const holons = new HolonsBot();
-await holons.init(process.argv[2]||process.env.APPNAME, process.argv[3]||process.env.TELEGRAM, process.argv[4]||process.env.DISCORD);
+await holons.init(process.argv[2] || process.env.APPNAME, process.argv[3] || process.env.TELEGRAM, process.argv[4] || process.env.DISCORD);
