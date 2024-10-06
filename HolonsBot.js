@@ -26,6 +26,7 @@ import Council from './Council.js';
 import Roles from './Roles.js';
 import * as request from './Requests.js';
 import OneOnOne from './OneOnOne.js';
+import Announcements from './Announcements.js';
 
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {
@@ -105,6 +106,7 @@ class HolonsBot {
     this.council = new Council(this.telebot, this.db);
     this.roles = new Roles(this.telebot, this.db, this.ui, this.settings);
     this.rounds = new OneOnOne(this.telebot, this.db, this.settings);
+    this.announcements = new Announcements(this.telebot, this.db, this.settings, this.users);
   }
 
   setupTelegramCommands() {

@@ -5,7 +5,7 @@ import holonsschema from './schemas/holons_schema-v0.0.1.json' assert { type: "j
 import { createHash } from "crypto";
 import { markAsUntransferable } from 'worker_threads';
 import { parse } from 'path';
-import HoloSphere from 'holosphere'
+
 
 var p = { "linked_schemas": ["offers_wants-v0.0.2"], "profile_url": "https:\/\/hamlets.communityforge.net\/ad\/150\/murmurations.json", "primary_url": "https:\/\/hamlets.communityforge.net", "geolocation": { "lat": 46.8145624, "lon": 8.239973599999999 }, "country": "CH", "title": "A traditional stress-tested dolly from the orient.", "description": "\u003Cp\u003E\u003Cstrong\u003EDolus euismod \u003C\/strong\u003Ehos luptatum olim paratus similis. Bene gravis in letalis nisl odio pagus qui saluto validus. Abdo antehabeo consectetuer esse exputo os similis voco. Causa ea iaceo incassum macto minim nibh ratis sed. Humo macto nutus populus tum utrum velit vero vulputate zelus.\u003C\/p\u003E\r\n\r\n\u003Cp\u003EBlandit feugiat macto quibus. Elit macto mauris nobis nostrud patria secundum te venio. Commoveo interdico mos neque pagus paulatim scisco. Aliquam diam esse iriure jus magna quibus utrum vindico. Abbas adipiscing at distineo iustum olim velit.\u003C\/p\u003E", "exchange_type": "want", "item_type": "service", "transaction_type": ["receive-donate", "borrow-lend"], "geographic_scope": "local", "expires_at": 1702422000, "tags": ["Business Services \u0026 Clerical"], "contact_details": { "contact_form": "https:\/\/hamlets.communityforge.net\/user\/28\/contact" } }
 var holon = {
@@ -107,12 +107,18 @@ class H3 {
             const messageContent = ctx.message.reply_to_message.text;
             let settings = await this.db.get('settings', chatID)
             let id = settings.hex ? settings.hex : 'Hex not set, use /sethex'
-            //create root node for the item
-            let node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
-            for (let tag of tags) {
-                await this.holosphere.put(id,tag, node)
-                this.holosphere.upcast(id, tag, node)
-            }
+            // fetch the stored node
+            let node = await this.holosphere.gun.get(chatID + '/' + messageID)
+            console.log("NODE:", node)
+
+            // if (!node) {
+            //     node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
+            // }
+            
+            // for (let tag of tags) {
+            //     await this.holosphere.put(id,tag, node)
+            //     this.holosphere.upcast(id, tag, node)
+            // }
         })
 
         this.bot.command('publish', async (ctx) => {

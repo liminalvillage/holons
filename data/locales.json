@@ -88,7 +88,9 @@
             "Split All": "Split with All",
             "appreciationunknownuser": "The user {{user}} is not subscribed. Ask the user to complete a task or type /join to subscribe.",
             "appreciationfailed": "Appreciation failed. The user(s) might not exist or might not be subscribed.",
-            "appreciationsuccess": "{{sender}} has sent appreciation to {{receivers}} users for {{action}}"
+            "appreciationsuccess": "{{sender}} has sent appreciation to {{receivers}} users for {{action}}",
+            "announcementusage": "Usage: /announcement [message] (es. /announcement Meeting at 3pm)",
+            "announced": "Announcement sent: {{message}}"
         }
     },
     "it": {
@@ -171,7 +173,9 @@
             "Split All": "Dividi tra tutti",
             "appreciationunknownuser": "L'utente {{user}} non è iscritto. Chiedi all'utente di completare un compito o digita /join per iscriversi.",
             "appreciationfailed": "Apprezzamento non riuscito. L'utente(i) potrebbe non esistere o potrebbe non essere iscritto.",
-            "appreciationsuccess": "{{sender}} ha apprezzato a {{receivers}} utenti per {{action}}"
+            "appreciationsuccess": "{{sender}} ha apprezzato a {{receivers}} utenti per {{action}}",
+            "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
+            "announced": "Annuncio inviato: {{message}}"
         }
     },
     "fiobbo": {
@@ -254,7 +258,9 @@
             "Split All": "Dividi tra tutti",
             "appreciationunknownuser": "L'utente {{user}} non è iscritto. Chiedi all'utente di completare un compito o digita /join per iscriversi.",
             "appreciationfailed": "Apprezzamento non riuscito. L'utente(i) potrebbe non esistere o potrebbe non essere iscritto.",
-            "appreciationsuccess": "{{sender}} ha inviato un fiorino a {{receivers}} utenti per {{action}}"
+            "appreciationsuccess": "{{sender}} ha inviato un fiorino a {{receivers}} utenti per {{action}}",
+            "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
+            "announced": "Annuncio inviato: {{message}}"
         }
     },
     "week": {

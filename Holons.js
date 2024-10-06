@@ -23,7 +23,7 @@ export default class Holons {
     this.holonsContract = new this.web3.eth.Contract(holons.default.abi, holons.default.networks[this.chainId].address);
     this.account = this.web3.eth.accounts.privateKeyToAccount(this.privateKey);
     console.log("Wallet address:", this.account.address);
-    console.log("Wallet Network:", this.network); 
+    console.log("Wallet Network:", this.network);
     //unlock account 
     this.web3.eth.accounts.wallet.add(this.account);
     this.web3.eth.defaultAccount = this.account.address;
@@ -34,7 +34,7 @@ export default class Holons {
     this.bot.command("claim", async (ctx) => { this.claim(ctx) });
     this.bot.command("ethbalance", async (ctx) => { this.ethBalance(ctx) });
     this.bot.command("sendCommand", async (ctx) => { this.sendCommand(ctx) });
-    
+
     this.bot.command("listmembers", async (ctx) => {
       const chatID = ctx.message.chat.id;
       let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
@@ -104,10 +104,10 @@ export default class Holons {
     };
     const receipt = await this.sendSignedTransaction(tx);
     if (receipt.status == true) {
-       ctx.reply("Sync Successful");
+      ctx.reply("Sync Successful");
 
     } else {
-       ctx.reply("Sync Failed: " + receipt.message);
+      ctx.reply("Sync Failed: " + receipt.message);
     }
     return receipt;
   }
@@ -160,7 +160,7 @@ export default class Holons {
       const tx = {
         from: this.account.address,
         to: this.holonsContract.options.address,
-        data: this.holonsContract.methods.newHolon(flavor, chatID.toString(), 0).encodeABI(),
+        data: this.holonsContract.methods.newHolon(flavor, chatID.toString(), flavor == "Zoned" ? 5 : 0).encodeABI(),
         gas: 3000000,
         nonce: await this.web3.eth.getTransactionCount(this.account.address),
         maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
@@ -174,7 +174,7 @@ export default class Holons {
       }
       else {
         address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-        ctx.reply("Holon address on " + this.network + ": " + address);
+        ctx.reply(flavor + " holon address on " + this.network + ": " + address);
       }
       return address
     }
@@ -192,33 +192,33 @@ export default class Holons {
       }
     })
   }
-
+   // not used yet ()
   async sendFunction(funct, param1, param1type, param2, param2type) {
     const functionSignature = web3.utils.sha3(funct).substr(0, 10);
 
-// Encode parameters
-const eparam1 = web3.eth.abi.encodeParameter('uint256', 123).substr(2);
-const eparam2 = web3.eth.abi.encodeParameter('address', '0xYourAddress').substr(2);
+    // Encode parameters
+    const eparam1 = web3.eth.abi.encodeParameter('uint256', 123).substr(2);
+    const eparam2 = web3.eth.abi.encodeParameter('address', '0xYourAddress').substr(2);
 
-// Concatenate the function signature and parameters
-const data = functionSignature + eparam1 + eparam2;
+    // Concatenate the function signature and parameters
+    const data = functionSignature + eparam1 + eparam2;
 
-// Prepare the transaction object
-const transaction = {
-    to: '0xContractAddress',
-    from: '0xYourAddress',
-    data: data,
-    gas: 2000000
-};
+    // Prepare the transaction object
+    const transaction = {
+      to: '0xContractAddress', //TODO: replace with the contract address  
+      from: '0xYourAddress',
+      data: data,
+      gas: 2000000
+    };
 
-// Send the transaction
-web3.eth.sendTransaction(transaction)
-    .then(receipt => {
+    // Send the transaction
+    web3.eth.sendTransaction(transaction)
+      .then(receipt => {
         console.log('Transaction receipt:', receipt);
-    })
-    .catch(error => {
+      })
+      .catch(error => {
         console.error('Error sending transaction:', error);
-    });
+      });
   }
 
   //send a command to the holon
@@ -318,8 +318,8 @@ web3.eth.sendTransaction(transaction)
       chainId: this.chainId,
       type: 0x2
     };
- 
-    return  await this.sendSignedTransaction(tx);
+
+    return await this.sendSignedTransaction(tx);
   }
 
 
