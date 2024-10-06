@@ -19,14 +19,14 @@ class Announcements {
         const language = await this.settings.getLanguage(chatID)
         const message = ctx.message.text.split(' ').slice(1).join(' ')
         if (!message || message.length === 0 || message === '') {
-            ctx.reply(utils.i18next.t('announceusage', { lng: language }));
+            ctx.reply(utils.i18next.t('announcementusage', { lng: language }));
             return;
         }
 
         let announcement = { id: messageID, from: ctx.from.username , date: new Date(), image: await this.users.getUserPicture(ctx.from.id), content: message }
        
         await this.db.put(chatID + '/announcements', announcement );
-        ctx.reply(utils.i18next.t('announced', { lng: language }));
+        ctx.reply(utils.i18next.t('announced', { message: message ,lng: language }));
     }
 
     
