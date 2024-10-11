@@ -4,54 +4,54 @@ class Library {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
-        this.bot.command('additem', (ctx) => this.add(ctx));
-        this.bot.command('book', (ctx) => this.book(ctx));
-        this.bot.command('return', (ctx) => this.return(ctx));
+        this.bot.command('additem', (ctx) => this.addItem(ctx));
+        this.bot.command('borrow', (ctx) => this.borrowItem(ctx));
+        this.bot.command('return', (ctx) => this.returnItem(ctx));
         this.bot.command('inventory', (ctx) => this.inventory(ctx));
-        this.bot.action(/book_(.+)/, (ctx) => this.toggleBookStatus(ctx, true));
-        this.bot.action(/return_(.+)/, (ctx) => this.toggleBookStatus(ctx, false));
+        this.bot.action(/borrow_(.+)/, (ctx) => this.toggleItemStatus(ctx, true));
+        this.bot.action(/return_(.+)/, (ctx) => this.toggleItemStatus(ctx, false));
     }
 
-    async add(ctx) {
+    async addItem(ctx) {
         let chatID = ctx.chat.id;
-        const item = ctx.message.text.split('/add ')[1];
+        const item = ctx.message.text.split('/additem ')[1];
         if (!item) {
-            ctx.reply('Please specify an item to add. eg: /add hammer');
+            ctx.reply('Please specify an item to add. eg: /additem hammer');
             return;
         }
-        if(await this.db.get(chatID + '/library',item)) {
+        if(await this.db.get(chatID + '/library', item)) {
             ctx.reply(`${item} is already in the library.`);
             return;
         }
 
-        await this.db.put(chatID + '/library', { id: item, booked: false });
+        await this.db.put(chatID + '/library', { id: item, borrowed: false });
         ctx.reply(`Added ${item} to the library.`);
     }
 
-    async book(ctx) {
+    async borrowItem(ctx) {
         let chatID = ctx.chat.id;
-        const item = ctx.message.text.split('/book ')[1];
+        const item = ctx.message.text.split('/borrow ')[1];
         if (!item) {
-            ctx.reply('Please specify an item to book. eg: /book hammer');
+            ctx.reply('Please specify an item to borrow. eg: /borrow hammer');
             return;
         }
 
-        let currentItem = await this.db.get(chatID + '/library',item);
+        let currentItem = await this.db.get(chatID + '/library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
         }
-        if(currentItem.booked) {
-            ctx.reply(`${item} is already booked.`);
+        if(currentItem.borrowed) {
+            ctx.reply(`${item} is already borrowed.`);
             return;
         }
 
-        currentItem.booked = true;
-        await this.db.put(chatID + '/library',currentItem);
-        ctx.reply(`You booked ${item}.`);
+        currentItem.borrowed = true;
+        await this.db.put(chatID + '/library', currentItem);
+        ctx.reply(`You borrowed ${item}.`);
     }
 
-    async return(ctx) {
+    async returnItem(ctx) {
         let chatID = ctx.chat.id;
         const item = ctx.message.text.split('/return ')[1];
         if (!item) {
@@ -59,18 +59,18 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(item);
+        let currentItem = await this.db.get(chatID + '/library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
         }
-        if(!currentItem.booked) {
-            ctx.reply(`${item} is not booked.`);
+        if(!currentItem.borrowed) {
+            ctx.reply(`${item} is not borrowed.`);
             return;
         }
 
-        currentItem.booked = false;
-        await this.db.put(chatID + '/library',currentItem);
+        currentItem.borrowed = false;
+        await this.db.put(chatID + '/library', currentItem);
         ctx.reply(`You returned ${item}.`);
     }
 
@@ -86,33 +86,32 @@ class Library {
     getLibraryKeyboard(list) {
         let mu = [];
         list.forEach(function (item) {
-            mu.push([Markup.button.callback(item.id + (item.booked ? ' (booked)' : ''), item.booked ? `return_${item.id}` : `book_${item.id}`)]);
+            mu.push([Markup.button.callback(item.id + (item.borrowed ? ' (borrowed)' : ''), item.borrowed ? `return_${item.id}` : `borrow_${item.id}`)]);
         })
         return Markup.inlineKeyboard(mu);
     }
 
-    async toggleBookStatus(ctx, isBooking) {
+    async toggleItemStatus(ctx, isBorrowing) {
         let chatID = ctx.chat.id;
         const itemId = ctx.match[1];
         
-
-        let currentItem = await this.db.get(chatID + '/library',itemId);
+        let currentItem = await this.db.get(chatID + '/library', itemId);
         if (!currentItem) {
             ctx.reply(`${itemId} is not in the library.`);
             return;
         }
 
-        currentItem.booked = isBooking;
-        await this.db.put(chatID + '/library',currentItem);
-        ctx.editMessageText(`${isBooking ? 'Booked' : 'Returned'} ${itemId}`).catch((error) => { console.log(error) });
+        currentItem.borrowed = isBorrowing;
+        await this.db.put(chatID + '/library', currentItem);
+        ctx.editMessageText(`${isBorrowing ? 'Borrowed' : 'Returned'} ${itemId}`).catch((error) => { console.log(error) });
     }
 
     async getLibraryItems(ctx) {
         let chatID = ctx.chat.id;
         let list = await this.db.getAll(chatID + '/library');
-        //list.sort((a, b) => a.id.localeCompare(b.id));
+        list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }
 }
 
-export default Library
+export default Library;
