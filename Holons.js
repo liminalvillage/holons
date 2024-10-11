@@ -32,6 +32,7 @@ export default class Holons {
     this.bot.command("addmembers", async (ctx) => { this.addMembers(ctx) });
     this.bot.command("syncscore", async (ctx) => { this.syncScore(ctx) });
     this.bot.command("claim", async (ctx) => { this.claim(ctx) });
+    this.bot.command("reward", async (ctx) => { this.reward(ctx) });
     this.bot.command("ethbalance", async (ctx) => { this.ethBalance(ctx) });
     this.bot.command("tokenbalance", async (ctx) => { this.tokenBalance(ctx) });
     this.bot.command("sendCommand", async (ctx) => { this.sendCommand(ctx) });
@@ -57,6 +58,44 @@ export default class Holons {
 
     this.bot.command("claim", async (ctx) => { this.claim(ctx) });
 
+  }
+
+  async reward(ctx) {
+    const args = ctx.message.text.split(" ").slice(1);
+    if (args.length < 2) {
+      return ctx.reply("Usage: /reward [token address] [amount]");
+    }
+
+    const tokenAddress = args[0];
+    const amount = args[1];
+    const chatID = ctx.message.chat.id;
+
+    try {
+      let holonAddress = await this.holonsContract.methods.toAddress(chatID.toString()).call();
+      let holon = new this.web3.eth.Contract(managed.default.abi, holonAddress);
+
+      const tx = {
+        from: this.account.address,
+        to: holon.options.address,
+        data: holon.methods.reward(tokenAddress, amount).encodeABI(),
+        gas: 3000000,
+        maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
+        maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
+        chainId: this.chainId,
+        type: 0x2
+      };
+
+      const receipt = await this.sendSignedTransaction(tx);
+
+      if (receipt?.status) {
+        ctx.reply(`Reward of ${amount} tokens successfully distributed to holon members.`);
+      } else {
+        ctx.reply("Failed to distribute reward. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error in reward function:", error);
+      ctx.reply("An error occurred while processing the reward. Please try again later.");
+    }
   }
 
   //pick up the balance from the holon
@@ -370,24 +409,3 @@ export default class Holons {
   }
 
 }
-
-// (async () => {
-
-//   const holons = await new Holons();
-//   //  const newholon = await holons.newHolon('Test1', 0);
-//   //  console.log(newholon);
-
-//   // let holonlist = await holons.listHolons();
-//   //console.log(holonlist);
-//   let balance = await holons.web3.eth.getBalance(holons.account.address);
-//   console.log(balance);
-//   // let flavor = await holons.newFlavor("Appreciative2", "0x9065eF317cA9701BB0fdd90384D0994B897E96eF");
-//   // console.log(flavor);
-//   let flavors = await holons.listHolons();
-//   console.log(flavors);
-
-//   await holons.addMember('0xB284d0d0564E4886F91803bA3D388134E7CB97cc', 12345)
-
-//   // let holonlist = await holons.listHolons();
-//   // console.log(holonlist);
-// })();
