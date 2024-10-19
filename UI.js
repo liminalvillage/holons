@@ -2,6 +2,7 @@ import puppetteer from 'puppeteer';
 import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
+import { Markup } from 'telegraf'; 
 
 
 const browser = await puppetteer.launch(
@@ -115,7 +116,12 @@ class UI {
     this.getRankTable(users, valueEquation, chatID).then((path) => {
       //this.getAppreciationTable(users, chatID).then((path) => {
       //send the image
-      ctx.replyWithPhoto({ source: fs.createReadStream(path) })
+      ctx.replyWithPhoto(
+        { source: fs.createReadStream(path) },
+        Markup.inlineKeyboard([
+          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/status`)
+        ])
+      )
     });
     return;
   }
@@ -129,7 +135,12 @@ class UI {
     this.getBulletinTable(users, chatID).then((path) => {
       //this.getAppreciationTable(users, chatID).then((path) => {
       //send the image
-      ctx.replyWithPhoto({ source: fs.createReadStream(path) })
+      ctx.replyWithPhoto(
+        { source: fs.createReadStream(path) },
+        Markup.inlineKeyboard([
+          Markup.button.webApp('Open in Holons', `https://dashboard.holons.io/${chatID}/offers`)
+        ])
+      )
     });
     return;
   }
@@ -173,7 +184,12 @@ class UI {
     await svgElement.screenshot({
       path: path
     });
-    await ctx.replyWithPhoto({ source: fs.createReadStream(path) })
+    await ctx.replyWithPhoto(
+      { source: fs.createReadStream(path) },
+      Markup.inlineKeyboard([
+        Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/values/`)
+      ])
+    )
   }
   async needscloud(ctx) {
     let needs = [] // = this.getFederatedValues(chatID)
@@ -213,7 +229,12 @@ class UI {
     await svgElement.screenshot({
       path: path
     });
-    await ctx.replyWithPhoto({ source: fs.createReadStream(path) })
+    await ctx.replyWithPhoto(
+      { source: fs.createReadStream(path) },
+      Markup.inlineKeyboard([
+        Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/needs/`)
+      ])
+    )
   }
 
 
@@ -228,10 +249,12 @@ class UI {
     // Create a table header
     this.getQuestsTable(quests, chatID).then((path) => {
       //send the image
-      ctx.replyWithPhoto({ source: fs.createReadStream(path) });
-      // ctx.replyWithPhoto({ source: fs.createReadStream(path) }, Markup.inlineKeyboard([
-      //   //  Markup.button.url('Go to message '+ chatID, 'https://t.me/'+chatID + '/'+quests[0].id.toString()),
-      // ])).then((ctx) => { this.bot.telegram.pinChatMessage(chatID, ctx.message_id) });
+      ctx.replyWithPhoto(
+        { source: fs.createReadStream(path) },
+        Markup.inlineKeyboard([
+          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/kanban`)
+        ])
+      )
     });
   }
 
@@ -245,7 +268,12 @@ class UI {
     // Create a table header
     this.getRequestsTable(requests, chatID).then((path) => {
       //send the image
-      ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+      ctx.replyWithPhoto(
+        { source: fs.createReadStream(path) },
+        Markup.inlineKeyboard([
+          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/offers`)
+        ])
+      )
     });
     return;
   }
@@ -260,7 +288,12 @@ class UI {
     // Create a table header
     this.getOffersTable(requests, chatID).then((path) => {
       //send the image
-      ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+      ctx.replyWithPhoto(
+        { source: fs.createReadStream(path) },
+        Markup.inlineKeyboard([
+          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/offers/`)
+        ])
+      )
     });
     return;
 
@@ -613,4 +646,3 @@ class UI {
 }
 
 export default UI;
-

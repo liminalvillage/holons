@@ -143,6 +143,35 @@ class HolonsBot {
     this.telebot.on('callback_query', async (ctx) => {
       await this.handleCallbackQuery(ctx);
     });
+
+    // Add a middleware to handle all outgoing messages
+    this.telebot.use(async (ctx, next) => {
+      console.log("HOLA", ctx.message);
+
+      // Check if the update is a message and if it's outgoing
+      if (ctx.message && !ctx.message.from.is_bot) {
+        const chatId = ctx.chat.id;
+        const messageId = ctx.message.message_id;
+        
+        // Create the webapp URL with parameters
+        const webappUrl = `https://holons.io?chatId=${chatId}&messageId=${messageId}`;
+
+        // Create an inline keyboard with the webapp button
+        const inlineKeyboard = Markup.inlineKeyboard([
+          Markup.button.webApp('Open in Holons', webappUrl)
+        ]);
+
+        // Edit the message to add the inline keyboard
+        await ctx.telegram.editMessageReplyMarkup(
+          chatId,
+          messageId,
+          undefined,
+          inlineKeyboard.reply_markup
+        );
+      }
+
+      await next(); // Process the message normally first
+    });
   }
 
   async handleInlineQuery(ctx) {

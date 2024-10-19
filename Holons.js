@@ -1,6 +1,4 @@
-import Web3 from 'web3';
-import { ETH_DATA_FORMAT, DEFAULT_RETURN_FORMAT } from "web3";
-import 'dotenv/config'
+import { ethers } from 'ethers';
 
 import * as appreciative from './contracts/Appreciative.json' assert { type: "json" };
 import * as appreciativefactory from './contracts/AppreciativeFactory.json' assert { type: "json" };
@@ -9,55 +7,57 @@ import * as managed from './contracts/Managed.json' assert { type: "json" };
 import * as factory from './contracts/IHolonFactory.json' assert { type: "json" };
 import * as holons from './contracts/Holons.json' assert { type: "json" };
 
-
 export default class Holons {
   constructor(bot, db, settings) {
     this.network = process.env.NETWORK;
-    this.chainId = process.env.CHAINID;
+    this.chainId = parseInt(process.env.CHAINID);
     this.bot = bot;
     this.db = db;
-    this.settings = settings
+    this.settings = settings;
     this.privateKey = process.env.WEB3KEY;
-    const provider = new Web3.providers.HttpProvider(process.env.WEB3PROVIDER);
-    this.web3 = new Web3(provider);
-    this.holonsContract = new this.web3.eth.Contract(holons.default.abi, holons.default.networks[this.chainId].address);
-    this.account = this.web3.eth.accounts.privateKeyToAccount(this.privateKey);
-    console.log("Wallet address:", this.account.address);
-    console.log("Wallet Network:", this.network);
-    //unlock account 
-    this.web3.eth.accounts.wallet.add(this.account);
-    this.web3.eth.defaultAccount = this.account.address;
+    
+    this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
+    this.wallet = new ethers.Wallet(this.privateKey, this.provider);
+    
+    this.holonsContract = new ethers.Contract(
+      holons.default.networks[this.chainId].address,
+      holons.default.abi,
+      this.wallet
+    );
 
-    this.bot.command("createholon", async (ctx) => { this.createHolon(ctx) });
-    this.bot.command("addmembers", async (ctx) => { this.addMembers(ctx) });
-    this.bot.command("syncscore", async (ctx) => { this.syncScore(ctx) });
-    this.bot.command("claim", async (ctx) => { this.claim(ctx) });
-    this.bot.command("reward", async (ctx) => { this.reward(ctx) });
-    this.bot.command("ethbalance", async (ctx) => { this.ethBalance(ctx) });
-    this.bot.command("tokenbalance", async (ctx) => { this.tokenBalance(ctx) });
-    this.bot.command("sendCommand", async (ctx) => { this.sendCommand(ctx) });
+    console.log("Wallet address:", this.wallet.address);
+    console.log("Wallet Network:", this.network);
+
+    this.setupBotCommands();
+  }
+
+  setupBotCommands() {
+    this.bot.command("createholon", async (ctx) => this.createHolon(ctx));
+    this.bot.command("addmembers", async (ctx) => this.addMembers(ctx));
+    this.bot.command("syncscore", async (ctx) => this.syncScore(ctx));
+    this.bot.command("claim", async (ctx) => this.claim(ctx));
+    this.bot.command("reward", async (ctx) => this.reward(ctx));
+    this.bot.command("ethbalance", async (ctx) => this.ethBalance(ctx));
+    this.bot.command("tokenbalance", async (ctx) => this.tokenBalance(ctx));
+    this.bot.command("sendCommand", async (ctx) => this.sendCommand(ctx));
 
     this.bot.command("listmembers", async (ctx) => {
       const chatID = ctx.message.chat.id;
-      let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-      let holon = new this.web3.eth.Contract(managed.default.abi, address);
-      let members = await holon.methods.listMembers().call();
+      let address = await this.holonsContract.toAddress(chatID.toString());
+      let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+      let members = await holon.listMembers();
       if (members.length > 0) {
-        return ctx.reply(members);
+        return ctx.reply(members.join(', '));
       } else {
         ctx.reply("No members found");
       }
-    })
+    });
 
     this.bot.command("sync", async (ctx) => {
-      await this.createHolon(ctx)
+      await this.createHolon(ctx);
       await this.addMembers(ctx);
       await this.syncScore(ctx);
-    }
-    );
-
-    this.bot.command("claim", async (ctx) => { this.claim(ctx) });
-
+    });
   }
 
   async reward(ctx) {
@@ -67,84 +67,97 @@ export default class Holons {
     }
 
     const tokenAddress = args[0];
-    const amount = args[1];
+    const amount = ethers.parseUnits(args[1], 18); // Assuming 18 decimals, adjust if needed
     const chatID = ctx.message.chat.id;
 
     try {
-      let holonAddress = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-      let holon = new this.web3.eth.Contract(managed.default.abi, holonAddress);
+      let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      let holon = new ethers.Contract(holonAddress, managed.default.abi, this.wallet);
 
-      const tx = {
-        from: this.account.address,
-        to: holon.options.address,
-        data: holon.methods.reward(tokenAddress, amount).encodeABI(),
-        gas: 3000000,
-        maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-        maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-        chainId: this.chainId,
-        type: 0x2
-      };
+      // First, approve the holon contract to spend tokens
+      let tokenContract = new ethers.Contract(tokenAddress, [
+        'function approve(address spender, uint256 amount) public returns (bool)',
+        'function allowance(address owner, address spender) public view returns (uint256)'
+      ], this.wallet);
 
-      const receipt = await this.sendSignedTransaction(tx);
+      // Check current allowance
+      const currentAllowance = await tokenContract.allowance(this.wallet.address, holonAddress);
+      if (currentAllowance < amount ) {
+        const approveTx = await tokenContract.approve(holonAddress, amount);
+        await approveTx.wait();
+        console.log('Approval transaction completed');
+      }
 
-      if (receipt?.status) {
-        ctx.reply(`Reward of ${amount} tokens successfully distributed to holon members.`);
+      // Now call the reward function
+      const tx = await holon.reward(tokenAddress, amount, {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+      });
+
+      const receipt = await tx.wait();
+
+      if (receipt.status === 1) {
+        ctx.reply(`Reward of ${ethers.formatUnits(amount, 18)} tokens successfully distributed to holon members.`);
       } else {
         ctx.reply("Failed to distribute reward. Please try again.");
       }
     } catch (error) {
       console.error("Error in reward function:", error);
-      ctx.reply("An error occurred while processing the reward. Please try again later.");
+      ctx.reply("An error occurred while processing the reward: " + error.message);
     }
   }
 
-  //pick up the balance from the holon
   async ethBalance(ctx) {
     const userID = ctx.message.from.id;
     const chatID = ctx.message.chat.id;
-    let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-    let holon = new this.web3.eth.Contract(managed.default.abi, address);
-    let balance = await holon.methods.etherBalance(userID.toString()).call();
-    //let balance = await this.web3.eth.getBalance(this.account.address);
+    let address = await this.holonsContract.toAddress(chatID.toString());
+    let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+    let balance = await holon.etherBalance(userID.toString());
 
-    ctx.reply("Eth Balance: " + balance);
+    ctx.reply("Eth Balance: " + ethers.formatEther(balance));
   }
 
   async tokenBalance(ctx) {
-    const userID = ctx.message.from.id;
     const chatID = ctx.message.chat.id;
     const args = ctx.message.text.split(" ").slice(1);
     if (args.length < 1) {
       return ctx.reply("Usage: /tokenbalance [token address]");
     }
     const tokenAddress = args[0];
-    // Get the list of user IDs from the User table
+    
     let users = await this.db.getAll(chatID.toString() + '/users');
     if (!users || users.length === 0) {
       return ctx.reply("No users found in the database.");
     }
     
-    // Extract user IDs
     let userIds = users.map(user => user.id.toString());
     
-    // Log the user IDs for debugging (optional)
     console.log("User IDs:", userIds);
 
-    let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-    let holon = new this.web3.eth.Contract(managed.default.abi, address);
-    let balances = await Promise.all(userIds.map(userId => 
-      holon.methods.tokenBalance(userId, tokenAddress).call()
+    let address = await this.holonsContract.toAddress(chatID.toString());
+    let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+    
+    // Get token balance for the contract itself
+    let tokenContract = new ethers.Contract(tokenAddress, ['function balanceOf(address) view returns (uint256)'], this.provider);
+    let contractBalance = await tokenContract.balanceOf(address);
+
+    let balances = await Promise.all(userIds.map(async userId => 
+      await holon.tokenBalance(userId, tokenAddress)
     ));
     
     let table = "User ID | Token Balance\n" +
                 "--------|---------------\n" +
                 userIds.map((userId, index) => 
-                  `${userId.padEnd(8)} | ${balances[index]}`
+                  `${userId.padEnd(8)} | ${ethers.formatEther(balances[index])}`
                 ).join('\n');
     
-    ctx.reply("Token Balances:\n```\n" + table + "\n```", { parse_mode: 'Markdown' });
+    ctx.reply(
+      `Contract Balance: ${ethers.formatEther(contractBalance)}\n` +
+      `Token Balances:\n\`\`\`\n${table}\n\`\`\``, 
+      { parse_mode: 'Markdown' }
+    );
   }
-
 
   async syncScore(ctx) {
     const chatID = ctx.message.chat.id;
@@ -152,7 +165,7 @@ export default class Holons {
     if (!users) return ctx.reply("No users found");
     const equation = await this.settings.getValueEquation(chatID)
 
-    let userids = users.map((user) => { return user.id.toString() })
+    let userids = users.map((user) => user.id.toString());
     let scores = users.map((user) => {
       return (
         user.initiated.length * equation.initiated +
@@ -162,98 +175,89 @@ export default class Holons {
         user.hours * equation.hours +
         user.collaboration * equation.collaboration +
         user.wants.length * equation.wants +
-        user.offers.length * equation.offers)
-    })
+        user.offers.length * equation.offers
+      );
+    });
 
-    let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-    let holon = new this.web3.eth.Contract(managed.default.abi, address);
-    //let size = await holon.methods.getSize().call();
-    const tx = {
-      from: this.account.address,
-      to: holon.options.address,
-      data: holon.methods.setAppreciation(userids, scores).encodeABI(),
-      gas: 3000000,
-      maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-      maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: this.chainId,
-      type: 0x2
-    };
-    const receipt = await this.sendSignedTransaction(tx);
-    if (receipt.status == true) {
-      ctx.reply("Sync Successful");
+    let address = await this.holonsContract.toAddress(chatID.toString());
+    let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
 
-    } else {
-      ctx.reply("Sync Failed: " + receipt.message);
+    try {
+      const tx = await holon.setAppreciation(userids, scores, {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+      });
+      const receipt = await tx.wait();
+      
+      if (receipt.status === 1) {
+        ctx.reply("Sync Successful");
+      } else {
+        ctx.reply("Sync Failed");
+      }
+    } catch (error) {
+      console.error("Error in syncScore:", error);
+      ctx.reply("Sync Failed: " + error.message);
     }
-    return receipt;
   }
 
   async claim(ctx) {
     const chatID = ctx.message.chat.id;
     const userID = ctx.message.from.id;
-    let holonaddress = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-    let holon = new this.web3.eth.Contract(managed.default.abi, holonaddress);
+    let holonaddress = await this.holonsContract.toAddress(chatID.toString());
+    let holon = new ethers.Contract(holonaddress, managed.default.abi, this.wallet);
     const args = ctx.message.text.split(" ").slice(1);
     if (args.length < 1) {
-      return ctx.reply("Usage: /claim [your wallet address on " + this.network + "]");
+      return ctx.reply(`Usage: /claim [your wallet address on ${this.network}]`);
     }
     const address = args[0];
-    const tx = {
-      from: this.account.address,
-      to: holon.options.address,
-      data: holon.methods.claim(userID.toString(), address).encodeABI(),
-      gas: 3000000,
-      nonce: await this.web3.eth.getTransactionCount(this.account.address),
-      maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-      maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: this.chainId,
-      type: 0x2
-    };
-    const receipt = await this.sendSignedTransaction(tx);
-    if (receipt.status == true) {
-      return ctx.reply("Claim Successful");
-
-    } else {
-      return ctx.reply("Claim Failed: " + receipt.message);
+    
+    try {
+      const tx = await holon.claim(userID.toString(), address, {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+      });
+      const receipt = await tx.wait();
+      
+      if (receipt.status === 1) {
+        return ctx.reply("Claim Successful");
+      } else {
+        return ctx.reply("Claim Failed");
+      }
+    } catch (error) {
+      console.error("Error in claim:", error);
+      return ctx.reply("Claim Failed: " + error.message);
     }
-    return receipt;
   }
 
   async createHolon(ctx) {
     try {
       const chatID = ctx.message.chat.id;
-      //extract parameters from ctx
       let flavor = ctx.message.text.split(" ").slice(1).join(" ");
       if (flavor == "") {
         flavor = "Managed";
       }
       console.log(flavor);
-      // check if holon already exists
-      let address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-      if (address != '0x0000000000000000000000000000000000000000') {
-        ctx.reply("Holon address on " + this.network + ": " + address);
+      
+      let address = await this.holonsContract.toAddress(chatID.toString());
+      if (address !== '0x0000000000000000000000000000000000000000') {
+        ctx.reply(`Holon address on ${this.network}: ${address}`);
       } else {
-        // create new holon
-        const tx = {
-          from: this.account.address,
-          to: this.holonsContract.options.address,
-          data: this.holonsContract.methods.newHolon(flavor, chatID.toString(), flavor == "Zoned" ? 5 : 0).encodeABI(),
-          gas: 3000000,
-          nonce: await this.web3.eth.getTransactionCount(this.account.address),
-          maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-          maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-          chainId: this.chainId,
-          type: 0x2
-        };
-        let result = await this.sendSignedTransaction(tx);
-        if (result.status == false) {
-          return ctx.reply("Holon creation failed: " + result.message);
+        const tx = await this.holonsContract.newHolon(flavor, chatID.toString(), flavor == "Zoned" ? 5 : 0, {
+          gasLimit: 3000000,
+          maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+          maxFeePerGas: ethers.parseUnits("30", "gwei"),
+        });
+        const receipt = await tx.wait();
+        
+        if (receipt.status !== 1) {
+          return ctx.reply("Holon creation failed");
+        } else {
+          address = await this.holonsContract.toAddress(chatID.toString());
+          ctx.reply(`${flavor} holon address on ${this.network}: ${address}`);
         }
-        else {
-          address = await this.holonsContract.methods.toAddress(chatID.toString()).call();
-          ctx.reply(flavor + " holon address on " + this.network + ": " + address);
-        }
-        return address
+        return address;
       }
     } catch (error) {
       console.error("Error creating holon:", error);
@@ -262,150 +266,96 @@ export default class Holons {
   }
 
   async addMembers(ctx) {
+    console.log("Adding members to holon");
     const id = ctx.message.chat.id;
-    let holonaddress = await this.holonsContract.methods.toAddress(id.toString()).call();
+    let holonaddress = await this.holonsContract.toAddress(id.toString());
     let users = await this.db.getAll(id.toString() + '/users');
-
-    await Promise.all(users.map(user => {
+    await Promise.all(users.map(async user => {
       if (user.id != undefined) {
-        return this.addMember(holonaddress, user.id.toString());
+        return await this.addMember(holonaddress, user.id.toString());
       }
     }));
   }
-   // not used yet ()
-  async sendFunction(funct, param1, param1type, param2, param2type) {
-    const functionSignature = web3.utils.sha3(funct).substr(0, 10);
 
-    // Encode parameters
-    const eparam1 = web3.eth.abi.encodeParameter('uint256', 123).substr(2);
-    const eparam2 = web3.eth.abi.encodeParameter('address', '0xYourAddress').substr(2);
-
-    // Concatenate the function signature and parameters
-    const data = functionSignature + eparam1 + eparam2;
-
-    // Prepare the transaction object
-    const transaction = {
-      to: '0xContractAddress', //TODO: replace with the contract address  
-      from: '0xYourAddress',
-      data: data,
-      gas: 2000000
-    };
-
-    // Send the transaction
-    web3.eth.sendTransaction(transaction)
-      .then(receipt => {
-        console.log('Transaction receipt:', receipt);
-      })
-      .catch(error => {
-        console.error('Error sending transaction:', error);
-      });
-  }
-
-  //send a command to the holon
   async sendCommand(_holonaddress, _command, _args) {
-    let holon = new this.web3.eth.Contract(managed.default.abi, _holonaddress);
-    let tx = {
-      from: this.account.address,
-      to: holon.options.address,
-      data: holon.methods[_command](_args).encodeABI(),
-      gas: 3000000,
-      nonce: await this.web3.eth.getTransactionCount(this.account.address),
-      maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-      maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: this.chainId,
-      type: 0x2
-    };
-    return await this.sendSignedTransaction(tx);
+    let holon = new ethers.Contract(_holonaddress, managed.default.abi, this.wallet);
+    try {
+      const tx = await holon[_command](..._args, {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+      });
+      return await tx.wait();
+    } catch (error) {
+      console.error("Error in sendCommand:", error);
+      return error;
+    }
   }
-
 
   async newFlavor(_flavorname, _flavoraddress) {
-    let limit = await this.web3.eth.estimateGas({
-      from: this.account.address,
-      to: this.holonsContract.address,
-      value: this.web3.utils.toWei("0.0001", "ether"),
-    });
-
-    const tx = {
-      from: this.account.address,
-      to: this.holonsContract.options.address,
-      data: this.holonsContract.methods.newFlavor(_flavorname, _flavoraddress).encodeABI(),
-      gas: limit,
-      nonce: await this.web3.eth.getTransactionCount(this.account.address),
-      maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-      maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: this.chainId,
-      type: 0x2
-    };
-
-    return await this.sendSignedTransaction(tx);
+    try {
+      const tx = await this.holonsContract.newFlavor(_flavorname, _flavoraddress, {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+      });
+      return await tx.wait();
+    } catch (error) {
+      console.error("Error in newFlavor:", error);
+      return error;
+    }
   }
 
   async newHolon(_name, _parameter) {
-    const tx = {
-      from: this.account.address,
-      to: this.holonsContract.options.address,
-      data: this.holonsContract.methods.newHolon("Managed", _name, 0).encodeABI(),
-      gas: 3000000,
-      //nonce: await this.web3.eth.getTransactionCount(this.account.address),
-      maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-      maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: this.chainId,
-      type: 0x2
-    };
-    return await this.sendSignedTransaction(tx);
+    try {
+      const tx = await this.holonsContract.newHolon("Managed", _name, 0, {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+      });
+      return await tx.wait();
+    } catch (error) {
+      console.error("Error in newHolon:", error);
+      return error;
+    }
   }
 
   async getFlavorAddress(_name) {
-    return await this.holonsContract.methods.getFlavorAddress(_name).call();
+    return await this.holonsContract.getFlavorAddress(_name);
   }
 
   async listFlavors() {
-    return await this.holonsContract.methods.listFlavors().call();
+    return await this.holonsContract.listFlavors();
   }
 
   async listHolons() {
-    return await this.holonsContract.methods.listHolons().call();
+    return await this.holonsContract.listHolons();
   }
 
   async listHolonsOf(_address) {
-    return await this.holonsContract.methods.listHolonsOf(_address).call();
+    return await this.holonsContract.listHolonsOf(_address);
   }
 
   async addMember(_holonaddress, _userid) {
-
-    let holon = new this.web3.eth.Contract(managed.default.abi, _holonaddress);
-
-    if (await holon.methods.userIdToAddress(_userid.toString()) != '0x0000000000000000000000000000000000000000')
+    let holon = new ethers.Contract(_holonaddress, managed.default.abi, this.wallet);
+    console.log('adding member to holon:', _holonaddress, _userid);
+    
+    const existingAddress = await holon.userIdToAddress(_userid.toString());
+    if (existingAddress !== '0x0000000000000000000000000000000000000000') {
+      console.log('member already exists: ', _userid);
       return true; // member already exists
+    }
 
-    const tx = {
-      from: this.account.address,
-      to: holon.options.address,
-      data: holon.methods.addMember(_userid.toString()).encodeABI(),
-      gas: 3000000,
-      //nonce: await this.web3.eth.getTransactionCount(this.account.address),
-      maxPriorityFeePerGas: this.web3.utils.toWei("3", "gwei"),
-      maxFeePerGas: this.web3.utils.toWei("30", "gwei"),
-      chainId: this.chainId,
-      type: 0x2
-    };
-
-    return await this.sendSignedTransaction(tx);
+    try {
+      const tx = await holon.addMember(_userid.toString(), {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+      });
+      return await tx.wait();
+    } catch (error) {
+      console.error("Error in addMember:", error);
+      return error;
+    }
   }
-
-
-  async sendSignedTransaction(tx) {
-    let signedTx = await this.web3.eth.accounts.signTransaction(tx, this.account.privateKey);
-    const receipt = await this.web3.eth.sendSignedTransaction(signedTx.raw || signedTx.rawTransaction)
-      .once("transactionHash", (txhash) => {
-        console.log(`Mining transaction ...`);
-        console.log(`https://${this.network}.etherscan.io/tx/${txhash}`);
-
-      }).catch((error) => { console.log(error.message); return error });
-    if (receipt?.blockNumber)
-      console.log(`Mined in block ${receipt.blockNumber}`);
-    return receipt;
-  }
-
 }

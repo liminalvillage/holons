@@ -283,49 +283,60 @@ export default class Quests {
 
     async join(ctx) {
         console.log("JOIN ACTION");
-        let chatID = ctx.callbackQuery.data.split('_')[2];
-        let messageID = ctx.callbackQuery.data.split('_')[3];
-        console.log(ctx.callbackQuery.data)
+        try {
+            let chatID = ctx.callbackQuery.data.split('_')[2];
+            let messageID = ctx.callbackQuery.data.split('_')[3];
+            console.log(ctx.callbackQuery.data)
 
-        const language = await this.settings.getLanguage(chatID)
+            const language = await this.settings.getLanguage(chatID)
 
-        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+            let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+            if (!quest) { 
+                console.log('QUEST IS NOT FOUND'); 
+                ctx.answerCbQuery('Quest not found').catch(err => console.error('Error answering callback query:', err));
+                return;
+            }
 
-        if (quest.status == 'completed') {
-            ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID })
-            return;
+            if (quest.status == 'completed') {
+                ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID })
+                    .catch(err => console.error('Error answering callback query:', err));
+                return;
+            }
+            console.log("Quest:" ,quest)
+            
+            // Get the user who reacted
+            const sender = ctx.callbackQuery.from;
+
+            // Check if the user has already joined the quest
+            const userindex = quest.participants.findIndex(user => user.id === sender.id)
+            if (userindex > -1) {
+                ctx.answerCbQuery(`${sender.first_name}, left the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+                quest.participants.splice(userindex, 1);
+            }
+            else {
+                // Add the user to the quest
+                quest.participants.push(sender);
+                // Send a message to confirm that the user joined the quest
+                ctx.answerCbQuery(`${sender.first_name} has joined the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+            }
+
+            // Check if the user has already appreciated the quest, remove if so
+            const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
+            if (appreciationindex > -1) {
+                //asctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID }).catch(   (err) => { console.log(err) } );
+                quest.appreciation.splice(appreciationindex, 1);
+            }
+
+            // Update the message 
+            this.updateMessage(ctx, quest, language);
+
+            // Update the db
+            this.db.put(chatID + '/quests', quest);
+        } catch (error) {
+            console.error('Error in join function:', error);
+            
         }
-         console.log("Quest:" ,quest)
-        // Get the user who reacted
-        const sender = ctx.callbackQuery.from;
-
-        // Check if the user has already joined the quest
-        const userindex = quest.participants.findIndex(user => user.id === sender.id)
-        if (userindex > -1) {
-            ctx.answerCbQuery(`${sender.first_name}, left the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
-            quest.participants.splice(userindex, 1);
-        }
-        else {
-            // Add the user to the quest
-            quest.participants.push(sender);
-            // Send a message to confirm that the user joined the quest
-            ctx.answerCbQuery(`${sender.first_name} has joined the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
-        }
-
-        // Check if the user has already appreciated the quest, remove if so
-        const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
-        if (appreciationindex > -1) {
-            //asctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`, { reply_to_message_id: messageID }).catch(   (err) => { console.log(err) } );
-            quest.appreciation.splice(appreciationindex, 1);
-        }
-
-        // Update the message 
-        this.updateMessage(ctx, quest, language);
-
-        // Update the db
-        this.db.put(chatID + '/quests', quest);
     }
 
     async appreciate(ctx) {
@@ -372,7 +383,7 @@ export default class Quests {
             // share appreciation "after the fact"
             if (quest.status === "completed") {
                 await this.users.saveUserAction(sender, "sent", quest.title, 0, chatID)
-                for (let i = 0; quest.participants.length; i++) {
+                for (let i = 0; i < quest.participants.length; i++) {
                     console.log(quest.participants.length)
                     if (quest.participants[i]?.id) { //TODO: check why this is needed sometimes otherwise it crashes
                         await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0, chatID)
@@ -539,7 +550,7 @@ export default class Quests {
         const entities = ctx.message.entities;
 
         // Setup the necessary databases
-      const mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
+        const mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
         if (mentions.length === 0) {
             ctx.reply(i18next.t('appreciationusage',{lng:language}), { reply_to_message_id: ctx.message.message_id });
             return
@@ -562,10 +573,10 @@ export default class Quests {
             if (entity.type === 'text_mention')
                 recipent = await ctx.telegram.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
-                // get the user from the database
+                    // get the user from the database
                 recipient = await this.users.getUsers(chatID).then (users => users.filter(user => user.username === username)[0])
                // recipient = await this.db.query((user) => user.username == username)[0]
-            }
+                }
 
             // if ( !recipient || recipient == ''|| !recipient.id) { 
             //     recipient = {}
@@ -575,7 +586,7 @@ export default class Quests {
 
             if (!recipient || recipient == '') {
                 ctx.reply(i18next.t(`appreciationunknownuser`,{ lng: language, user:username })).catch((err) => { });
-                receivers -= 1;
+                    receivers -= 1;
                 // register the user in the database
                 return;
             }
