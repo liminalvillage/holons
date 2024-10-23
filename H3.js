@@ -63,8 +63,6 @@ class H3 {
                 return ctx.reply('Please specify a tag.');
             }
             let hex = (await this.db.get('settings', chatID)).hex
-            //let hex = settings.hex
-            console.log('hex', hex)
 
             let data = await this.holosphere.get(hex, tag)
             ctx.reply(JSON.stringify(data, null, 2))
@@ -72,6 +70,7 @@ class H3 {
         })
 
         this.bot.command('gethex', async (ctx) => {
+            const chatID = ctx.message.chat.id;
             let settings = await this.db.get('settings', chatID)
             let id = settings.hex ? settings.hex : 'Hex not set, use /sethex'
             ctx.reply(id)
@@ -108,17 +107,16 @@ class H3 {
             let settings = await this.db.get('settings', chatID)
             let id = settings.hex ? settings.hex : 'Hex not set, use /sethex'
             // fetch the stored node
-            let node = await this.holosphere.gun.get(chatID + '/' + messageID)
-            console.log("NODE:", node)
-
+            let node =  this.holosphere.getNode( chatID, 'quests', messageID)
+            
             // if (!node) {
             //     node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
             // }
             
-            // for (let tag of tags) {
-            //     await this.holosphere.put(id,tag, node)
-            //     this.holosphere.upcast(id, tag, node)
-            // }
+            //for (let tag of tags) {
+        
+                this.holosphere.upcast(id, 'quests', node)
+            //}
         })
 
         this.bot.command('publish', async (ctx) => {

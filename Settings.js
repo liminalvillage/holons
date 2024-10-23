@@ -50,6 +50,10 @@ export default class Settings {
             }
         })
 
+        this.bot.command('id', async (ctx) => {
+            ctx.reply('This holon ID is ' + utils.getChatId(ctx))
+        })
+
         this.bot.command(['federate', 'spoon'], async (ctx) => {
             if (utils.isAdmin(ctx)) this.federate(ctx)
             else ctx.reply('Only a chat admin can perform this action')
