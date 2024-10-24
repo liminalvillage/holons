@@ -94,7 +94,7 @@ class H3 {
 
         this.bot.command('cast', async (ctx) => {
             if (!ctx.message.reply_to_message) {
-                return ctx.reply('Please reply to a message you want to tag.');
+                return ctx.reply('Please reply to a message you want to cast.');
             }
             const tags = ctx.message.text.split(' ').slice(1);
             if (tags.length === 0) {

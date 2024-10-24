@@ -215,7 +215,7 @@ class HolonsBot {
     const messageID = ctx.update.callback_query.message.message_id;
 
     if (callbackData.startsWith('removekeyboard')) {
-      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch((error) => { console.log(error) });
     }
 
     if (messageID === this.quests.calendar.chats.get(chatID)) {
@@ -458,6 +458,18 @@ class HolonsBot {
       await ipfs.stop();
       process.exit(0);
     });
+
+    // Add this new event handler for uncaught exceptions
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught Exception:', error);
+      process.exit();
+    });
+
+    // Add this new event handler for unhandled promise rejections
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      process.exit();
+    });
   }
 }
 
@@ -465,3 +477,4 @@ console.log('Holon name: ', process.env.APPNAME)
 
 const holons = new HolonsBot();
 await holons.init(process.argv[2] || process.env.APPNAME, process.argv[3] || process.env.TELEGRAM, process.argv[4] || process.env.DISCORD);
+
