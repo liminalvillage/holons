@@ -111,15 +111,15 @@ class UI {
     const federation = await this.settings.getFederation(chatID)
     const valueEquation = await this.settings.getValueEquation(chatID)
     let users = await this.getFederatedUsers(chatID)
+    const language = await this.settings.getLanguage(chatID)
 
     // Create a table header
     this.getRankTable(users, valueEquation, chatID).then((path) => {
-      //this.getAppreciationTable(users, chatID).then((path) => {
-      //send the image
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
-          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/status`)
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+            `https://dashboard.holons.io/${chatID}/status`)
         ])
       )
     });
@@ -129,6 +129,7 @@ class UI {
   async bulletinboard(ctx) {
     if (!this.db) return
     let chatID = ctx.message.chat.id
+    let language = await this.settings.getLanguage(chatID)
     // loop through the userlist and get the quests
     let users = await this.getFederatedUsers(chatID)
     // Create a table header
@@ -138,7 +139,8 @@ class UI {
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
-          Markup.button.webApp('Open in Holons', `https://dashboard.holons.io/${chatID}/offers`)
+          Markup.button.url(i18next.t('Open in Holons', { lng: language }), 
+            `https://dashboard.holons.io/${chatID}/offers`)
         ])
       )
     });
@@ -147,6 +149,7 @@ class UI {
 
   async valuescloud(ctx) {
     let values = [] // = this.getFederatedValues(chatID)
+    const language = await this.settings.getLanguage(chatID)
     const chatID = ctx.message.chat.id;
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
@@ -187,12 +190,14 @@ class UI {
     await ctx.replyWithPhoto(
       { source: fs.createReadStream(path) },
       Markup.inlineKeyboard([
-        Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/values/`)
+        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+          `https://dashboard.holons.io/${chatID}/values/`)
       ])
     )
   }
   async needscloud(ctx) {
     let needs = [] // = this.getFederatedValues(chatID)
+    const language = await this.settings.getLanguage(chatID)
     const chatID = ctx.message.chat.id;
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
@@ -232,7 +237,8 @@ class UI {
     await ctx.replyWithPhoto(
       { source: fs.createReadStream(path) },
       Markup.inlineKeyboard([
-        Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/needs/`)
+        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+          `https://dashboard.holons.io/${chatID}/needs/`)
       ])
     )
   }
@@ -243,6 +249,7 @@ class UI {
     if (!this.db) return
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
+    const language = await this.settings.getLanguage(chatID)
 
     let quests = await this.getFederatedQuests(chatID)
      quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled')) //TODO:Reenable this filter
@@ -252,7 +259,8 @@ class UI {
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
-          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/kanban`)
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+            `https://dashboard.holons.io/${chatID}/kanban`)
         ])
       )
     });
@@ -262,6 +270,7 @@ class UI {
     if (!this.db) return
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
+    const language = await this.settings.getLanguage(chatID)
 
     let requests = await this.db.getAll(chatID + '/offers')
 
@@ -271,7 +280,8 @@ class UI {
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
-          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/offers`)
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+            `https://dashboard.holons.io/${chatID}/offers`)
         ])
       )
     });
@@ -282,6 +292,7 @@ class UI {
     if (!this.db) return
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
+    const language = await this.settings.getLanguage(chatID)
 
     let requests = await this.db.getAll(chatID + '/offers')
 
@@ -291,7 +302,8 @@ class UI {
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
-          Markup.button.webApp('Open Dashboard', `https://dashboard.holons.io/${chatID}/offers/`)
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+            `https://dashboard.holons.io/${chatID}/offers/`)
         ])
       )
     });
@@ -300,13 +312,13 @@ class UI {
   }
 
   async getQuestImage(quest, chatID) {
-    const lang = await this.settings.getLanguage(chatID)
+    const language = await this.settings.getLanguage(chatID)
     const element = `
     <table>
-      <tr><th>${i18next.t('Quest')}:</th><td>${quest.title}</td></tr>
-      <tr><th>${i18next.t('Initiator')}:</th><td>${quest.initiator.first_name}</td></tr>
-      <tr><th>${i18next.t('Joined by')}:</th><td>${[...quest.participants].slice(1).map(u => u.username).join(', ')}</td></tr>
-      <tr><th>${i18next.t('Appreciated by')}:</th><td>${[...quest.appreciation].slice(1).map(u => u.username).join(', ')}</td></tr>
+      <tr><th>${i18next.t('Quest', { lng: language })}:</th><td>${quest.title}</td></tr>
+      <tr><th>${i18next.t('Initiator', { lng: language })}:</th><td>${quest.initiator.first_name}</td></tr>
+      <tr><th>${i18next.t('Joined by', { lng: language })}:</th><td>${[...quest.participants].slice(1).map(u => u.username).join(', ')}</td></tr>
+      <tr><th>${i18next.t('Appreciated by', { lng: language })}:</th><td>${[...quest.appreciation].slice(1).map(u => u.username).join(', ')}</td></tr>
     <table>`
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
     const path = './images/quest' + quest.id + '.png'
@@ -315,8 +327,12 @@ class UI {
   }
 
   async getBulletinTable(users, chatID) {
-    const lang = await this.settings.getLanguage(chatID)
-    let table = `<table><tr><th>${i18next.t('Username',{ lng: lang })}</th><th>${i18next.t('Wants',{ lng: lang })}</th><th>${i18next.t('Offers',{ lng: lang })}</th></tr>`;
+    const language = await this.settings.getLanguage(chatID)
+    let table = `<table><tr>
+      <th>${i18next.t('Username', { lng: language })}</th>
+      <th>${i18next.t('Wants', { lng: language })}</th>
+      <th>${i18next.t('Offers', { lng: language })}</th>
+    </tr>`;
 
     for (let user of users) {
       table += '<tr><td>' + user.username + '</td>';
@@ -342,7 +358,7 @@ class UI {
   }
 
   async getCreditTable(creditMatrix, userArray, chatID) {
-    const lang = await this.settings.getLanguage(chatID);
+    const language = await this.settings.getLanguage(chatID);
     const rows = [];
     userArray.forEach((user, index) => {
       const credits = creditMatrix[index].map((credit, creditIndex) => `<td >${credit.toFixed(2)}</td>`).join('');
@@ -358,12 +374,12 @@ class UI {
     const headers = userArray.map((user, index) => `<th scope="col" style = "writing-mode: vertical-rl;
     text-orientation: mixed;">${user}</th>`).join('');
     const element = `<table>
-    <caption>${i18next.t('Credit Matrix', { lng: lang })}</caption>
+    <caption>${i18next.t('Credit Matrix', { lng: language })}</caption>
     <thead>
         <tr>
-            <th scope="col">${i18next.t('User', { lng: lang })}</th>
+            <th scope="col">${i18next.t('User', { lng: language })}</th>
             ${headers}
-            <th scope="col">${i18next.t('Total', { lng: lang })}</th>
+            <th scope="col">${i18next.t('Total', { lng: language })}</th>
         </tr>
     </thead>
     <tbody>
@@ -378,8 +394,7 @@ class UI {
   }
 
   async getQuestsTable(quests, chatID) {
-
-    const lang = await this.settings.getLanguage(chatID)
+    const language = await this.settings.getLanguage(chatID)
     const rows = []
     for (let i = 0; i < quests.length; i++) {
       const quest = quests[i]
@@ -394,14 +409,14 @@ class UI {
     }
 
     const element = `<table>
-    <caption>${i18next.t('Active Quests', { lng: lang })}</caption>
+    <caption>${i18next.t('Active Quests', { lng: language })}</caption>
     <thead>
         <tr>
-            <th scope="col">${i18next.t('ID', { lng: lang })}</th>
-            <th scope="col">${i18next.t('Quest', { lng: lang })}</th>
-            <th scope="col">${i18next.t('Initiator', { lng: lang })}</th>
-            <th scope="col">${i18next.t('People', { lng: lang })}</th>
-            <th scope="col">${i18next.t('Appreciators', { lng: lang })}</th>
+            <th scope="col">${i18next.t('ID', { lng: language })}</th>
+            <th scope="col">${i18next.t('Quest', { lng: language })}</th>
+            <th scope="col">${i18next.t('Initiator', { lng: language })}</th>
+            <th scope="col">${i18next.t('People', { lng: language })}</th>
+            <th scope="col">${i18next.t('Appreciators', { lng: language })}</th>
         </tr>
     </thead>
     <tbody>
@@ -416,7 +431,7 @@ class UI {
   }
 
   async getRolesTable(roles, chatID) {
-    const lang = await this.settings.getLanguage(chatID)
+    const language = await this.settings.getLanguage(chatID)
     const rows = []
     for (let i = 0; i < roles.length; i++) {
       const role = roles[i]
@@ -428,11 +443,11 @@ class UI {
     }
 
     const element = `<table>
-    <caption>${i18next.t('Roles', { lng: lang })}</caption>
+    <caption>${i18next.t('Roles', { lng: language })}</caption>
     <thead>
         <tr>
-            <th scope="col">${i18next.t('Roles', { lng: lang })}</th>
-            <th scope="col">${i18next.t('People', { lng: lang })}</th>
+            <th scope="col">${i18next.t('Roles', { lng: language })}</th>
+            <th scope="col">${i18next.t('People', { lng: language })}</th>
         </tr>
     </thead>
     <tbody>
@@ -448,10 +463,8 @@ class UI {
 
 
   async getRequestsTable(requests, chatID) {
-
-    const lang = await this.settings.getLanguage(chatID)
+    const language = await this.settings.getLanguage(chatID)
     const needs = requests.filter(request => request.type == 'request')
-    const offers = requests.filter(request => request.type == 'offer')
 
     const rows = []
     for (let i = 0; i < needs.length; i++) {
@@ -465,11 +478,11 @@ class UI {
     }
 
     const element = `<table>
-    <caption>${i18next.t('Active Requests', { lng: lang })}</caption>
+    <caption>${i18next.t('Active Requests', { lng: language })}</caption>
     <thead>
         <tr>
-            <th scope="col">${i18next.t('Person', { lng: lang })}</th>
-            <th scope="col">${i18next.t('Request', { lng: lang })}</th>
+            <th scope="col">${i18next.t('Person', { lng: language })}</th>
+            <th scope="col">${i18next.t('Request', { lng: language })}</th>
         </tr>
     </thead>
     <tbody>
@@ -484,8 +497,7 @@ class UI {
   }
 
   async getOffersTable(requests, chatID) {
-
-    const lang = await this.settings.getLanguage(chatID)
+    const language = await this.settings.getLanguage(chatID)
     const offers = requests.filter(request => request.type == 'offer')
 
     const rows = []
@@ -500,11 +512,11 @@ class UI {
     }
 
     const element = `<table>
-    <caption>${i18next.t('Active Offers', { lng: lang })}</caption>
+    <caption>${i18next.t('Active Offers', { lng: language })}</caption>
     <thead>
         <tr>
-            <th scope="col">${i18next.t('Person')}</th>
-            <th scope="col">${i18next.t('Offer')}</th>
+            <th scope="col">${i18next.t('Person', { lng: language })}</th>
+            <th scope="col">${i18next.t('Offer', { lng: language })}</th>
         </tr>
     </thead>
     <tbody>
@@ -520,12 +532,17 @@ class UI {
 
 
   async getRankTable(users, equation, chatID) {
-    // initiated, completed, ccredits sent, credits received, hours, groupsize?, requested, offered, money
+    const language = await this.settings.getLanguage(chatID)
     const rows = []
     const sortedUsers = Object.keys(users).sort((a, b) => {
-      return (users[b].initiated.length * equation.initiated + users[b].completed.length * equation.completed + users[b].sent * equation.sent + users[b].received * equation.received + users[b].hours * equation.hours + users[b].collaboration * equation.collaboration + users[b].wants.length * equation.wants + users[b].offers.length * equation.offers ) -
-        (users[a].initiated.length * equation.initiated + users[a].completed.length * equation.completed + users[a].sent * equation.sent + users[a].received * equation.received + users[a].hours * equation.hours + users[a].collaboration * equation.collaboration + users[a].wants.length * equation.wants + users[a].offers.length * equation.offers )
-      //return users[b].score - users[a].score
+      return (users[b].initiated.length * equation.initiated + users[b].completed.length * equation.completed + 
+        users[b].sent * equation.sent + users[b].received * equation.received + users[b].hours * equation.hours + 
+        users[b].collaboration * equation.collaboration + users[b].wants.length * equation.wants + 
+        users[b].offers.length * equation.offers ) -
+        (users[a].initiated.length * equation.initiated + users[a].completed.length * equation.completed + 
+        users[a].sent * equation.sent + users[a].received * equation.received + users[a].hours * equation.hours + 
+        users[a].collaboration * equation.collaboration + users[a].wants.length * equation.wants + 
+        users[a].offers.length * equation.offers )
     });
 
     for (let i = 0; i < sortedUsers.length; i++) {
@@ -537,11 +554,10 @@ class UI {
         user.hours * equation.hours +
         user.collaboration * equation.collaboration +
         user.wants.length * equation.wants +
-        user.offers.length * equation.offers// +
-        //user.money * equation.money
+        user.offers.length * equation.offers
       const row = `<tr>
         <th scope="row">${i + 1}</th>
-        <th>${user.first_name} ${user.last_name?user.last_name:''}</th>
+        <th>${user.first_name} ${user.last_name || ''}</th>
         <th>${user.initiated.length}</th>
         <th>${user.completed.length}</th>
         <th>${user.sent}</th>
@@ -551,9 +567,9 @@ class UI {
 
       rows.push(row)
     }
-    let language = await this.settings.getLanguage(chatID);
-    let element = `<table>
-    <caption> ${i18next.t('Rank', { lng: language })} </caption>
+
+    const element = `<table>
+    <caption>${i18next.t('Rank', { lng: language })}</caption>
     <thead>
         <tr>
             <th scope="col">${i18next.t('rank', { lng: language })}</th>
@@ -571,8 +587,7 @@ class UI {
   </table>`
 
     const path = './images/rank' + chatID + '.png'
-    const theme = await this.settings.getTheme(chatID)
-    const html = await this.generateHtml(element, theme)
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
     await this.screenshotHtml(html, path, 'table')
     return path
   }
@@ -580,7 +595,7 @@ class UI {
 
 
   async getAppreciationTable(appreciation, chatID) {
-
+    
     const rows = []
     const sortedUsers = Object.keys(appreciation).sort((a, b) => {
       return appreciation[b].received - appreciation[b].sent - (appreciation[a].received - appreciation[a].sent);

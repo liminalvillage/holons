@@ -90,7 +90,9 @@
             "appreciationfailed": "Appreciation failed. The user(s) might not exist or might not be subscribed.",
             "appreciationsuccess": "{{sender}} has sent appreciation to {{receivers}} users for {{action}}",
             "announcementusage": "Usage: /announcement [message] (es. /announcement Meeting at 3pm)",
-            "announced": "Announcement sent: {{message}}"
+            "announced": "Announcement sent: {{message}}",
+            "Open Dashboard": "Open Dashboard",
+            "Open in Holons": "Open in Holons"
         }
     },
     "it": {
@@ -175,7 +177,9 @@
             "appreciationfailed": "Apprezzamento non riuscito. L'utente(i) potrebbe non esistere o potrebbe non essere iscritto.",
             "appreciationsuccess": "{{sender}} ha apprezzato a {{receivers}} utenti per {{action}}",
             "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
-            "announced": "Annuncio inviato: {{message}}"
+            "announced": "Annuncio inviato: {{message}}",
+            "Open Dashboard": "Apri Dashboard",
+            "Open in Holons": "Apri in Holons"
         }
     },
     "fiobbo": {
@@ -260,7 +264,9 @@
             "appreciationfailed": "Apprezzamento non riuscito. L'utente(i) potrebbe non esistere o potrebbe non essere iscritto.",
             "appreciationsuccess": "{{sender}} ha inviato un fiorino a {{receivers}} utenti per {{action}}",
             "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
-            "announced": "Annuncio inviato: {{message}}"
+            "announced": "Annuncio inviato: {{message}}",
+            "Open Dashboard": "Apri Dashboard",
+            "Open in Holons": "Apri in Holons"
         }
     },
     "week": {
