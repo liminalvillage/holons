@@ -46,7 +46,7 @@ export default class Quests {
         this.bot.command('ricorrente', async (ctx) => this.quest('recurring', ctx))
 
         //create new request/offer
-        this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo','cerco'], async (ctx) => this.quest('request', ctx))
+        this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => this.quest('offer', ctx))
 
         //this.bot.command('lista', async (ctx) => this.list(ctx))
@@ -93,11 +93,11 @@ export default class Quests {
                 //resend the message
                 const quest = quests[i];
                 await ctx.telegram.sendMessage(chatID, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (nctx) => {
-                    this.db.del(chatID + '/quests',quest.id.toString())
+                    this.db.del(chatID + '/quests', quest.id.toString())
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
-                    await this.db.put(chatID + '/quests',quest)
+                    await this.db.put(chatID + '/quests', quest)
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
@@ -116,7 +116,7 @@ export default class Quests {
     }
 
     async listanytype(ctx) {
-     
+
     }
 
     async listtype(ctx) {
@@ -124,7 +124,7 @@ export default class Quests {
         if (type && type[type.length - 1] === 's')
             type = type.slice(0, -1);
 
-        if (type == undefined){
+        if (type == undefined) {
             ctx.reply(`Please specify a type of quest to list. eg: /listtype quest`);
             return
         }
@@ -143,8 +143,8 @@ export default class Quests {
         for (let i = 0; i < quests.length; i++) {
             const quest = quests[i];
             if (quest.type == type)
-            // link to the quest message
-            message += `~${quest.title}~ \t 👍:${quest.appreciation.length} \n`;
+                // link to the quest message
+                message += `~${quest.title}~ \t 👍:${quest.appreciation.length} \n`;
             //message += createMessage(quest, language) + '\n';
         }
         ctx.reply(message, { parse_mode: 'Markdown' });
@@ -202,12 +202,12 @@ export default class Quests {
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
-                    this.db.put( chatID + '/quests', quest)
+                    this.db.put(chatID + '/quests', quest)
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     // update the markup
                     //await ctx.telegram.editMessageRe(quest.chat, quest.id,null, markup(quest, language)).catch((err) => { console.log(err) });
-                    await this.updateMessage(ctx, quest,language)
+                    await this.updateMessage(ctx, quest, language)
                     //delete the original message
                     ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
@@ -230,10 +230,10 @@ export default class Quests {
             }
             ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
                 if (ctx.platform !== 'discord') {
-                quest.id = nctx.message_id;
-                quest.chat = nctx.chat.id;
+                    quest.id = nctx.message_id;
+                    quest.chat = nctx.chat.id;
                 }
-                if (ctx.platform == 'discord'){
+                if (ctx.platform == 'discord') {
                     quest.id = nctx.id;
                     quest.chat = nctx.channel.id;
                     return //TODO: remove this by fixing below for multi platforms
@@ -251,7 +251,7 @@ export default class Quests {
 
                 // REPLICATE IN FEDERATED CHATS
 
-                let notifyChats = (await this.db.get('federation',chatID))
+                let notifyChats = (await this.db.get('federation', chatID))
 
                 if (!notifyChats || notifyChats == '') { console.log('FEDERATION IS NOT FOUND') }
                 else
@@ -259,7 +259,7 @@ export default class Quests {
 
                 if (notifyChats && notifyChats.length > 0) {
                     let id = quest.chat * 2 + quest.id //*2 is a hack not to return similar indexes
-                    let fedinfo = this.db.get('federation',id)
+                    let fedinfo = this.db.get('federation', id)
                     console.log(fedinfo)
                     if (!fedinfo || fedinfo == '' || fedinfo == undefined)
                         fedinfo = { id: id, all: [{ chat: quest.chat.toString(), id: quest.id.toString() }], type: 'quest' }  //TODO UPDATE JSON SCHEMA
@@ -292,8 +292,8 @@ export default class Quests {
 
             let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-            if (!quest) { 
-                console.log('QUEST IS NOT FOUND'); 
+            if (!quest) {
+                console.log('QUEST IS NOT FOUND');
                 ctx.answerCbQuery('Quest not found').catch(err => console.error('Error answering callback query:', err));
                 return;
             }
@@ -303,8 +303,8 @@ export default class Quests {
                     .catch(err => console.error('Error answering callback query:', err));
                 return;
             }
-            console.log("Quest:" ,quest)
-            
+            console.log("Quest:", quest)
+
             // Get the user who reacted
             const sender = ctx.callbackQuery.from;
 
@@ -335,7 +335,7 @@ export default class Quests {
             this.db.put(chatID + '/quests', quest);
         } catch (error) {
             console.error('Error in join function:', error);
-            
+
         }
     }
 
@@ -415,9 +415,9 @@ export default class Quests {
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
         // Handle the reaction to the quest
-        if (quest.initiator.id === ctx.from.id) {
+        if (quest.initiator.id === ctx.from.id || utils.isAdmin(ctx.from.id, chatID)) {
             //delete quest from database
-            this.db.del(chatID +  '/quests', messageID.toString())
+            this.db.del(chatID + '/quests', messageID.toString())
 
             //unpin the message
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
@@ -477,13 +477,13 @@ export default class Quests {
 
         const language = await this.settings.getLanguage(chatID)
 
-        let quest = await this.db.get(chatID + '/quests',messageID.toString())
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
         if (!quest.status == 'stopped') { ctx.answerCbQuery(`You cannot complete a quest that has been stopped. Ask to remove the stop before completing the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) }); return }
 
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
-        if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1) {
+        if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || utils.isAdmin(ctx.from.id, chatID)) {
             quest.status = "completed";
             // Update the message 
             this.updateMessage(ctx, quest, language);
@@ -537,13 +537,13 @@ export default class Quests {
         let language = await this.settings.getLanguage(ctx.callbackQuery.message.chat.id)
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
-        this.calendar.startNavCalendar(ctx,language);//TODO: pass quest information to recreate message
+        this.calendar.startNavCalendar(ctx, language);//TODO: pass quest information to recreate message
         this.calendar.chats.set(getChatId(ctx) * 100, getMessageId(ctx)); //TODO: fix this, use a different method to store the message id
     }
 
     async sendAppreciation(ctx) {
         console.log("SEND APPRECIATION ACTION");
-        
+
         const chatID = ctx.message.chat.id;
         const language = await this.settings.getLanguage(chatID)
         const sender = getUser(ctx);
@@ -552,7 +552,7 @@ export default class Quests {
         // Setup the necessary databases
         const mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
         if (mentions.length === 0) {
-            ctx.reply(i18next.t('appreciationusage',{lng:language}), { reply_to_message_id: ctx.message.message_id });
+            ctx.reply(i18next.t('appreciationusage', { lng: language }), { reply_to_message_id: ctx.message.message_id });
             return
         }
 
@@ -562,7 +562,7 @@ export default class Quests {
         if (action.startsWith('for')) {
             action = action.substring(3).trim();
         }
-        
+
         if (action === '') { action = 'appreciated' }
         let receivers = mentions.length
         // Check if the message contains a mention
@@ -573,10 +573,10 @@ export default class Quests {
             if (entity.type === 'text_mention')
                 recipent = await ctx.telegram.getFullUser(entity.user.id)// ctx.text.substring(entity.offset, entity.offset + entity.length)
             if (entity.type === 'mention') {
-                    // get the user from the database
-                recipient = await this.users.getUsers(chatID).then (users => users.filter(user => user.username === username)[0])
-               // recipient = await this.db.query((user) => user.username == username)[0]
-                }
+                // get the user from the database
+                recipient = await this.users.getUsers(chatID).then(users => users.filter(user => user.username === username)[0])
+                // recipient = await this.db.query((user) => user.username == username)[0]
+            }
 
             // if ( !recipient || recipient == ''|| !recipient.id) { 
             //     recipient = {}
@@ -585,8 +585,8 @@ export default class Quests {
             // }
 
             if (!recipient || recipient == '') {
-                ctx.reply(i18next.t(`appreciationunknownuser`,{ lng: language, user:username })).catch((err) => { });
-                    receivers -= 1;
+                ctx.reply(i18next.t(`appreciationunknownuser`, { lng: language, user: username })).catch((err) => { });
+                receivers -= 1;
                 // register the user in the database
                 return;
             }
@@ -596,7 +596,7 @@ export default class Quests {
 
             // Check if the recipient is the sender
             if (recipient.id === sender.id) {
-                ctx.reply(i18next.t("appreciationself",{ lng: language })).catch((err) => { });
+                ctx.reply(i18next.t("appreciationself", { lng: language })).catch((err) => { });
                 receivers -= 1;
                 return;
             }
@@ -610,12 +610,12 @@ export default class Quests {
 
         // Update the sent appreciation of the sender
         //await sendToken(sender, 1, chatID)
-        if (receivers > 0){
+        if (receivers > 0) {
             await this.users.saveUserAction(sender, "sent", action, 1, chatID)
-            ctx.reply(i18next.t('appreciationsuccess', { lng:language, sender: sender.username, receivers: receivers, action:action})).catch((error) => console.log(error));
+            ctx.reply(i18next.t('appreciationsuccess', { lng: language, sender: sender.username, receivers: receivers, action: action })).catch((error) => console.log(error));
         }
         else
-            ctx.reply(i18next.t('appreciationfailed',{lng:language}), { reply_to_message_id: ctx.message.message_id });
+            ctx.reply(i18next.t('appreciationfailed', { lng: language }), { reply_to_message_id: ctx.message.message_id });
     }
 
     // ============== UTILITY FUNCTIONS
@@ -626,7 +626,7 @@ export default class Quests {
         console.log("REMIND ACTION");
         let language = await this.settings.getLanguage(ctx.callbackQuery.message.chat.id)
         //TODO Notify federated chats
-        ctx.reply(i18next.t("taskstarting",{quest:quest,lng:language}), { reply_to_message_id: quest.id });
+        ctx.reply(i18next.t("taskstarting", { quest: quest, lng: language }), { reply_to_message_id: quest.id });
     }
 
     // Function to update messages for a quest
@@ -695,19 +695,23 @@ export default class Quests {
 
 // Function to create the message for a quest 
 function createMessage(quest, language) {
-    let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), {lng:language})}: ${quest.title.padEnd(30, ' ')} \n`;
-    message += `| ${i18next.t('💡',{lng:language})} : @${quest.initiator.username} \n`;
+    let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
+    //message += `| ${i18next.t('💡',{lng:language})} : @${quest.initiator.username} \n`;
+    // if (quest.participants.length > 0)
+    //     message += `| ${i18next.t('🙋‍♂',{lng:language})} : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
+    // if (quest.appreciation.length > 0)
+    //     message += `| ${i18next.t('👍',{lng:language})} : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.participants.length > 0)
-        message += `| ${i18next.t('🙋‍♂',{lng:language})} : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
+        message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => u.first_name + ' ' + u.last_name.slice(0, 1) + '.').join(', ')} \n`;
     if (quest.appreciation.length > 0)
-        message += `| ${i18next.t('👍',{lng:language})} : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
+        message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => u.first_name + ' ' + u.last_name.slice(0, 1) + '.').join(', ')} \n`;
     if (quest.when)
-        message += `| ${i18next.t('📅',{lng:language})} : ${quest.when} \n`;
+        message += `| ${i18next.t('📅', { lng: language })} : ${quest.when} \n`;
     if (quest.where?.lat)
-        message += `| ${i18next.t('📍 ',{lng:language})}: ${quest.where.lat} : ${quest.where.lon}   \n`;
+        message += `| ${i18next.t('📍 ', { lng: language })}: ${quest.where.lat} : ${quest.where.lon}   \n`;
     if (quest.status === "stopped")
-        message += `| ${i18next.t('🛑',{lng:language})} : ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
-    message += `| ${i18next.t('🚥',{lng:language})} : ${i18next.t(quest.status,{lng:language})}\n`;
+        message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
+    message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;
     return message;
 }
 
@@ -715,7 +719,7 @@ function markup(quest, language) {
 
     let mu
 
-    if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' ||  quest.type == 'mission' || quest.type == 'compito') {
+    if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
         mu = Markup.inlineKeyboard([
             [
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
@@ -748,7 +752,7 @@ function markup(quest, language) {
             [
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-             ]
+            ]
             // [
             //     Markup.button.webApp(i18next.t('Set Location', { lng: language }), `https://hexamap.holons.io?quest=${quest.id}`)
             // ]
