@@ -33,9 +33,6 @@ export default class Settings {
             if (utils.isAdmin(ctx)) {
                 let chatID = utils.getChatId(ctx)
                 let chatName = utils.getChatName(ctx, chatID)
-                // try{
-                //  await ctx.getChatAdministrators(chatID).then((admins) => {console.log(admins)}) //TODO: check if the user is an admin (crashes in private chats)
-                // }catch(e){ console.log(e)}
                 await this.db.drop(chatID + '/shopping')
                 await this.db.drop(chatID + '/quests')
                 await this.db.drop(chatID + '/offers')
@@ -84,8 +81,8 @@ export default class Settings {
         })
 
         this.bot.command('setAdmin', async (ctx) => {
-            //TODO; check if the user is an admin
-            await this.setAdmin(ctx)
+            if (utils.isAdmin(ctx)) await this.setAdmin(ctx)
+            else ctx.reply('Only a chat admin can perform this action')
         })
 
         this.bot.command(['valueweights', 'weights', 'weight', 'equation'], async (ctx) => {
@@ -194,6 +191,36 @@ export default class Settings {
                 Markup.button.callback('<', 'decrement_received'),
                 Markup.button.callback(weights.received, 'null'),
                 Markup.button.callback('>', 'increment_received')
+            ],
+            [
+                Markup.button.callback('Hours:', 'null'),
+                Markup.button.callback('<', 'decrement_hours'),
+                Markup.button.callback(weights.hours, 'null'),
+                Markup.button.callback('>', 'increment_hours')
+            ],
+            // [
+            //     Markup.button.callback('Collaboration:', 'null'),
+            //     Markup.button.callback('<', 'decrement_collaboration'),
+            //     Markup.button.callback(weights.collaboration, 'null'),
+            //     Markup.button.callback('>', 'increment_collaboration')
+            // ],
+            // [
+            //     Markup.button.callback('Wants:', 'null'),
+            //     Markup.button.callback('<', 'decrement_wants'),
+            //     Markup.button.callback(weights.wants, 'null'),
+            //     Markup.button.callback('>', 'increment_wants')
+            // ],
+            // [
+            //     Markup.button.callback('Offers:', 'null'),
+            //     Markup.button.callback('<', 'decrement_offers'),
+            //     Markup.button.callback(weights.offers, 'null'),
+            //     Markup.button.callback('>', 'increment_offers')
+            // ],
+            [
+                Markup.button.callback('Money:', 'null'),
+                Markup.button.callback('<', 'decrement_money'),
+                Markup.button.callback(weights.money, 'null'),
+                Markup.button.callback('>', 'increment_money')
             ],
             [
                 Markup.button.callback('Done', 'removekeyboard'),
@@ -487,9 +514,11 @@ export default class Settings {
     async getSettings(chatID) {
         let settings = await this.db.get('settings', chatID)
         if (!settings || settings == '') {
-            settings = this.getDefaultSettings(chatID)
+            let chatName = await utils.getChatName(this.bot, chatID)
+            settings = this.getDefaultSettings(chatID, chatName)
             this.db.put('settings', settings)
         }
+        //
         return settings
     }
 

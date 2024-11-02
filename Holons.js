@@ -270,11 +270,26 @@ export default class Holons {
     const id = ctx.message.chat.id;
     let holonaddress = await this.holonsContract.toAddress(id.toString());
     let users = await this.db.getAll(id.toString() + '/users');
-    await Promise.all(users.map(async user => {
-      if (user.id != undefined) {
-        return await this.addMember(holonaddress, user.id.toString());
-      }
-    }));
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    // Process members sequentially
+    for (const user of users) {
+        if (user.id != undefined) {
+            try {
+                // Add a small delay between transactions
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                await this.addMember(holonaddress, user.id.toString());
+                successCount++;
+            } catch (error) {
+                console.error(`Failed to add member ${user.id}:`, error);
+                failCount++;
+            }
+        }
+    }
+    
+    ctx.reply(`Finished processing members.\nSuccess: ${successCount}\nFailed: ${failCount}`);
   }
 
   async sendCommand(_holonaddress, _command, _args) {
@@ -337,25 +352,49 @@ export default class Holons {
   }
 
   async addMember(_holonaddress, _userid) {
-    let holon = new ethers.Contract(_holonaddress, managed.default.abi, this.wallet);
-    console.log('adding member to holon:', _holonaddress, _userid);
-    
-    const existingAddress = await holon.userIdToAddress(_userid.toString());
-    if (existingAddress !== '0x0000000000000000000000000000000000000000') {
-      console.log('member already exists: ', _userid);
-      return true; // member already exists
-    }
-
     try {
-      const tx = await holon.addMember(_userid.toString(), {
-        gasLimit: 3000000,
-        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-        maxFeePerGas: ethers.parseUnits("30", "gwei"),
-      });
-      return await tx.wait();
+        // Create contract instance with the correct ABI
+        let holon = new ethers.Contract(_holonaddress, managed.default.abi, this.wallet);
+        console.log('adding member to holon:', _holonaddress, _userid);
+        
+        // First check if member already exists
+        const existingAddress = await holon.userIdToAddress(_userid.toString());
+        if (existingAddress !== '0x0000000000000000000000000000000000000000') {
+            console.log('member already exists: ', _userid);
+            return true;
+        }
+
+        // Get the current nonce for this transaction
+        const nonce = await this.wallet.getNonce();
+        
+        // Make sure we're passing the userId as a string
+        const userId = _userid.toString();
+        console.log('Adding member with userId:', userId);
+        
+        // Call the addMember(string) function explicitly
+        const tx = await holon['addMember(string)'](userId, {
+            gasLimit: 3000000,
+            maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+            maxFeePerGas: ethers.parseUnits("30", "gwei"),
+            nonce: nonce
+        });
+        
+        console.log('Transaction sent:', tx.hash);
+        
+        // Wait for the transaction to be mined
+        const receipt = await tx.wait();
+        console.log(`Successfully added member ${userId}, transaction hash: ${receipt.hash}`);
+        return receipt;
     } catch (error) {
-      console.error("Error in addMember:", error);
-      return error;
+        console.error("Error in addMember:", error);
+        if (error.transaction) {
+            console.error("Transaction details:", {
+                to: error.transaction.to,
+                from: error.transaction.from,
+                data: error.transaction.data
+            });
+        }
+        throw error;
     }
   }
 }

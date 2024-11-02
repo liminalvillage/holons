@@ -143,6 +143,57 @@ class HolonsBot {
     this.telebot.on('callback_query', async (ctx) => {
       await this.handleCallbackQuery(ctx);
     });
+
+    // Handler for new chat members
+    this.telebot.on('new_chat_members', async (ctx) => {
+      const newMembers = ctx.message.new_chat_members;
+      
+      // Check if the bot itself was added to the group
+      const botWasAdded = newMembers.some(member => member.id === ctx.botInfo.id);
+      
+      if (botWasAdded) {
+        const welcomeMessage = `
+Hello! I am Holon! 🌟
+
+My purpose is to help communities coordinate and collaborate more effectively... at any scale!
+
+Here are some key features to get started:
+• /task - Create and assign tasks
+• /request - Make requests to the group
+• /offer - Share what you can offer
+• /appreciate - Show appreciation to others
+
+Type / anytime to see the full list of commands.
+
+Note: This is a preview version. Your data may be lost during updates.
+
+Need help? Contact @RobertoValenti for feedback and support.`;
+
+        await ctx.reply(welcomeMessage);
+      }
+
+      // Add all new members to the database using Users module
+      for (const member of newMembers) {
+        // Skip if the new member is the bot itself
+        if (member.id === ctx.botInfo.id) continue;
+
+        try {
+          // Use getUserInfo which will create the user if they don't exist
+          await this.users.getUserInfo(member, ctx.chat.id);
+          
+          // Save a join action for the user
+          await this.users.saveUserAction(
+            member,
+            'joined',
+            'Joined the group',
+            0,
+            ctx.chat.id
+          );
+        } catch (error) {
+          console.error(`Error processing new user ${member.id}:`, error);
+        }
+      }
+    });
   }
 
   async handleInlineQuery(ctx) {

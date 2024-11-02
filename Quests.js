@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import { getUserName, getUser, getChatId, getMessageId, capitalize } from './utilities.js';
+import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import Users from './Users.js';
 
@@ -415,7 +415,7 @@ export default class Quests {
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
         // Handle the reaction to the quest
-        if (quest.initiator.id === ctx.from.id || utils.isAdmin(ctx.from.id, chatID)) {
+        if (quest.initiator.id === ctx.from.id || isAdmin(ctx.from.id, chatID)) {
             //delete quest from database
             this.db.del(chatID + '/quests', messageID.toString())
 
@@ -483,7 +483,7 @@ export default class Quests {
         if (!quest.status == 'stopped') { ctx.answerCbQuery(`You cannot complete a quest that has been stopped. Ask to remove the stop before completing the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) }); return }
 
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
-        if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || utils.isAdmin(ctx.from.id, chatID)) {
+        if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || isAdmin(ctx.from.id, chatID)) {
             quest.status = "completed";
             // Update the message 
             this.updateMessage(ctx, quest, language);
@@ -702,9 +702,9 @@ function createMessage(quest, language) {
     // if (quest.appreciation.length > 0)
     //     message += `| ${i18next.t('👍',{lng:language})} : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.participants.length > 0)
-        message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => u.first_name + ' ' + u.last_name.slice(0, 1) + '.').join(', ')} \n`;
+        message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => u.first_name + ' ' + u.last_name?.slice(0, 1) + '.').join(', ')} \n`;
     if (quest.appreciation.length > 0)
-        message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => u.first_name + ' ' + u.last_name.slice(0, 1) + '.').join(', ')} \n`;
+        message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => u.first_name + ' ' + u.last_name?.slice(0, 1) + '.').join(', ')} \n`;
     if (quest.when)
         message += `| ${i18next.t('📅', { lng: language })} : ${quest.when} \n`;
     if (quest.where?.lat)

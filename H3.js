@@ -105,9 +105,11 @@ class H3 {
             const chatID = ctx.message.chat.id;
             const messageContent = ctx.message.reply_to_message.text;
             let settings = await this.db.get('settings', chatID)
-            let id = settings.hex ? settings.hex : 'Hex not set, use /sethex'
+            let id = settings.hex ? settings.hex : 'Hex not set, use /setHex'
             // fetch the stored node
+            
             let node =  this.holosphere.getNode( chatID, 'quests', messageID)
+            console.log(node)
             
             // if (!node) {
             //     node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
