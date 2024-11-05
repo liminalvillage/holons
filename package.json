@@ -1,8 +1,9 @@
 {
   "name": "holosphere",
-  "version": "1.0.5",
-  "description": "Holonic Geospatial Communication Infrastructure based on h3.js and gun.js",
+  "version": "1.0.7",
+  "description": "Holonic Geospatial Communication Infrastructure",
   "main": "holosphere.js",
+  "types": "holosphere.d.ts",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

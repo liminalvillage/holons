@@ -31,18 +31,18 @@ class HoloSphere {
     }
 
     /**
-     * Sets the JSON schema for a specific lense.
-     * @param {string} lense - The lense identifier.
+     * Sets the JSON schema for a specific lens.
+     * @param {string} lens - The lens identifier.
      * @param {object} schema - The JSON schema to set.
      * @returns {Promise} - Resolves when the schema is set.
      */
-    async setSchema(lense, schema) {
+    async setSchema(lens, schema) {
         return new Promise((resolve, reject) => {
-            this.gun.get(lense).get('schema').put(JSON.stringify(schema), ack => {
+            this.gun.get(lens).get('schema').put(JSON.stringify(schema), ack => {
                 if (ack.err) {
                     resolve(new Error('Failed to add schema: ' + ack.err));
                 } else {
-                    console.log('Schema added successfully under lense:', lense);
+                    console.log('Schema added successfully under lens:', lens);
                     resolve(ack);
                 }
             })
@@ -50,13 +50,13 @@ class HoloSphere {
     }
 
     /**
-     * Retrieves the JSON schema for a specific lense.
-     * @param {string} lense - The lense identifier.
+     * Retrieves the JSON schema for a specific lens.
+     * @param {string} lens - The lens identifier.
      * @returns {Promise<object|null>} - The retrieved schema or null if not found.
      */
-    async getSchema(lense) {
+    async getSchema(lens) {
         return new Promise((resolve) => {
-            this.gun.get(lense).get('schema').once(data => {
+            this.gun.get(lens).get('schema').once(data => {
                 if (data) {
                     let parsed;
                     try {
@@ -82,14 +82,16 @@ class HoloSphere {
     }
 
     /**
-     * Stores content in the specified hex and lense.
+     * Stores content in the specified hex and lens.
      * @param {string} hex - The hex identifier.
-     * @param {string} lense - The lense under which to store the content.
+     * @param {string} lens - The lens under which to store the content.
      * @param {object} content - The content to store.
      */
-    async put(hex, lense, content) {
-        // Retrieve the schema for the lense
-        let schema = await this.getSchema(lense)
+    async put(hex, lens, content) {
+        if (!hex || !lens || !content) return;
+        console.error('Error in put:', hex, lens, content);
+        // Retrieve the schema for the lens
+        let schema = await this.getSchema(lens)
         if (schema) {
             // Validate the content against the schema
             const valid = this.validator.validate(schema, content);
@@ -105,71 +107,102 @@ class HoloSphere {
         let noderef;
 
         if (content.id) { //use the user-defined id. Important to be able to send updates using put
-            noderef = this.gun.get(lense).get(content.id).put(payload)
-            this.gun.get(hex.toString()).get(lense).get(content.id).put(payload)
+            noderef = this.gun.get(lens).get(content.id).put(payload)
+            this.gun.get(hex.toString()).get(lens).get(content.id).put(payload)
         } else { // create a content-addressable reference like IPFS. Note: no updates possible using put
             const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             const hashHex = hashArray.map(byte => byte.toString(16).padStart(2, "0")).join("");
-            noderef = this.gun.get(lense).get(hashHex).put(payload)
-            this.gun.get(hex.toString()).get(lense).get(hashHex).put(payload)
+            noderef = this.gun.get(lens).get(hashHex).put(payload)
+            this.gun.get(hex.toString()).get(lens).get(hashHex).put(payload)
         }
 
     }
 
-    async putNode(hex, lense, node) {
-        this.gun.get(hex).get(lense).set(node)
+    async putNode(hex, lens, node) {
+        this.gun.get(hex).get(lens).set(node)
+    }
+
+    async parse(data) {
+        let parsed = {};
+
+        if (typeof data === 'object' && data !== null) {
+            if (data._ && data._["#"]) {
+                // If the data is a reference, fetch the actual content
+                let query = data._['#'].split('/');
+                let hex = query[1];
+                let lens = query[2];
+                let key = query[3];
+                parsed = await this.getKey(hex, lens, key);
+            } else if (data._ && data._['>']) {
+                // This might be a GunDB node, try to get its value
+                const nodeValue = Object.values(data).find(v => typeof v !== 'object' && v !== '_');
+                if (nodeValue) {
+                    try {
+                        parsed = JSON.parse(nodeValue);
+                    } catch (e) {
+                        console.log('Invalid JSON in node value:', nodeValue);
+                        parsed = nodeValue; // return the raw data
+                    }
+                } else {
+                    console.log('Unable to parse GunDB node:', data);
+                    parsed = data; // return the original data
+                }
+            } else {
+                // Treat it as regular data
+                parsed = data;
+            }
+        } else {
+            // If it's not an object, try parsing it as JSON
+            try {
+                parsed = JSON.parse(data);
+            } catch (e) {
+                console.log('Invalid JSON:', data);
+                parsed = data; // return the raw data
+            }
+        }
+
+        return parsed;
     }
 
     /**
-     * Retrieves content from the specified hex and lense.
+     * Retrieves content from the specified hex and lens.
      * @param {string} hex - The hex identifier.
-     * @param {string} lense - The lense from which to retrieve content.
+     * @param {string} lens - The lens from which to retrieve content.
      * @returns {Promise<Array<object>>} - The retrieved content.
      */
-    async get(hex, lense) {
+    async get(hex, lens) {
+        if (!hex || !lens) {
+            console.log('Wrong get:', hex, lens)
+            return;
+        }
         // Wrap the GunDB operation in a promise
-        //retrieve lense schema
-        const schema = await this.getSchema(lense);
+        //retrieve lens schema
+        const schema = await this.getSchema(lens);
 
         if (!schema) {
-            console.log('The schema for "' + lense + '" is not defined');
+            console.log('The schema for "' + lens + '" is not defined');
             // return null; // No schema found, return null if strict about it 
         }
 
         return new Promise(async (resolve, reject) => {
             let output = []
             let counter = 0
-            this.gun.get(hex.toString()).get(lense).once((data, key) => {
+            this.gun.get(hex.toString()).get(lens).once((data, key) => {
                 if (data) {
                     const maplenght = Object.keys(data).length - 1
                     console.log('Map length:', maplenght)
-                    this.gun.get(hex.toString()).get(lense).map().once(async (itemdata, key) => {
+                    this.gun.get(hex.toString()).get(lens).map().once(async (itemdata, key) => {
                         counter += 1
                         if (itemdata) {
-                            if (itemdata._["#"]) {
-                                
-                                // If the data is a reference, fetch the actual content
-                                let query  = itemdata._['#'].split('/')
-                                let hex = query[1]
-                                let lense = query[2]
-                                let key = query[3]
-                                itemdata = await this.getNode(hex, lense, key)
-
-                            }
-                            var parsed = {}
-                            try {
-                                parsed = JSON.parse(itemdata);
-                            } catch (e) {
-                                console.log('Invalid JSON:', itemdata);
-                                parsed = itemdata //return the raw data
-                            }
+                            let parsed = await this.parse (itemdata)
+                          
 
                             if (schema) {
                                 let valid = this.validator.validate(schema, parsed);
                                 if (!valid || parsed == null || parsed == undefined) {
                                     console.log('Removing Invalid content:', this.validator.errors);
-                                    this.gun.get(hex).get(lense).get(key).put(null);
+                                    this.gun.get(hex).get(lens).get(key).put(null);
 
                                 } else {
                                     output.push(parsed);
@@ -192,18 +225,26 @@ class HoloSphere {
     }
 
        /**
-     * Retrieves a specific key from the specified hex and lense.
+     * Retrieves a specific key from the specified hex and lens.
      * @param {string} hex - The hex identifier.
-     * @param {string} lense - The lense from which to retrieve the key.
+     * @param {string} lens - The lens from which to retrieve the key.
      * @param {string} key - The specific key to retrieve.
      * @returns {Promise<object|null>} - The retrieved content or null if not found.
      */
-       async getKey(hex, lense, key) {
+       async getKey(hex, lens, key) {
         return new Promise((resolve) => {
             // Use Gun to get the data
-            this.gun.get(hex).get(lense).get(key).once((data, key) => {
+            this.gun.get(hex).get(lens).get(key).once((data, key) => {
                 if (data) {
-                    resolve(JSON.parse(data)); // Resolve the promise with the data if data is found
+                    console.log('Data getting parsed:', data)
+                    try {
+                        let parsed = JSON.parse(data); // Resolve the promise with the data if data is found
+                        resolve(parsed);
+                    }
+                    catch (e) {
+                        resolve(data)
+                    }
+                   
                 } else {
                     resolve(null); // Reject the promise if no data is found
                 }
@@ -213,26 +254,26 @@ class HoloSphere {
     }
 
     /**
-   * Retrieves a specific gundb node from the specified hex and lense.
+   * Retrieves a specific gundb node from the specified hex and lens.
    * @param {string} hex - The hex identifier.
-   * @param {string} lense - The lense from which to retrieve the key.
+   * @param {string} lens - The lens from which to retrieve the key.
    * @param {string} key - The specific key to retrieve.
    * @returns {Promise<object|null>} - The retrieved content or null if not found.
    */
-     getNode(hex, lense, key) {
+     getNode(hex, lens, key) {
         // Use Gun to get the data
-        return this.gun.get(hex).get(lense).get(key)
+        return this.gun.get(hex).get(lens).get(key)
     }
 
 
 
     /**
-     * Computes summaries based on the content within a hex and lense.
+     * Computes summaries based on the content within a hex and lens.
      * @param {string} hex - The hex identifier.
-     * @param {string} lense - The lense to compute.
+     * @param {string} lens - The lens to compute.
      * @param {string} operation - The operation to perform.
      */
-    async compute(hex, lense, operation) {
+    async compute(hex, lens, operation) {
 
         let res = h3.getResolution(hex);
         if (res < 1 || res > 15) return;
@@ -251,7 +292,7 @@ class HoloSphere {
                     resolve(); // Resolve the promise to prevent it from hanging
                 }, 1000); // Timeout of 5 seconds
 
-                this.gun.get(siblings[i]).get(lense).map().once((data, key) => {
+                this.gun.get(siblings[i]).get(lens).map().once((data, key) => {
                     clearTimeout(timeout); // Clear the timeout if data is received
                     if (data) {
                         content.push(data.content);
@@ -267,23 +308,23 @@ class HoloSphere {
         console.log('Computed:', computed)
         let node = await this.gun.get(parent + '_summary').put({ id: parent + '_summary', content: computed })
 
-        this.put(parent, lense, node);
-        this.compute(parent, lense, operation)
+        this.put(parent, lens, node);
+        this.compute(parent, lens, operation)
     }
 
     /**
-     * Clears all entities under a specific hex and lense.
+     * Clears all entities under a specific hex and lens.
      * @param {string} hex - The hex identifier.
-     * @param {string} lense - The lense to clear.
+     * @param {string} lens - The lens to clear.
      */
-    async clearlense(hex, lense) {
+    async clearlens(hex, lens) {
         let entities = {};
 
         // Get list out of Gun
-        this.gun.get(hex).get(lense).map().once((data, key) => {
+        this.gun.get(hex).get(lens).map().once((data, key) => {
             //entities = data;
             //const id = Object.keys(entities)[0] // since this would be in object form, you can manipulate it as you would like. 
-            this.gun.get(hex).get(lense).put({ [key]: null })
+            this.gun.get(hex).get(lens).put({ [key]: null })
         })
     }
 
@@ -328,21 +369,21 @@ class HoloSphere {
     /**
      * Upcasts content to parent hexagons recursively.
      * @param {string} hex - The current hex identifier.
-     * @param {string} lense - The lense under which to upcast.
+     * @param {string} lens - The lens under which to upcast.
      * @param {object} content - The content to upcast.
      * @returns {Promise<object>} - The upcasted content.
      */
-    async upcast(hex, lense, content) {
+    async upcast(hex, lens, content) {
         let res = h3.getResolution(hex)
         if (res == 0) {
-            await this.putNode(hex, lense, content)
+            await this.putNode(hex, lens, content)
             return content
         }
         else {
-            console.log('Upcasting ', hex, lense, content, res)
-            await this.putNode(hex, lense, content)
+            console.log('Upcasting ', hex, lens, content, res)
+            await this.putNode(hex, lens, content)
             let parent = h3.cellToParent(hex, res - 1)
-            return this.upcast(parent, lense, content)
+            return this.upcast(parent, lens, content)
         }
     }
 
@@ -410,13 +451,13 @@ class HoloSphere {
     }
 
     /**
-     * Subscribes to changes in a specific hex and lense.
+     * Subscribes to changes in a specific hex and lens.
      * @param {string} hex - The hex identifier.
-     * @param {string} lense - The lense to subscribe to.
+     * @param {string} lens - The lens to subscribe to.
      * @param {function} callback - The callback to execute on changes.
      */
-    subscribe(hex, lense, callback) {
-        this.gun.get(hex).get(lense).map().on((data, key) => {
+    subscribe(hex, lens, callback) {
+        this.gun.get(hex).get(lens).map().on((data, key) => {
             callback(data, key)
         })
     }
