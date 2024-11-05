@@ -5,12 +5,9 @@
       <small v-if="type == 'ETHEREUM'">{{ this.id }}</small>
       <br />
       <button v-if="type == 'ETHEREUM'" @click="sendFunds(this.id)">Send Funds</button> <br />
-      <!-- <button v-if="type == 'ETHEREUM'" @click="sendFunds(this.id)">Purchase Product</button> -->
-      <!-- <i v-if="quote">"{{quote}}"</i>
-      <br/>
-      <br/>
-      <i><b>{{quoteauthor}}</b></i> -->
+      <button v-if="type == 'ETHEREUM'" @click="sendERC20('0x123', this.id)">Send ERC20</button> <br />
     </div>
+    
     <div slot="default" style="width:85%;margin:5%;"> <vue-markdown :source="this.description"></vue-markdown></div>
     <div slot="extension">
       <z-dialog :title="name" :width="600" :height="600" :content="description" :open="dialog" @close="dialog = false"
@@ -18,39 +15,27 @@
         <z-spot button slot="extension" :angle=45 size='small' @click.native='dialog = false'>
           Close
         </z-spot>
-        <!-- default slot-->
-        <!-- creates a form and saves it using gundb -->
-        <z-form :fields="[
-          {type: 'text', label: 'Name', model: 'name'},
-          {type: 'text', label: 'Description', model: 'description'},
-          {type: 'text', label: 'URL', model: 'url'},
-          {type: 'text', label: 'Quote', model: 'quote'},
-          {type: 'text', label: 'Quote Author', model: 'quoteauthor'},
-          {type: 'text', label: 'Image', model: 'image'},
-          {type: 'text', label: 'Holons', model: 'holons'},
-          {type: 'text', label: 'Holons Labels', model: 'holonslabels'},
-          {type: 'text', label: 'Holons Images', model: 'holonsimages'},
-          {type: 'text', label: 'Holons Values', model: 'holonsvalues'}
-        ]" @submit="dialog = false; console.log('submitted!')"></z-form>
         Please copy an holon.json file from existing holons, modify it and save it in your own location (e.g. github/ftp/ipfs)
         
       </z-dialog>
-      <z-spot v-if="type == 'PROJECT'" label="Contributors" :distance="100" :angle="100" label-pos="bottom">
-      </z-spot>
-      <z-spot v-if="type == 'PROJECT'" label="Dependencies" :distance="100" label-pos="bottom" :angle="200">
-      </z-spot>
+      
+      <!-- <z-list 
+      :items = holons
+      :per-page = "10"> -->
       <z-spot v-for="(holon, index) in holons" :key="holon.id" :knob="editing ? true : false"
         @click.native="holonsvalues[index] ? normalize(index) : ''" :qty.sync="holonsvalues[index]"
+        :index= index
         :label="holonslabels[index]" :progress="parseInt(holon.value)"
         :angle="200 - (index * (220. / (holons.length > 1 ? holons.length - 1 : 1)))" size="m" :distance="130"
         :label-pos="index >= holons.length / 2 ? 'right' : 'left'"
-        :to-view="editing ? '' : { name: 'holon', params: { id: holon.id } }">
+        :to-view="editing ? '' : { name: holon.lense ? holon.lense : 'holon', params: { id: holon.id } }">
         <!-- :style="[{backgroundImage:`url(${holonsimages[index]})`},{backgroundSize: `100% 100%`},{backgroundRepeat: `no-repeat`},{backgroundPosition: `center`},{borderWidth:'$(holonsvalues[index])px'}]"
       -->
         <img v-if=holonsimages[index] :src="`${holonsimages[index]}`" style="width: 100%; opacity:0.4;"
           onerror="this.style.display='none'" />
         <!-- :imagePath = "holonsimages[index]?'./images/'+ holonsimages[index]:''" -->
       </z-spot>
+    <!-- </z-list> -->
       <!-- settings-->
       <!-- <z-spot
         :angle="270"
@@ -86,13 +71,8 @@
 
 import VueMarkdown from 'vue-markdown'
 
-import Web3 from 'web3'
-
 import { fetchInfo } from '../libs/holons.js'
 
-
-// import abi from '../abi.json'
-import * as contractdata from '../ContractData.json'
 
 // import { fstat } from 'fs'
 export default {
@@ -140,37 +120,6 @@ export default {
       console.log('Go to Site:' + address)
       return window.open(address, '_blank')
     },
-    async initWeb3() {
-      this.web3 = new Web3(new Web3.providers.WebsocketProvider('wss://sepolia.infura.io/ws/v3/966b62ed84c84715bc5970a1afecad29'))
-      // this.web3.eth.getAccounts(console.log)
-    },
-    async initDb() {
-    const ipfsOptions = {
-      repo: './ipfs',
-      start: true,
-      preload: {
-        enabled: false,
-      },
-      EXPERIMENTAL: {
-        pubsub: true,
-      },
-      config: {
-        Addresses: {
-          Swarm: [
-            // Use IPFS dev webrtc signal server
-            '/dns4/wrtc-star1.par.dwebops.pub/tcp/443/wss/p2p-webrtc-star/',
-            '/dns4/wrtc-star2.sjc.dwebops.pub/tcp/443/wss/p2p-webrtc-star/',
-            '/dns4/webrtc-star.discovery.libp2p.io/tcp/443/wss/p2p-webrtc-star/',
-          ],
-        },
-      },
-    }
-    ipfs = await window.Ipfs.create(ipfsOptions)
-    orbitdb = await window.OrbitDB.createInstance(ipfs)
-   
-    },
-
-
 
     // async getPerspectives () {
     //   const uri = 'ws://localhost:4000/graphql'
@@ -195,6 +144,7 @@ export default {
     async holonInfo() { // retrieves and updates the information about this holon and its sub holons
       if (this.$zircle.getParams()) {
         this.id = this.$zircle.getParams().id
+        this.lense = this.$zircle.getParams().lense
       }
     
       if (this.id && this.id.startsWith('http')) {
@@ -204,7 +154,7 @@ export default {
           var file = ''
           if (pathArray[3]) file = url.pathname.slice(url.pathname.indexOf(pathArray[2]) + pathArray[2].length)
           //this.$router.push({ path: `/${pathArray[1]}/${pathArray[2]}/${file}`, query: { id: this.id } })
-          this.$router.push({ path: `/`, query: { id: this.id } })
+          this.$router.push({ path: `/${this.id}`, query: { id: this.id } })
         }
       }
       // if (this.id && this.id.startsWith('Qm')) {
@@ -222,7 +172,7 @@ export default {
       if (this.id.startsWith('./') || this.id.startsWith('/') || this.id.startsWith('..') || this.id.match(/^[a-zA-Z]+$/) )
         this.id = this.$route.query.id + '/' + this.id //this.id.slice(0, this.id.lastIndexOf('/') + 1)
 
-      let r = await fetchInfo(this.id? this.id : this.$route.query.id)
+      let r = await fetchInfo(this.id? this.id : this.$route.query.id, this.lense)
       
       console.log(r.type)
       this.type = r.type
@@ -313,9 +263,6 @@ export default {
   },
   mounted() {
     this.holonInfo()
-    this.initWeb3()
-   // this.initDb()
-    // this.holon = new Web3.eth.Contract(data.holonabi, data.holonaddress)
   },
   computed: {
     cssVars() {
@@ -329,11 +276,11 @@ export default {
     return {
       dialog: false,
       db: null,
-      web3: null,
       holon: null,
       editing: false,
       url: null,
-      type: 'GITHUB',
+      type: 'HOLONS',
+      lense: null,
       id: '',
       name: '',
       description: '',

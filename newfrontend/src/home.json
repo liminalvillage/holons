@@ -2,13 +2,7 @@
     "name": "Liminal Convergence",
     "image":"https://www.holons.io/images/holons.png",
     "holons" : [
-    { "id": "convergence", "label": "Convergence"},
-    { "id": "emergence", "label": "Emergence" },
-    { "id": "coherence", "label": "Coherence"},
-    { "id": "economics", "label": "Community Economics" },
-    { "id": "identity", "label": "Identity (Reputation)" },
-    { "id": "biodiversity", "label": "Biodiversity Mapping" },
-    { "id": "rba", "label": "Resource-Based Accounting" },
-    { "id": "regenmemes", "label": "Regenerative Memes" }
+    {"id": "235114395", "label":"Holons","lense":"holons"},
+    { "id": "http://github.com/robertovalenti/personal/holon", "label": "Roberto Valenti"}
     ]
 }

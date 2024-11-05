@@ -1,6 +1,69 @@
 // Description: fetches holon info from different sources
 import Home from '../home.json'
 
+import HoloSphere from 'holosphere'
+
+let hs = new HoloSphere("Holons")
+
+async function fetchHolon(id){
+
+  // var tableid = id.split('.')[0]
+  // var lense = id.split('.')[1]
+  // var itemid = id.split('.')[2]
+
+  // console.log("Holon:", tableid)
+  // console.log("lense:", lense)
+  // console.log("itemid:", itemid)
+
+  // var holon = {}
+  // if (lense == null|| lense == undefined){
+  // holon.id = id
+  // holon.holons = [
+  //   {'id': id+'.quests', 'label': 'Tasks', 'lense':'tasks' },
+  //   {'id': id+'.users', 'label': 'People', 'lense':'users' },
+  //   {'id': id+'.shopping', 'label': 'Shopping', 'lense':'shopping' },
+  //   {'id': id+'.tags', 'label': 'Tags', 'lense':'tags' },
+  //   {'id': id+'.expenses', 'label': 'Expenses', 'lense':'expenses' },
+  //   {'id': id+'.settings', 'label': 'Settings', 'lense':'settings' },
+  // ]
+  // return holon
+  // }
+
+  //   // Fetch info from table 
+  // let table = await hs.get(tableid, lense)
+
+  // if (itemid){ // if leaf node
+  //   console.log("item", table)
+  //   holon.name = table.name || table.title || table.description
+  //   let itemtype = lense.slice(0, -1) 
+  //   holon.id = table.id
+  //   return holon
+  // }
+ 
+  // holon.id = id
+  // holon.name = id
+  // holon.description = id
+  // holon.holons = []
+
+  // //let members = await users.get(id,"users")
+  // //remove last letter of type
+
+ 
+  // table.forEach(item => {
+
+  //   if (item.status !== 'completed' && item.type=="task")  // task
+  //   holon.holons.push( { 'id': id+'.'+item.id, 'label': item.title||item.name||item.description, 'lense': lense, 'payload':item})
+  //   else 
+  //   if (item.currency) // Expense
+  //     holon.holons.push( { 'id': id+'.'+item.id, 'label': item.description, 'lense': lense, 'payload':item})
+  //   if (item.username) // User
+  //     holon.holons.push( { 'id': id+'.'+item.id, 'label': item.username, 'lense': lense, 'payload':item})
+  // })
+  
+  // return holon
+
+}
+
 async function fetchContributors (id) {
     // fetch(id, {
     //   method: 'POST',
@@ -51,7 +114,7 @@ async function fetchContributors (id) {
     var holon = {}
 
       // Create / Open a OrbitDB doc store
-    //let users = await db.docstore("WeQuest." + address + ".users");
+    //let users = await db.docstore("Holons." + address + ".users");
     if (!ipfs){
       const ipfsOptions = {
         repo: './ipfs',
@@ -129,7 +192,7 @@ async function fetchContributors (id) {
     // compile jsos
   } 
 
- export  async function fetchInfo (address) { // returns json containing info of the holon passedd in
+ export  async function fetchInfo (address, lense) { // returns json containing info of the holon passedd in
     console.log('Requesting: ' + address)
     var type = 'N/A'
     var json = { 'id': address, 'url': address, 'name': 'n/a', 'image': 'notfound.jpg' }
@@ -145,7 +208,16 @@ async function fetchContributors (id) {
         return { json, type }
       }
     // ===================================
-    if (address.includes('github.com')) { // GITHUB ADDRESS
+    // check if address is made of just numbers
+    // match with -1002029098719
+    
+
+    if (address.match(/[0-9]{9}/g)||address.match(/-[0-9]{13}/g)) {
+      type = 'HOLON'
+      json = await fetchHolon(address, lense)
+      return {json, type}
+    }
+    else if (address.includes('github.com')) { // GITHUB ADDRESS
       type = 'GITHUB'
       url = new URL(address)
       pathArray = url.pathname.split('/')
@@ -179,7 +251,7 @@ async function fetchContributors (id) {
     // } else if (address.match(/[0-9A-Za-z]{3,}/g)) { // NPM NAME
     //   type = 'NPM'
     //   fetchaddress = 'https://registry.npmjs.org/' + address
-    }else  if (address.match(/^[0-9]+$/)|| address.startsWith('WeQuest.') || address.startsWith('Holons.')) { // ORBITDB ADDRESS
+    }else  if (address.match(/^[0-9]+$/)|| address.startsWith('Holons.') || address.startsWith('Holons.')) { // ORBITDB ADDRESS
       type = 'ORBITDB'
       fetchaddress = address
       json = await  fetchOrbitInfo(address)

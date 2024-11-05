@@ -32,7 +32,7 @@ contract Managed is Holon {
     uint256 public totalappreciation;
     mapping(string => uint256) public appreciation; // appreciation received by a member based on UserID
 
-    constructor(address _creator, string memory _name) {
+    constructor(address _creator, string memory _name) Holon(_name, "1.0", 'Managed', _creator) {
         name = _name;
         creator = _creator;
         totalappreciation = 0;
@@ -41,13 +41,20 @@ contract Managed is Holon {
     // Only the creator can add members
     function addMember(string memory _userId) external {
         require(msg.sender == creator, "Only creator can add members");
-        require (isManagedMember[_userId] == false, "User ID is already added");
-        // for (uint i = 0; i < userIds.length; i++) {
-        //     //TODO:maybe cheaper to usa a lookup mapping?
-        //     require(keccak256(abi.encodePacked(userIds[i])) != keccak256(abi.encodePacked(_userId)), "User ID is already added");
-        // }
+        if (isManagedMember[_userId]) return; // Gently fail if user is already added
         isManagedMember[_userId] = true;
         userIds.push(_userId);
+    }
+
+    // Add multiple members at once
+    function addMembers(string[] memory _userIds) external {
+        require(msg.sender == creator, "Only creator can add members");
+        for (uint i = 0; i < _userIds.length; i++) {
+            string memory userId = _userIds[i];
+            if (isManagedMember[userId]) continue; // Skip if user is already added
+            isManagedMember[userId] = true;
+            userIds.push(userId);
+        }
     }
 
     function getSize() external view override returns (uint256) {
@@ -143,12 +150,11 @@ contract Managed is Holon {
 
         }
     }
-
     // reward function to reward all members through their user id
     function reward(
         address _tokenaddress,
         uint256 _tokenamount
-    ) public payable override {
+    ) public payable override returns (uint256) {
         bool etherreward;
         IERC20 token;
 
