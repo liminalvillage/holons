@@ -3,9 +3,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { Client, GatewayIntentBits,ActionRowBuilder, ButtonBuilder, ButtonStyle,Events } from 'discord.js';
 import MattermostClient from 'mattermost-client';
 
-import { joinVoiceChannel, createAudioPlayer, createAudioResource, getVoiceConnection, VoiceReceiver } from '@discordjs/voice';
 import fs from 'fs';
-import prism from 'prism-media';
 
 import qrReader from 'qrcode-reader';
 import Jimp from 'jimp';

@@ -92,7 +92,13 @@
             "announcementusage": "Usage: /announcement [message] (es. /announcement Meeting at 3pm)",
             "announced": "Announcement sent: {{message}}",
             "Open Dashboard": "Open Dashboard",
-            "Open in Holons": "Open in Holons"
+            "Open in Holons": "Open in Holons",
+            "noquestsfound": "No quests found",
+            "listtypeusage": "Please specify a type of quest to list. eg: /listtype quest",
+            "notypefound": "No {{type}}s found",
+            "cannotcompletestopped": "You cannot complete a quest that has been stopped. Ask to remove the stop before completing the quest.",
+            "onlyinitiatorcomplete": "Only the initiator of the quest or a participant can mark it as completed.",
+            "onlyinitatorcancel": "Only the creator of the quest can cancel the quest."
         }
     },
     "it": {
@@ -179,7 +185,13 @@
             "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
             "announced": "Annuncio inviato: {{message}}",
             "Open Dashboard": "Apri Dashboard",
-            "Open in Holons": "Apri in Holons"
+            "Open in Holons": "Apri in Holons",
+            "noquestsfound": "Nessuna missione trovata",
+            "listtypeusage": "Specifica un tipo di missione da elencare. es: /listtype compito",
+            "notypefound": "Nessun {{type}} trovato",
+            "cannotcompletestopped": "Non puoi completare una missione che è stata fermata. Chiedi di rimuovere il blocco prima di completare la missione.",
+            "onlyinitiatorcomplete": "Solo l'iniziatore della missione o un partecipante può segnarla come completata.",
+            "onlyinitatorcancel": "Solo il creatore della missione può cancellarla."
         }
     },
     "fiobbo": {
@@ -266,7 +278,13 @@
             "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
             "announced": "Annuncio inviato: {{message}}",
             "Open Dashboard": "Apri Dashboard",
-            "Open in Holons": "Apri in Holons"
+            "Open in Holons": "Apri in Holons",
+            "noquestsfound": "Nessun compito trovato",
+            "listtypeusage": "Specifica un tipo di compito da elencare. es: /listtype compito",
+            "notypefound": "Nessun {{type}} trovato",
+            "cannotcompletestopped": "Non puoi completare un compito che è stato bloccato. Chiedi di rimuovere il blocco prima di completare il compito.",
+            "onlyinitiatorcomplete": "Solo l'iniziatore del compito o un partecipante può segnarlo come completato.",
+            "onlyinitatorcancel": "Solo il creatore del compito può cancellarlo."
         }
     },
     "week": {

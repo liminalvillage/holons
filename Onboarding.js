@@ -1,5 +1,4 @@
-import { Telegraf, Scenes, session, Markup } from 'telegraf';
-
+import { Telegraf, Scenes, Markup } from 'telegraf';
 
 import h3Scene from './scenes/h3Scene.js';
 import arrivalbookingScene from './scenes/arrivalbookingScene.js';
@@ -22,12 +21,27 @@ export default class Onboarding {
     this.bot = bot;
     this.userResponses = {};
 
-    const stage = new Scenes.Stage(
-      [welcomeScene, arrivalbookingScene, departurebookingScene, videoScene, valuesScene, categoriesScene, onboardingScene, locationScene, questionsScene, saveprofileScene, summarizeScene, h3Scene, dnaScene, done].concat(createScenesForQuestions()).concat(createScenesForDNA())
-    );
+    const scenes = [
+      welcomeScene, 
+      arrivalbookingScene, 
+      departurebookingScene, 
+      videoScene, 
+      valuesScene, 
+      categoriesScene, 
+      onboardingScene, 
+      locationScene, 
+      questionsScene, 
+      saveprofileScene, 
+      summarizeScene, 
+      h3Scene, 
+      dnaScene, 
+      done
+    ].concat(createScenesForQuestions())
+     .concat(createScenesForDNA());
 
-    bot.use(session());
-    bot.use(stage.middleware());
+    scenes.forEach(scene => {
+      bot.stage.register(scene);
+    });
 
     bot.command('onboarding', ctx => {
       const userId = ctx.from.id;
@@ -38,7 +52,9 @@ export default class Onboarding {
       ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
     });
 
-    bot.command('summarize', ctx => { ctx.session.db = this.db; ctx.scene.enter('summarize') });
+    bot.command('summarize', ctx => { 
+      ctx.session.db = this.db; 
+      ctx.scene.enter('summarize') 
+    });
   }
-
 }

@@ -1,43 +1,74 @@
-import { CronJob } from 'cron'; // You may need to install the 'cron' package
+import { CronJob } from 'cron';
 
 class Scheduler {
-    constructor(bot, db) {
+    constructor(bot, db, quests) {
         this.bot = bot;
         this.db = db;
-        this.this.db = null; // Database for tasks
+        this.quests = quests; // Reference to Quests class
+        this.jobs = new Map(); // Store active cron jobs
         this.loadTasks();
+
+        this.bot.command('recurring', (ctx) => this.addTask(ctx));
     }
 
     async loadTasks() {
-        // Initialize or load the tasks database
-  
+        // Load all recurring tasks from database and schedule them
+        const tasks = await this.db.getAll('recurring');
+        if (tasks && tasks.length > 0) {
+            tasks.forEach(task => {
+                this.scheduleTask(task);
+            });
+        }
     }
 
     async addTask(ctx) {
         const chatID = ctx.message.chat.id;
         const [frequency, ...taskDetails] = ctx.message.text.split(' ').slice(1);
+        
+        if (!frequency || taskDetails.length === 0) {
+            ctx.reply('Usage: /recurring [frequency] [task description]\nFrequencies: daily, weekly, monthly, quarterly, yearly');
+            return;
+        }
+
         const task = {
+            id: Date.now().toString(),
             chatID,
-            taskDetails: taskDetails.join(' '),
+            title: taskDetails.join(' '),
             frequency,
             createdAt: new Date(),
-            completed: false
+            type: 'recurring',
+            initiator: ctx.message.from
         };
-        await this.this.db.put(chatID + '/schedule',task);
+
+        // Save to database
+        await this.db.put('recurring', task);
+        
+        // Schedule the task
         this.scheduleTask(task);
-        ctx.reply('Task scheduled successfully.');
+        
+        ctx.reply(`Recurring task "${task.title}" scheduled ${frequency}`);
     }
 
     scheduleTask(task) {
         const cronTime = this.getCronTime(task.frequency);
+        if (!cronTime) {
+            console.error('Invalid frequency:', task.frequency);
+            return;
+        }
+
+        // Create new cron job
         const job = new CronJob(cronTime, () => {
-            this.remindTask(task);
+            this.createQuest(task);
         }, null, true, 'UTC');
+
+        // Store job reference
+        this.jobs.set(task.id, job);
+        
+        // Start the job
         job.start();
     }
 
     getCronTime(frequency) {
-        // Convert frequency to a cron format string
         switch (frequency.toLowerCase()) {
             case 'daily':
                 return '0 9 * * *'; // Every day at 9 AM
@@ -50,33 +81,35 @@ class Scheduler {
             case 'yearly':
                 return '0 9 1 1 *'; // Every January 1st at 9 AM
             default:
-                return '0 0 0 * * *'; // Default to every minute (for testing)
+                return null;
         }
     }
 
-    async remindTask(task) {
-        const chatID = task.chatID;
-        if (!task.completed) {
-            this.bot.telegram.sendMessage(chatID, `Reminder: ${task.taskDetails}`);
-            // Check if the task is completed and update the database accordingly
-        }
+    async createQuest(task) {
+        // Create a new quest context
+        const ctx = {
+            message: {
+                chat: { id: task.chatID },
+                from: task.initiator,
+                text: `/task ${task.title}`,
+                message_id: Date.now()
+            }
+        };
+
+        // Create the quest using the Quests class
+        await this.quests.quest('recurring', ctx);
     }
 
-    async markTaskCompleted(ctx) {
-        const chatID = ctx.message.chat.id;
-        const taskDetails = ctx.message.text.split(' ').slice(1).join(' ');
-        const tasks = await this.this.db.query((doc) => doc.chatID === chatID && doc.taskDetails === taskDetails);
-        if (tasks.length > 0) {
-            let task = tasks[0];
-            task.completed = true;
-            await this.this.db.put(chatID + '/schedule',task);
-            ctx.reply('Task marked as completed.');
-        } else {
-            ctx.reply('Task not found.');
+    async stopTask(taskId) {
+        const job = this.jobs.get(taskId);
+        if (job) {
+            job.stop();
+            this.jobs.delete(taskId);
+            await this.db.del('recurring', taskId);
+            return true;
         }
+        return false;
     }
-
-    // Additional methods as needed, such as listTasks, deleteTask, etc.
 }
 
 export default Scheduler;

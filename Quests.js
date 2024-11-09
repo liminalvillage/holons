@@ -82,7 +82,7 @@ export default class Quests {
         let quests = await this.db.getAll(chatID + '/quests');
         //quests = ((doc) => doc.status === 'ongoing' || doc.status === 'scheduled')
         if (quests.length === 0) {
-            ctx.reply(`No quests found`);
+            ctx.reply(i18next.t('noquestsfound', { lng: language }));
             return;
         }
         else {
@@ -125,7 +125,7 @@ export default class Quests {
             type = type.slice(0, -1);
 
         if (type == undefined) {
-            ctx.reply(`Please specify a type of quest to list. eg: /listtype quest`);
+            ctx.reply(i18next.t('listtypeusage', { lng: language }));
             return
         }
 
@@ -136,7 +136,7 @@ export default class Quests {
         let quests = await this.db.getAll(chatID + '/quests')
         // quests = quests.filter((doc) => doc.type === type && doc.status === 'ongoing' || doc.status === 'scheduled');
         if (quests.length === 0) {
-            ctx.reply(`No ${type}s found`);
+            ctx.reply(i18next.t('notypefound', { type: type, lng: language }));
             return;
         }
         let message = '*' + capitalize(type) + 's*:\n\n';
@@ -425,7 +425,7 @@ export default class Quests {
             ctx.deleteMessage(messageID.toString()).catch((err) => { });
 
         } else {
-            ctx.answerCbQuery(`Only the creator of the quest can cancel the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+            ctx.answerCbQuery(i18next.t('onlyinitatorcancel', { lng: language }), { reply_to_message_id: messageID })
 
         }
     }
@@ -480,8 +480,9 @@ export default class Quests {
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-        if (!quest.status == 'stopped') { ctx.answerCbQuery(`You cannot complete a quest that has been stopped. Ask to remove the stop before completing the quest.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) }); return }
-
+        if (!quest.status == 'stopped') { ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }), { reply_to_message_id: messageID })
+            return 
+        }
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
         if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || isAdmin(ctx.from.id, chatID)) {
             quest.status = "completed";
@@ -493,7 +494,7 @@ export default class Quests {
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { })
 
         } else {
-            ctx.answerCbQuery(`Only the initiator of the quest or a participant can mark it as completed.`).catch((err) => { });
+            ctx.answerCbQuery(i18next.t('onlyinitiatorcomplete', { lng: language }))
             return;
         }
         // ================================ RECORD ACTIONS ========================== 

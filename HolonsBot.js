@@ -5,7 +5,7 @@ import Jimp from 'jimp';
 import axios from 'axios';
 import sharp from 'sharp';
 import fs from 'fs';
-import { Telegraf, Markup } from 'telegraf';
+import { Telegraf, Markup, Scenes,session } from 'telegraf';
 import { Client, GatewayIntentBits } from 'discord.js';
 import DB from "./DB.js";
 import UI from './UI.js';
@@ -27,6 +27,7 @@ import Roles from './Roles.js';
 import * as request from './Requests.js';
 import OneOnOne from './OneOnOne.js';
 import Announcements from './Announcements.js';
+import Checklists from './Checklists.js';
 
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {
@@ -36,6 +37,7 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 class HolonsBot {
   constructor() {
     this.db = null;
+    this.stage = null;
     this.telebot = null;
     this.settings = null;
     this.ui = null;
@@ -55,11 +57,22 @@ class HolonsBot {
     this.roles = null;
     this.rounds = null;
     this.userVoiceData = {};
+    this.checklists = null;
   }
 
   async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
     try {
       this.telebot = new Telegraf(telegramtoken);
+      
+      // Create all scenes first
+ 
+      // Initialize stage with ALL scenes at once
+      this.telebot.stage = new Scenes.Stage([]);
+      
+      // Add session and stage middleware ONCE
+      this.telebot.use(session());
+      this.telebot.use(this.telebot.stage.middleware());
+      
       this.telebot.launch({ handlerTimeout: Infinity });
 
       if (process.env.MODE === 'development') {
@@ -76,7 +89,6 @@ class HolonsBot {
 
       this.setupTelegramCommands();
       this.setupTelegramHandlers();
-      //this.setupDiscordBot(discordtoken);
 
       this.handleProcessEvents();
     } catch (error) {
@@ -107,6 +119,9 @@ class HolonsBot {
     this.roles = new Roles(this.telebot, this.db, this.ui, this.settings);
     this.rounds = new OneOnOne(this.telebot, this.db, this.settings);
     this.announcements = new Announcements(this.telebot, this.db, this.settings, this.users);
+    this.onboarding = new Onboarding(this.telebot, this.db);
+    this.checklists = new Checklists(this.telebot, this.db);
+
   }
 
   setupTelegramCommands() {
