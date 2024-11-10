@@ -25,6 +25,9 @@ class Checklists {
         this.bot.action(/add_item_to_(.+)/, (ctx) => this.handleAddItemButton(ctx));
         this.bot.action('new_checklist', (ctx) => this.handleNewChecklistButton(ctx));
         this.bot.action('dummy_action', (ctx) => this.handleDummyAction(ctx));
+        this.bot.action(/enter_remove_mode_(.+)/, (ctx) => this.enterRemoveMode(ctx));
+        this.bot.action(/exit_remove_mode_(.+)/, (ctx) => this.exitRemoveMode(ctx));
+        this.bot.action(/remove_item_(.+)/, (ctx) => this.removeItem(ctx));
     }
 
     setupScenes() {
@@ -265,8 +268,10 @@ class Checklists {
             return;
         }
 
-        // Always show the checklist, even if empty
-        await ctx.reply(`📋 ${listName.toUpperCase()} Checklist:`, this.getChecklistKeyboard(checklist));
+        // Show checklist in normal mode (removeMode = false)
+        await ctx.reply(`📋 ${listName.toUpperCase()} Checklist:`, 
+            this.getChecklistKeyboard(checklist, false)
+        );
     }
 
     async clearChecklist(ctx) {
@@ -292,25 +297,36 @@ class Checklists {
         ).catch(error => console.log(error));
     }
 
-    getChecklistKeyboard(checklist) {
+    getChecklistKeyboard(checklist, removeMode = false) {
         let buttons = [];
         
         // Add item buttons if there are any
         if (checklist.items.length > 0) {
             buttons = checklist.items.map((item, index) => {
-                const status = item.checked ? '✅' : '⬜️';
-                return [Markup.button.callback(
-                    `${status} ${item.text}`,
-                    `check_${checklist.id}_${index}`
-                )];
+                if (removeMode) {
+                    return [Markup.button.callback(
+                        `❌ ${item.text}`,
+                        `remove_item_${checklist.id}_${index}`
+                    )];
+                } else {
+                    const status = item.checked ? '✅' : '⬜️';
+                    return [Markup.button.callback(
+                        `${status} ${item.text}`,
+                        `check_${checklist.id}_${index}`
+                    )];
+                }
             });
         }
 
-        // Always add the control buttons in a single row, even if list is empty
+        // Always add the control buttons in a single row
         buttons.push([
             Markup.button.callback(
                 '➕ Add Item',
                 `add_item_to_${checklist.id}`
+            ),
+            Markup.button.callback(
+                removeMode ? '🔙 Back' : '🗑️ Remove',
+                removeMode ? `exit_remove_mode_${checklist.id}` : `enter_remove_mode_${checklist.id}`
             ),
             Markup.button.callback(
                 '🔄 Clear All',
@@ -331,6 +347,65 @@ class Checklists {
     async handleDummyAction(ctx) {
         await ctx.answerCbQuery();
         await ctx.reply('This action is not available.');
+    }
+
+    async enterRemoveMode(ctx) {
+        await ctx.answerCbQuery();
+        const listName = ctx.match[1];
+        let chatID = ctx.chat.id;
+        let checklist = await this.db.get(chatID + '/checklists', listName);
+        
+        if (!checklist) {
+            ctx.reply(`Checklist "${listName}" not found.`);
+            return;
+        }
+
+        await ctx.editMessageText(
+            `📋 ${listName.toUpperCase()} Checklist:\nSelect items to remove:`,
+            this.getChecklistKeyboard(checklist, true)
+        ).catch(error => console.log(error));
+    }
+
+    async exitRemoveMode(ctx) {
+        await ctx.answerCbQuery();
+        const listName = ctx.match[1];
+        let chatID = ctx.chat.id;
+        let checklist = await this.db.get(chatID + '/checklists', listName);
+        
+        if (!checklist) {
+            ctx.reply(`Checklist "${listName}" not found.`);
+            return;
+        }
+
+        await ctx.editMessageText(
+            `📋 ${listName.toUpperCase()} Checklist:`,
+            this.getChecklistKeyboard(checklist, false)
+        ).catch(error => console.log(error));
+    }
+
+    async removeItem(ctx) {
+        await ctx.answerCbQuery();
+        const [listName, itemIndex] = ctx.match[1].split('_');
+        let chatID = ctx.chat.id;
+        let checklist = await this.db.get(chatID + '/checklists', listName);
+        
+        if (!checklist || !checklist.items[itemIndex]) {
+            ctx.reply('Item not found.');
+            return;
+        }
+
+        // Store the item text before removing it
+        const removedItemText = checklist.items[itemIndex].text;
+
+        // Remove the item
+        checklist.items = checklist.items.filter((_, index) => index !== parseInt(itemIndex));
+        await this.db.put(chatID + '/checklists', checklist);
+
+        // Update the message with the new keyboard, staying in remove mode
+        await ctx.editMessageText(
+            `📋 ${listName.toUpperCase()} Checklist:\nRemoved "${removedItemText}"`,
+            this.getChecklistKeyboard(checklist, true)
+        ).catch(error => console.log(error));
     }
 }
 

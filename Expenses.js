@@ -36,7 +36,10 @@ export default class Expenses {
             const language = await this.settings.getLanguage(chatID)
             const result = await this.splitAll(chatID, ctx.from.username, expenseID);
             if (result) {
-                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: 'Split', callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
+                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([
+                    { text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, 
+                    { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${result.id}` }
+                ])).catch(err => console.log(err));
             } else {
                 ctx.reply(i18next.t('expensejoinfail', { lng: language }));
             }
