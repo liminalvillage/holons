@@ -33,45 +33,26 @@ class Checklists {
     setupScenes() {
         // Setup add item scene
         this.addItemScene.enter(async (ctx) => {
-            await ctx.reply('Please enter the new item text:');
+            await ctx.reply('Please enter the new items (comma-separated for multiple items):');
         });
 
         this.addItemScene.on('text', async (ctx) => {
-            const itemText = ctx.message.text;
+            const itemsText = ctx.message.text;
             const listName = ctx.session.currentChecklist;
             const chatId = ctx.chat.id;
             
-            let checklist = await this.db.get(chatId + '/checklists', listName);
-            
-            if (!checklist) {
-                await ctx.reply(`Checklist "${listName}" not found.`);
-                return ctx.scene.leave();
-            }
-
-            checklist.items.push({
-                text: itemText,
-                checked: false
-            });
-
-            await this.db.put(chatId + '/checklists', checklist);
-            await ctx.reply(`Added "${itemText}" to checklist "${listName}".`);
-            
-            // Show the updated checklist
-            await ctx.reply(
-                `📋 ${listName.toUpperCase()} Checklist:`, 
-                this.getChecklistKeyboard(checklist)
-            );
-            
+            const result = await this.addItemsToChecklist(listName, itemsText, chatId, ctx);
             return ctx.scene.leave();
         });
 
         // Setup new checklist scene
         this.newChecklistScene.enter(async (ctx) => {
-            await ctx.reply('Please enter a name for the new checklist:');
+            await ctx.reply('Please enter a name for the new checklist, followed by comma-separated items (optional):\nExample: morning brush teeth, make bed, exercise');
         });
 
         this.newChecklistScene.on('text', async (ctx) => {
-            const name = ctx.message.text;
+            const input = ctx.message.text;
+            const [name, ...itemsText] = input.split(/\s+(.+)/); // Split on first space
             const chatId = ctx.chat.id;
             
             if (await this.db.get(chatId + '/checklists', name)) {
@@ -79,15 +60,33 @@ class Checklists {
                 return ctx.scene.leave();
             }
 
+            // Parse items if they exist
+            const items = itemsText.length > 0 
+                ? itemsText[0].split(',')
+                    .map(item => ({
+                        text: item.trim(),
+                        checked: false
+                    }))
+                    .filter(item => item.text)
+                : [];
+
             const checklist = {
                 id: name,
-                items: [],
+                items: items,
                 creator: ctx.from.id,
                 created: new Date()
             };
 
             await this.db.put(chatId + '/checklists', checklist);
-            await ctx.reply(`Created checklist "${name}".`);
+            await ctx.reply(`Created checklist "${name}"${items.length ? ' with initial items' : ''}.`);
+            
+            // Show the checklist if items were added
+            if (items.length > 0) {
+                await ctx.reply(
+                    `📋 ${name.toUpperCase()} Checklist:`, 
+                    this.getChecklistKeyboard(checklist)
+                );
+            }
             
             // Show updated list of checklists
             await this.showAllChecklists(ctx);
@@ -125,7 +124,7 @@ class Checklists {
     }
 
     async createChecklist(ctx) {
-        const [_, name, ...items] = ctx.message.text.split(/\s+/);
+        const [_, name, ...itemsText] = ctx.message.text.split(/\s+/);
         if (!name) {
             ctx.reply('Please specify a checklist name. eg: /newchecklist morning');
             return;
@@ -137,43 +136,36 @@ class Checklists {
             return;
         }
 
+        // Join the remaining text and split by commas
+        const items = itemsText.join(' ').split(',').map(item => ({
+            text: item.trim(),
+            checked: false
+        })).filter(item => item.text); // Filter out empty items
+
         const checklist = {
             id: name,
-            items: items.map(item => ({
-                text: item,
-                checked: false
-            })),
+            items: items,
             creator: ctx.from.id,
             created: new Date()
         };
 
         await this.db.put(chatID + '/checklists', checklist);
         ctx.reply(`Created checklist "${name}"${items.length ? ' with initial items' : ''}.`);
+        
+        // Show the checklist if items were added
+        if (items.length > 0) {
+            ctx.reply(`📋 ${name.toUpperCase()} Checklist:`, this.getChecklistKeyboard(checklist));
+        }
     }
 
     async addChecklistItem(ctx) {
         const [_, listName, ...itemWords] = ctx.message.text.split(/\s+/);
         if (!listName || itemWords.length === 0) {
-            ctx.reply('Please specify list name and item. eg: /additem morning brush teeth');
+            ctx.reply('Please specify list name and items. eg: /addcheck morning brush teeth, make bed, exercise');
             return;
         }
 
-        const itemText = itemWords.join(' ');
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
-        
-        if (!checklist) {
-            ctx.reply(`Checklist "${listName}" not found.`);
-            return;
-        }
-
-        checklist.items.push({
-            text: itemText,
-            checked: false
-        });
-
-        await this.db.put(chatID + '/checklists', checklist);
-        ctx.reply(`Added "${itemText}" to checklist "${listName}".`);
+        await this.addItemsToChecklist(listName, itemWords.join(' '), ctx.chat.id, ctx);
     }
 
     async removeChecklistItem(ctx) {
@@ -406,6 +398,42 @@ class Checklists {
             `📋 ${listName.toUpperCase()} Checklist:\nRemoved "${removedItemText}"`,
             this.getChecklistKeyboard(checklist, true)
         ).catch(error => console.log(error));
+    }
+
+    async addItemsToChecklist(listName, itemsText, chatId, ctx) {
+        let checklist = await this.db.get(chatId + '/checklists', listName);
+        
+        if (!checklist) {
+            await ctx.reply(`Checklist "${listName}" not found.`);
+            return null;
+        }
+
+        // Split by commas and create items
+        const newItems = itemsText.split(',')
+            .map(item => ({
+                text: item.trim(),
+                checked: false
+            }))
+            .filter(item => item.text); // Filter out empty items
+
+        if (newItems.length === 0) {
+            await ctx.reply('No valid items provided.');
+            return null;
+        }
+
+        checklist.items.push(...newItems);
+        await this.db.put(chatId + '/checklists', checklist);
+
+        const itemsAdded = newItems.map(item => `"${item.text}"`).join(', ');
+        await ctx.reply(`Added ${newItems.length} items to checklist "${listName}": ${itemsAdded}`);
+        
+        // Show the updated checklist
+        await ctx.reply(
+            `📋 ${listName.toUpperCase()} Checklist:`, 
+            this.getChecklistKeyboard(checklist)
+        );
+
+        return checklist;
     }
 }
 
