@@ -171,8 +171,30 @@ export default class Quests {
             return;
         }
 
-        // Create a quest object
+        // Get category from chat topic if available
+        let category = '';
+        if (ctx.message.chat.type === 'supergroup' || ctx.message.chat.type === 'channel') {
+            try {
+                if (ctx.message.message_thread_id) {
+                    // Get forum topic info using correct method name
+                    const forumTopicInfo = await ctx.telegram.getForumTopicByID(
+                        chatID,
+                        ctx.message.message_thread_id
+                    );
+                    if (forumTopicInfo?.name) {
+                        category = forumTopicInfo.name;
+                    }
+                }
+            } catch (err) {
+                console.log('Error getting forum topic:', err);
+                // Fallback: try to get the thread name directly from the message if available
+                if (ctx.message.reply_to_message?.forum_topic_created?.name) {
+                    category = ctx.message.reply_to_message.forum_topic_created.name;
+                }
+            }
+        }
 
+        // Create a quest object
         let quest = {
             id: '',
             version: '0.1',
@@ -189,7 +211,8 @@ export default class Quests {
             appreciation: [],
             stoppers: [],
             type: type,
-            status: 'ongoing'
+            status: 'ongoing',
+            category: category
         }
 
         if (picture)
@@ -697,6 +720,10 @@ export default class Quests {
 // Function to create the message for a quest 
 function createMessage(quest, language) {
     let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
+    // Add category to message if it exists
+    if (quest.category) {
+        message += `| 📑 ${i18next.t('category', { lng: language })}: ${quest.category} \n`;
+    }
     //message += `| ${i18next.t('💡',{lng:language})} : @${quest.initiator.username} \n`;
     // if (quest.participants.length > 0)
     //     message += `| ${i18next.t('🙋‍♂',{lng:language})} : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
