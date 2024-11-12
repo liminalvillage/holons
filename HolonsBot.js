@@ -110,7 +110,6 @@ class HolonsBot {
     this.library = new Library(this.telebot, this.db);
     this.users = new Users(this.telebot, this.db);
     this.expenses = new Expenses(this.telebot, this.db, this.ui, this.settings);
-    this.onboarding = new Onboarding(this.telebot, this.db);
     this.holons = new Holons(this.telebot, this.db, this.settings);
     this.h3 = new H3(this.telebot, this.db);
     this.tags = new Tags(this.telebot, this.db);
@@ -280,30 +279,58 @@ Need help? Contact @RobertoValenti for feedback and support.`;
     const chatID = ctx.update.callback_query.message.chat.id;
     const messageID = ctx.update.callback_query.message.message_id;
 
-    if (callbackData.startsWith('removekeyboard')) {
-      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch((error) => { console.log(error) });
-    }
+    try {
+      // Handle schedule button click
+      if (callbackData.startsWith('schedule_quest_')) {
+        const [_, __, chatId, questId] = callbackData.split('_');
+        return await this.quests.schedule(ctx);
+      }
 
-    if (messageID === this.quests.calendar.chats.get(chatID)) {
-      const when = this.quests.calendar.clickButtonCalendar(ctx);
-      if (when !== -1) {
-        const quest = await this.db.get(chatID + '/quests', messageID);
+      // Handle calendar date/time selection
+      if (callbackData.startsWith('t_') || callbackData.startsWith('n_')) {
+        const when = this.quests.calendar.clickButtonCalendar(ctx);
+        if (when === -1) return;
 
-        if (!quest) {
-          console.log('Quest not found');
+        // Get the original quest ID that was stored when schedule was clicked
+        const questId = this.quests.calendar.questIds.get(chatID);
+        if (!questId) {
+          console.log('No quest ID found in calendar data');
+          await ctx.answerCbQuery('Could not find associated task');
           return;
         }
 
+        // Get the quest from database
+        const quest = await this.db.get(`${chatID}/quests`, questId);
+        if (!quest) {
+          console.log(`Quest ${questId} not found in database`);
+          await ctx.answerCbQuery('Could not find the task');
+          return;
+        }
+
+        // Update quest with selected time
         quest.status = 'scheduled';
         quest.when = when;
 
+        // Set reminder
         setTimeout(() => {
           this.quests.remind(ctx, quest);
         }, new Date(when).getTime() - Date.now());
 
-        this.quests.updateMessage(ctx, quest);
-        this.db.put(chatID + '/quests', quest);
+        // Save and update
+        await this.db.put(`${chatID}/quests`, quest);
+        await this.quests.updateMessage(ctx, quest);
+        
+        // Delete the calendar message
+        await ctx.deleteMessage(messageID).catch(err => {
+          console.log('Error deleting calendar message:', err);
+        });
+        
+        await ctx.answerCbQuery('Task scheduled successfully!');
       }
+
+    } catch (error) {
+      console.error('Error in callback query:', error);
+      await ctx.answerCbQuery('An error occurred. Please try again.');
     }
   }
 

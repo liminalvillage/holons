@@ -23,6 +23,7 @@ export class Calendar {
         this.options.custom_start_msg = (typeof options.custom_start_msg === 'undefined') ? false : options.custom_start_msg;
         this.bot = (bot === false) ? false : bot;
         this.chats = new Map();
+        this.questIds = new Map();
         this.addCustomStartMsg();
         this.libraryInitialization();
     }

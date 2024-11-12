@@ -558,11 +558,30 @@ export default class Quests {
 
     async schedule(ctx) {
         console.log("SCHEDULE ACTION");
-        let language = await this.settings.getLanguage(ctx.callbackQuery.message.chat.id)
-        let chatID = ctx.callbackQuery.data.split('_')[2];
-        let messageID = ctx.callbackQuery.data.split('_')[3];
-        this.calendar.startNavCalendar(ctx, language);//TODO: pass quest information to recreate message
-        this.calendar.chats.set(getChatId(ctx) * 100, getMessageId(ctx)); //TODO: fix this, use a different method to store the message id
+        const chatID = ctx.callbackQuery.message.chat.id;
+        const questID = ctx.callbackQuery.data.split('_')[3];
+        const language = await this.settings.getLanguage(chatID);
+
+        try {
+            // Verify quest exists before showing calendar
+            const quest = await this.db.get(`${chatID}/quests`, questID);
+            if (!quest) {
+                console.log(`Quest ${questID} not found`);
+                await ctx.answerCbQuery('Could not find the task');
+                return;
+            }
+
+            // Store quest ID for later retrieval when date is selected
+            this.calendar.questIds.set(chatID, questID);
+            
+            // Show calendar
+            await this.calendar.startNavCalendar(ctx, language);
+            await ctx.answerCbQuery();
+
+        } catch (error) {
+            console.error('Error in schedule:', error);
+            await ctx.answerCbQuery('Error showing calendar');
+        }
     }
 
     async sendAppreciation(ctx) {
