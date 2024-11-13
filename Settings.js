@@ -10,12 +10,12 @@ export default class Settings {
         this.db = db
         this.bot = bot
         // ================= ADMIN ===========================
-        this.bot.command('chats', async (ctx) => {
-            //TODO; check if the user is an admin
-            let chats = await this.getChats(ctx)
-            ctx.reply('Chats: ' + chats)
-        })
+   
+        this.bot.command('getSettings', async (ctx) => {
+            let settings = await this.getSettings(utils.getChatId(ctx))
 
+            ctx.reply( JSON.stringify(settings) )
+        })
         this.bot.command(['getChatNames'], async (ctx) => {
             let chats = ctx.message.text.split(',')
             let chatnames = ''
@@ -25,7 +25,7 @@ export default class Settings {
                     chatnames += name +','
                 console.log(chats[i], name)
             };
-            ctx.reply(chatnames)
+            ctx.reply(chatnames).catch((e) => { console.log(e) })
 
         })
 
@@ -39,8 +39,10 @@ export default class Settings {
                 await this.db.drop(chatID + '/users')
                 await this.db.drop(chatID + '/tags')
                 await this.db.drop(chatID + '/expenses')
+                await this.db.drop(chatID + '/announcements')
+    
 
-                this.db.put('settings', this.getDefaultSettings(chatID, chatName))
+                this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))
                 ctx.reply('Bot resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -96,6 +98,7 @@ export default class Settings {
         })
 
         this.bot.command('setHex', async (ctx) => ctx.reply("New hex: " + await this.setHex(ctx)))
+        this.bot.command('getHex', async (ctx) => ctx.reply("Current hex: " + await this.getHex(ctx)))
         this.bot.command('getHexContent', async (ctx) => ctx.reply(await this.getHexContent(ctx)))
 
         this.bot.command('setroles', async (ctx) => ctx.reply("New roles: " + await this.setRoles(ctx)))
@@ -107,7 +110,7 @@ export default class Settings {
         this.bot.command('whitelist', async (ctx) => {
             let settings = await this.getSettings(utils.getChatId(ctx))[0]
             settings.whitelisted = true
-            this.db.put('settings', settings)
+            this.db.put(utils.getChatId(ctx) + '/settings', settings)
         })
 
         this.bot.action(/increment_(.+)/, async (ctx) => {
@@ -138,16 +141,18 @@ export default class Settings {
 
     }
 
+    async getHex(ctx) {
+        let settings = await this.getSettings(utils.getChatId(ctx))
+        return settings.hex
+    }
+
     async setHex(ctx) {
         if (utils.isAdmin(ctx)) {
             const chatID = ctx.message.chat.id;
             const hex = ctx.message.text.split(' ')[1];
-            console.log(ctx.message.text)
-            console.log('newHex',hex)
             let settings = await this.getSettings(chatID)
             settings.hex = hex
-            this.db.put(chatID + '/settings', settings)
-            this.db.holosphere.put(hex, 'chats', { id: chatID })
+            await this.setSettings(settings)
             return hex
         }
         else ctx.reply("Only admins can set the hex")
@@ -287,7 +292,7 @@ export default class Settings {
 
         let settings = await this.getSettings(chatID)
         settings.language = language
-        this.db.put('settings', settings)
+        this.db.put(chatID + '/settings', settings)
         ctx.reply('Language changed to ' + language)
     }
 
@@ -318,7 +323,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(chatID)
         settings.theme = theme
-        this.db.put('settings', settings)
+        this.db.put(chatID + '/settings', settings)
         ctx.reply('Theme changed to ' + theme)
     }
 
@@ -342,7 +347,7 @@ export default class Settings {
 
         let settings = await this.getSettings(chatID)
         settings.level = level
-        this.db.put('settings', settings)
+        this.db.put(chatID + '/settings', settings)
         ctx.reply('Level changed to ' + level)
 
     }
@@ -361,7 +366,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(chatID)
         settings.admin = admin
-        this.db.put('settings', settings)
+        this.db.put(chatID + '/settings', settings)
         ctx.reply('Admin changed to ' + admin)
     }
 
@@ -480,7 +485,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(chatID)
         settings.roles = roles
-        this.db.put('settings', settings)
+        this.db.put(chatID + '/settings', settings)
         return settings.roles
     }
 
@@ -496,7 +501,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(chatID)
         settings.values = values.split(' ')
-        this.db.put('settings', settings)
+        this.db.put(chatID + '/settings', settings)
         return settings.values
     }
 
@@ -505,31 +510,26 @@ export default class Settings {
         return settings.values
     }
 
-
-    async getChats(ctx) {
-        let chats = await this.db.getAll('settings')
-        return await Promise.all(chats.map(async function (chat) { return chat.id }))
-    }
-
     async getSettings(chatID) {
-        let settings = await this.db.get('settings', chatID)
+        let settings = await this.db.get(chatID + '/settings', chatID)
+        console.log('settings', settings)
         if (!settings || settings == '') {
             let chatName = await utils.getChatName(this.bot, chatID)
             settings = this.getDefaultSettings(chatID, chatName)
-            this.db.put('settings', settings)
+            await this.db.put(chatID + '/settings', settings)
         }
         //
         return settings
     }
 
     async setSettings(settings) {
-        this.db.put('settings', settings)
+        await this.db.put(settings.id + '/settings', settings)
     }
 
     async setValueEquation(chatID, equation) {
         let settings = await this.getSettings(chatID)
         settings.valueEquation = equation
-        await this.db.put('settings', settings)
+        await this.db.put(chatID + '/settings', settings)
     }
 
     async getValueEquation(chatID) {

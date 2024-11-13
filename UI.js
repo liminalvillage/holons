@@ -250,6 +250,7 @@ class UI {
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
     const language = await this.settings.getLanguage(chatID)
+    console.log( language)
 
     let quests = await this.getFederatedQuests(chatID)
      quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled')) //TODO:Reenable this filter

@@ -238,9 +238,9 @@ class DB {
         await this.open(table)
         try {
             if (this.db === 'gun')
-                return this.getAllGunDB(table);
+                return await this.getAllGunDB(table);
             if (this.db === 'orbit')
-                return this.getAllOrbitDB(table);
+                return await this.getAllOrbitDB(table);
         } catch (error) {
             throw error;
         }

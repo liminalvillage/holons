@@ -43,19 +43,6 @@ class H3 {
         this.holosphere = db.holosphere
         this.bot = bot
 
-        this.bot.command('sethex', async (ctx) => {
-            let chatID = ctx.message.chat.id;
-            let hex = await this.setHex(ctx)
-            ctx.reply('Hex set to :', hex);
-        })
-
-
-        this.bot.command('resethex', async (ctx) => {
-            let chatID = ctx.message.chat.id;
-            let hex = (await this.db.get('settings', chatID)).hex
-            this.holosphere.delete(hex, ctx.message.text.split(' ')[1])
-        })
-
         this.bot.command('get', async (ctx) => {
             const chatID = ctx.message.chat.id;
             const tag = ctx.message.text.split(' ')[1];
@@ -67,13 +54,6 @@ class H3 {
             let data = await this.holosphere.get(hex, tag)
             ctx.reply(JSON.stringify(data, null, 2))
 
-        })
-
-        this.bot.command('gethex', async (ctx) => {
-            const chatID = ctx.message.chat.id;
-            let settings = await this.db.get('settings', chatID)
-            let id = settings.hex ? settings.hex : 'Hex not set, use /sethex'
-            ctx.reply(id)
         })
 
         this.bot.command('compute', async (ctx) => {
@@ -144,14 +124,6 @@ class H3 {
             ctx.reply('Tag published.');
         });
 
-    }
-
-    async setHex(ctx) {
-        const chatID = ctx.message.chat.id;
-        const hex = ctx.message.text.split(' ')[1];
-        this.db.gun.get(hex).set('chats').put(chatID)
-        this.db.gun.get('settings').get(chatID).put(hex)
-        return hex
     }
 }
 
