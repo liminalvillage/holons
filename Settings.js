@@ -40,6 +40,7 @@ export default class Settings {
                 await this.db.drop(chatID + '/tags')
                 await this.db.drop(chatID + '/expenses')
                 await this.db.drop(chatID + '/announcements')
+                await this.db.drop(chatID + '/recurring')
     
 
                 this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))

@@ -316,7 +316,6 @@ class Users {
         username: user.username ? user.username : user.id,
         first_name: user.first_name,
         last_name: user.last_name,
-        picture: await this.getUserPicture(user.id),
         participated: {},
         actions: [],
         initiated: [],
@@ -335,7 +334,6 @@ class Users {
       }
       await this.db.put(chatID + '/users', userinfo)
     }
-    if (userinfo._id) userinfo.id = userinfo._id // convert older format
     return userinfo
   }
 }

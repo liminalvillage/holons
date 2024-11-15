@@ -27,7 +27,6 @@ export default class Quests {
         this.bot.command('proposal', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('propose', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('todo', async (ctx) => this.quest('todo', ctx))
-        this.bot.command('recurring', async (ctx) => this.quest('recurring', ctx))
 
         this.bot.command(['need', 'request', 'want', 'wish'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offer', 'give', 'have', 'gift'], async (ctx) => this.quest('offer', ctx))
@@ -61,7 +60,32 @@ export default class Quests {
         this.bot.action(/stop_quest_(.+)/, (ctx) => this.stop(ctx));
 
         //--------------------------------------------------------------------
+
+        // Add scheduler reference
+        this.scheduler = null; // This should be set from outside after construction
     }
+
+    // Method to set scheduler reference
+    setScheduler(scheduler) {
+        this.scheduler = scheduler;
+    }
+
+    // Find the method that handles calendar date selection and add:
+    async handleCalendarDate(ctx, date) {
+        // ... existing date handling code ...
+
+        // If this is a recurring task, update its schedule
+        if (ctx.quest?.type === 'recurring') {
+            await this.scheduler?.updateTaskSchedule(
+                ctx.quest.chat,
+                ctx.quest.title,
+                date
+            );
+        }
+
+        // ... rest of the date handling code ...
+    }
+
     // this.bot.on('location', async (ctx) => this.location(ctx));
     // async location(ctx) {
     //     console.log("LOCATION ACTION");
@@ -299,6 +323,7 @@ export default class Quests {
                 }
             })
         }
+        return quest
     }
 
 
@@ -739,7 +764,13 @@ export default class Quests {
 // Function to create the message for a quest 
 function createMessage(quest, language) {
     let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
-    // Add category to message if it exists
+    
+    // Add frequency for recurring tasks
+    if (quest.type === 'recurring' && quest.frequency) {
+        message += `| 🔄 ${i18next.t('frequency', { lng: language })}: ${quest.frequency} \n`;
+    }
+    
+    // Rest of the existing message creation code...
     if (quest.category) {
         message += `| 📑 ${i18next.t('category', { lng: language })}: ${quest.category} \n`;
     }
@@ -847,6 +878,23 @@ function markup(quest, language) {
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
             ]
         )
+    }
+
+    if (quest.type == 'recurring') {
+        mu = Markup.inlineKeyboard([
+            [
+                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
+            ],
+            [
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
+            ],
+            [
+                Markup.button.callback(i18next.t('remove', { lng: language }), 'remove_recurring_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+            ]
+        ])
     }
 
     return mu

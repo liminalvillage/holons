@@ -28,6 +28,7 @@ import * as request from './Requests.js';
 import OneOnOne from './OneOnOne.js';
 import Announcements from './Announcements.js';
 import Checklists from './Checklists.js';
+import Scheduler from './Scheduler.js';
 
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {
@@ -58,6 +59,7 @@ class HolonsBot {
     this.rounds = null;
     this.userVoiceData = {};
     this.checklists = null;
+    this.scheduler = null;
   }
 
   async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
@@ -120,6 +122,10 @@ class HolonsBot {
     this.announcements = new Announcements(this.telebot, this.db, this.settings, this.users);
     this.onboarding = new Onboarding(this.telebot, this.db);
     this.checklists = new Checklists(this.telebot, this.db);
+    
+
+    this.scheduler = new Scheduler(this.telebot, this.db, this.quests);
+    this.quests.setScheduler(this.scheduler);
 
   }
 
