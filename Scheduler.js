@@ -8,7 +8,7 @@ class Scheduler {
         this.jobs = new Map(); // Store active cron jobs
         this.loadTasks();
 
-        this.bot.command('recurring', (ctx) => this.addTask(ctx));
+        this.bot.command('recurring', async (ctx) => await this.addTask(ctx));
         this.bot.action(/remove_recurring_(.+)/, (ctx) => this.removeRecurringTask(ctx));
     }
 
@@ -17,7 +17,19 @@ class Scheduler {
         const tasks = await this.db.getAll('recurring');
         if (tasks && tasks.length > 0) {
             tasks.forEach(task => {
-                this.scheduleTask(task);
+                // Create a mock ctx object from the task data
+                const mockCtx = {
+                    message: {
+                        chat: {
+                            id: task.chatID
+                        },
+                        from: task.initiator,
+                        message_id: task.id
+                    },
+                    from: task.initiator
+                };
+                
+                this.scheduleTask(task, mockCtx);
             });
         }
     }
@@ -27,19 +39,19 @@ class Scheduler {
         const [frequency, ...taskDetails] = ctx.message.text.split(' ').slice(1);
         
         if (!frequency || taskDetails.length === 0) {
-            ctx.reply('Usage: /recurring [frequency] [task description]\nFrequencies: daily, weekly, monthly, quarterly, yearly\nUse /when to set the start time');
+            ctx.reply('Usage: /recurring [frequency] [task description]\nFrequencies: 30sec, daily, weekly, monthly, quarterly, yearly\nUse /when to set the start time');
             return;
         }
 
         // Validate frequency
-        const validFrequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
+        const validFrequencies = ['30sec', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
         if (!validFrequencies.includes(frequency.toLowerCase())) {
             ctx.reply(`Invalid frequency. Please use one of: ${validFrequencies.join(', ')}`);
             return;
         }
 
         let quest = await this.quests.quest('recurring', ctx);
-
+        console.log('QUEST', quest);
         const task = {
             id: quest.id,
             chatID: chatID,
@@ -54,13 +66,13 @@ class Scheduler {
         await this.db.put('recurring', task);
         
         // Schedule the task
-        await this.scheduleTask(task);
+        await this.scheduleTask(task,ctx);
         
         const timeStr = new Date(task.when).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
         ctx.reply(`Recurring task "${task.title}" scheduled ${task.frequency} starting at ${timeStr}`);
     }
 
-    scheduleTask(task) {
+    scheduleTask(task,ctx) {
         if (!task.when || task.when === '' || task.frequency === '') {
             console.error('Invalid task, no when or frequency:', task);
             return;
@@ -75,7 +87,7 @@ class Scheduler {
 
         // Create new cron job with the specific timezone if provided in the quest
         const timezone = task.timezone || 'UTC';
-        const job = new CronJob(cronTime, async(ctx) => {
+        const job = new CronJob(cronTime, async() => {
          this.quests.quest('recurring', ctx);
         }, null, true, timezone);
 
@@ -92,6 +104,8 @@ class Scheduler {
         const minute = date.getMinutes();
         
         switch (frequency.toLowerCase()) {
+            case '30sec':
+                return '*/30 * * * * *'; // Every 30 seconds
             case 'daily':
                 return `${minute} ${hour} * * *`; // Every day at specified hour:minute
             case 'weekly':

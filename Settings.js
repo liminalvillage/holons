@@ -32,7 +32,7 @@ export default class Settings {
         this.bot.command(['restart', 'reset'], async (ctx) => {
             if (utils.isAdmin(ctx)) {
                 let chatID = utils.getChatId(ctx)
-                let chatName = utils.getChatName(ctx, chatID)
+                let chatName = await utils.getChatName(ctx, chatID)
                 await this.db.drop(chatID + '/shopping')
                 await this.db.drop(chatID + '/quests')
                 await this.db.drop(chatID + '/offers')
@@ -42,7 +42,6 @@ export default class Settings {
                 await this.db.drop(chatID + '/announcements')
                 await this.db.drop(chatID + '/recurring')
     
-
                 this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))
                 ctx.reply('Bot resetted')
             } else {
