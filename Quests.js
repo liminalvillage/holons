@@ -176,7 +176,6 @@ export default class Quests {
 
 
     async quest(type, ctx) {
-
         console.log('NEW QUEST')
         // Get the message text and sender from the context
         let chatID = ctx.message.chat.id;
@@ -275,55 +274,58 @@ export default class Quests {
                 quest.appreciation.push(sender);
                 await this.users.saveUserAction(sender, "wants", quest.title, 0, chatID)
             }
-            ctx.reply(createMessage(quest, language), markup(quest, language)).then(async (nctx) => {
-                if (ctx.platform !== 'discord') {
-                    quest.id = nctx.message_id;
-                    quest.chat = nctx.chat.id;
+
+            // Send message and get the message ID
+            const nctx = await ctx.reply(createMessage(quest, language), markup(quest, language));
+
+            if (ctx.platform !== 'discord') {
+                quest.id = nctx.message_id;
+                quest.chat = nctx.chat.id;
+            }
+            if (ctx.platform == 'discord') {
+                quest.id = nctx.id;
+                quest.chat = nctx.channel.id;
+            }
+
+            await this.db.put(chatID + '/quests', quest)
+
+            //Pin the message
+            this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
+
+            // update the markup
+            await this.updateMessage(ctx, quest, language)
+
+            //delete the original message
+            this.bot.telegram.deleteMessage(chatID, messageID.toString()).catch((err) => { });
+
+            // REPLICATE IN FEDERATED CHATS
+
+            let notifyChats = await this.db.get('federation', chatID)
+
+            if (!notifyChats || notifyChats == '') { console.log('FEDERATION IS NOT FOUND') }
+            else
+                notifyChats = notifyChats.notify
+
+            if (notifyChats && notifyChats.length > 0) {
+                let id = quest.chat * 2 + quest.id //*2 is a hack not to return similar indexes
+                let fedinfo = this.db.get('federation', id)
+                console.log(fedinfo)
+                if (!fedinfo || fedinfo == '' || fedinfo == undefined)
+                    fedinfo = { id: id, all: [{ chat: quest.chat.toString(), id: quest.id.toString() }], type: 'quest' }  //TODO UPDATE JSON SCHEMA
+                //TODO CHECK FOR PROMISES TO RETURN
+                for (let i = 0; i < notifyChats.length; i++) {
+                    const federatedChat = notifyChats[i];
+                    await ctx.telegram.sendMessage(federatedChat, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (fctx) => {
+                        // save the federated message id
+                        fedinfo.all.push({ chat: federatedChat.toString(), id: fctx.message_id.toString() })
+                    })
                 }
-                if (ctx.platform == 'discord') {
-                    quest.id = nctx.id;
-                    quest.chat = nctx.channel.id;
-                    return //TODO: remove this by fixing below for multi platforms
-                }
-
-                await this.db.put(chatID + '/quests', quest)
-
-                //Pin the message
-                ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
-                // update the markup
-                //await ctx.telegram.editMessageRe(quest.chat, quest.id,null, markup(quest, language)).catch((err) => { console.log(err) });
-                await this.updateMessage(ctx, quest, language)
-                //delete the original message
-                ctx.deleteMessage(messageID.toString()).catch((err) => { });
-
-                // REPLICATE IN FEDERATED CHATS
-
-                let notifyChats = (await this.db.get('federation', chatID))
-
-                if (!notifyChats || notifyChats == '') { console.log('FEDERATION IS NOT FOUND') }
-                else
-                    notifyChats = notifyChats.notify
-
-                if (notifyChats && notifyChats.length > 0) {
-                    let id = quest.chat * 2 + quest.id //*2 is a hack not to return similar indexes
-                    let fedinfo = this.db.get('federation', id)
-                    console.log(fedinfo)
-                    if (!fedinfo || fedinfo == '' || fedinfo == undefined)
-                        fedinfo = { id: id, all: [{ chat: quest.chat.toString(), id: quest.id.toString() }], type: 'quest' }  //TODO UPDATE JSON SCHEMA
-                    //TODO CHECK FOR PROMISES TO RETURN
-                    for (let i = 0; i < notifyChats.length; i++) {
-                        const federatedChat = notifyChats[i];
-                        await ctx.telegram.sendMessage(federatedChat, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (fctx) => {
-                            // save the federated message id
-                            fedinfo.all.push({ chat: federatedChat.toString(), id: fctx.message_id.toString() })
-                        })
-                    }
-                    console.log(fedinfo)
-                    this.db.put('federation', fedinfo) // Add federated message ids to the DB
-                }
-            })
+                console.log(fedinfo)
+                this.db.put('federation', fedinfo) // Add federated message ids to the DB
+            }
+            console.log('RETURNING QUEST', quest)
+            return quest
         }
-        return quest
     }
 
 
@@ -528,8 +530,9 @@ export default class Quests {
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-        if (!quest.status == 'stopped') { ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }), { reply_to_message_id: messageID })
-            return 
+        if (!quest.status == 'stopped') {
+            ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }), { reply_to_message_id: messageID })
+            return
         }
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
         if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || isAdmin(ctx.from.id, chatID)) {
@@ -598,7 +601,7 @@ export default class Quests {
 
             // Store quest ID for later retrieval when date is selected
             this.calendar.questIds.set(chatID, questID);
-            
+
             // Show calendar
             await this.calendar.startNavCalendar(ctx, language);
             await ctx.answerCbQuery();
@@ -721,7 +724,7 @@ export default class Quests {
                     markup(quest, language)
                 ).catch((err) => { });
             }
-            else
+            else {
                 await ctx.telegram.editMessageText(
                     chat_id,
                     message_id,
@@ -729,6 +732,7 @@ export default class Quests {
                     createMessage(quest, language),
                     markup(quest, language)
                 ).catch((err) => { });
+            }
 
         } else {
             for (let i = 0; i < fedinfo.all.length; i++) {
@@ -764,12 +768,12 @@ export default class Quests {
 // Function to create the message for a quest 
 function createMessage(quest, language) {
     let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
-    
+
     // Add frequency for recurring tasks
     if (quest.type === 'recurring' && quest.frequency) {
         message += `| 🔄 ${i18next.t('frequency', { lng: language })}: ${quest.frequency} \n`;
     }
-    
+
     // Rest of the existing message creation code...
     if (quest.category) {
         message += `| 📑 ${i18next.t('category', { lng: language })}: ${quest.category} \n`;

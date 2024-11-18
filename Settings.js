@@ -512,7 +512,6 @@ export default class Settings {
 
     async getSettings(chatID) {
         let settings = await this.db.get(chatID + '/settings', chatID)
-        console.log('settings', settings)
         if (!settings || settings == '') {
             let chatName = await utils.getChatName(this.bot, chatID)
             settings = this.getDefaultSettings(chatID, chatName)
