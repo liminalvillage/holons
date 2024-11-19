@@ -123,7 +123,8 @@ contract Managed is Holon {
 
         uint256 amount = etherBalance[_userId];
         etherBalance[_userId] = 0;
-        payable(_beneficiary).transfer(amount);
+        if (amount > 0 )
+            payable(_beneficiary).transfer(amount);
     }
 
     // Function for users to claim their ERC20 tokens
@@ -137,10 +138,11 @@ contract Managed is Holon {
         for (uint i = 0; i < tokensOf[_userId].length; i++) {
             IERC20 token = IERC20(tokens[i]);
             uint256 amount = tokenBalance[_userId][tokens[i]];
-            tokenBalance[_userId][tokens[i]] = 0;
-            totalDeposited[tokens[i]] -= amount;
-            token.transfer(_beneficiary, amount);
-
+            if (amount > 0) {
+                tokenBalance[_userId][tokens[i]] = 0;
+                totalDeposited[tokens[i]] -= amount;
+                token.transfer(_beneficiary, amount);
+            }
         }
     }
 
