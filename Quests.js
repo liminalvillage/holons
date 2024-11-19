@@ -323,7 +323,6 @@ export default class Quests {
                 console.log(fedinfo)
                 this.db.put('federation', fedinfo) // Add federated message ids to the DB
             }
-            console.log('RETURNING QUEST', quest)
             return quest
         }
     }

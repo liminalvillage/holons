@@ -295,16 +295,18 @@ Need help? Contact @RobertoValenti for feedback and support.`;
       // Handle calendar date/time selection
       if (callbackData.startsWith('t_') || callbackData.startsWith('n_')) {
         const when = this.quests.calendar.clickButtonCalendar(ctx);
+        
         if (when === -1) return;
 
         // Get the original quest ID that was stored when schedule was clicked
         const questId = this.quests.calendar.questIds.get(chatID);
+        
         if (!questId) {
           console.log('No quest ID found in calendar data');
           await ctx.answerCbQuery('Could not find associated task');
           return;
         }
-
+        this.scheduler.updateTaskSchedule(chatID, questId, new Date(when), ctx ); 
         // Get the quest from database
         const quest = await this.db.get(`${chatID}/quests`, questId);
         if (!quest) {
