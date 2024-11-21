@@ -75,19 +75,30 @@ module.exports = {
      network_id: "*",       // Any network (default: none)
     },
     gnosis: {
-      provider: () => new HDWalletProvider(MNEMONIC, `https://rpc.gnosischain.com/`),
+      provider: () => new HDWalletProvider({ mnemonic: {
+        phrase: `${MNEMONIC}`
+        }}, "https://rpc.gnosischain.com/"),
       network_id: "100",
-      confirmations: 2,
-      timeoutBlocks: 200,
-      skipDryRun: true
+      confirmations: 1,
+      timeoutBlocks: 2000,
+      skipDryRun: true,
+      gas: 5000000,
+      gasPrice: 10000000000
     },
     sepolia: {
-      provider: () => new HDWalletProvider(MNEMONIC, `https://sepolia.infura.io/v3/${PROJECT_ID}`),
-      network_id: "11155111",
-      confirmations: 2,
-      //timeoutBlocks: 200,
-      skipDryRun: true
-    },
+      provider: () => new HDWalletProvider({
+      mnemonic: {
+      phrase: `${MNEMONIC}`
+      },
+      providerOrUrl: `https://eth-sepolia.g.alchemy.com/v2/-Yaao6VeArzAi8Du6brNypudpaoFf34F`
+      }),
+      network_id: 11155111, // Sepolia's network ID
+      //gas: 4000000, // Adjust the gas limit as per your requirements
+      //gasPrice: 10000000000, // Set the gas price to an appropriate value
+      //confirmations: 2, // Set the number of confirmations needed for a transaction
+      timeoutBlocks: 2000, // Set the timeout for transactions
+      skipDryRun: true // Skip the dry run option
+     },
     // An additional network, but with some advanced options…
     // advanced: {
     //   port: 8777,             // Custom port
@@ -107,6 +118,20 @@ module.exports = {
       timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
       skipDryRun: true     // Skip dry run before migrations? (default: false for public nets )
     },
+    opti_sepolia: {
+      provider: () => new HDWalletProvider(MNEMONIC, `https://optimism-sepolia.infura.io/v3/${PROJECT_ID}`),
+      network_id: 11155420,  
+      confirmations: 2,
+      timeoutBlocks: 200,
+      skipDryRun: true
+    },
+    optimism: {
+      provider: () => new HDWalletProvider(MNEMONIC, `https://optimism-mainnet.infura.io/v3/${PROJECT_ID}`),
+      network_id: 10,
+      confirmations: 2,
+      timeoutBlocks: 200,
+      skipDryRun: true
+    }
     //
     // Useful for private networks
     // private: {
@@ -124,15 +149,15 @@ module.exports = {
   // Configure your compilers
   compilers: {
     solc: {
-      version: "0.8.0",      // Fetch exact version from solc-bin (default: truffle's version)
-      // docker: true,        // Use "0.5.1" you've installed locally with docker (default: false)
-      // settings: {          // See the solidity docs for advice about optimization and evmVersion
-      //  optimizer: {
-      //    enabled: false,
-      //    runs: 200
-      //  },
-      //  evmVersion: "byzantium"
-      // }
+      version: "0.8.1",      // Fetch exact version from solc-bin (default: truffle's version)
+     // docker: true,        // Use "0.5.1" you've installed locally with docker (default: false)
+      settings: {          // See the solidity docs for advice about optimization and evmVersion
+       optimizer: {
+         enabled: true,
+         runs: 200
+       },
+       evmVersion: "byzantium"
+      }
     }
   },
 

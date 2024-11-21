@@ -21,20 +21,9 @@ contract Holons {
 
     mapping (address => address[]) private holons;
     mapping (string => address) public toAddress;   //NOTE: Remove on deploy
-    mapping (string => address) private flavors;
-    string[] public knownflavors;
-
 
     event NewHolon (string name, address addr);
-    event NewFlavor(address indexed flavor, string name);
-    
-    function newFlavor(string calldata _flavorname, address _flavoraddress) public {
-        require(flavors[_flavorname] == address(0), "Flavor with this name already exists");
-        flavors[_flavorname] = _flavoraddress;
-        knownflavors.push(_flavorname);
-        emit NewFlavor( _flavoraddress,  _flavorname);
-    }
-    
+
     function newHolon(string memory _flavor, string memory _name, uint _parameter) public returns (address) {
         require(flavors[_flavor] != address(0), "Flavor with this name does not exist");
         address flavorAddress = flavors[_flavor];
@@ -49,7 +38,20 @@ contract Holons {
         
         return holonAddress;
     }
+
+    mapping (string => address) private flavors;
+    string[] public knownflavors;
+
+    event NewFlavor(address indexed flavor, string name);
     
+    function newFlavor(string calldata _flavorname, address _flavoraddress) public {
+        require(flavors[_flavorname] == address(0), "Flavor with this name already exists");
+        flavors[_flavorname] = _flavoraddress;
+        knownflavors.push(_flavorname);
+        emit NewFlavor( _flavoraddress,  _flavorname);
+    }
+    
+
     function getFlavorAddress(string memory _name) public view returns (address) {
         require(flavors[_name] != address(0), "Flavor with this name does not exist");
         return flavors[_name];

@@ -16,12 +16,11 @@ pragma solidity ^0.8;
     Peer Production License for more details.
  */
 
-import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./Holon.sol";
 
 contract Appreciative is Holon  {
-    using SafeMath for uint256;
+
     //======================== Structures for tracking appreciation
     uint256 public totalappreciation;               // max amount of appreciation in this holon
     mapping (address => uint256) public appreciation; //appreciaton received by a member
@@ -130,9 +129,9 @@ contract Appreciative is Holon  {
 
         for (uint256 i = 0; i < _members.length; i++) {
             if (totalappreciation > 0 ) // if any appreciation was shared
-                amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
+                amount = (appreciation[_members[i]] * _tokenamount) / totalappreciation; //multiply given appreciation with unit reward
             else
-                amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+                amount = _tokenamount /_members.length ; //else use blanket unit reward value.
 
             if (amount > 0 ){
                 if (etherreward){

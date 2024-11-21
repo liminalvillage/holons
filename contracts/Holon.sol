@@ -16,13 +16,11 @@ pragma solidity ^0.8;
     Peer Production License for more details.
  */
 
-import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./IHolonFactory.sol";
 import "./Membrane.sol";
 
 contract Holon is Membrane{
-    using SafeMath for uint256;
 
      //======================== Public holon variables
     string public name;                      //The name of the holon
@@ -31,8 +29,9 @@ contract Holon is Membrane{
     address public creator;                  //Link to the holonic parent
 
     //======================== Events
-    event HolonRewarded (address holon, string token, uint256 amount);
+    event HolonRewarded (address holon, string token, uint256 amount);    
     event MemberRewarded (address member,string token, uint256 amount);
+    event RewardFailed(address indexed member, address token, uint256 amount);
 
     /// @notice Constructor to create an holon
     ///  created the Holon contract, the factory needs to be deployed first
@@ -62,9 +61,9 @@ contract Holon is Membrane{
 
     //     for (uint256 i = 0; i < _members.length; i++) {
     //         if (totalappreciation > 0 ) // if any appreciation was shared
-    //             amount = appreciation[_members[i]].mul( _tokenamount.div(totalappreciation)); //multiply given appreciation with unit reward
+    //             amount = appreciation[_members[i]] * ( _tokenamount / totalappreciation); //multiply given appreciation with unit reward
     //         else
-    //             amount = _tokenamount.div(_members.length); //else use blanket unit reward value.
+    //             amount = _tokenamount / _members.length; //else use blanket unit reward value.
 
     //         if (amount > 0 ){
     //             if (etherreward){
@@ -142,43 +141,42 @@ contract Holon is Membrane{
     }
 
 
-    function reward(address _tokenaddress, uint256 _tokenamount)
-        public
-        payable
-        virtual
-    {
-        require (_members.length > 0, "No members to reward");
-        bool etherreward = false;
-        IERC20 token;
+     function reward(address _tokenAddress, uint256 _tokenAmount) public payable virtual {
+        require(_members.length > 0, "No members to reward");
+        require(_tokenAmount > 0, "Token amount must be greater than zero");
 
-        if (msg.value  > 0 && _tokenaddress == address(0)) {
-            _tokenamount = msg.value;
-            etherreward = true;
+        if (msg.value > 0 && _tokenAddress == address(0)) {
+            require(_tokenAmount == msg.value, "Ether amount mismatch");
+            distributeEther(_tokenAmount);
+        } else {
+            require(_tokenAddress != address(0), "Invalid token address for ERC20 reward");
+            distributeERC20(_tokenAddress, _tokenAmount);
         }
-         else {
-            //Load ERC20 token information
-            token = IERC20(_tokenaddress);
-            require (token.balanceOf(address(this)) >= _tokenamount, "Not enough tokens in the contract");
-        }
-        
-        uint256 amount = _tokenamount.div(_members.length); // use blanket unit reward value.
+    }
+
+    function distributeEther(uint256 _etherAmount) private {
+        uint256 amountPerMember = _etherAmount / _members.length;
+        require(amountPerMember > 0, "Insufficient amount for distribution");
 
         for (uint256 i = 0; i < _members.length; i++) {
-            if (amount > 0 ){
-                if (etherreward){
-                    (bool success, ) = _members[i].call{value: amount}("");
-                    require(success, "Transfer failed");
-                }
-                else {
-                    token.transfer(_members[i],amount);
-                    (bool success,) = _members[i].call(
-                    abi.encodeWithSignature("reward(address,uint256)", _tokenaddress, amount)
-                    );
-                    require(success, "Unable to call the reward function" );
-                }
-                MemberRewarded(_members[i],etherreward? "ETHER":"ERC20", amount);
-            }
+            (bool success, ) = _members[i].call{value: amountPerMember}("");
+            require(success, "Ether transfer failed");
         }
-        emit HolonRewarded(address(this), etherreward? "ETHER":"ERC20", _tokenamount);
+
+        emit HolonRewarded(address(this), "ETHER", _etherAmount);
+    }
+
+    function distributeERC20(address _tokenAddress, uint256 _tokenAmount) private {
+        IERC20 token = IERC20(_tokenAddress);
+        require(token.balanceOf(address(this)) >= _tokenAmount, "Not enough tokens in the contract");
+
+        uint256 amountPerMember = _tokenAmount / _members.length;
+        require(amountPerMember > 0, "Insufficient amount for distribution");
+
+        for (uint256 i = 0; i < _members.length; i++) {
+            require(token.transfer(_members[i], amountPerMember), "ERC20 transfer failed");
+        }
+
+        emit HolonRewarded(address(this), "ERC20", _tokenAmount);
     }
 }

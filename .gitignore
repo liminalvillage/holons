@@ -2,3 +2,8 @@ build
 node_modules
 yarn-error.log
 .secret
+.DS_Store
+.config.json
+.env
+cache/
+out/

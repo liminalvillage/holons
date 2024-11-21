@@ -16,11 +16,9 @@ pragma solidity ^0.8;
     Peer Production License for more details.
  */
 
-import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "./Membrane.sol"; //TODO import interface instead
 
 contract Crown is Membrane{
-    using SafeMath for uint256;
     //======================== Structures for tracking appreciation
    
     address lead;

@@ -19,6 +19,7 @@ import "./Zoned.sol";
  */
 
 contract ZonedFactory {
+    
     mapping (address => address[]) private holons;
     mapping (string => address) public toAddress;   //NOTE: Remove on deploy
 
