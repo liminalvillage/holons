@@ -20,6 +20,7 @@ export default class Quests {
         this.settings = settings
         this.users = new Users(bot, db)
         //----------------------------- QUESTS -----------------------------
+        this.bot.command('delete', async (ctx) => this.delete(ctx))
         this.bot.command('quest', async (ctx) => this.quest('task', ctx))
         this.bot.command('mission', async (ctx) => this.quest('task', ctx))
         this.bot.command('task', async (ctx) => this.quest('task', ctx))
@@ -42,7 +43,6 @@ export default class Quests {
         this.bot.command('proposta', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('propongo', async (ctx) => this.quest('proposal', ctx))
         this.bot.command('fare', async (ctx) => this.quest('todo', ctx))
-        this.bot.command('ricorrente', async (ctx) => this.quest('recurring', ctx))
 
         //create new request/offer
         this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'], async (ctx) => this.quest('request', ctx))
@@ -68,6 +68,14 @@ export default class Quests {
     // Method to set scheduler reference
     setScheduler(scheduler) {
         this.scheduler = scheduler;
+    }
+
+    async delete(ctx) {
+        console.log("DELETE ACTION");
+        let chatID = ctx.message.chat.id;
+        let messageID =  ctx.message.text.split(' ')[1];
+        this.db.del(chatID + '/quests', messageID.toString())
+        ctx.reply('Quest deleted')
     }
 
     // Find the method that handles calendar date selection and add:

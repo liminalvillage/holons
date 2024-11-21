@@ -191,7 +191,7 @@ class Scheduler {
         // Stop the existing cron job
         await this.stopTask(task.id);
 
-         this.db.holosphere.putGlobal('recurring',task)
+         this.db.put('recurring',task)
 
 
         // Create new schedule with updated time

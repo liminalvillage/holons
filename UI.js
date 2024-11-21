@@ -88,7 +88,6 @@ class UI {
   async getFederatedQuests(chatID) {
     let federation = await this.settings.getFederation(chatID)
     let quests = await this.db.getAll(chatID + '/quests')//.filter(quest => quest.status === 'ongoing')
-    console.log("All Quests:", quests)
     for (let i = 0; i < federation.length; i++) {
       let federatedquests = await this.db.getAll(federation[i] + '/quests')
       quests = quests.concat(federatedquests)

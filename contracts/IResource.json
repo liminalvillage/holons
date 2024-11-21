@@ -53,20 +53,20 @@
   "sourceMap": "",
   "deployedSourceMap": "",
   "source": "// SPDX-License-Identifier: GPL-3.0\npragma solidity ^0.8.0;\n\ninterface IResource {\n    function requestRecipe(uint _recipeID, uint _amount, string memory _location)  external;\n    function getTruePrice(uint recipeID) view external returns (uint[] memory);  \n}   ",
-  "sourcePath": "/Users/roberto/Projects/Hack-Along/holons/contracts/IResource.sol",
+  "sourcePath": "/Users/roberto/Projects/Liminal/holons/contracts/IResource.sol",
   "ast": {
     "absolutePath": "project:/contracts/IResource.sol",
     "exportedSymbols": {
       "IResource": [
-        2646
+        2654
       ]
     },
-    "id": 2647,
+    "id": 2655,
     "license": "GPL-3.0",
     "nodeType": "SourceUnit",
     "nodes": [
       {
-        "id": 2628,
+        "id": 2636,
         "literals": [
           "solidity",
           "^",
@@ -82,32 +82,32 @@
         "contractDependencies": [],
         "contractKind": "interface",
         "fullyImplemented": false,
-        "id": 2646,
+        "id": 2654,
         "linearizedBaseContracts": [
-          2646
+          2654
         ],
         "name": "IResource",
         "nodeType": "ContractDefinition",
         "nodes": [
           {
             "functionSelector": "1c5d6566",
-            "id": 2637,
+            "id": 2645,
             "implemented": false,
             "kind": "function",
             "modifiers": [],
             "name": "requestRecipe",
             "nodeType": "FunctionDefinition",
             "parameters": {
-              "id": 2635,
+              "id": 2643,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2630,
+                  "id": 2638,
                   "mutability": "mutable",
                   "name": "_recipeID",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2637,
+                  "scope": 2645,
                   "src": "110:14:13",
                   "stateVariable": false,
                   "storageLocation": "default",
@@ -116,7 +116,7 @@
                     "typeString": "uint256"
                   },
                   "typeName": {
-                    "id": 2629,
+                    "id": 2637,
                     "name": "uint",
                     "nodeType": "ElementaryTypeName",
                     "src": "110:4:13",
@@ -129,11 +129,11 @@
                 },
                 {
                   "constant": false,
-                  "id": 2632,
+                  "id": 2640,
                   "mutability": "mutable",
                   "name": "_amount",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2637,
+                  "scope": 2645,
                   "src": "126:12:13",
                   "stateVariable": false,
                   "storageLocation": "default",
@@ -142,7 +142,7 @@
                     "typeString": "uint256"
                   },
                   "typeName": {
-                    "id": 2631,
+                    "id": 2639,
                     "name": "uint",
                     "nodeType": "ElementaryTypeName",
                     "src": "126:4:13",
@@ -155,11 +155,11 @@
                 },
                 {
                   "constant": false,
-                  "id": 2634,
+                  "id": 2642,
                   "mutability": "mutable",
                   "name": "_location",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2637,
+                  "scope": 2645,
                   "src": "140:23:13",
                   "stateVariable": false,
                   "storageLocation": "memory",
@@ -168,7 +168,7 @@
                     "typeString": "string"
                   },
                   "typeName": {
-                    "id": 2633,
+                    "id": 2641,
                     "name": "string",
                     "nodeType": "ElementaryTypeName",
                     "src": "140:6:13",
@@ -183,12 +183,12 @@
               "src": "109:55:13"
             },
             "returnParameters": {
-              "id": 2636,
+              "id": 2644,
               "nodeType": "ParameterList",
               "parameters": [],
               "src": "174:0:13"
             },
-            "scope": 2646,
+            "scope": 2654,
             "src": "87:88:13",
             "stateMutability": "nonpayable",
             "virtual": false,
@@ -196,23 +196,23 @@
           },
           {
             "functionSelector": "f6adf7b1",
-            "id": 2645,
+            "id": 2653,
             "implemented": false,
             "kind": "function",
             "modifiers": [],
             "name": "getTruePrice",
             "nodeType": "FunctionDefinition",
             "parameters": {
-              "id": 2640,
+              "id": 2648,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2639,
+                  "id": 2647,
                   "mutability": "mutable",
                   "name": "recipeID",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2645,
+                  "scope": 2653,
                   "src": "202:13:13",
                   "stateVariable": false,
                   "storageLocation": "default",
@@ -221,7 +221,7 @@
                     "typeString": "uint256"
                   },
                   "typeName": {
-                    "id": 2638,
+                    "id": 2646,
                     "name": "uint",
                     "nodeType": "ElementaryTypeName",
                     "src": "202:4:13",
@@ -236,16 +236,16 @@
               "src": "201:15:13"
             },
             "returnParameters": {
-              "id": 2644,
+              "id": 2652,
               "nodeType": "ParameterList",
               "parameters": [
                 {
                   "constant": false,
-                  "id": 2643,
+                  "id": 2651,
                   "mutability": "mutable",
                   "name": "",
                   "nodeType": "VariableDeclaration",
-                  "scope": 2645,
+                  "scope": 2653,
                   "src": "240:13:13",
                   "stateVariable": false,
                   "storageLocation": "memory",
@@ -255,7 +255,7 @@
                   },
                   "typeName": {
                     "baseType": {
-                      "id": 2641,
+                      "id": 2649,
                       "name": "uint",
                       "nodeType": "ElementaryTypeName",
                       "src": "240:4:13",
@@ -264,7 +264,7 @@
                         "typeString": "uint256"
                       }
                     },
-                    "id": 2642,
+                    "id": 2650,
                     "nodeType": "ArrayTypeName",
                     "src": "240:6:13",
                     "typeDescriptions": {
@@ -277,14 +277,14 @@
               ],
               "src": "239:15:13"
             },
-            "scope": 2646,
+            "scope": 2654,
             "src": "180:75:13",
             "stateMutability": "view",
             "virtual": false,
             "visibility": "external"
           }
         ],
-        "scope": 2647,
+        "scope": 2655,
         "src": "61:198:13"
       }
     ],
@@ -295,8 +295,8 @@
     "version": "0.8.1+commit.df193b15.Emscripten.clang"
   },
   "networks": {},
-  "schemaVersion": "3.4.10",
-  "updatedAt": "2024-08-24T23:45:49.434Z",
+  "schemaVersion": "3.4.16",
+  "updatedAt": "2024-09-12T09:34:06.063Z",
   "devdoc": {
     "kind": "dev",
     "methods": {},

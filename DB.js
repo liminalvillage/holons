@@ -101,7 +101,7 @@ class DB {
                 if (hex && lens)
                     return this.holosphere.getKey(hex, lens, key);
                 else
-                    return this.holosphere.getNode(table, key);
+                    return this.holosphere.getGlobalKey(table, key);
             } else if (this.db === 'orbit') {
                 return this.getOrbitDB(table, key);
             }

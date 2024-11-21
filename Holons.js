@@ -3,6 +3,8 @@ import { ethers } from 'ethers';
 import * as appreciative from './contracts/Appreciative.json' assert { type: "json" };
 import * as appreciativefactory from './contracts/AppreciativeFactory.json' assert { type: "json" };
 import * as managed from './contracts/Managed.json' assert { type: "json" };
+import * as zoned from './contracts/Zoned.json' assert { type: "json" };
+import * as splitter from './contracts/Splitter.json' assert { type: "json" };
 
 import * as factory from './contracts/IHolonFactory.json' assert { type: "json" };
 import * as holons from './contracts/Holons.json' assert { type: "json" };
@@ -40,6 +42,11 @@ export default class Holons {
     this.bot.command("ethbalance", async (ctx) => this.ethBalance(ctx));
     this.bot.command("tokenbalance", async (ctx) => this.tokenBalance(ctx));
     this.bot.command("sendCommand", async (ctx) => this.sendCommand(ctx));
+    this.bot.command("holontypes", async (ctx) => this.showHolonTypes(ctx));
+    this.bot.command("movezone", async (ctx) => this.moveToZone(ctx));
+    this.bot.command("zones", async (ctx) => this.showZones(ctx));
+    this.bot.command("setshares", async (ctx) => this.setShares(ctx));
+
 
     this.bot.command("listmembers", async (ctx) => {
       const chatID = ctx.message.chat.id;
@@ -47,7 +54,11 @@ export default class Holons {
       let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
       let members = await holon.listMembers();
       if (members.length > 0) {
-        return ctx.reply(members.join(', '));
+        let message = "Members:\n";
+        members.forEach((member, index) => {
+          message += `${index + 1}. ${member}\n`;
+        });
+        return ctx.reply(message);
       } else {
         ctx.reply("No members found");
       }
@@ -204,8 +215,8 @@ export default class Holons {
   async claim(ctx) {
     const chatID = ctx.message.chat.id;
     const userID = ctx.message.from.id;
-    let holonaddress = await this.holonsContract.toAddress(chatID.toString());
-    let holon = new ethers.Contract(holonaddress, managed.default.abi, this.wallet);
+    let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+    let holon = await this.getHolonContract(holonAddress);
     const args = ctx.message.text.split(" ").slice(1);
     if (args.length < 1) {
       return ctx.reply(`Usage: /claim [your wallet address on ${this.network}]`);
@@ -231,69 +242,187 @@ export default class Holons {
     }
   }
 
+  async waitForTransaction(tx, context, successMessage) {
+    try {
+      const receipt = await tx.wait();
+      if (receipt.status === 1) {
+        if (successMessage) {
+          await context.reply(successMessage);
+        }
+        return receipt;
+      } else {
+        throw new Error("Transaction failed");
+      }
+    } catch (error) {
+      console.error("Transaction error:", error);
+      if (context) {
+        await context.reply(`Transaction failed: ${error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  async executeTransaction(contract, method, args, options = {}) {
+    const defaultOptions = {
+      gasLimit: 3000000,
+      maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+      maxFeePerGas: ethers.parseUnits("30", "gwei"),
+    };
+
+    try {
+      const nonce = await this.wallet.getNonce();
+      
+      // Check if method exists on contract
+      if (typeof contract[method] !== 'function') {
+        throw new Error(`Method ${method} not found on contract`);
+      }
+
+      // Use proper method calling syntax
+      const tx = await contract[method](...args, {
+        ...defaultOptions,
+        ...options,
+        nonce
+      });
+
+      return tx;
+    } catch (error) {
+      console.error(`Error executing ${method}:`, error);
+      throw error;
+    }
+  }
+
   async createHolon(ctx) {
     try {
       const chatID = ctx.message.chat.id;
-      let flavor = ctx.message.text.split(" ").slice(1).join(" ");
-      if (flavor == "") {
-        flavor = "Managed";
-      }
-      console.log(flavor);
+      const args = ctx.message.text.split(" ").slice(1);
+      const flavor = args[0]; // First parameter is always the holon type
       
-      let address = await this.holonsContract.toAddress(chatID.toString());
-      if (address !== '0x0000000000000000000000000000000000000000') {
-        ctx.reply(`Holon address on ${this.network}: ${address}`);
-      } else {
-        const tx = await this.holonsContract.newHolon(flavor, chatID.toString(), flavor == "Zoned" ? 5 : 0, {
-          gasLimit: 3000000,
-          maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-          maxFeePerGas: ethers.parseUnits("30", "gwei"),
-        });
-        const receipt = await tx.wait();
-        
-        if (receipt.status !== 1) {
-          return ctx.reply("Holon creation failed");
-        } else {
-          address = await this.holonsContract.toAddress(chatID.toString());
-          ctx.reply(`${flavor} holon address on ${this.network}: ${address}`);
-        }
-        return address;
+      if (!flavor) {
+        return ctx.reply(
+          "Please specify a holon type. Use /holontypes to see available types.\n" +
+          "Usage: /createholon [type]"
+        );
       }
+
+      let currentAddress = await this.holonsContract.toAddress(chatID.toString());
+      const holonExists = currentAddress !== '0x0000000000000000000000000000000000000000';
+
+      const flavors = await this.holonsContract.listFlavors();
+      if (!flavors.includes(flavor)) {
+        return ctx.reply(`Invalid holon type "${flavor}". Available types:\n${flavors.join('\n')}`);
+      }
+
+      // Handle existing holon case
+      if (holonExists) {
+        const isConfirmed = args.includes("confirm");
+        if (!isConfirmed) {
+          return ctx.reply(
+            `⚠️ WARNING: A holon already exists at ${currentAddress}\n\n` +
+            `Creating a new ${flavor} holon will replace the existing one.\n` +
+            `All existing members, balances, and data will be inaccessible!\n\n` +
+            `To confirm, reply with /createholon ${flavor} confirm`
+          );
+        }
+
+        await ctx.reply(`Creating new ${flavor} holon to replace existing one... Please wait.`);
+      } else {
+        await ctx.reply(`Creating ${flavor} holon... Please wait.`);
+      }
+
+      // Create new holon - this will automatically replace any existing holon for this chatID
+      const createTx = await this.executeTransaction(
+        this.holonsContract,
+        'newHolon',
+        [flavor, chatID.toString(), flavor === "Zoned" ? 5 : 0]
+      );
+
+      await this.waitForTransaction(
+        createTx, 
+        ctx,
+        `${flavor} holon created on ${this.network}`
+      );
+
+      const newAddress = await this.holonsContract.toAddress(chatID.toString());
+      return ctx.reply(`Holon address: ${newAddress}`);
+
     } catch (error) {
       console.error("Error creating holon:", error);
-      ctx.reply("An error occurred while creating the holon.");
+      ctx.reply(`Failed to create holon: ${error.message}`);
     }
   }
 
   async addMembers(ctx) {
-    console.log("Adding members to holon");
-    const id = ctx.message.chat.id;
-    let holonaddress = await this.holonsContract.toAddress(id.toString());
-    let users = await this.db.getAll(id.toString() + '/users');
+    const args = ctx.message.text.split(" ").slice(1);
+    const chatID = ctx.message.chat.id;
     
-    let successCount = 0;
-    let failCount = 0;
-    
-    // Process members sequentially
-    for (const user of users) {
-        if (user.id != undefined) {
-            try {
-                // Add a small delay between transactions
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                await this.addMember(holonaddress, user.id.toString());
-                successCount++;
-            } catch (error) {
-                console.error(`Failed to add member ${user.id}:`, error);
-                failCount++;
-            }
-        }
+    if (args.length === 0) {
+      return ctx.reply(
+        "Usage: /addmembers [ethereum_address1] [ethereum_address2] ...\n" +
+        "Example: /addmembers 0x123... 0x456..."
+      );
     }
-    
-    ctx.reply(`Finished processing members.\nSuccess: ${successCount}\nFailed: ${failCount}`);
+
+    try {
+      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      if (holonAddress === '0x0000000000000000000000000000000000000000') {
+        return ctx.reply("No holon exists for this chat. Create one first with /createholon");
+      }
+
+      const holon = await this.getHolonContract(holonAddress);
+      
+      // Validate all addresses first
+      const invalidAddresses = args.filter(addr => !ethers.isAddress(addr));
+      if (invalidAddresses.length > 0) {
+        return ctx.reply(
+          "Invalid Ethereum addresses detected:\n" +
+          invalidAddresses.join('\n') +
+          "\n\nPlease provide valid addresses."
+        );
+      }
+
+      await ctx.reply(`Adding ${args.length} members... Please wait.`);
+      
+      let results = [];
+      for (const address of args) {
+        try {
+          // Check if already a member
+          const isMember = await holon.isMember(address);
+          if (isMember) {
+            results.push(`${address}: Already a member`);
+            continue;
+          }
+
+          const tx = await this.executeTransaction(
+            holon,
+            'addMember(address)',
+            [address]
+          );
+          
+          await this.waitForTransaction(tx);
+          results.push(`${address}: Added successfully`);
+          
+          // Add delay between transactions
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+          results.push(`${address}: Failed - ${error.message}`);
+        }
+      }
+
+      // Send results in batches to avoid message length limits
+      const batchSize = 10;
+      for (let i = 0; i < results.length; i += batchSize) {
+        const batch = results.slice(i, i + batchSize);
+        await ctx.reply(batch.join('\n'));
+      }
+
+    } catch (error) {
+      console.error("Error in addMembers:", error);
+      ctx.reply(`Failed to process members: ${error.message}`);
+    }
   }
 
   async sendCommand(_holonaddress, _command, _args) {
-    let holon = new ethers.Contract(_holonaddress, managed.default.abi, this.wallet);
+    let holon = await this.getHolonContract(_holonaddress);
     try {
       const tx = await holon[_command](..._args, {
         gasLimit: 3000000,
@@ -323,7 +452,7 @@ export default class Holons {
 
   async newHolon(_name, _parameter) {
     try {
-      const tx = await this.holonsContract.newHolon("Managed", _name, 0, {
+      const tx = await this.holonsContract.newHolon("Managed3", _name, 0, {
         gasLimit: 3000000,
         maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
         maxFeePerGas: ethers.parseUnits("30", "gwei"),
@@ -350,51 +479,241 @@ export default class Holons {
   async listHolonsOf(_address) {
     return await this.holonsContract.listHolonsOf(_address);
   }
+  
 
-  async addMember(_holonaddress, _userid) {
+  async addMember(_holonAddress, _memberAddress) {
     try {
-        // Create contract instance with the correct ABI
-        let holon = new ethers.Contract(_holonaddress, managed.default.abi, this.wallet);
-        console.log('adding member to holon:', _holonaddress, _userid);
+      let holon = await this.getHolonContract(_holonAddress);
+      console.log('adding member to holon:', _holonAddress, _memberAddress);
+      
+      // First check if member already exists
+      const isMember = await holon.isMember(_memberAddress);
+      if (isMember) {
+        console.log('member already exists: ', _memberAddress);
+        return true;
+      }
+
+      // Get the current nonce for this transaction
+      const nonce = await this.wallet.getNonce();
+      
+      // Call the addMember(address) function explicitly
+      const tx = await holon['addMember(address)'](_memberAddress, {
+        gasLimit: 3000000,
+        maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+        maxFeePerGas: ethers.parseUnits("30", "gwei"),
+        nonce: nonce
+      });
+      
+      console.log('Transaction sent:', tx.hash);
+      
+      // Wait for the transaction to be mined
+      const receipt = await tx.wait();
+      console.log(`Successfully added member ${_memberAddress}, transaction hash: ${receipt.hash}`);
+      return receipt;
+    } catch (error) {
+      console.error("Error in addMember:", error);
+      if (error.transaction) {
+        console.error("Transaction details:", {
+          to: error.transaction.to,
+          from: error.transaction.from,
+          data: error.transaction.data
+        });
+      }
+      throw error;
+    }
+  }
+
+  async showHolonTypes(ctx) {
+    try {
+      const flavors = await this.holonsContract.listFlavors();
+      const message = "Available Holon Types:\n" + 
+                     flavors.join('\n') + 
+                     "\n\nTo create a holon, use:\n/createholon [type]";
+      ctx.reply(message);
+    } catch (error) {
+      console.error("Error fetching holon types:", error);
+      ctx.reply("Error fetching holon types");
+    }
+  }
+
+  async moveToZone(ctx) {
+    const args = ctx.message.text.split(" ").slice(1);
+    if (args.length < 2) {
+      return ctx.reply(
+        "Usage: /movezone [ethereum_address] [zone_number]\n" +
+        "Example: /movezone 0x123... 2"
+      );
+    }
+
+    const [memberAddress, zoneNumberStr] = args;
+    const zoneNumber = parseInt(zoneNumberStr);
+    const chatID = ctx.message.chat.id;
+
+    if (!ethers.isAddress(memberAddress)) {
+      return ctx.reply(`Invalid Ethereum address: ${memberAddress}`);
+    }
+
+    if (isNaN(zoneNumber) || zoneNumber < 0) {
+      return ctx.reply("Zone number must be a non-negative integer");
+    }
+
+    try {
+      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      if (holonAddress === '0x0000000000000000000000000000000000000000') {
+        return ctx.reply("No holon exists for this chat");
+      }
+
+      const holon = await this.getHolonContract(holonAddress);
+      
+      // Check if this is actually a Zoned holon
+      try {
+        await holon.zoneCount();
+      } catch (error) {
+        return ctx.reply("This command only works with Zoned holons");
+      }
+
+      await ctx.reply(`Moving member to zone ${zoneNumber}... Please wait.`);
+
+      const tx = await this.executeTransaction(
+        holon,
+        'moveToZone',
+        [memberAddress, zoneNumber]
+      );
+
+      await this.waitForTransaction(
+        tx,
+        ctx,
+        `Successfully moved ${memberAddress} to zone ${zoneNumber}`
+      );
+
+    } catch (error) {
+      console.error("Error moving to zone:", error);
+      if (error.message.includes("not a zoned")) {
+        ctx.reply("This command only works with Zoned holons");
+      } else {
+        ctx.reply(`Failed to move member: ${error.message}`);
+      }
+    }
+  }
+
+  async showZones(ctx) {
+    const chatID = ctx.message.chat.id;
+    
+    try {
+      let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      let holon = await this.getHolonContract(holonAddress);
+
+      // Check if this is a Zoned holon
+      try {
+        await holon.zoneCount();
+      } catch (error) {
+        return ctx.reply("This command only works with Zoned holons");
+      }
+
+      // Try to get zones - this will only work for Zoned holons
+      try {
+        const zoneCount = await holon.zoneCount();
+        let zoneMembers = [];
         
-        // First check if member already exists
-        const existingAddress = await holon.userIdToAddress(_userid.toString());
-        if (existingAddress !== '0x0000000000000000000000000000000000000000') {
-            console.log('member already exists: ', _userid);
-            return true;
+        for (let i = 0; i < zoneCount; i++) {
+          const members = await holon.listZoneMembers(i);
+          zoneMembers.push({
+            zone: i,
+            members: members
+          });
         }
 
-        // Get the current nonce for this transaction
-        const nonce = await this.wallet.getNonce();
-        
-        // Make sure we're passing the userId as a string
-        const userId = _userid.toString();
-        console.log('Adding member with userId:', userId);
-        
-        // Call the addMember(string) function explicitly
-        const tx = await holon['addMember(string)'](userId, {
-            gasLimit: 3000000,
-            maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-            maxFeePerGas: ethers.parseUnits("30", "gwei"),
-            nonce: nonce
-        });
-        
-        console.log('Transaction sent:', tx.hash);
-        
-        // Wait for the transaction to be mined
-        const receipt = await tx.wait();
-        console.log(`Successfully added member ${userId}, transaction hash: ${receipt.hash}`);
-        return receipt;
-    } catch (error) {
-        console.error("Error in addMember:", error);
-        if (error.transaction) {
-            console.error("Transaction details:", {
-                to: error.transaction.to,
-                from: error.transaction.from,
-                data: error.transaction.data
+        let message = "Zone Members:\n";
+        zoneMembers.forEach(zone => {
+          message += `\nZone ${zone.zone}:\n`;
+          if (zone.members.length === 0) {
+            message += "- Empty\n";
+          } else {
+            zone.members.forEach(member => {
+              message += `- ${member}\n`;
             });
+          }
+        });
+
+        ctx.reply(message);
+      } catch (error) {
+        if (error.message.includes("not a zoned")) {
+          ctx.reply("This command only works with Zoned holons");
+        } else {
+          throw error;
         }
-        throw error;
+      }
+    } catch (error) {
+      console.error("Error showing zones:", error);
+      ctx.reply("Failed to show zones: " + error.message);
+    }
+  }
+
+  async getHolonContract(holonAddress) {
+    try {
+      // First try with Managed ABI
+      let holon = new ethers.Contract(holonAddress, managed.default.abi, this.wallet);
+      
+      // Try to detect the holon type
+      try {
+        // Check if it's a Zoned holon
+        await holon.zoneCount();
+        return new ethers.Contract(holonAddress, zoned.default.abi, this.wallet);
+      } catch {
+        try {
+          // Check if it's a Splitter holon
+          await holon.shares();
+          return new ethers.Contract(holonAddress, splitter.default.abi, this.wallet);
+        } catch {
+          // Default to Managed if no special features detected
+          return holon;
+        }
+      }
+    } catch (error) {
+      console.error("Error getting holon contract:", error);
+      throw error;
+    }
+  }
+
+  async setShares(ctx) {
+    const args = ctx.message.text.split(" ").slice(1);
+    if (args.length < 2) {
+      return ctx.reply(
+        "Usage: /setshares [ethereum_address] [shares]\n" +
+        "Example: /setshares 0x123... 50"
+      );
+    }
+
+    const [memberAddress, sharesStr] = args;
+    const shares = parseInt(sharesStr);
+    const chatID = ctx.message.chat.id;
+
+    try {
+      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      const holon = await this.getHolonContract(holonAddress);
+
+      // Check if this is a Splitter holon
+      try {
+        await holon.shares();
+      } catch (error) {
+        return ctx.reply("This command only works with Splitter holons");
+      }
+
+      const tx = await this.executeTransaction(
+        holon,
+        'setShares',
+        [memberAddress, shares]
+      );
+
+      await this.waitForTransaction(
+        tx,
+        ctx,
+        `Successfully set shares for ${memberAddress} to ${shares}`
+      );
+
+    } catch (error) {
+      console.error("Error setting shares:", error);
+      ctx.reply(`Failed to set shares: ${error.message}`);
     }
   }
 }
