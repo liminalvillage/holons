@@ -134,6 +134,89 @@ await proposal.vote({
 });
 ```
 
+### Schema Validation
+
+```javascript
+// Set a schema for a specific lens
+const schema = {
+  type: 'object',
+  properties: {
+    temperature: { type: 'number' },
+    timestamp: { type: 'number' }
+  },
+  required: ['temperature', 'timestamp']
+};
+
+await holo.setSchema('climate', schema);
+
+// Data will be validated against schema before storage
+await hex.put('climate', {
+  temperature: 22.5,
+  timestamp: Date.now()
+});
+```
+
+### Hierarchical Data Management
+
+```javascript
+// Get hexagons at all scales for a location
+const hexStack = holo.getScalespace(37.7749, -122.4194);
+
+// Get parent hexagons for a specific hex
+const parentHexes = holo.getHexScalespace('8928308280fffff');
+
+// Automatically upcast content to parent hexagons
+await holo.upcast(hex, 'climate', {
+  temperature: 22.5,
+  timestamp: Date.now()
+});
+```
+
+### Real-time Subscriptions
+
+```javascript
+// Subscribe to changes in a specific hex and lens
+holo.subscribe('8928308280fffff', 'climate', (data, key) => {
+  console.log('New data:', data);
+  console.log('Key:', key);
+});
+```
+
+### Content Processing
+
+```javascript
+// Compute summaries across hexagon hierarchies
+await holo.compute(hex, 'observations', 'summarize');
+
+// Clear data from a specific lens
+await holo.clearlens(hex, 'temporary_data');
+
+// Get specific content by key
+const data = await holo.getKey(hex, 'climate', 'measurement_001');
+
+// Get raw GunDB node reference
+const node = holo.getNode(hex, 'climate', 'measurement_001');
+```
+
+### Voting System Details
+
+The voting system supports:
+- Direct voting on topics within hexagons
+- Vote delegation to other users
+- Circular delegation detection
+- Vote aggregation across regions
+
+```javascript
+// Cast a vote
+await holo.vote(userId, hexId, 'proposal_123', 'approve');
+
+// Delegate voting power
+await holo.delegateVote(userId, 'environmental', delegateUserId);
+
+// Get aggregated votes for a region
+const voteResults = holo.aggregateVotes(hexId, 'proposal_123');
+```
+
 ## Configuration
 
 HoloSphere can be configured with various options:
@@ -202,5 +285,214 @@ If you use HoloSphere in your research, please cite:
   year = {2024},
   url = {https://github.com/holosphere/holosphere}
 }
+```
+
+## Technical Details
+
+### Data Storage
+
+HoloSphere uses GunDB for decentralized storage with the following features:
+- Content-addressable storage (SHA-256 hashing)
+- User-defined IDs for updatable content
+- Automatic peer synchronization
+- Schema validation before storage
+
+### Spatial Indexing
+
+The system uses Uber's H3 library for:
+- Converting lat/long to hexagon IDs
+- Managing parent-child relationships
+- Multi-resolution operations
+- Spatial queries and containment
+
+### AI Integration
+
+The AI processing system supports:
+- Multiple AI providers (OpenAI, local models, etc.)
+- Content summarization across regions
+- Hierarchical content processing
+- Customizable processing operations
+
+## Error Handling
+
+HoloSphere includes built-in error handling for:
+- Schema validation failures
+- Network connectivity issues
+- Invalid spatial coordinates
+- Circular vote delegations
+- Data parsing errors
+
+## Performance Considerations
+
+- Use appropriate H3 resolution levels (0-15) for your use case
+- Consider data volume when computing summaries
+- Monitor real-time subscriptions for memory usage
+- Cache frequently accessed schemas
+- Use batch operations for bulk data processing
+
+## Security Notes
+
+- Store API keys securely
+- Implement appropriate access control
+- Validate all user input
+- Monitor delegation chains
+- Protect against vote manipulation
+
+### Global Data Management
+
+HoloSphere provides methods for managing global (non-hex-specific) data:
+
+```javascript
+// Store data in a global table
+await holo.putGlobal('settings', {
+  id: 'app_config',
+  theme: 'dark',
+  language: 'en'
+});
+
+// Retrieve all data from a global table
+const settings = await holo.getGlobal('settings');
+
+// Get specific item from a global table
+const config = await holo.getGlobalKey('settings', 'app_config');
+
+// Delete a global table
+await holo.deleteGlobal('settings');
+```
+
+### Data Retrieval and Management
+
+HoloSphere offers multiple ways to retrieve and manage data:
+
+```javascript
+// Get all items from a specific hex and lens
+const allItems = await holo.getAll('8928308280fffff', 'climate');
+
+// Get all items from a lens across all hexes
+const allClimateData = await holo.getAllTable('climate');
+
+// Drop (delete) all content under a specific hex and lens
+await holo.drop('8928308280fffff', 'climate');
+```
+
+## Implementation Details
+
+### Data Storage Patterns
+
+HoloSphere implements two storage patterns:
+1. **Content-Addressable Storage**: For immutable data, using SHA-256 hashing
+2. **ID-Based Storage**: For updatable content, using user-defined IDs
+
+```javascript
+// Store updatable content with ID
+await holo.put(hex, 'climate', {
+  id: 'station_001',
+  temperature: 22.5
+});
+
+// Store immutable content (auto-generated hash ID)
+await holo.put(hex, 'observations', {
+  temperature: 22.5,
+  timestamp: Date.now()
+});
+```
+
+### Data Validation
+
+All data operations include:
+- Schema validation before storage
+- JSON parsing validation
+- Null checks for required parameters
+- Error handling for invalid data
+
+### Performance Optimizations
+
+The system includes several optimizations:
+- Efficient data retrieval using GunDB's `.once()` method
+- Parallel processing for bulk operations
+- Automatic cleanup of invalid data
+- Smart timeout handling for network operations
+
+### Error Handling Examples
+
+```javascript
+// Example with schema validation
+try {
+  await holo.put(hex, 'climate', invalidData);
+} catch (error) {
+  console.error('Validation failed:', error);
+}
+
+// Example with data retrieval
+const data = await holo.getKey(hex, 'climate', 'missing_key');
+if (data === null) {
+  console.log('No data found for key');
+}
+```
+
+### Global Data Management (Additional Features)
+
+```javascript
+// Get all items from a global table with filtering
+const allItems = await holo.getAllTable('settings');
+
+// Subscribe to changes in a global table
+holo.subscribe('settings', null, (data, key) => {
+  console.log('Settings updated:', data);
+});
+
+// Delete specific items from a global table
+await holo.delete('settings', 'old_config');
+```
+
+### Data Management Patterns
+
+HoloSphere supports three types of data storage:
+
+1. **Hex-specific Data**: Stored under hexagonal regions
+```javascript
+await holo.put(hex, 'climate', data);
+```
+
+2. **Global Data**: Stored independently of hexagons
+```javascript
+await holo.putGlobal('settings', data);
+```
+
+3. **Cross-referenced Data**: Data that can be accessed from both global and hex contexts
+```javascript
+// Store in global context
+await holo.putGlobal('shared_data', {
+  id: 'shared_item',
+  data: 'value'
+});
+
+// Reference in hex context
+await holo.put(hex, 'local_lens', {
+  id: 'local_reference',
+  ref: 'shared_item'
+});
+```
+
+### Global Schema Management
+
+Schemas can be managed globally and applied to multiple lenses:
+
+```javascript
+// Set a global schema template
+await holo.putGlobal('schemas', {
+  id: 'measurement_template',
+  schema: {
+    type: 'object',
+    properties: {
+      value: { type: 'number' },
+      timestamp: { type: 'number' }
+    }
+  }
+});
+
+// Apply global schema to a lens
+const template = await holo.getGlobalKey('schemas', 'measurement_template');
+await holo.setSchema('climate', template.schema);
 ```
 

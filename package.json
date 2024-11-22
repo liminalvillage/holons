@@ -1,12 +1,12 @@
 {
   "name": "holosphere",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "Holonic Geospatial Communication Infrastructure",
   "main": "holosphere.js",
   "types": "holosphere.d.ts",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "author": "Roberto Valenti",
   "license": "GPL-3.0-or-later",
@@ -15,5 +15,16 @@
     "gun": "^0.2020.1240",
     "h3-js": "^4.1.0",
     "openai": "^4.29.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {},
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    }
   }
 }
