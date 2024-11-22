@@ -1,0 +1,4 @@
+node_modules
+radata/*
+.env
+.DS_Store
