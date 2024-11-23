@@ -23,7 +23,7 @@ class Announcements {
             return;
         }
 
-        let announcement = { id: messageID, from: ctx.from.username , date: new Date(), image: await this.users.getUserPicture(ctx.from.id), content: message }
+        let announcement = { id: messageID, user: ctx.from , date: new Date(), content: message }
        
         await this.db.put(chatID + '/announcements', announcement );
         ctx.reply(utils.i18next.t('announced', { message: message ,lng: language }));
