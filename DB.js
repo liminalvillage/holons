@@ -39,8 +39,9 @@ class DB {
                 });
                 await this.preloadedDB[table].load();
                 console.log('preloaded ', table);
+                return this.preloadedDB[table];
             }
-            return this.preloadedDB[table];
+        
         } catch (error) {
             console.error("Error opening table:", error);
         }
@@ -50,7 +51,10 @@ class DB {
         try {
             if (this.db === 'gun') {
                 const [hex, lens] = table.split('/');
-                return this.holosphere.delete(hex, lens, key);
+                if (hex && lens) {
+                    return this.holosphere.delete(hex, lens, key)
+                }else 
+                    return this.holosphere.deleteGlobal(table, key);
             } else if (this.db === 'orbit') {
                 return this.deleteOrbitDB(table, key);
             }
@@ -61,13 +65,15 @@ class DB {
     }
 
     async drop(table) {
+        console.log('Dropping ', table);
         try {
             if (this.db === 'gun') {
                 const [hex, lens] = table.split('/');
-                await this.holosphere.drop(hex, lens);
-                this.preloadedDB[table] = null;
+                if (hex && lens)
+                    await this.holosphere.deleteAll(hex, lens);
+                else
+                    await this.holosphere.deleteAllGlobal(table);
             } else if (this.db === 'orbit' && this.preloadedDB[table] !== undefined) {
-                console.log('Dropping ', table);
                 await this.preloadedDB[table].drop();
                 delete this.preloadedDB[table];
             }
@@ -80,10 +86,12 @@ class DB {
     async put(table, data) {
         try {
             await this.open(table);
-            console.log('Put:', table)
             if (this.db === 'gun') {
                 const [hex, lens] = table.split('/');
-                return this.holosphere.put(hex, lens, data);
+                if (hex && lens)
+                    return this.holosphere.put(hex, lens, data);
+                else
+                    return this.holosphere.putGlobal(table, data);
             } else if (this.db === 'orbit') {
                 return this.addOrbitDB(table, data);
             }
@@ -99,9 +107,9 @@ class DB {
             if (this.db === 'gun') {
                 const [hex, lens] = table.split('/');
                 if (hex && lens)
-                    return this.holosphere.getKey(hex, lens, key);
+                    return this.holosphere.get(hex, lens, key);
                 else
-                    return this.holosphere.getGlobalKey(table, key);
+                    return this.holosphere.getGlobal(table, key);
             } else if (this.db === 'orbit') {
                 return this.getOrbitDB(table, key);
             }
@@ -117,9 +125,9 @@ class DB {
             if (this.db === 'gun') {
                 if (table.includes('/')) {
                     const [hex, lens] = table.split('/');
-                    return this.holosphere.getAll(hex, lens);
+                    return await this.holosphere.getAll(hex, lens);
                 } else {
-                    return this.holosphere.getAllTable(table);
+                    return await this.holosphere.getAllGlobal(table);
                 }
             } else if (this.db === 'orbit') {
                 return this.getAllOrbitDB(table);

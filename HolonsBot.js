@@ -109,7 +109,7 @@ class HolonsBot {
 
     this.lunation = new Lunation(this.telebot);
     this.shopping = new Shopping(this.telebot, this.db, this.settings);
-    this.quests = new Quests(this.telebot, this.db, this.settings);
+
     this.bigtalk = new Bigtalk(this.telebot, this.settings);
     this.library = new Library(this.telebot, this.db);
     this.users = new Users(this.telebot, this.db);
@@ -126,6 +126,7 @@ class HolonsBot {
     this.checklists = new Checklists(this.telebot, this.db);
     this.capitalGame = new CapitalGame(this.telebot, this.settings);
 
+    this.quests = new Quests(this.telebot, this.db, this.users,this.settings);
     this.scheduler = new Scheduler(this.telebot, this.db, this.quests);
     this.quests.setScheduler(this.scheduler);
 

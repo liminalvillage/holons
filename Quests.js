@@ -7,7 +7,7 @@ import Users from './Users.js';
 
 export default class Quests {
 
-    constructor(bot, db, settings) {
+    constructor(bot, db, users, settings) {
 
         this.bot = bot;
         this.db = db;
@@ -18,7 +18,7 @@ export default class Quests {
             bot_api: 'telegraf'
         });
         this.settings = settings
-        this.users = new Users(bot, db)
+        this.users = users
         //----------------------------- QUESTS -----------------------------
         this.bot.command('delete', async (ctx) => this.delete(ctx))
         this.bot.command('quest', async (ctx) => this.quest('task', ctx))
@@ -360,7 +360,6 @@ export default class Quests {
                     .catch(err => console.error('Error answering callback query:', err));
                 return;
             }
-            console.log("Quest:", quest)
 
             // Get the user who reacted
             const sender = ctx.callbackQuery.from;

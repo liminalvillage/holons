@@ -16,6 +16,7 @@ export default class Settings {
 
             ctx.reply( JSON.stringify(settings) )
         })
+        
         this.bot.command(['getChatNames'], async (ctx) => {
             let chats = ctx.message.text.split(',')
             let chatnames = ''
@@ -42,7 +43,7 @@ export default class Settings {
                 await this.db.drop(chatID + '/announcements')
                 await this.db.drop(chatID + '/recurring')
     
-                this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))
+                await this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))
                 ctx.reply('Bot resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -466,7 +467,6 @@ export default class Settings {
 
     async getFederation(chatID) {
         let federation = await this.db.get('federation', chatID)
-        console.log('federation', federation)
         if (!federation || federation == []) {
             return []
         }

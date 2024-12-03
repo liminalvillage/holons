@@ -8,7 +8,7 @@ class Scheduler {
         this.jobs = new Map(); // Store active cron jobs
         this.loadTasks();
 
-
+        this.bot.command('droprecurring', async (ctx) => this.deleteTasks(ctx));
         this.bot.command('recurring', async (ctx) =>  this.addTask(ctx) );
         this.bot.action(/remove_recurring_(.+)/, (ctx) => this.removeRecurringTask(ctx));
     }
@@ -21,13 +21,10 @@ class Scheduler {
 
     async loadTasks() {
         // Load all recurring tasks from database and schedule them
-        const tasks = await this.db.getAll('recurring');
-
-        
+        const tasks = await this.db.holosphere.getAllGlobal('recurring');
         
         if (tasks && tasks.length > 0) {
             tasks.forEach(async task => {
-                console.log('LOAD TASK', task);
                 // Create a mock ctx object from the task data
             
                 const mockCtx = {
@@ -92,7 +89,7 @@ class Scheduler {
 
     async scheduleTask(task, ctx) {
         let chatID = task.chatID;
-        if (!task.when || task.when === '' || task.frequency === '') {
+        if (!task.when || !task.frequency) {
             console.error('Invalid task, no when or frequency:', task);
             return;
         }
@@ -176,9 +173,13 @@ class Scheduler {
     async updateTaskSchedule(chatId, messageId, newDate, ctx) {
         // Find the task in recurring database
         console.log('UPDATE TASK SCHEDULE', chatId, messageId, newDate);
-        const recurringID = await this.db.holosphere.getGlobalKey('recurringlookup', chatId + '_' + messageId);
+        const recurringID = await this.db.holosphere.getGlobal('recurringlookup', chatId + '_' + messageId);
+        if (!recurringID) {
+            console.log('No recurring lookup found to update schedule');
+            return;
+        }
         console.log('RECURRING ID', recurringID);
-        let task = this.db.holosphere.getGlobalKey('recurring', recurringID.taskID);
+        let task = this.db.holosphere.getGlobal('recurring', recurringID.taskID);
         
         if (!task) {
             console.log('No recurring task found to update schedule');
@@ -206,7 +207,7 @@ class Scheduler {
         
         try {
             // Find the task in recurring lookup
-            const lookup = await this.db.holosphere.getGlobalKey('recurringlookup', chatId + '_' + messageId);
+            const lookup = await this.db.holosphere.getGlobal('recurringlookup', chatId + '_' + messageId);
             
             if (!lookup) {
                 console.log('No recurring task lookup found to remove');
@@ -215,7 +216,7 @@ class Scheduler {
             }
 
             // Get the actual task using the taskID from lookup
-            const task = await this.db.holosphere.getGlobalKey('recurring', lookup.taskID);
+            const task = await this.db.holosphere.getGlobal('recurring', lookup.taskID);
             
             if (!task) {
                 console.log('No recurring task found to remove');

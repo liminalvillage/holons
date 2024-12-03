@@ -1,6 +1,12 @@
 import { t } from "i18next";
 import * as utils from './utilities.js';
 import { Markup } from 'telegraf';
+import fs from 'fs';
+import path from 'path';
+import axios from 'axios';
+import express from 'express';
+
+let serverInstance = null;  // Static variable to track server instance
 
 class Users {
   constructor(bot, db) {
@@ -15,8 +21,88 @@ class Users {
     //this.bot.command('collaborated', (ctx) => this.collaborated(ctx));
     // this.bot.command('wallet', (ctx) => this.wallet(ctx));
     // this.bot.command('balance', (ctx) => this.balance(ctx));
+    this.setupAvatarServer();
   }
 
+  setupAvatarServer() {
+    // If server is already running, don't create another one
+    if (serverInstance) {
+      console.log('Avatar server is already running');
+      return;
+    }
+
+    const app = express();
+    const port = process.env.AVATAR_PORT || 80;
+
+    this.avatarsDir = path.join(process.cwd(), 'public', 'avatars');
+    if (!fs.existsSync(this.avatarsDir)) {
+      fs.mkdirSync(this.avatarsDir, { recursive: true });
+    }
+
+    // Path to default avatar
+    this.defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
+    // Create default avatar if it doesn't exist
+    if (!fs.existsSync(this.defaultAvatarPath)) {
+      // Copy from templates or create a basic icon
+      const defaultTemplate = path.join(process.cwd(), 'templates', 'default-avatar.png');
+      if (fs.existsSync(defaultTemplate)) {
+        fs.copyFileSync(defaultTemplate, this.defaultAvatarPath);
+      }
+    }
+
+    app.use(express.static('public'));
+
+    app.get('/getavatar', async (req, res) => {
+      const userId = req.query.user_id;
+
+      if (!userId) {
+        return res.sendFile(this.defaultAvatarPath);
+      }
+
+      const localAvatarPath = path.join(this.avatarsDir, `${userId}.jpg`);
+
+      if (fs.existsSync(localAvatarPath)) {
+        return res.sendFile(localAvatarPath);
+      }
+
+      try {
+        const fileUrl = await this.getUserPicture(userId);
+        if (fileUrl) {
+          await this.downloadAndSaveAvatar(fileUrl, userId);
+          res.sendFile(localAvatarPath);
+        } else {
+          res.sendFile(this.defaultAvatarPath);
+        }
+      } catch (error) {
+        console.error('Error retrieving the profile photo:', error);
+        res.sendFile(this.defaultAvatarPath);
+      }
+    });
+
+    serverInstance = app.listen(port, () => {
+      console.log(`Avatar server is running at http://localhost:${port}`);
+    }).on('error', (error) => {
+      console.error('Failed to start avatar server:', error.message);
+      serverInstance = null;  // Reset on error
+    });
+  }
+
+  async downloadAndSaveAvatar(fileUrl, userId) {
+    const response = await axios({
+      url: fileUrl,
+      method: 'GET',
+      responseType: 'stream'
+    });
+    
+    const filePath = path.join(this.avatarsDir, `${userId}.jpg`);
+    const writer = fs.createWriteStream(filePath);
+    
+    return new Promise((resolve, reject) => {
+      response.data.pipe(writer);
+      writer.on('finish', () => resolve(filePath));
+      writer.on('error', reject);
+    });
+  }
 
   // async balance(ctx) {
   //   const chatID = ctx.message.chat.id;

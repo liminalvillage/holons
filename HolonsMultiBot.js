@@ -80,7 +80,7 @@ class HolonsBot {
 
     this.lunation = new Lunation(this.bot);
     this.shopping = new Shopping(this.bot, this.db, this.settings);
-    this.quests = new Quests(this.bot, this.db, this.settings);
+  
     this.bigtalk = new Bigtalk(this.bot);
     this.library = new Library(this.bot, this.db);
     this.users = new Users(this.bot, this.db);
@@ -91,7 +91,9 @@ class HolonsBot {
     this.tags = new Tags(this.bot, this.db);
     this.participation = new Participation(this.bot, this.db);
     this.council = new Council(this.bot, this.db);
-    this.roles = new Roles(this.bot, this.db);
+    this.roles = new Roles(this.bot, this.db, this.ui, this.settings);
+    this.quests = new Quests(this.bot, this.db, this.users, this.settings);
+    
   }
 
   handleProcessEvents() {
