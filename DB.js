@@ -17,7 +17,7 @@ class DB {
 
     async init() {
         try {
-            
+
             this.gun = this.holosphere.gun;
             
             if (this.db === 'orbit') {
@@ -71,10 +71,11 @@ class DB {
     async drop(table) {
         try {
             if (this.db === 'gun') {
-                this.gun.get(this.dbName + '/' + table).map().once((data, key) => {
-                    this.gun.get(this.dbName + '/' + table).get(key).put(null); // Delete each key in the table                }
-                })
-                //this.gun.get(this.dbName + '/' + table).put(null); // Delete the table
+                let [hex, lens] = table.split('/')
+                if (lens === undefined)
+                    this.holosphere.deleteAllGlobal(table);
+                else
+                    this.holosphere.deleteAll(hex, lens);
                 this.preloadedDB[table] = null;
             } else if (this.db === 'orbit' && this.preloadedDB[table] !== undefined) {
                 console.log('Dropping ', table);
@@ -90,10 +91,7 @@ class DB {
     async put(table, data) {
         try {
             await this.open(table);
-            console.log('Put:',table)
             if (this.db === 'gun') {
-                let [hex, lens] = table.split('/')
-                this.holosphere.put(hex,lens, data);
                 return this.addGunDB(table, data);
             } else if (this.db === 'orbit') {
                 return this.addOrbitDB(table, data);
@@ -105,11 +103,11 @@ class DB {
         }
     }
 
-    async get(table, key) {
+    async get(table, key) {    
         try {
             await this.open(table);
             if (this.db === 'gun') {
-                return this.getGunDB(table, key);
+                return await this.getGunDB(table, key);
             } else if (this.db === 'orbit') {
                 return this.getOrbitDB(table, key);
             }
@@ -184,6 +182,11 @@ class DB {
     // ===========================      Gun Functions
 
     async addGunDB(table, data) {
+        let [hex, lens] = table.split('/')
+        if (lens === undefined)
+            return this.holosphere.putGlobal(table, data);
+        else
+            return this.holosphere.put(hex, lens, data);
         return new Promise((resolve) => {
             this.gun.get(this.dbName + '/' + table).get(data.id).put(JSON.stringify(data), ack => {
                 if (ack.err) {
@@ -197,6 +200,11 @@ class DB {
     }
 
     async getGunDB(table, key) {
+        let [hex, lens] = table.split('/')
+        if (lens === undefined)
+            return this.holosphere.getGlobal(table, key);
+        else
+            return this.holosphere.get(hex, lens, key);
         return new Promise((resolve) => {
             // Use Gun to get the data
             this.gun.get(this.dbName + '/' + table).get(key).once((data, key) => {
@@ -212,7 +220,11 @@ class DB {
 
 
     async getAllGunDB( table) {
-    
+        let [hex, lens] = table.split('/')
+        if (lens === undefined)
+            return await this.holosphere.getAllGlobal(table);
+        else
+            return await this.holosphere.getAll(hex, lens);
         return new Promise(async (resolve, reject) => {
             let output = []
             let counter = 0
@@ -295,6 +307,8 @@ class DB {
     // )}
     
     deleteGunDB(table, key) {
+        let [hex, lens] = table.split('/')
+        return this.holosphere.delete(hex, lens, key);
         return new Promise((resolve, reject) => {
             this.gun.get(this.dbName + '/' + table).get(key).put(null, ack => {
                 if (ack.err) {

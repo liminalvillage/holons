@@ -24,7 +24,7 @@ class UI {
     this.bot.command(['fiorini','apprezzamento', 'crediti', 'punti', 'punteggio', 'punteggi', 'classifica', 'stato'], async (ctx) => this.leaderboard(ctx))
 
     // Set up a command to display the quests
-    this.bot.command(['tasks', 'quests', 'todos', 'proposals'], (ctx) => this.questboard(ctx))
+    this.bot.command(['tasks', 'quests', 'todos', 'proposals'],  (ctx) =>  this.questboard(ctx))
     this.bot.command(['compiti', 'missioni', 'proposte'], (ctx) => this.questboard(ctx))
 
     // Set up a command to display the requests
@@ -87,7 +87,7 @@ class UI {
 
   async getFederatedQuests(chatID) {
     let federation = await this.settings.getFederation(chatID)
-    let quests = await this.db.getAll(chatID + '/quests')//.filter(quest => quest.status === 'ongoing')
+    let quests = await this.db.holosphere.getAll(chatID, 'quests')//.filter(quest => quest.status === 'ongoing')
     for (let i = 0; i < federation.length; i++) {
       let federatedquests = await this.db.getAll(federation[i] + '/quests')
       quests = quests.concat(federatedquests)
