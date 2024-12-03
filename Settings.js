@@ -10,20 +10,20 @@ export default class Settings {
         this.db = db
         this.bot = bot
         // ================= ADMIN ===========================
-   
+
         this.bot.command('getSettings', async (ctx) => {
             let settings = await this.getSettings(utils.getChatId(ctx))
 
-            ctx.reply( JSON.stringify(settings) )
+            ctx.reply(JSON.stringify(settings))
         })
-        
+
         this.bot.command(['getChatNames'], async (ctx) => {
             let chats = ctx.message.text.split(',')
             let chatnames = ''
-            for (let i = 0 ; i < chats.length; i++) {
+            for (let i = 0; i < chats.length; i++) {
                 let name = await utils.getChatName(ctx, chats[i])
                 if (name)
-                    chatnames += name +','
+                    chatnames += name + ','
                 console.log(chats[i], name)
             };
             ctx.reply(chatnames).catch((e) => { console.log(e) })
@@ -34,16 +34,16 @@ export default class Settings {
             if (utils.isAdmin(ctx)) {
                 let chatID = utils.getChatId(ctx)
                 let chatName = await utils.getChatName(ctx, chatID)
-                await this.db.drop(chatID + '/shopping')
-                await this.db.drop(chatID + '/quests')
-                await this.db.drop(chatID + '/offers')
-                await this.db.drop(chatID + '/users')
-                await this.db.drop(chatID + '/tags')
-                await this.db.drop(chatID + '/expenses')
-                await this.db.drop(chatID + '/announcements')
-                await this.db.drop(chatID + '/recurring')
-    
-                await this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))
+                this.db.drop(chatID + '/shopping')
+                this.db.drop(chatID + '/quests')
+                this.db.drop(chatID + '/offers')
+                this.db.drop(chatID + '/users')
+                this.db.drop(chatID + '/tags')
+                this.db.drop(chatID + '/expenses')
+                this.db.drop(chatID + '/announcements')
+                this.db.drop(chatID + '/recurring')
+
+                this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))
                 ctx.reply('Bot resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -158,7 +158,7 @@ export default class Settings {
         }
         else ctx.reply("Only admins can set the hex")
 
-     
+
     }
 
     async getHexContent(ctx) {
@@ -239,7 +239,7 @@ export default class Settings {
             id: chatID,
             hex: chatID,
             version: 0.1,
-            name: chatName||'unknown',
+            name: chatName || 'unknown',
             timezone: '',
             whitelisted: false,
             language: process.env.LANGUAGE || 'en',

@@ -8,14 +8,18 @@ import HoloSphere from 'holosphere';
 class DB {
     constructor(dbName) {
         this.orbitdb = null;
+        this.gun = null;
         this.dbName = dbName;
         this.preloadedDB = {};
         this.holosphere = new HoloSphere(dbName);
-        this.db = 'gun'; // 'orbit' or 'gun' or 'both' (writing to both, reading from gun)
+        this.db = 'gun'; // 'orbit' or 'gun' or 'both' (writing to both, reading from gub)
     }
 
     async init() {
         try {
+            
+            this.gun = this.holosphere.gun;
+            
             if (this.db === 'orbit') {
                 this.ipfs = await create({
                     address: "127.0.0.1",
@@ -33,15 +37,18 @@ class DB {
 
     async open(table) {
         try {
-            if (!this.preloadedDB[table] && this.db === 'orbit') {
-                this.preloadedDB[table] = await this.orbitdb.docs(this.dbName + '/' + table, {
-                    indexBy: 'id'
-                });
-                await this.preloadedDB[table].load();
-                console.log('preloaded ', table);
-                return this.preloadedDB[table];
+            if (!this.preloadedDB[table]) {
+                if (this.db === 'gun') {
+                    //this.preloadedDB[table] = this.gun.get(this.dbName + '/' + table); //store table reference
+                } else if (this.db === 'orbit') {
+                    this.preloadedDB[table] = await this.orbitdb.docs(this.dbName + '/' + table, {
+                        indexBy: 'id'
+                    });
+                    await this.preloadedDB[table].load();
+                    console.log('preloaded ', table);
+                }
             }
-        
+            return this.preloadedDB[table];
         } catch (error) {
             console.error("Error opening table:", error);
         }
@@ -50,54 +57,51 @@ class DB {
     async del(table, key) {
         try {
             if (this.db === 'gun') {
-                const [hex, lens] = table.split('/');
-                if (hex && lens) {
-                    return this.holosphere.delete(hex, lens, key)
-                }else 
-                    return this.holosphere.deleteGlobal(table, key);
+                return this.deleteGunDB(table, key);
             } else if (this.db === 'orbit') {
+                this.deleteGunDB(table, key);
                 return this.deleteOrbitDB(table, key);
             }
         } catch (error) {
             console.error("Error deleting data:", error);
-            throw error;
+            throw error; // Rethrow to allow caller to handle
         }
     }
 
     async drop(table) {
-        console.log('Dropping ', table);
         try {
             if (this.db === 'gun') {
-                const [hex, lens] = table.split('/');
-                if (hex && lens)
-                    await this.holosphere.deleteAll(hex, lens);
-                else
-                    await this.holosphere.deleteAllGlobal(table);
+                this.gun.get(this.dbName + '/' + table).map().once((data, key) => {
+                    this.gun.get(this.dbName + '/' + table).get(key).put(null); // Delete each key in the table                }
+                })
+                //this.gun.get(this.dbName + '/' + table).put(null); // Delete the table
+                this.preloadedDB[table] = null;
             } else if (this.db === 'orbit' && this.preloadedDB[table] !== undefined) {
+                console.log('Dropping ', table);
                 await this.preloadedDB[table].drop();
-                delete this.preloadedDB[table];
+                delete this.preloadedDB[table]; // Remove reference after dropping
             }
         } catch (error) {
             console.error("Error dropping table:", error);
-            throw error;
+            throw error; // Rethrow to allow caller to handle
         }
     }
-    
+
     async put(table, data) {
         try {
             await this.open(table);
+            console.log('Put:',table)
             if (this.db === 'gun') {
-                const [hex, lens] = table.split('/');
-                if (hex && lens)
-                    return this.holosphere.put(hex, lens, data);
-                else
-                    return this.holosphere.putGlobal(table, data);
+                let [hex, lens] = table.split('/')
+                this.holosphere.put(hex,lens, data);
+                return this.addGunDB(table, data);
             } else if (this.db === 'orbit') {
                 return this.addOrbitDB(table, data);
+                
             }
         } catch (error) {
             console.error("Error putting data:", error);
-            throw error;
+            throw error; // Rethrow to allow caller to handle
         }
     }
 
@@ -105,35 +109,24 @@ class DB {
         try {
             await this.open(table);
             if (this.db === 'gun') {
-                const [hex, lens] = table.split('/');
-                if (hex && lens)
-                    return this.holosphere.get(hex, lens, key);
-                else
-                    return this.holosphere.getGlobal(table, key);
+                return this.getGunDB(table, key);
             } else if (this.db === 'orbit') {
                 return this.getOrbitDB(table, key);
             }
         } catch (error) {
             console.error("Error getting data:", error);
-            throw error;
+            throw error; // Rethrow to allow caller to handle
         }
     }
 
     async getAll(table) {
-        await this.open(table);
+        await this.open(table)
         try {
-            if (this.db === 'gun') {
-                if (table.includes('/')) {
-                    const [hex, lens] = table.split('/');
-                    return await this.holosphere.getAll(hex, lens);
-                } else {
-                    return await this.holosphere.getAllGlobal(table);
-                }
-            } else if (this.db === 'orbit') {
+            if (this.db === 'gun')
+                return this.getAllGunDB(table);
+            if (this.db === 'orbit')
                 return this.getAllOrbitDB(table);
-            }
         } catch (error) {
-            console.error("Error in getAll:", error);
             throw error;
         }
     }
@@ -186,6 +179,131 @@ class DB {
         }
         const result = await db.del(key);
         return result
+    }
+
+    // ===========================      Gun Functions
+
+    async addGunDB(table, data) {
+        return new Promise((resolve) => {
+            this.gun.get(this.dbName + '/' + table).get(data.id).put(JSON.stringify(data), ack => {
+                if (ack.err) {
+                    console.error("Error adding data to GunDB:", ack.err);
+                    resolve(null);
+                } else {
+                    resolve(ack.ok);
+                }
+            })
+        })    
+    }
+
+    async getGunDB(table, key) {
+        return new Promise((resolve) => {
+            // Use Gun to get the data
+            this.gun.get(this.dbName + '/' + table).get(key).once((data, key) => {
+                if (data) {
+                    resolve(JSON.parse(data)); // Resolve the promise with the data if data is found
+                } else {
+                    resolve(null); // Reject the promise if no data is found
+                }
+            });
+        });
+
+    }
+
+
+    async getAllGunDB( table) {
+    
+        return new Promise(async (resolve, reject) => {
+            let output = []
+            let counter = 0
+            this.gun.get(this.dbName + '/' + table).once((data, key) => {
+                if (data) {
+                    const maplenght = Object.keys(data).length - 1
+                    this.gun.get(this.dbName + '/' + table).map().once(async (itemdata, key) => {
+                        counter += 1
+                        if (itemdata) {
+                            var parsed = {}
+                            try {
+                                parsed = JSON.parse(itemdata);
+                            } catch (e) {
+                                console.log('Invalid JSON:', itemdata);
+                            }
+                            output.push(parsed);
+                            
+                        }
+
+                        if (counter == maplenght) {
+                            resolve(output);
+                        }
+                    }
+                    );
+                } else resolve(output)
+            })
+        }
+        );
+    }
+
+    // async getAllGunDB(table) {
+    //     console.log('getAllGunDB:', table);
+    //     return new Promise((resolve, reject) => {
+    //         let allData = [];
+    //         let dataStream = this.gun.get(this.dbName + '/' + table).map();
+    //         let hasData = false;
+    
+    //         dataStream.once((data, key) => {
+    //             if (data) {
+    //                 hasData = true;
+    //                 console.log(data)
+    //                 try {
+    //                     // Assuming the stored data is an object and not a string that needs JSON.parse()
+    //                     if (data.payload)
+    //                     allData.push(JSON.parse(data.payload));
+    //                 } catch (parseError) {
+    //                     console.error("Error parsing data:", parseError);
+    //                     reject(parseError);
+    //                 }
+    //             }
+    //         });
+    
+    //         setTimeout(() => {
+    //             if (hasData) {
+    //                 resolve(allData);
+    //             } else {
+    //                 // Handle the case where no data is found or the stream ends without data
+    //                 console.log("No data found or end of data stream.");
+    //                 resolve(allData); // Resolve with empty array if no data
+    //             }
+    //         }, 1000); // Adjust timeout as necessary based on application needs
+    //     });
+    // }
+
+    // deleteAllGunDB(table) {
+    //     return new Promise((resolve, reject) => {
+    //             this.gun.get(this.dbName + '/'+ table).map().once((data, key) => {
+    //                 //entities = data;
+    //                 //const id = Object.keys(entities)[0] // since this would be in object form, you can manipulate it as you would like. 
+    //                 this.gun.get(this.dbName + '/'+ table).put({ [key]: null })
+    //             }).then(() => {
+    //                 resolve(true)
+    //             }
+    //             ).catch((error) => {
+    //                 console.log('Error deleting all data:', error)
+    //                 resolve(false)
+    //             } 
+    //     );
+    // }
+    // )}
+    
+    deleteGunDB(table, key) {
+        return new Promise((resolve, reject) => {
+            this.gun.get(this.dbName + '/' + table).get(key).put(null, ack => {
+                if (ack.err) {
+                    resolve(ack.err);
+                } else {
+                    resolve(ack.ok);
+                }
+            });
+        });
     }
 }
 
