@@ -13,7 +13,11 @@ class HoloSphere {
     constructor(appname, strict = false, openaikey = null) {
         this.appname = appname
         this.strict = strict;
-        this.validator = new Ajv2019({ allErrors: false, strict: false });
+        this.validator = new Ajv2019({ 
+            allErrors: true,
+            strict: false,  // Keep this false to avoid Ajv strict mode issues
+            validateSchema: true // Always validate schemas
+        });
         this.gun = Gun({
             peers: ['http://gun.holons.io', 'https://59.src.eco/gun'],
             axe: false,
@@ -38,16 +42,84 @@ class HoloSphere {
      * @returns {Promise} - Resolves when the schema is set.
      */
     async setSchema(lens, schema) {
-        return new Promise((resolve, reject) => {
-            this.gun.get(this.appname).get(lens).get('schema').put(JSON.stringify(schema), ack => {
-                if (ack.err) {
-                    resolve(new Error('Failed to add schema: ' + ack.err));
-                } else {
-                    console.log('Schema added successfully under lens:', lens);
-                    resolve(ack);
+        if (!lens || !schema) {
+            console.error('setSchema: Missing required parameters');
+            return false;
+        }
+
+        // Basic schema validation - check for required fields
+        if (!schema.type || typeof schema.type !== 'string') {
+            console.error('setSchema: Schema must have a type field');
+            return false;
+        }
+
+        if (this.strict) {
+            try {
+                // Validate schema against JSON Schema meta-schema
+                const metaSchema = {
+                    type: 'object',
+                    required: ['type', 'properties'],
+                    properties: {
+                        type: { type: 'string' },
+                        properties: { 
+                            type: 'object',
+                            additionalProperties: {
+                                type: 'object',
+                                required: ['type'],
+                                properties: {
+                                    type: { type: 'string' }
+                                }
+                            }
+                        },
+                        required: {
+                            type: 'array',
+                            items: { type: 'string' }
+                        }
+                    }
+                };
+
+                const valid = this.validator.validate(metaSchema, schema);
+                if (!valid) {
+                    console.error('setSchema: Invalid schema structure:', this.validator.errors);
+                    return false;
                 }
-            })
-        })
+
+                // Additional strict mode checks
+                if (!schema.properties || typeof schema.properties !== 'object') {
+                    console.error('setSchema: Schema must have properties in strict mode');
+                    return false;
+                }
+
+                if (!schema.required || !Array.isArray(schema.required) || schema.required.length === 0) {
+                    console.error('setSchema: Schema must have required fields in strict mode');
+                    return false;
+                }
+            } catch (error) {
+                console.error('setSchema: Schema validation error:', error);
+                return false;
+            }
+        }
+
+        return new Promise((resolve) => {
+            try {
+                const schemaString = JSON.stringify(schema);
+                this.gun.get(this.appname)
+                    .get(lens)
+                    .get('schema')
+                    .put(schemaString, ack => {
+                        if (ack.err) {
+                            console.error('Failed to add schema:', ack.err);
+                            resolve(false);
+                        } else {
+                            console.log('Schema added successfully for lens:', lens);
+                            resolve(true);
+                        }
+                    });
+            } catch (error) {
+                console.error('setSchema: Error stringifying schema:', error);
+                resolve(false);
+            }
+        });
     }
 
     /**
@@ -56,22 +128,44 @@ class HoloSphere {
      * @returns {Promise<object|null>} - The retrieved schema or null if not found.
      */
     async getSchema(lens) {
+        if (!lens) {
+            console.error('getSchema: Missing lens parameter');
+            return null;
+        }
+
         return new Promise((resolve) => {
-            this.gun.get(this.appname).get(lens).get('schema').once(data => {
-                if (data) {
-                    let parsed;
+            this.gun.get(this.appname)
+                .get(lens)
+                .get('schema')
+                .once(data => {
+                    if (!data) {
+                        resolve(null);
+                        return;
+                    }
+                    
                     try {
-                        parsed = this.parse(data);
+                        // If data is already a string, parse it
+                        if (typeof data === 'string') {
+                            resolve(JSON.parse(data));
+                        } 
+                        // If data is an object with a string value (GunDB format)
+                        else if (typeof data === 'object' && data !== null) {
+                            const schemaStr = Object.values(data).find(v => 
+                                typeof v === 'string' && v.includes('"type":')); 
+                            if (schemaStr) {
+                                resolve(JSON.parse(schemaStr));
+                            } else {
+                                resolve(null);
+                            }
+                        } else {
+                            resolve(null);
+                        }
+                    } catch (error) {
+                        console.error('getSchema: Error parsing schema:', error);
+                        resolve(null);
                     }
-                    catch (e) {
-                        resolve(null)
-                    }
-                    resolve(parsed);
-                } else {
-                    resolve(null);
-                }
-            })
-        })
+                });
+        });
     }
 
     // ================================ CONTENT FUNCTIONS ================================
@@ -91,6 +185,25 @@ class HoloSphere {
 
         if (!data.id) {
             console.error('put: Data must have an id field');
+            return false;
+        }
+
+        // Strict validation of schema and data
+        const schema = await this.getSchema(lens);
+        if (schema) {
+            try {
+                const valid = this.validator.validate(schema, data);
+                if (!valid) {
+                    const errors = this.validator.errors;
+                    console.error('put: Schema validation failed:', errors);
+                    return false;
+                }
+            } catch (error) {
+                console.error('put: Schema validation error:', error);
+                return false;
+            }
+        } else if (this.strict) {
+            console.error('put: Schema required in strict mode for lens:', lens);
             return false;
         }
 
@@ -117,205 +230,87 @@ class HoloSphere {
         });
     }
 
-    // /**
-    //  * Stores content in the specified holon and lens.
-    //  * @param {string} holon - The holon identifier.
-    //  * @param {string} lens - The lens under which to store the content.
-    //  * @param {object} content - The content to store.
-    //  */
-    // async put(holon, lens, content) {
-
-    //     if (!holon || !lens || !content) {
-    //         console.error('Error in put:', holon, lens, content);
-    //         return;
-    //     }
-    //     // Retrieve the schema for the lens
-    //     let schema = await this.getSchema(lens)
-    //     if (schema) {
-    //         // Validate the content against the schema
-    //         const valid = this.validator.validate(schema, content);
-    //         if (!valid) {
-    //             console.error('Not committing invalid content:', this.validator.errors);
-    //             return null;
-    //         }
-    //     }
-
-    //     // Create a node for the content
-    //     const payload = JSON.stringify(content);
-
-
-    //     return new Promise(async (resolve) => {
-    //         if (content.id) { //use the user-defined id. Important to be able to send updates using put
-    //             this.gun.get(this.appname).get(holon).get(lens).get(content.id).put(payload, ack => {
-    //                 if (ack.err) {
-    //                     console.error("Error adding data to GunDB:", ack.err);
-    //                     resolve(null);
-    //                 } else {
-    //                     resolve(ack.ok);
-    //                 }
-    //             })
-    //         } else { // create a content-addressable reference like IPFS. Note: no updates possible using put
-    //             console.log('Missing ID - Creating content-addressable reference:', payload)
-    //             const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
-    //             const hashArray = Array.from(new Uint8Array(hashBuffer));
-    //             const hashholon = hashArray.map(byte => byte.toString(16).padStart(2, "0")).join("");
-    //             this.gun.get(this.appname).get(holon).get(lens).get(hashholon).put(payload)
-    //         }
-    //     })
-
-    //     }
-
-
-    // async parse(data) {
-    //     let parsed = {};
-    //     if (typeof data === 'object' && data !== null) {
-    //         if (data._ && data._["#"]) {
-    //             // If the data is a reference, fetch the actual content
-    //             let query = data._['#'].split('/');
-    //             let holon = query[1];
-    //             let lens = query[2];
-    //             let key = query[3];
-    //             parsed = await this.get(holon, lens, key);
-    //         } else if (data._ && data._['>']) {
-    //             // This might be a gun node, try to get its value
-    //             const nodeValue = Object.values(data).find(v => typeof v !== 'object' && v !== '_');
-    //             if (nodeValue) {
-    //                 try {
-    //                     parsed = JSON.parse(nodeValue);
-    //                 } catch (e) {
-    //                     console.log('Invalid JSON in node value:', nodeValue);
-    //                     parsed = nodeValue; // return the raw data
-    //                 }
-    //             } else {
-    //                 console.log('Unable to parse gun node:', data);
-    //                 parsed = data; // return the original data
-    //             }
-    //         } else {
-    //             // Treat it as regular data
-    //             parsed = data;
-    //         }
-    //     } else {
-    //         // If it's not an object, try parsing it as JSON
-    //         try {
-    //             parsed = JSON.parse(data);
-    //         } catch (e) {
-    //             console.log('Invalid JSON:', data);
-    //             parsed = data; // return the raw data
-    //         }
-    //     }
-
-    //     return parsed;
-    // }
-
-    // /**
-    //  * Retrieves content from the specified holon and lens.
-    //  * @param {string} holon - The holon identifier.
-    //  * @param {string} lens - The lens from which to retrieve content.
-    //  * @returns {Promise<Array<object>>} - The retrieved content.
-    //  */
-    // async getAll(holon, lens) {
-    //     if (!holon || !lens) {
-    //         console.log('Error in getAll:', holon, lens)
-    //         return;
-    //     }
-    //     // Wrap the gun operation in a promise
-    //     //retrieve lens schema
-    //     const schema = await this.getSchema(lens);
-
-    //     if (!schema && this.strict) {
-    //         console.log('Aborting getAll: the schema for "' + lens + '" is not defined');
-    //         return null; // No schema found, return null if strict about it 
-    //     }
-
-    //     return new Promise(async (resolve, reject) => {
-    //         let output = []
-    //         let counter = 0
-    //         this.gun.get(holon.toString()).get(lens).once((data, key) => {
-    //             if (data) {
-    //                 const maplenght = Object.keys(data).length - 1
-    //                 this.gun.get(holon.toString()).get(lens).map().once(async (itemdata, key) => {
-    //                     counter += 1
-    //                     if (itemdata) {
-    //                         let parsed = await this.parse(itemdata)
-
-    //                         if (schema && this.strict) {
-    //                             let valid = this.validator.validate(schema, parsed);
-    //                             if (!valid || parsed == null || parsed == undefined) {
-    //                                 console.log('Removing Invalid content:', this.validator.errors);
-    //                                 this.gun.get(this.appname).get(holon).get(lens).get(key).put(null);
-
-    //                             } else {
-    //                                 output.push(parsed);
-    //                             }
-    //                         }
-    //                         else {
-    //                             output.push(parsed);
-    //                         }
-    //                     }
-
-    //                     if (counter == maplenght) {
-    //                         resolve(output);
-    //                     }
-    //                 }
-    //                 );
-    //             } else resolve(output)
-    //         })
-    //     }
-    //     );
-    // }
-
-    // /**
-    //  * Retrieves a specific key from the specified holon and lens.
-    //  * @param {string} holon - The holon identifier.
-    //  * @param {string} lens - The lens from which to retrieve the key.
-    //  * @param {string} key - The specific key to retrieve.
-    //  * @returns {Promise<object|null>} - The retrieved content or null if not found.
-    //  */
-    // async get(holon, lens, key) {
-    //     return new Promise((resolve) => {
-    //         // Use Gun to get the data
-    //         this.gun.get(this.appname).get(holon).get(lens).get(key).once((data, key) => {
-    //             if (data) {
-    //                 try {
-    //                     let parsed = this.parse(data); // Resolve the promise with the data if data is found
-    //                     resolve(parsed);
-    //                 }
-    //                 catch (e) {
-    //                     resolve(data)
-    //                 }
-
-    //             } else {
-    //                 resolve(null); // Reject the promise if no data is found
-    //             }
-    //         });
-    //     });
-
-   // }
-
     /**
-     * Deletes a specific key from a given holon and lens.
+     * Retrieves content from the specified holon and lens.
      * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to delete the key.
-     * @param {string} key - The specific key to delete.
+     * @param {string} lens - The lens from which to retrieve content.
+     * @returns {Promise<Array<object>>} - The retrieved content.
      */
-    async delete (holon, lens, key) {
-            return new Promise((resolve, reject) => {
-                this.gun.get(this.appname).get(holon).get(lens).get(key).put(null, ack => {
-                    if (ack.err) {
-                        resolve(ack.err);
-                    } else {
-                        resolve(ack.ok);
+    async getAll(holon, lens) {
+        if (!holon || !lens) {
+            console.error('getAll: Missing required parameters:', { holon, lens });
+            return [];
+        }
+
+        const schema = await this.getSchema(lens);
+        if (!schema && this.strict) {
+            console.error('getAll: Schema required in strict mode for lens:', lens);
+            return [];
+        }
+
+        return new Promise((resolve) => {
+            let output = [];
+            let counter = 0;
+            
+            this.gun.get(this.appname).get(holon).get(lens).once((data, key) => {
+                if (!data) {
+                    resolve(output);
+                    return;
+                }
+
+                const mapLength = Object.keys(data).length - 1;
+                
+                this.gun.get(this.appname).get(holon).get(lens).map().once(async (itemdata, key) => {
+                    counter += 1;
+                    if (itemdata) {
+                        try {
+                            const parsed = JSON.parse(itemdata);
+                            
+                            if (schema) {
+                                const valid = this.validator.validate(schema, parsed);
+                                if (valid) {
+                                    output.push(parsed);
+                                } else if (this.strict) {
+                                    console.warn('Invalid data removed:', key, this.validator.errors);
+                                    await this.delete(holon, lens, key);
+                                } else {
+                                    console.warn('Invalid data found:', key, this.validator.errors);
+                                    output.push(parsed);
+                                }
+                            } else {
+                                output.push(parsed);
+                            }
+                        } catch (error) {
+                            console.error('Error parsing data:', error);
+                            if (this.strict) {
+                                await this.delete(holon, lens, key);
+                            }
+                        }
+                    }
+
+                    if (counter === mapLength) {
+                        resolve(output);
                     }
                 });
             });
-        }
+        });
+    }
 
-
+    /**
+     * Retrieves a specific key from the specified holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens from which to retrieve the key.
+     * @param {string} key - The specific key to retrieve.
+     * @returns {Promise<object|null>} - The retrieved content or null if not found.
+     */
     async get(holon, lens, key) {
         if (!holon || !lens || !key) {
             console.error('get: Missing required parameters:', { holon, lens, key });
             return null;
         }
+
+        // Get schema for validation
+        const schema = await this.getSchema(lens);
 
         return new Promise((resolve) => {
             let timeout = setTimeout(() => {
@@ -337,6 +332,19 @@ class HoloSphere {
 
                     try {
                         const parsed = JSON.parse(data);
+                        
+                        // Validate against schema if one exists
+                        if (schema) {
+                            const valid = this.validator.validate(schema, parsed);
+                            if (!valid) {
+                                console.error('get: Invalid data according to schema:', this.validator.errors);
+                                if (this.strict) {
+                                    resolve(null);
+                                    return;
+                                }
+                            }
+                        }
+                        
                         resolve(parsed);
                     } catch (error) {
                         console.error('Error parsing data:', error);
@@ -346,45 +354,23 @@ class HoloSphere {
         });
     }
 
-
-
-    async getAll(holon, lens) {
-
-            return new Promise(async (resolve, reject) => {
-                let output = []
-                let counter = 0
-                this.gun.get(this.appname).get(holon).get(lens).once((data, key) => {
-                    if (data) {
-                        const maplenght = Object.keys(data).length - 1
-                        this.gun.get(this.appname).get(holon).get(lens).map().once(async (itemdata, key) => {
-                            counter += 1
-                            if (itemdata) {
-                                var parsed = {}
-                                try {
-                                    parsed = JSON.parse(itemdata);
-                                } catch (e) {
-                                    console.log('Invalid JSON:', itemdata);
-                                }
-                                output.push(parsed);
-
-                            }
-
-                            if (counter == maplenght) {
-                                resolve(output);
-                            }
-                        }
-                        );
-                    } else resolve(output)
-                })
-            }
-            );
+    /**
+     * Deletes a specific key from a given holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens from which to delete the key.
+     * @param {string} key - The specific key to delete.
+     */
+    async delete (holon, lens, key) {
+            return new Promise((resolve, reject) => {
+                this.gun.get(this.appname).get(holon).get(lens).get(key).put(null, ack => {
+                    if (ack.err) {
+                        resolve(ack.err);
+                    } else {
+                        resolve(ack.ok);
+                    }
+                });
+            });
         }
-
-
-
-
-
-
 
     /**
      * Deletes all keys from a given holon and lens.
@@ -436,7 +422,6 @@ class HoloSphere {
         });
     }
 
-
     // ================================ NODE FUNCTIONS ================================
 
 
@@ -453,23 +438,61 @@ class HoloSphere {
     /**
    * Retrieves a specific gun node from the specified holon and lens.
    * @param {string} holon - The holon identifier.
-   * @param {string} lens - The lens from which to retrieve the key.
+   * @param {string} lens - The lens identifier.
    * @param {string} key - The specific key to retrieve.
-   * @returns {Promise<object|null>} - The retrieved content or null if not found.
+   * @returns {Promise<object|null>} - The retrieved node or null if not found.
    */
     async getNode(holon, lens, key) {
-            // Use Gun to get the data
-            return this.gun.get(this.appname).get(holon).get(lens).get(key)
+        if (!holon || !lens || !key) {
+            console.error('getNode: Missing required parameters');
+            return null;
         }
+
+        return new Promise((resolve) => {
+            let timeout = setTimeout(() => {
+                console.warn('getNode: Operation timed out');
+                resolve(null);
+            }, 5000);
+
+            this.gun.get(this.appname)
+                .get(holon)
+                .get(lens)
+                .get(key)
+                .once((data) => {
+                    clearTimeout(timeout);
+                    resolve(data || null);
+                });
+        });
+    }
 
     /**
      * Deletes a specific gun node from a given holon and lens.
      * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens identifier.
      * @param {string} key - The key of the node to delete.
+     * @returns {Promise<boolean>} - Returns true if successful
      */
     async deleteNode(holon, lens, key) {
-            await this.gun.get(this.appname).get(holon).get(lens).get(key).put(null)
+        if (!holon || !lens || !key) {
+            console.error('deleteNode: Missing required parameters');
+            return false;
         }
+
+        return new Promise((resolve) => {
+            this.gun.get(this.appname)
+                .get(holon)
+                .get(lens)
+                .get(key)
+                .put(null, ack => {
+                    if (ack.err) {
+                        console.error('deleteNode: Error deleting node:', ack.err);
+                        resolve(false);
+                    } else {
+                        resolve(true);
+                    }
+                });
+        });
+    }
 
     // ================================ GLOBAL FUNCTIONS ================================
     /**
