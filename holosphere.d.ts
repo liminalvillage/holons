@@ -1,34 +1,38 @@
 declare module 'holosphere' {
     export default class HoloSphere {
-        constructor(appName: string, openaikey?: string | null);
-
+        constructor(appName: string, strict?: boolean | null, openaikey?: string | null);
+        
         // User Management
         createUser(username: string, password: string): Promise<object>;
         login(username: string, password: string): Promise<object>;
         logout(): Promise<void>;
 
         // Schema Operations
-        setLensSchema(lens: string, schema: object): Promise<void>;
-        getLensSchema(lens: string): Promise<object | null>;
+        setSchema(lens: string, schema: object): Promise<void>;
+        getSchema(lens: string): Promise<object | null>;
 
         // Encryption Operations
         encrypt(data: any, secret: string): Promise<string>;
         decrypt(encryptedData: string, secret: string): Promise<any>;
 
-        // Global Data Operations
-        putGlobalData(tableName: string, data: object): Promise<void>;
-        getGlobalData(tableName: string): Promise<object | null>;
-        getGlobalDataKey(tableName: string, key: string): Promise<object | null>;
-        deleteGlobalData(tableName: string): Promise<void>;
-
         // Hex Data Operations
-        putHexData(hexId: string, lens: string, content: object, encrypt?: boolean, secret?: string | null): Promise<void>;
-        getHexData(hexId: string, lens: string, secret?: string | null): Promise<Array<any>>;
-        getHexKey(hexId: string, lens: string, key: string): Promise<any | null>;
-        getHexNode(hexId: string, lens: string, key: string): Promise<any>;
-        deleteHexData(hexId: string, lens: string, contentId: string): Promise<void>;
-        deleteNode(nodeId: string, tag: string): Promise<void>;
-        clearlens(hex: string, lens: string): Promise<void>;
+        put(holon: string, lens: string, content: object, encrypt?: boolean, secret?: string | null): Promise<void>;
+        get(holon: string, lens: string, key: string): Promise<any | null>;
+        delete(holon: string, lens: string, contentId: string): Promise<void>;
+        getAll(holon: string, lens: string, secret?: string | null): Promise<Array<any>>;
+        deleteAll(holon: string, lens: string): Promise<void>; 
+     
+        // Node Operations
+        putNode(holon: string, lens: string, node: object): Promise<void>;
+        getNode(holon: string, lens: string, key: string): Promise<any>;
+        deleteNode(holon: string, lens: string, key: string): Promise<void>;
+
+        // Global Data Operations
+        putGlobal(tableName: string, data: object): Promise<void>;
+        getGlobal(tableName: string, key: string): Promise<object | null>;
+        deleteGlobal(tableName: string, key: string): Promise<void>;
+        getAllGlobal(tableName: string): Promise<object | null>;
+        deleteAllGlobal(tableName: string): Promise<void>;
 
         // Geospatial Operations
         getHex(lat: number, lng: number, resolution: number): Promise<string>;
@@ -38,12 +42,7 @@ declare module 'holosphere' {
         upcast(hex: string, lens: string, content: any): Promise<any>;
 
         // Subscription
-        subscribe(hex: string, lens: string, callback: (data: any, key: string) => void): void;
-
-        // Voting System
-        getFinalVote(userId: string, topic: string, votes: object, visited?: Set<string>): string | null;
-        aggregateVotes(hexId: string, topic: string): object;
-        delegateVote(userId: string, topic: string, delegateTo: string): Promise<void>;
-        vote(userId: string, hexId: string, topic: string, vote: string): Promise<void>;
+        subscribe(holon: string, lens: string, callback: (data: any, key: string) => void): void;
+        subscribeGlobal(tableName: string, callback: (data: any, key: string) => void): void;
     }
 }
