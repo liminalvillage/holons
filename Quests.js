@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin } from './utilities.js';
+import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import Users from './Users.js';
 
@@ -367,14 +367,13 @@ export default class Quests {
             // Check if the user has already joined the quest
             const userindex = quest.participants.findIndex(user => user.id === sender.id)
             if (userindex > -1) {
-                ctx.answerCbQuery(`${sender.first_name}, left the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`, 
+                    { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
                 quest.participants.splice(userindex, 1);
-            }
-            else {
-                // Add the user to the quest
+            } else {
                 quest.participants.push(sender);
-                // Send a message to confirm that the user joined the quest
-                ctx.answerCbQuery(`${sender.first_name} has joined the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+                ctx.answerCbQuery(`${getDisplayName(sender)} has joined the quest "${quest.title}"`, 
+                    { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             }
 
             // Check if the user has already appreciated the quest, remove if so
@@ -426,28 +425,15 @@ export default class Quests {
         if (appreciationindex > -1) {
             if (quest.status === "completed") {
                 ctx.answerCbQuery(`You have already appreciated this ${quest.type}`);
-            }
-            else {
-                ctx.answerCbQuery(`${sender.first_name}'s appreciation for "${quest.title}" has been removed`);
+            } else {
+                ctx.answerCbQuery(`${getDisplayName(sender)}'s appreciation for "${quest.title}" has been removed`);
                 quest.appreciation.splice(appreciationindex, 1);
             }
         } else {
             // Add the user to the quest
             quest.appreciation.push(sender);
             // Send a message to confirm that the user joined the quest
-            ctx.answerCbQuery(`${sender.first_name} appreciates the quest "${quest.title}"`);
-            // share appreciation "after the fact"
-            if (quest.status === "completed") {
-                await this.users.saveUserAction(sender, "sent", quest.title, 0, chatID)
-                for (let i = 0; i < quest.participants.length; i++) {
-                    console.log(quest.participants.length)
-                    if (quest.participants[i]?.id) { //TODO: check why this is needed sometimes otherwise it crashes
-                        await this.users.saveUserAction(quest.participants[i], "received", quest.title, 0, chatID)
-                    } else {
-                        console.log('Bug: participant has no id: ' + quest.participants[i])
-                    }
-                }
-            }
+            ctx.answerCbQuery(`${getDisplayName(sender)} appreciates the quest "${quest.title}"`);
         }
 
 
@@ -486,7 +472,7 @@ export default class Quests {
         }
     }
 
-    async stop(ctx,) {
+    async stop(ctx) {
         console.log("STOP ACTION");
 
         let chatID = ctx.callbackQuery.data.split('_')[2];
@@ -503,14 +489,13 @@ export default class Quests {
 
         const stopperindex = quest.stoppers.findIndex(user => user.id === sender.id)
         if (stopperindex > -1) {
-            ctx.reply(`${sender.first_name} has revoked its veto for the quest "${quest.title}"`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+            ctx.reply(`${getDisplayName(sender)} has revoked its veto for the quest "${quest.title}"`, 
+                { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             quest.stoppers.splice(stopperindex, 1);
-        }
-        else {
-            // Add the user to the quest
+        } else {
             quest.stoppers.push(sender);
-            // Send a message to confirm that the user joined the quest
-            ctx.reply(`${sender.first_name} has stopped the quest "${quest.title}". Please get in touch to address any concerns.`, { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+            ctx.reply(`${getDisplayName(sender)} has stopped the quest "${quest.title}". Please get in touch to address any concerns.`, 
+                { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
         }
         if (quest.stoppers.length > 0)
             quest.status = 'stopped'
@@ -689,7 +674,12 @@ export default class Quests {
         //await sendToken(sender, 1, chatID)
         if (receivers > 0) {
             await this.users.saveUserAction(sender, "sent", action, 1, chatID)
-            ctx.reply(i18next.t('appreciationsuccess', { lng: language, sender: sender.username, receivers: receivers, action: action })).catch((error) => console.log(error));
+            ctx.reply(i18next.t('appreciationsuccess', { 
+                lng: language, 
+                sender: getDisplayName(sender), 
+                receivers: receivers, 
+                action: action 
+            })).catch((error) => console.log(error));
         }
         else
             ctx.reply(i18next.t('appreciationfailed', { lng: language }), { reply_to_message_id: ctx.message.message_id });
@@ -775,6 +765,9 @@ export default class Quests {
 function createMessage(quest, language) {
     let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
 
+    // Add initiator info
+    message += `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)} \n`;
+
     // Add frequency for recurring tasks
     if (quest.type === 'recurring' && quest.frequency) {
         message += `| 🔄 ${i18next.t('frequency', { lng: language })}: ${quest.frequency} \n`;
@@ -790,15 +783,15 @@ function createMessage(quest, language) {
     // if (quest.appreciation.length > 0)
     //     message += `| ${i18next.t('👍',{lng:language})} : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
     if (quest.participants.length > 0)
-        message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => u.first_name + ' ' + u.last_name?.slice(0, 1) + '.').join(', ')} \n`;
+        message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => getDisplayName(u)).join(', ')} \n`;
     if (quest.appreciation.length > 0)
-        message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => u.first_name + ' ' + u.last_name?.slice(0, 1) + '.').join(', ')} \n`;
+        message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => getDisplayName(u)).join(', ')} \n`;
     if (quest.when)
         message += `| ${i18next.t('📅', { lng: language })} : ${quest.when} \n`;
     if (quest.where?.lat)
         message += `| ${i18next.t('📍 ', { lng: language })}: ${quest.where.lat} : ${quest.where.lon}   \n`;
     if (quest.status === "stopped")
-        message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => '@' + u.username).join(', ')} \n`;
+        message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => getDisplayName(u)).join(', ')} \n`;
     message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;
     return message;
 }

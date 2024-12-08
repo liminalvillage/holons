@@ -84,3 +84,31 @@ export const isAdmin = async (ctx) => {
   return false
 
 }
+
+/**
+ * Returns a standardized display name for a user in the format "FirstName L." 
+ * Falls back to username or ID if name is unavailable
+ * @param {Object} user - User object containing id, first_name, last_name, username
+ * @returns {string} Formatted display name
+ */
+export const getDisplayName = (user) => {
+  if (!user) return 'unknown';
+  
+  // First try to create FirstName L. format
+  if (user.first_name) {
+    const lastName = user.last_name ? ` ${user.last_name.charAt(0)}.` : '';
+    return `${user.first_name}${lastName}`;
+  }
+  
+  // Fall back to username if available
+  if (user.username) {
+    return `@${user.username}`;
+  }
+  
+  // Last resort - use user ID
+  if (user.id) {
+    return `User${user.id}`;
+  }
+  
+  return 'unknown';
+}

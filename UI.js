@@ -3,6 +3,7 @@ import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
 import { Markup } from 'telegraf'; 
+import { getDisplayName } from './utilities.js';
 
 
 const browser = await puppetteer.launch(
@@ -315,9 +316,9 @@ class UI {
     const element = `
     <table>
       <tr><th>${i18next.t('Quest', { lng: language })}:</th><td>${quest.title}</td></tr>
-      <tr><th>${i18next.t('Initiator', { lng: language })}:</th><td>${quest.initiator.first_name}</td></tr>
-      <tr><th>${i18next.t('Joined by', { lng: language })}:</th><td>${[...quest.participants].slice(1).map(u => u.username).join(', ')}</td></tr>
-      <tr><th>${i18next.t('Appreciated by', { lng: language })}:</th><td>${[...quest.appreciation].slice(1).map(u => u.username).join(', ')}</td></tr>
+      <tr><th>${i18next.t('Initiator', { lng: language })}:</th><td>${getDisplayName(quest.initiator)}</td></tr>
+      <tr><th>${i18next.t('Joined by', { lng: language })}:</th><td>${[...quest.participants].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
+      <tr><th>${i18next.t('Appreciated by', { lng: language })}:</th><td>${[...quest.appreciation].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
     <table>`
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
     const path = './images/quest' + quest.id + '.png'
@@ -334,7 +335,7 @@ class UI {
     </tr>`;
 
     for (let user of users) {
-      table += '<tr><td>' + user.username + '</td>';
+      table += '<tr><td>' + getDisplayName(user) + '</td>';
 
       table += '<td><ul>';
       for (let want of user.wants) {
@@ -400,7 +401,7 @@ class UI {
       const row = `<tr>
           <th scope="row">${quest.id}</th>
           <th>${quest.title}</th>
-          <th>${quest.initiator.first_name}</th>
+          <th>${getDisplayName(quest.initiator)}</th>
           <th>${quest.participants ? quest.participants.length : quest.users.length}</th>
           <th>${quest.appreciation.length}</th>
         </tr>`
@@ -469,7 +470,7 @@ class UI {
     for (let i = 0; i < needs.length; i++) {
       const request = needs[i]
       const row = `<tr>
-          <th>${request.initiator.first_name}</th>
+          <th>${getDisplayName(request.initiator)}</th>
           <th>${request.title}</th>
         </tr>`
 
@@ -503,7 +504,7 @@ class UI {
     for (let i = 0; i < offers.length; i++) {
       const offer = offers[i]
       const row = `<tr>
-          <th>${offer.initiator.first_name}</th>
+          <th>${getDisplayName(offer.initiator)}</th>
           <th>${offer.title}</th>
         </tr>`
 
@@ -556,7 +557,7 @@ class UI {
         user.offers.length * equation.offers
       const row = `<tr>
         <th scope="row">${i + 1}</th>
-        <th>${user.first_name} ${user.last_name || ''}</th>
+        <th>${getDisplayName(user)}</th>
         <th>${user.initiated.length}</th>
         <th>${user.completed.length}</th>
         <th>${user.sent}</th>
@@ -605,7 +606,7 @@ class UI {
       const score = appreciation[sortedUsers[i]]
       const row = `<tr>
         <th scope="row">${i + 1}</th>
-        <th>${score.username}</th>
+        <th>${getDisplayName(score)}</th>
         <th>${score.sent}</th>
         <th>${score.received}</th>
       </tr>`
