@@ -38,9 +38,10 @@ var holon = {
 }
 // WRAPPER CLASS FOR HOLOSPHERE
 class H3 {
-    constructor(bot, db) {
+    constructor(bot, db, settings) {
         this.db = db
         this.holosphere = db.holosphere
+        this.settings = settings
         this.bot = bot
 
         this.bot.command('get', async (ctx) => {
@@ -49,7 +50,7 @@ class H3 {
             if (!tag) {
                 return ctx.reply('Please specify a tag.');
             }
-            let hex = (await this.db.get('settings', chatID)).hex
+            let hex = (await this.settings.getSettings(chatID)).hex
 
             let data = await this.holosphere.get(hex, tag)
             ctx.reply(JSON.stringify(data, null, 2))
@@ -68,7 +69,7 @@ class H3 {
                 ctx.reply('Please specify a lense where to perform the operation ')
                 return
             }
-            let hex = (await this.db.get('settings', chatID)).hex
+            let hex = (await this.settings.getSettings(chatID)).hex
             await this.holosphere.compute(hex, lense, operation)
         })
 
@@ -84,11 +85,11 @@ class H3 {
             const messageID = ctx.message.reply_to_message.message_id;
             const chatID = ctx.message.chat.id;
             const messageContent = ctx.message.reply_to_message.text;
-            let settings = await this.db.get('settings', chatID)
+            let settings = await this.settings.getSettings(chatID)
             let id = settings.hex ? settings.hex : 'Hex not set, use /setHex'
             // fetch the stored node
             
-            let node =  this.holosphere.getNode( chatID, 'quests', messageID)
+            let node =  await this.holosphere.getNode( chatID, 'quests', messageID)
             console.log(node)
             
             // if (!node) {
@@ -113,7 +114,7 @@ class H3 {
             const messageID = ctx.message.reply_to_message.message_id;
             const chatID = ctx.message.chat.id;
             const messageContent = ctx.message.reply_to_message.text;
-            let settings = await this.db.get('settings', chatID)
+            let settings = await this.settings.getSettings(chatID)
             let hex = settings.hex
 
             for (let tag of tags) {

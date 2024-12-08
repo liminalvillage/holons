@@ -115,7 +115,7 @@ class HolonsBot {
     this.users = new Users(this.telebot, this.db);
     this.expenses = new Expenses(this.telebot, this.db, this.ui, this.settings);
     this.holons = new Holons(this.telebot, this.db, this.settings);
-    this.h3 = new H3(this.telebot, this.db);
+    this.h3 = new H3(this.telebot, this.db, this.settings);
     this.tags = new Tags(this.telebot, this.db);
     this.participation = new Participation(this.telebot, this.db);
     this.council = new Council(this.telebot, this.db);

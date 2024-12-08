@@ -43,7 +43,7 @@ export default class Settings {
                 this.db.drop(chatID + '/announcements')
                 this.db.drop(chatID + '/recurring')
 
-                this.db.put(chatID + '/settings', this.getDefaultSettings(chatID, chatName))
+                this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
                 ctx.reply('Bot resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')

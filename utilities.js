@@ -13,20 +13,19 @@ export const getUser = (ctx) =>
   ctx?.update?.message?.from || ctx?.update?.callback_query?.from || 0;
 
 export const getChatName = async (ctx, chatID) => {
-  const chatInfo = await ctx.telegram.getChat(chatID).catch((err) => { return 'unknown' });
-
-  let chatName = '';
-
-  if (chatInfo.type === 'private') {
-    // For private chats, you can use the first and/or last name
-    chatName = `${chatInfo.first_name} ${chatInfo.last_name || ''}`.trim();
-  } else {
-    // For groups, supergroups, and channels, you can use the title
-    chatName = chatInfo.title;
+  try {
+    const chatInfo = await ctx.telegram.getChat(chatID);
+    
+    if (chatInfo.type === 'private') {
+      return `${chatInfo.first_name} ${chatInfo.last_name || ''}`.trim();
+    } else {
+      return chatInfo.title || 'unknown';
+    }
+  } catch (err) {
+    console.error('Error getting chat name:', err);
+    return 'unknown';
   }
-  return chatName
 }
-
 
 export const getUserName = (ctx) =>
   ctx?.from?.first_name ||
