@@ -11,3 +11,4 @@ orbitdb/*
 ipfs/*
 audio/*
 recordings/*
+certs/*
