@@ -2,41 +2,80 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+import Gun from 'gun';
+import https from 'https';
 
 class Server {
   constructor(bot) {
     this.bot = bot;
     this.serverInstance = null;
-    this.setupAvatarServer();
+    this.setupServer();
   }
 
-  setupAvatarServer() {
-    // If server is already running, don't create another one
+  setupServer() {
     if (this.serverInstance) {
-      console.log('Avatar server is already running');
+      console.log('Server is already running');
       return;
     }
 
     const app = express();
-    const port = process.env.AVATAR_PORT || 80;
+    const isDebug = process.env.NODE_ENV === 'development';
+    const port = process.env.PORT || (isDebug ? 80 : 443);
 
+    // Setup static file serving and Gun middleware
+    app.use(express.static('public'));
+    app.use(Gun.serve);
+
+    // Setup avatar endpoints
+    this.setupAvatarEndpoints(app);
+
+    // Create server (HTTP for debug, HTTPS for production)
+    if (isDebug) {
+      this.serverInstance = app.listen(port, () => {
+        console.log(`HTTP Server running on port ${port} (debug mode)`);
+      });
+    } else {
+      // SSL certificate configuration
+      const sslOptions = {
+        key: fs.readFileSync(process.env.SSL_KEY_PATH || 'certs/private.key'),
+        cert: fs.readFileSync(process.env.SSL_CERT_PATH || 'certs/certificate.crt'),
+      };
+
+      this.serverInstance = https.createServer(sslOptions, app)
+        .listen(port, () => {
+          console.log(`HTTPS Server running on port ${port}`);
+        });
+    }
+
+    this.serverInstance.on('error', (error) => {
+      console.error(`Failed to start ${isDebug ? 'HTTP' : 'HTTPS'} server:`, error.message);
+      this.serverInstance = null;
+    });
+
+    // Initialize Gun with server
+    this.gun = Gun({
+      web: this.serverInstance,
+      file: 'data',
+      multicast: false,
+      peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : []
+    });
+
+    console.log(`Gun server initialized with ${isDebug ? 'HTTP' : 'HTTPS'}`);
+  }
+
+  setupAvatarEndpoints(app) {
     this.avatarsDir = path.join(process.cwd(), 'public', 'avatars');
     if (!fs.existsSync(this.avatarsDir)) {
       fs.mkdirSync(this.avatarsDir, { recursive: true });
     }
 
-    // Path to default avatar
     this.defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
-    // Create default avatar if it doesn't exist
     if (!fs.existsSync(this.defaultAvatarPath)) {
-      // Copy from templates or create a basic icon
       const defaultTemplate = path.join(process.cwd(), 'templates', 'default-avatar.png');
       if (fs.existsSync(defaultTemplate)) {
         fs.copyFileSync(defaultTemplate, this.defaultAvatarPath);
       }
     }
-
-    app.use(express.static('public'));
 
     app.get('/getavatar', async (req, res) => {
       const userId = req.query.user_id;
@@ -63,13 +102,6 @@ class Server {
         console.error('Error retrieving the profile photo:', error);
         res.sendFile(this.defaultAvatarPath);
       }
-    });
-
-    this.serverInstance = app.listen(port, () => {
-      console.log(`Avatar server is running at http://localhost:${port}`);
-    }).on('error', (error) => {
-      console.error('Failed to start avatar server:', error.message);
-      this.serverInstance = null;  // Reset on error
     });
   }
 
