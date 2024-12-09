@@ -1,5 +1,5 @@
 "use strict";
-
+import Server from './Server.js';
 import qrReader from 'qrcode-reader';
 import Jimp from 'jimp';
 import axios from 'axios';
@@ -38,6 +38,7 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
 
 class HolonsBot {
   constructor() {
+    this.server = null;
     this.db = null;
     this.stage = null;
     this.telebot = null;
@@ -101,6 +102,8 @@ class HolonsBot {
   }
 
   async initializeModules() {
+    this.server = new Server(this.telebot);
+
     this.settings = new Settings(this.telebot, this.db);
     await this.settings.init();
 
