@@ -1,0 +1,29 @@
+{
+  "localhost": {
+    "SplitterFactory": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "AppreciativeFactory": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "ZonedFactory": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "ManagedFactory": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+    "Managed": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+    "Holons": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "TestToken": "0x0165878A594ca255338adfa4d48449f69242Eb8F"
+  },
+  "homestead": {
+    "SplitterFactory": "0xB426156a15601C0103910E9c731Bb3615C2CFC92",
+    "AppreciativeFactory": "0x264c8344A60d0687c0312abF0187F582Ed225854",
+    "ZonedFactory": "0x44bB2aBcd848DeC740F3853f33303a2257b70b33",
+    "ManagedFactory": "0xEd8A6280C0684A5d2B939E1ac440f52957489D7B",
+    "Managed": "0x335D0d9bc5C5e03E1DCd3575509a03034A2f12F7",
+    "Holons": "0x3fE6F808E4bA48ACD56b88EF1DA1de11e330186e",
+    "TestToken": "0xeAD87f57830089eB963930765B0AD48699Ffe30a"
+  },
+  "virtualtestnet": {
+    "SplitterFactory": "0x004b13466F5aBDbFe2b529f484a934d25F0860fF",
+    "AppreciativeFactory": "0xd4B66B006dbf019081EB769d8d09fe949De081B6",
+    "ZonedFactory": "0x5d6fbD49Cb50A314171e6203970DFcF0832B5A52",
+    "ManagedFactory": "0x8cdee21EdD7937f601D29A9f5538C83D304E5bEf",
+    "Managed": "0x2779822ED896ef83b3fF3EE3bdAB9aC91Aa365B8",
+    "Holons": "0x043859D4C292bd804980cf38d29F1CCB7B028DB0",
+    "TestToken": "0x6Bb183c511f949dcb78DFb5049F3988EBce9277E"
+  }
+}

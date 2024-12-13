@@ -32,7 +32,10 @@ contract Managed is Holon {
     uint256 public totalappreciation;
     mapping(string => uint256) public appreciation; // appreciation received by a member based on UserID
 
-    constructor(address _creator, string memory _name) Holon(_name, "1.0", 'Managed', _creator) {
+    event LogClaimEther(string userId, address beneficiary, uint256 amount);
+
+
+    constructor(address _creator, string memory _name) {
         name = _name;
         creator = _creator;
         totalappreciation = 0;
@@ -116,8 +119,8 @@ contract Managed is Holon {
         } else {
             // require(userIdToAddress[_userId] == _beneficiary, "Unauthorized");
         }
-        claimEther(_userId, _beneficiary);
-        claimTokens(_userId, _beneficiary);
+         claimEther(_userId, _beneficiary);
+         claimTokens(_userId, _beneficiary);
         hasClaimed[_userId] = true;
     }
 
@@ -127,10 +130,15 @@ contract Managed is Holon {
             msg.sender == creator,
             "Only creator can submit an user claim Ether"
         );
-
         uint256 amount = etherBalance[_userId];
+        require(_beneficiary != address(0), "Invalid beneficiary address");
+
+        emit LogClaimEther(_userId, _beneficiary, amount);
+        if (amount > 0 ) {
+            (bool sent, bytes memory data) = _beneficiary.call{value: amount}("");
+            require(sent, "Claiming Ether failed");
+        }
         etherBalance[_userId] = 0;
-        payable(_beneficiary).transfer(amount);
     }
 
     // Function for users to claim their ERC20 tokens
@@ -144,17 +152,18 @@ contract Managed is Holon {
         for (uint i = 0; i < tokensOf[_userId].length; i++) {
             IERC20 token = IERC20(tokens[i]);
             uint256 amount = tokenBalance[_userId][tokens[i]];
-            tokenBalance[_userId][tokens[i]] = 0;
-            totalDeposited[tokens[i]] -= amount;
-            token.transfer(_beneficiary, amount);
-
+            if (amount > 0) {
+                tokenBalance[_userId][tokens[i]] = 0;
+                totalDeposited[tokens[i]] -= amount;
+                token.transfer(_beneficiary, amount);
+            }
         }
     }
     // reward function to reward all members through their user id
     function reward(
         address _tokenaddress,
         uint256 _tokenamount
-    ) public payable override returns (uint256) {
+    ) public payable override  {
         bool etherreward;
         IERC20 token;
 
@@ -183,16 +192,16 @@ contract Managed is Holon {
                 amount = _tokenamount / userIds.length; //else use blanket unit reward value.
 
             if (amount > 0) {
-                if (etherreward) {
+                if (etherreward) { //ETHER CASE
                     if (hasClaimed[userIds[i]]) {
                         (bool success, ) = payable(userIdToAddress[userIds[i]])
                             .call{value: amount}("");
                         require(success, "Transfer failed");
                     } else {
                         this.depositEtherForUser(userIds[i], amount); //userIds[i].call{value: amount}("");
-                         emit MemberRewarded(address(0), "STOREDETH", amount); // TODO
+                        emit MemberRewarded(address(0), "STOREDETH", amount); // TODO
                     }
-                } else {
+                } else { //  ERC20 CASE
                     if (hasClaimed[userIds[i]]) {
                         token.transfer(userIdToAddress[userIds[i]], amount);
                         (bool success, ) = userIdToAddress[userIds[i]].call(
