@@ -12,3 +12,5 @@ ipfs/*
 audio/*
 recordings/*
 certs/*
+.netlify/*
+data/*

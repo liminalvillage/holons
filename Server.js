@@ -54,6 +54,7 @@ class Server {
 
     // Initialize Gun with server
     this.gun = Gun({
+      axe: false,
       web: this.serverInstance,
       file: 'data',
       multicast: false,

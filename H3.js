@@ -113,19 +113,24 @@ class H3 {
 
             const messageID = ctx.message.reply_to_message.message_id;
             const chatID = ctx.message.chat.id;
-            const messageContent = ctx.message.reply_to_message.text;
+
+            let node =   this.holosphere.getNode( chatID, 'quests', messageID) //TODO: change to any lens type
+
+
             let settings = await this.settings.getSettings(chatID)
             let hex = settings.hex
 
             for (let tag of tags) {
-                let node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
-                await this.holosphere.put(hex, tag, node)
+                await this.holosphere.putNode(hex, tag, {id: messageID, content: node})
             }
+            let refetched = await this.holosphere.getNode(hex, 'quests', messageID)
+            console.log('refteched attempt: ', refetched)
 
             ctx.reply('Tag published.');
         });
 
     }
+
 }
 
 export default H3;
