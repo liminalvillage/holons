@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import Gun from 'gun'
 import Ajv2019 from 'ajv/dist/2019.js'
 
+
 class HoloSphere {
     /**
      * Initializes a new instance of the HoloSphere class.
@@ -13,13 +14,13 @@ class HoloSphere {
     constructor(appname, strict = false, openaikey = null) {
         this.appname = appname
         this.strict = strict;
-        this.validator = new Ajv2019({ 
+        this.validator = new Ajv2019({
             allErrors: true,
             strict: false,  // Keep this false to avoid Ajv strict mode issues
             validateSchema: true // Always validate schemas
         });
         this.gun = Gun({
-            peers: ['http://gun.holons.io', 'https://59.src.eco/gun'],
+            peers: ['https://gun.holons.io', 'https://59.src.eco/gun'],
             axe: false,
             // uuid: (content) => { // generate a unique id for each node
             //     console.log('uuid', content);
@@ -61,7 +62,7 @@ class HoloSphere {
                     required: ['type', 'properties'],
                     properties: {
                         type: { type: 'string' },
-                        properties: { 
+                        properties: {
                             type: 'object',
                             additionalProperties: {
                                 type: 'object',
@@ -142,16 +143,16 @@ class HoloSphere {
                         resolve(null);
                         return;
                     }
-                    
+
                     try {
                         // If data is already a string, parse it
                         if (typeof data === 'string') {
                             resolve(JSON.parse(data));
-                        } 
+                        }
                         // If data is an object with a string value (GunDB format)
                         else if (typeof data === 'object' && data !== null) {
-                            const schemaStr = Object.values(data).find(v => 
-                                typeof v === 'string' && v.includes('"type":')); 
+                            const schemaStr = Object.values(data).find(v =>
+                                typeof v === 'string' && v.includes('"type":'));
                             if (schemaStr) {
                                 resolve(JSON.parse(schemaStr));
                             } else {
@@ -210,7 +211,7 @@ class HoloSphere {
         return new Promise((resolve) => {
             try {
                 const payload = JSON.stringify(data);
-                
+
                 this.gun.get(this.appname)
                     .get(holon)
                     .get(lens)
@@ -251,7 +252,7 @@ class HoloSphere {
         return new Promise((resolve) => {
             let output = [];
             let counter = 0;
-            
+
             this.gun.get(this.appname).get(holon).get(lens).once((data, key) => {
                 if (!data) {
                     resolve(output);
@@ -259,13 +260,12 @@ class HoloSphere {
                 }
 
                 const mapLength = Object.keys(data).length - 1;
-                
+
                 this.gun.get(this.appname).get(holon).get(lens).map().once(async (itemdata, key) => {
                     counter += 1;
                     if (itemdata) {
                         try {
-                            const parsed = JSON.parse(itemdata);
-                            
+                            const parsed = await this.parse(itemdata);
                             if (schema) {
                                 const valid = this.validator.validate(schema, parsed);
                                 if (valid) {
@@ -296,6 +296,54 @@ class HoloSphere {
         });
     }
 
+      /**
+     * Parses data from GunDB, handling various data formats and references.
+     * @param {*} data - The data to parse, could be a string, object, or GunDB reference.
+     * @returns {Promise<object>} - The parsed data.
+     */
+      async parse(rawData) {
+        let parsedData = {};
+
+        if (typeof rawData === 'object' && rawData !== null) {
+            if (rawData._ && rawData._["#"]) {
+                console.log('Parsing reference:', rawData._['#']);
+                // If the data is a reference, fetch the actual content
+                let pathParts = rawData._['#'].split('/');
+                let hexId = pathParts[1];
+                let lensId = pathParts[2];
+                let dataKey = pathParts[3];
+                parsedData = await this.get(hexId, lensId, dataKey);
+            } else if (rawData._ && rawData._['>']) {
+                console.log('Parsing node:', rawData._['>']);
+                // This might be a GunDB node, try to get its value
+                const nodeValue = Object.values(rawData).find(v => typeof v !== 'object' && v !== '_');
+                if (nodeValue) {
+                    try {
+                        parsedData = JSON.parse(nodeValue);
+                    } catch (e) {
+                        console.log('Invalid JSON in node value:', nodeValue);
+                        parsedData = nodeValue; // return the raw data
+                    }
+                } else {
+                    console.log('Unable to parse GunDB node:', rawData);
+                    parsedData = rawData; // return the original data
+                }
+            } else {
+                // Treat it as regular data
+                parsedData = rawData;
+            }
+        } else {
+            // If it's not an object, try parsing it as JSON
+            try {
+                parsedData = JSON.parse(rawData);
+            } catch (e) {
+                parsedData = rawData; // return the raw data
+            }
+        }
+
+        return parsedData;
+    }
+
     /**
      * Retrieves a specific key from the specified holon and lens.
      * @param {string} holon - The holon identifier.
@@ -324,15 +372,15 @@ class HoloSphere {
                 .get(key)
                 .once((data) => {
                     clearTimeout(timeout);
-                    
+
                     if (!data) {
                         resolve(null);
                         return;
                     }
 
                     try {
-                        const parsed = JSON.parse(data);
-                        
+                        const parsed = this.parse(data);
+
                         // Validate against schema if one exists
                         if (schema) {
                             const valid = this.validator.validate(schema, parsed);
@@ -344,7 +392,7 @@ class HoloSphere {
                                 }
                             }
                         }
-                        
+
                         resolve(parsed);
                     } catch (error) {
                         console.error('Error parsing data:', error);
@@ -360,17 +408,17 @@ class HoloSphere {
      * @param {string} lens - The lens from which to delete the key.
      * @param {string} key - The specific key to delete.
      */
-    async delete (holon, lens, key) {
-            return new Promise((resolve, reject) => {
-                this.gun.get(this.appname).get(holon).get(lens).get(key).put(null, ack => {
-                    if (ack.err) {
-                        resolve(ack.err);
-                    } else {
-                        resolve(ack.ok);
-                    }
-                });
+    async delete(holon, lens, key) {
+        return new Promise((resolve, reject) => {
+            this.gun.get(this.appname).get(holon).get(lens).get(key).put(null, ack => {
+                if (ack.err) {
+                    resolve(ack.err);
+                } else {
+                    resolve(ack.ok);
+                }
             });
-        }
+        });
+    }
 
     /**
      * Deletes all keys from a given holon and lens.
@@ -386,7 +434,7 @@ class HoloSphere {
 
         return new Promise((resolve) => {
             let deletionPromises = [];
-            
+
             // First get all the data to find keys to delete
             this.gun.get(this.appname).get(holon).get(lens).once((data) => {
                 if (!data) {
@@ -396,7 +444,7 @@ class HoloSphere {
 
                 // Get all keys except Gun's metadata key '_'
                 const keys = Object.keys(data).filter(key => key !== '_');
-                
+
                 // Create deletion promises for each key
                 keys.forEach(key => {
                     deletionPromises.push(
@@ -432,8 +480,17 @@ class HoloSphere {
      * @param {object} node - The node to store.
      */
     async putNode(holon, lens, node) {
-            this.gun.get(this.appname).get(holon).get(lens).put(node)
-        }
+        return new Promise((resolve) => {
+        this.gun.get(this.appname).get(holon).get(lens).put(node, ack => {
+            if (ack.err) {
+                console.error("Error adding data to GunDB:", ack.err);
+                resolve(false);
+            } else {
+                resolve(true);
+            }
+            });
+        });
+    }
 
     /**
    * Retrieves a specific gun node from the specified holon and lens.
@@ -503,32 +560,32 @@ class HoloSphere {
      */
     async putGlobal(tableName, data) {
 
-            return new Promise((resolve, reject) => {
-                if (!tableName || !data) {
-                    reject(new Error('Table name and data are required'));
-                    return;
-                }
+        return new Promise((resolve, reject) => {
+            if (!tableName || !data) {
+                reject(new Error('Table name and data are required'));
+                return;
+            }
 
 
-                if (data.id) {
-                    this.gun.get(this.appname).get(tableName).get(data.id).put(JSON.stringify(data), ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve();
-                        }
-                    });
-                } else {
-                    this.gun.get(this.appname).get(tableName).put(JSON.stringify(data), ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve();
-                        }
-                    });
-                }
-            });
-        }
+            if (data.id) {
+                this.gun.get(this.appname).get(tableName).get(data.id).put(JSON.stringify(data), ack => {
+                    if (ack.err) {
+                        reject(new Error(ack.err));
+                    } else {
+                        resolve();
+                    }
+                });
+            } else {
+                this.gun.get(this.appname).get(tableName).put(JSON.stringify(data), ack => {
+                    if (ack.err) {
+                        reject(new Error(ack.err));
+                    } else {
+                        resolve();
+                    }
+                });
+            }
+        });
+    }
 
     /**
     * Retrieves a specific key from a global table.
@@ -537,21 +594,21 @@ class HoloSphere {
     * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
     */
     async getGlobal(tableName, key) {
-            return new Promise((resolve) => {
-                this.gun.get(this.appname).get(tableName).get(key).once((data) => {
-                    if (!data) {
-                        resolve(null);
-                        return;
-                    }
-                    try {
-                        const parsed = this.parse(data);
-                        resolve(parsed);
-                    } catch (e) {
-                        resolve(null);
-                    }
-                });
+        return new Promise((resolve) => {
+            this.gun.get(this.appname).get(tableName).get(key).once((data) => {
+                if (!data) {
+                    resolve(null);
+                    return;
+                }
+                try {
+                    const parsed = this.parse(data);
+                    resolve(parsed);
+                } catch (e) {
+                    resolve(null);
+                }
             });
-        }
+        });
+    }
 
 
 
@@ -561,29 +618,29 @@ class HoloSphere {
      * @returns {Promise<object|null>} - The parsed data from the table or null if not found.
      */
     async getAllGlobal(tableName) {
-            return new Promise(async (resolve, reject) => {
-                let output = []
-                let counter = 0
-                this.gun.get(tableName.toString()).once((data, key) => {
-                    if (data) {
-                        const maplenght = Object.keys(data).length - 1
-                        this.gun.get(tableName.toString()).map().once(async (itemdata, key) => {
-                            counter += 1
-                            if (itemdata) {
-                                let parsed = await this.parse(itemdata)
-                                output.push(parsed);
-                            }
-
-                            if (counter == maplenght) {
-                                resolve(output);
-                            }
+        return new Promise(async (resolve, reject) => {
+            let output = []
+            let counter = 0
+            this.gun.get(tableName.toString()).once((data, key) => {
+                if (data) {
+                    const maplenght = Object.keys(data).length - 1
+                    this.gun.get(tableName.toString()).map().once(async (itemdata, key) => {
+                        counter += 1
+                        if (itemdata) {
+                            let parsed = await this.parse(itemdata)
+                            output.push(parsed);
                         }
-                        );
-                    } else resolve(output)
-                })
-            }
-            )
+
+                        if (counter == maplenght) {
+                            resolve(output);
+                        }
+                    }
+                    );
+                } else resolve(output)
+            })
         }
+        )
+    }
 
     /**
      * Deletes a specific key from a global table.
@@ -592,8 +649,8 @@ class HoloSphere {
      * @returns {Promise<void>}
      */
     async deleteGlobal(tableName, key) {
-            await this.gun.get(this.appname).get(tableName).get(key).put(null)
-        }
+        await this.gun.get(this.appname).get(tableName).get(key).put(null)
+    }
 
     /**
      * Deletes an entire global table.
@@ -602,15 +659,15 @@ class HoloSphere {
      */
     async deleteAllGlobal(tableName) {
 
-            return new Promise((resolve) => {
-                this.gun.get(this.appname).get(tableName).map().put(null).once(
-                    (data, key) => this.gun.get(this.appname).get(tableName).get(key).put(null)
-                )
-                this.gun.get(this.appname).get(tableName).put({}, ack => {
-                    resolve();
-                });
+        return new Promise((resolve) => {
+            this.gun.get(this.appname).get(tableName).map().put(null).once(
+                (data, key) => this.gun.get(this.appname).get(tableName).get(key).put(null)
+            )
+            this.gun.get(this.appname).get(tableName).put({}, ack => {
+                resolve();
             });
-        }
+        });
+    }
 
     // ================================ COMPUTE FUNCTIONS ================================
     /**
@@ -621,8 +678,8 @@ class HoloSphere {
      */
     async compute(holon, lens, operation) {
 
-            let res = h3.getResolution(holon);
-            if(res < 1 || res > 15) return;
+        let res = h3.getResolution(holon);
+        if (res < 1 || res > 15) return;
         console.log(res)
         let parent = h3.cellToParent(holon, res - 1);
         let siblings = h3.cellToChildren(parent, res);
