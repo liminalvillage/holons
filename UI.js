@@ -148,9 +148,10 @@ class UI {
   }
 
   async valuescloud(ctx) {
+    let chatID = ctx.message.chat.id
     let values = [] // = this.getFederatedValues(chatID)
     const language = await this.settings.getLanguage(chatID)
-    const chatID = ctx.message.chat.id;
+   
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
@@ -197,8 +198,8 @@ class UI {
   }
   async needscloud(ctx) {
     let needs = [] // = this.getFederatedValues(chatID)
-    const language = await this.settings.getLanguage(chatID)
     const chatID = ctx.message.chat.id;
+    const language = await this.settings.getLanguage(chatID)
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
