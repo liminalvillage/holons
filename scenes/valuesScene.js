@@ -19,7 +19,6 @@ const valuesScene = new Scenes.BaseScene('values');
 
 // Entry point for the scene
 valuesScene.enter((ctx) => {
-  ctx.reply('Please select the 5 values that represent you the most:');
   ctx.session.page = 0; // Initialize page number
   ctx.session.selectedValues = []; // Initialize selected values
   ctx.reply('Great! Now Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });

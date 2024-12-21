@@ -14,7 +14,7 @@ departurebookingScene.enter((ctx) => {
     language: 'en',
     bot_api: 'telegraf'
 });
-calendar.startNavCalendar(ctx);//TODO: pass quest information to recreate message
+calendar.startNavCalendar(ctx,'en');//TODO: pass quest information to recreate message
 });
 
 departurebookingScene.on('callback_query', (ctx) => {

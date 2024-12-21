@@ -4,89 +4,112 @@ import { Scenes, Markup } from 'telegraf';
 const welcomeScene = new Scenes.BaseScene('welcome');
 
 // Entry point for the scene
-welcomeScene.enter((ctx) => {
+welcomeScene.enter(async (ctx) => {
   const chatID = ctx.chat.id;
 
-  if (chatID < 0) {// Group Chats
-    ctx.reply('Welcome to our community onbording process! Please aswer the following questions from the commmunity perspective create your DNA');
-    ctx.scene.enter('dna')
-
-    ctx.session.sceneStack = []; // Initialize the stack if it doesn't exist
-    ctx.session.sceneStack.push('welcome'); // Add the current scene to the stack
-    ctx.reply('Welcome back! Would you like to make some changes to your DNA?', Markup.inlineKeyboard([
-
-      [Markup.button.callback('See DNA', 'DNA'), Markup.button.callback('Restart Wizard', 'dnawizard')],
-      [Markup.button.callback('Change DNA', 'change'), Markup.button.callback('Reset DNA', 'delete')]
-
-    ]))
-  
-    return
+  // Initialize scene stack if it doesn't exist
+  ctx.session.sceneStack = ctx.session.sceneStack || [];
+  if (!ctx.session.sceneStack.includes('welcome')) {
+    ctx.session.sceneStack.push('welcome');
   }
-  ctx.session.db.gun.get(ctx.from.id.toString()).once((data, key) => {
-  if (data) {
-    ctx.session.sceneStack = []; // Initialize the stack if it doesn't exist
-    ctx.session.sceneStack.push('welcome'); // Add the current scene to the stack
-    ctx.reply('Welcome back! Would you like to make some changes to your DNA?', Markup.inlineKeyboard([
 
-      [Markup.button.callback('See DNA', 'DNA'), Markup.button.callback('Restart Wizard', 'wizard')],
-      [Markup.button.callback('Change Profile', 'change'), Markup.button.callback('Reset Profile', 'delete')]
-
-    ]))
-  } else {
-    wizard(ctx)
+  if (chatID < 0) { // Group Chats
+    await ctx.reply('Welcome to our community onboarding process! Please answer the following questions from the community perspective to create your DNA');
+    return ctx.scene.enter('dna');
   }
-})
 
-  welcomeScene.action('DNA', (ctx) => {
-  ctx.session.db.gun.get(ctx.from.id.toString()).once((data, key) => {
-    ctx.reply('Your current DNA:\n\n' + JSON.stringify(data))
-  })
-})
+  // Check existing profile for individual users
+  try {
+    const data = await new Promise((resolve) => {
+      ctx.session.db.gun.get(ctx.from.id.toString()).once(resolve);
+    });
 
-  welcomeScene.action('change', (ctx) => {
-  ctx.reply('What would you like to change?', Markup.inlineKeyboard([
+    if (data) {
+      return ctx.reply('Welcome back! Would you like to make some changes to your DNA?', Markup.inlineKeyboard([
+        [Markup.button.callback('See DNA', 'DNA'), Markup.button.callback('Restart Wizard', 'wizard')],
+        [Markup.button.callback('Change Profile', 'change'), Markup.button.callback('Reset Profile', 'delete')]
+      ]));
+    } else {
+      return wizard(ctx);
+    }
+  } catch (error) {
+    console.error('Error fetching profile:', error);
+    return ctx.reply('Sorry, there was an error. Please try again.');
+  }
+});
+
+// Action handlers
+welcomeScene.action('DNA', async (ctx) => {
+  await ctx.answerCbQuery();
+  ctx.session.db.gun.get(ctx.from.id.toString()).once((data) => {
+    ctx.reply('Your current DNA:\n\n' + JSON.stringify(data, null, 2));
+  });
+});
+
+welcomeScene.action('change', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply('What would you like to change?', Markup.inlineKeyboard([
     [Markup.button.callback('Name', 'name'), Markup.button.callback('Location', 'location')],
     [Markup.button.callback('Values', 'values'), Markup.button.callback('Category', 'category')],
     [Markup.button.callback('Enquiry', 'enquiry'), Markup.button.callback('Hexagon', 'hexagon')]
-  ]
-  ))
-})
-
-  welcomeScene.action('wizard', (ctx) => wizard(ctx))
-  welcomeScene.action('dnawizard', (ctx) => dnawizard(ctx))
-
-  welcomeScene.action('delete', (ctx) => {
-  ctx.session.db.gun.get('users').get(ctx.from.id.toString()).put(null)
-  ctx.reply('Your DNA has been deleted, type /start to create a new DNA')
-})
-
-  welcomeScene.action('name', (ctx) => { ctx.session.wizard = false; ctx.session.sceneStack.push('values'); ctx.scene.enter('values') })
-  welcomeScene.action('location', (ctx) => { ctx.session.wizard = false; ctx.session.sceneStack.push('location'); ctx.scene.enter('location') })
-  welcomeScene.action('hexagon', (ctx) => { ctx.session.wizard = false; ctx.session.sceneStack.push('hexagon'); ctx.scene.enter('h3') })
-  welcomeScene.action('values', (ctx) => { ctx.session.wizard = false; ctx.session.sceneStack.push('values'); ctx.scene.enter('values') })
-  welcomeScene.action('category', (ctx) => { ctx.session.wizard = false; ctx.session.sceneStack.push('categories'); ctx.scene.enter('categories') })
-  welcomeScene.action('enquiry', (ctx) => { ctx.session.wizard = false; ctx.session.sceneStack.push('questions'); ctx.scene.enter('questions') })
-  welcomeScene.action('video', (ctx) => { ctx.session.wizard = false; ctx.session.sceneStack.push('video'); ctx.scene.enter('video') })
-
-  function wizard(ctx) {
-    ctx.reply('Welcome to the personal onboarding process! I will guide you through the process of creating your DNA.');
-    ctx.session.wizard = true;
-    ctx.session.id = ctx.from.id;
-    ctx.session.username = ctx.from.username;
-    ctx.session.first_name = ctx.from.first_name;
-    ctx.session.last_name = ctx.from.last_name;
-
-    ctx.session.stage += 1;
-    ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
-  }
-
-  function dnawizard(ctx) {
-    ctx.reply('Welcome to the community onboarding process! I will guide you through the process of creating your community DNA.');
-    ctx.session.wizard = false;
-    ctx.scene.enter('dna')
-  }
-
+  ]));
 });
 
-// Export the scene
-export default welcomeScene
+welcomeScene.action('wizard', async (ctx) => {
+  await ctx.answerCbQuery();
+  return wizard(ctx);
+});
+
+welcomeScene.action('dnawizard', async (ctx) => {
+  await ctx.answerCbQuery();
+  return dnawizard(ctx);
+});
+
+welcomeScene.action('delete', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.session.db.gun.get(ctx.from.id.toString()).put(null);
+  await ctx.reply('Your DNA has been deleted, type /start to create a new DNA');
+});
+
+// Scene navigation actions
+const sceneMap = {
+  'name': 'values',
+  'location': 'location',
+  'hexagon': 'h3',
+  'values': 'values',
+  'category': 'categories',
+  'enquiry': 'questions',
+  'video': 'video'
+};
+
+Object.entries(sceneMap).forEach(([action, targetScene]) => {
+  welcomeScene.action(action, async (ctx) => {
+    await ctx.answerCbQuery();
+    ctx.session.wizard = false;
+    ctx.session.sceneStack.push(targetScene);
+    return ctx.scene.enter(targetScene);
+  });
+});
+
+function wizard(ctx) {
+  if (!ctx.session.sequence) {
+    ctx.session.sequence = ['values', 'location', 'categories', 'questions'];
+    ctx.session.stage = -1;
+  }
+
+  ctx.session.wizard = true;
+  ctx.session.id = ctx.from.id;
+  ctx.session.username = ctx.from.username;
+  ctx.session.first_name = ctx.from.first_name;
+  ctx.session.last_name = ctx.from.last_name;
+
+  ctx.session.stage += 1;
+  return ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+}
+
+function dnawizard(ctx) {
+  ctx.session.wizard = false;
+  return ctx.scene.enter('dna');
+}
+
+export default welcomeScene;

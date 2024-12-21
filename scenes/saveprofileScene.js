@@ -21,12 +21,13 @@ saveprofileScene.enter((ctx) => {
 });
 
 saveprofileScene.action('public', (ctx) => {
+  let userID = ctx.chat.id
   ctx.session.public = true;
   ctx.session.stage +=1;
   ctx.session.id = ctx.from.id
   console.log(ctx.session)
   //store data in the db
-  ctx.session.db.gun.get(ctx.from.id.toString()).put(createProfile(ctx.session).toString())
+  ctx.session.db.holosphere.put(userID,"profile",createProfile(ctx.session))
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
 });

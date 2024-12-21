@@ -2,7 +2,7 @@ import {
   Scenes,
   Markup
 } from 'telegraf';
-import categoryTypes from "../data/guilds.json" assert { type: "json" };
+import categoryTypes from "../data/roles.json" assert { type: "json" };
 
 import fs from 'fs';
 
@@ -15,24 +15,24 @@ categoriesScene.enter(async (ctx) => {
   //let categoryTypes = JSON.parse(await ctx.session.db.getAll('categories'))
   
   ctx.replyWithPhoto({
-      source: fs.createReadStream('./data/guilds.jpg'),
+      source: fs.createReadStream('./data/roles.png'),
       caption: 'Please select a category you would like to join'
     },
     Markup.inlineKeyboard([
-      [Markup.button.callback(categoryTypes.guilds[0].name, 'category_' + categoryTypes.guilds[0].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.guilds[0].name)],
-      [Markup.button.callback(categoryTypes.guilds[1].name, 'category_' + categoryTypes.guilds[1].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.guilds[1].name)],
-      [Markup.button.callback(categoryTypes.guilds[2].name, 'category_' + categoryTypes.guilds[2].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.guilds[2].name)],
-      [Markup.button.callback(categoryTypes.guilds[3].name, 'category_' + categoryTypes.guilds[3].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.guilds[3].name)],
-      [Markup.button.callback(categoryTypes.guilds[4].name, 'category_' + categoryTypes.guilds[4].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.guilds[4].name)],
-      [Markup.button.callback(categoryTypes.guilds[5].name, 'category_' + categoryTypes.guilds[5].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.guilds[5].name)],
-      [Markup.button.callback(categoryTypes.guilds[6].name, 'category_' + categoryTypes.guilds[6].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.guilds[6].name)],
+      [Markup.button.callback(categoryTypes.roles[0].name, 'category_' + categoryTypes.roles[0].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[0].name)],
+      [Markup.button.callback(categoryTypes.roles[1].name, 'category_' + categoryTypes.roles[1].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[1].name)],
+      [Markup.button.callback(categoryTypes.roles[2].name, 'category_' + categoryTypes.roles[2].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[2].name)],
+      [Markup.button.callback(categoryTypes.roles[3].name, 'category_' + categoryTypes.roles[3].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[3].name)],
+      [Markup.button.callback(categoryTypes.roles[4].name, 'category_' + categoryTypes.roles[4].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[4].name)],
+      [Markup.button.callback(categoryTypes.roles[5].name, 'category_' + categoryTypes.roles[5].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[5].name)],
+      [Markup.button.callback(categoryTypes.roles[6].name, 'category_' + categoryTypes.roles[6].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[6].name)],
     ]))
 
 });
 
 categoriesScene.action(/explain_(.+)/, ctx => {
   var topic = ctx.callbackQuery.data.split('_')[1]
-  const category =categoryTypes.guilds.filter(category => category.name === topic )
+  const category =categoryTypes.roles.filter(category => category.name === topic )
   if (category.length === 0) {
     ctx.answerCbQuery('No description available');
     return;
