@@ -10,6 +10,11 @@ describe("ManagedHolon", function () {
   let B1: Signer;
   let B2: Signer;
   let B3: Signer;
+  let B4: Signer;
+  let B5: Signer;
+  let B6: Signer;
+  let B7: Signer;
+  let B8: Signer;
 
   let Managed: any;
   let Holons: any;
@@ -24,7 +29,7 @@ describe("ManagedHolon", function () {
       const networkArgIndex = args.indexOf("--network");
       const network = networkArgIndex !== -1 && args[networkArgIndex + 1] ? args[networkArgIndex + 1] : "localhost";
       
-      [owner, A1, B1, B2, B3] = await ethers.getSigners();
+      [owner, A1, B1, B2, B3, B4, B5, B6, B7, B8] = await ethers.getSigners();
 
       // Load deployment data for the specified network
       deploymentData = JSON.parse(fs.readFileSync("deployment.json", "utf-8"))[network];
@@ -142,7 +147,7 @@ describe("ManagedHolon", function () {
     });
     
 
-  describe("Member Management Tests", function () {
+    describe("Member Management Tests", function () {
       it("Adds members to a Managed Holon", async function () {
         const { managedHolonAddress } = await createManagedHolonFixture("MemberManagmentManagedHolon");
         const holonInstance = await ethers.getContractAt("Managed", managedHolonAddress as string);
@@ -195,59 +200,37 @@ describe("ManagedHolon", function () {
     describe("Reward Tests", function () {
       it("Rewards Ether to current users based on appreciation", async function () {
         const { managedHolonAddress } = await createManagedHolonFixture("EtherTestManagedHolon");
+
         const holonInstance = await ethers.getContractAt("Managed", managedHolonAddress as string);
       
         // Add members
         await holonInstance.connect(owner).addMembers(["B1", "B3"]);
 
-        console.log("Sucessfully added members!");
-      
-        // Set appreciation values
         await holonInstance.connect(owner).setAppreciation(["B1", "B3"], [60, 40]);
 
-        console.log("Sucessfully set appreciation!");    
-        
         // Check Ether balance before reward
         const etherBalanceBeforeB1 = await holonInstance.etherBalance("B1");
         const etherBalanceBeforeB3 = await holonInstance.etherBalance("B3");
-      
-        // Send Ether to the Holon contract
 
-        await owner.sendTransaction({
-          to: holonInstance,
-          value: ethers.parseEther("1.2"),
-        });
-
-        console.log("Ether to contract send successfully");
+        console.log("etherBalanceBeforeB1Address: ", etherBalanceBeforeB1);
+        console.log("etherBalanceBeforeB3: ", etherBalanceBeforeB3);
 
         const contractBalance = await ethers.provider.getBalance(managedHolonAddress as string);
         console.log("Contract Ether Balance:", ethers.formatEther(contractBalance));
 
-        // Necessary to deposit Ether for userIds
-        // await holonInstance.connect(owner).depositEtherForUser("B1", ethers.parseEther("0.6"));
-        // await holonInstance.connect(owner).depositEtherForUser("B3", ethers.parseEther("0.4"));
-        // console.log("Successfully deposited Ether for users!");
-        
-        // Necessary to attach actual addresses to userIds
-        const B1Address = await B1.getAddress();
-        const B3Address = await B3.getAddress();
-
-        console.log("Beneficiary Address for B1:", B1Address);
-        console.log("Beneficiary Address for B3:", B3Address);
-
-        // await holonInstance.connect(owner).claim("B1", B1Address, { gasLimit: 400000 });
-        // await holonInstance.connect(owner).claim("B3", B3Address, { gasLimit: 400000 });
-
-        console.log("Users claimed Ether, addresses mapped!");
-
         // Reward Ether to members
-        await holonInstance.connect(owner).reward(ethers.ZeroAddress, ethers.parseEther("1"));
-
-        console.log("Sucessfully reward transaction!")
-      
+        console.log("Rewarding users...");
+        // # Change this in contracts so it rewards with funds that are available
+        await holonInstance.connect(owner).reward(ethers.ZeroAddress, ethers.parseEther("1"), {
+          value: ethers.parseEther("1")
+        });
+        console.log("Successfully rewarded users...");
         // Check Ether balance after reward
         const etherBalanceAfterB1 = await holonInstance.etherBalance("B1");
         const etherBalanceAfterB3 = await holonInstance.etherBalance("B3");
+
+        console.log("etherBalanceAfterB1: ", etherBalanceAfterB1);
+        console.log("etherBalanceAfterB3: ", etherBalanceAfterB3);
       
         // Verify balances based on appreciation
         expect(etherBalanceAfterB1 - etherBalanceBeforeB1).to.equal(ethers.parseEther("0.6")); // 60%
@@ -255,210 +238,233 @@ describe("ManagedHolon", function () {
       
         console.log("Ether rewarded successfully based on appreciation:");
         console.log("B1 Ether Balance:", ethers.formatEther(etherBalanceAfterB1));
-        // console.log("B2 Ether Balance:", ethers.formatEther(etherBalanceBeforeB3));
       });
     
-      // it("Rewards Tokens to current users based on appreciation", async function () {
-      //   const { managedHolonBAddress } = await loadFixture(createManagedHolonFixture);
+    it("Rewards Tokens to current users based on appreciation", async function () {
+        const { managedHolonAddress } = await createManagedHolonFixture("TokenAppreciationManagedHolon");
 
-      //   const holonInstance = await ethers.getContractAt("Managed", managedHolonBAddress as string);
-      //   // Add members
-      //   await holonInstance.connect(owner).addMembers(["B1", "B2"]);        
-      //   // Set appreciation values
-      //   await holonInstance.connect(owner).setAppreciation(["B1", "B2"], [60, 40]);
+        const holonInstance = await ethers.getContractAt("Managed", managedHolonAddress as string);
+        // Add members
+        await holonInstance.connect(owner).addMembers(["B1", "B2"]);        
+        // Set appreciation values
+        await holonInstance.connect(owner).setAppreciation(["B1", "B2"], [60, 40]);
 
-      //   const B1Address = await B1.getAddress();
-      //   const B2Address = await B2.getAddress();
+        const B1Address = await B1.getAddress();
+        const B2Address = await B2.getAddress();
 
-      //   const testTokenAddress = await TestToken.getAddress()
-      //   // Send tokens to the Holon contract
-      //   await TestToken.connect(owner).transfer(managedHolonBAddress, 1002);
+        const testTokenAddress = await TestToken.getAddress()
+        // Send tokens to the Holon contract
+        await TestToken.connect(owner).transfer(managedHolonAddress, 1002);
 
-      //   await holonInstance.connect(owner).depositTokenForUser("B1", testTokenAddress, 1);
+        // await holonInstance.connect(owner).depositTokenForUser("B1", testTokenAddress, 1);
 
-      //   await holonInstance.connect(owner).depositTokenForUser("B2", testTokenAddress, 1);
-      //   // Necessary in order to attach actual addresses to usersIds
-      //   await holonInstance.connect(owner).claim("B1", B1Address);
-      //   // Necessary in order to attach actual addresses to usersIds
-      //   await holonInstance.connect(owner).claim("B2", B2Address);
-      //   // Reward tokens to members
-      //   await holonInstance.connect(owner).reward(testTokenAddress, 1000);
-      //   // Verify balances based on appreciation
-      //   const tokenBalanceB1 = await TestToken.balanceOf(B1Address);
-      //   const tokenBalanceB2 = await TestToken.balanceOf(B2Address);
+        // await holonInstance.connect(owner).depositTokenForUser("B2", testTokenAddress, 1);
+        // Necessary in order to attach actual addresses to usersIds
+        // Reward tokens to members
+        await holonInstance.connect(owner).reward(testTokenAddress, 1000);
 
-      //   expect(tokenBalanceB1).to.equal(601); // 60% of 1000 + 1 to attach address to userId
-      //   expect(tokenBalanceB2).to.equal(401); // 40% of 1000 + 1 to attach address to userId
-      // });
-    // });
+        await holonInstance.connect(owner).claim("B1", B1Address);
+        await holonInstance.connect(owner).claim("B2", B2Address);
 
+        const tokenBalanceB1 = await TestToken.balanceOf(B1Address);
+        const tokenBalanceB2 = await TestToken.balanceOf(B2Address);
 
-  // describe("Reward Tests Appreciative -> Managed", function () {
-  //   it("Rewards Tokens to another Holon as its address", async function () {
+        expect(tokenBalanceB1).to.equal(600); // 60% of 1000
+        expect(tokenBalanceB2).to.equal(400); // 40% of 1000
+      });
 
-  //     const { appreciativeHolonAAddress: appreciativeHolonAAddress } = await createAppreciativeHolonFixture();
-  //     const { managedHolonAddress: managedHolonBAddress } = await createManagedHolonFixture("childManaged");
+      it("Rewards Tokens to current users based on no appreciation", async function () {
+        const { managedHolonAddress } = await createManagedHolonFixture("NoAppreciationManagedHolon");
 
-  //     console.log("*Child managed address: ", managedHolonBAddress);
+        const holonInstance = await ethers.getContractAt("Managed", managedHolonAddress as string);
+        // Add members
+        await holonInstance.connect(owner).addMembers(["B3", "B4"]);        
+        // Set appreciation values
+        const B3Address = await B3.getAddress();
+        const B4Address = await B4.getAddress();
 
-  //     // Get contract instances based on contract addresses
-  //     const holonA = await ethers.getContractAt("Appreciative", appreciativeHolonAAddress as string);
-  //     const holonB = await ethers.getContractAt("Managed", managedHolonBAddress as string);
+        const testTokenAddress = await TestToken.getAddress()
+        // Send tokens to the Holon contract
+        await TestToken.connect(owner).transfer(managedHolonAddress, 1002);
+        // Reward tokens to members
+        const etherBalanceBefore = await ethers.provider.getBalance(managedHolonAddress as string);
+        console.log("Contract Ether Balance before reward:", ethers.formatEther(etherBalanceBefore));
 
-  //     // Test conditions: 
-  //     // Holon A, members = A1, HolonB
-  //     // Holon B, members = B1, B2
-  //     let A1Address = await A1.getAddress();
-  //     let B1Address = await B1.getAddress();
-  //     let B2Address = await B2.getAddress();
+        const tokenBalanceBeforeB1 = await TestToken.balanceOf(B3Address);
+        const tokenBalanceBeforeB2 = await TestToken.balanceOf(B4Address);
 
-  //     // Add members to the HolonsA ( comment out while incrementaly testing, as it will cause an errors [already inserted ] )
+        console.log("B1 Token Balance before reward:", tokenBalanceBeforeB1.toString());
+        console.log("B2 Token Balance before reward:", tokenBalanceBeforeB2.toString());
 
-  //     // Managed has an issue - AddMember ( as in other holons)  is not the same - because adding member, requires name. 
-  //     await holonB.connect(owner).addMembers(["B1", "B2"]);
+        await holonInstance.connect(owner).reward(testTokenAddress, 1000);
 
-  //     await holonA.connect(owner).addMember(A1Address, "1");
-  //     console.log("Added member A1 to HolonA");
+        await holonInstance.connect(owner).claim("B3", B3Address);
+        await holonInstance.connect(owner).claim("B4", B4Address);
 
-  //     await holonA.connect(owner).addMember(holonB, "2");
-  //     console.log("Added member HolonB to HolonA");
+        const tokenBalanceB3 = await TestToken.balanceOf(B3Address);
+        const tokenBalanceB4 = await TestToken.balanceOf(B4Address);
+
+        console.log("B1 Token Balance after reward:", tokenBalanceB3.toString());
+        console.log("B4 Token Balance after reward:", tokenBalanceB4.toString());
+
+        expect(tokenBalanceB3).to.equal(500); // 50% of 1000
+        expect(tokenBalanceB4).to.equal(500); // 50% of 1000
+      });
+    });
+
+  // this one fails
+  describe("Reward Tests Appreciative -> Managed", function () {
+    it("Rewards Tokens to another Holon as its address", async function () {
+
+      const { appreciativeHolonAAddress } = await createAppreciativeHolonFixture();
+      console.log("*AppreciativeHolonAddress: ", appreciativeHolonAAddress);
+      const { managedHolonAddress: managedHolonBAddress } = await createManagedHolonFixture("childManaged");
+
+      console.log("*Child managed address: ", managedHolonBAddress);
+      // Get contract instances based on contract addresses
+      const holonA = await ethers.getContractAt("Appreciative", appreciativeHolonAAddress as string);
+      const holonB = await ethers.getContractAt("Managed", managedHolonBAddress as unknown as string);
+
+      // Test conditions: 
+      // Holon A, members = A1, HolonB
+      // Holon B, members = B5, B6
+      let A1Address = await A1.getAddress();
+      let B5Address = await B5.getAddress();
+      let B6Address = await B6.getAddress();
+
+      // Add members to the HolonsA ( comment out while incrementaly testing, as it will cause an errors [already inserted ] )
+
+      // Managed has an issue - AddMember ( as in other holons)  is not the same - because adding member, requires name. 
+      await holonB.connect(owner).addMembers(["B5", "B6"]);
+
+      await holonA.connect(owner).addMember(A1Address, "1");
+      console.log("Added member A1 to HolonA");
+
+      await holonA.connect(owner).addMember(holonB, "2");
+      console.log("Added member HolonB to HolonA");
   
-  //     await TestToken.connect(owner).transfer(holonA, 1000);
+      await TestToken.connect(owner).transfer(holonA, 1000);
 
-  //     const holonAInitialBalance = await TestToken.connect(owner).balanceOf(holonA);
+      const holonAInitialBalance = await TestToken.connect(owner).balanceOf(holonA);
     
-  //     console.log("holonAInitialBalance: ", holonAInitialBalance);
+      console.log("holonAInitialBalance: ", holonAInitialBalance);
 
-  //     const testTokenAddress = await TestToken.getAddress();
+      const testTokenAddress = await TestToken.getAddress();
 
-  //     const A1AddressBeforeReward = await TestToken.connect(owner).balanceOf(A1Address);
+      const A1AddressBeforeReward = await TestToken.connect(owner).balanceOf(A1Address);
 
-  //     console.log("A1AddressBeforeReward: ", A1AddressBeforeReward);
+      console.log("A1AddressBeforeReward: ", A1AddressBeforeReward);
 
-  //     console.log("HolonB related logs...")
+      console.log("HolonB related logs...")
 
-  //     const holonBUsersLength = await holonB.connect(owner).getSize();
+      const holonBUsersLength = await holonB.connect(owner).getSize();
 
-  //     console.log("Number of users in HolonB:", holonBUsersLength);
+      console.log("Number of users in HolonB:", holonBUsersLength);
 
-  //     const userIds = [];
-  //     for (let i = 0; i < holonBUsersLength; i++) {
-  //         const userId = await holonB.connect(owner).userIds(i);
-  //         userIds.push(userId);
-  //     }
-  //     console.log("All User IDs:", userIds);
+      const userIds = [];
+      for (let i = 0; i < holonBUsersLength; i++) {
+          const userId = await holonB.connect(owner).userIds(i);
+          userIds.push(userId);
+      }
+      console.log("Users B5 and B6 claimed their tokens, addresses assigned");
 
-  //     // await TestToken.connect(owner).transfer(holonB, 100)
+      await holonA.connect(owner).reward(testTokenAddress, 1000);
 
-  //     // await holonB.connect(owner).depositTokenForUser("B1", testTokenAddress, 1);
+      await holonB.connect(owner).claim("B5", B5Address);
 
-  //     // await holonB.connect(owner).depositTokenForUser("B2", testTokenAddress, 1);
+      await holonB.connect(owner).claim("B6", B6Address);
 
-  //     // console.log("Tokens deposited for users B1 and B2");
+      const A1AddressAfterReward = await TestToken.connect(owner).balanceOf(A1Address);
 
-  //     // await holonB.connect(owner).claim("B1", B1Address);
+      console.log("A1AddressAfterReward: ", A1AddressAfterReward);
 
-  //     // await holonB.connect(owner).claim("B2", B2Address);
+      // expect(A1AddressAfterReward).to.equal(500);
+      const B5AddressBalance = await TestToken.connect(owner).balanceOf(B5Address); 
+      console.log("Member 'B5AddressBalance' token balance:", B5AddressBalance.toString());
 
-  //     console.log("Users B1 and B2 claimed their tokens, addresses assigned");
+      expect(B5AddressBalance).to.equal(250); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
 
-  //     await holonA.connect(owner).reward(testTokenAddress, 1000);
+      const B6AddressBalance = await TestToken.connect(owner).balanceOf(B6Address); 
+      console.log("Member 'B6AddressBalance' token balance:", B6AddressBalance.toString());
 
-  //     await holonB.connect(owner).claim("B1", B1Address);
+      expect(B6AddressBalance).to.equal(250); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
+    });
+  });
 
-  //     await holonB.connect(owner).claim("B2", B2Address);
+  describe("Reward Tests Managed -> Managed", function () {
+    it("Rewards Tokens to another Holon as its address", async function () {
 
-  //     const A1AddressAfterReward = await TestToken.connect(owner).balanceOf(A1Address);
+      const { managedHolonAddress: parentAddress } = await createManagedHolonFixture("parent");
+      const { managedHolonAddress: childAddress } = await createManagedHolonFixture("child");
 
-  //     console.log("A1AddressAfterReward: ", A1AddressAfterReward);
+      console.log("*parentAddress: ", parentAddress);
+      console.log("*childAddress: ", childAddress);
 
-  //     // expect(A1AddressAfterReward).to.equal(500);
-  //     const B1AddressBalance = await TestToken.connect(owner).balanceOf(B1Address); 
-  //     console.log("Member 'B1AddressBalance' token balance:", B1AddressBalance.toString());
+      // Get contract instances based on contract addresses
+      const parent = await ethers.getContractAt("Managed", parentAddress as string);
+      const child = await ethers.getContractAt("Managed", childAddress as string);
 
-  //     expect(B1AddressBalance).to.equal(250); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
+      // Test conditions: 
+      // Holon A, members = A1, HolonB
+      // Holon B, members = B1, B2
+      // let A1Address = await A1.getAddress();
+      let B7Address = await B7.getAddress();
+      let B8Address = await B8.getAddress();
 
-  //     const B2AddressBalance = await TestToken.connect(owner).balanceOf(B2Address); 
-  //     console.log("Member 'B2AddressBalance' token balance:", B2AddressBalance.toString());
+      // Add members to the HolonsA ( comment out while incrementaly testing, as it will cause an errors [already inserted ] )
 
-  //     expect(B2AddressBalance).to.equal(250); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
-  //   });
-  // });
+      // Managed has an issue - AddMember ( as in other holons)  is not the same - because adding member, requires name. 
+      await child.connect(owner).addMembers(["B7", "B8"]);
 
-  // describe("Reward Tests Managed -> Managed", function () {
-  //   it("Rewards Tokens to another Holon as its address", async function () {
+      await parent.connect(owner).addMembers(["1"]);
+      console.log("Added member A1 to HolonA");
 
-  //     const { managedHolonAddress: parentAddress } = await createManagedHolonFixture("parent");
-  //     const { managedHolonAddress: childAddress } = await createManagedHolonFixture("child");
-
-  //     console.log("*parentAddress: ", parentAddress);
-  //     console.log("*childAddress: ", childAddress);
-
-  //     // Get contract instances based on contract addresses
-  //     const parent = await ethers.getContractAt("Managed", parentAddress as string);
-  //     const child = await ethers.getContractAt("Managed", childAddress as string);
-
-  //     // Test conditions: 
-  //     // Holon A, members = A1, HolonB
-  //     // Holon B, members = B1, B2
-  //     // let A1Address = await A1.getAddress();
-  //     let B1Address = await B1.getAddress();
-  //     let B2Address = await B2.getAddress();
-
-  //     // Add members to the HolonsA ( comment out while incrementaly testing, as it will cause an errors [already inserted ] )
-
-  //     // Managed has an issue - AddMember ( as in other holons)  is not the same - because adding member, requires name. 
-  //     await child.connect(owner).addMembers(["B1", "B2"]);
-
-  //     await parent.connect(owner).addMembers(["1"]);
-  //     console.log("Added member A1 to HolonA");
-
-  //     // await parent.connect(owner).addMember(child, "2");
-  //     // console.log("Added member HolonB to HolonA");
+      // await parent.connect(owner).addMember(child, "2");
+      // console.log("Added member HolonB to HolonA");
   
-  //     await TestToken.connect(owner).transfer(parent, 1000);
+      await TestToken.connect(owner).transfer(parent, 1000);
 
-  //     const parentInitialBalance = await TestToken.connect(owner).balanceOf(parent);
+      const parentInitialBalance = await TestToken.connect(owner).balanceOf(parent);
     
-  //     console.log("parentInitialBalance: ", parentInitialBalance);
+      console.log("parentInitialBalance: ", parentInitialBalance);
 
-  //     const testTokenAddress = await TestToken.getAddress();
+      const testTokenAddress = await TestToken.getAddress();
 
-  //     console.log("child related logs...")
+      console.log("child related logs...")
 
-  //     const childUsersLength = await child.connect(owner).getSize();
+      const childUsersLength = await child.connect(owner).getSize();
 
-  //     console.log("Number of users in child:", childUsersLength);
+      console.log("Number of users in child:", childUsersLength);
 
-  //     const userIds = [];
-  //     for (let i = 0; i < childUsersLength; i++) {
-  //         const userId = await child.connect(owner).userIds(i);
-  //         userIds.push(userId);
-  //     }
-  //     console.log("All User IDs:", userIds);
+      const userIds = [];
+      for (let i = 0; i < childUsersLength; i++) {
+          const userId = await child.connect(owner).userIds(i);
+          userIds.push(userId);
+      }
+      console.log("All User IDs:", userIds);
 
-  //     console.log("Users B1 and B2 claimed their tokens, addresses assigned");
+      console.log("Users B7 and B8 claimed their tokens, addresses assigned");
 
-  //     await parent.connect(owner).claim("1", childAddress as string);
+      await parent.connect(owner).claim("1", childAddress as string);
 
-  //     await parent.connect(owner).reward(testTokenAddress, 1000);
+      await parent.connect(owner).reward(testTokenAddress, 1000);
 
-  //     const childUnclaimedBalance = await child.connect(owner).tokenBalance("B1", testTokenAddress);
+      const childUnclaimedBalance = await child.connect(owner).tokenBalance("B7", testTokenAddress);
       
-  //     console.log("childUnclaimedBalance", childUnclaimedBalance);
+      console.log("childUnclaimedBalance", childUnclaimedBalance);
 
-  //     await child.connect(owner).claim("B2", B2Address);
+      await child.connect(owner).claim("B8", B8Address);
 
-  //     // expect(A1AddressAfterReward).to.equal(500);
-  //     const B1AddressBalance = await TestToken.connect(owner).balanceOf(B1Address); 
-  //     console.log("Member 'B1AddressBalance' token balance:", B1AddressBalance.toString());
+      // expect(A1AddressAfterReward).to.equal(500);
+      const B7AddressBalance = await TestToken.connect(owner).balanceOf(B7Address); 
+      console.log("Member 'B7AddressBalance' token balance:", B7AddressBalance.toString());
 
-  //     // expect(B1AddressBalance).to.equal(500); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
+      // expect(B1AddressBalance).to.equal(500); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
 
-  //     const B2AddressBalance = await TestToken.connect(owner).balanceOf(B2Address); 
-  //     console.log("Member 'B2AddressBalance' token balance:", B2AddressBalance.toString());
+      const B8AddressBalance = await TestToken.connect(owner).balanceOf(B8Address); 
+      console.log("Member 'B8AddressBalance' token balance:", B8AddressBalance.toString());
 
-  //     expect(B2AddressBalance).to.equal(500); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
-  //   });
+      expect(B8AddressBalance).to.equal(500); // should be 250 but we had to add + 1 that was necessary for Managed holon to register the address for specific user id
+    });
   });
 });

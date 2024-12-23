@@ -26,4 +26,4 @@ node_modules
 ignition/deployments/chain-31337
 
 # deployments
-/deployments
+deployments/
