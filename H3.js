@@ -88,17 +88,17 @@ class H3 {
             let settings = await this.settings.getSettings(chatID)
             let id = settings.hex ? settings.hex : 'Hex not set, use /setHex'
             // fetch the stored node
-            
-            let node =  await this.holosphere.getNode( chatID, 'quests', messageID)
+
+            let node = await this.holosphere.getNode(chatID, 'quests', messageID)
             console.log(node)
-            
+
             // if (!node) {
             //     node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
             // }
-            
+
             //for (let tag of tags) {
-        
-                this.holosphere.upcast(id, 'quests', node)
+
+            this.holosphere.upcast(id, 'quests', node)
             //}
         })
 
@@ -114,20 +114,55 @@ class H3 {
             const messageID = ctx.message.reply_to_message.message_id;
             const chatID = ctx.message.chat.id;
 
-            let node =   this.holosphere.getNode( chatID, 'quests', messageID) //TODO: change to any lens type
-
+            let node = this.holosphere.getNode(chatID, 'quests', messageID) //TODO: change to any lens type
+            let soul = this.findSoul(node)
+            console.log('node soul: ', soul)
 
             let settings = await this.settings.getSettings(chatID)
             let hex = settings.hex
 
-            for (let tag of tags) {
-                await this.holosphere.putNode(hex, tag, {id: messageID, content: node})
-            }
-            let refetched = await this.holosphere.getNode(hex, 'quests', messageID)
+            await this.holosphere.putNode(hex, "quests", messageID, soul)
+
+            // for (let tag of tags) {
+            //     await this.holosphere.putNode(hex, tag, messageID, node )
+            // }
+            let refetched = await this.holosphere.get(hex, 'quests', this.findSoul(node))
             console.log('refteched attempt: ', refetched)
 
-            ctx.reply('Tag published.');
+            ctx.reply('Tag published to hex ' + hex);
         });
+
+    }
+
+    findSoul(gunRef) {
+
+        // Method 1: Direct soul
+        if (gunRef._ && gunRef._['#']) {
+            return gunRef._['#']
+        }
+
+        // Method 2: Back reference
+        if (gunRef._.back && gunRef._.back.link) {
+            return gunRef._.back.link;
+        }
+
+        // Method 4: Check back chain
+        let back = gunRef._.back;
+        let backChain = [];
+        while (back) {
+            if (back.get) backChain.push(back.get);
+            if (back.link) backChain.push(back.link);
+            back = back.back;
+        }
+        if (backChain.length > 0) {
+            //reverse the backchain
+            backChain = backChain.reverse()
+            //chain the backchain into a string
+            let soul = backChain.join('/')
+            soul += '/' + gunRef._.get
+            return soul
+        }
+        else return null
 
     }
 
