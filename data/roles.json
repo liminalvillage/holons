@@ -1,0 +1,52 @@
+{
+  "roles": [
+    {
+      "name": "Farming & Eco Activities",
+      "description": "Focuses on farming, hands-on ecological activities, and sustainable agricultural practices."
+    },
+    {
+      "name": "Building & Maintenance",
+      "description": "Covers handyman services, painting, decoration, and general building maintenance work."
+    },
+    {
+      "name": "Community Work",
+      "description": "Encompasses social work, teaching, building and repairing for community benefit."
+    },
+    {
+      "name": "Communication & Marketing",
+      "description": "Includes social media management, photography, and video making services."
+    },
+    {
+      "name": "Teaching",
+      "description": "Focuses on language instruction and sports coaching."
+    },
+    {
+      "name": "Kitchen & Bar Tasks",
+      "description": "Covers kitchen hand duties, bartending, and cooking services."
+    },
+    {
+      "name": "Household Chores",
+      "description": "Includes housekeeping, kitchen assistance, and pet sitting services."
+    },
+    {
+      "name": "Welcoming & Helping Guests",
+      "description": "Covers reception, housekeeping, and various guest service roles."
+    },
+    {
+      "name": "Interacting & Entertaining Guests",
+      "description": "Includes party promotion, tour guiding, and other guest entertainment services."
+    },
+    {
+      "name": "Improving Websites & SEO",
+      "description": "Focuses on web development and content writing for digital presence."
+    },
+    {
+      "name": "Arts & Culture",
+      "description": "Encompasses music, photography, painting, and decorating activities."
+    },
+    {
+      "name": "Child or Elderly Care",
+      "description": "Provides housekeeping and language teaching services focused on caring for children and elderly."
+    }
+  ]
+}

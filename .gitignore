@@ -13,4 +13,4 @@ audio/*
 recordings/*
 certs/*
 .netlify/*
-data/*
+data/%1C
