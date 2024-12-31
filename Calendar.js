@@ -135,14 +135,14 @@ export class Calendar {
             }
             return res;
         },
-        startNavCalendar(msg) {
-            var now = new Date();
-            now.setDate(1);
-            now.setHours(0);
-            now.setMinutes(0);
-            now.setSeconds(0);
-            this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), msg);
-        },
+        // startNavCalendar(msg) {
+        //     var now = new Date();
+        //     now.setDate(1);
+        //     now.setHours(0);
+        //     now.setMinutes(0);
+        //     now.setSeconds(0);
+        //     this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), msg);
+        // },
         startTimeSelector(msg) {
             this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector()), msg);
         }

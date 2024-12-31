@@ -116,43 +116,55 @@ class H3 {
 
             let node = this.holosphere.getNode(chatID, 'quests', messageID) //TODO: change to any lens type
             let soul = this.findSoul(node)
-            console.log('node soul: ', soul)
+            //console.log('node soul: ', soul)
 
             let settings = await this.settings.getSettings(chatID)
             let hex = settings.hex
 
-            await this.holosphere.putNode(hex, "quests", messageID, soul)
+            await this.holosphere.put(hex, "quests",  {'id': messageID, 'soul': soul })
 
             // for (let tag of tags) {
             //     await this.holosphere.putNode(hex, tag, messageID, node )
             // }
-            let refetched = await this.holosphere.get(hex, 'quests', this.findSoul(node))
-            console.log('refteched attempt: ', refetched)
+            let refetched = await this.holosphere.get(hex, 'quests', messageID)
+            console.log(refetched)
 
             ctx.reply('Tag published to hex ' + hex);
         });
 
     }
 
+    reconstructNodeRef(soul) {
+        const parts = soul.split('/');
+        let ref = this.holosphere.gun;
+        parts.forEach(part => {
+            ref = ref.get(part);
+        });
+        return ref;
+    }
+
     findSoul(gunRef) {
 
-        // Method 1: Direct soul
-        if (gunRef._ && gunRef._['#']) {
-            return gunRef._['#']
-        }
+        // // Method 1: Direct soul
+        // if (gunRef._ && gunRef._['#']) {
+        //     console.log('soul found 1: ', gunRef._['#'])
+        //     return gunRef._['#']
+        // }
 
-        // Method 2: Back reference
-        if (gunRef._.back && gunRef._.back.link) {
-            return gunRef._.back.link;
-        }
+        // // Method 2: Back reference
+        // if (gunRef._.back && gunRef._.back.link) {
+        //     console.log('soul found 2: ', gunRef._.back.link)
+        //     return gunRef._.back.link;
+        // }
 
         // Method 4: Check back chain
         let back = gunRef._.back;
         let backChain = [];
         while (back) {
             if (back.get) backChain.push(back.get);
-            if (back.link) backChain.push(back.link);
+            //if (back.link) backChain.push(back.link);
             back = back.back;
+          
         }
         if (backChain.length > 0) {
             //reverse the backchain

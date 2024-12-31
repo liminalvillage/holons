@@ -129,8 +129,8 @@ class HolonsBot {
     this.checklists = new Checklists(this.telebot, this.db);
     this.capitalGame = new CapitalGame(this.telebot, this.settings);
 
-    this.quests = new Quests(this.telebot, this.db, this.users,this.settings);
-    this.scheduler = new Scheduler(this.telebot, this.db, this.quests);
+    this.quests = new Quests(this.telebot, this.db, this.users, this.settings);
+    this.scheduler = new Scheduler(this.telebot, this.db, this.quests, this.settings);
     this.quests.setScheduler(this.scheduler);
 
   }
@@ -218,6 +218,14 @@ Need help? Contact @RobertoValenti for feedback and support.`;
         } catch (error) {
           console.error(`Error processing new user ${member.id}:`, error);
         }
+      }
+    });
+
+    // Add new handler for replies to messages
+    this.telebot.on('message', async (ctx) => {
+      // Check if message is a reply
+      if (ctx.message.reply_to_message) {
+        await this.handleReply(ctx);
       }
     });
   }
@@ -577,6 +585,62 @@ Need help? Contact @RobertoValenti for feedback and support.`;
       console.error('Unhandled Rejection at:', promise, 'reason:', reason);
       process.exit();
     });
+  }
+
+  // Add this new method to handle replies
+  async handleReply(ctx) {
+    try {
+      const repliedMessage = ctx.message.reply_to_message;
+      
+      // Check if the replied message is from the bot
+      if (repliedMessage.from.id === ctx.botInfo.id) {
+        // Try to determine the type of the original message
+        const messageType = this.determineMessageType(repliedMessage);
+        
+        // Handle based on message type
+        switch (messageType) {
+          case 'quest':
+            await this.quests.addNote(ctx);
+            break;
+          case 'expense':
+            await this.expenses.addNote(ctx);
+            break;
+          // Add more cases as needed
+          default:
+            // Optional: Handle unknown message types
+            console.log('Reply to unknown message type:', messageType);
+        }
+      }
+    } catch (error) {
+      console.error('Error handling reply:', error);
+    }
+  }
+
+  // Add this helper method to determine message type
+  determineMessageType(message) {
+    // Check message content/structure to determine type
+    
+    // Check if it's a quest message
+    if (message.text && (
+      message.text.startsWith('📋 Task:') ||
+      message.text.startsWith('🎯 Quest:') ||
+      message.text.includes('Status: pending') ||
+      message.text.includes('Status: done')
+    )) {
+      return 'quest';
+    }
+    
+    // Check if it's an expense message
+    if (message.text && (
+      message.text.startsWith('💰 Expense:') ||
+      message.text.includes('Amount:')
+    )) {
+      return 'expense';
+    }
+    
+    // Add more type checks as needed
+    
+    return 'unknown';
   }
 }
 

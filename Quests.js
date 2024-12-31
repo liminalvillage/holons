@@ -579,10 +579,9 @@ export default class Quests {
         console.log("SCHEDULE ACTION");
         const chatID = ctx.callbackQuery.message.chat.id;
         const questID = ctx.callbackQuery.data.split('_')[3];
-        const language = await this.settings.getLanguage(chatID);
 
         try {
-            // Verify quest exists before showing calendar
+            // Verify quest exists
             const quest = await this.db.get(`${chatID}/quests`, questID);
             if (!quest) {
                 console.log(`Quest ${questID} not found`);
@@ -590,11 +589,8 @@ export default class Quests {
                 return;
             }
 
-            // Store quest ID for later retrieval when date is selected
-            this.calendar.questIds.set(chatID, questID);
-
-            // Show calendar
-            await this.calendar.startNavCalendar(ctx, language);
+            // Pass the ctx object to showCalendar
+            await this.scheduler.showCalendar(ctx, questID);
             await ctx.answerCbQuery();
 
         } catch (error) {
@@ -759,6 +755,55 @@ export default class Quests {
             }
         }
     }
+
+    // Add this method to handle notes added to quests
+    async addNote(ctx) {
+        try {
+            const originalMessage = ctx.message.reply_to_message;
+            const note = ctx.message.text;
+            
+            // Extract quest ID from the original message
+            const questId = this.extractQuestId(originalMessage);
+            
+            if (!questId) {
+                console.log('Could not find quest ID');
+                return;
+            }
+            
+            // Get the quest from database
+            const quest = await this.db.get(`${ctx.chat.id}/quests`, questId);
+            
+            if (!quest) {
+                console.log('Quest not found');
+                return;
+            }
+            
+            // Add the note to the quest
+            if (!quest.notes) quest.notes = [];
+            quest.notes.push({
+                text: note,
+                from: ctx.from,
+                timestamp: Date.now()
+            });
+            
+            // Save updated quest
+            await this.db.put(`${ctx.chat.id}/quests`, quest);
+            
+            // Update the original message to show the new note
+            await this.updateMessage(ctx, quest);
+            
+        } catch (error) {
+            console.error('Error adding note to quest:', error);
+        }
+    }
+
+    // Helper method to extract quest ID from message
+    extractQuestId(message) {
+        // Implement based on how you store quest IDs in messages
+        // This is just an example - adjust based on your actual implementation
+        const match = message.text.match(/ID: ([a-zA-Z0-9-]+)/);
+        return match ? match[1] : null;
+    }
 }
 
 // Function to create the message for a quest 
@@ -773,21 +818,39 @@ function createMessage(quest, language) {
         message += `| 🔄 ${i18next.t('frequency', { lng: language })}: ${quest.frequency} \n`;
     }
 
-    // Rest of the existing message creation code...
     if (quest.category) {
         message += `| 📑 ${i18next.t('category', { lng: language })}: ${quest.category} \n`;
     }
-    //message += `| ${i18next.t('💡',{lng:language})} : @${quest.initiator.username} \n`;
-    // if (quest.participants.length > 0)
-    //     message += `| ${i18next.t('🙋‍♂',{lng:language})} : ${[...quest.participants].map(u => '@' + u.username).join(', ')} \n`;
-    // if (quest.appreciation.length > 0)
-    //     message += `| ${i18next.t('👍',{lng:language})} : ${[...quest.appreciation].map(u => '@' + u.username).join(', ')} \n`;
+
     if (quest.participants.length > 0)
         message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => getDisplayName(u)).join(', ')} \n`;
     if (quest.appreciation.length > 0)
         message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => getDisplayName(u)).join(', ')} \n`;
-    if (quest.when)
-        message += `| ${i18next.t('📅', { lng: language })} : ${quest.when} \n`;
+    
+    // Format date in a human-friendly way
+    if (quest.when) {
+        const date = new Date(quest.when);
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        let dateStr;
+        if (date.toDateString() === today.toDateString()) {
+            dateStr = `Today at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
+        } else if (date.toDateString() === tomorrow.toDateString()) {
+            dateStr = `Tomorrow at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
+        } else {
+            dateStr = date.toLocaleDateString(language, { 
+                weekday: 'long',
+                month: 'long', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        message += `| ${i18next.t('📅', { lng: language })} : ${dateStr} \n`;
+    }
+
     if (quest.where?.lat)
         message += `| ${i18next.t('📍 ', { lng: language })}: ${quest.where.lat} : ${quest.where.lon}   \n`;
     if (quest.status === "stopped")
