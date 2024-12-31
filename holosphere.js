@@ -296,17 +296,21 @@ class HoloSphere {
         });
     }
 
-      /**
-     * Parses data from GunDB, handling various data formats and references.
-     * @param {*} data - The data to parse, could be a string, object, or GunDB reference.
-     * @returns {Promise<object>} - The parsed data.
-     */
-      async parse(rawData) {
+    /**
+   * Parses data from GunDB, handling various data formats and references.
+   * @param {*} data - The data to parse, could be a string, object, or GunDB reference.
+   * @returns {Promise<object>} - The parsed data.
+   */
+    async parse(rawData) {
         let parsedData = {};
+        if (rawData.soul) {
+            console.log('Parsing link:', rawData.soul);
+            this.getNodeRef(rawData.soul).once (data => {return JSON.parse(data)});
+        }
 
         if (typeof rawData === 'object' && rawData !== null) {
             if (rawData._ && rawData._["#"]) {
-                console.log('Parsing reference:', rawData._['#']);
+                console.log('Parsing object reference:', rawData._['#']);
                 // If the data is a reference, fetch the actual content
                 let pathParts = rawData._['#'].split('/');
                 let hexId = pathParts[1];
@@ -314,7 +318,7 @@ class HoloSphere {
                 let dataKey = pathParts[3];
                 parsedData = await this.get(hexId, lensId, dataKey);
             } else if (rawData._ && rawData._['>']) {
-                console.log('Parsing node:', rawData._['>']);
+                console.log('Parsing objectnode:', rawData._['>']);
                 // This might be a GunDB node, try to get its value
                 const nodeValue = Object.values(rawData).find(v => typeof v !== 'object' && v !== '_');
                 if (nodeValue) {
@@ -329,14 +333,21 @@ class HoloSphere {
                     parsedData = rawData; // return the original data
                 }
             } else {
-                // Treat it as regular data
+                // Treat it as object data
+                console.log('Parsing object data:', rawData);
                 parsedData = rawData;
             }
         } else {
             // If it's not an object, try parsing it as JSON
             try {
                 parsedData = JSON.parse(rawData);
+                //if the data has a soul, return the soul node
+                if (parsedData.soul) {
+                    console.log('Parsing link:', parsedData.soul);
+                    parsedData = await this.get(parsedData.soul.split('/')[1], parsedData.soul.split('/')[2], parsedData.soul.split('/')[3]);
+                }
             } catch (e) {
+                console.log('Failed to parse, returning raw data', e);
                 parsedData = rawData; // return the raw data
             }
         }
@@ -370,9 +381,9 @@ class HoloSphere {
                 .get(holon)
                 .get(lens)
                 .get(key)
-                .once((data) => {
+                .once((data,key) => {
                     clearTimeout(timeout);
-
+                   
                     if (!data) {
                         resolve(null);
                         return;
@@ -392,7 +403,6 @@ class HoloSphere {
                                 }
                             }
                         }
-
                         resolve(parsed);
                     } catch (error) {
                         console.error('Error parsing data:', error);
@@ -481,13 +491,13 @@ class HoloSphere {
      */
     async putNode(holon, lens, node) {
         return new Promise((resolve) => {
-        this.gun.get(this.appname).get(holon).get(lens).put(node, ack => {
-            if (ack.err) {
-                console.error("Error adding data to GunDB:", ack.err);
-                resolve(false);
-            } else {
-                resolve(true);
-            }
+            this.gun.get(this.appname).get(holon).get(lens).put(node, ack => {
+                if (ack.err) {
+                    console.error("Error adding data to GunDB:", ack.err);
+                    resolve(false);
+                } else {
+                    resolve(true);
+                }
             });
         });
     }
@@ -499,27 +509,26 @@ class HoloSphere {
    * @param {string} key - The specific key to retrieve.
    * @returns {Promise<object|null>} - The retrieved node or null if not found.
    */
-    async getNode(holon, lens, key) {
+    getNode(holon, lens, key) {
         if (!holon || !lens || !key) {
             console.error('getNode: Missing required parameters');
             return null;
         }
 
-        return new Promise((resolve) => {
-            let timeout = setTimeout(() => {
-                console.warn('getNode: Operation timed out');
-                resolve(null);
-            }, 5000);
+        return this.gun.get(this.appname)
+            .get(holon)
+            .get(lens)
+            .get(key)
 
-            this.gun.get(this.appname)
-                .get(holon)
-                .get(lens)
-                .get(key)
-                .once((data) => {
-                    clearTimeout(timeout);
-                    resolve(data || null);
-                });
+    }
+
+    getNodeRef(soul) {
+        const parts = soul.split('/');
+        let ref = this.gun.get(this.appname);
+        parts.forEach(part => {
+            ref = ref.get(part);
         });
+        return ref;
     }
 
     /**
@@ -617,31 +626,91 @@ class HoloSphere {
      * @param {string} tableName - The table name to retrieve data from.
      * @returns {Promise<object|null>} - The parsed data from the table or null if not found.
      */
-    async getAllGlobal(tableName) {
-        return new Promise(async (resolve, reject) => {
-            let output = []
-            let counter = 0
-            this.gun.get(tableName.toString()).once((data, key) => {
-                if (data) {
-                    const maplenght = Object.keys(data).length - 1
-                    this.gun.get(tableName.toString()).map().once(async (itemdata, key) => {
-                        counter += 1
-                        if (itemdata) {
-                            let parsed = await this.parse(itemdata)
-                            output.push(parsed);
-                        }
+    // async getAllGlobal(tableName) {
+    //     return new Promise(async (resolve, reject) => {
+    //         let output = []
+    //         let counter = 0
+    //         this.gun.get(this.appname).get(tableName.toString()).once((data, key) => {
+    //             if (data) {
+    //                 const maplenght = Object.keys(data).length - 1
+    //                 this.gun.get(this.appname).get(tableName.toString()).map().once(async (itemdata, key) => {
+                     
+    //                     counter += 1
+    //                     if (itemdata) {
+    //                         let parsed = await this.parse(itemdata)
+    //                         output.push(parsed);
+    //                         console.log('getAllGlobal: parsed: ', parsed)
+    //                     }
 
-                        if (counter == maplenght) {
-                            resolve(output);
+    //                     if (counter == maplenght) {
+    //                         resolve(output);
+                            
+    //                     }
+    //                 }
+    //                 );
+    //             } else resolve(output)
+    //         })
+    //     }
+    //     )
+    // }
+    async getAllGlobal(lens) {
+        if ( !lens) {
+            console.error('getAll: Missing required parameters:', { lens });
+            return [];
+        }
+
+        const schema = await this.getSchema(lens);
+        if (!schema && this.strict) {
+            console.error('getAll: Schema required in strict mode for lens:', lens);
+            return [];
+        }
+
+        return new Promise((resolve) => {
+            let output = [];
+            let counter = 0;
+
+            this.gun.get(this.appname).get(lens).once((data, key) => {
+                if (!data) {
+                    resolve(output);
+                    return;
+                }
+
+                const mapLength = Object.keys(data).length - 1;
+
+                this.gun.get(this.appname).get(lens).map().once(async (itemdata, key) => {
+                    counter += 1;
+                    if (itemdata) {
+                        try {
+                            const parsed = await this.parse(itemdata);
+                            if (schema) {
+                                const valid = this.validator.validate(schema, parsed);
+                                if (valid) {
+                                    output.push(parsed);
+                                } else if (this.strict) {
+                                    console.warn('Invalid data removed:', key, this.validator.errors);
+                                    await this.delete(holon, lens, key);
+                                } else {
+                                    console.warn('Invalid data found:', key, this.validator.errors);
+                                    output.push(parsed);
+                                }
+                            } else {
+                                output.push(parsed);
+                            }
+                        } catch (error) {
+                            console.error('Error parsing data:', error);
+                            if (this.strict) {
+                                await this.delete(holon, lens, key);
+                            }
                         }
                     }
-                    );
-                } else resolve(output)
-            })
-        }
-        )
-    }
 
+                    if (counter === mapLength) {
+                        resolve(output);
+                    }
+                });
+            });
+        });
+    }
     /**
      * Deletes a specific key from a global table.
      * @param {string} tableName - The table name to delete from.
@@ -658,15 +727,16 @@ class HoloSphere {
      * @returns {Promise<void>}
      */
     async deleteAllGlobal(tableName) {
-
-        return new Promise((resolve) => {
-            this.gun.get(this.appname).get(tableName).map().put(null).once(
-                (data, key) => this.gun.get(this.appname).get(tableName).get(key).put(null)
-            )
-            this.gun.get(this.appname).get(tableName).put({}, ack => {
-                resolve();
-            });
-        });
+       // return new Promise((resolve) => {
+            this.gun.get(this.appname).get(tableName).map().once( (data, key)=> {
+                this.gun.get(this.appname).get(tableName).get(key).put(null)
+            })
+            this.gun.get(this.appname).get(tableName).put(null, ack => {
+                console.log('deleteAllGlobal: ack: ', ack)
+            })
+            //    resolve();
+            //});
+        // });
     }
 
     // ================================ COMPUTE FUNCTIONS ================================
@@ -859,9 +929,10 @@ class HoloSphere {
      * @param {string} lens - The lens to subscribe to.
      * @param {function} callback - The callback to execute on changes.
      */
-    subscribe(holon, lens, callback) {
-        this.gun.get(this.appname).get(holon).get(lens).map().on((data, key) => {
-            callback(data, key)
+    async subscribe(holon, lens, callback) {
+        this.gun.get(this.appname).get(holon).get(lens).map().on(async (data, key) => {
+            if (data)
+            callback( await this.parse(data), key)
         })
     }
 }
