@@ -31,7 +31,7 @@ export default class Expenses {
 
         bot.action(/splitall:(.+)/, async (ctx) => {
             const chatID = utils.getChatId(ctx);
-            const messageID = uti
+            const messageID = utils.getMessageId(ctx);
             const expenseID = ctx.match[1];
             const language = await this.settings.getLanguage(chatID)
             const result = await this.splitAll(chatID, expenseID);
