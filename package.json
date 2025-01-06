@@ -25,7 +25,7 @@
     "ffmpeg-static": "^5.2.0",
     "gun": "^0.2020.1239",
     "h3-js": "^4.1.0",
-    "holosphere": "^1.1.0",
+    "holosphere": "^1.1.1",
     "i18next": "^22.4.9",
     "i18next-http-backend": "^2.1.1",
     "ipfs": "^0.66.0",

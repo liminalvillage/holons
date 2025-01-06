@@ -21,22 +21,23 @@ export default class Expenses {
             const messageID = ctx.callbackQuery.message.message_id;
             const expenseID = ctx.match[1];
             const language = await this.settings.getLanguage(chatID)
-            const result = await this.joinSplit(chatID, ctx.from.username, expenseID);
+            const result = await this.joinSplit(chatID, ctx.from.id, expenseID);
             if (result) {
-                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([{ text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
+                ctx.telegram.editMessageText(chatID, messageID, null, await this.createMessage(result), Markup.inlineKeyboard([{ text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
             } else {
                 ctx.reply(i18next.t('expensejoinfail', { lng: language }));
             }
         });
 
         bot.action(/splitall:(.+)/, async (ctx) => {
-            const chatID = ctx.callbackQuery?.message?.chat?.id
-            const messageID = ctx.callbackQuery.message.message_id;
+            const chatID = utils.getChatId(ctx);
+            const messageID = uti
             const expenseID = ctx.match[1];
             const language = await this.settings.getLanguage(chatID)
-            const result = await this.splitAll(chatID, ctx.from.username, expenseID);
+            const result = await this.splitAll(chatID, expenseID);
             if (result) {
-                ctx.telegram.editMessageText(chatID, messageID, null, this.createMessage(result), Markup.inlineKeyboard([
+                let message = await this.createMessage(result);
+                ctx.telegram.editMessageText(chatID, messageID, null, message, Markup.inlineKeyboard([
                     { text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, 
                     { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${result.id}` }
                 ])).catch(err => console.log(err));
@@ -51,8 +52,8 @@ export default class Expenses {
             const language = await this.settings.getLanguage(chatID)
             if (currency == null || currency.length == 0)
                 return ctx.reply(i18next.t('balanceusage', { lng: language }));
-            const { creditMatrix, userArray } = await this.calculateCredits(chatID, currency);
-            this.ui.getCreditTable(creditMatrix, userArray, chatID).then((path) => {
+            const { creditMatrix, userNames } = await this.calculateCredits(chatID, currency);
+            this.ui.getCreditTable(creditMatrix, userNames, chatID).then((path) => {
                 ctx.replyWithPhoto({ source: fs.createReadStream(path) });
             });
         });
@@ -68,9 +69,9 @@ export default class Expenses {
             return;
         }
         let message = ""//i18next.t('ledgerheader', { lng: language });
-        expenses.forEach(expense => {
-            message += 'id: ' + expense.id + ' \n' + this.createMessage(expense) + '\n\n';
-        });
+        for (const expense of expenses) {
+            message += 'id: ' + expense.id + ' \n' + await this.createMessage(expense) + '\n\n';
+        }
         //split message if too long
         if (message.length > 4096) {
             const messages = message.match(/[\s\S]{1,4096}/g) || [];
@@ -102,8 +103,8 @@ export default class Expenses {
 
         const description = args.slice(2).join(' ');
         // TODO WARNING!!: messageID+1 is a dirty hack to get the id of the reply message as id of the expense. This will break if another message is sent at the same time
-        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.username);
-        ctx.reply(this.createMessage(expense), Markup.inlineKeyboard(
+        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.id);
+        ctx.reply(await this.createMessage(expense), Markup.inlineKeyboard(
             [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
         ));
     };
@@ -128,7 +129,7 @@ export default class Expenses {
 
         const expense = {
             id: messageID,
-            date: Date.now().toString(),
+            date: Date.now(),
             amount,
             currency,
             description,
@@ -140,15 +141,15 @@ export default class Expenses {
         return expense;
     }
 
-    async joinSplit(chatID, username, expenseID) {
+    async joinSplit(chatID, userID, expenseID) {
         let expense = await this.db.get(chatID + '/expenses', expenseID)
 
         if (expense) {
-            if (!expense.splitWith.includes(username)) { //add user to split
-                expense.splitWith.push(username);
+            if (!expense.splitWith.includes(userID)) { //add user to split
+                expense.splitWith.push(userID);
             }
             else {//remove user from split
-                expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != username; });
+                expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != userID; });
             }
 
             await this.db.put(chatID + '/expenses', expense)
@@ -165,23 +166,52 @@ export default class Expenses {
             return;
         }
 
-        let username = ctx.message.text.split(' ').slice(1)[0];
-        if (username == null || username.length == 0) {
+        if (!ctx.message.entities || !ctx.message.entities.length) {
             return ctx.reply(i18next.t('expenseremoveusage', { lng: language }));
         }
 
         let chatID = ctx.chat.id;
         let expenseID = ctx.message.reply_to_message.message_id; 
 
-        //get expense id from the replied message
-        let expense = await this.db.get(chatID + '/expenses', expenseID)
-        if (expense) {
-            expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != username; });
-            await this.db.put(chatID + '/expenses', expense)
-            ctx.telegram.editMessageText(chatID, expenseID, null, this.createMessage(expense), Markup.inlineKeyboard(
-                [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-            )).catch(err => console.log(err))
-            return expense;
+        // Get the mentioned user
+        const entity = ctx.message.entities.find(e => e.type === 'text_mention' || e.type === 'mention');
+        if (!entity) {
+            return ctx.reply(i18next.t('usernotfound', { lng: language }));
+        }
+
+        try {
+            let userId;
+            if (entity.type === 'text_mention' && entity.user) {
+                // User mentioned by first/last name - we have their ID directly
+                userId = entity.user.id;
+            } else if (entity.type === 'mention') {
+                // For username mentions, we need to get the user from our database
+                const username = ctx.message.text.slice(entity.offset + 1, entity.offset + entity.length);
+                const users = await this.db.getAll(chatID + '/users');
+                const user = users.find(u => u.username?.toLowerCase() === username.toLowerCase());
+                if (!user) {
+                    return ctx.reply(i18next.t('usernotfound', { lng: language }));
+                }
+                userId = user.id;
+            }
+
+            const chatMember = await ctx.telegram.getChatMember(chatID, userId);
+            if (!chatMember || !chatMember.user) {
+                return ctx.reply(i18next.t('usernotfound', { lng: language }));
+            }
+
+            let expense = await this.db.get(chatID + '/expenses', expenseID)
+            if (expense) {
+                expense.splitWith = expense.splitWith.filter(value => value != chatMember.user.id);
+                await this.db.put(chatID + '/expenses', expense)
+                ctx.telegram.editMessageText(chatID, expenseID, null, await this.createMessage(expense), Markup.inlineKeyboard(
+                    [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
+                )).catch(err => console.log(err))
+                return expense;
+            }
+        } catch (error) {
+            console.error('Error getting chat member:', error);
+            return ctx.reply(i18next.t('usernotfound', { lng: language }));
         }
         return false;
     }
@@ -189,38 +219,67 @@ export default class Expenses {
     async addToSplit(ctx) {
         const language = await this.settings.getLanguage(ctx.chat.id)
         if (!ctx.message.reply_to_message){
-            ctx.reply('Please reply to the expense message you want to remove a user from');
+            ctx.reply('Please reply to the expense message you want to add a user to');
             return;
-        }
-        let username = ctx.message.text.split(' ').slice(1)[0];
-        if (username == null || username.length == 0) {
-            return ctx.reply(i18next.t('expenseaddusage', { lng: language }));
         }
 
         let chatID = ctx.chat.id;
         let expenseID = ctx.message.reply_to_message.message_id;
-       
 
-        let expense = await this.db.get(chatID + '/expenses', expenseID)
-        if (expense) {
-            if (!expense.splitWith)
-                expense.splitWith = [];
-            if (!expense.splitWith.includes(username))
-                expense.splitWith.push(username);
-            await this.db.put(chatID + '/expenses', expense)
-            ctx.telegram.editMessageText(chatID, expenseID, null, this.createMessage(expense), Markup.inlineKeyboard(
-                [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-            )).catch(err => console.log(err));
-            return expense;
+        // Get the mentioned user
+        const entity = ctx.message.entities.find(e => e.type === 'text_mention' || e.type === 'mention');
+        if (!entity) {
+            return ctx.reply(i18next.t('expenseaddusage', { lng: language }));
+        }
+
+        try {
+            let userId;
+            if (entity.type === 'text_mention' && entity.user) {
+                // User mentioned by first/last name - we have their ID directly
+                userId = entity.user.id;
+            } else if (entity.type === 'mention') {
+                // For username mentions, we need to get the user from our database
+                const username = ctx.message.text.slice(entity.offset + 1, entity.offset + entity.length);
+                const users = await this.db.getAll(chatID + '/users');
+                const user = users.find(u => u.username?.toLowerCase() === username.toLowerCase());
+                if (!user) {
+                    return ctx.reply(i18next.t('usernotfound', { lng: language }));
+                }
+                userId = user.id;
+            }
+
+            const chatMember = await ctx.telegram.getChatMember(chatID, userId);
+            if (!chatMember || !chatMember.user) {
+                return ctx.reply(i18next.t('usernotfound', { lng: language }));
+            }
+
+            let expense = await this.db.get(chatID + '/expenses', expenseID)
+            if (expense) {
+                if (!expense.splitWith)
+                    expense.splitWith = [];
+                if (!expense.splitWith.includes(chatMember.user.id))
+                    expense.splitWith.push(chatMember.user.id);
+                await this.db.put(chatID + '/expenses', expense)
+                ctx.telegram.editMessageText(chatID, expenseID, null, await this.createMessage(expense), Markup.inlineKeyboard(
+                    [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
+                )).catch(err => console.log(err));
+                return expense;
+            }
+        } catch (error) {
+            console.error('Error getting chat member:', error);
+            return ctx.reply(i18next.t('usernotfound', { lng: language }));
         }
         return false;
     }
 
-    async splitAll(chatID, username, expenseID) {
+    async splitAll(chatID, expenseID) {
         let expense = await this.db.get(chatID + '/expenses', expenseID)
+        console.log(expense)
         if (expense) {
             let users = await this.db.getAll(chatID + '/users')
-            let userArray = users.map(user => user.username)
+            console.log(users)
+            let userArray = users.map(user => user.id)
+            console.log(userArray)
             expense.splitWith = userArray;
             await this.db.put(chatID + '/expenses', expense)
             return expense;
@@ -241,7 +300,7 @@ export default class Expenses {
 
         let expenses = await this.db.getAll(chatID + '/expenses')
         let users = await this.db.getAll(chatID + '/users')
-        let userArray = users.map(user => user.username)
+        let userArray = users.map(user => user.id)
         let creditMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
 
         expenses.forEach(expense => {
@@ -259,18 +318,32 @@ export default class Expenses {
                 });
             }
         });
-
-        return { creditMatrix, userArray };
+        let userNames= await Promise.all(userArray.map(user => this.getDisplayName(user)))
+        return { creditMatrix, userNames};
     }
 
-    createMessage(expense) {
+    async createMessage(expense) {
         const amount = expense.amount;
         const currency = expense.currency;
         const description = expense.description;
-        const paidBy = expense.paidBy;
-        const splitWith = expense.splitWith.length > 0 ? expense.splitWith.join(", ") : "";
+        
+        // Get payer's info
+        const paidBy = await this.getDisplayName(expense.paidBy);
+
+        // Get all splitters' info and map to display names
+        const splitNames = await Promise.all(expense.splitWith.map(userId => this.getDisplayName(userId)));
+        
+        const splitWith = splitNames.join(", ");
 
         return i18next.t('expensemessage', { amount, currency, description, paidBy, splitWith });
+    }
+
+    async getDisplayName(userId) {
+        const userInfo = await this.db.get(userId + '/users', userId);
+        if (!userInfo) {
+            return userId.toString();
+        }
+        return utils.getDisplayName(userInfo);
     }
 }
 
