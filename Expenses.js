@@ -21,7 +21,7 @@ export default class Expenses {
             const messageID = ctx.callbackQuery.message.message_id;
             const expenseID = ctx.match[1];
             const language = await this.settings.getLanguage(chatID)
-            const result = await this.joinSplit(chatID, ctx.from.id, expenseID);
+            const result = await this.joinSplit(chatID, ctx.from.username || ctx.from.id, expenseID);
             if (result) {
                 ctx.telegram.editMessageText(chatID, messageID, null, await this.createMessage(result), Markup.inlineKeyboard([{ text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
             } else {
@@ -54,7 +54,10 @@ export default class Expenses {
                 return ctx.reply(i18next.t('balanceusage', { lng: language }));
             const { creditMatrix, userNames } = await this.calculateCredits(chatID, currency);
             this.ui.getCreditTable(creditMatrix, userNames, chatID).then((path) => {
-                ctx.replyWithPhoto({ source: fs.createReadStream(path) });
+                ctx.replyWithPhoto({ source: fs.createReadStream(path) },Markup.inlineKeyboard([
+                    Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+                      `https://dashboard.holons.io/${chatID}/expenses`)
+                  ])).catch(err => console.log(err));
             });
         });
 
@@ -274,12 +277,9 @@ export default class Expenses {
 
     async splitAll(chatID, expenseID) {
         let expense = await this.db.get(chatID + '/expenses', expenseID)
-        console.log(expense)
         if (expense) {
             let users = await this.db.getAll(chatID + '/users')
-            console.log(users)
             let userArray = users.map(user => user.id)
-            console.log(userArray)
             expense.splitWith = userArray;
             await this.db.put(chatID + '/expenses', expense)
             return expense;
