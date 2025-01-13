@@ -16,8 +16,10 @@ export default class Settings {
         this.purposeScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentPurpose = settings.purpose || 'Not set';
-            await ctx.reply(`Current purpose: ${currentPurpose}\n\n✏️ Send a new purpose to change it:`).catch(e => console.log('Error in purpose scene enter:', e));
+            const currentPurpose = settings.purpose || i18next.t('settings_not_set');
+            await ctx.reply(i18next.t('settings_current', { value: currentPurpose }) + '\n\n' + 
+                           i18next.t('settings_send_new', { type: i18next.t('settings_purpose').toLowerCase() }))
+                .catch(e => console.log('Error in purpose scene enter:', e));
         });
         this.purposeScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -55,8 +57,12 @@ export default class Settings {
         this.domainsScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentDomains = settings.domains && settings.domains.length > 0 ? '• ' + settings.domains.join('\n• ') : 'Not set';
-            await ctx.reply(`Current domains:\n${currentDomains}\n\n✏️ Send new domains (one per line or comma-separated) to change them:`).catch(e => console.log('Error in domains scene enter:', e));
+            const currentDomains = settings.domains && settings.domains.length > 0 ? 
+                '• ' + settings.domains.join('\n• ') : 
+                i18next.t('settings_not_set');
+            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentDomains }) + '\n\n' + 
+                           i18next.t('settings_send_new', { type: i18next.t('settings_domains').toLowerCase() }))
+                .catch(e => console.log('Error in domains scene enter:', e));
         });
         this.domainsScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -104,8 +110,12 @@ export default class Settings {
         this.valuesScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentValues = settings.values && settings.values.length > 0 ? '• ' + settings.values.join('\n• ') : 'Not set';
-            await ctx.reply(`Current values:\n${currentValues}\n\n✏️ Send new values (one per line or comma-separated) to change them:`);
+            const currentValues = settings.values && settings.values.length > 0 ? 
+                '• ' + settings.values.join('\n• ') : 
+                i18next.t('settings_not_set');
+            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentValues }) + '\n\n' + 
+                           i18next.t('settings_send_new', { type: i18next.t('settings_values').toLowerCase() }))
+                .catch(e => console.log('Error in values scene enter:', e));
         });
         this.valuesScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -153,8 +163,12 @@ export default class Settings {
         this.rolesScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentRoles = settings.roles && settings.roles.length > 0 ? '• ' + settings.roles.join('\n• ') : 'Not set';
-            await ctx.reply(`Current roles:\n${currentRoles}\n\n✏️ Send new roles (one per line or comma-separated) to change them:`);
+            const currentRoles = settings.roles && settings.roles.length > 0 ? 
+                '• ' + settings.roles.join('\n• ') : 
+                i18next.t('settings_not_set');
+            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentRoles }) + '\n\n' + 
+                           i18next.t('settings_send_new', { type: i18next.t('settings_roles').toLowerCase() }))
+                .catch(e => console.log('Error in roles scene enter:', e));
         });
         this.rolesScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -202,8 +216,10 @@ export default class Settings {
         this.adminScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentAdmin = settings.admin || 'Not set';
-            await ctx.reply(`Current admin: ${currentAdmin}\n\n✏️ Send a new admin username (e.g. @username) to change it:`);
+            const currentAdmin = settings.admin || i18next.t('settings_not_set');
+            await ctx.reply(i18next.t('settings_current', { value: currentAdmin }) + '\n\n' + 
+                           i18next.t('settings_send_new', { type: i18next.t('settings_admin').toLowerCase() }))
+                .catch(e => console.log('Error in admin scene enter:', e));
         });
         this.adminScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -239,8 +255,10 @@ export default class Settings {
         this.hexScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentHex = settings.hex || 'Not set';
-            await ctx.reply(`Current hex: ${currentHex}\n\n✏️ Send a new hex ID to change it:`);
+            const currentHex = settings.hex || i18next.t('settings_not_set');
+            await ctx.reply(i18next.t('settings_current', { value: currentHex }) + '\n\n' + 
+                           i18next.t('settings_send_new', { type: i18next.t('settings_hex').toLowerCase() }))
+                .catch(e => console.log('Error in hex scene enter:', e));
         });
         this.hexScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -664,7 +682,7 @@ export default class Settings {
                     await ctx.reply(
                         "🌟 Welcome to Holons Bot! 🌟\n\n" +
                         "A Holon is a self-organizing entity that is both a whole and a part of a larger whole. This bot helps manage your Holon community by:\n\n" +
-                        "🎯 Purpose & Values:\n" +
+                        "�� Purpose & Values:\n" +
                         "• Define your Holon's purpose\n" +
                         "• Set core values that guide your community\n" +
                         "• Establish domains of accountability\n\n" +
@@ -689,6 +707,25 @@ export default class Settings {
                         "Need help? Click the Support & Feedback button to contact us!"
                     ).catch(e => console.log('Error sending help message:', e));
                     break;
+            }
+        });
+
+        // Add language selection handlers
+        this.bot.action(/language_(.+)/, async (ctx) => {
+            const language = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(chatID);
+            
+            if (['en', 'it', 'es', 'fr'].includes(language)) {
+                settings.language = language;
+                await this.setSettings(settings);
+                
+                // Change i18next language
+                await i18next.changeLanguage(language);
+                
+                // Update the settings menu with new translations
+                await this.showSettingsMenu(ctx, true)
+                    .catch(e => console.log('Error updating settings menu after language change:', e));
             }
         });
 
@@ -822,8 +859,8 @@ export default class Settings {
             ctx.reply('Please specify the language. Example: /setLanguage en')
             return
         }
-        if (language !== 'en' && language !== 'it' && language !== 'fiobbo') {
-            ctx.reply('Please specify "it" or "en". Example: /setLanguage en')
+        if (language !== 'en' && language !== 'it' && language !== 'es' && language !== 'fiobbo') {
+            ctx.reply('Please specify "en", "it", "es", or "fiobbo". Example: /setLanguage en')
             return
         }
 
@@ -1128,41 +1165,41 @@ export default class Settings {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: `🌐 Language: ${settings.language}`, callback_data: 'settings_language' },
-                        { text: `🎨 Theme: ${settings.theme}`, callback_data: 'settings_theme' }
+                        { text: i18next.t('settings_language') + ': ' + settings.language, callback_data: 'settings_language' },
+                        { text: i18next.t('settings_theme') + ': ' + settings.theme, callback_data: 'settings_theme' }
                     ],
                     [
-                        { text: `⭐️ Level: ${settings.level}`, callback_data: 'settings_level' },
-                        { text: `🕒 Timezone: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : 'Not set'}`, callback_data: 'settings_timezone' }
+                        { text: i18next.t('settings_level') + ': ' + settings.level, callback_data: 'settings_level' },
+                        { text: i18next.t('settings_timezone') + ': ' + (settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set')), callback_data: 'settings_timezone' }
                     ],
                     [
-                        { text: `👑 Admin: ${settings.admin || 'Not set'}`, callback_data: 'settings_admin' },
-                        { text: `🎯 Purpose: ${settings.purpose ? '✓' : 'Not set'}`, callback_data: 'settings_purpose' }
+                        { text: i18next.t('settings_admin') + ': ' + (settings.admin || i18next.t('settings_not_set')), callback_data: 'settings_admin' },
+                        { text: i18next.t('settings_purpose') + ': ' + (settings.purpose ? '✓' : i18next.t('settings_not_set')), callback_data: 'settings_purpose' }
                     ],
                     [
-                        { text: `🔍 Domains: ${settings.domains?.length || 0}`, callback_data: 'settings_domains' },
-                        { text: `👥 Roles: ${settings.roles?.length || 0}`, callback_data: 'settings_roles' }
+                        { text: i18next.t('settings_domains') + ': ' + (settings.domains?.length || 0), callback_data: 'settings_domains' },
+                        { text: i18next.t('settings_roles') + ': ' + (settings.roles?.length || 0), callback_data: 'settings_roles' }
                     ],
                     [
-                        { text: `💫 Values: ${settings.values?.length || 0}`, callback_data: 'settings_values' },
-                        { text: `🔷 Hex: ${settings.hex || 'Not set'}`, callback_data: 'settings_hex' }
+                        { text: i18next.t('settings_values') + ': ' + (settings.values?.length || 0), callback_data: 'settings_values' },
+                        { text: i18next.t('settings_hex') + ': ' + (settings.hex || i18next.t('settings_not_set')), callback_data: 'settings_hex' }
                     ],
                     [
-                        { text: '⚖️ Value Equation', callback_data: 'settings_equation' }
+                        { text: i18next.t('settings_equation'), callback_data: 'settings_equation' }
                     ],
                     [
-                        { text: '❓ Help & Guide', callback_data: 'settings_help' },
-                        { text: '💬 Support & Feedback', url: 'https://t.me/RobertoValenti' }
+                        { text: i18next.t('settings_help'), callback_data: 'settings_help' },
+                        { text: i18next.t('settings_support'), url: 'https://t.me/RobertoValenti' }
                     ]
                 ]
             }
         };
 
         if (edit) {
-            return ctx.editMessageText('⚙️ Settings:', menuMarkup)
+            return ctx.editMessageText(i18next.t('settings'), menuMarkup)
                 .catch(e => console.log('Error editing settings menu:', e));
         } else {
-            return ctx.reply('⚙️ Settings:', menuMarkup)
+            return ctx.reply(i18next.t('settings'), menuMarkup)
                 .catch(e => console.log('Error showing settings menu:', e));
         }
     }
@@ -1171,14 +1208,17 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         return {
             inline_keyboard: [
-                [{ text: `Current: ${settings.language}`, callback_data: ' ' }],
-                [{ text: '✏️ Change', callback_data: 'settings_language_select' }],
+                [{ text: i18next.t('settings_current', { value: settings.language }), callback_data: ' ' }],
+                [{ text: i18next.t('settings_change'), callback_data: 'settings_language_select' }],
                 [
-                    { text: 'English', callback_data: 'lang_en' },
-                    { text: 'Italian', callback_data: 'lang_it' },
-                    { text: 'Fiobbo', callback_data: 'lang_fiobbo' }
+                    { text: '🇬🇧 English', callback_data: 'language_en' },
+                    { text: '🇮🇹 Italian', callback_data: 'language_it' }
                 ],
-                [{ text: '« Back', callback_data: 'settings_back' }]
+                [
+                    { text: '🇪🇸 Spanish', callback_data: 'language_es' },
+                    { text: '🇫🇷 French', callback_data: 'language_fr' }
+                ],
+                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
             ]
         };
     }
@@ -1187,13 +1227,13 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         return {
             inline_keyboard: [
-                [{ text: `Current: ${settings.theme}`, callback_data: ' ' }],
-                [{ text: '✏️ Change', callback_data: 'settings_theme_select' }],
+                [{ text: i18next.t('settings_current', { value: settings.theme }), callback_data: ' ' }],
+                [{ text: i18next.t('settings_change'), callback_data: 'settings_theme_select' }],
                 [
-                    { text: 'Light', callback_data: 'theme_light' },
-                    { text: 'Dark', callback_data: 'theme_dark' }
+                    { text: i18next.t('settings_theme_light'), callback_data: 'theme_light' },
+                    { text: i18next.t('settings_theme_dark'), callback_data: 'theme_dark' }
                 ],
-                [{ text: '« Back', callback_data: 'settings_back' }]
+                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
             ]
         };
     }
@@ -1202,14 +1242,14 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         return {
             inline_keyboard: [
-                [{ text: `Current: Level ${settings.level}`, callback_data: ' ' }],
-                [{ text: '✏️ Change', callback_data: 'settings_level_select' }],
+                [{ text: i18next.t('settings_current', { value: 'Level ' + settings.level }), callback_data: ' ' }],
+                [{ text: i18next.t('settings_change'), callback_data: 'settings_level_select' }],
                 [
-                    { text: 'Level 1', callback_data: 'level_1' },
-                    { text: 'Level 2', callback_data: 'level_2' },
-                    { text: 'Level 3', callback_data: 'level_3' }
+                    { text: i18next.t('settings_level_1'), callback_data: 'level_1' },
+                    { text: i18next.t('settings_level_2'), callback_data: 'level_2' },
+                    { text: i18next.t('settings_level_3'), callback_data: 'level_3' }
                 ],
-                [{ text: '« Back', callback_data: 'settings_back' }]
+                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
             ]
         };
     }
