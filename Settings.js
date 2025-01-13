@@ -3,21 +3,295 @@ import fs from 'fs';
 import locales from "./data/locales.json" assert { type: "json" };
 import * as utils from './utilities.js'
 import { Markup } from 'telegraf';
+import { Scenes } from 'telegraf';
 import exp from "constants";
 
 export default class Settings {
     constructor(bot, db) {
         this.db = db
         this.bot = bot
+
+        // Create scenes for text input
+        this.purposeScene = new Scenes.BaseScene('purpose_scene');
+        this.purposeScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            let settings = await this.getSettings(chatID);
+            const currentPurpose = settings.purpose || 'Not set';
+            await ctx.reply(`Current purpose: ${currentPurpose}\n\n✏️ Send a new purpose to change it:`).catch(e => console.log('Error in purpose scene enter:', e));
+        });
+        this.purposeScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            let settings = await this.getSettings(chatID);
+            settings.purpose = ctx.message.text;
+            await this.setSettings(settings);
+            await ctx.scene.leave();
+            
+            // Delete the scene messages
+            try {
+                // Delete the user's input message
+                await ctx.deleteMessage(ctx.message.message_id);
+                // Delete the scene's prompt message
+                await ctx.deleteMessage(ctx.message.message_id - 1);
+                // Delete the original settings message
+                await ctx.deleteMessage(ctx.message.message_id - 2);
+            } catch (e) {
+                console.log('Error deleting messages:', e);
+            }
+            
+            // Show purpose submenu
+            await ctx.reply('Purpose Settings', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `Current: ${settings.purpose || 'Not set'}`, callback_data: ' ' }],
+                        [{ text: '✏️ Change', callback_data: 'settings_purpose_change' }],
+                        [{ text: '« Back', callback_data: 'settings_back' }]
+                    ]
+                }
+            }).catch(e => console.log('Error showing purpose menu:', e));
+        });
+        this.purposeScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in purpose scene message:', e)));
+
+        this.domainsScene = new Scenes.BaseScene('domains_scene');
+        this.domainsScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            let settings = await this.getSettings(chatID);
+            const currentDomains = settings.domains && settings.domains.length > 0 ? '• ' + settings.domains.join('\n• ') : 'Not set';
+            await ctx.reply(`Current domains:\n${currentDomains}\n\n✏️ Send new domains (one per line or comma-separated) to change them:`).catch(e => console.log('Error in domains scene enter:', e));
+        });
+        this.domainsScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            const domains = ctx.message.text
+                .split(/[,\n]/)
+                .map(d => d.trim())
+                .filter(d => d !== '');
+            let settings = await this.getSettings(chatID);
+            settings.domains = domains;
+            await this.setSettings(settings);
+            await ctx.scene.leave();
+            
+            // Delete the scene messages
+            try {
+                await ctx.deleteMessage(ctx.message.message_id);
+                await ctx.deleteMessage(ctx.message.message_id - 1);
+                await ctx.deleteMessage(ctx.message.message_id - 2);
+            } catch (e) {
+                console.log('Error deleting messages:', e);
+            }
+            
+            // Show domains submenu
+            const keyboard = [
+                [{ text: 'Current Domains:', callback_data: ' ' }]
+            ];
+            
+            domains.forEach(domain => {
+                keyboard.push([{ text: `• ${domain}`, callback_data: `domain_${domain}` }]);
+            });
+            
+            if (domains.length === 0) {
+                keyboard.push([{ text: 'No domains set', callback_data: ' ' }]);
+            }
+            
+            keyboard.push([{ text: '✏️ Change', callback_data: 'settings_domains_change' }]);
+            keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
+            
+            await ctx.reply('Domains Settings', {
+                reply_markup: { inline_keyboard: keyboard }
+            }).catch(e => console.log('Error showing domains menu:', e));
+        });
+        this.domainsScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in domains scene message:', e)));
+
+        this.valuesScene = new Scenes.BaseScene('values_scene');
+        this.valuesScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            let settings = await this.getSettings(chatID);
+            const currentValues = settings.values && settings.values.length > 0 ? '• ' + settings.values.join('\n• ') : 'Not set';
+            await ctx.reply(`Current values:\n${currentValues}\n\n✏️ Send new values (one per line or comma-separated) to change them:`);
+        });
+        this.valuesScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            const values = ctx.message.text
+                .split(/[,\n]/)
+                .map(v => v.trim())
+                .filter(v => v !== '');
+            let settings = await this.getSettings(chatID);
+            settings.values = values;
+            await this.setSettings(settings);
+            await ctx.scene.leave();
+            
+            // Delete the scene messages
+            try {
+                await ctx.deleteMessage(ctx.message.message_id);
+                await ctx.deleteMessage(ctx.message.message_id - 1);
+                await ctx.deleteMessage(ctx.message.message_id - 2);
+            } catch (e) {
+                console.log('Error deleting messages:', e);
+            }
+            
+            // Show values submenu
+            const keyboard = [
+                [{ text: 'Current Values:', callback_data: ' ' }]
+            ];
+            
+            values.forEach(value => {
+                keyboard.push([{ text: `• ${value}`, callback_data: `value_${value}` }]);
+            });
+            
+            if (values.length === 0) {
+                keyboard.push([{ text: 'No values set', callback_data: ' ' }]);
+            }
+            
+            keyboard.push([{ text: '✏️ Change', callback_data: 'settings_values_change' }]);
+            keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
+            
+            await ctx.reply('Values Settings', {
+                reply_markup: { inline_keyboard: keyboard }
+            }).catch(e => console.log('Error showing values menu:', e));
+        });
+        this.valuesScene.on('message', ctx => ctx.reply('Please send text only'));
+
+        this.rolesScene = new Scenes.BaseScene('roles_scene');
+        this.rolesScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            let settings = await this.getSettings(chatID);
+            const currentRoles = settings.roles && settings.roles.length > 0 ? '• ' + settings.roles.join('\n• ') : 'Not set';
+            await ctx.reply(`Current roles:\n${currentRoles}\n\n✏️ Send new roles (one per line or comma-separated) to change them:`);
+        });
+        this.rolesScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            const roles = ctx.message.text
+                .split(/[,\n]/)
+                .map(r => r.trim())
+                .filter(r => r !== '');
+            let settings = await this.getSettings(chatID);
+            settings.roles = roles;
+            await this.setSettings(settings);
+            await ctx.scene.leave();
+            
+            // Delete the scene messages
+            try {
+                await ctx.deleteMessage(ctx.message.message_id);
+                await ctx.deleteMessage(ctx.message.message_id - 1);
+                await ctx.deleteMessage(ctx.message.message_id - 2);
+            } catch (e) {
+                console.log('Error deleting messages:', e);
+            }
+            
+            // Show roles submenu
+            const keyboard = [
+                [{ text: 'Current Roles:', callback_data: ' ' }]
+            ];
+            
+            roles.forEach(role => {
+                keyboard.push([{ text: `• ${role}`, callback_data: `role_${role}` }]);
+            });
+            
+            if (roles.length === 0) {
+                keyboard.push([{ text: 'No roles set', callback_data: ' ' }]);
+            }
+            
+            keyboard.push([{ text: '✏️ Change', callback_data: 'settings_roles_change' }]);
+            keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
+            
+            await ctx.reply('Roles Settings', {
+                reply_markup: { inline_keyboard: keyboard }
+            }).catch(e => console.log('Error showing roles menu:', e));
+        });
+        this.rolesScene.on('message', ctx => ctx.reply('Please send text only'));
+
+        this.adminScene = new Scenes.BaseScene('admin_scene');
+        this.adminScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            let settings = await this.getSettings(chatID);
+            const currentAdmin = settings.admin || 'Not set';
+            await ctx.reply(`Current admin: ${currentAdmin}\n\n✏️ Send a new admin username (e.g. @username) to change it:`);
+        });
+        this.adminScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            const admin = ctx.message.text.trim();
+            let settings = await this.getSettings(chatID);
+            settings.admin = admin;
+            await this.setSettings(settings);
+            await ctx.scene.leave();
+            
+            // Delete the scene messages
+            try {
+                await ctx.deleteMessage(ctx.message.message_id);
+                await ctx.deleteMessage(ctx.message.message_id - 1);
+                await ctx.deleteMessage(ctx.message.message_id - 2);
+            } catch (e) {
+                console.log('Error deleting messages:', e);
+            }
+            
+            // Show admin submenu
+            await ctx.reply('Admin Settings', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `Current: ${admin || 'Not set'}`, callback_data: ' ' }],
+                        [{ text: '✏️ Change', callback_data: 'settings_admin_change' }],
+                        [{ text: '« Back', callback_data: 'settings_back' }]
+                    ]
+                }
+            }).catch(e => console.log('Error showing admin menu:', e));
+        });
+        this.adminScene.on('message', ctx => ctx.reply('Please send text only'));
+
+        this.hexScene = new Scenes.BaseScene('hex_scene');
+        this.hexScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            let settings = await this.getSettings(chatID);
+            const currentHex = settings.hex || 'Not set';
+            await ctx.reply(`Current hex: ${currentHex}\n\n✏️ Send a new hex ID to change it:`);
+        });
+        this.hexScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            const hex = ctx.message.text.trim();
+            let settings = await this.getSettings(chatID);
+            settings.hex = hex;
+            await this.setSettings(settings);
+            await ctx.scene.leave();
+            
+            // Delete the scene messages
+            try {
+                await ctx.deleteMessage(ctx.message.message_id);
+                await ctx.deleteMessage(ctx.message.message_id - 1);
+                await ctx.deleteMessage(ctx.message.message_id - 2);
+            } catch (e) {
+                console.log('Error deleting messages:', e);
+            }
+            
+            // Show hex submenu
+            await ctx.reply('Hex Settings', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `Current: ${hex || 'Not set'}`, callback_data: ' ' }],
+                        [{ text: '✏️ Change', callback_data: 'settings_hex_change' }],
+                        [{ text: '« Back', callback_data: 'settings_back' }]
+                    ]
+                }
+            }).catch(e => console.log('Error showing hex menu:', e));
+        });
+        this.hexScene.on('message', ctx => ctx.reply('Please send text only'));
+
+        // Register scenes
+        const stage = new Scenes.Stage([
+            this.purposeScene,
+            this.domainsScene,
+            this.valuesScene,
+            this.rolesScene,
+            this.adminScene,
+            this.hexScene
+        ]);
+        this.bot.use(stage.middleware());
+
         // ================= ADMIN ===========================
 
-        this.bot.command('getSettings', async (ctx) => {
+        this.bot.command('getsettings', async (ctx) => {
             let settings = await this.getSettings(utils.getChatId(ctx))
 
             ctx.reply(JSON.stringify(settings))
         })
 
-        this.bot.command(['getChatNames'], async (ctx) => {
+        this.bot.command(['getchatnames'], async (ctx) => {
             let chats = ctx.message.text.split(',')
             let chatnames = ''
             for (let i = 0; i < chats.length; i++) {
@@ -73,17 +347,17 @@ export default class Settings {
         }
         )
 
-        this.bot.command('setLanguage', async (ctx) => {
+        this.bot.command('setlanguage', async (ctx) => {
             if (utils.isAdmin(ctx)) await this.setLanguage(ctx)
             else ctx.reply('Only a chat admin can perform this action')
         })
 
-        this.bot.command('setTheme', async (ctx) => {
+        this.bot.command('settheme', async (ctx) => {
             if (utils.isAdmin(ctx)) this.setTheme(ctx)
             else ctx.reply('Only a chat admin can perform this action')
         })
 
-        this.bot.command('setAdmin', async (ctx) => {
+        this.bot.command('setadmin', async (ctx) => {
             if (utils.isAdmin(ctx)) await this.setAdmin(ctx)
             else ctx.reply('Only a chat admin can perform this action')
         })
@@ -95,50 +369,328 @@ export default class Settings {
             } else {
                 ctx.reply('Only a chat admin can perform this action')
             }
-
         })
 
-        this.bot.command('setHex', async (ctx) => ctx.reply("New hex: " + await this.setHex(ctx)))
-        this.bot.command('getHex', async (ctx) => ctx.reply("Current hex: " + await this.getHex(ctx)))
-        this.bot.command('getHexContent', async (ctx) => ctx.reply(await this.getHexContent(ctx)))
+        this.bot.command('sethex', async (ctx) => ctx.reply("New hex: " + await this.setHex(ctx)))
+        this.bot.command('gethex', async (ctx) => ctx.reply("Current hex: " + await this.getHex(ctx)))
+        this.bot.command('gethexcontent', async (ctx) => ctx.reply(await this.getHexContent(ctx)))
 
         this.bot.command('setroles', async (ctx) => ctx.reply("New roles: " + await this.setRoles(ctx)))
         this.bot.command('getroles', async (ctx) => { let roles = await this.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
 
-        this.bot.command('setvalues', async (ctx) => ctx.reply("New values: " + await this.setValues(utils.getChatId(ctx), utils.getParameters(ctx))))
-        this.bot.command('getvalues', async (ctx) => { let values = await this.getValues(utils.getChatId(ctx)); ctx.reply(values ? values : 'No values specified') })
+        this.bot.command('setvalues', async (ctx) => {
+            if (utils.isAdmin(ctx)) {
+                await this.setValues(ctx);
+            } else {
+                ctx.reply('Only a chat admin can perform this action');
+            }
+        });
 
-        this.bot.command('whitelist', async (ctx) => {
-            let settings = await this.getSettings(utils.getChatId(ctx))[0]
-            settings.whitelisted = true
-            this.db.put(utils.getChatId(ctx) + '/settings', settings)
-        })
+        this.bot.command('getvalues', async (ctx) => {
+            let settings = await this.getSettings(utils.getChatId(ctx));
+            ctx.reply('Current values:\n• ' + settings.values.join('\n• '));
+        });
 
-        this.bot.action(/increment_(.+)/, async (ctx) => {
-            const callbackData = ctx.callbackQuery.data;
-            let chatID = ctx.callbackQuery.message.chat.id;
-            let weights = await this.getValueEquation(chatID)
-            const weightName = callbackData.substring(10);
-            weights[weightName] = parseInt(weights[weightName]) + 1;
-            // Save the updated weights back to your database
-            await this.setValueEquation(chatID, weights);
+        this.bot.command('setpurpose', async (ctx) => {
+            if (utils.isAdmin(ctx)) {
+                await this.setPurpose(ctx);
+            } else {
+                ctx.reply('Only a chat admin can perform this action');
+            }
+        });
 
-            // Update the message with the new inline keyboard
-            await ctx.editMessageText('Update weights:', this.equationInlineKeyboard(weights));
-        })
+        this.bot.command('setdomains', async (ctx) => {
+            if (utils.isAdmin(ctx)) {
+                const chatID = ctx.message.chat.id;
+                const text = ctx.message.text.substring('/setDomains'.length).trim();
+                
+                if (!text) {
+                    ctx.reply('Please specify the domains, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setDomains Managing community resources, Coordinating events, Maintaining channels\n\n2. Using newlines:\n/setDomains\nManaging community resources\nCoordinating events\nMaintaining channels');
+                    return;
+                }
 
-        this.bot.action(/decrement_(.+)/, async (ctx) => {
-            const callbackData = ctx.callbackQuery.data;
-            let chatID = ctx.callbackQuery.message.chat.id;
-            let weights = await this.getValueEquation(chatID)
-            const weightName = callbackData.substring(10);
-            weights[weightName] = parseInt(weights[weightName]) - 1;
-            // Save the updated weights back to your database
-            await this.setValueEquation(chatID, weights);
+                // Split by both newlines and commas
+                const domains = text
+                    .split(/[,\n]/)                    // Split by comma or newline
+                    .map(d => d.trim())                // Trim whitespace
+                    .filter(d => d !== '');            // Remove empty entries
 
-            // Update the message with the new inline keyboard
-            await ctx.editMessageText('Update weights:', this.equationInlineKeyboard(weights)).catch((e) => { console.log(e) });
-        })
+                let settings = await this.getSettings(chatID);
+                settings.domains = domains;
+                await this.setSettings(settings);
+                ctx.reply('Domains set to:\n• ' + settings.domains.join('\n• '));
+            } else {
+                ctx.reply('Only admins can set the domains');
+            }
+        });
+
+        // Handle timezone region selection
+        this.bot.action(/timezone_region_(.+)/, async (ctx) => {
+            const region = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            await ctx.editMessageText('Select timezone:', {
+                reply_markup: await this.getTimezoneKeyboard(chatID, region)
+            }).catch(e => console.log('Error in timezone region selection:', e));
+        });
+
+        // Handle timezone selection
+        this.bot.action(/timezone_set_(.+)/, async (ctx) => {
+            const timezone = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(chatID);
+            settings.timezone = timezone;
+            await this.setSettings(settings);
+            await ctx.editMessageText('Timezone set to: ' + timezone.split('/')[1].replace('_', ' '), {
+                reply_markup: await this.getTimezoneKeyboard(chatID)
+            }).catch(e => console.log('Error in timezone setting:', e));
+        });
+
+        // Add back the settings command handler
+        this.bot.command('settings', async (ctx) => {
+            if (utils.isAdmin(ctx)) {
+                await this.showSettingsMenu(ctx, false)
+                    .catch(e => console.log('Error in settings command:', e));
+            } else {
+                ctx.reply('Only a chat admin can perform this action')
+                    .catch(e => console.log('Error in settings admin check:', e));
+            }
+        });
+
+        // Handle settings menu callbacks
+        this.bot.action(/settings_(.+)/, async (ctx) => {
+            const action = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(chatID);
+            
+            switch(action) {
+                case 'language':
+                    await ctx.editMessageText('Select language:', {
+                        reply_markup: await this.getLanguageKeyboard(chatID)
+                    }).catch(e => console.log('Error in language menu:', e));
+                    break;
+                case 'theme':
+                    await ctx.editMessageText('Select theme:', {
+                        reply_markup: await this.getThemeKeyboard(chatID)
+                    }).catch(e => console.log('Error in theme menu:', e));
+                    break;
+                case 'level':
+                    await ctx.editMessageText('Select level:', {
+                        reply_markup: await this.getLevelKeyboard(chatID)
+                    }).catch(e => console.log('Error in level menu:', e));
+                    break;
+                case 'admin':
+                    if (utils.isAdmin(ctx)) {
+                        const currentAdmin = settings.admin || 'Not set';
+                        await ctx.editMessageText('Admin Settings', {
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: `Current: ${currentAdmin}`, callback_data: ' ' }],
+                                    [{ text: '✏️ Change', callback_data: 'settings_admin_change' }],
+                                    [{ text: '« Back', callback_data: 'settings_back' }]
+                                ]
+                            }
+                        });
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'admin_change':
+                    if (utils.isAdmin(ctx)) {
+                        await ctx.scene.enter('admin_scene');
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'roles':
+                    if (utils.isAdmin(ctx)) {
+                        const currentRoles = settings.roles || [];
+                        const keyboard = [
+                            [{ text: 'Current Roles:', callback_data: ' ' }]
+                        ];
+                        
+                        // Add each role as a button
+                        currentRoles.forEach(role => {
+                            keyboard.push([{ text: `• ${role}`, callback_data: `role_${role}` }]);
+                        });
+                        
+                        if (currentRoles.length === 0) {
+                            keyboard.push([{ text: 'No roles set', callback_data: ' ' }]);
+                        }
+                        
+                        keyboard.push([{ text: '✏️ Change', callback_data: 'settings_roles_change' }]);
+                        keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
+                        
+                        await ctx.editMessageText('Roles Settings', {
+                            reply_markup: { inline_keyboard: keyboard }
+                        });
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'roles_change':
+                    if (utils.isAdmin(ctx)) {
+                        await ctx.scene.enter('roles_scene');
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'values':
+                    if (utils.isAdmin(ctx)) {
+                        const currentValues = settings.values || [];
+                        const keyboard = [
+                            [{ text: 'Current Values:', callback_data: ' ' }]
+                        ];
+                        
+                        // Add each value as a button
+                        currentValues.forEach(value => {
+                            keyboard.push([{ text: `• ${value}`, callback_data: `value_${value}` }]);
+                        });
+                        
+                        if (currentValues.length === 0) {
+                            keyboard.push([{ text: 'No values set', callback_data: ' ' }]);
+                        }
+                        
+                        keyboard.push([{ text: '✏️ Change', callback_data: 'settings_values_change' }]);
+                        keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
+                        
+                        await ctx.editMessageText('Values Settings', {
+                            reply_markup: { inline_keyboard: keyboard }
+                        });
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'values_change':
+                    if (utils.isAdmin(ctx)) {
+                        await ctx.scene.enter('values_scene');
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'hex':
+                    if (utils.isAdmin(ctx)) {
+                        const currentHex = settings.hex || 'Not set';
+                        await ctx.editMessageText('Hex Settings', {
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: `Current: ${currentHex}`, callback_data: ' ' }],
+                                    [{ text: '✏️ Change', callback_data: 'settings_hex_change' }],
+                                    [{ text: '« Back', callback_data: 'settings_back' }]
+                                ]
+                            }
+                        });
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'hex_change':
+                    if (utils.isAdmin(ctx)) {
+                        await ctx.scene.enter('hex_scene');
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'purpose':
+                    if (utils.isAdmin(ctx)) {
+                        const currentPurpose = settings.purpose || 'Not set';
+                        await ctx.editMessageText('Purpose Settings', {
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: `Current: ${currentPurpose}`, callback_data: ' ' }],
+                                    [{ text: '✏️ Change', callback_data: 'settings_purpose_change' }],
+                                    [{ text: '« Back', callback_data: 'settings_back' }]
+                                ]
+                            }
+                        });
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'purpose_change':
+                    if (utils.isAdmin(ctx)) {
+                        await ctx.scene.enter('purpose_scene');
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'domains':
+                    if (utils.isAdmin(ctx)) {
+                        const currentDomains = settings.domains || [];
+                        const keyboard = [
+                            [{ text: 'Current Domains:', callback_data: ' ' }]
+                        ];
+                        
+                        // Add each domain as a button
+                        currentDomains.forEach(domain => {
+                            keyboard.push([{ text: `• ${domain}`, callback_data: `domain_${domain}` }]);
+                        });
+                        
+                        if (currentDomains.length === 0) {
+                            keyboard.push([{ text: 'No domains set', callback_data: ' ' }]);
+                        }
+                        
+                        keyboard.push([{ text: '✏️ Change', callback_data: 'settings_domains_change' }]);
+                        keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
+                        
+                        await ctx.editMessageText('Domains Settings', {
+                            reply_markup: { inline_keyboard: keyboard }
+                        });
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'domains_change':
+                    if (utils.isAdmin(ctx)) {
+                        await ctx.scene.enter('domains_scene');
+                    } else {
+                        ctx.reply('Only a chat admin can perform this action');
+                    }
+                    break;
+                case 'timezone':
+                    await ctx.editMessageText('Select region:', {
+                        reply_markup: await this.getTimezoneKeyboard(chatID)
+                    }).catch(e => console.log('Error in timezone menu:', e));
+                    break;
+                case 'equation':
+                    let weights = await this.getValueEquation(chatID);
+                    await ctx.editMessageText('Value Equation:', {
+                        reply_markup: this.equationInlineKeyboard(weights)
+                    });
+                    break;
+                case 'back':
+                    await this.showSettingsMenu(ctx, true);
+                    break;
+                case 'help':
+                    await ctx.reply(
+                        "🌟 Welcome to Holons Bot! 🌟\n\n" +
+                        "A Holon is a self-organizing entity that is both a whole and a part of a larger whole. This bot helps manage your Holon community by:\n\n" +
+                        "🎯 Purpose & Values:\n" +
+                        "• Define your Holon's purpose\n" +
+                        "• Set core values that guide your community\n" +
+                        "• Establish domains of accountability\n\n" +
+                        "👥 Roles & Responsibilities:\n" +
+                        "• Assign roles to members\n" +
+                        "• Track contributions and participation\n" +
+                        "• Manage administrative access\n\n" +
+                        "⚖️ Value System:\n" +
+                        "• Configure value equation weights\n" +
+                        "• Track member contributions\n" +
+                        "• Balance giving and receiving\n\n" +
+                        "🔗 Integration:\n" +
+                        "• Connect with other Holons via Hex IDs\n" +
+                        "• Customize language and theme\n" +
+                        "• Set your timezone for coordination\n\n" +
+                        "To get started:\n" +
+                        "1. Set an admin using the Admin setting\n" +
+                        "2. Define your Holon's purpose\n" +
+                        "3. Add your core values\n" +
+                        "4. Define accountability domains\n" +
+                        "5. Configure roles as needed\n\n" +
+                        "Need help? Click the Support & Feedback button to contact us!"
+                    ).catch(e => console.log('Error sending help message:', e));
+                    break;
+            }
+        });
 
     }
 
@@ -173,65 +725,48 @@ export default class Settings {
 
     // TODO: move to utilities or UI
     equationInlineKeyboard(weights) {
-        return Markup.inlineKeyboard([
+        const keyboard = [
+            [{ text: 'Current Value Equation Weights:', callback_data: ' ' }],
+            [{ text: '✏️ Change', callback_data: 'settings_equation_change' }],
             [
-                Markup.button.callback('Initiated:', 'null'),
-                Markup.button.callback('<', 'decrement_initiated'),
-                Markup.button.callback(weights.initiated, 'null'),
-                Markup.button.callback('>', 'increment_initiated')
+                { text: 'Initiated:', callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_initiated' },
+                { text: weights.initiated.toString(), callback_data: 'null' },
+                { text: '>', callback_data: 'increment_initiated' }
             ],
             [
-                Markup.button.callback('Completed:', 'null'),
-                Markup.button.callback('<', 'decrement_completed'),
-                Markup.button.callback(weights.completed, 'null'),
-                Markup.button.callback('>', 'increment_completed')
+                { text: 'Completed:', callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_completed' },
+                { text: weights.completed.toString(), callback_data: 'null' },
+                { text: '>', callback_data: 'increment_completed' }
             ],
             [
-                Markup.button.callback('Sent:', 'null'),
-                Markup.button.callback('<', 'decrement_sent'),
-                Markup.button.callback(weights.sent, 'null'),
-                Markup.button.callback('>', 'increment_sent')
+                { text: 'Sent:', callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_sent' },
+                { text: weights.sent.toString(), callback_data: 'null' },
+                { text: '>', callback_data: 'increment_sent' }
             ],
             [
-                Markup.button.callback('Received:', 'null'),
-                Markup.button.callback('<', 'decrement_received'),
-                Markup.button.callback(weights.received, 'null'),
-                Markup.button.callback('>', 'increment_received')
+                { text: 'Received:', callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_received' },
+                { text: weights.received.toString(), callback_data: 'null' },
+                { text: '>', callback_data: 'increment_received' }
             ],
             [
-                Markup.button.callback('Hours:', 'null'),
-                Markup.button.callback('<', 'decrement_hours'),
-                Markup.button.callback(weights.hours, 'null'),
-                Markup.button.callback('>', 'increment_hours')
-            ],
-            // [
-            //     Markup.button.callback('Collaboration:', 'null'),
-            //     Markup.button.callback('<', 'decrement_collaboration'),
-            //     Markup.button.callback(weights.collaboration, 'null'),
-            //     Markup.button.callback('>', 'increment_collaboration')
-            // ],
-            // [
-            //     Markup.button.callback('Wants:', 'null'),
-            //     Markup.button.callback('<', 'decrement_wants'),
-            //     Markup.button.callback(weights.wants, 'null'),
-            //     Markup.button.callback('>', 'increment_wants')
-            // ],
-            // [
-            //     Markup.button.callback('Offers:', 'null'),
-            //     Markup.button.callback('<', 'decrement_offers'),
-            //     Markup.button.callback(weights.offers, 'null'),
-            //     Markup.button.callback('>', 'increment_offers')
-            // ],
-            [
-                Markup.button.callback('Money:', 'null'),
-                Markup.button.callback('<', 'decrement_money'),
-                Markup.button.callback(weights.money, 'null'),
-                Markup.button.callback('>', 'increment_money')
+                { text: 'Hours:', callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_hours' },
+                { text: weights.hours.toString(), callback_data: 'null' },
+                { text: '>', callback_data: 'increment_hours' }
             ],
             [
-                Markup.button.callback('Done', 'removekeyboard'),
-            ]
-        ]);
+                { text: 'Money:', callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_money' },
+                { text: weights.money.toString(), callback_data: 'null' },
+                { text: '>', callback_data: 'increment_money' }
+            ],
+            [{ text: '« Back', callback_data: 'settings_back' }]
+        ];
+        return { inline_keyboard: keyboard };
     }
 
     getDefaultSettings(chatID, chatName) {
@@ -248,8 +783,9 @@ export default class Settings {
             admin: '',
             roles: [],
             values: [],
-            valueEquation:
-            {
+            purpose: '',
+            domains: [],
+            valueEquation: {
                 initiated: 1,
                 completed: 1,
                 sent: 1,
@@ -494,20 +1030,34 @@ export default class Settings {
         return settings.roles
     }
 
-    async setValues(chatID, values) {
+    async setValues(ctx) {
+        if (utils.isAdmin(ctx)) {
+            const chatID = ctx.message.chat.id;
+            const text = ctx.message.text.substring('/setValues'.length).trim();
+            
+            if (!text) {
+                ctx.reply('Please specify the values, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setValues Collaboration, Communication, Pro-activity\n\n2. Using newlines:\n/setValues\nCollaboration\nCommunication\nPro-activity');
+                return;
+            }
 
-        if (values === undefined || values === null || values === '') {
-            return ('Please specify the values. Example: /setValues collaboration communication pro-activity')
+            // Split by both newlines and commas
+            const values = text
+                .split(/[,\n]/)                    // Split by comma or newline
+                .map(v => v.trim())                // Trim whitespace
+                .filter(v => v !== '');            // Remove empty entries
+
+            let settings = await this.getSettings(chatID);
+            settings.values = values;
+            await this.setSettings(settings);
+            ctx.reply('Values set to:\n• ' + settings.values.join('\n• ')).catch(e => console.log('Error in setValues reply:', e));
+        } else {
+            ctx.reply('Only admins can set the values').catch(e => console.log('Error in setValues admin check:', e));
         }
-        let settings = await this.getSettings(chatID)
-        settings.values = values.split(' ')
-        this.db.put(chatID + '/settings', settings)
-        return settings.values
     }
 
     async getValues(chatID) {
-        let settings = await this.getSettings(chatID)
-        return settings.values
+        let settings = await this.getSettings(chatID);
+        return settings.values;
     }
 
     async getSettings(chatID) {
@@ -516,8 +1066,25 @@ export default class Settings {
             let chatName = await utils.getChatName(this.bot, chatID)
             settings = this.getDefaultSettings(chatID, chatName)
             await this.db.put(chatID + '/settings', settings)
+        } else {
+            // Ensure all required fields exist by merging with default settings
+            const defaultSettings = this.getDefaultSettings(chatID, settings.name || 'unknown')
+            settings = {
+                ...defaultSettings,  // Start with all default values
+                ...settings,         // Override with existing settings
+                // Ensure array properties exist
+                roles: settings.roles || defaultSettings.roles,
+                values: settings.values || defaultSettings.values,
+                domains: settings.domains || defaultSettings.domains,
+                // Ensure object properties exist
+                valueEquation: {
+                    ...defaultSettings.valueEquation,
+                    ...(settings.valueEquation || {})
+                }
+            }
+            // Save the updated settings with any missing fields
+            await this.db.put(chatID + '/settings', settings)
         }
-        //
         return settings
     }
 
@@ -552,4 +1119,159 @@ export default class Settings {
     //         [{ text: 'Roles', callback_data: 'roles' }]
     //     ]
     // }
+
+    async showSettingsMenu(ctx, edit = false) {
+        const chatID = ctx.chat?.id || ctx.callbackQuery.message.chat.id;
+        let settings = await this.getSettings(chatID);
+        
+        const menuMarkup = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { text: `🌐 Language: ${settings.language}`, callback_data: 'settings_language' },
+                        { text: `🎨 Theme: ${settings.theme}`, callback_data: 'settings_theme' }
+                    ],
+                    [
+                        { text: `⭐️ Level: ${settings.level}`, callback_data: 'settings_level' },
+                        { text: `🕒 Timezone: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : 'Not set'}`, callback_data: 'settings_timezone' }
+                    ],
+                    [
+                        { text: `👑 Admin: ${settings.admin || 'Not set'}`, callback_data: 'settings_admin' },
+                        { text: `🎯 Purpose: ${settings.purpose ? '✓' : 'Not set'}`, callback_data: 'settings_purpose' }
+                    ],
+                    [
+                        { text: `🔍 Domains: ${settings.domains?.length || 0}`, callback_data: 'settings_domains' },
+                        { text: `👥 Roles: ${settings.roles?.length || 0}`, callback_data: 'settings_roles' }
+                    ],
+                    [
+                        { text: `💫 Values: ${settings.values?.length || 0}`, callback_data: 'settings_values' },
+                        { text: `🔷 Hex: ${settings.hex || 'Not set'}`, callback_data: 'settings_hex' }
+                    ],
+                    [
+                        { text: '⚖️ Value Equation', callback_data: 'settings_equation' }
+                    ],
+                    [
+                        { text: '❓ Help & Guide', callback_data: 'settings_help' },
+                        { text: '💬 Support & Feedback', url: 'https://t.me/RobertoValenti' }
+                    ]
+                ]
+            }
+        };
+
+        if (edit) {
+            return ctx.editMessageText('⚙️ Settings:', menuMarkup)
+                .catch(e => console.log('Error editing settings menu:', e));
+        } else {
+            return ctx.reply('⚙️ Settings:', menuMarkup)
+                .catch(e => console.log('Error showing settings menu:', e));
+        }
+    }
+
+    async getLanguageKeyboard(chatID) {
+        let settings = await this.getSettings(chatID);
+        return {
+            inline_keyboard: [
+                [{ text: `Current: ${settings.language}`, callback_data: ' ' }],
+                [{ text: '✏️ Change', callback_data: 'settings_language_select' }],
+                [
+                    { text: 'English', callback_data: 'lang_en' },
+                    { text: 'Italian', callback_data: 'lang_it' },
+                    { text: 'Fiobbo', callback_data: 'lang_fiobbo' }
+                ],
+                [{ text: '« Back', callback_data: 'settings_back' }]
+            ]
+        };
+    }
+
+    async getThemeKeyboard(chatID) {
+        let settings = await this.getSettings(chatID);
+        return {
+            inline_keyboard: [
+                [{ text: `Current: ${settings.theme}`, callback_data: ' ' }],
+                [{ text: '✏️ Change', callback_data: 'settings_theme_select' }],
+                [
+                    { text: 'Light', callback_data: 'theme_light' },
+                    { text: 'Dark', callback_data: 'theme_dark' }
+                ],
+                [{ text: '« Back', callback_data: 'settings_back' }]
+            ]
+        };
+    }
+
+    async getLevelKeyboard(chatID) {
+        let settings = await this.getSettings(chatID);
+        return {
+            inline_keyboard: [
+                [{ text: `Current: Level ${settings.level}`, callback_data: ' ' }],
+                [{ text: '✏️ Change', callback_data: 'settings_level_select' }],
+                [
+                    { text: 'Level 1', callback_data: 'level_1' },
+                    { text: 'Level 2', callback_data: 'level_2' },
+                    { text: 'Level 3', callback_data: 'level_3' }
+                ],
+                [{ text: '« Back', callback_data: 'settings_back' }]
+            ]
+        };
+    }
+
+    async getTimezoneKeyboard(chatID, region = null) {
+        const timezones = {
+            'Europe': [
+                'Europe/London', 'Europe/Paris', 'Europe/Berlin', 
+                'Europe/Rome', 'Europe/Madrid', 'Europe/Moscow'
+            ],
+            'Americas': [
+                'America/New_York', 'America/Chicago', 'America/Denver',
+                'America/Los_Angeles', 'America/Toronto', 'America/Sao_Paulo'
+            ],
+            'Asia/Pacific': [
+                'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Singapore',
+                'Asia/Dubai', 'Australia/Sydney', 'Pacific/Auckland'
+            ]
+        };
+
+        let settings = await this.getSettings(chatID);
+        const currentTimezone = settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : 'Not set';
+
+        if (!region) {
+            // Show regions
+            return {
+                inline_keyboard: [
+                    [{ text: `Current: ${currentTimezone}`, callback_data: ' ' }],
+                    [{ text: '✏️ Change', callback_data: 'settings_timezone_select' }],
+                    [{ text: 'Europe', callback_data: 'timezone_region_Europe' }],
+                    [{ text: 'Americas', callback_data: 'timezone_region_Americas' }],
+                    [{ text: 'Asia/Pacific', callback_data: 'timezone_region_Asia/Pacific' }],
+                    [{ text: '« Back', callback_data: 'settings_back' }]
+                ]
+            };
+        } else {
+            // Show timezones for selected region
+            const keyboard = [
+                [{ text: `Current: ${currentTimezone}`, callback_data: ' ' }],
+                [{ text: '✏️ Change', callback_data: 'settings_timezone_select' }]
+            ];
+            for (let i = 0; i < timezones[region].length; i += 2) {
+                const row = [];
+                row.push({ 
+                    text: timezones[region][i].split('/')[1].replace('_', ' '), 
+                    callback_data: 'timezone_set_' + timezones[region][i] 
+                });
+                if (i + 1 < timezones[region].length) {
+                    row.push({ 
+                        text: timezones[region][i + 1].split('/')[1].replace('_', ' '), 
+                        callback_data: 'timezone_set_' + timezones[region][i + 1] 
+                    });
+                }
+                keyboard.push(row);
+            }
+            keyboard.push([{ text: '« Back to Regions', callback_data: 'settings_timezone' }]);
+            return { inline_keyboard: keyboard };
+        }
+    }
+
+    async getTimezone(chatID) {
+        let settings = await this.getSettings(chatID);
+        return settings.timezone || 'Not set';
+    }
 }
