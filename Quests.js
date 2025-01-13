@@ -48,8 +48,6 @@ export default class Quests {
         this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => this.quest('offer', ctx))
 
-        //this.bot.command('lista', async (ctx) => this.list(ctx))
-
         // QUEST ACTIONS ====================================================
 
         this.bot.action(/join_quest_(.+)/, (ctx) => this.join(ctx));
@@ -58,8 +56,10 @@ export default class Quests {
         this.bot.action(/cancel_quest_(.+)/, (ctx) => this.cancel(ctx));
         this.bot.action(/complete_quest_(.+)/, (ctx) => this.complete(ctx));
         this.bot.action(/stop_quest_(.+)/, (ctx) => this.stop(ctx));
-
-        //--------------------------------------------------------------------
+        this.bot.action(/more_actions_(.+)/, (ctx) => this.showMoreActions(ctx));
+        this.bot.action(/less_actions_(.+)/, (ctx) => this.hideMoreActions(ctx));
+        this.bot.action(/publish_quest_(.+)/, (ctx) => this.publish(ctx));
+        this.bot.action(/cast_quest_(.+)/, (ctx) => this.cast(ctx));
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
@@ -804,6 +804,300 @@ export default class Quests {
         const match = message.text.match(/ID: ([a-zA-Z0-9-]+)/);
         return match ? match[1] : null;
     }
+
+    // Add this new method to handle showing more actions
+    async showMoreActions(ctx) {
+        console.log("MORE ACTIONS");
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+        
+        const language = await this.settings.getLanguage(chatID)
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        
+        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        
+        // Create expanded markup with all buttons
+        let buttons = this.getExpandedButtons(quest, language);
+        
+        // Update message with expanded buttons
+        await ctx.editMessageReplyMarkup({ 
+            inline_keyboard: buttons 
+        }).catch((err) => { console.log(err) });
+        
+        await ctx.answerCbQuery().catch((err) => { console.log(err) });
+    }
+
+    // Add this method to handle hiding more actions
+    async hideMoreActions(ctx) {
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+        
+        const language = await this.settings.getLanguage(chatID)
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        
+        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        
+        // Update message with original markup
+        await ctx.editMessageReplyMarkup({ 
+            inline_keyboard: markup(quest, language).reply_markup.inline_keyboard 
+        }).catch((err) => { console.log(err) });
+        
+        await ctx.answerCbQuery().catch((err) => { console.log(err) });
+    }
+
+    // Add this helper method to get expanded buttons
+    getExpandedButtons(quest, language) {
+        let buttons = [];
+        
+        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
+            // First row - essential actions
+            buttons.push([
+                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Second row - appreciation and schedule
+            buttons.push([
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Third row - stop and cancel
+            buttons.push([
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Fourth row - publish and cast
+            buttons.push([
+                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+            ]);
+        } else if (quest.type == 'event') {
+            // First row - essential actions
+            buttons.push([
+                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Second row - appreciation and schedule
+            buttons.push([
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Third row - publish and cast
+            buttons.push([
+                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+            ]);
+        } else if (quest.type == 'proposal') {
+            // First row
+            buttons.push([
+                Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Second row
+            buttons.push([
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Third row - publish and cast
+            buttons.push([
+                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+            ]);
+        } else if (quest.type == 'offer' || quest.type == 'request') {
+            // First row
+            buttons.push([
+                Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Second row
+            buttons.push([
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Third row - publish and cast
+            buttons.push([
+                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+            ]);
+        } else if (quest.type == 'recurring') {
+            // First row
+            buttons.push([
+                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Second row
+            buttons.push([
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Third row
+            buttons.push([
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('remove', { lng: language }), 'remove_recurring_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Fourth row - publish and cast
+            buttons.push([
+                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+            ]);
+        }
+        
+        // Last row - collapse button (for all types except completed)
+        if (quest.status !== "completed") {
+            buttons.push([
+                Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
+            ]);
+        }
+        
+        return buttons;
+    }
+
+    // Add publish method
+    async publish(ctx) {
+        console.log("PUBLISH ACTION");
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+
+        const language = await this.settings.getLanguage(chatID)
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+
+        if (!quest || quest == '') { 
+            console.log('QUEST IS NOT FOUND'); 
+            ctx.answerCbQuery('Quest not found')
+            return 
+        }
+
+        // Get the user who initiated the publish
+        const sender = ctx.callbackQuery.from;
+
+        // Check if user has permission to publish
+        if (quest.initiator.id !== sender.id && !isAdmin(sender.id, chatID)) {
+            ctx.answerCbQuery(i18next.t('onlyinitiatorpublish', { lng: language }))
+            return;
+        }
+
+        try {
+            // Get the hex from settings
+            let settings = await this.settings.getSettings(chatID)
+            let hex = settings.hex
+
+            if (!hex) {
+                ctx.answerCbQuery('Hex not set. Please set hex using /setHex')
+                return;
+            }
+
+            // Get the node from holosphere
+            let node = await this.db.holosphere.getNode(chatID, 'quests', messageID)
+            
+            if (!node) {
+                // Create node if it doesn't exist
+                node = {
+                    id: messageID,
+                    type: quest.type,
+                    title: quest.title,
+                    initiator: quest.initiator,
+                    participants: quest.participants,
+                    status: quest.status,
+                    when: quest.when,
+                    where: quest.where,
+                    category: quest.category
+                }
+            }
+
+            // Publish to holosphere
+            await this.db.holosphere.put(hex, "quests", {'id': messageID, 'soul': this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID})
+            
+            ctx.answerCbQuery('Quest published to hex ' + hex)
+            
+            // Update the message to show it's been published
+            quest.published = true
+            await this.db.put(chatID + '/quests', quest)
+            await this.updateMessage(ctx, quest, language)
+
+        } catch (error) {
+            console.error('Error publishing quest:', error)
+            ctx.answerCbQuery('Error publishing quest')
+        }
+    }
+
+    // Add cast method
+    async cast(ctx) {
+        console.log("CAST ACTION");
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
+
+        const language = await this.settings.getLanguage(chatID)
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+
+        if (!quest || quest == '') { 
+            console.log('QUEST IS NOT FOUND'); 
+            ctx.answerCbQuery('Quest not found')
+            return 
+        }
+
+        // Get the user who initiated the cast
+        const sender = ctx.callbackQuery.from;
+
+        // Check if user has permission to cast
+        if (quest.initiator.id !== sender.id && !isAdmin(sender.id, chatID)) {
+            ctx.answerCbQuery(i18next.t('onlyinitiatorcast', { lng: language }))
+            return;
+        }
+
+        try {
+            // Get settings and hex
+            let settings = await this.settings.getSettings(chatID)
+            let hex = settings.hex
+
+            if (!hex) {
+                ctx.answerCbQuery('Hex not set. Please set hex using /setHex')
+                return;
+            }
+
+            // Get the node
+            let node = await this.db.holosphere.getNode(chatID, 'quests', messageID)
+            
+            if (!node) {
+                // Create node if it doesn't exist
+                node = {
+                    id: messageID,
+                    type: quest.type,
+                    title: quest.title,
+                    initiator: quest.initiator,
+                    participants: quest.participants,
+                    status: quest.status,
+                    when: quest.when,
+                    where: quest.where,
+                    category: quest.category
+                }
+            }
+
+            // Upcast to holosphere
+            await this.db.holosphere.upcast(hex, 'quests', {id: messageID, soul: this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID })
+            
+            ctx.answerCbQuery('Quest cast to hex ' + hex)
+            
+            // Update the message to show it's been cast
+            quest.cast = true
+            await this.db.put(chatID + '/quests', quest)
+            await this.updateMessage(ctx, quest, language)
+
+        } catch (error) {
+            console.error('Error casting quest:', error)
+            ctx.answerCbQuery('Error casting quest')
+        }
+    }
 }
 
 // Function to create the message for a quest 
@@ -856,34 +1150,28 @@ function createMessage(quest, language) {
     if (quest.status === "stopped")
         message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => getDisplayName(u)).join(', ')} \n`;
     message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;
+    
+    // Add published and cast status
+    if (quest.published)
+        message += `| 📢 ${i18next.t('published', { lng: language })}\n`;
+    if (quest.cast)
+        message += `| 🎭 ${i18next.t('cast', { lng: language })}\n`;
+        
     return message;
 }
 
 function markup(quest, language) {
-
     let mu
 
     if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
         mu = Markup.inlineKeyboard([
             [
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-            ]//,
-            // [
-            //     Markup.button.webapp(i18next.t('Set Location', { lng: language }), `https://hexamap.holons.io?quest=${quest.id}`)
-            // ]
-            // ,[
-            //     Markup.button.webApp(i18next.t('Share',{lng:language}), `https://t.me/WeQuestBot?start=${quest.id}`),
-            //     Markup.button.webApp(i18next.t('Pick a Time',{lng:language}), `https://robertovalenti.github.io/datepicker/index.html`)
-            // ]
+            ],
+            [
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+            ]
         ])
     }
 
@@ -891,15 +1179,11 @@ function markup(quest, language) {
         mu = Markup.inlineKeyboard([
             [
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ],
             [
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]
-            // [
-            //     Markup.button.webApp(i18next.t('Set Location', { lng: language }), `https://hexamap.holons.io?quest=${quest.id}`)
-            // ]
         ])
     }
 
@@ -910,8 +1194,7 @@ function markup(quest, language) {
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
             ],
             [
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]
         ])
     }
@@ -923,16 +1206,14 @@ function markup(quest, language) {
             ]
         ])
 
-
     if (quest.type == 'offer' || quest.type == 'request') {
         mu = Markup.inlineKeyboard([
             [
                 Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ],
             [
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]
         ])
     }
@@ -950,15 +1231,10 @@ function markup(quest, language) {
         mu = Markup.inlineKeyboard([
             [
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback(i18next.t('remove', { lng: language }), 'remove_recurring_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+            ],
+            [
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]
         ])
     }
@@ -975,8 +1251,9 @@ async function updateQuestImage(ctx, quest) {
             ctx.update.callback_query.message.message_id,
             null,
             {
-                source: fs.createReadStream
-                    (path)
+                type: 'photo',
+                media: path,
+                caption: createMessage(quest, language)
             },
         );
     } catch (e) {

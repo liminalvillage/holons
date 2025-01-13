@@ -92,7 +92,15 @@
             "announcementusage": "Usage: /announcement [message] (es. /announcement Meeting at 3pm)",
             "announced": "Announcement sent: {{message}}",
             "Open Dashboard": "Open Dashboard",
-            "Open in Holons": "Open in Holons"
+            "Open in Holons": "Open in Holons",
+            "more_actions": "More Actions",
+            "less_actions": "Less Actions",
+            "publish": "Publish",
+            "cast": "Cast",
+            "published": "Published",
+            "cast": "Cast",
+            "onlyinitiatorpublish": "Only the initiator or admins can publish this quest",
+            "onlyinitiatorcast": "Only the initiator or admins can cast this quest"
         }
     },
     "it": {
@@ -179,7 +187,15 @@
             "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
             "announced": "Annuncio inviato: {{message}}",
             "Open Dashboard": "Apri Dashboard",
-            "Open in Holons": "Apri in Holons"
+            "Open in Holons": "Apri in Holons",
+            "more_actions": "Altre Azioni",
+            "less_actions": "Meno Azioni",
+            "publish": "Pubblica",
+            "cast": "Trasmetti",
+            "published": "Pubblicato",
+            "cast": "Trasmesso",
+            "onlyinitiatorpublish": "Solo l'iniziatore o gli amministratori possono pubblicare questa missione",
+            "onlyinitiatorcast": "Solo l'iniziatore o gli amministratori possono trasmettere questa missione"
         }
     },
     "fiobbo": {
@@ -266,7 +282,15 @@
             "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
             "announced": "Annuncio inviato: {{message}}",
             "Open Dashboard": "Apri Dashboard",
-            "Open in Holons": "Apri in Holons"
+            "Open in Holons": "Apri in Holons",
+            "more_actions": "Altre Azioni",
+            "less_actions": "Meno Azioni",
+            "publish": "Pubblica",
+            "cast": "Trasmetti",
+            "published": "Pubblicato",
+            "cast": "Trasmesso",
+            "onlyinitiatorpublish": "Solo l'iniziatore o gli amministratori possono pubblicare questa missione",
+            "onlyinitiatorcast": "Solo l'iniziatore o gli amministratori possono trasmettere questa missione"
         }
     },
     "week": {
