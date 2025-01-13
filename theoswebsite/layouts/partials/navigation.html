@@ -1,0 +1,62 @@
+<section class="sticky-top navigation">
+	<div class="container">
+		<nav class="navbar navbar-expand-lg navbar-dark">
+			<a class="navbar-brand p-0" href="{{ .Site.BaseURL | relLangURL }}">
+				{{ if .Site.Params.logo }}
+				<img class="img-fluid logo-nav logo-dark" src="{{ .Site.Params.logo | absURL }}" alt="{{ .Site.Title }}">
+					{{ if .Site.Params.logo_light }}
+					<img class="img-fluid logo-nav logo-light" src="{{ .Site.Params.logo_light | absURL }}" alt="{{ .Site.Title }}">
+
+					{{ end }}
+				{{ else }}
+				{{ .Site.Title }}
+				{{ end }}
+			</a>
+
+			<button class="navbar-toggler rounded-0" type="button" data-toggle="collapse" data-target="#navigation">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+
+			<div class="collapse navbar-collapse text-center" id="navigation">
+				<ul class="navbar-nav ml-auto">
+					<li class="nav-item"><a class="nav-link" href="#body">{{ .Site.Params.home }}</a></li>
+					{{ if .IsHome }}
+					{{ range .Site.Menus.main }}
+					<li class="nav-item"><a class="nav-link" href="#{{ .URL }}">{{ .Name }}</a></li>
+					{{ end }}
+
+					{{ else }}
+
+					{{ range .Site.Menus.main }}
+					<li class="nav-item"><a class="nav-link" href="{{ $.Site.BaseURL | relLangURL }}#{{ .URL }}">{{ .Name }}</a>
+					</li>
+					{{ end }}
+					{{ end }}
+				</ul>
+
+				<button id="moon-toggle" class="btn btn-sm btn-outline rounded-circle p-2"> 🌙 </button>
+				<!-- Language List -->
+				{{- if .Site.IsMultiLingual }}
+				<select id="select-language" onchange="location = this.value;">
+					{{ $siteLanguages := .Site.Languages}}
+					{{ $pageLang := .Page.Lang}}
+					{{ range .Page.AllTranslations }}
+					{{ $translation := .}}
+					{{ range $siteLanguages }}
+					{{ if eq $translation.Lang .Lang }}
+					{{ $selected := false }}
+					{{ if eq $pageLang .Lang}}
+					<option id="{{ $translation.Language }}" value="{{ $translation.Permalink }}" selected>{{ .LanguageName }}
+					</option>
+					{{ else }}
+					<option id="{{ $translation.Language }}" value="{{ $translation.Permalink }}">{{ .LanguageName }}</option>
+					{{ end }}
+					{{ end }}
+					{{ end }}
+					{{ end }}
+				</select>
+				{{ end }}
+			</div>
+		</nav>
+	</div>
+</section>

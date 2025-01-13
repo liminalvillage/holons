@@ -38,7 +38,6 @@ contract("Holons", async accounts => {
             //create first holon
             await factory.newHolon("Appreciative", "Holon",0, { from: owner });
             holonaddress = await factory.newHolon.call("Appreciative","Holon", 0,{ from: owner });
-            console.log("holonaddress: " + holonaddress);
             const holonlist = await factory.listHolonsOf(owner);
             assert.equal(holonaddress.toString(), holonlist[0].toString(), "Address mismatch");
         })
@@ -50,6 +49,16 @@ contract("Holons", async accounts => {
             holonaddress = await factory.newHolon.call("Zoned","Zolon", 0, { from: owner });
             const holonlist = await factory.listHolonsOf(owner);
             assert.equal(holonaddress.toString(), holonlist[1].toString(), "Address mismatch");
+        })
+
+
+        it("Creates a new Managed Holon ", async () => {
+            factory = await Holons.deployed();
+            //create first holon
+            await factory.newHolon("Managed","Managed", 0, { from: owner });
+            holonaddress = await factory.newHolon.call("Managed","Managed", 0, { from: owner });
+            const holonlist = await factory.listHolonsOf(owner);
+            assert.equal(holonaddress.toString(), holonlist[2].toString(), "Address mismatch");
         })
     })
 })

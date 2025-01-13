@@ -1,13 +1,8 @@
 {
-    "name": "HOLONS",
+    "name": "Liminal Convergence",
     "image":"https://www.holons.io/images/holons.png",
-    "holons" : 
-    [
-    { "id": "http://github.com/robertovalenti/personal/holon", "label": "Roberto Valenti"},
-    { "id": "http://github.com/liminalvillage/local/", "label": "Liminal Village" },
-    { "id": "http://github.com/robertovalenti/worldmandala/holon", "label": "World Mandala" },
-    { "id": "http://github.com/liminalvillage/hubs", "label": "Hubs Network" },
-    { "id": "http://github.com/liminalvillage/bridgemedicine/public/text/en/home", "label": "Bridge Medicine" },
-    { "id": "http://github.com/robertovalenti/personal/pizza", "label": "Pizza Margherita Recipe" }
+    "holons" : [
+    {"id": "235114395", "label":"Holons","lense":"holons"},
+    { "id": "http://github.com/robertovalenti/personal/holon", "label": "Roberto Valenti"}
     ]
 }

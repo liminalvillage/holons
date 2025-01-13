@@ -1,5 +1,5 @@
 ################################# Default configuration ###################
-baseURL = "https://holonssite.netlify.com"
+baseURL = "https://www.holons.io"
 title = "Holons"
 theme = "meghna-hugo"
 # post pagination
@@ -75,10 +75,10 @@ weight = 1
 # URL = "blog"
 # weight = 6
 
-#[[menu.main]]
-#name = "Contact"
-#URL = "contact"
-#weight = 3
+[[menu.main]]
+name = "Contact"
+URL = "contact"
+weight = 3
 
 
 
@@ -90,7 +90,7 @@ logo_light = "images/holonslight.png"
 description = "Holons"
 author = "Roberto Valenti"
 # Google Analitycs
-google_analitycs_id = "" # Your ID
+google_analitycs_id = "G-70HH3YTRXN" # Your ID
 # post share
 post_share = true
 #theme css //modified from theme module

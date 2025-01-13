@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Payment Tracking with Forwarders</title>
+    <style>
+        table, th, td {
+            border: 1px solid black;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Payment Forwarding Transactions</h1>
+    <table id="transactions">
+        <tr>
+            <th>Original Sender</th>
+            <th>Current Sender</th>
+            <th>Recipient</th>
+            <th>Amount</th>
+            <th>Timestamp</th>
+        </tr>
+    </table>
+
+    <script src="https://cdn.jsdelivr.net/npm/web3/dist/web3.min.js"></script>
+    <script>
+        const web3 = new Web3('https://mainnet.infura.io/v3/YOUR_INFURA_API_KEY'); // Use your own Infura API key and network
+        const contractAddress = 'YOUR_CONTRACT_ADDRESS'; // Set your contract's address here
+        const contractABI = [/* ABI JSON here */]; // ABI of the contract
+
+        const contract = new web3.eth.Contract(contractABI, contractAddress);
+
+        async function loadTransactions() {
+            const events = await contract.getPastEvents('PaymentForwarded', {
+                fromBlock: 0,
+                toBlock: 'latest'
+            });
+
+            const table = document.getElementById('transactions');
+
+            events.forEach(event => {
+                const row = table.insertRow();
+                const origSenderCell = row.insertCell();
+                const currSenderCell = row.insertCell();
+                const recipientCell = row.insertCell();
+                const amountCell = row.insertCell();
+                const timestampCell = row.insertCell();
+
+                origSenderCell.textContent = event.returnValues.originalSender;
+                currSenderCell.textContent = event.returnValues.currentSender;
+                recipientCell.textContent = event.returnValues.recipient;
+                amountCell.textContent = web3.utils.fromWei(event.returnValues.amount, 'ether') + ' ETH';
+                timestampCell.textContent = new Date(event.returnValues.timestamp * 1000).toLocaleString();
+            });
+        }
+
+        loadTransactions();
+    </script>
+</body>
+</html>
