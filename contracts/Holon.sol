@@ -30,7 +30,7 @@ contract Holon is Membrane{
 
     //======================== Events
     event HolonRewarded (address holon, string token, uint256 amount);    
-    event MemberRewarded (address member,string token, uint256 amount);
+    // event MemberRewarded (address member,string token, uint256 amount);
     event RewardFailed(address indexed member, address token, uint256 amount);
 
     /// @notice Constructor to create an holon

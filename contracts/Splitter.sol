@@ -82,7 +82,7 @@ contract Splitter is Holon {
                     );
                     require(success, "Unable to call the reward function" );
                 }
-                 emit MemberRewarded(_members[i], "ERC20", amount); //TODO
+                // emit MemberRewarded(_members[i], "ERC20", amount); //TODO
             }
         }
        // emit HolonRewarded(address(this), "ERC20", _tokenamount);TODO

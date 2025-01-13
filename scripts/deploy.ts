@@ -67,6 +67,7 @@ async function main() {
   const managed = await Managed.waitForDeployment();
   deployments[networkName]["Managed"] = managed.target;
   console.log("Managed deployed to:", managed.target);
+
   // Etherscan verification
   // await run("verify:verify", { address: managed.address }); // Verify Managed
 
@@ -79,6 +80,21 @@ async function main() {
   console.log("Holons deployed to:", holons.target);
   // Etherscan verification
   // await run("verify:verify", { address: holons.address }); // Verify Holons
+
+  // // Deploy Zoned
+  // const Holons = await ethers.deployContract("Holons", [deployer, "Holons", "1"]);
+  const Zoned = await ethers.deployContract("Zoned", [deployer, "5", 1]);
+  const zoned = await Zoned.waitForDeployment();
+  await zoned.waitForDeployment();
+  deployments[networkName]["Zoned"] = zoned.target;
+  console.log("Zoned deployed to:", zoned.target);
+
+  // // Deploy Spliter
+  const Splitter = await ethers.deployContract("Splitter", [deployer, "Splitter", 1]);
+  const splitter = await Zoned.waitForDeployment();
+  await splitter.waitForDeployment();
+  deployments[networkName]["Splitter"] = splitter.target;
+  console.log("splitter deployed to:", splitter.target);
 
   // Deploy TestToken with 1 million tokens
   const TestToken = await ethers.getContractFactory("TestToken");

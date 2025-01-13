@@ -100,7 +100,7 @@ import "./Holon.sol";
                             );
                             require(success, "Unable to call the reward function" );
                         }
-                        emit MemberRewarded(zonemembers[z][i], "ERC20", amount); 
+                        // emit MemberRewarded(zonemembers[z][i], "ERC20", amount); 
                     }
                 }
         // emit HolonRewarded(address(this), "ERC20", _tokenamount);TODO

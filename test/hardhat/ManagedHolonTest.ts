@@ -239,7 +239,6 @@ describe("ManagedHolon", function () {
         console.log("Ether rewarded successfully based on appreciation:");
         console.log("B1 Ether Balance:", ethers.formatEther(etherBalanceAfterB1));
       });
-    
     it("Rewards Tokens to current users based on appreciation", async function () {
         const { managedHolonAddress } = await createManagedHolonFixture("TokenAppreciationManagedHolon");
 
@@ -272,7 +271,7 @@ describe("ManagedHolon", function () {
         expect(tokenBalanceB1).to.equal(600); // 60% of 1000
         expect(tokenBalanceB2).to.equal(400); // 40% of 1000
       });
-
+      // !
       it("Rewards Tokens to current users based on no appreciation", async function () {
         const { managedHolonAddress } = await createManagedHolonFixture("NoAppreciationManagedHolon");
 
@@ -283,13 +282,16 @@ describe("ManagedHolon", function () {
         const B3Address = await B3.getAddress();
         const B4Address = await B4.getAddress();
 
-        const testTokenAddress = await TestToken.getAddress()
+        const testTokenAddress = await TestToken.getAddress();
         // Send tokens to the Holon contract
         await TestToken.connect(owner).transfer(managedHolonAddress, 1002);
         // Reward tokens to members
         const etherBalanceBefore = await ethers.provider.getBalance(managedHolonAddress as string);
         console.log("Contract Ether Balance before reward:", ethers.formatEther(etherBalanceBefore));
 
+        // Querying balance in this way is successfull, the problem is that in
+        // Holons bot, specifically Holons.js in /tokenBalance method we fetch balance
+        // By querying this structure - mapping(string => mapping(address => uint256)) public tokenBalance;
         const tokenBalanceBeforeB1 = await TestToken.balanceOf(B3Address);
         const tokenBalanceBeforeB2 = await TestToken.balanceOf(B4Address);
 
