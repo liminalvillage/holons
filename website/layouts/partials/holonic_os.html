@@ -1,0 +1,59 @@
+{{ if .Site.Data.holonic_os.enable }}
+{{ "<!-- Start Holonic OS Section -->" | safeHTML }}
+<section id="holonic-os" class="section" style="position: relative; overflow: hidden;">
+    <div class="background-image" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: url('{{ "images/theos.png" | relURL }}'); background-size: cover; background-position: center; background-attachment: fixed; filter: grayscale(70%) brightness(60%); z-index: 1;"></div>
+    <div class="network-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(36, 41, 48, 0.7); z-index: 2;"></div>
+    <div class="container position-relative" style="z-index: 3;">
+        <div class="row justify-content-center">
+            <div class="col-lg-12">
+                {{ with .Site.Data.holonic_os.heading }}
+                <div class="title text-center wow fadeInDown" data-wow-duration="500ms">
+                    <h2>{{ .title | markdownify }}</h2>
+                    <div class="border-meghna"></div>
+                    <p class="mt-3">{{ .subtitle | markdownify }}</p>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-lg-12">
+                <div class="text-center mb-5 wow fadeInDown" data-wow-duration="500ms">
+                    <p class="lead">{{ .Site.Data.holonic_os.description | markdownify }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="row justify-content-center">
+            {{ range .Site.Data.holonic_os.features }}
+            <div class="col-lg-4 col-md-6">
+                <div class="service-item text-center wow fadeInUp" data-wow-duration="500ms">
+                    <div class="icon-box">
+                        <i class="{{ .icon }}"></i>
+                    </div>
+                    <div class="service-desc">
+                        <h3>{{ .title }}</h3>
+                        <p>{{ .description }}</p>
+                    </div>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+
+        {{ with .Site.Data.holonic_os.call_to_action }}
+        {{ if .enable }}
+        <div class="row mt-5">
+            <div class="col-lg-12">
+                <div class="text-center wow fadeInDown" data-wow-duration="500ms">
+                    <h3>{{ .title }}</h3>
+                    <p class="mt-3">{{ .content }}</p>
+                    <a href="{{ .button.url }}" class="btn btn-main mt-4">{{ .button.label }}</a>
+                </div>
+            </div>
+        </div>
+        {{ end }}
+        {{ end }}
+    </div>
+</section>
+{{ "<!-- End Holonic OS Section -->" | safeHTML }}
+{{ end }} 

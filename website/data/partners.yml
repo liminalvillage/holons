@@ -1,0 +1,20 @@
+enable: true
+heading:
+  title: "Supported Projects & Aligned Movements"
+  
+partner_list:
+  - name: "The Venus Project"
+    logo: "images/partners/tvp-logo.svg"
+    url: "https://www.thevenusproject.com"
+    
+  - name: "The Zeitgeist Movement"
+    logo: "images/partners/tzm-logo.svg"
+    url: "https://www.thezeitgeistmovement.com"
+    
+  - name: "Resource Based Economy"
+    logo: "images/partners/rbe-logo.svg"
+    url: "https://resourcebasedeconomy.org"
+    
+  - name: "The Auravana Project"
+    logo: "images/partners/auravana-logo.svg"
+    url: "https://auravana.org" 

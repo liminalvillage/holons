@@ -5,7 +5,7 @@ about:
   about_item :
 
   - icon : ti-user # themify icon pack : https://themify.me/themify-icons
-    title : Create an new organization
+    title : Create an Holon
     content : "Form an holon with your collaborators. Holons can be stacked : Other holons can also join as members!"
 
   - icon : ti-heart # themify icon pack : https://themify.me/themify-icons

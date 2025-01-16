@@ -49,3 +49,22 @@ if (moon) {
 
   });
 }
+
+// Copy command functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const copyButtons = document.querySelectorAll('.copy-btn');
+    
+    copyButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const command = this.getAttribute('data-command');
+            navigator.clipboard.writeText(command).then(() => {
+                // Visual feedback
+                const originalIcon = this.innerHTML;
+                this.innerHTML = '<i class="ti-check"></i>';
+                setTimeout(() => {
+                    this.innerHTML = originalIcon;
+                }, 2000);
+            });
+        });
+    });
+});

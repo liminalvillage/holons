@@ -1,0 +1,138 @@
+{{ if .Site.Data.chat_interface.enable }}
+{{ "<!-- Start Chat Interface Section -->" | safeHTML }}
+<section id="chat-interface" class="section">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-12">
+                {{ with .Site.Data.chat_interface.heading }}
+                <div class="title text-center wow fadeInDown" data-wow-duration="500ms">
+                    <h2>{{ .title | markdownify }}</h2>
+                    <div class="border-meghna"></div>
+                    <p class="mt-3">{{ .subtitle | markdownify }}</p>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-lg-12">
+                <div class="text-center mb-5 wow fadeInDown" data-wow-duration="500ms">
+                    <p class="lead">{{ .Site.Data.chat_interface.description | markdownify }}</p>
+                </div>
+            </div>
+        </div>
+
+        {{ with .Site.Data.chat_interface.installation }}
+        <div class="row mt-5 mb-5">
+            <div class="col-lg-12">
+                <h3 class="text-center mb-4 wow fadeInDown" data-wow-duration="500ms">{{ .title }}</h3>
+            </div>
+            {{ range .steps }}
+            <div class="col-lg-4">
+                <div class="installation-step wow fadeInUp" data-wow-duration="500ms">
+                    <div class="step-number">{{ .number }}</div>
+                    <div class="icon-box">
+                        <i class="{{ .icon }}"></i>
+                    </div>
+                    <h4>{{ .title }}</h4>
+                    <p>{{ .description }}</p>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+        {{ end }}
+
+        <div class="row align-items-center">
+            <div class="col-lg-6">
+                <div class="phone-frame wow fadeInLeft" data-wow-duration="500ms">
+                    <div class="phone-screen">
+                        <div class="chat-preview">
+                            <div class="chat-header">
+                                <span class="bot-name">Holons Bot</span>
+                            </div>
+                            <div class="chat-messages">
+                                <div class="message bot">
+                                    <span class="content">Hi! I help communities organize. What would you like to do?
+
+• /create - Start a new organization
+• /join - Enter an existing one
+• /help - See all commands</span>
+                                </div>
+                                <div class="message user">
+                                    <span class="content">/create</span>
+                                </div>
+                                <div class="message bot">
+                                    <span class="content">Let's set up your organization. Name it:</span>
+                                </div>
+                                <div class="message user">
+                                    <span class="content">Local Food Network</span>
+                                </div>
+                                <div class="message bot">
+                                    <span class="content">Done! Your organization is ready. Quick actions:
+
+/tasks - Manage tasks
+/vote - Make decisions
+/track - Record exchanges</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6">
+                <div class="platform-commands wow fadeInRight" data-wow-duration="500ms">
+                    {{ with .Site.Data.chat_interface.platform }}
+                    <div class="command-card">
+                        <h3>{{ .title }}</h3>
+                        <p>{{ .description }}</p>
+                        <div class="command-box">
+                            <code>{{ .command }}</code>
+                            <button class="copy-btn" data-command="{{ .command }}" title="Copy command">
+                                <i class="ti-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {{ end }}
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-5">
+            <div class="col-lg-12">
+                <h3 class="text-center mb-4 wow fadeInDown" data-wow-duration="500ms">What You Can Do</h3>
+            </div>
+            {{ range .Site.Data.chat_interface.features }}
+            <div class="col-lg-4 col-md-6">
+                <div class="feature-card wow fadeInUp" data-wow-duration="500ms">
+                    <div class="icon-box">
+                        <i class="{{ .icon }}"></i>
+                    </div>
+                    <h4>{{ .title }}</h4>
+                    <p>{{ .description }}</p>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+
+        {{ with .Site.Data.chat_interface.advantages }}
+        <div class="row mt-5">
+            <div class="col-lg-12">
+                <div class="advantages-section wow fadeInUp" data-wow-duration="500ms">
+                    <h3 class="text-center mb-4">{{ .title }}</h3>
+                    <div class="advantages-grid">
+                        {{ range .list }}
+                        <div class="advantage-item">
+                            <i class="ti-check"></i>
+                            <span>{{ . }}</span>
+                        </div>
+                        {{ end }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {{ end }}
+    </div>
+</section>
+{{ "<!-- End Chat Interface Section -->" | safeHTML }}
+{{ end }} 

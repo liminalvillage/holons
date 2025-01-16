@@ -1,0 +1,41 @@
+enable: true
+heading:
+  title: "The Holonic Earth Operating System"
+  subtitle: "AI-Enhanced Protocol for Planetary Coordination"
+
+description: |
+  Beyond the user interfaces, there's a powerful open source protocol enhanced by AI agents that facilitate communication and agreements between holons. 
+  A decentralized infrastructure designed for intelligent emergence, seamless adaptation, and planetary regeneration.
+
+features:
+  - title: "AI Facilitation"
+    description: "Intelligent agents that help coordinate between holons, facilitate agreements, and optimize resource flows across the network."
+    icon: "ti-thought"
+    
+  - title: "Holonic Architecture"
+    description: "A system of nested, self-organizing units that mirrors nature's most successful patterns, from cells to ecosystems."
+    icon: "ti-infinite"
+    
+  - title: "Smart Agreements"
+    description: "AI-assisted creation and management of inter-holonic agreements, ensuring clear terms and fair execution."
+    icon: "ti-file"
+    
+  - title: "Resource-Based Allocation"
+    description: "Intelligent distribution based on real needs and ecological capacity, using AI to optimize resource flows."
+    icon: "ti-pulse"
+    
+  - title: "Open Source Protocol"
+    description: "Community-driven development ensuring the system remains transparent, adaptable, and aligned with the common good."
+    icon: "ti-world"
+    
+  - title: "Place-Based Integration"
+    description: "Deep connection with local ecosystems and communities, using AI to map and enhance bioregional relationships."
+    icon: "ti-map"
+
+call_to_action:
+  enable: true
+  title: "Help Build the Future"
+  content: "Join us in developing the AI-enhanced infrastructure for a regenerative civilization"
+  button:
+    label: "Contribute to THEOS"
+    url: "https://docs.theos.io"

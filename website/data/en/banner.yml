@@ -1,12 +1,12 @@
 ############################### Banner ################################
 banner:
-  enable : true
-  bg_image_webp : "images/backgrounds/fractalmembrane.webp"
-  bg_image : "images/backgrounds/Sbackgrounds/fractalmembrane.jpg"
-  icon : "" # themify icon pack : https://themify.me/themify-icons
-  title : 
-  content : "A holon is an evolving self-organizing structure, composed of other holons. A holon is simultaneously a whole in itself and at the same time is nested within another holon and so is a part of something much larger than itself."
+  enable: true
+  bg_image_webp: "images/backgrounds/fractalmembrane.webp"
+  bg_image: "images/backgrounds/Sbackgrounds/fractalmembrane.jpg"
+  icon: "" # themify icon pack : https://themify.me/themify-icons
+  title: "Build Living Organizations"
+  content: "Holons are the building blocks of life itself - from cells to societies. We've turned this natural pattern into an open protocol for creating organizations that are alive, adaptive, and interconnected. Start small, grow naturally, and join a planetary network of regenerative communities."
   button:
-    enable : true
-    label : "Join the holonic ecosystem"
-    link : "https://wequest.typeform.com/to/gXMheBaH"
+    enable: true
+    label: "Start Your Holon"
+    link: "https://wequest.typeform.com/to/gXMheBaH"

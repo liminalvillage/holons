@@ -42,45 +42,41 @@ link = "plugins/lazy-load/lozad.min.js"
 [[params.plugins.js]]
 link = "plugins/google-map/map.js"
 
-
-
 ############################# Navigation ##################################
 [[menu.main]]
 name = "About"
 URL = "about"
 weight = 1
 
-#[[menu.main]]
-#name = "Service"
-#URL = "services"
-#weight = 2
+[[menu.main]]
+name = "Holonic OS"
+URL = "holonic-os"
+weight = 2
 
-# [[menu.main]]
-# name = "Portfolio"
-# URL = "portfolio"
-# weight = 3
-#
-# [[menu.main]]
-# name = "Team"
-# URL = "team"
-# weight = 4
-#
-# [[menu.main]]
-# name = "Pricing"
-# URL = "pricing"
-# weight = 5
-#
-# [[menu.main]]
-# name = "Blog"
-# URL = "blog"
-# weight = 6
+[[menu.main]]
+name = "Social Bot"
+URL = "chat-interface"
+weight = 3
+
+[[menu.main]]
+name = "Dashboard"
+URL = "dashboard"
+weight = 4
+
+[[menu.main]]
+name = "Partners"
+URL = "partners"
+weight = 5
 
 [[menu.main]]
 name = "Contact"
 URL = "contact"
-weight = 3
+weight = 6
 
-
+[[menu.main]]
+name = "Documentation"
+URL = "https://docs.holons.io"
+weight = 7
 
 ############################# Default Parameters ##########################
 [params]
