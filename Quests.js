@@ -20,6 +20,7 @@ export default class Quests {
         this.settings = settings
         this.users = users
         this.expenses = null // Will be set from outside after construction
+        this.checklists = null // Will be set from outside after construction
         //----------------------------- QUESTS -----------------------------
         this.bot.command('delete', async (ctx) => this.delete(ctx))
         this.bot.command('quest', async (ctx) => this.quest('task', ctx))
@@ -63,6 +64,11 @@ export default class Quests {
         this.bot.action(/cast_quest_(.+)/, (ctx) => this.cast(ctx));
         this.bot.action(/add_time_quest_(.+)/, (ctx) => this.addTime(ctx));
         this.bot.action(/subtract_time_quest_(.+)/, (ctx) => this.subtractTime(ctx));
+
+        // Add checklist action handler
+        this.bot.action(/checklist_quest_(.+)/, (ctx) => this.handleChecklistButton(ctx));
+        this.bot.action(/check_(.+)/, (ctx) => this.handleCheckItem(ctx));
+        this.bot.action(/add_item_to_(.+)/, (ctx) => this.handleAddItem(ctx));
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
@@ -247,15 +253,16 @@ export default class Quests {
             type: type,
             status: 'ongoing',
             category: category,
-            timeTracking: {} // Add time tracking object to store user contributions
+            timeTracking: {}, // Add time tracking object to store user contributions
+            checklistId: null // Add checklist ID field
         }
 
         if (picture)
             ctx.replyWithPhoto(picture,
                 {
-                    caption: createMessage(quest, language),
+                    caption: await this.createMessage(quest, language),
                     parse_mode: 'Markdown',
-                    ...markup(quest, language)
+                    ...this.markup(quest, language)
                 }).catch((err) => { console.log(err) }).then(async (nctx) => {
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
@@ -288,7 +295,7 @@ export default class Quests {
             }
 
             // Send message and get the message ID
-            const nctx = await ctx.reply(createMessage(quest, language), markup(quest, language));
+            const nctx = await ctx.reply(await this.createMessage(quest, language), this.markup(quest, language));
 
             if (ctx.platform !== 'discord') {
                 quest.id = nctx.message_id;
@@ -734,9 +741,9 @@ export default class Quests {
                     {
                         type: 'photo',
                         media: quest.picture,
-                        caption: createMessage(quest, language)
+                        caption: await this.createMessage(quest, language)
                     },
-                    markup(quest, language)
+                    this.markup(quest, language)
                 ).catch((err) => { });
             }
             else {
@@ -744,8 +751,8 @@ export default class Quests {
                     chat_id,
                     message_id,
                     null,
-                    createMessage(quest, language),
-                    markup(quest, language)
+                    await this.createMessage(quest, language),
+                    this.markup(quest, language)
                 ).catch((err) => { });
             }
 
@@ -762,9 +769,9 @@ export default class Quests {
                         {
                             type: 'photo',
                             media: quest.picture,
-                            caption: createMessage(quest, language)
+                            caption: await this.createMessage(quest, language)
                         },
-                        markup(quest, language)
+                        this.markup(quest, language)
                     ).catch((err) => { });
                 }
                 else
@@ -772,8 +779,8 @@ export default class Quests {
                         chat_id,
                         message_id,
                         null,
-                        createMessage(quest, language),
-                        markup(quest, language)
+                        await this.createMessage(quest, language),
+                        this.markup(quest, language)
                     ).catch((err) => { });
             }
         }
@@ -890,14 +897,19 @@ export default class Quests {
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
-            // Fourth row - stop and cancel
+
+            // Fourth row - checklist and stop
             buttons.push([
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('📋 ' + i18next.t('checklist', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Fifth row - cancel
+            buttons.push([
                 Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Fifth row - publish and cast
+            // Sixth row - publish and cast
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
@@ -929,14 +941,7 @@ export default class Quests {
             
             // Second row
             buttons.push([
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
-            ]);
-
-            // Third row - publish and cast
-            buttons.push([
-                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]);
         } else if (quest.type == 'offer' || quest.type == 'request') {
             // First row
@@ -947,8 +952,7 @@ export default class Quests {
             
             // Second row
             buttons.push([
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]);
 
             // Third row - publish and cast
@@ -965,8 +969,7 @@ export default class Quests {
             
             // Second row
             buttons.push([
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]);
             
             // Third row
@@ -1202,27 +1205,250 @@ export default class Quests {
             ctx.answerCbQuery(`No time logged for ${getDisplayName(sender)} to remove`);
         }
     }
-}
 
-// Function to create the message for a quest 
-function createMessage(quest, language) {
-    let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
+    // Add checklist action handler
+    async handleChecklistButton(ctx) {
+        console.log("CHECKLIST ACTION");
+        const chatID = ctx.callbackQuery.message.chat.id;
+        const messageID = ctx.callbackQuery.data.split('_')[3];
 
-    // Add initiator info
-    message += `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)} \n`;
+        const language = await this.settings.getLanguage(chatID)
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-    // Add frequency for recurring tasks
-    if (quest.type === 'recurring' && quest.frequency) {
-        message += `| 🔄 ${i18next.t('frequency', { lng: language })}: ${quest.frequency} \n`;
+        if (!quest || quest == '') { 
+            console.log('QUEST IS NOT FOUND'); 
+            ctx.answerCbQuery('Quest not found')
+            return 
+        }
+
+        if (!this.checklists) {
+            console.error('Checklists instance not set');
+            ctx.answerCbQuery('Checklist functionality not available');
+            return;
+        }
+
+        try {
+            // If quest doesn't have a checklist yet, create one
+            if (!quest.checklistId) {
+                // Create a new checklist with the quest's title
+                const checklist = {
+                    id: messageID.toString(),
+                    items: [],
+                    creator: quest.initiator.id,
+                    created: new Date(),
+                    questId: quest.id, // Store reference to the quest
+                    questTitle: quest.title, // Store quest title for display
+                    chatId: chatID, // Store chat ID for navigation
+                    isTaskChecklist: true // Flag to indicate this is a task's checklist
+                };
+
+                // Save the checklist
+                await this.db.put(chatID + '/checklists', checklist);
+                
+                // Update quest with checklist ID
+                quest.checklistId = messageID.toString();
+                await this.db.put(chatID + '/quests', quest);
+                
+                // Create keyboard with back button
+                const keyboard = [
+                    [Markup.button.callback('➕ Add Item', `add_item_to_${messageID}`)],
+                ];
+
+                // Add back button in its own row if this is a task's checklist
+                keyboard.push([
+                    Markup.button.callback('🔙 Back to Task', `back_to_quest_${chatID}_${quest.id}`)
+                ]);
+
+                // Edit current message to show checklist
+                await ctx.editMessageText(
+                    `📋 ${quest.title} Checklist:`,
+                    Markup.inlineKeyboard(keyboard)
+                );
+            } else {
+                // Get existing checklist
+                const checklist = await this.db.get(chatID + '/checklists', quest.checklistId);
+                
+                if (!checklist) {
+                    console.log('Checklist not found despite having ID');
+                    ctx.answerCbQuery('Error: Checklist not found');
+                    return;
+                }
+
+                // Ensure checklist has quest reference and task flag
+                if (!checklist.questId) {
+                    checklist.questId = quest.id;
+                    checklist.questTitle = quest.title;
+                    checklist.chatId = chatID;
+                    checklist.isTaskChecklist = true;
+                    await this.db.put(chatID + '/checklists', checklist);
+                }
+
+                // Create keyboard with items and controls
+                const keyboard = [
+                    ...checklist.items.map((item, index) => ([
+                        Markup.button.callback(
+                            `${item.checked ? '✅' : '⬜️'} ${item.text}`,
+                            `check_${checklist.id}_${index}`
+                        )
+                    ])),
+                    [Markup.button.callback('➕ Add Item', `add_item_to_${checklist.id}`)],
+                ];
+
+                // Add back button in its own row if this is a task's checklist
+                keyboard.push([
+                    Markup.button.callback('🔙 Back to Task', `back_to_quest_${chatID}_${quest.id}`)
+                ]);
+
+                // Edit current message to show checklist
+                await ctx.editMessageText(
+                    `📋 ${quest.title} Checklist:`,
+                    Markup.inlineKeyboard(keyboard)
+                );
+            }
+
+            await ctx.answerCbQuery();
+
+        } catch (error) {
+            console.error('Error handling checklist button:', error)
+            await ctx.answerCbQuery('Error handling checklist button')
+        }
     }
 
-    if (quest.category) {
-        message += `| 📑 ${i18next.t('category', { lng: language })}: ${quest.category} \n`;
-    }
-
-    if (quest.participants.length > 0)
-        message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => getDisplayName(u)).join(', ')} \n`;
+    // Add back to quest handler
+    async handleBackToQuest(ctx) {
+        const [chatId, questId] = ctx.match[1].split('_');
+        const language = await this.settings.getLanguage(chatId);
         
+        try {
+            const quest = await this.db.get(chatId + '/quests', questId);
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            // Update message to show quest again
+            await ctx.editMessageText(
+                await this.createMessage(quest, language),
+                this.markup(quest, language)
+            );
+            
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error handling back to quest:', error);
+            await ctx.answerCbQuery('Error returning to quest');
+        }
+    }
+
+    // Add new methods for handling checklist interactions
+    async handleCheckItem(ctx) {
+        const [checklistId, itemIndex] = ctx.match[1].split('_');
+        const chatId = ctx.callbackQuery.message.chat.id;
+        const messageId = ctx.callbackQuery.message.message_id;
+
+        try {
+            const checklist = await this.db.get(chatId + '/checklists', messageId.toString());
+            if (!checklist) {
+                await ctx.answerCbQuery('Checklist not found');
+                return;
+            }
+
+            // Toggle the item's checked status
+            checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
+            await this.db.put(chatId + '/checklists', checklist);
+
+            // Create keyboard with items
+            const keyboard = [
+                ...checklist.items.map((item, index) => ([
+                    Markup.button.callback(
+                        `${item.checked ? '✅' : '⬜️'} ${item.text}`,
+                        `check_${messageId}_${index}`
+                    )
+                ])),
+                [Markup.button.callback('➕ Add Item', `add_item_to_${messageId}`)]
+            ];
+
+            // Add back button if this is a quest's checklist
+            if (checklist.questId) {
+                keyboard.push([
+                    Markup.button.callback('🔙 Back to Task', `back_to_quest_${checklist.chatId}_${checklist.questId}`)
+                ]);
+            }
+
+            // Update the message with new keyboard
+            await ctx.editMessageText(
+                `📋 ${checklist.questTitle || 'Checklist'}:`,
+                Markup.inlineKeyboard(keyboard)
+            );
+
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error handling check item:', error);
+            await ctx.answerCbQuery('Error updating checklist item');
+        }
+    }
+
+    async handleAddItem(ctx) {
+        const messageId = ctx.match[1];
+        const chatId = ctx.callbackQuery.message.chat.id;
+
+        try {
+            // Get the checklist to ensure it exists and to pass its data to the scene
+            const checklist = await this.db.get(chatId + '/checklists', messageId.toString());
+            if (!checklist) {
+                await ctx.answerCbQuery('Checklist not found');
+                return;
+            }
+
+            // Enter scene for adding items with the necessary context
+            await ctx.scene.enter('add_item_scene', { 
+                checklistId: messageId,
+                chatId: chatId,
+                questId: checklist.questId,
+                questTitle: checklist.questTitle
+            });
+            
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error handling add item:', error);
+            await ctx.answerCbQuery('Error adding checklist item');
+        }
+    }
+
+    // Add method to set checklists instance
+    setChecklists(checklists) {
+        this.checklists = checklists;
+        // Pass this quest instance to the checklists
+        this.checklists.setQuestInstance(this);
+    }
+
+    // Function to create the message for a quest 
+    async createMessage(quest, language) {
+        let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
+
+        // Add initiator info
+        message += `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)} \n`;
+
+        // Add frequency for recurring tasks
+        if (quest.type === 'recurring' && quest.frequency) {
+            message += `| 🔄 ${i18next.t('frequency', { lng: language })}: ${quest.frequency} \n`;
+        }
+
+        if (quest.category) {
+            message += `| 📑 ${i18next.t('category', { lng: language })}: ${quest.category} \n`;
+        }
+
+        // Add checklist progress if it exists
+        if (quest.checklistId && this.checklists) {
+            const checklist = await this.db.get(quest.chat + '/checklists', quest.checklistId);
+            if (checklist && checklist.items.length > 0) {
+                const completed = checklist.items.filter(item => item.checked).length;
+                message += `| 📋 Checklist: ${completed}/${checklist.items.length} completed\n`;
+            }
+        }
+
+        if (quest.participants.length > 0)
+            message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => getDisplayName(u)).join(', ')} \n`;
+            
         // Add time tracking info if any time is logged
         if (quest.timeTracking && Object.keys(quest.timeTracking).length > 0) {
             message += `| ⏰ Time logged:\n`;
@@ -1276,107 +1502,187 @@ function createMessage(quest, language) {
         return message;
     }
 
-function markup(quest, language) {
-    let mu
+    markup(quest, language) {
+        let mu
 
-    if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
-        mu = Markup.inlineKeyboard([
-            [
-                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
-            ]
-        ])
+        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
+            mu = Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+                ],
+                [
+                    Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
+                ],
+                [
+                    Markup.button.callback('📋 ' + i18next.t('checklist', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+                ]
+            ])
+        }
+
+        if (quest.type == 'event') {
+            mu = Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+                ],
+                [
+                    Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+                ]
+            ])
+        }
+
+        if (quest.type == 'proposal') {
+            mu = Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
+                ],
+                [
+                    Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+                ]
+            ])
+        }
+
+        if (quest.type == 'idea' || quest.type == 'lesson' || quest.type == 'quote' || quest.type == 'tip' || quest.type == 'fact' || quest.type == 'joke' || quest.type == 'story' || quest.type == 'thought' || quest.type == 'question' || quest.type == 'challenge' || quest.type == 'advice' || quest.type == 'trigger' || quest.type == 'projection' || quest.type == 'assumption' || quest.type == 'observation' || quest.type == 'rule' || quest.type == 'suggestion' || quest.type == 'guideline' || quest.type == 'feature' || quest.type == 'perspective' || quest.type == 'opinion' || quest.type == 'insight' || quest.type == 'inspiration' || quest.type == 'motivation' || quest.type == 'reminder' || quest.type == 'warning' || quest.type == 'alert' || quest.type == 'note' || quest.type == 'comment' || quest.type == 'feedback' || quest.type == 'review' || quest.type == 'critique' || quest.type == 'compliment' || quest.type == 'complaint')
+            mu = Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
+                ]
+            ])
+
+        if (quest.type == 'offer' || quest.type == 'request') {
+            mu = Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+                ],
+                [
+                    Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+                ]
+            ])
+        }
+
+        if (quest.status === "completed") // only show appreciation button
+        {
+            mu = Markup.inlineKeyboard(
+                [
+                    Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
+                ]
+            )
+        }
+
+        if (quest.type == 'recurring') {
+            mu = Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+                ],
+                [
+                    Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+                ]
+            ])
+        }
+
+        return mu
     }
 
-    if (quest.type == 'event') {
-        mu = Markup.inlineKeyboard([
-            [
-                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
-            ]
-        ])
+    // Function to update messages for a quest
+    async updateQuestImage(ctx, quest) {
+        try {
+            // update the image
+            let path = await ui.getQuestImage(quest)
+            await ctx.telegram.editMessageMedia(
+                ctx.update.callback_query.message.chat.id,
+                ctx.update.callback_query.message.message_id,
+                null,
+                {
+                    type: 'photo',
+                    media: path,
+                    caption: await this.createMessage(quest, language)
+                },
+            );
+        } catch (e) {
+            console.log(e);
+        }
     }
 
-    if (quest.type == 'proposal') {
-        mu = Markup.inlineKeyboard([
-            [
-                Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
-            ]
-        ])
-    }
+    setupScenes() {
+        // Setup add item scene
+        this.addItemScene.enter(async (ctx) => {
+            await ctx.reply('Please enter the new items (comma-separated for multiple items):');
+        });
 
-    if (quest.type == 'idea' || quest.type == 'lesson' || quest.type == 'quote' || quest.type == 'tip' || quest.type == 'fact' || quest.type == 'joke' || quest.type == 'story' || quest.type == 'thought' || quest.type == 'question' || quest.type == 'challenge' || quest.type == 'advice' || quest.type == 'trigger' || quest.type == 'projection' || quest.type == 'assumption' || quest.type == 'observation' || quest.type == 'rule' || quest.type == 'suggestion' || quest.type == 'guideline' || quest.type == 'feature' || quest.type == 'perspective' || quest.type == 'opinion' || quest.type == 'insight' || quest.type == 'inspiration' || quest.type == 'motivation' || quest.type == 'reminder' || quest.type == 'warning' || quest.type == 'alert' || quest.type == 'note' || quest.type == 'comment' || quest.type == 'feedback' || quest.type == 'review' || quest.type == 'critique' || quest.type == 'compliment' || quest.type == 'complaint')
-        mu = Markup.inlineKeyboard([
-            [
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
-            ]
-        ])
+        this.addItemScene.on('text', async (ctx) => {
+            const itemsText = ctx.message.text;
+            const chatId = ctx.scene.state.chatId;
+            
+            try {
+                // Get the checklist ID from the scene state
+                const checklistId = ctx.scene.state.checklistId;
+                if (!checklistId) {
+                    await ctx.reply('Error: Checklist ID not found');
+                    return ctx.scene.leave();
+                }
 
-    if (quest.type == 'offer' || quest.type == 'request') {
-        mu = Markup.inlineKeyboard([
-            [
-                Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
-            ]
-        ])
-    }
+                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString());
+                if (!checklist) {
+                    await ctx.reply('Checklist not found');
+                    return ctx.scene.leave();
+                }
 
-    if (quest.status === "completed") // only show appreciation button
-    {
-        mu = Markup.inlineKeyboard(
-            [
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
-            ]
-        )
-    }
+                // Add new items
+                const newItems = itemsText.split(',').map(text => ({
+                    text: text.trim(),
+                    checked: false
+                })).filter(item => item.text);
 
-    if (quest.type == 'recurring') {
-        mu = Markup.inlineKeyboard([
-            [
-                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-            ],
-            [
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
-            ]
-        ])
-    }
+                checklist.items.push(...newItems);
+                await this.db.put(chatId + '/checklists', checklist);
 
-    return mu
-}
-// Function to update messages for a quest
-async function updateQuestImage(ctx, quest) {
-    try {
-        // update the image
-        let path = await ui.getQuestImage(quest)
-        await ctx.telegram.editMessageMedia(
-            ctx.update.callback_query.message.chat.id,
-            ctx.update.callback_query.message.message_id,
-            null,
-            {
-                type: 'photo',
-                media: path,
-                caption: createMessage(quest, language)
-            },
-        );
-    } catch (e) {
-        console.log(e);
+                // Create keyboard with items
+                const keyboard = [
+                    ...checklist.items.map((item, index) => ([
+                        Markup.button.callback(
+                            `${item.checked ? '✅' : '⬜️'} ${item.text}`,
+                            `check_${checklistId}_${index}`
+                        )
+                    ])),
+                    [Markup.button.callback('➕ Add Item', `add_item_to_${checklistId}`)]
+                ];
+
+                // Add back button if this is a quest's checklist
+                if (checklist.questId) {
+                    keyboard.push([
+                        Markup.button.callback('🔙 Back to Task', `back_to_quest_${checklist.chatId}_${checklist.questId}`)
+                    ]);
+                }
+
+                // Show updated checklist
+                await ctx.reply(
+                    `📋 ${checklist.questTitle || 'Checklist'}:`,
+                    Markup.inlineKeyboard(keyboard)
+                );
+
+                // Delete the original "enter items" message and the prompt
+                if (ctx.message) {
+                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                }
+                // Try to delete the "Please enter items" message
+                try {
+                    await ctx.deleteMessage(ctx.message.message_id - 1);
+                } catch (error) {
+                    console.log('Could not delete prompt message');
+                }
+
+            } catch (error) {
+                console.error('Error adding items to checklist:', error);
+                await ctx.reply('Error adding items to checklist');
+            }
+
+            return ctx.scene.leave();
+        });
     }
 }

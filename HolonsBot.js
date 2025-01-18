@@ -69,9 +69,8 @@ class HolonsBot {
     try {
       this.telebot = new Telegraf(telegramtoken);
       
-      // Create all scenes first
- 
       // Initialize stage with ALL scenes at once
+      console.log('Initializing stage');
       this.telebot.stage = new Scenes.Stage([]);
       
       // Add session and stage middleware ONCE
@@ -127,12 +126,15 @@ class HolonsBot {
     this.announcements = new Announcements(this.telebot, this.db, this.settings, this.users);
     this.onboarding = new Onboarding(this.telebot, this.db);
     this.checklists = new Checklists(this.telebot, this.db);
+    this.quests = new Quests(this.telebot, this.db, this.users, this.settings);
+    this.quests.setChecklists(this.checklists);
+    this.checklists.setQuestInstance(this.quests);
     this.capitalGame = new CapitalGame(this.telebot, this.settings);
 
-    this.quests = new Quests(this.telebot, this.db, this.users, this.settings);
     this.scheduler = new Scheduler(this.telebot, this.db, this.quests, this.settings);
     this.quests.setScheduler(this.scheduler);
     this.quests.expenses = this.expenses;
+    this.quests.checklists = this.checklists;
 
   }
 

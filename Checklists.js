@@ -4,6 +4,7 @@ class Checklists {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
+        this.questInstance = null; // Initialize questInstance
         
         // Create scenes
         this.addItemScene = new Scenes.BaseScene('add_item_scene');
@@ -28,6 +29,7 @@ class Checklists {
         this.bot.action(/enter_remove_mode_(.+)/, (ctx) => this.enterRemoveMode(ctx));
         this.bot.action(/exit_remove_mode_(.+)/, (ctx) => this.exitRemoveMode(ctx));
         this.bot.action(/remove_item_(.+)/, (ctx) => this.removeItem(ctx));
+        this.bot.action(/back_to_quest_(.+)/, (ctx) => this.handleBackToQuest(ctx));
     }
 
     setupScenes() {
@@ -326,6 +328,16 @@ class Checklists {
             )
         ]);
 
+        // Add back button in its own row if this is a task's checklist
+        if (checklist.questId) {
+            buttons.push([
+                Markup.button.callback(
+                    '🔙 Back to Task',
+                    `back_to_quest_${checklist.chatId}_${checklist.questId}`
+                )
+            ]);
+        }
+
         return Markup.inlineKeyboard(buttons);
     }
 
@@ -434,6 +446,48 @@ class Checklists {
         );
 
         return checklist;
+    }
+
+    async handleBackToQuest(ctx) {
+        const [chatId, questId] = ctx.match[1].split('_');
+        
+        try {
+            const quest = await this.db.get(chatId + '/quests', questId);
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            if (!this.questInstance) {
+                console.error('Quest instance not set');
+                await ctx.answerCbQuery('Error: Cannot return to quest');
+                return;
+            }
+
+            // Use the quest instance's updateMessage method to rerender the quest
+            await this.questInstance.updateMessage(ctx, quest);
+            await ctx.answerCbQuery();
+
+        } catch (error) {
+            console.error('Error handling back to quest:', error);
+            await ctx.answerCbQuery('Error returning to quest');
+        }
+    }
+
+    // Add a method to get the quest instance
+    async getQuestInstance() {
+        // This should be set from outside after construction
+        if (!this.questInstance) {
+            console.error('Quest instance not set');
+            return null;
+        }
+        return this.questInstance;
+    }
+
+    // Add a method to set the quest instance
+    setQuestInstance(questInstance) {
+        this.questInstance = questInstance;
+        console.log('Quest instance set successfully');
     }
 }
 

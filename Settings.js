@@ -291,15 +291,13 @@ export default class Settings {
         this.hexScene.on('message', ctx => ctx.reply('Please send text only'));
 
         // Register scenes
-        const stage = new Scenes.Stage([
-            this.purposeScene,
-            this.domainsScene,
-            this.valuesScene,
-            this.rolesScene,
-            this.adminScene,
-            this.hexScene
-        ]);
-        this.bot.use(stage.middleware());
+        this.bot.stage.register(this.purposeScene);
+        this.bot.stage.register(this.domainsScene);
+        this.bot.stage.register(this.valuesScene);
+        this.bot.stage.register(this.rolesScene);
+        this.bot.stage.register(this.adminScene);
+        this.bot.stage.register(this.hexScene);
+      
 
         // ================= ADMIN ===========================
 
