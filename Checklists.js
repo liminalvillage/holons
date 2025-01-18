@@ -35,16 +35,69 @@ class Checklists {
     setupScenes() {
         // Setup add item scene
         this.addItemScene.enter(async (ctx) => {
-            await ctx.reply('Please enter the new items (comma-separated for multiple items):');
+            // Store the original message ID and chat ID
+            ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
+            ctx.scene.state.chatId = ctx.callbackQuery.message.chat.id;
+            
+            // Send prompt message
+            const promptMessage = await ctx.reply('Please enter the new items (comma-separated for multiple items):');
+            // Store prompt message ID for later deletion
+            ctx.scene.state.promptMessageId = promptMessage.message_id;
         });
 
         this.addItemScene.on('text', async (ctx) => {
             const itemsText = ctx.message.text;
-            const listName = ctx.session.currentChecklist;
-            const chatId = ctx.chat.id;
+            const chatId = ctx.scene.state.chatId;
+            const originalMessageId = ctx.scene.state.originalMessageId;
+            const promptMessageId = ctx.scene.state.promptMessageId;
             
-            const result = await this.addItemsToChecklist(listName, itemsText, chatId, ctx);
-            return ctx.scene.leave();
+            try {
+                // Get the checklist ID from the scene state
+                const checklistId = ctx.scene.state.checklistId;
+                if (!checklistId) {
+                    await ctx.reply('Error: Checklist ID not found');
+                    return ctx.scene.leave();
+                }
+
+                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString());
+                if (!checklist) {
+                    await ctx.reply('Checklist not found');
+                    return ctx.scene.leave();
+                }
+
+                // Add new items
+                const newItems = itemsText.split(',').map(text => ({
+                    text: text.trim(),
+                    checked: false
+                })).filter(item => item.text);
+
+                checklist.items.push(...newItems);
+                await this.db.put(chatId + '/checklists', checklist);
+
+                // Delete the prompt message
+                if (promptMessageId) {
+                    await ctx.deleteMessage(promptMessageId).catch(() => {});
+                }
+                // Delete the user's input message
+                if (ctx.message) {
+                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                }
+
+                // If this is a quest's checklist, return to the quest view
+                if (checklist.questId) {
+                    const quest = await this.db.get(chatId + '/quests', checklist.questId);
+                    if (quest && this.questInstance) {
+                        await this.questInstance.updateMessage(ctx, quest);
+                    }
+                }
+
+                await ctx.scene.leave();
+
+            } catch (error) {
+                console.error('Error adding items to checklist:', error);
+                await ctx.reply('Error adding items to checklist');
+                await ctx.scene.leave();
+            }
         });
 
         // Setup new checklist scene
@@ -343,9 +396,12 @@ class Checklists {
 
     async handleAddItemButton(ctx) {
         await ctx.answerCbQuery();
-        const listName = ctx.match[1];
-        ctx.session.currentChecklist = listName;
-        await ctx.scene.enter('add_item_scene');
+        const checklistId = ctx.match[1];
+        await ctx.scene.enter('add_item_scene', { 
+            checklistId: checklistId,
+            chatId: ctx.callbackQuery.message.chat.id,
+            messageId: ctx.callbackQuery.message.message_id
+        });
     }
 
     async handleDummyAction(ctx) {
