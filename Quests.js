@@ -1209,11 +1209,11 @@ export default class Quests {
     // Add checklist action handler
     async handleChecklistButton(ctx) {
         console.log("CHECKLIST ACTION");
-        const chatID = ctx.callbackQuery.message.chat.id;
-        const messageID = ctx.callbackQuery.data.split('_')[3];
+        const chatId = ctx.callbackQuery.message.chat.id;
+        const messageId = ctx.callbackQuery.data.split('_')[3];
 
-        const language = await this.settings.getLanguage(chatID)
-        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        const language = await this.settings.getLanguage(chatId)
+        let quest = await this.db.get(chatId + '/quests', messageId.toString())
 
         if (!quest || quest == '') { 
             console.log('QUEST IS NOT FOUND'); 
@@ -1232,81 +1232,26 @@ export default class Quests {
             if (!quest.checklistId) {
                 // Create a new checklist with the quest's title
                 const checklist = {
-                    id: messageID.toString(),
+                    id: messageId.toString(),
                     items: [],
                     creator: quest.initiator.id,
                     created: new Date(),
                     questId: quest.id, // Store reference to the quest
                     questTitle: quest.title, // Store quest title for display
-                    chatId: chatID, // Store chat ID for navigation
+                    chatId: chatId, // Store chat ID for navigation
                     isTaskChecklist: true // Flag to indicate this is a task's checklist
                 };
 
                 // Save the checklist
-                await this.db.put(chatID + '/checklists', checklist);
+                await this.db.put(chatId + '/checklists', checklist);
                 
                 // Update quest with checklist ID
-                quest.checklistId = messageID.toString();
-                await this.db.put(chatID + '/quests', quest);
-                
-                // Create keyboard with back button
-                const keyboard = [
-                    [Markup.button.callback('➕ Add Item', `add_item_to_${messageID}`)],
-                ];
-
-                // Add back button in its own row if this is a task's checklist
-                keyboard.push([
-                    Markup.button.callback('🔙 Back to Task', `back_to_quest_${chatID}_${quest.id}`)
-                ]);
-
-                // Edit current message to show checklist
-                await ctx.editMessageText(
-                    `📋 ${quest.title} Checklist:`,
-                    Markup.inlineKeyboard(keyboard)
-                );
-            } else {
-                // Get existing checklist
-                const checklist = await this.db.get(chatID + '/checklists', quest.checklistId);
-                
-                if (!checklist) {
-                    console.log('Checklist not found despite having ID');
-                    ctx.answerCbQuery('Error: Checklist not found');
-                    return;
-                }
-
-                // Ensure checklist has quest reference and task flag
-                if (!checklist.questId) {
-                    checklist.questId = quest.id;
-                    checklist.questTitle = quest.title;
-                    checklist.chatId = chatID;
-                    checklist.isTaskChecklist = true;
-                    await this.db.put(chatID + '/checklists', checklist);
-                }
-
-                // Create keyboard with items and controls
-                const keyboard = [
-                    ...checklist.items.map((item, index) => ([
-                        Markup.button.callback(
-                            `${item.checked ? '✅' : '⬜️'} ${item.text}`,
-                            `check_${checklist.id}_${index}`
-                        )
-                    ])),
-                    [Markup.button.callback('➕ Add Item', `add_item_to_${checklist.id}`)],
-                ];
-
-                // Add back button in its own row if this is a task's checklist
-                keyboard.push([
-                    Markup.button.callback('🔙 Back to Task', `back_to_quest_${chatID}_${quest.id}`)
-                ]);
-
-                // Edit current message to show checklist
-                await ctx.editMessageText(
-                    `📋 ${quest.title} Checklist:`,
-                    Markup.inlineKeyboard(keyboard)
-                );
+                quest.checklistId = messageId.toString();
+                await this.db.put(chatId + '/quests', quest);
             }
 
-            await ctx.answerCbQuery();
+            // Let the Checklists class handle displaying the checklist
+            await this.checklists.showChecklist(ctx, messageId.toString());
 
         } catch (error) {
             console.error('Error handling checklist button:', error)

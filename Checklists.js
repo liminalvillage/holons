@@ -83,13 +83,14 @@ class Checklists {
                     await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
                 }
 
-                // If this is a quest's checklist, return to the quest view
-                if (checklist.questId) {
-                    const quest = await this.db.get(chatId + '/quests', checklist.questId);
-                    if (quest && this.questInstance) {
-                        await this.questInstance.updateMessage(ctx, quest);
-                    }
-                }
+                // Update the original checklist message
+                await ctx.telegram.editMessageText(
+                    chatId,
+                    originalMessageId,
+                    null,
+                    `📋 ${checklist.questTitle || 'Checklist'}:`,
+                    this.getChecklistKeyboard(checklist)
+                );
 
                 await ctx.scene.leave();
 
@@ -263,27 +264,27 @@ class Checklists {
         ctx.reply(`Removed checklist "${name}".`);
     }
 
-    async showChecklist(ctx) {
-        const name = ctx.message.text.split('/checklist ')[1];
-        if (!name) {
-            ctx.reply('Please specify a checklist name. eg: /checklist morning');
-            return;
-        }
-
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', name);
+    async showChecklist(ctx, checklistId) {
+        const chatId = ctx.callbackQuery.message.chat.id;
         
-        if (!checklist) {
-            ctx.reply(`Checklist "${name}" not found.`);
-            return;
-        }
+        try {
+            const checklist = await this.db.get(chatId + '/checklists', checklistId);
+            if (!checklist) {
+                await ctx.answerCbQuery('Checklist not found');
+                return;
+            }
 
-        if (checklist.items.length === 0) {
-            ctx.reply(`Checklist "${name}" is empty.`);
-            return;
+            // Edit current message to show checklist
+            await ctx.editMessageText(
+                `📋 ${checklist.questTitle || 'Checklist'}:`,
+                this.getChecklistKeyboard(checklist)
+            );
+            
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error showing checklist:', error);
+            await ctx.answerCbQuery('Error displaying checklist');
         }
-
-        ctx.reply(`📋 ${name.toUpperCase()} Checklist:`, this.getChecklistKeyboard(checklist));
     }
 
     async toggleCheckItem(ctx) {
