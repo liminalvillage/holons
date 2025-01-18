@@ -132,6 +132,7 @@ class HolonsBot {
     this.quests = new Quests(this.telebot, this.db, this.users, this.settings);
     this.scheduler = new Scheduler(this.telebot, this.db, this.quests, this.settings);
     this.quests.setScheduler(this.scheduler);
+    this.quests.expenses = this.expenses;
 
   }
 

@@ -106,13 +106,13 @@ export default class Expenses {
 
         const description = args.slice(2).join(' ');
         // TODO WARNING!!: messageID+1 is a dirty hack to get the id of the reply message as id of the expense. This will break if another message is sent at the same time
-        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.id);
+        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.id, [chatID]);
         ctx.reply(await this.createMessage(expense), Markup.inlineKeyboard(
             [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
         ));
     };
 
-    async addExpense(messageID, chatID, amount, currency, description, paidBy) {
+    async addExpense(messageID, chatID, amount, currency, description, paidBy, splitWith) {
         //do health check on currency: remove uppercase, check if it's a valid currency, remove plural
         if (isNaN(amount) || amount <= 0 || currency == null || currency.length == 0) {
             return false;
@@ -137,7 +137,7 @@ export default class Expenses {
             currency,
             description,
             paidBy,
-            splitWith: [paidBy]
+            splitWith    
         };
         await this.db.put(chatID + '/expenses', expense)
         console.log('added expense', expense.id)
@@ -150,11 +150,15 @@ export default class Expenses {
         if (expense) {
             if (!expense.splitWith.includes(userID)) { //add user to split
                 expense.splitWith.push(userID);
+                expense.splitWith.remove(chatID);
             }
             else {//remove user from split
                 expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != userID; });
+                if (expense.splitWith.length == 0) {
+                    expense.splitWith.push(chatID);
+                }
             }
-
+        
             await this.db.put(chatID + '/expenses', expense)
             return expense;
         }

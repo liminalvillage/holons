@@ -19,6 +19,7 @@ export default class Quests {
         });
         this.settings = settings
         this.users = users
+        this.expenses = null // Will be set from outside after construction
         //----------------------------- QUESTS -----------------------------
         this.bot.command('delete', async (ctx) => this.delete(ctx))
         this.bot.command('quest', async (ctx) => this.quest('task', ctx))
@@ -60,6 +61,8 @@ export default class Quests {
         this.bot.action(/less_actions_(.+)/, (ctx) => this.hideMoreActions(ctx));
         this.bot.action(/publish_quest_(.+)/, (ctx) => this.publish(ctx));
         this.bot.action(/cast_quest_(.+)/, (ctx) => this.cast(ctx));
+        this.bot.action(/add_time_quest_(.+)/, (ctx) => this.addTime(ctx));
+        this.bot.action(/subtract_time_quest_(.+)/, (ctx) => this.subtractTime(ctx));
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
@@ -243,7 +246,8 @@ export default class Quests {
             stoppers: [],
             type: type,
             status: 'ongoing',
-            category: category
+            category: category,
+            timeTracking: {} // Add time tracking object to store user contributions
         }
 
         if (picture)
@@ -528,6 +532,25 @@ export default class Quests {
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
         if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || isAdmin(ctx.from.id, chatID)) {
             quest.status = "completed";
+            
+            // Create expense entries for all time tracked
+            if (quest.timeTracking) {
+                for (const [userID, hours] of Object.entries(quest.timeTracking)) {
+                    if (hours > 0) {
+                        // Create expense entry for the time logged, using chatID for splitWith
+                        await this.expenses.addExpense(
+                            messageID, // Unique ID
+                            chatID,
+                            hours, // Total hours logged
+                            'hour',
+                            quest.title,
+                            userID,
+                            [chatID]
+                        );
+                    }
+                }
+            }
+
             // Update the message 
             this.updateMessage(ctx, quest, language);
             // Update the db
@@ -856,19 +879,25 @@ export default class Quests {
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
             
-            // Second row - appreciation and schedule
+            // Second row - time tracking
+            buttons.push([
+                Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Third row - appreciation and schedule
             buttons.push([
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
             ]);
             
-            // Third row - stop and cancel
+            // Fourth row - stop and cancel
             buttons.push([
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Fourth row - publish and cast
+            // Fifth row - publish and cast
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
@@ -1098,6 +1127,81 @@ export default class Quests {
             ctx.answerCbQuery('Error casting quest')
         }
     }
+
+    async addTime(ctx) {
+        console.log("ADD TIME ACTION");
+        let chatID = ctx.callbackQuery.data.split('_')[3];
+        let messageID = ctx.callbackQuery.data.split('_')[4];
+        const language = await this.settings.getLanguage(chatID)
+
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+
+        // Get the user who logged time
+        const sender = ctx.callbackQuery.from;
+        const userId = sender.id;
+
+        // Initialize time tracking for user if not exists
+        if (!quest.timeTracking[userId]) {
+            quest.timeTracking[userId] = 0;
+        }
+
+        // Add 15 minutes (0.25 hours)
+        quest.timeTracking[userId] += 0.25;
+
+        // Add user to participants if they're not already in the list
+        const userIndex = quest.participants.findIndex(user => user.id === sender.id);
+        if (userIndex === -1) {
+            quest.participants.push(sender);
+        }
+
+        // Update the message
+        await this.updateMessage(ctx, quest, language);
+
+        // Update the db
+        await this.db.put(chatID + '/quests', quest);
+
+        ctx.answerCbQuery(`Added 15 minutes to ${getDisplayName(sender)}'s time on "${quest.title}"`);
+    }
+
+    async subtractTime(ctx) {
+        console.log("SUBTRACT TIME ACTION");
+        let chatID = ctx.callbackQuery.data.split('_')[3];
+        let messageID = ctx.callbackQuery.data.split('_')[4];
+        const language = await this.settings.getLanguage(chatID)
+
+        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+
+        // Get the user who logged time
+        const sender = ctx.callbackQuery.from;
+        const userId = sender.id;
+
+        // Initialize time tracking for user if not exists
+        if (!quest.timeTracking[userId]) {
+            quest.timeTracking[userId] = 0;
+        }
+
+        // Only subtract if there's time logged
+        if (quest.timeTracking[userId] >= 0.25) {
+            quest.timeTracking[userId] -= 0.25;
+
+            // If user has no more time logged, remove them from participants
+            if (quest.timeTracking[userId] === 0) {
+                quest.participants = quest.participants.filter(user => user.id !== sender.id);
+            }
+
+            // Update the message
+            await this.updateMessage(ctx, quest, language);
+
+            // Update the db
+            await this.db.put(chatID + '/quests', quest);
+
+            ctx.answerCbQuery(`Removed 15 minutes from ${getDisplayName(sender)}'s time on "${quest.title}"`);
+        } else {
+            ctx.answerCbQuery(`No time logged for ${getDisplayName(sender)} to remove`);
+        }
+    }
 }
 
 // Function to create the message for a quest 
@@ -1118,47 +1222,59 @@ function createMessage(quest, language) {
 
     if (quest.participants.length > 0)
         message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => getDisplayName(u)).join(', ')} \n`;
-    if (quest.appreciation.length > 0)
-        message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => getDisplayName(u)).join(', ')} \n`;
-    
-    // Format date in a human-friendly way
-    if (quest.when) {
-        const date = new Date(quest.when);
-        const today = new Date();
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-
-        let dateStr;
-        if (date.toDateString() === today.toDateString()) {
-            dateStr = `Today at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
-        } else if (date.toDateString() === tomorrow.toDateString()) {
-            dateStr = `Tomorrow at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
-        } else {
-            dateStr = date.toLocaleDateString(language, { 
-                weekday: 'long',
-                month: 'long', 
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
-        message += `| ${i18next.t('📅', { lng: language })} : ${dateStr} \n`;
-    }
-
-    if (quest.where?.lat)
-        message += `| ${i18next.t('📍 ', { lng: language })}: ${quest.where.lat} : ${quest.where.lon}   \n`;
-    if (quest.status === "stopped")
-        message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => getDisplayName(u)).join(', ')} \n`;
-    message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;
-    
-    // Add published and cast status
-    if (quest.published)
-        message += `| 📢 ${i18next.t('published', { lng: language })}\n`;
-    if (quest.cast)
-        message += `| 🎭 ${i18next.t('cast', { lng: language })}\n`;
         
-    return message;
-}
+        // Add time tracking info if any time is logged
+        if (quest.timeTracking && Object.keys(quest.timeTracking).length > 0) {
+            message += `| ⏰ Time logged:\n`;
+            for (const [userId, hours] of Object.entries(quest.timeTracking)) {
+                if (hours > 0) {
+                    const user = quest.participants.find(p => p.id === parseInt(userId)) || quest.initiator;
+                    message += `|   ${getDisplayName(user)}: ${hours.toFixed(2)}h\n`;
+                }
+            }
+        }
+
+        if (quest.appreciation.length > 0)
+            message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => getDisplayName(u)).join(', ')} \n`;
+        
+        // Format date in a human-friendly way
+        if (quest.when) {
+            const date = new Date(quest.when);
+            const today = new Date();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
+            let dateStr;
+            if (date.toDateString() === today.toDateString()) {
+                dateStr = `Today at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
+            } else if (date.toDateString() === tomorrow.toDateString()) {
+                dateStr = `Tomorrow at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
+            } else {
+                dateStr = date.toLocaleDateString(language, { 
+                    weekday: 'long',
+                    month: 'long', 
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+            message += `| ${i18next.t('📅', { lng: language })} : ${dateStr} \n`;
+        }
+
+        if (quest.where?.lat)
+            message += `| ${i18next.t('📍 ', { lng: language })}: ${quest.where.lat} : ${quest.where.lon}   \n`;
+        if (quest.status === "stopped")
+            message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => getDisplayName(u)).join(', ')} \n`;
+        message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;
+        
+        // Add published and cast status
+        if (quest.published)
+            message += `| 📢 ${i18next.t('published', { lng: language })}\n`;
+        if (quest.cast)
+            message += `| 🎭 ${i18next.t('cast', { lng: language })}\n`;
+            
+        return message;
+    }
 
 function markup(quest, language) {
     let mu
@@ -1168,6 +1284,10 @@ function markup(quest, language) {
             [
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+            ],
+            [
+                Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
             ],
             [
                 Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
