@@ -20,7 +20,7 @@ class HoloSphere {
             validateSchema: true // Always validate schemas
         });
         this.gun = Gun({
-            peers: ['https://gun.holons.io', 'https://59.src.eco/gun'],
+            peers: ['https://gun.holons.io/gun', 'https://59.src.eco/gun'],
             axe: false,
             // uuid: (content) => { // generate a unique id for each node
             //     console.log('uuid', content);
@@ -266,7 +266,7 @@ class HoloSphere {
                     if (itemdata) {
                         try {
                             const parsed = await this.parse(itemdata);
-                            if (schema) {
+                            if (schema && this.strict) {
                                 const valid = this.validator.validate(schema, parsed);
                                 if (valid) {
                                     output.push(parsed);
@@ -849,12 +849,12 @@ class HoloSphere {
     async upcast(holon, lens, content) {
         let res = h3.getResolution(holon)
         if (res == 0) {
-            await this.putNode(holon, lens, content)
+            await this.put(holon, lens, content)
             return content
         }
         else {
             console.log('Upcasting ', holon, lens, content, res)
-            await this.putNode(holon, lens, content)
+            await this.put(holon, lens, content)
             let parent = h3.cellToParent(holon, res - 1)
             return this.upcast(parent, lens, content)
         }
