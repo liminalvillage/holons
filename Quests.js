@@ -3,6 +3,7 @@ import i18next from 'i18next';
 import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import Users from './Users.js';
+import { Scenes } from 'telegraf';
 
 
 export default class Quests {
@@ -21,6 +22,12 @@ export default class Quests {
         this.users = users
         this.expenses = null // Will be set from outside after construction
         this.checklists = null // Will be set from outside after construction
+
+        // Initialize scenes
+        this.descriptionScene = new Scenes.BaseScene('description_scene');
+        this.setupDescriptionScene();
+        this.bot.stage.register(this.descriptionScene);
+
         //----------------------------- QUESTS -----------------------------
         this.bot.command('delete', async (ctx) => this.delete(ctx))
         this.bot.command('quest', async (ctx) => this.quest('task', ctx))
@@ -69,6 +76,9 @@ export default class Quests {
         this.bot.action(/checklist_quest_(.+)/, (ctx) => this.handleChecklistButton(ctx));
         this.bot.action(/check_(.+)/, (ctx) => this.handleCheckItem(ctx));
         this.bot.action(/add_item_to_(.+)/, (ctx) => this.handleAddItem(ctx));
+
+        // Add description action handler
+        this.bot.action(/description_quest_(.+)/, (ctx) => this.handleDescription(ctx));
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
@@ -869,7 +879,7 @@ export default class Quests {
         
         // Update message with original markup
         await ctx.editMessageReplyMarkup({ 
-            inline_keyboard: markup(quest, language).reply_markup.inline_keyboard 
+            inline_keyboard: this.markup(quest, language).reply_markup.inline_keyboard 
         }).catch((err) => { console.log(err) });
         
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
@@ -898,14 +908,15 @@ export default class Quests {
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Fourth row - checklist and stop
+            // Fourth row - description and checklist
             buttons.push([
-                Markup.button.callback('📋 ' + i18next.t('checklist', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'description_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('📋 ' + i18next.t('checklist', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
             ]);
             
-            // Fifth row - cancel
+            // Fifth row - stop and cancel
             buttons.push([
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
             ]);
 
@@ -913,6 +924,11 @@ export default class Quests {
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Last row - less actions button
+            buttons.push([
+                Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
             ]);
         } else if (quest.type == 'event') {
             // First row - essential actions
@@ -982,13 +998,6 @@ export default class Quests {
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
-            ]);
-        }
-        
-        // Last row - collapse button (for all types except completed)
-        if (quest.status !== "completed") {
-            buttons.push([
-                Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
             ]);
         }
         
@@ -1373,6 +1382,11 @@ export default class Quests {
         // Add initiator info
         message += `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)} \n`;
 
+        // Add description if it exists
+        if (quest.description) {
+            message += `| 📝 ${quest.description}\n`;
+        }
+
         // Add frequency for recurring tasks
         if (quest.type === 'recurring' && quest.frequency) {
             message += `| 🔄 ${i18next.t('frequency', { lng: language })}: ${quest.frequency} \n`;
@@ -1554,80 +1568,69 @@ export default class Quests {
         }
     }
 
-    setupScenes() {
-        // Setup add item scene
-        this.addItemScene.enter(async (ctx) => {
-            await ctx.reply('Please enter the new items (comma-separated for multiple items):');
+    setupDescriptionScene() {
+        this.descriptionScene.enter(async (ctx) => {
+            const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
+            const currentDescription = quest.description || '';
+            
+            let message = '📝 *Description*\n\n';
+            if (currentDescription) {
+                message += currentDescription + '\n\n';
+            }
+            message += 'Reply to this message to add or update the description.';
+            
+            await ctx.reply(message, { parse_mode: 'Markdown' });
         });
 
-        this.addItemScene.on('text', async (ctx) => {
-            const itemsText = ctx.message.text;
-            const chatId = ctx.scene.state.chatId;
-            
+        this.descriptionScene.on('text', async (ctx) => {
             try {
-                // Get the checklist ID from the scene state
-                const checklistId = ctx.scene.state.checklistId;
-                if (!checklistId) {
-                    await ctx.reply('Error: Checklist ID not found');
+                const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
+                if (!quest) {
+                    await ctx.reply('Quest not found');
                     return ctx.scene.leave();
                 }
 
-                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString());
-                if (!checklist) {
-                    await ctx.reply('Checklist not found');
-                    return ctx.scene.leave();
-                }
+                // Update the description
+                quest.description = ctx.message.text;
+                await this.db.put(ctx.scene.state.chatId + '/quests', quest);
 
-                // Add new items
-                const newItems = itemsText.split(',').map(text => ({
-                    text: text.trim(),
-                    checked: false
-                })).filter(item => item.text);
-
-                checklist.items.push(...newItems);
-                await this.db.put(chatId + '/checklists', checklist);
-
-                // Create keyboard with items
-                const keyboard = [
-                    ...checklist.items.map((item, index) => ([
-                        Markup.button.callback(
-                            `${item.checked ? '✅' : '⬜️'} ${item.text}`,
-                            `check_${checklistId}_${index}`
-                        )
-                    ])),
-                    [Markup.button.callback('➕ Add Item', `add_item_to_${checklistId}`)]
-                ];
-
-                // Add back button if this is a quest's checklist
-                if (checklist.questId) {
-                    keyboard.push([
-                        Markup.button.callback('🔙 Back to Task', `back_to_quest_${checklist.chatId}_${checklist.questId}`)
-                    ]);
-                }
-
-                // Show updated checklist
-                await ctx.reply(
-                    `📋 ${checklist.questTitle || 'Checklist'}:`,
-                    Markup.inlineKeyboard(keyboard)
-                );
-
-                // Delete the original "enter items" message and the prompt
-                if (ctx.message) {
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                }
-                // Try to delete the "Please enter items" message
-                try {
-                    await ctx.deleteMessage(ctx.message.message_id - 1);
-                } catch (error) {
-                    console.log('Could not delete prompt message');
-                }
-
+                // Update the original quest message
+                await this.updateMessage(ctx, quest);
+                
+                await ctx.reply('Description updated successfully!');
+                return ctx.scene.leave();
             } catch (error) {
-                console.error('Error adding items to checklist:', error);
-                await ctx.reply('Error adding items to checklist');
+                console.error('Error updating description:', error);
+                await ctx.reply('Error updating description');
+                return ctx.scene.leave();
+            }
+        });
+    }
+
+    // Add description handler method
+    async handleDescription(ctx) {
+        console.log("DESCRIPTION ACTION");
+        const chatId = ctx.callbackQuery.message.chat.id;
+        const messageId = ctx.callbackQuery.data.split('_')[3];
+        
+        try {
+            const quest = await this.db.get(chatId + '/quests', messageId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
             }
 
-            return ctx.scene.leave();
-        });
+            // Enter scene for adding/viewing description
+            await ctx.scene.enter('description_scene', { 
+                questId: messageId,
+                chatId: chatId,
+                currentDescription: quest.description || ''
+            });
+            
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error handling description:', error);
+            await ctx.answerCbQuery('Error accessing description');
+        }
     }
 }
