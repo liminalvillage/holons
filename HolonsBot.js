@@ -31,6 +31,7 @@ import Checklists from './Checklists.js';
 import Scheduler from './Scheduler.js';
 import CapitalGame from './CapitalGame.js';
 
+
 // Delete lock file if it exists
 if (fs.existsSync('./orbitdb/repo.lock')) {
   fs.rmdirSync('./orbitdb/repo.lock');

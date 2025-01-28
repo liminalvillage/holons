@@ -41,6 +41,15 @@ class UI {
     this.bot.command('values', (ctx) => this.valuescloud(ctx))
     this.bot.command('needs', (ctx) => this.needscloud(ctx))
     this.bot.command('cloud', (ctx) => this.valuescloud(ctx))
+ 
+    this.bot.command('dashboard', async (ctx) => {
+      let chatID = ctx.message.chat.id
+      const language = await this.settings.getLanguage(chatID)
+      ctx.reply('Holonic Dashboard', Markup.inlineKeyboard([
+        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+          `https://dashboard.holons.io/${chatID}/`)
+      ]))
+    })
   }
 
   async init() {

@@ -68,7 +68,7 @@ export default class Quests {
         this.bot.action(/more_actions_(.+)/, (ctx) => this.showMoreActions(ctx));
         this.bot.action(/less_actions_(.+)/, (ctx) => this.hideMoreActions(ctx));
         this.bot.action(/publish_quest_(.+)/, (ctx) => this.publish(ctx));
-        this.bot.action(/cast_quest_(.+)/, (ctx) => this.cast(ctx));
+        this.bot.action(/broadcast_quest_(.+)/, (ctx) => this.broadcast(ctx));
         this.bot.action(/add_time_quest_(.+)/, (ctx) => this.addTime(ctx));
         this.bot.action(/subtract_time_quest_(.+)/, (ctx) => this.subtractTime(ctx));
 
@@ -364,7 +364,7 @@ export default class Quests {
         try {
             let chatID = ctx.callbackQuery.data.split('_')[2];
             let messageID = ctx.callbackQuery.data.split('_')[3];
-            console.log(ctx.callbackQuery.data)
+         
 
             const language = await this.settings.getLanguage(chatID)
 
@@ -911,7 +911,7 @@ export default class Quests {
             // Fourth row - description and checklist
             buttons.push([
                 Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'description_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('📋 ' + i18next.t('checklist', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
             ]);
             
             // Fifth row - stop and cancel
@@ -920,10 +920,10 @@ export default class Quests {
                 Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Sixth row - publish and cast
+            // Sixth row - publish and broadcast
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
             ]);
 
             // Last row - less actions button
@@ -943,10 +943,10 @@ export default class Quests {
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Third row - publish and cast
+            // Third row - publish and broadcast
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
             ]);
         } else if (quest.type == 'proposal') {
             // First row
@@ -971,10 +971,10 @@ export default class Quests {
                 Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Third row - publish and cast
+            // Third row - publish and broadcast
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
             ]);
         } else if (quest.type == 'recurring') {
             // First row
@@ -994,10 +994,10 @@ export default class Quests {
                 Markup.button.callback(i18next.t('remove', { lng: language }), 'remove_recurring_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Fourth row - publish and cast
+            // Fourth row - publish and broadcast
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('cast', { lng: language }), 'cast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
             ]);
         }
         
@@ -1072,9 +1072,9 @@ export default class Quests {
         }
     }
 
-    // Add cast method
-    async cast(ctx) {
-        console.log("CAST ACTION");
+    // Add broadcast method
+    async broadcast(ctx) {
+        console.log("BROADCAST ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
 
@@ -1087,12 +1087,12 @@ export default class Quests {
             return 
         }
 
-        // Get the user who initiated the cast
+        // Get the user who initiated the broadcast
         const sender = ctx.callbackQuery.from;
 
-        // Check if user has permission to cast
+        // Check if user has permission to broadcast
         if (quest.initiator.id !== sender.id && !isAdmin(sender.id, chatID)) {
-            ctx.answerCbQuery(i18next.t('onlyinitiatorcast', { lng: language }))
+            ctx.answerCbQuery(i18next.t('onlyinitiatorbroadcast', { lng: language }))
             return;
         }
 
@@ -1127,16 +1127,16 @@ export default class Quests {
             // Upcast to holosphere
             await this.db.holosphere.upcast(hex, 'quests', {id: messageID, soul: this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID })
             
-            ctx.answerCbQuery('Quest cast to hex ' + hex)
+            ctx.answerCbQuery('Quest broadcast to hex ' + hex)
             
-            // Update the message to show it's been cast
-            quest.cast = true
+            // Update the message to show it's been broadcast
+            quest.broadcasted = true
             await this.db.put(chatID + '/quests', quest)
             await this.updateMessage(ctx, quest, language)
 
         } catch (error) {
-            console.error('Error casting quest:', error)
-            ctx.answerCbQuery('Error casting quest')
+            console.error('Error broadcasting quest:', error)
+            ctx.answerCbQuery('Error broadcasting quest')
         }
     }
 
@@ -1452,11 +1452,11 @@ export default class Quests {
             message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => getDisplayName(u)).join(', ')} \n`;
         message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;
         
-        // Add published and cast status
+        // Add published and broadcast status
         if (quest.published)
             message += `| 📢 ${i18next.t('published', { lng: language })}\n`;
-        if (quest.cast)
-            message += `| 🎭 ${i18next.t('cast', { lng: language })}\n`;
+        if (quest.broadcasted)
+            message += `| 🎭 ${i18next.t('broadcasted', { lng: language })}\n`;
             
         return message;
     }
@@ -1475,7 +1475,7 @@ export default class Quests {
                     Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
-                    Markup.button.callback('📋 ' + i18next.t('checklist', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
                 ]
             ])
