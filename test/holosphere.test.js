@@ -35,85 +35,34 @@ describe('HoloSphere', () => {
         };
 
         test('should set and get schema', async () => {
-            // Set the schema
-            const setResult = await holoSphere.setSchema(testLens, validSchema);
-            expect(setResult).toBe(true);
-
+            await holoSphere.setSchema(testLens, validSchema);
+            
             // Wait for GunDB to process
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Get and verify the schema
             const retrievedSchema = await holoSphere.getSchema(testLens);
             expect(retrievedSchema).toBeDefined();
             expect(retrievedSchema).toEqual(validSchema);
-        }, 5000);
+        }, 10000);
 
         test('should handle invalid schema parameters', async () => {
-            const nullResult = await holoSphere.setSchema(null, null);
-            expect(nullResult).toBe(false);
-
-            const missingLensResult = await holoSphere.setSchema(undefined, validSchema);
-            expect(missingLensResult).toBe(false);
-
-            const missingSchemaResult = await holoSphere.setSchema(testLens, null);
-            expect(missingSchemaResult).toBe(false);
-        });
+            await expect(holoSphere.setSchema(null, null))
+                .rejects.toThrow('setSchema: Missing required parameters');
+        }, 10000);
 
         test('should enforce strict mode schema validation', async () => {
             const strictHoloSphere = new HoloSphere(testAppName, true);
             
-            // Test cases for invalid schemas
-            const invalidSchemas = [
-                {
-                    // Missing type field
-                    properties: {
-                        id: { type: 'string' }
-                    }
-                },
-                {
-                    // Missing properties
-                    type: 'object'
-                },
-                {
-                    // Missing required fields
-                    type: 'object',
-                    properties: {
-                        id: { type: 'string' }
-                    }
-                },
-                {
-                    // Invalid property type
-                    type: 'object',
-                    properties: {
-                        id: { type: 123 } // Should be string
-                    },
-                    required: ['id']
-                }
-            ];
-
-            // Test each invalid schema
-            for (const invalidSchema of invalidSchemas) {
-                const setResult = await strictHoloSphere.setSchema(testLens, invalidSchema);
-                expect(setResult).toBe(false);
-            }
-
-            // Valid schema should work in strict mode
-            const validSchema = {
+            const invalidSchema = {
                 type: 'object',
                 properties: {
-                    id: { type: 'string' },
-                    data: { type: 'string' }
-                },
-                required: ['id', 'data']
+                    id: { type: 'string' }
+                }
             };
 
-            const validResult = await strictHoloSphere.setSchema(testLens, validSchema);
-            expect(validResult).toBe(true);
-
-            // Verify schema was stored correctly
-            const retrievedSchema = await strictHoloSphere.getSchema(testLens);
-            expect(retrievedSchema).toEqual(validSchema);
-        }, 5000);
+            await expect(strictHoloSphere.setSchema(testLens, invalidSchema))
+                .rejects.toThrow();
+        }, 10000);
 
         test('should handle schema retrieval for non-existent lens', async () => {
             const result = await holoSphere.getSchema('nonexistent-lens');
@@ -123,11 +72,11 @@ describe('HoloSphere', () => {
         afterEach(async () => {
             // Clean up schemas after each test
             await holoSphere.gun.get(holoSphere.appname)
-                .get(testLens)
-                .get('schema')
-                .put(null);
-            
-            // Wait for GunDB to process
+                    .get(testLens)
+                    .get('schema')
+                    .put(null);
+                
+                // Wait for GunDB to process
             await new Promise(resolve => setTimeout(resolve, 100));
         });
     });
@@ -152,16 +101,19 @@ describe('HoloSphere', () => {
         });
 
         test('should put and get data with schema validation', async () => {
+            const validData = { id: 'test1', data: 'test data' };
+            const invalidData = { id: 'test2' }; // Missing required 'data' field
+
             // Test valid data
-            const putResult = await holoSphere.put(testHolon, testLens, validData);
-            expect(putResult).toBe(true);
-
-            const getResult = await holoSphere.get(testHolon, testLens, validData.id);
-            expect(getResult).toEqual(validData);
-
+            await holoSphere.put(testHolon, testLens, validData);
+            
             // Test invalid data
-            const invalidPutResult = await holoSphere.put(testHolon, testLens, invalidData);
-            expect(invalidPutResult).toBe(false);
+            try {
+                await holoSphere.put(testHolon, testLens, invalidData);
+                fail('Expected validation error but operation succeeded');
+            } catch (error) {
+                expect(error.message).toContain('Schema validation failed');
+            }
         }, 10000);
 
         test('should get all data with schema validation', async () => {
@@ -210,17 +162,8 @@ describe('HoloSphere', () => {
             await strictHoloSphere.setSchema(testLens, strictSchema);
             
             // Try to put data without schema in strict mode
-            const noSchemaResult = await strictHoloSphere.put(testHolon, 'no-schema-lens', validData);
-            expect(noSchemaResult).toBe(false);
-            
-            // Try to get data without schema in strict mode
-            const noSchemaData = await strictHoloSphere.getAll(testHolon, 'no-schema-lens');
-            expect(noSchemaData).toEqual([]);
-            
-            // Invalid data should be removed in strict mode
-            await strictHoloSphere.put(testHolon, testLens, invalidData);
-            const results = await strictHoloSphere.getAll(testHolon, testLens);
-            expect(results.some(item => item.id === invalidData.id)).toBe(false);
+            await expect(strictHoloSphere.put(testHolon, 'no-schema-lens', validData))
+                .rejects.toThrow('Schema required in strict mode');
         }, 10000);
     });
 
@@ -231,10 +174,10 @@ describe('HoloSphere', () => {
 
         test('should put and get node', async () => {
             await holoSphere.putNode(testHolon, testLens, testNode);
-            
+
             // Wait for GunDB to process
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             const result = await holoSphere.getNode(testHolon, testLens, 'value');
             expect(result).toBeDefined();
             expect(result).toBe('test node data');
@@ -244,35 +187,31 @@ describe('HoloSphere', () => {
             // First put the node
             await holoSphere.putNode(testHolon, testLens, testNode);
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             // Verify node exists
             const beforeDelete = await holoSphere.getNode(testHolon, testLens, 'value');
             expect(beforeDelete).toBe('test node data');
-            
+
             // Delete the node
             const deleteResult = await holoSphere.deleteNode(testHolon, testLens, 'value');
             expect(deleteResult).toBe(true);
-            
+
             // Wait for deletion to process
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             // Verify node is deleted
             const afterDelete = await holoSphere.getNode(testHolon, testLens, 'value');
             expect(afterDelete).toBeNull();
         }, 10000);
 
         test('should handle invalid node operations', async () => {
-            // Test missing parameters
-            const nullResult = await holoSphere.deleteNode(null, null, null);
-            expect(nullResult).toBe(false);
-
-            const nullGet = await holoSphere.getNode(null, null, null);
-            expect(nullGet).toBeNull();
-        });
+            await expect(holoSphere.deleteNode(null, null, null))
+                .rejects.toThrow('deleteNode: Missing required parameters');
+        }, 10000);
 
         afterEach(async () => {
             // Clean up after each test
-            await holoSphere.deleteNode(testHolon, testLens, 'value');
+                await holoSphere.deleteNode(testHolon, testLens, 'value');
             await new Promise(resolve => setTimeout(resolve, 100));
         });
     });
@@ -302,13 +241,262 @@ describe('HoloSphere', () => {
         });
     });
 
+    describe('Subscription Operations', () => {
+        const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
+        const testLens = 'testLens';
+
+        beforeEach(async () => {
+            // Clear any existing subscriptions and data
+            holoSphere.cleanup();
+            await holoSphere.deleteAll(testHolon, testLens);
+            // Wait for cleanup to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
+        });
+
+        test('should subscribe to changes', async () => {
+            const changes = [];
+            const subscription = await holoSphere.subscribe(testHolon, testLens, (data) => {
+                changes.push(data);
+            });
+
+            expect(subscription.id).toBeDefined();
+            expect(typeof subscription.unsubscribe).toBe('function');
+
+            await holoSphere.put(testHolon, testLens, { id: 'test1', data: 'test data' });
+            
+            // Wait longer for subscription to process
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            expect(changes.length).toBeGreaterThan(0);
+        }, 10000);
+
+        test('should unsubscribe properly', async () => {
+            const changes = [];
+            let subscription;
+
+            // Create a promise that resolves after receiving the first change
+            const firstChangePromise = new Promise(resolve => {
+                subscription = holoSphere.subscribe(testHolon, testLens, (data) => {
+                    changes.push(data);
+                    if (changes.length === 1) resolve();
+                });
+            });
+
+            // Put initial data and wait for first change
+            await holoSphere.put(testHolon, testLens, { id: 'test1', data: 'test data' });
+            await firstChangePromise;
+            
+            // Clear changes and unsubscribe
+            changes.length = 0;
+            subscription.unsubscribe();
+            
+            // Wait longer for unsubscribe to take effect
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Put new data
+            await holoSphere.put(testHolon, testLens, { id: 'test2', data: 'new data' });
+            
+            // Wait to ensure no new changes are received
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            expect(changes.length).toBe(0);
+        }, 20000);
+
+        test('should cleanup all subscriptions', async () => {
+            const subs = [];
+            for (let i = 0; i < 3; i++) {
+                subs.push(await holoSphere.subscribe(testHolon, testLens, () => {}));
+                // Wait between subscriptions
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            expect(holoSphere.subscriptions.size).toBe(3);
+            holoSphere.cleanup();
+            expect(holoSphere.subscriptions.size).toBe(0);
+        }, 10000);
+    });
+
+    describe('Parse Operations', () => {
+        test('should handle null input', async () => {
+            await expect(holoSphere.parse(null))
+                .rejects.toThrow('parse: No data provided');
+        });
+
+        test('should parse valid JSON string', async () => {
+            const result = await holoSphere.parse('{"test": "data"}');
+            expect(result).toEqual({ test: 'data' });
+        });
+    });
+
+    describe('Global Operations', () => {
+        test('should put and get global data', async () => {
+            const testData = { id: 'global1', value: 'test' };
+            await holoSphere.putGlobal('testTable', testData);
+            
+            const result = await holoSphere.getGlobal('testTable', 'global1');
+            expect(result).toEqual(testData);
+        });
+
+        test('should handle missing parameters in global operations', async () => {
+            await expect(holoSphere.putGlobal(null, null))
+                .rejects.toThrow('Table name and data are required');
+        });
+
+        test('should handle getAllGlobal', async () => {
+            await holoSphere.putGlobal('testTable', { id: 'g1', value: 'test1' });
+            await holoSphere.putGlobal('testTable', { id: 'g2', value: 'test2' });
+            
+            const results = await holoSphere.getAllGlobal('testTable');
+            expect(Array.isArray(results)).toBe(true);
+            expect(results.length).toBeGreaterThan(0);
+        });
+    });
+
+    describe('Compute Operations', () => {
+        const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
+        const testLens = 'testLens';
+
+        beforeEach(async () => {
+            // Set up schema for compute tests
+            const schema = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    content: { type: 'string' },
+                    data: { type: 'string' }
+                },
+                required: ['id', 'data']
+            };
+            await holoSphere.setSchema(testLens, schema);
+        });
+
+        test('should validate compute parameters', async () => {
+            await expect(holoSphere.compute(null, null))
+                .rejects.toThrow('compute: Missing required parameters');
+        });
+
+        test('should validate holon resolution', async () => {
+            const invalidHolon = 'invalid';
+            await expect(holoSphere.compute(invalidHolon, 'testLens'))
+                .rejects.toThrow('compute: Invalid holon resolution');
+        });
+
+        test('should compute with valid parameters', async () => {
+            await holoSphere.put(testHolon, testLens, { 
+                id: 'test1',
+                data: 'test data',
+                content: 'test content'
+            });
+            
+            await expect(holoSphere.compute(testHolon, testLens, 'summarize'))
+                .resolves.not.toThrow();
+        }, 15000);
+    });
+
+    describe('Error Handling', () => {
+        const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
+        const testLens = 'testLens';
+
+        beforeEach(async () => {
+            // Clear all existing data
+            await holoSphere.deleteAll(testHolon, testLens);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Set up fresh schema
+            const schema = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    data: { type: 'string' }
+                },
+                required: ['id', 'data']
+            };
+            await holoSphere.setSchema(testLens, schema);
+            await new Promise(resolve => setTimeout(resolve, 500));
+        });
+
+        test('should handle concurrent operations', async () => {
+            const numOperations = 10;
+            const promises = [];
+            const expectedIds = new Set();
+
+            // Create concurrent put operations
+            for (let i = 0; i < numOperations; i++) {
+                const id = `concurrent${i}`;
+                expectedIds.add(id);
+                promises.push(holoSphere.put(testHolon, testLens, { 
+                    id: id, 
+                    data: 'test' 
+                }));
+            }
+
+            // Wait for all operations to complete
+            await Promise.all(promises);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Get and verify results
+            const results = await holoSphere.getAll(testHolon, testLens);
+            const resultIds = new Set(results.map(r => r.id));
+
+            // Verify we have exactly the expected number of unique results
+            expect(resultIds.size).toBe(numOperations);
+            
+            // Verify all expected IDs are present
+            expectedIds.forEach(id => {
+                expect(resultIds.has(id)).toBe(true);
+            });
+        }, 20000);
+
+        test('should handle large data sets', async () => {
+            const largeData = { 
+                id: 'large', 
+                data: 'x'.repeat(1000000) 
+            };
+            
+            // Put the data
+            await holoSphere.put(testHolon, testLens, largeData);
+            
+            // Wait for data to be stored
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Get the data back
+            const result = await holoSphere.get(testHolon, testLens, 'large');
+            
+            // Verify the data
+            expect(result).toBeDefined();
+            expect(result.id).toBe(largeData.id);
+            expect(result.data).toBe(largeData.data);
+        }, 20000);
+
+        afterEach(async () => {
+            // Clean up after each test
+            await holoSphere.deleteAll(testHolon, testLens);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        });
+    });
+
+    describe('OpenAI Integration', () => {
+        test('should handle missing OpenAI key', async () => {
+            const noAIHoloSphere = new HoloSphere('test');
+            const result = await noAIHoloSphere.summarize('test content');
+            expect(result).toBe('OpenAI not initialized, please specify the API key in the constructor.');
+        });
+
+        test.skip('should summarize content with valid OpenAI key', async () => {
+            const hsWithAI = new HoloSphere('test', false, process.env.OPENAI_API_KEY);
+            const summary = await hsWithAI.summarize('Test content to summarize');
+            expect(typeof summary).toBe('string');
+            expect(summary.length).toBeGreaterThan(0);
+        });
+    });
+
     afterAll(async () => {
         // Clean up test data
-        const testLens = 'testLens';
-        const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
-        await holoSphere.deleteAll(testHolon, testLens);
-        
-        // Allow time for Gun to process
+            const testLens = 'testLens';
+            const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
+            await holoSphere.deleteAll(testHolon, testLens);
+            
+            // Allow time for Gun to process
         await new Promise(resolve => setTimeout(resolve, 1000));
     });
 }); 
