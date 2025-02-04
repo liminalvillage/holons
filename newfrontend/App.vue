@@ -9,6 +9,7 @@ Vue.use(Router)
 const router = new Router()
 export default {
   components: {
+    orbit: () => import('./views/orbit'),
     holon: () => import('./views/holon'),
     settings: () => import('./views/settings')
   },

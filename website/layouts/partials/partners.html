@@ -1,0 +1,38 @@
+{{ if .Site.Data.partners.enable }}
+{{ "<!-- Start Partners Section -->" | safeHTML }}
+<section id="partners" class="section partners bg-one">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-12">
+                {{ with .Site.Data.partners.heading }}
+                <div class="title text-center wow fadeInDown" data-wow-duration="500ms">
+                    <h2>{{ .title | markdownify }}</h2>
+                    <div class="border-meghna"></div>
+                </div>
+                {{ end }}
+            </div>
+            
+            <div class="row">
+                {{ range .Site.Data.partners.partner_list }}
+                <div class="col-lg-3 col-md-4 col-sm-6 mb-4 wow fadeInUp" data-wow-duration="500ms">
+                    {{ if .logo }}
+                    <div class="partner-item text-center">
+                        <a href="{{ .url }}" title="{{ .name }}" target="_blank">
+                            <img src="{{ .logo | absURL }}" alt="{{ .name }}" class="img-fluid">
+                        </a>
+                    </div>
+                    {{ else }}
+                    <div class="partner-item text-logo text-center">
+                        <a href="{{ .url }}" title="{{ .name }}" target="_blank">
+                            {{ .name }}
+                        </a>
+                    </div>
+                    {{ end }}
+                </div>
+                {{ end }}
+            </div>
+        </div>
+    </div>
+</section>
+{{ "<!-- End Partners Section -->" | safeHTML }}
+{{ end }} 

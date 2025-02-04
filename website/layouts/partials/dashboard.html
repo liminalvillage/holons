@@ -1,0 +1,106 @@
+{{ if .Site.Data.dashboard.enable }}
+{{ "<!-- Start Dashboard Section -->" | safeHTML }}
+<section id="dashboard" class="section bg-one">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-lg-12">
+                {{ with .Site.Data.dashboard.heading }}
+                <div class="title text-center wow fadeInDown" data-wow-duration="500ms">
+                    <h2>{{ .title | markdownify }}</h2>
+                    <div class="border-meghna"></div>
+                    <p class="mt-3">{{ .subtitle | markdownify }}</p>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-lg-12">
+                <div class="text-center mb-5 wow fadeInDown" data-wow-duration="500ms">
+                    <p class="lead">{{ .Site.Data.dashboard.description | markdownify }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-7">
+                <div class="dashboard-preview wow fadeInLeft" data-wow-duration="500ms">
+                    <div class="dashboard-tabs">
+                        {{ range .Site.Data.dashboard.dashboard_preview }}
+                        <div class="tab {{ if .active }}active{{ end }}">
+                            <span class="tab-name">{{ .tab_name }}</span>
+                            <span class="tab-desc">{{ .description }}</span>
+                        </div>
+                        {{ end }}
+                    </div>
+                    <div class="dashboard-screen">
+                        <div class="task-interface">
+                            <div class="task-header">
+                                <div class="task-title">Tasks Today</div>
+                                <div class="task-date">Wed Jan 15 2025</div>
+                            </div>
+                            <div class="task-stats">
+                                <div class="stat-item">
+                                    <div class="stat-value">32</div>
+                                    <div class="stat-label">Unassigned</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value">39</div>
+                                    <div class="stat-label">Ongoing</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value">84</div>
+                                    <div class="stat-label">Completed</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value">142</div>
+                                    <div class="stat-label">Total Tasks</div>
+                                </div>
+                            </div>
+                            <div class="task-filters">
+                                <div class="filter-dropdown">All Categories</div>
+                                <div class="filter-sort">Sort</div>
+                                <div class="filter-toggle">Show Completed</div>
+                            </div>
+                            <div class="task-list">
+                                <div class="task-item event">
+                                    <span class="task-icon">📅</span>
+                                    <span class="task-text">garden guild planning session</span>
+                                    <span class="task-metrics">👥 0 ⭐ 0</span>
+                                </div>
+                                <div class="task-item">
+                                    <span class="task-icon">✓</span>
+                                    <span class="task-text">plant bulbs in containment wall south of the chickens</span>
+                                    <span class="task-metrics">👥 0 ⭐ 0</span>
+                                </div>
+                                <div class="task-item">
+                                    <span class="task-icon">✓</span>
+                                    <span class="task-text">understand duplication of tasks</span>
+                                    <span class="task-metrics">👥 1 ⭐ 0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-5">
+                <div class="dashboard-features wow fadeInRight" data-wow-duration="500ms">
+                    {{ range .Site.Data.dashboard.features }}
+                    <div class="feature-item">
+                        <div class="icon-box">
+                            <i class="{{ .icon }}"></i>
+                        </div>
+                        <div class="feature-desc">
+                            <h3>{{ .title }}</h3>
+                            <p>{{ .description }}</p>
+                        </div>
+                    </div>
+                    {{ end }}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{{ "<!-- End Dashboard Section -->" | safeHTML }}
+{{ end }}

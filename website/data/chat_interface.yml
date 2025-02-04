@@ -1,0 +1,68 @@
+enable: true
+heading:
+  title: "Meet the people where they are"
+  subtitle: "Create your holon from your telegram community"
+
+description: |
+  Create and manage your organization right where your community already chats. 
+  No new apps. No learning curve. Just simple commands in Telegram.
+
+platform:
+  title: "Ready to Start?"
+  description: "Type one command to begin. It's that simple."
+  command: "/start @HolonsBot"
+
+features:
+  - title: "Vote & Decide Together"
+    description: "Create proposals, vote, and make group decisions right in your chat. Democracy made simple."
+    icon: "ti-crown"
+    
+  - title: "Manage Tasks Naturally"
+    description: "Create and assign tasks using everyday language. No complex project management needed."
+    icon: "ti-check-box"
+    
+  - title: "Track Value Exchange"
+    description: "Record contributions and exchanges with mutual credit. Fair, transparent, and simple."
+    icon: "ti-exchange-vertical"
+    
+  - title: "Follow Clear Processes"
+    description: "Turn any process into a simple checklist. Everyone knows what to do next."
+    icon: "ti-list"
+    
+  - title: "Reward Participation"
+    description: "Recognize contributions automatically. Build reputation through action."
+    icon: "ti-money"
+    
+  - title: "Build Your Way"
+    description: "Combine simple commands to create powerful workflows. As flexible as you need."
+    icon: "ti-layers"
+
+installation:
+  title: "Quick start in 3 Steps"
+  steps:
+    - number: 1
+      title: "Open Telegram"
+      description: "Already have Telegram? You're halfway there."
+      icon: "ti-mobile"
+      
+    - number: 2
+      title: "Add Holons"
+      description: "Search and add  @HolonsBot to your group"
+      icon: "ti-search"
+      
+    - number: 3
+      title: "Type /start @HolonsBot"
+      description: "One command sets up your organization"
+      icon: "ti-rocket"
+
+advantages:
+  title: "Why Telegram?"
+  list:
+    - "Your data stays private with end-to-end encryption"
+    - "Works on all your devices instantly"
+    - "Messages deliver in milliseconds"
+    - "Powerful features through simple commands"
+    - "Free forever, no hidden costs"
+    - "Join 700M+ users worldwide"
+    - "Perfect for group coordination"
+    - "Share files of any size or type" 

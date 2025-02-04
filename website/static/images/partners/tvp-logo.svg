@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="100" cy="100" r="90" fill="none" stroke="currentColor" stroke-width="4"/>
+  <text x="100" y="90" text-anchor="middle" font-family="Arial" font-size="24" fill="currentColor">TVP</text>
+  <text x="100" y="120" text-anchor="middle" font-family="Arial" font-size="16" fill="currentColor">The Venus Project</text>
+</svg> 

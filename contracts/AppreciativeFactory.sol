@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8;
 
-import "./Holon.sol";
 import "./Appreciative.sol";
 
 /*
@@ -36,7 +35,7 @@ contract AppreciativeFactory {
         if (toAddress[_name] > address(0x0)) //An holon with the same name already exists
            return toAddress[_name];
 
-        Holon newholon = new Appreciative(address(this), _name); //create an holon
+        Appreciative newholon = new Appreciative(address(this), _name); //create an holon
         address addr = address(newholon);
         holons[address(0)].push(addr); //add to the global holon list
         holons[msg.sender].push(addr); // add it to the local holon list

@@ -16,13 +16,10 @@ pragma solidity ^0.8;
     Peer Production License for more details.
  */
 
-import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
-
 contract Membrane {
-    using SafeMath for uint256;
 
 
-    address payable[] internal _members;
+    address payable[] internal  _members;
     address[] internal _parents;
     address owner;
     string public manifest;                  //IPFS Hash for the JSON containing the manifest of this membrane
@@ -45,7 +42,7 @@ contract Membrane {
     // ====================================================
     //                      Member Management Functions
     //=============================================================
-    // these function will be used by the holon lead to mantain the holon members
+    // these function will be used by the membrane owner to mantain the membrane members
 
     function addMember(address  _memberaddress, string memory _membername) virtual
         public
@@ -58,12 +55,21 @@ contract Membrane {
         toAddress[_membername] = _memberaddress;
         isMember[_memberaddress] = true;
         
-        //Membrane(_memberaddress).addParent(address(this));
-        (bool success,) = _memberaddress.call(
+        // call addParent function of the new member so that it can add this membrane as a parent
+        // detect if the contract has the function addParent
+
+        bool success;
+        bytes memory data;
+        (success, data) = _memberaddress.staticcall(
+            abi.encodeWithSignature("addParent(address)", address(this))
+        );
+
+        if (success) {
+            (success,) = _memberaddress.call(
                     abi.encodeWithSignature("addParent(address)", address(this))
                     );
-        require (success, "Failed to create parent");
-        
+            require (success, "Failed to create parent");
+        }
        
         emit AddedMember(_memberaddress, _membername);
     }
@@ -112,6 +118,18 @@ contract Membrane {
         emit ChangedName(toName[_address], _name);
         toName[_address] = _name;
     }
+
+    /// @dev Changes the owner of the membrane
+    /// @notice only the owner can call this function
+    /// @param _address The address of the new owner
+
+    function changeOwner(address _address)
+        public
+    {
+        require (msg.sender == owner, "Only owner can change the owner");
+        owner = _address;
+    }
+ 
  
     
     /// @dev Retrieves the index of  members in the membrane
@@ -140,6 +158,7 @@ contract Membrane {
     /// @return number of members in the membrane
 
     function getSize()
+        virtual
         external
         view
         returns (uint256)
@@ -147,14 +166,8 @@ contract Membrane {
         return _members.length; //+ _contributors.length;
     }
 
-        //=============================================================
-    //                      Reward Functions
-    //=============================================================
-    //these function will be called when a payment is sent to the holon
-
-
-    /// @dev Sets the hash of the latest IPFS manifest for this membrane
-    /// @notice Only the holon lead can change this!
+    /// @dev Sets the hash of the latest IPFS manifest for this holon
+    /// @notice Only the holon owner can change this!
     /// @param _IPFSHash The hash of the IPFS manifest
 
     function setManifest(string calldata _IPFSHash)

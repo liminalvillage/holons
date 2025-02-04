@@ -1,41 +1,41 @@
-{{ $data := index .Site.Data .Site.Language.Lang }}
-
-{{ if $data.feature.feature.enable }}
-{{ with $data.feature.feature }}
-{{"<!-- feature -->" | safeHTML}}
-<section class="section section-bg about-2 padding-0" id="feature">
-	<div class="container-fluid">
-		<div class="row">
-			<div class="col-lg-6 padding-0" style="background-image: url('{{ .image_webp | relURL }}'); background-size: contain; background-position: top center; background-repeat: no-repeat; min-height: 550px;">
-			<!-- this image is for trigger this section fallback background image -->
-			<img style="display: none;" onerror="this.onerror=null;this.parentElement.style.backgroundImage= 'url({{ .image | relURL }})'" src="{{ .image_webp | relURL }}" />
-			</div>
-			<div class="col-lg-6 py-4">
-				<div class="content-block">
+{{ if .Site.Data.feature.enable }}
+{{ "<!-- Start Feature Section -->" | safeHTML }}
+<section id="feature" class="section">
+	<div class="container">
+		<div class="row justify-content-center">
+			<div class="col-lg-12">
+				{{ with .Site.Data.feature.heading }}
+				<div class="title text-center wow fadeInDown" data-wow-duration="500ms">
 					<h2>{{ .title | markdownify }}</h2>
-					<p>{{ .content | markdownify }}</p>
-					<div class="row">
-						{{ range .feature_item }}
-						<div class="col-lg-6">
-							<div class="media">
-								{{with .icon}}
-								<div class="align-self-start mr-3">
-									<i class="{{ . }}"></i>
-								</div>
-								{{ end }}
-								<div class="media-body">
-									<h4 class="media-heading">{{ .title | markdownify }}</h4>
-									<p>{{ .content | markdownify }}</p>
-								</div>
-							</div>
-						</div>
-						{{ end }}
-					</div>
+					<div class="border-meghna"></div>
+					<p class="mt-3">{{ .subtitle | markdownify }}</p>
+				</div>
+				{{ end }}
+			</div>
+		</div>
+		
+		<div class="row mt-4">
+			<div class="col-lg-12">
+				<div class="text-center mb-5 wow fadeInDown" data-wow-duration="500ms">
+					<p class="lead">{{ .Site.Data.feature.heading.description | markdownify }}</p>
 				</div>
 			</div>
 		</div>
+
+		<div class="row">
+			{{ range .Site.Data.feature.features }}
+			<div class="col-lg-4 col-md-6">
+				<div class="feature-card wow fadeInUp" data-wow-duration="500ms">
+					<div class="icon-box">
+						<i class="{{ .icon }}"></i>
+					</div>
+					<h4>{{ .title }}</h4>
+					<p>{{ .content }}</p>
+				</div>
+			</div>
+			{{ end }}
+		</div>
 	</div>
 </section>
-{{"<!-- /feature -->" | safeHTML}}
-{{ end }}
+{{ "<!-- End Feature Section -->" | safeHTML }}
 {{ end }}

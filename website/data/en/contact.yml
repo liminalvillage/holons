@@ -1,20 +1,17 @@
 ############################## Contact #############################
 contact:
-  enable : true
+  enable : false
   title : Contact Us
   subtitle : Contact Details
-  content : Lorem ipsum dolor sit amet, consectetur adipisicing elit. Ipsam, vero, provident, eum eligendi blanditiis ex explicabo vitae nostrum facilis asperiores dolorem illo officiis ratione vel fugiat dicta laboriosam labore adipisci.
-  form_action: "#" #contact form works with https://formspree.io
+  content : Would you like to know more or join in the fractal organism ?
+  form_action: "https://wequest.typeform.com/to/gXMheBaH" #contact form works with https://formspree.io
 
   contact_details :
     - icon : ti-location-pin # themify icon pack : https://themify.me/themify-icons
-      info : "Khaja Road, Bayzid, Chittagong, Bangladesh"
+      info : "Italy, 63100 Ascoli Piceno"
       
     - icon : ti-mobile # themify icon pack : https://themify.me/themify-icons
-      info : "Phone: +880-31-000-000"
-      
-    - icon : ti-printer # themify icon pack : https://themify.me/themify-icons
-      info : "Fax: +880-31-000-000"
+      info : "Phone: +39 3207012290"
       
     - icon : ti-email # themify icon pack : https://themify.me/themify-icons
-      info : "Email: hello@meghna.com"
+      info : "Email: info@liminalvillage.com"

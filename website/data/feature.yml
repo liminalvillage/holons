@@ -1,0 +1,32 @@
+enable: true
+heading:
+  title: "Stackable Organizations"
+  subtitle: "Nature's Pattern for Coordination"
+  description: |
+    Like cells combining into organisms, holons let you build organizations that are alive and adaptable. 
+    Each unit is both independent and part of a larger whole, creating resilient networks that grow naturally.
+
+features:
+  - title: "Fractal Structure"
+    icon: "ti-infinite"
+    content: "Create organizations within organizations. Each holon can contain or join others, forming living structures that mirror nature's patterns."
+    
+  - title: "Flexible Connections"
+    icon: "ti-vector"
+    content: "Connect horizontally with peers or vertically in parent-child relationships. Build networks that match your community's real needs."
+    
+  - title: "Local Autonomy"
+    icon: "ti-shield"
+    content: "Every holon maintains its independence while participating in larger structures. Local groups keep their agency while benefiting from wider collaboration."
+    
+  - title: "Organic Growth"
+    icon: "ti-pulse"
+    content: "Start with a single group and grow naturally. Add new units, merge with others, or join existing networks as your needs evolve."
+    
+  - title: "Resource Sharing"
+    icon: "ti-exchange-vertical"
+    content: "Share resources, knowledge, and capabilities across your network while maintaining clear boundaries and agreements."
+    
+  - title: "Emergent Order"
+    icon: "ti-layers"
+    content: "Watch complex organizational patterns emerge from simple, clear rules - just like in nature's most successful systems." 

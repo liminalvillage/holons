@@ -43,6 +43,10 @@
 export default {
   components: {
     holon: () => import('./views/holon'),
+    tasks: () => import('./views/tasks'),
+    holons: () => import('./views/holons'),
+    users: () => import('./views/users'),
+    projects: () => import('./views/projects'),
     settings: () => import('./views/settings')
   },
   methods: {
@@ -52,12 +56,13 @@ export default {
   },
   mounted () {
     this.$zircle.config({
-      mode: 'mixed',
+      usePercentSizes:  true,
+      mode: 'full',
       style: {
         theme: 'black',
         mode: 'dark'
       },
-      debug: true
+      debug: false
     })
     this.$zircle.toView('holon')
     //

@@ -3,7 +3,7 @@ feature:
   enable : true
   image : images/backgrounds/Cymatics5.jpg
   image_webp : images/backgrounds/Cymatics5.webp
-  title : Holons come in flavours 
+  title : Holons come in different flavours 
   content : "Depending on the group preferences, every holon can be initialized with different settings, allowing all sorts of organizations and reward structures to arise."
   feature_item :
       # feature item loop
