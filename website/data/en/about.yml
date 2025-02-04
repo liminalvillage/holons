@@ -5,13 +5,13 @@ about:
   about_item :
 
   - icon : ti-user # themify icon pack : https://themify.me/themify-icons
-    title : Create an Holon
-    content : "Form an holon with your collaborators. Holons can be stacked : Other holons can also join as members!"
+    title : Create a Holon
+    content : "Form a holon with your collaborators. Holons can be stacked : Other holons can also join as members!"
 
   - icon : ti-heart # themify icon pack : https://themify.me/themify-icons
-    title : Give Appreciation
-    content : Appreciation is the default signal to highlight contributions to the purpose of the holon
+    title : Track Contribution
+    content : Use a multitude of signals to highlight contributions to the purpose of the holon
 
   - icon : ti-pie-chart # themify icon pack : https://themify.me/themify-icons
     title : Share Rewards
-    content : Every token sent to the holon will be divided according to the accumulated appreciaton 
+    content : Every rewards or perks sent to the holon will be divided according to the current contributions signals

@@ -38,7 +38,7 @@ features:
     icon: "ti-layers"
 
 installation:
-  title: "Start in 3 Steps"
+  title: "Quick start in 3 Steps"
   steps:
     - number: 1
       title: "Open Telegram"
@@ -46,7 +46,7 @@ installation:
       icon: "ti-mobile"
       
     - number: 2
-      title: "Find Our Bot"
+      title: "Add Holons"
       description: "Search and add  @HolonsBot to your group"
       icon: "ti-search"
       
