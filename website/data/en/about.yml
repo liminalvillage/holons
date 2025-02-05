@@ -9,9 +9,9 @@ about:
     content : "Form a holon with your collaborators. Holons can be stacked : Other holons can also join as members!"
 
   - icon : ti-heart # themify icon pack : https://themify.me/themify-icons
-    title : Track Contribution
-    content : Use a multitude of signals to highlight contributions to the purpose of the holon
+    title : Track Contributions
+    content : Use a multitude of ways to signals and highlight contributions towards the purpose of the holon
 
   - icon : ti-pie-chart # themify icon pack : https://themify.me/themify-icons
     title : Share Rewards
-    content : Every rewards or perks sent to the holon will be divided according to the current contributions signals
+    content : Every rewards or perks sent to the holon will be divided according to the current contribution signals
