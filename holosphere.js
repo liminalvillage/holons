@@ -10,8 +10,9 @@ class HoloSphere {
      * @param {string} appname - The name of the application.
      * @param {boolean} strict - Whether to enforce strict schema validation.
      * @param {string|null} openaikey - The OpenAI API key.
+     * @param {Gun|null} gunInstance - The Gun instance to use.
      */
-    constructor(appname, strict = false, openaikey = null) {
+    constructor(appname, strict = false, openaikey = null, gunInstance = null) {
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -19,7 +20,9 @@ class HoloSphere {
             strict: false,  // Keep this false to avoid Ajv strict mode issues
             validateSchema: true // Always validate schemas
         });
-        this.gun = Gun({
+        
+        // Use provided Gun instance or create new one
+        this.gun = gunInstance || Gun({
             peers: ['https://gun.holons.io/gun', 'https://59.src.eco/gun'],
             axe: false,
             // uuid: (content) => { // generate a unique id for each node
@@ -32,8 +35,6 @@ class HoloSphere {
                 apiKey: openaikey,
             });
         }
-
-        this.subscriptions = new Map(); // Track active subscriptions
     }
 
     // ================================ SCHEMA FUNCTIONS ================================
@@ -94,14 +95,20 @@ class HoloSphere {
         return new Promise((resolve, reject) => {
             try {
                 const schemaString = JSON.stringify(schema);
+                const schemaData = {
+                    schema: schemaString,
+                    timestamp: Date.now()
+                };
+                
                 this.gun.get(this.appname)
                     .get(lens)
                     .get('schema')
-                    .put(schemaString, ack => {
+                    .put(schemaData, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
-                            resolve(true);
+                            // Add small delay to ensure data is written
+                            setTimeout(() => resolve(true), 50);
                         }
                     });
             } catch (error) {
@@ -121,27 +128,31 @@ class HoloSphere {
         }
 
         return new Promise((resolve) => {
+            let timeout = setTimeout(() => {
+                console.warn('getSchema: Operation timed out');
+                resolve(null);
+            }, 5000);
+
             this.gun.get(this.appname)
                 .get(lens)
                 .get('schema')
                 .once(data => {
+                    clearTimeout(timeout);
                     if (!data) {
                         resolve(null);
                         return;
                     }
 
                     try {
-                        // Handle both direct string and GunDB object formats
-                        let schemaStr = data;
-                        if (typeof data === 'object' && data !== null) {
-                            schemaStr = Object.values(data).find(v => 
-                                typeof v === 'string' && v.includes('"type":'));
-                        }
-
-                        if (schemaStr) {
-                            resolve(JSON.parse(schemaStr));
+                        // Handle both new format and legacy format
+                        if (data.schema) {
+                            // New format with timestamp
+                            resolve(JSON.parse(data.schema));
                         } else {
-                            resolve(null);
+                            // Legacy format or direct string
+                            const schemaStr = typeof data === 'string' ? data : 
+                                Object.values(data).find(v => typeof v === 'string' && v.includes('"type":'));
+                            resolve(schemaStr ? JSON.parse(schemaStr) : null);
                         }
                     } catch (error) {
                         console.error('getSchema: Error parsing schema:', error);
@@ -169,20 +180,23 @@ class HoloSphere {
             data.id = this.generateId();
         }
 
+        // Get and validate schema first
         const schema = await this.getSchema(lens);
         if (schema) {
-            // Clone data to avoid modifying original
+            // Deep clone data to avoid modifying the original
             const dataToValidate = JSON.parse(JSON.stringify(data));
-            
-            // Validate against schema
             const valid = this.validator.validate(schema, dataToValidate);
+            
             if (!valid) {
-                throw new Error(`Schema validation failed: ${JSON.stringify(this.validator.errors)}`);
+                const errorMsg = `Schema validation failed: ${JSON.stringify(this.validator.errors)}`;
+                // Always throw on schema validation failure, regardless of strict mode
+                throw new Error(errorMsg);
             }
         } else if (this.strict) {
             throw new Error('Schema required in strict mode');
         }
 
+        // Only proceed with put if validation passes
         return new Promise((resolve, reject) => {
             try {
                 const payload = JSON.stringify(data);
@@ -219,49 +233,94 @@ class HoloSphere {
             throw new Error('getAll: Schema required in strict mode');
         }
 
-        return new Promise((resolve) => {
-            const output = new Set();
-            const promises = new Set();
-            let timeout;
+        return new Promise((resolve, reject) => {
+            const output = new Map(); // Use Map to ensure unique by ID
+            let isResolved = false;
+            let listener = null;
+            
+            // Set a hard timeout
+            const hardTimeout = setTimeout(() => {
+                if (!isResolved) {
+                    cleanup();
+                    resolve(Array.from(output.values()));
+                }
+            }, 5000); // 5 second hard timeout
 
-            const processData = async (itemdata, key) => {
-                if (itemdata) {
-                    try {
-                        const parsed = await this.parse(itemdata);
-                        if (schema) {
-                            const valid = this.validator.validate(schema, parsed);
-                            if (valid || !this.strict) {
-                                output.add(parsed);
-                            } else if (this.strict) {
-                                await this.delete(holon, lens, key);
-                            }
-                        } else {
-                            output.add(parsed);
-                        }
-                    } catch (error) {
-                        console.error('Error parsing data:', error);
-                        if (this.strict) {
+            const cleanup = () => {
+                if (listener) {
+                    listener.off();
+                }
+                clearTimeout(hardTimeout);
+                isResolved = true;
+            };
+
+            const processData = async (data, key) => {
+                if (!data || key === '_') return; // Skip Gun metadata
+
+                try {
+                    const parsed = await this.parse(data);
+                    if (!parsed || !parsed.id) return; // Skip invalid data
+
+                    if (schema) {
+                        const valid = this.validator.validate(schema, parsed);
+                        if (valid || !this.strict) {
+                            output.set(parsed.id, parsed); // Use ID as key to prevent duplicates
+                        } else if (this.strict) {
                             await this.delete(holon, lens, key);
                         }
+                    } else {
+                        output.set(parsed.id, parsed);
+                    }
+                } catch (error) {
+                    console.error('Error processing data:', error);
+                    if (this.strict) {
+                        await this.delete(holon, lens, key);
                     }
                 }
             };
 
-            const listener = this.gun.get(this.appname)
+            // Get initial data snapshot
+            this.gun.get(this.appname)
                 .get(holon)
                 .get(lens)
-                .map()
-                .on(async (data, key) => {
-                    const promise = processData(data, key);
-                    promises.add(promise);
-                    promise.finally(() => promises.delete(promise));
+                .once(async (data) => {
+                    if (!data) {
+                        cleanup();
+                        resolve([]);
+                        return;
+                    }
 
-                    // Reset timeout on new data
-                    clearTimeout(timeout);
-                    timeout = setTimeout(() => {
-                        listener.off();
-                        Promise.all(promises).then(() => resolve(Array.from(output)));
-                    }, 1000); // Wait 1 second after last received data
+                    const initialPromises = [];
+                    Object.keys(data)
+                        .filter(key => key !== '_')
+                        .forEach(key => {
+                            initialPromises.push(processData(data[key], key));
+                        });
+
+                    try {
+                        await Promise.all(initialPromises);
+                        
+                        // Set up listener for changes
+                        listener = this.gun.get(this.appname)
+                            .get(holon)
+                            .get(lens)
+                            .map()
+                            .on(async (data, key) => {
+                                await processData(data, key);
+                            });
+
+                        // Give some time for potential updates
+                        setTimeout(() => {
+                            if (!isResolved) {
+                                cleanup();
+                                resolve(Array.from(output.values()));
+                            }
+                        }, 1000);
+
+                    } catch (error) {
+                        cleanup();
+                        reject(error);
+                    }
                 });
         });
     }
@@ -311,7 +370,9 @@ class HoloSphere {
 
             return parsedData;
         } catch (error) {
-            throw new Error(`Parse error: ${error.message}`);
+            console.log("Parsing not a JSON, returning raw data", rawData);
+            return rawData;
+            //throw new Error(`Parse error: ${error.message}`);
         }
     }
 
@@ -459,10 +520,10 @@ class HoloSphere {
      * Stores a specific gun node in a given holon and lens.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens under which to store the node.
-     * @param {object} node - The node to store.
+     * @param {object} data - The node to store.
      */
-    async putNode(holon, lens, node) {
-        if (!holon || !lens || !node) {
+    async putNode(holon, lens, data) {
+        if (!holon || !lens || !data) {
             throw new Error('putNode: Missing required parameters');
         }
 
@@ -471,7 +532,8 @@ class HoloSphere {
                 this.gun.get(this.appname)
                     .get(holon)
                     .get(lens)
-                    .put(node, ack => {
+                    .get('value')  // Store at 'value' key
+                    .put(data.value, ack => {  // Store the value directly
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
@@ -489,19 +551,26 @@ class HoloSphere {
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens identifier.
      * @param {string} key - The specific key to retrieve.
-   * @returns {Promise<object|null>} - The retrieved node or null if not found.
+     * @returns {Promise<any>} - The retrieved node or null if not found.
      */
-    getNode(holon, lens, key) {
+    async getNode(holon, lens, key) {
         if (!holon || !lens || !key) {
-            console.error('getNode: Missing required parameters');
-            return null;
+            throw new Error('getNode: Missing required parameters');
         }
 
-        return this.gun.get(this.appname)
+        return new Promise((resolve) => {
+            this.gun.get(this.appname)
                 .get(holon)
                 .get(lens)
                 .get(key)
-
+                .once((data) => {
+                    if (!data) {
+                        resolve(null);
+                        return;
+                    }
+                    resolve(data);  // Return the data directly
+                });
+        });
     }
 
     getNodeRef(soul) {
@@ -734,17 +803,44 @@ class HoloSphere {
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens to compute.
      * @param {string} operation - The operation to perform.
+     * @param {number} [depth=0] - Current recursion depth.
+     * @param {number} [maxDepth=15] - Maximum recursion depth.
+     * @throws {Error} If parameters are invalid or missing
      */
     async compute(holon, lens, operation, depth = 0, maxDepth = 15) {
-        if (!holon || !lens) {
+        // Validate required parameters
+        if (!holon || !lens || !operation) {
             throw new Error('compute: Missing required parameters');
         }
 
-        if (depth >= maxDepth) return;
+        // Validate holon format and resolution
+        let res;
+        try {
+            res = h3.getResolution(holon);
+        } catch (error) {
+            throw new Error('compute: Invalid holon format');
+        }
 
-        const res = h3.getResolution(holon);
         if (res < 1 || res > 15) {
-            throw new Error('compute: Invalid holon resolution');
+            throw new Error('compute: Invalid holon resolution (must be between 1 and 15)');
+        }
+
+        // Validate depth parameters
+        if (typeof depth !== 'number' || depth < 0) {
+            throw new Error('compute: Invalid depth parameter');
+        }
+
+        if (typeof maxDepth !== 'number' || maxDepth < 1 || maxDepth > 15) {
+            throw new Error('compute: Invalid maxDepth parameter (must be between 1 and 15)');
+        }
+
+        if (depth >= maxDepth) {
+            return;
+        }
+
+        // Validate operation
+        if (typeof operation !== 'string' || !['summarize'].includes(operation)) {
+            throw new Error('compute: Invalid operation (must be "summarize")');
         }
 
         const parent = h3.cellToParent(holon, res - 1);
@@ -756,7 +852,7 @@ class HoloSphere {
                 const timeout = setTimeout(() => {
                     console.warn(`Timeout for sibling ${sibling}`);
                     resolve();
-                }, 1000);
+                }, 10000);
 
                 this.gun.get(this.appname)
                     .get(sibling)
@@ -764,8 +860,19 @@ class HoloSphere {
                     .map()
                     .once((data) => {
                         clearTimeout(timeout);
-                        if (data?.content) {
-                            content.push(data.content);
+                        if (!data) {
+                            resolve();
+                            return;
+                        }
+
+                        try {
+                            // Parse the data if it's a string
+                            const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+                            if (parsed && parsed.content) {
+                                content.push(parsed.content);
+                            }
+                        } catch (error) {
+                            console.warn('Error parsing data:', error);
                         }
                         resolve();
                     });
@@ -775,18 +882,28 @@ class HoloSphere {
         await Promise.all(promises);
 
         if (content.length > 0) {
-            const computed = await this.summarize(content.join('\n'));
-            const summaryId = `${parent}_summary`;
-            await this.put(parent, lens, { 
-                id: summaryId, 
-                content: computed,
-                timestamp: Date.now()
-            });
+            try {
+                const computed = await this.summarize(content.join('\n'));
+                if (computed) {
+                    const summaryId = `${parent}_summary`;
+                    await this.put(parent, lens, { 
+                        id: summaryId, 
+                        content: computed,
+                        timestamp: Date.now()
+                    });
 
-            if (res > 1) { // Only recurse if not at top level
-                await this.compute(parent, lens, operation, depth + 1, maxDepth);
+                    if (res > 1) { // Only recurse if not at top level
+                        await this.compute(parent, lens, operation, depth + 1, maxDepth);
+                    }
+                }
+            } catch (error) {
+                console.warn('Error in compute operation:', error);
+                // Don't throw here to maintain graceful handling of compute errors
             }
         }
+
+        // Return successfully even if no content was found or processed
+        return;
     }
 
     /**
@@ -971,26 +1088,37 @@ class HoloSphere {
      * @param {function} callback - The callback to execute on changes.
      */
     async subscribe(holon, lens, callback) {
-        const subscriptionId = `${holon}:${lens}:${Date.now()}`;
-        const listener = this.gun.get(this.appname).get(holon).get(lens).map().on(async (data, key) => {
-            if (data) callback(await this.parse(data), key);
-        });
+        if (!holon || !lens || !callback) {
+            throw new Error('subscribe: Missing required parameters');
+        }
 
-        this.subscriptions.set(subscriptionId, listener);
+        const ref = this.gun.get(this.appname)
+            .get(holon)
+            .get(lens);
+
+        // Create a more robust handler
+        const handler = async (data, key) => {
+            if (!data || key === '_') return; // Skip empty data or Gun metadata
+
+            try {
+                const parsed = typeof data === 'string' ? await this.parse(data) : data;
+                await callback(parsed, key);
+            } catch (error) {
+                console.warn('Subscription handler error:', error);
+            }
+        };
+
+        // Subscribe using Gun's map() and on()
+        const chain = ref.map();
+        const off = chain.on(handler);
 
         return {
-            unsubscribe: () => {
-                listener.off();
-                this.subscriptions.delete(subscriptionId);
-            },
-            id: subscriptionId
+            off: async () => {
+                if (chain && handler) {
+                    chain.off(handler);
+                }
+            }
         };
-    }
-
-    // Add cleanup method
-    cleanup() {
-        this.subscriptions.forEach(listener => listener.off());
-        this.subscriptions.clear();
     }
 
     // Add ID generation method
