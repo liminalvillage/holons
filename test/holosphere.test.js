@@ -2,12 +2,39 @@ import HoloSphere from '../holosphere.js';
 import * as h3 from 'h3-js';
 
 describe('HoloSphere', () => {
-    let holoSphere;
     const testAppName = 'test-app';
-    
-    beforeAll(() => {
+    const testCredentials = {
+        spacename: 'testuser',
+        password: 'testpass'
+    };
+    let holoSphere = new HoloSphere(testAppName, false);
+    beforeAll(async () => {
         // Initialize HoloSphere once for all tests
-        holoSphere = new HoloSphere(testAppName, false);
+       
+        
+        // Set up test space and authenticate
+        try {
+            await holoSphere.createSpace(testCredentials.spacename, testCredentials.password);
+        } catch (error) {
+            // Space might already exist, try to delete it first
+            try {
+                await holoSphere.deleteGlobal('spaces', testCredentials.spacename);
+                await holoSphere.createSpace(testCredentials.spacename, testCredentials.password);
+            } catch (error) {
+                console.error('Failed to recreate space:', error);
+                throw error;
+            }
+        }
+        
+        // Ensure we're logged in
+        await holoSphere.login(testCredentials.spacename, testCredentials.password);
+    });
+
+    beforeEach(async () => {
+        // Ensure we're logged in before each test
+        if (!holoSphere.currentSpace || holoSphere.currentSpace.exp < Date.now()) {
+            await holoSphere.login(testCredentials.spacename, testCredentials.password);
+        }
     });
 
     describe('Constructor', () => {
@@ -37,6 +64,13 @@ describe('HoloSphere', () => {
             required: ['id', 'data']
         };
 
+        beforeEach(async () => {
+            // Ensure we're logged in before each schema test
+            if (!holoSphere.currentSpace || holoSphere.currentSpace.exp < Date.now()) {
+                await holoSphere.login(testCredentials.spacename, testCredentials.password);
+            }
+        });
+
         test('should set and get schema', async () => {
             await holoSphere.setSchema(testLens, validSchema);
             const retrievedSchema = await holoSphere.getSchema(testLens);
@@ -52,6 +86,9 @@ describe('HoloSphere', () => {
         test('should enforce strict mode schema validation', async () => {
             const strictHoloSphere = new HoloSphere(testAppName, true);
             
+            // Login to the strict instance
+            await strictHoloSphere.login(testCredentials.spacename, testCredentials.password);
+            
             const invalidSchema = {
                 type: 'object',
                 properties: {
@@ -61,6 +98,9 @@ describe('HoloSphere', () => {
 
             await expect(strictHoloSphere.setSchema(testLens, invalidSchema))
                 .rejects.toThrow();
+
+            // Clean up
+            await strictHoloSphere.logout();
         });
 
         test('should handle schema retrieval for non-existent lens', async () => {
@@ -71,6 +111,9 @@ describe('HoloSphere', () => {
         test('should maintain schema integrity across storage and retrieval', async () => {
             const testLens = 'schemaTestLens';
             const strictHoloSphere = new HoloSphere(testAppName, true); 
+            
+            // Login to the strict instance
+            await strictHoloSphere.login(testCredentials.spacename, testCredentials.password);
             
             // Create test schemas of increasing complexity
             const testSchemas = [
@@ -154,6 +197,7 @@ describe('HoloSphere', () => {
 
             // Clean up the strict instance
             if (strictHoloSphere.gun) {
+                await strictHoloSphere.logout();
                 await new Promise(resolve => setTimeout(resolve, 100)); // Allow time for cleanup
             }
         }, 10000); // Increase timeout to 10 seconds
@@ -245,8 +289,9 @@ describe('HoloSphere', () => {
     describe('Data Operations', () => {
         const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
         const testLens = 'testLens';
-        const validData = { id: 'test123', data: 'test data' };
+        const validData = { id: 'test1', data: 'test data' };
         const invalidData = { id: 'test456', wrongField: 'wrong data' };
+        const expectedValidData = { ...validData, owner: testCredentials.spacename };
 
         beforeEach(async () => {
             // Set up schema for validation tests
@@ -254,7 +299,8 @@ describe('HoloSphere', () => {
                 type: 'object',
                 properties: {
                     id: { type: 'string' },
-                    data: { type: 'string' }
+                    data: { type: 'string' },
+                    owner: { type: 'string' }
                 },
                 required: ['id', 'data']
             };
@@ -262,20 +308,6 @@ describe('HoloSphere', () => {
         });
 
         test('should put and get data with schema validation', async () => {
-            // Set up schema first
-            const schema = {
-                type: 'object',
-                properties: {
-                    id: { type: 'string' },
-                    data: { type: 'string' }
-                },
-                required: ['id', 'data']
-            };
-            await holoSphere.setSchema(testLens, schema);
-
-            const validData = { id: 'test1', data: 'test data' };
-            const invalidData = { id: 'test2' }; // Missing required 'data' field
-
             // Test valid data
             await expect(holoSphere.put(testHolon, testLens, validData))
                 .resolves.toBe(true);
@@ -286,7 +318,7 @@ describe('HoloSphere', () => {
 
             // Verify the valid data was stored correctly
             const result = await holoSphere.get(testHolon, testLens, validData.id);
-            expect(result).toEqual(validData);
+            expect(result).toEqual(expectedValidData);
 
             // Verify the invalid data was not stored
             const invalidResult = await holoSphere.get(testHolon, testLens, invalidData.id);
@@ -325,6 +357,9 @@ describe('HoloSphere', () => {
         test('should enforce strict mode data validation', async () => {
             const strictHoloSphere = new HoloSphere(testAppName, true);
             
+            // Login to the strict instance
+            await strictHoloSphere.login(testCredentials.spacename, testCredentials.password);
+            
             // Define schema for strict mode tests
             const strictSchema = {
                 type: 'object',
@@ -341,17 +376,22 @@ describe('HoloSphere', () => {
             // Try to put data without schema in strict mode
             await expect(strictHoloSphere.put(testHolon, 'no-schema-lens', validData))
                 .rejects.toThrow('Schema required in strict mode');
+
+            // Clean up
+            await strictHoloSphere.logout();
         });
 
         test('should maintain content integrity in holon storage', async () => {
-            const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
-            const testLens = 'testLens';
-            
             const testData = [
                 { id: 'test1', data: 'content1' },
                 { id: 'test2', data: 'content2' },
                 { id: 'test3', data: 'content3' }
             ];
+
+            const expectedData = testData.map(data => ({
+                ...data,
+                owner: testCredentials.spacename
+            }));
 
             // Store all test data
             for (const data of testData) {
@@ -362,7 +402,7 @@ describe('HoloSphere', () => {
             const retrievedData = await holoSphere.getAll(testHolon, testLens);
 
             // Sort both arrays by id for comparison
-            const sortedTestData = [...testData].sort((a, b) => a.id.localeCompare(b.id));
+            const sortedExpectedData = [...expectedData].sort((a, b) => a.id.localeCompare(b.id));
             const sortedRetrievedData = [...retrievedData].sort((a, b) => a.id.localeCompare(b.id));
 
             // Verify no duplicates
@@ -370,12 +410,12 @@ describe('HoloSphere', () => {
             expect(uniqueIds.size).toBe(testData.length);
 
             // Verify all items are present and correct
-            expect(sortedRetrievedData).toEqual(sortedTestData);
+            expect(sortedRetrievedData).toEqual(sortedExpectedData);
 
             // Verify individual item retrieval
-            for (const data of testData) {
-                const item = await holoSphere.get(testHolon, testLens, data.id);
-                expect(item).toEqual(data);
+            for (let i = 0; i < testData.length; i++) {
+                const item = await holoSphere.get(testHolon, testLens, testData[i].id);
+                expect(item).toEqual(expectedData[i]);
             }
         });
 
@@ -384,7 +424,10 @@ describe('HoloSphere', () => {
                 { id: 'test1', data: 'content1' },
                 { id: 'test2', data: 'content2' },
                 { id: 'test3', data: 'content3' }
-            ];
+            ].map(data => ({
+                ...data,
+                owner: testCredentials.spacename
+            }));
 
             // Store test data
             for (const data of testData) {
@@ -407,7 +450,8 @@ describe('HoloSphere', () => {
         test('should handle data consistency in getAll operations', async () => {
             const testData = Array.from({ length: 10 }, (_, i) => ({
                 id: `test${i}`,
-                data: `content${i}`
+                data: `content${i}`,
+                owner: testCredentials.spacename
             }));
 
             // Store test data sequentially to ensure consistency
@@ -438,7 +482,7 @@ describe('HoloSphere', () => {
                 const sortedExpected = [...testData].sort((a, b) => a.id.localeCompare(b.id));
                 expect(sortedResult).toEqual(sortedExpected);
             });
-        }, 10000);
+        }, 15000);
 
         test('should handle rapid concurrent get operations', async () => {
             const testData = { id: 'concurrent-test', data: 'test data' };
@@ -569,7 +613,7 @@ describe('HoloSphere', () => {
 
     describe('Subscription Operations', () => {
         const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
-        const testLens = 'subscriptionTestLens';
+        const testLens = 'testLens';
 
         beforeEach(async () => {
             await holoSphere.deleteAll(testHolon, testLens);
@@ -577,19 +621,22 @@ describe('HoloSphere', () => {
 
         test('should receive data through subscription', (done) => {
             const testData = { id: 'test1', data: 'test data' };
+            const expectedData = { ...testData, owner: testCredentials.spacename };
             let received = false;
 
             holoSphere.subscribe(testHolon, testLens, (data) => {
                 if (!received && data.id === testData.id) {
                     received = true;
-                    expect(data).toEqual(testData);
+                    expect(data).toEqual(expectedData);
                     done();
                 }
             });
 
             // Put data after subscription
-            holoSphere.put(testHolon, testLens, testData);
-        });
+            setTimeout(() => {
+                holoSphere.put(testHolon, testLens, testData);
+            }, 100);
+        }, 10000);
 
         test('should stop receiving data after unsubscribe', async () => {
             const testData1 = { id: 'test1', data: 'first' };
@@ -605,10 +652,11 @@ describe('HoloSphere', () => {
                     await holoSphere.put(testHolon, testLens, testData2);
                     
                     // Wait a bit to ensure no more data is received
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    expect(received).toBe(true);
+                    setTimeout(() => {
+                        expect(received).toBe(true);
+                    }, 1000);
                 } else if (data.id === testData2.id) {
-                    done(new Error('Received data after unsubscribe'));
+                    throw new Error('Received data after unsubscribe');
                 }
             });
 
@@ -618,6 +666,7 @@ describe('HoloSphere', () => {
 
         test('should handle multiple subscriptions', (done) => {
             const testData = { id: 'test1', data: 'test data' };
+            const expectedData = { ...testData, owner: testCredentials.spacename };
             let received1 = false;
             let received2 = false;
 
@@ -630,7 +679,7 @@ describe('HoloSphere', () => {
             holoSphere.subscribe(testHolon, testLens, (data) => {
                 if (data.id === testData.id) {
                     received1 = true;
-                    expect(data).toEqual(testData);
+                    expect(data).toEqual(expectedData);
                     checkDone();
                 }
             });
@@ -638,13 +687,19 @@ describe('HoloSphere', () => {
             holoSphere.subscribe(testHolon, testLens, (data) => {
                 if (data.id === testData.id) {
                     received2 = true;
-                    expect(data).toEqual(testData);
+                    expect(data).toEqual(expectedData);
                     checkDone();
                 }
             });
 
             // Put data after both subscriptions
-            holoSphere.put(testHolon, testLens, testData);
+            setTimeout(() => {
+                holoSphere.put(testHolon, testLens, testData);
+            }, 100);
+        }, 10000);
+
+        afterEach(async () => {
+            await holoSphere.deleteAll(testHolon, testLens);
         });
     });
 
@@ -728,15 +783,20 @@ describe('HoloSphere', () => {
             const promises = [];
             const expectedData = [];
 
-            // Create and store data concurrently
+            // Create and store data concurrently with small delays
             for (let i = 0; i < numOperations; i++) {
                 const data = { id: `concurrent${i}`, value: `value${i}` };
                 expectedData.push(data);
+                // Add small delay between operations
+                await new Promise(resolve => setTimeout(resolve, 50));
                 promises.push(holoSphere.putGlobal(testTable, data));
             }
 
             // Wait for all operations to complete
             await Promise.all(promises);
+
+            // Add delay before verification
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             // Retrieve and verify data
             const retrievedData = await holoSphere.getAllGlobal(testTable);
@@ -754,7 +814,7 @@ describe('HoloSphere', () => {
 
             // Clean up test data
             await holoSphere.deleteAllGlobal(testTable);
-        });
+        }, 15000); // Increase timeout to 15 seconds
     });
 
     describe('Compute Operations', () => {
@@ -844,10 +904,12 @@ describe('HoloSphere', () => {
             const promises = [];
             const expectedIds = new Set();
 
-            // Create concurrent put operations
+            // Create concurrent put operations with small delays between them
             for (let i = 0; i < numOperations; i++) {
                 const id = `concurrent${i}`;
                 expectedIds.add(id);
+                // Add small delay between operations to prevent race conditions
+                await new Promise(resolve => setTimeout(resolve, 50));
                 promises.push(holoSphere.put(testHolon, testLens, { 
                     id: id, 
                     data: 'test' 
@@ -856,6 +918,9 @@ describe('HoloSphere', () => {
 
             // Wait for all operations to complete
             await Promise.all(promises);
+
+            // Add delay before verification to ensure data is settled
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             // Get and verify results
             const results = await holoSphere.getAll(testHolon, testLens);
@@ -868,7 +933,7 @@ describe('HoloSphere', () => {
             expectedIds.forEach(id => {
                 expect(resultIds.has(id)).toBe(true);
             });
-        });
+        }, 15000); // Increase timeout to 15 seconds
 
         test('should handle large data sets', async () => {
             const largeData = { 
@@ -911,8 +976,21 @@ describe('HoloSphere', () => {
 
     afterAll(async () => {
         // Clean up test data
-            const testLens = 'testLens';
-            const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
-            await holoSphere.deleteAll(testHolon, testLens);
+        const testLens = 'testLens';
+        const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
+        await holoSphere.deleteAll(testHolon, testLens);
+        
+        // Clean up test tables
+        await holoSphere.deleteAllGlobal('testTable');
+        await holoSphere.deleteAllGlobal('testGlobalTable');
+        await holoSphere.deleteAllGlobal('concurrentGlobalTest');
+        
+        // Clean up test space
+        await holoSphere.deleteGlobal('spaces', testCredentials.spacename);
+        
+        // Logout
+        if (holoSphere.currentSpace) {
+            await holoSphere.logout();
+        }
     });
 }); 

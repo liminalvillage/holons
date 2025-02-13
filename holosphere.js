@@ -35,6 +35,9 @@ class HoloSphere {
                 apiKey: openaikey,
             });
         }
+
+        // Add currentSpace property to track logged in space
+        this.currentSpace = null;
     }
 
     // ================================ SCHEMA FUNCTIONS ================================
@@ -49,6 +52,12 @@ class HoloSphere {
         if (!lens || !schema) {
             throw new Error('setSchema: Missing required parameters');
         }
+
+        // Check authentication for schema operations
+        if (!this.currentSpace) {
+            throw new Error('Unauthorized to modify schema');
+        }
+        this._checkSession();
 
         // Basic schema validation
         if (!schema.type || typeof schema.type !== 'string') {
@@ -97,7 +106,8 @@ class HoloSphere {
                 const schemaString = JSON.stringify(schema);
                 const schemaData = {
                     schema: schemaString,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    owner: this.currentSpace.alias
                 };
                 
                 this.gun.get(this.appname)
@@ -172,19 +182,39 @@ class HoloSphere {
      * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
      */
     async put(holon, lens, data) {
-        if (!holon || !lens || !data) {
+        // Check authentication for data operations
+        if (!this.currentSpace) {
+            throw new Error('Unauthorized to modify this data');
+        }
+        this._checkSession();
+
+        // If updating existing data, check ownership
+        if (data.id) {
+            const existing = await this.get(holon, lens, data.id);
+            if (existing && existing.owner && existing.owner !== this.currentSpace.alias) {
+                throw new Error('Unauthorized to modify this data');
+            }
+        }
+
+        // Add owner information to data
+        const dataWithOwner = {
+            ...data,
+            owner: this.currentSpace.alias
+        };
+
+        if (!holon || !lens || !dataWithOwner) {
             throw new Error('put: Missing required parameters');
         }
 
-        if (!data.id) {
-            data.id = this.generateId();
+        if (!dataWithOwner.id) {
+            dataWithOwner.id = this.generateId();
         }
 
         // Get and validate schema first
         const schema = await this.getSchema(lens);
         if (schema) {
             // Deep clone data to avoid modifying the original
-            const dataToValidate = JSON.parse(JSON.stringify(data));
+            const dataToValidate = JSON.parse(JSON.stringify(dataWithOwner));
             const valid = this.validator.validate(schema, dataToValidate);
             
             if (!valid) {
@@ -199,11 +229,11 @@ class HoloSphere {
         // Only proceed with put if validation passes
         return new Promise((resolve, reject) => {
             try {
-                const payload = JSON.stringify(data);
+                const payload = JSON.stringify(dataWithOwner);
                 this.gun.get(this.appname)
                     .get(holon)
                     .get(lens)
-                    .get(data.id)
+                    .get(dataWithOwner.id)
                     .put(payload, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
@@ -396,13 +426,13 @@ class HoloSphere {
             let timeout = setTimeout(() => {
                 console.warn('get: Operation timed out');
                 resolve(null);
-            }, 5000); // 5 second timeout
+            }, 5000);
 
             this.gun.get(this.appname)
                 .get(holon)
                 .get(lens)
                 .get(key)
-                .once((data,key) => {
+                .once(async (data) => {
                     clearTimeout(timeout);
                    
                     if (!data) {
@@ -411,7 +441,7 @@ class HoloSphere {
                     }
 
                     try {
-                        const parsed = this.parse(data);
+                        const parsed = await this.parse(data);
 
                         // Validate against schema if one exists
                         if (schema) {
@@ -424,6 +454,18 @@ class HoloSphere {
                                 }
                             }
                         }
+
+                        // Check if user has access - only allow if:
+                        // 1. No owner (public data)
+                        // 2. User is the owner
+                        // 3. User is in shared list
+                        if (parsed.owner && 
+                            this.currentSpace?.alias !== parsed.owner &&
+                            (!parsed.shared || !parsed.shared.includes(this.currentSpace?.alias))) {
+                            resolve(null);
+                            return;
+                        }
+
                         resolve(parsed);
                     } catch (error) {
                         console.error('Error parsing data:', error);
@@ -442,6 +484,21 @@ class HoloSphere {
     async delete(holon, lens, key) {
         if (!holon || !lens || !key) {
             throw new Error('delete: Missing required parameters');
+        }
+
+        if (!this.currentSpace) {
+            throw new Error('Unauthorized to delete this data');
+        }
+        this._checkSession();
+
+        // Check ownership before delete
+        const data = await this.get(holon, lens, key);
+        if (!data) {
+            return true; // Nothing to delete
+        }
+        
+        if (data.owner && data.owner !== this.currentSpace.alias) {
+            throw new Error('Unauthorized to delete this data');
         }
 
         return new Promise((resolve, reject) => {
@@ -689,83 +746,54 @@ class HoloSphere {
      * @param {string} tableName - The table name to retrieve data from.
      * @returns {Promise<object|null>} - The parsed data from the table or null if not found.
      */
-    // async getAllGlobal(tableName) {
-    //     return new Promise(async (resolve, reject) => {
-    //         let output = []
-    //         let counter = 0
-    //         this.gun.get(this.appname).get(tableName.toString()).once((data, key) => {
-                     
-    //             counter += 1
-    //             if (itemdata) {
-    //                 let parsed = await this.parse(itemdata)
-    //                 output.push(parsed);
-    //                 console.log('getAllGlobal: parsed: ', parsed)
-    //             }
-
-    //             if (counter == maplenght) {
-    //                 resolve(output);
-                            
-    //             }
-    //         }
-    //         );
-    //     }
-    //     )
-    // }
-    async getAllGlobal(lens) {
-        if ( !lens) {
-            console.error('getAll: Missing required parameters:', { lens });
-            return [];
-        }
-
-        const schema = await this.getSchema(lens);
-        if (!schema && this.strict) {
-            console.error('getAll: Schema required in strict mode for lens:', lens);
-            return [];
+    async getAllGlobal(tableName) {
+        if (!tableName) {
+            throw new Error('getAllGlobal: Missing table name parameter');
         }
 
         return new Promise((resolve) => {
             let output = [];
-            let counter = 0;
-
-            this.gun.get(this.appname).get(lens).once((data, key) => {
-                if (!data) {
+            let isResolved = false;
+            let timeout = setTimeout(() => {
+                if (!isResolved) {
+                    isResolved = true;
                     resolve(output);
+                }
+            }, 5000);
+
+            this.gun.get(this.appname).get(tableName).once(async (data) => {
+                if (!data) {
+                    clearTimeout(timeout);
+                    isResolved = true;
+                    resolve([]);
                     return;
                 }
 
-                const mapLength = Object.keys(data).length - 1;
-
-                this.gun.get(this.appname).get(lens).map().once(async (itemdata, key) => {
-                    counter += 1;
-                    if (itemdata) {
-                        try {
-                            const parsed = await this.parse(itemdata);
-                            if (schema) {
-                                const valid = this.validator.validate(schema, parsed);
-                                if (valid) {
-                                    output.push(parsed);
-                                } else if (this.strict) {
-                                    console.warn('Invalid data removed:', key, this.validator.errors);
-                                    await this.delete(holon, lens, key);
-                                } else {
-                                    console.warn('Invalid data found:', key, this.validator.errors);
-                                    output.push(parsed);
-                                }
-                            } else {
-                                output.push(parsed);
-                            }
-                        } catch (error) {
-                            console.error('Error parsing data:', error);
-                            if (this.strict) {
-                                await this.delete(holon, lens, key);
+                const keys = Object.keys(data).filter(key => key !== '_');
+                const promises = keys.map(key => 
+                    new Promise(async (resolveItem) => {
+                        const itemData = await new Promise(resolveData => {
+                            this.gun.get(this.appname).get(tableName).get(key).once(resolveData);
+                        });
+                        
+                        if (itemData) {
+                            try {
+                                const parsed = await this.parse(itemData);
+                                if (parsed) output.push(parsed);
+                            } catch (error) {
+                                console.error('Error parsing data:', error);
                             }
                         }
-                    }
+                        resolveItem();
+                    })
+                );
 
-                    if (counter === mapLength) {
-                        resolve(output);
-                    }
-                });
+                await Promise.all(promises);
+                clearTimeout(timeout);
+                if (!isResolved) {
+                    isResolved = true;
+                    resolve(output);
+                }
             });
         });
     }
@@ -776,7 +804,32 @@ class HoloSphere {
      * @returns {Promise<void>}
      */
     async deleteGlobal(tableName, key) {
-        await this.gun.get(this.appname).get(tableName).get(key).put(null)
+        if (!tableName || !key) {
+            throw new Error('deleteGlobal: Missing required parameters');
+        }
+
+        // Check authentication
+        if (!this.currentSpace) {
+            throw new Error('Unauthorized to delete this data');
+        }
+        this._checkSession();
+
+        return new Promise((resolve, reject) => {
+            try {
+                this.gun.get(this.appname)
+                    .get(tableName)
+                    .get(key)
+                    .put(null, ack => {
+                        if (ack.err) {
+                            reject(new Error(ack.err));
+                        } else {
+                            resolve(true);
+                        }
+                    });
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 
     /**
@@ -785,16 +838,61 @@ class HoloSphere {
      * @returns {Promise<void>}
      */
     async deleteAllGlobal(tableName) {
-       // return new Promise((resolve) => {
-            this.gun.get(this.appname).get(tableName).map().once( (data, key)=> {
-            this.gun.get(this.appname).get(tableName).get(key).put(null)
-        })
-        this.gun.get(this.appname).get(tableName).put(null, ack => {
-            console.log('deleteAllGlobal: ack: ', ack)
-        })
-            //    resolve();
-            //});
-        // });
+        if (!tableName) {
+            throw new Error('deleteAllGlobal: Missing table name parameter');
+        }
+
+        // Check authentication
+        if (!this.currentSpace) {
+            throw new Error('Unauthorized to delete this data');
+        }
+        this._checkSession();
+
+        return new Promise((resolve, reject) => {
+            try {
+                const deletions = new Set();
+                let timeout = setTimeout(() => {
+                    if (deletions.size === 0) {
+                        resolve(true); // No data to delete
+                    }
+                }, 5000);
+
+                this.gun.get(this.appname).get(tableName).once(async (data) => {
+                    if (!data) {
+                        clearTimeout(timeout);
+                        resolve(true);
+                        return;
+                    }
+
+                    const keys = Object.keys(data).filter(key => key !== '_');
+                    const promises = keys.map(key => 
+                        new Promise((resolveDelete) => {
+                            this.gun.get(this.appname)
+                                .get(tableName)
+                                .get(key)
+                                .put(null, ack => {
+                                    if (ack.err) {
+                                        console.error(`Failed to delete ${key}:`, ack.err);
+                                    }
+                                    resolveDelete();
+                                });
+                        })
+                    );
+
+                    try {
+                        await Promise.all(promises);
+                        // Finally delete the table itself
+                        this.gun.get(this.appname).get(tableName).put(null);
+                        clearTimeout(timeout);
+                        resolve(true);
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 
     // ================================ COMPUTE FUNCTIONS ================================
@@ -1124,6 +1222,91 @@ class HoloSphere {
     // Add ID generation method
     generateId() {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    }
+
+    /**
+     * Creates a new space with the given credentials
+     * @param {string} spacename - The space identifier/username
+     * @param {string} password - The space password
+     * @returns {Promise<boolean>} - True if space was created successfully
+     */
+    async createSpace(spacename, password) {
+        if (!spacename || !password) {
+            throw new Error('Invalid credentials format');
+        }
+
+        // Check if space already exists
+        const existingSpace = await this.getGlobal('spaces', spacename);
+        if (existingSpace) {
+            throw new Error('Space already exists');
+        }
+
+        // Create space record
+        const space = {
+            alias: spacename,
+            // Store hashed password in a real implementation
+            password: password,
+            created: Date.now()
+        };
+
+        await this.putGlobal('spaces', {
+            ...space,
+            id: spacename
+        });
+
+        return true;
+    }
+
+    /**
+     * Logs in to a space with the given credentials
+     * @param {string} spacename - The space identifier/username
+     * @param {string} password - The space password
+     * @returns {Promise<boolean>} - True if login was successful
+     */
+    async login(spacename, password) {
+        // Validate input
+        if (!spacename || !password || 
+            typeof spacename !== 'string' || 
+            typeof password !== 'string') {
+            throw new Error('Invalid credentials format');
+        }
+
+        // Get space record
+        const space = await this.getGlobal('spaces', spacename);
+        if (!space || space.password !== password) {
+            throw new Error('Invalid spacename or password');
+        }
+
+        // Set current space with expiration
+        this.currentSpace = {
+            ...space,
+            exp: Date.now() + (24 * 60 * 60 * 1000) // 24 hour expiration
+        };
+
+        return true;
+    }
+
+    /**
+     * Logs out the current space
+     * @returns {Promise<void>}
+     */
+    async logout() {
+        this.currentSpace = null;
+    }
+
+    /**
+     * Checks if the current session is valid
+     * @private
+     */
+    _checkSession() {
+        if (!this.currentSpace) {
+            throw new Error('No active session');
+        }
+        if (this.currentSpace.exp < Date.now()) {
+            this.currentSpace = null;
+            throw new Error('Session expired');
+        }
+        return true;
     }
 }
 
