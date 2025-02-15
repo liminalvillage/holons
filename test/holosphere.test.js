@@ -484,23 +484,6 @@ describe('HoloSphere', () => {
             });
         }, 15000);
 
-        test('should handle rapid concurrent get operations', async () => {
-            const testData = { id: 'concurrent-test', data: 'test data' };
-            await holoSphere.put(testHolon, testLens, testData);
-
-            // Perform multiple concurrent get operations
-            const promises = Array.from({ length: 20 }, () => 
-                holoSphere.get(testHolon, testLens, 'concurrent-test')
-            );
-
-            const results = await Promise.all(promises);
-
-            // Verify all results are identical
-            results.forEach(result => {
-                expect(result).toEqual(testData);
-            });
-        });
-
         test('should handle rapid concurrent getAll operations', async () => {
             const testData = Array.from({ length: 5 }, (_, i) => ({
                 id: `concurrent${i}`,

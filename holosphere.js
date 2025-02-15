@@ -53,12 +53,6 @@ class HoloSphere {
             throw new Error('setSchema: Missing required parameters');
         }
 
-        // Check authentication for schema operations
-        if (!this.currentSpace) {
-            throw new Error('Unauthorized to modify schema');
-        }
-        this._checkSession();
-
         // Basic schema validation
         if (!schema.type || typeof schema.type !== 'string') {
             throw new Error('setSchema: Schema must have a type field');
@@ -107,7 +101,8 @@ class HoloSphere {
                 const schemaData = {
                     schema: schemaString,
                     timestamp: Date.now(),
-                    owner: this.currentSpace.alias
+                    // Only set owner if there's an authenticated space
+                    ...(this.currentSpace && { owner: this.currentSpace.alias })
                 };
                 
                 this.gun.get(this.appname)
@@ -270,10 +265,8 @@ class HoloSphere {
             
             // Set a hard timeout
             const hardTimeout = setTimeout(() => {
-                if (!isResolved) {
-                    cleanup();
-                    resolve(Array.from(output.values()));
-                }
+                cleanup();
+                resolve(Array.from(output.values()));
             }, 5000); // 5 second hard timeout
 
             const cleanup = () => {
@@ -808,11 +801,15 @@ class HoloSphere {
             throw new Error('deleteGlobal: Missing required parameters');
         }
 
-        // Check authentication
-        if (!this.currentSpace) {
+        // Only check authentication for non-spaces tables
+        if (tableName !== 'spaces' && !this.currentSpace) {
             throw new Error('Unauthorized to delete this data');
         }
-        this._checkSession();
+
+        // Skip session check for spaces table
+        if (tableName !== 'spaces') {
+            this._checkSession();
+        }
 
         return new Promise((resolve, reject) => {
             try {
@@ -842,11 +839,15 @@ class HoloSphere {
             throw new Error('deleteAllGlobal: Missing table name parameter');
         }
 
-        // Check authentication
-        if (!this.currentSpace) {
+        // Only check authentication for non-spaces tables
+        if (tableName !== 'spaces' && !this.currentSpace) {
             throw new Error('Unauthorized to delete this data');
         }
-        this._checkSession();
+
+        // Skip session check for spaces table
+        if (tableName !== 'spaces') {
+            this._checkSession();
+        }
 
         return new Promise((resolve, reject) => {
             try {
