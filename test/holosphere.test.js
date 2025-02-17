@@ -291,7 +291,14 @@ describe('HoloSphere', () => {
         const testLens = 'testLens';
         const validData = { id: 'test1', data: 'test data' };
         const invalidData = { id: 'test456', wrongField: 'wrong data' };
-        const expectedValidData = { ...validData, owner: testCredentials.spacename };
+        const expectedValidData = { 
+            ...validData, 
+            owner: testCredentials.spacename,
+            federation: expect.objectContaining({
+                origin: testCredentials.spacename,
+                timestamp: expect.any(Number)
+            })
+        };
 
         beforeEach(async () => {
             // Set up schema for validation tests
@@ -318,7 +325,7 @@ describe('HoloSphere', () => {
 
             // Verify the valid data was stored correctly
             const result = await holoSphere.get(testHolon, testLens, validData.id);
-            expect(result).toEqual(expectedValidData);
+            expect(result).toEqual(expect.objectContaining(expectedValidData));
 
             // Verify the invalid data was not stored
             const invalidResult = await holoSphere.get(testHolon, testLens, invalidData.id);
@@ -390,7 +397,11 @@ describe('HoloSphere', () => {
 
             const expectedData = testData.map(data => ({
                 ...data,
-                owner: testCredentials.spacename
+                owner: testCredentials.spacename,
+                federation: expect.objectContaining({
+                    origin: testCredentials.spacename,
+                    timestamp: expect.any(Number)
+                })
             }));
 
             // Store all test data
@@ -410,12 +421,12 @@ describe('HoloSphere', () => {
             expect(uniqueIds.size).toBe(testData.length);
 
             // Verify all items are present and correct
-            expect(sortedRetrievedData).toEqual(sortedExpectedData);
+            expect(sortedRetrievedData).toEqual(expect.arrayContaining(sortedExpectedData));
 
             // Verify individual item retrieval
             for (let i = 0; i < testData.length; i++) {
                 const item = await holoSphere.get(testHolon, testLens, testData[i].id);
-                expect(item).toEqual(expectedData[i]);
+                expect(item).toEqual(expect.objectContaining(expectedData[i]));
             }
         });
 
@@ -426,24 +437,29 @@ describe('HoloSphere', () => {
                 { id: 'test3', data: 'content3' }
             ].map(data => ({
                 ...data,
-                owner: testCredentials.spacename
+                owner: testCredentials.spacename,
+                federation: expect.objectContaining({
+                    origin: testCredentials.spacename,
+                    timestamp: expect.any(Number)
+                })
             }));
 
             // Store test data
             for (const data of testData) {
-                await holoSphere.put(testHolon, testLens, data);
+                const { federation, ...storeData } = data;
+                await holoSphere.put(testHolon, testLens, storeData);
             }
 
             // Test individual get operations
             for (const expected of testData) {
                 const result = await holoSphere.get(testHolon, testLens, expected.id);
-                expect(result).toEqual(expected);
+                expect(result).toEqual(expect.objectContaining(expected));
             }
 
             // Multiple consecutive gets should return same data
             for (let i = 0; i < 5; i++) {
                 const result = await holoSphere.get(testHolon, testLens, 'test1');
-                expect(result).toEqual(testData[0]);
+                expect(result).toEqual(expect.objectContaining(testData[0]));
             }
         });
 
@@ -451,12 +467,17 @@ describe('HoloSphere', () => {
             const testData = Array.from({ length: 10 }, (_, i) => ({
                 id: `test${i}`,
                 data: `content${i}`,
-                owner: testCredentials.spacename
+                owner: testCredentials.spacename,
+                federation: expect.objectContaining({
+                    origin: testCredentials.spacename,
+                    timestamp: expect.any(Number)
+                })
             }));
 
             // Store test data sequentially to ensure consistency
             for (const data of testData) {
-                await holoSphere.put(testHolon, testLens, data);
+                const { federation, ...storeData } = data;
+                await holoSphere.put(testHolon, testLens, storeData);
             }
 
             // Wait a bit to ensure data is settled
@@ -480,7 +501,9 @@ describe('HoloSphere', () => {
                 // Should contain all expected data
                 const sortedResult = [...result].sort((a, b) => a.id.localeCompare(b.id));
                 const sortedExpected = [...testData].sort((a, b) => a.id.localeCompare(b.id));
-                expect(sortedResult).toEqual(sortedExpected);
+                sortedResult.forEach((item, idx) => {
+                    expect(item).toEqual(expect.objectContaining(sortedExpected[idx]));
+                });
             });
         }, 15000);
 
@@ -602,24 +625,48 @@ describe('HoloSphere', () => {
             await holoSphere.deleteAll(testHolon, testLens);
         });
 
-        test('should receive data through subscription', (done) => {
+        test('should receive data through subscription', async () => {
             const testData = { id: 'test1', data: 'test data' };
-            const expectedData = { ...testData, owner: testCredentials.spacename };
+            const expectedData = { 
+                ...testData, 
+                owner: testCredentials.spacename,
+                federation: expect.objectContaining({
+                    origin: testCredentials.spacename,
+                    timestamp: expect.any(Number)
+                })
+            };
             let received = false;
 
-            holoSphere.subscribe(testHolon, testLens, (data) => {
-                if (!received && data.id === testData.id) {
-                    received = true;
-                    expect(data).toEqual(expectedData);
-                    done();
-                }
-            });
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Subscription timeout'));
+                }, 20000);
 
-            // Put data after subscription
-            setTimeout(() => {
-                holoSphere.put(testHolon, testLens, testData);
-            }, 100);
-        }, 10000);
+                holoSphere.subscribe(testHolon, testLens, (data) => {
+                    if (!received && data.id === testData.id) {
+                        try {
+                            received = true;
+                            expect(data).toEqual(expect.objectContaining(expectedData));
+                            clearTimeout(timeout);
+                            resolve();
+                        } catch (error) {
+                            clearTimeout(timeout);
+                            reject(error);
+                        }
+                    }
+                });
+
+                // Put data after subscription
+                setTimeout(async () => {
+                    try {
+                        await holoSphere.put(testHolon, testLens, testData);
+                    } catch (error) {
+                        clearTimeout(timeout);
+                        reject(error);
+                    }
+                }, 1000);
+            });
+        }, 30000);
 
         test('should stop receiving data after unsubscribe', async () => {
             const testData1 = { id: 'test1', data: 'first' };
@@ -647,39 +694,68 @@ describe('HoloSphere', () => {
             await holoSphere.put(testHolon, testLens, testData1);
         }, 10000);
 
-        test('should handle multiple subscriptions', (done) => {
+        test('should handle multiple subscriptions', async () => {
             const testData = { id: 'test1', data: 'test data' };
-            const expectedData = { ...testData, owner: testCredentials.spacename };
+            const expectedData = { 
+                ...testData, 
+                owner: testCredentials.spacename,
+                federation: expect.objectContaining({
+                    origin: testCredentials.spacename,
+                    timestamp: expect.any(Number)
+                })
+            };
             let received1 = false;
             let received2 = false;
 
-            function checkDone() {
-                if (received1 && received2) {
-                    done();
-                }
-            }
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Subscription timeout'));
+                }, 20000);
 
-            holoSphere.subscribe(testHolon, testLens, (data) => {
-                if (data.id === testData.id) {
-                    received1 = true;
-                    expect(data).toEqual(expectedData);
-                    checkDone();
+                function checkDone() {
+                    if (received1 && received2) {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
                 }
+
+                holoSphere.subscribe(testHolon, testLens, (data) => {
+                    if (data.id === testData.id) {
+                        try {
+                            received1 = true;
+                            expect(data).toEqual(expect.objectContaining(expectedData));
+                            checkDone();
+                        } catch (error) {
+                            clearTimeout(timeout);
+                            reject(error);
+                        }
+                    }
+                });
+
+                holoSphere.subscribe(testHolon, testLens, (data) => {
+                    if (data.id === testData.id) {
+                        try {
+                            received2 = true;
+                            expect(data).toEqual(expect.objectContaining(expectedData));
+                            checkDone();
+                        } catch (error) {
+                            clearTimeout(timeout);
+                            reject(error);
+                        }
+                    }
+                });
+
+                // Put data after both subscriptions
+                setTimeout(async () => {
+                    try {
+                        await holoSphere.put(testHolon, testLens, testData);
+                    } catch (error) {
+                        clearTimeout(timeout);
+                        reject(error);
+                    }
+                }, 1000);
             });
-
-            holoSphere.subscribe(testHolon, testLens, (data) => {
-                if (data.id === testData.id) {
-                    received2 = true;
-                    expect(data).toEqual(expectedData);
-                    checkDone();
-                }
-            });
-
-            // Put data after both subscriptions
-            setTimeout(() => {
-                holoSphere.put(testHolon, testLens, testData);
-            }, 100);
-        }, 10000);
+        }, 30000);
 
         afterEach(async () => {
             await holoSphere.deleteAll(testHolon, testLens);

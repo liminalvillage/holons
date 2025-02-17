@@ -1,6 +1,7 @@
 import * as h3 from 'h3-js';
 import OpenAI from 'openai';
 import Gun from 'gun'
+import 'gun/sea' // Import SEA module
 import Ajv2019 from 'ajv/dist/2019.js'
 
 
@@ -29,6 +30,9 @@ class HoloSphere {
             //     console.log('uuid', content);
             //     return content;}
         });
+
+        // Initialize SEA
+        this.sea = Gun.SEA;
 
         if (openaikey != null) {
             this.openai = new OpenAI({
@@ -186,30 +190,36 @@ class HoloSphere {
         // If updating existing data, check ownership
         if (data.id) {
             const existing = await this.get(holon, lens, data.id);
-            if (existing && existing.owner && existing.owner !== this.currentSpace.alias) {
+            if (existing && existing.owner && 
+                existing.owner !== this.currentSpace.alias && 
+                !existing.federation) { // Skip ownership check for federated data
                 throw new Error('Unauthorized to modify this data');
             }
         }
 
-        // Add owner information to data
-        const dataWithOwner = {
+        // Add owner and federation information to data
+        const dataWithMeta = {
             ...data,
-            owner: this.currentSpace.alias
+            owner: this.currentSpace.alias,
+            federation: {
+                origin: this.currentSpace.alias,
+                timestamp: Date.now()
+            }
         };
 
-        if (!holon || !lens || !dataWithOwner) {
+        if (!holon || !lens || !dataWithMeta) {
             throw new Error('put: Missing required parameters');
         }
 
-        if (!dataWithOwner.id) {
-            dataWithOwner.id = this.generateId();
+        if (!dataWithMeta.id) {
+            dataWithMeta.id = this.generateId();
         }
 
         // Get and validate schema first
         const schema = await this.getSchema(lens);
         if (schema) {
             // Deep clone data to avoid modifying the original
-            const dataToValidate = JSON.parse(JSON.stringify(dataWithOwner));
+            const dataToValidate = JSON.parse(JSON.stringify(dataWithMeta));
             const valid = this.validator.validate(schema, dataToValidate);
             
             if (!valid) {
@@ -221,14 +231,14 @@ class HoloSphere {
             throw new Error('Schema required in strict mode');
         }
 
-        // Only proceed with put if validation passes
-        return new Promise((resolve, reject) => {
+        // Store data in current space
+        const putResult = await new Promise((resolve, reject) => {
             try {
-                const payload = JSON.stringify(dataWithOwner);
+                const payload = JSON.stringify(dataWithMeta);
                 this.gun.get(this.appname)
                     .get(holon)
                     .get(lens)
-                    .get(dataWithOwner.id)
+                    .get(dataWithMeta.id)
                     .put(payload, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
@@ -240,6 +250,71 @@ class HoloSphere {
                 reject(error);
             }
         });
+
+        // If successful, propagate to federated spaces
+        if (putResult) {
+            await this._propagateToFederation(holon, lens, dataWithMeta);
+        }
+
+        return putResult;
+    }
+
+    /**
+     * Propagates data to federated spaces
+     * @private
+     * @param {string} holon - The holon identifier
+     * @param {string} lens - The lens identifier
+     * @param {object} data - The data to propagate
+     */
+    async _propagateToFederation(holon, lens, data) {
+        try {
+            // Get federation info for current space
+            const fedInfo = await this.getFederation(this.currentSpace.alias);
+            if (!fedInfo || !fedInfo.notify || fedInfo.notify.length === 0) {
+                return; // No federation to propagate to
+            }
+
+            // Propagate to each federated space
+            const propagationPromises = fedInfo.notify.map(spaceId => 
+                new Promise((resolve) => {
+                    // Store data in the federated space's lens
+                    this.gun.get(this.appname)
+                        .get(spaceId)
+                        .get(lens)
+                        .get(data.id)
+                        .put(JSON.stringify({
+                            ...data,
+                            federation: {
+                                ...data.federation,
+                                notified: Date.now()
+                            }
+                        }), ack => {
+                            if (ack.err) {
+                                console.warn(`Failed to propagate to space ${spaceId}:`, ack.err);
+                            }
+                            resolve();
+                        });
+
+                    // Also store in federation lens for notifications
+                    this.gun.get(this.appname)
+                        .get(spaceId)
+                        .get('federation')
+                        .get(data.id)
+                        .put(JSON.stringify({
+                            ...data,
+                            federation: {
+                                ...data.federation,
+                                notified: Date.now()
+                            }
+                        }));
+                })
+            );
+
+            await Promise.all(propagationPromises);
+        } catch (error) {
+            console.warn('Federation propagation error:', error);
+            // Don't throw here to avoid failing the original put
+        }
     }
 
     /**
@@ -258,16 +333,104 @@ class HoloSphere {
             throw new Error('getAll: Schema required in strict mode');
         }
 
-        return new Promise((resolve, reject) => {
-            const output = new Map(); // Use Map to ensure unique by ID
+        // Get local data
+        const localData = await this._getAllLocal(holon, lens, schema);
+        
+        // If authenticated, get federated data
+        let federatedData = [];
+        if (this.currentSpace) {
+            federatedData = await this._getAllFederated(holon, lens, schema);
+        }
+
+        // Combine and deduplicate data based on ID
+        const combined = new Map();
+        
+        // Add local data first
+        localData.forEach(item => {
+            if (item.id) {
+                combined.set(item.id, item);
+            }
+        });
+
+        // Add federated data, potentially overwriting local data if newer
+        federatedData.forEach(item => {
+            if (item.id) {
+                const existing = combined.get(item.id);
+                if (!existing || 
+                    (item.federation?.timestamp > (existing.federation?.timestamp || 0))) {
+                    combined.set(item.id, item);
+                }
+            }
+        });
+
+        return Array.from(combined.values());
+    }
+
+    /**
+     * Gets data from federated spaces
+     * @private
+     * @param {string} holon - The holon identifier
+     * @param {string} lens - The lens identifier
+     * @param {string} key - The key to get
+     * @returns {Promise<object|null>} - The federated data or null if not found
+     */
+    async _getFederatedData(holon, lens, key) {
+        try {
+            const fedInfo = await this.getFederation(this.currentSpace.alias);
+            if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
+                return null;
+            }
+
+            // Try each federated space
+            for (const spaceId of fedInfo.federation) {
+                const result = await new Promise((resolve) => {
+                    this.gun.get(this.appname)
+                        .get(spaceId)
+                        .get(lens)
+                        .get(key)
+                        .once(async (data) => {
+                            if (!data) {
+                                resolve(null);
+                                return;
+                            }
+                            try {
+                                const parsed = await this.parse(data);
+                                resolve(parsed);
+                            } catch (error) {
+                                console.warn(`Error parsing federated data from ${spaceId}:`, error);
+                                resolve(null);
+                            }
+                        });
+                });
+
+                if (result) {
+                    return result;
+                }
+            }
+        } catch (error) {
+            console.warn('Federation get error:', error);
+        }
+        return null;
+    }
+
+    /**
+     * Gets all data from local space
+     * @private
+     * @param {string} holon - The holon identifier
+     * @param {string} lens - The lens identifier
+     * @param {object} schema - The schema to validate against
+     * @returns {Promise<Array>} - Array of local data
+     */
+    async _getAllLocal(holon, lens, schema) {
+        return new Promise((resolve) => {
+            const output = new Map();
             let isResolved = false;
             let listener = null;
             
-            // Set a hard timeout
             const hardTimeout = setTimeout(() => {
                 cleanup();
                 resolve(Array.from(output.values()));
-            }, 5000); // 5 second hard timeout
+            }, 5000);
 
             const cleanup = () => {
                 if (listener) {
@@ -278,31 +441,25 @@ class HoloSphere {
             };
 
             const processData = async (data, key) => {
-                if (!data || key === '_') return; // Skip Gun metadata
+                if (!data || key === '_') return;
 
                 try {
                     const parsed = await this.parse(data);
-                    if (!parsed || !parsed.id) return; // Skip invalid data
+                    if (!parsed || !parsed.id) return;
 
                     if (schema) {
                         const valid = this.validator.validate(schema, parsed);
                         if (valid || !this.strict) {
-                            output.set(parsed.id, parsed); // Use ID as key to prevent duplicates
-                        } else if (this.strict) {
-                            await this.delete(holon, lens, key);
+                            output.set(parsed.id, parsed);
                         }
                     } else {
                         output.set(parsed.id, parsed);
                     }
                 } catch (error) {
                     console.error('Error processing data:', error);
-                    if (this.strict) {
-                        await this.delete(holon, lens, key);
-                    }
                 }
             };
 
-            // Get initial data snapshot
             this.gun.get(this.appname)
                 .get(holon)
                 .get(lens)
@@ -322,30 +479,77 @@ class HoloSphere {
 
                     try {
                         await Promise.all(initialPromises);
-                        
-                        // Set up listener for changes
-                        listener = this.gun.get(this.appname)
-                            .get(holon)
-                            .get(lens)
-                            .map()
-                            .on(async (data, key) => {
-                                await processData(data, key);
-                            });
-
-                        // Give some time for potential updates
-                        setTimeout(() => {
-                            if (!isResolved) {
-                                cleanup();
-                                resolve(Array.from(output.values()));
-                            }
-                        }, 1000);
-
+                        cleanup();
+                        resolve(Array.from(output.values()));
                     } catch (error) {
                         cleanup();
-                        reject(error);
+                        resolve([]);
                     }
                 });
         });
+    }
+
+    /**
+     * Gets all data from federated spaces
+     * @private
+     * @param {string} holon - The holon identifier
+     * @param {string} lens - The lens identifier
+     * @param {object} schema - The schema to validate against
+     * @returns {Promise<Array>} - Array of federated data
+     */
+    async _getAllFederated(holon, lens, schema) {
+        try {
+            const fedInfo = await this.getFederation(this.currentSpace.alias);
+            if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
+                return [];
+            }
+
+            const federatedData = new Map();
+            
+            // Get data from each federated space
+            const fedPromises = fedInfo.federation.map(spaceId =>
+                new Promise((resolve) => {
+                    this.gun.get(this.appname)
+                        .get(spaceId)
+                        .get(lens)
+                        .once(async (data) => {
+                            if (!data) {
+                                resolve();
+                                return;
+                            }
+
+                            const processPromises = Object.keys(data)
+                                .filter(key => key !== '_')
+                                .map(async key => {
+                                    try {
+                                        const parsed = await this.parse(data[key]);
+                                        if (parsed && parsed.id) {
+                                            if (schema) {
+                                                const valid = this.validator.validate(schema, parsed);
+                                                if (valid || !this.strict) {
+                                                    federatedData.set(parsed.id, parsed);
+                                                }
+                                            } else {
+                                                federatedData.set(parsed.id, parsed);
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.warn(`Error processing federated data from ${spaceId}:`, error);
+                                    }
+                                });
+
+                            await Promise.all(processPromises);
+                            resolve();
+                        });
+                })
+            );
+
+            await Promise.all(fedPromises);
+            return Array.from(federatedData.values());
+        } catch (error) {
+            console.warn('Federation getAll error:', error);
+            return [];
+        }
     }
 
     /**
@@ -415,7 +619,8 @@ class HoloSphere {
         // Get schema for validation
         const schema = await this.getSchema(lens);
 
-        return new Promise((resolve) => {
+        // First try to get from current space
+        const localResult = await new Promise((resolve) => {
             let timeout = setTimeout(() => {
                 console.warn('get: Operation timed out');
                 resolve(null);
@@ -452,9 +657,11 @@ class HoloSphere {
                         // 1. No owner (public data)
                         // 2. User is the owner
                         // 3. User is in shared list
+                        // 4. Data is from federation
                         if (parsed.owner && 
                             this.currentSpace?.alias !== parsed.owner &&
-                            (!parsed.shared || !parsed.shared.includes(this.currentSpace?.alias))) {
+                            (!parsed.shared || !parsed.shared.includes(this.currentSpace?.alias)) &&
+                            (!parsed.federation || !parsed.federation.origin)) {
                             resolve(null);
                             return;
                         }
@@ -466,6 +673,21 @@ class HoloSphere {
                     }
                 });
         });
+
+        // If found locally, return it
+        if (localResult) {
+            return localResult;
+        }
+
+        // If not found locally and we're authenticated, try federated spaces
+        if (this.currentSpace) {
+            const fedResult = await this._getFederatedData(holon, lens, key);
+            if (fedResult) {
+                return fedResult;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -839,13 +1061,13 @@ class HoloSphere {
             throw new Error('deleteAllGlobal: Missing table name parameter');
         }
 
-        // Only check authentication for non-spaces tables
-        if (tableName !== 'spaces' && !this.currentSpace) {
+        // Only check authentication for non-spaces and non-federation tables
+        if (!['spaces', 'federation'].includes(tableName) && !this.currentSpace) {
             throw new Error('Unauthorized to delete this data');
         }
 
-        // Skip session check for spaces table
-        if (tableName !== 'spaces') {
+        // Skip session check for spaces and federation tables
+        if (!['spaces', 'federation'].includes(tableName)) {
             this._checkSession();
         }
 
@@ -1119,7 +1341,7 @@ class HoloSphere {
 
 
     /**
-     * Updates the parent holonagon with a new report.
+     * Updates the parent holon with a new report.
      * @param {string} id - The child holon identifier.
      * @param {string} report - The report to update.
      * @returns {Promise<object>} - The updated parent information.
@@ -1201,7 +1423,9 @@ class HoloSphere {
 
             try {
                 const parsed = typeof data === 'string' ? await this.parse(data) : data;
-                await callback(parsed, key);
+                if (parsed) {
+                    await callback(parsed);
+                }
             } catch (error) {
                 console.warn('Subscription handler error:', error);
             }
@@ -1209,12 +1433,13 @@ class HoloSphere {
 
         // Subscribe using Gun's map() and on()
         const chain = ref.map();
-        const off = chain.on(handler);
+        chain.on(handler);
 
+        // Return subscription object
         return {
-            off: async () => {
-                if (chain && handler) {
-                    chain.off(handler);
+            off: () => {
+                if (chain) {
+                    chain.off();
                 }
             }
         };
@@ -1222,7 +1447,7 @@ class HoloSphere {
 
     // Add ID generation method
     generateId() {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        return Date.now().toString(10) + Math.random().toString(2);
     }
 
     /**
@@ -1242,20 +1467,37 @@ class HoloSphere {
             throw new Error('Space already exists');
         }
 
-        // Create space record
-        const space = {
-            alias: spacename,
-            // Store hashed password in a real implementation
-            password: password,
-            created: Date.now()
-        };
+        try {
+            // Generate key pair
+            const pair = await Gun.SEA.pair();
+            
+            // Create auth record with SEA
+            const salt = await Gun.SEA.random(64).toString('base64');
+            const hash = await Gun.SEA.work(password, salt);
+            const auth = {
+                salt: salt,
+                hash: hash,
+                pub: pair.pub
+            };
 
-        await this.putGlobal('spaces', {
-            ...space,
-            id: spacename
-        });
+            // Create space record with encrypted data
+            const space = {
+                alias: spacename,
+                auth: auth,
+                epub: pair.epub,
+                pub: pair.pub,
+                created: Date.now()
+            };
 
-        return true;
+            await this.putGlobal('spaces', {
+                ...space,
+                id: spacename
+            });
+
+            return true;
+        } catch (error) {
+            throw new Error(`Space creation failed: ${error.message}`);
+        }
     }
 
     /**
@@ -1272,19 +1514,29 @@ class HoloSphere {
             throw new Error('Invalid credentials format');
         }
 
-        // Get space record
-        const space = await this.getGlobal('spaces', spacename);
-        if (!space || space.password !== password) {
-            throw new Error('Invalid spacename or password');
+        try {
+            // Get space record
+            const space = await this.getGlobal('spaces', spacename);
+            if (!space || !space.auth) {
+                throw new Error('Invalid spacename or password');
+            }
+
+            // Verify password using SEA
+            const hash = await Gun.SEA.work(password, space.auth.salt);
+            if (hash !== space.auth.hash) {
+                throw new Error('Invalid spacename or password');
+            }
+
+            // Set current space with expiration
+            this.currentSpace = {
+                ...space,
+                exp: Date.now() + (24 * 60 * 60 * 1000) // 24 hour expiration
+            };
+
+            return true;
+        } catch (error) {
+            throw new Error('Authentication failed');
         }
-
-        // Set current space with expiration
-        this.currentSpace = {
-            ...space,
-            exp: Date.now() + (24 * 60 * 60 * 1000) // 24 hour expiration
-        };
-
-        return true;
     }
 
     /**
@@ -1308,6 +1560,291 @@ class HoloSphere {
             throw new Error('Session expired');
         }
         return true;
+    }
+
+    /**
+     * Creates a federation relationship between two spaces
+     * @param {string} spaceId1 - The first space ID
+     * @param {string} spaceId2 - The second space ID
+     * @returns {Promise<boolean>} - True if federation was created successfully
+     */
+    async federate(spaceId1, spaceId2) {
+        if (!spaceId1 || !spaceId2) {
+            throw new Error('federate: Missing required parameters');
+        }
+
+        // Get existing federation info for both spaces
+        let fedInfo1 = await this.getGlobal('federation', spaceId1);
+        let fedInfo2 = await this.getGlobal('federation', spaceId2);
+
+        // Check if federation already exists
+        if (fedInfo1 && fedInfo1.federation && fedInfo1.federation.includes(spaceId2)) {
+            throw new Error('Federation already exists');
+        }
+
+        // Create or update federation info for first space
+        if (!fedInfo1) {
+            fedInfo1 = {
+                id: spaceId1,
+                name: spaceId1,
+                federation: [],
+                notify: []
+            };
+        }
+        if (!fedInfo1.federation) fedInfo1.federation = [];
+        fedInfo1.federation.push(spaceId2);
+
+        // Create or update federation info for second space
+        if (!fedInfo2) {
+            fedInfo2 = {
+                id: spaceId2,
+                name: spaceId2,
+                federation: [],
+                notify: []
+            };
+        }
+        if (!fedInfo2.notify) fedInfo2.notify = [];
+        fedInfo2.notify.push(spaceId1);
+
+        // Save both federation records
+        await this.putGlobal('federation', fedInfo1);
+        await this.putGlobal('federation', fedInfo2);
+
+        return true;
+    }
+
+    /**
+     * Subscribes to federation notifications for a space
+     * @param {string} spaceId - The space ID to subscribe to
+     * @param {function} callback - The callback to execute on notifications
+     * @returns {Promise<object>} - Subscription object with off() method
+     */
+    async subscribeFederation(spaceId, callback) {
+        if (!spaceId || !callback) {
+            throw new Error('subscribeFederation: Missing required parameters');
+        }
+
+        // Get federation info
+        const fedInfo = await this.getGlobal('federation', spaceId);
+        if (!fedInfo) {
+            throw new Error('No federation info found for space');
+        }
+
+        // Create subscription for each federated space
+        const subscriptions = [];
+        if (fedInfo.federation && fedInfo.federation.length > 0) {
+            for (const federatedSpace of fedInfo.federation) {
+                // Subscribe to all lenses in the federated space
+                const sub = await this.subscribe(federatedSpace, '*', async (data) => {
+                    try {
+                        // Only notify if the data has federation info and is from the federated space
+                        if (data && data.federation && data.federation.origin === federatedSpace) {
+                            await callback(data);
+                        }
+                    } catch (error) {
+                        console.warn('Federation notification error:', error);
+                    }
+                });
+                subscriptions.push(sub);
+            }
+        }
+
+        // Return combined subscription object
+        return {
+            off: () => {
+                subscriptions.forEach(sub => {
+                    if (sub && typeof sub.off === 'function') {
+                        sub.off();
+                    }
+                });
+            }
+        };
+    }
+
+    /**
+     * Gets federation info for a space
+     * @param {string} spaceId - The space ID
+     * @returns {Promise<object|null>} - Federation info or null if not found
+     */
+    async getFederation(spaceId) {
+        if (!spaceId) {
+            throw new Error('getFederationInfo: Missing space ID');
+        }
+        return await this.getGlobal('federation', spaceId);
+    }
+
+    /**
+     * Removes a federation relationship between spaces
+     * @param {string} spaceId1 - The first space ID
+     * @param {string} spaceId2 - The second space ID
+     * @returns {Promise<boolean>} - True if federation was removed successfully
+     */
+    async unfederate(spaceId1, spaceId2) {
+        if (!spaceId1 || !spaceId2) {
+            throw new Error('unfederate: Missing required parameters');
+        }
+
+        // Get federation info for both spaces
+        const fedInfo1 = await this.getGlobal('federation', spaceId1);
+        const fedInfo2 = await this.getGlobal('federation', spaceId2);
+
+        if (fedInfo1) {
+            fedInfo1.federation = fedInfo1.federation.filter(id => id !== spaceId2);
+            await this.putGlobal('federation', fedInfo1);
+        }
+
+        if (fedInfo2) {
+            fedInfo2.notify = fedInfo2.notify.filter(id => id !== spaceId1);
+            await this.putGlobal('federation', fedInfo2);
+        }
+
+        return true;
+    }
+
+    /**
+     * Gets the name of a chat/space
+     * @param {string} spaceId - The space ID
+     * @returns {Promise<string>} - The space name or the ID if not found
+     */
+    async getChatName(spaceId) {
+        const spaceInfo = await this.getGlobal('spaces', spaceId);
+        return spaceInfo?.name || spaceId;
+    }
+
+    /**
+     * Gets data from a holon and lens, including data from federated spaces with optional aggregation
+     * @param {string} holon - The holon identifier
+     * @param {string} lens - The lens identifier
+     * @param {object} options - Options for data retrieval and aggregation
+     * @param {boolean} options.aggregate - Whether to aggregate items with matching IDs (default: false)
+     * @param {string} options.idField - Field to use as identifier for aggregation (default: 'id')
+     * @param {string[]} options.sumFields - Numeric fields to sum during aggregation (e.g., ['received', 'sent'])
+     * @param {string[]} options.concatArrays - Array fields to concatenate during aggregation (e.g., ['wants', 'offers'])
+     * @param {boolean} options.removeDuplicates - Whether to remove duplicates when not aggregating (default: true)
+     * @param {function} options.mergeStrategy - Custom function to merge items during aggregation
+     * @returns {Promise<Array>} - Combined array of local and federated data
+     */
+    async getFederated(holon, lens, options = {}) {
+        // Validate required parameters
+        if (!holon || !lens) {
+            throw new Error('getFederated: Missing required parameters');
+        }
+
+        const {
+            aggregate = false,
+            idField = 'id',
+            sumFields = [],
+            concatArrays = [],
+            removeDuplicates = true,
+            mergeStrategy = null
+        } = options;
+
+        // Get federation info for current space
+        const fedInfo = await this.getFederation(this.currentSpace?.alias);
+        
+        // Get local data
+        const localData = await this.getAll(holon, lens);
+        
+        // If no federation or not authenticated, return local data only
+        if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
+            return localData;
+        }
+
+        // Get data from each federated space
+        const federatedData = await Promise.all(
+            fedInfo.federation.map(async (federatedSpace) => {
+                try {
+                    const data = await this.getAll(federatedSpace, lens);
+                    return data || [];
+                } catch (error) {
+                    console.warn(`Error getting data from federated space ${federatedSpace}:`, error);
+                    return [];
+                }
+            })
+        );
+
+        // Combine all data
+        const allData = [...localData, ...federatedData.flat()];
+
+        // If aggregating, use enhanced aggregation logic
+        if (aggregate) {
+            const aggregated = new Map();
+
+            for (const item of allData) {
+                const itemId = item[idField];
+                if (!itemId) continue;
+
+                const existing = aggregated.get(itemId);
+                if (!existing) {
+                    aggregated.set(itemId, { ...item });
+                } else {
+                    // If custom merge strategy is provided, use it
+                    if (mergeStrategy && typeof mergeStrategy === 'function') {
+                        aggregated.set(itemId, mergeStrategy(existing, item));
+                        continue;
+                    }
+
+                    // Enhanced default merge strategy
+                    const merged = { ...existing };
+
+                    // Sum numeric fields
+                    for (const field of sumFields) {
+                        if (typeof item[field] === 'number') {
+                            merged[field] = (merged[field] || 0) + (item[field] || 0);
+                        }
+                    }
+
+                    // Concatenate and deduplicate array fields
+                    for (const field of concatArrays) {
+                        if (Array.isArray(item[field])) {
+                            const combinedArray = [
+                                ...(merged[field] || []),
+                                ...(item[field] || [])
+                            ];
+                            // Remove duplicates if elements are primitive
+                            merged[field] = Array.from(new Set(combinedArray));
+                        }
+                    }
+
+                    // Update federation metadata
+                    merged.federation = {
+                        ...merged.federation,
+                        timestamp: Math.max(
+                            merged.federation?.timestamp || 0,
+                            item.federation?.timestamp || 0
+                        ),
+                        origins: Array.from(new Set([
+                            ...(merged.federation?.origins || [merged.federation?.origin]),
+                            ...(item.federation?.origins || [item.federation?.origin])
+                        ]).filter(Boolean))
+                    };
+
+                    // Update the aggregated item
+                    aggregated.set(itemId, merged);
+                }
+            }
+
+            return Array.from(aggregated.values());
+        }
+
+        // If not aggregating, optionally remove duplicates based on idField
+        if (!removeDuplicates) {
+            return allData;
+        }
+        
+        // Remove duplicates keeping the most recent version
+        const uniqueMap = new Map();
+        allData.forEach(item => {
+            const id = item[idField];
+            if (!id) return;
+            
+            const existing = uniqueMap.get(id);
+            if (!existing || 
+                (item.federation?.timestamp > (existing.federation?.timestamp || 0))) {
+                uniqueMap.set(id, item);
+            }
+        });
+        return Array.from(uniqueMap.values());
     }
 }
 
