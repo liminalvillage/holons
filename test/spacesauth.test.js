@@ -1,7 +1,5 @@
 import HoloSphere from '../holosphere.js';
 import * as h3 from 'h3-js';
-import Gun from 'gun';
-import 'gun/sea';
 
 describe('Space Authentication and Authorization', () => {
     // Global HoloSphere instances

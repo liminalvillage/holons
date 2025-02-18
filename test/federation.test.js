@@ -1,9 +1,8 @@
 import HoloSphere from '../holosphere.js';
-import * as h3 from 'h3-js';
 import { jest } from '@jest/globals';
 
 // Set global timeout for all tests
-jest.setTimeout(30000);
+jest.setTimeout(3000);
 
 describe('Federation Operations', () => {
     const testAppName = 'test-app';
@@ -28,8 +27,6 @@ describe('Federation Operations', () => {
             await holoSphere.deleteAllGlobal('federation');
             await holoSphere.deleteGlobal('spaces', space1.spacename);
             await holoSphere.deleteGlobal('spaces', space2.spacename);
-            // Wait for cleanup
-            await new Promise(resolve => setTimeout(resolve, 2000));
         } catch (error) {
             // Ignore errors during cleanup
             console.log('Cleanup error (expected):', error.message);
@@ -44,12 +41,9 @@ describe('Federation Operations', () => {
             } catch (error) {
                 console.log('Space creation attempt', i + 1, 'failed:', error.message);
                 if (i === 2) throw error;
-                await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
 
-        // Wait for space creation to complete
-        await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Verify spaces were created
         const space1Created = await holoSphere.getGlobal('spaces', space1.spacename);
@@ -58,9 +52,6 @@ describe('Federation Operations', () => {
         if (!space1Created || !space2Created) {
             throw new Error('Failed to create test spaces');
         }
-
-        // Wait for everything to settle
-        await new Promise(resolve => setTimeout(resolve, 2000));
     }, 30000);
 
     beforeEach(async () => {
@@ -91,9 +82,7 @@ describe('Federation Operations', () => {
         await holoSphere.setSchema(testLens, baseSchema);
         await strictHoloSphere.setSchema(testLens, baseSchema);
         
-        // Wait for schema to be set
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+    
         // Verify spaces exist before proceeding
         const space1Exists = await holoSphere.getGlobal('spaces', space1.spacename);
         const space2Exists = await holoSphere.getGlobal('spaces', space2.spacename);
@@ -102,7 +91,6 @@ describe('Federation Operations', () => {
         if (!space1Exists) {
             try {
                 await holoSphere.createSpace(space1.spacename, space1.password);
-                await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (error) {
                 if (error.message !== 'Space already exists') {
                     throw error;
@@ -112,16 +100,12 @@ describe('Federation Operations', () => {
         if (!space2Exists) {
             try {
                 await holoSphere.createSpace(space2.spacename, space2.password);
-                await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (error) {
                 if (error.message !== 'Space already exists') {
                     throw error;
                 }
             }
         }
-        
-        // Wait for space creation to complete
-        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Verify spaces again
         const space1Verified = await holoSphere.getGlobal('spaces', space1.spacename);
@@ -142,16 +126,11 @@ describe('Federation Operations', () => {
         // Login as first space to holoSphere
         await holoSphere.login(space1.spacename, space1.password);
         
-        // Wait for login to complete
-        await new Promise(resolve => setTimeout(resolve, 2000));
     }, 20000);
 
     test('should create federation relationship between spaces', async () => {
         // Create federation relationship
         await holoSphere.federate(space1.spacename, space2.spacename);
-
-        // Wait for federation to be established
-        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Verify federation was created
         const fedInfo = await holoSphere.getFederation(space1.spacename);
@@ -162,9 +141,6 @@ describe('Federation Operations', () => {
     test('should establish bidirectional federation', async () => {
         // Create bidirectional federation
         await holoSphere.federate(space1.spacename, space2.spacename);
-
-        // Wait for federation to be established
-        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Login to space1 to verify federation
         await holoSphere.login(space1.spacename, space1.password);
@@ -185,9 +161,6 @@ describe('Federation Operations', () => {
 
         // Create initial federation
         await holoSphere.federate(space1.spacename, space2.spacename);
-
-        // Wait for federation to be established
-        await new Promise(resolve => setTimeout(resolve, 3000));
 
         // Verify federation exists
         const fedInfo = await holoSphere.getFederation(space1.spacename);
@@ -213,17 +186,11 @@ describe('Federation Operations', () => {
         // Set up federation
         await holoSphere.federate(space1.spacename, space2.spacename);
 
-        // Wait for federation to be established
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
         // Login to space2 with strict instance
         await strictHoloSphere.login(space2.spacename, space2.password);
 
         // Put data in first space
         await holoSphere.put(testHolon, testLens, testData);
-
-        // Wait for propagation
-        await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Verify data was propagated to federated space
         const federatedData = await strictHoloSphere.get(testHolon, testLens, testData.id);
@@ -239,18 +206,12 @@ describe('Federation Operations', () => {
         // Clean up any existing test data first
         await holoSphere.deleteAll(testHolon, testLens);
         await strictHoloSphere.deleteAll(testHolon, testLens);
-        
-        // Wait for cleanup to complete
-        await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Set up federation using non-strict instance (already logged in as space1)
         await holoSphere.federate(space1.spacename, space2.spacename);
 
         // Login to space2 with strict instance
         await strictHoloSphere.login(space2.spacename, space2.password);
-
-        // Wait for federation to be established
-        await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Test data with overlapping IDs and different fields
         const testData1 = { 
@@ -281,17 +242,12 @@ describe('Federation Operations', () => {
         // Put data using both instances and wait between puts
         console.log('Putting test data 1:', JSON.stringify(testData1, null, 2));
         await holoSphere.put(testHolon, testLens, testData1);
-        await new Promise(resolve => setTimeout(resolve, 5000));
         
         console.log('Putting test data 2:', JSON.stringify(testData2, null, 2));
         await strictHoloSphere.put(testHolon, testLens, testData2);
-        await new Promise(resolve => setTimeout(resolve, 5000));
         
         console.log('Putting test data 3:', JSON.stringify(testData3, null, 2));
         await holoSphere.put(testHolon, testLens, testData3);
-
-        // Wait longer for data propagation
-        await new Promise(resolve => setTimeout(resolve, 10000));
 
         // Test 1: Simple concatenation without deduplication
         const concatenatedResults = await holoSphere.getFederated(testHolon, testLens, {
@@ -352,9 +308,6 @@ describe('Federation Operations', () => {
         // Set up federation
         await holoSphere.federate(space1.spacename, space2.spacename);
 
-        // Wait for federation to be established
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
         // Verify federation exists
         let fedInfo1 = await holoSphere.getFederation(space1.spacename);
         expect(fedInfo1).toBeDefined();
@@ -363,9 +316,6 @@ describe('Federation Operations', () => {
 
         // Remove federation
         await holoSphere.unfederate(space1.spacename, space2.spacename);
-
-        // Wait for unfederation to complete
-        await new Promise(resolve => setTimeout(resolve, 5000));
 
         // Verify federation is removed
         fedInfo1 = await holoSphere.getFederation(space1.spacename);
@@ -391,9 +341,6 @@ describe('Federation Operations', () => {
         if (strictHoloSphere.currentSpace) {
             await strictHoloSphere.logout();
         }
-        
-        // Wait for cleanup
-        await new Promise(resolve => setTimeout(resolve, 1000));
     });
 
     afterAll(async () => {
@@ -401,8 +348,6 @@ describe('Federation Operations', () => {
         try {
             await holoSphere.deleteGlobal('spaces', space1.spacename);
             await holoSphere.deleteGlobal('spaces', space2.spacename);
-            // Wait for cleanup
-            await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (error) {
             console.error('Error during final cleanup:', error.message);
         }

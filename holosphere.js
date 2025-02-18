@@ -1,7 +1,7 @@
 import * as h3 from 'h3-js';
 import OpenAI from 'openai';
 import Gun from 'gun'
-import 'gun/sea' // Import SEA module
+import SEA from 'gun/sea.js'
 import Ajv2019 from 'ajv/dist/2019.js'
 
 
@@ -21,7 +21,7 @@ class HoloSphere {
             strict: false,  // Keep this false to avoid Ajv strict mode issues
             validateSchema: true // Always validate schemas
         });
-        
+
         // Use provided Gun instance or create new one
         this.gun = gunInstance || Gun({
             peers: ['https://gun.holons.io/gun', 'https://59.src.eco/gun'],
@@ -32,7 +32,7 @@ class HoloSphere {
         });
 
         // Initialize SEA
-        this.sea = Gun.SEA;
+        this.sea = SEA;
 
         if (openaikey != null) {
             this.openai = new OpenAI({
@@ -42,6 +42,9 @@ class HoloSphere {
 
         // Add currentSpace property to track logged in space
         this.currentSpace = null;
+
+        // Initialize subscriptions
+        this.subscriptions = {};
     }
 
     // ================================ SCHEMA FUNCTIONS ================================
@@ -108,7 +111,7 @@ class HoloSphere {
                     // Only set owner if there's an authenticated space
                     ...(this.currentSpace && { owner: this.currentSpace.alias })
                 };
-                
+
                 this.gun.get(this.appname)
                     .get(lens)
                     .get('schema')
@@ -159,7 +162,7 @@ class HoloSphere {
                             resolve(JSON.parse(data.schema));
                         } else {
                             // Legacy format or direct string
-                            const schemaStr = typeof data === 'string' ? data : 
+                            const schemaStr = typeof data === 'string' ? data :
                                 Object.values(data).find(v => typeof v === 'string' && v.includes('"type":'));
                             resolve(schemaStr ? JSON.parse(schemaStr) : null);
                         }
@@ -190,8 +193,8 @@ class HoloSphere {
         // If updating existing data, check ownership
         if (data.id) {
             const existing = await this.get(holon, lens, data.id);
-            if (existing && existing.owner && 
-                existing.owner !== this.currentSpace.alias && 
+            if (existing && existing.owner &&
+                existing.owner !== this.currentSpace.alias &&
                 !existing.federation) { // Skip ownership check for federated data
                 throw new Error('Unauthorized to modify this data');
             }
@@ -221,7 +224,7 @@ class HoloSphere {
             // Deep clone data to avoid modifying the original
             const dataToValidate = JSON.parse(JSON.stringify(dataWithMeta));
             const valid = this.validator.validate(schema, dataToValidate);
-            
+
             if (!valid) {
                 const errorMsg = `Schema validation failed: ${JSON.stringify(this.validator.errors)}`;
                 // Always throw on schema validation failure, regardless of strict mode
@@ -243,6 +246,12 @@ class HoloSphere {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
+                            // Notify subscribers after successful put
+                            this.notifySubscribers({
+                                holon,
+                                lens,
+                                ...dataWithMeta
+                            });
                             resolve(true);
                         }
                     });
@@ -275,7 +284,7 @@ class HoloSphere {
             }
 
             // Propagate to each federated space
-            const propagationPromises = fedInfo.notify.map(spaceId => 
+            const propagationPromises = fedInfo.notify.map(spaceId =>
                 new Promise((resolve) => {
                     // Store data in the federated space's lens
                     this.gun.get(this.appname)
@@ -335,7 +344,7 @@ class HoloSphere {
 
         // Get local data
         const localData = await this._getAllLocal(holon, lens, schema);
-        
+
         // If authenticated, get federated data
         let federatedData = [];
         if (this.currentSpace) {
@@ -344,7 +353,7 @@ class HoloSphere {
 
         // Combine and deduplicate data based on ID
         const combined = new Map();
-        
+
         // Add local data first
         localData.forEach(item => {
             if (item.id) {
@@ -356,7 +365,7 @@ class HoloSphere {
         federatedData.forEach(item => {
             if (item.id) {
                 const existing = combined.get(item.id);
-                if (!existing || 
+                if (!existing ||
                     (item.federation?.timestamp > (existing.federation?.timestamp || 0))) {
                     combined.set(item.id, item);
                 }
@@ -426,7 +435,7 @@ class HoloSphere {
             const output = new Map();
             let isResolved = false;
             let listener = null;
-            
+
             const hardTimeout = setTimeout(() => {
                 cleanup();
                 resolve(Array.from(output.values()));
@@ -505,7 +514,7 @@ class HoloSphere {
             }
 
             const federatedData = new Map();
-            
+
             // Get data from each federated space
             const fedPromises = fedInfo.federation.map(spaceId =>
                 new Promise((resolve) => {
@@ -632,7 +641,7 @@ class HoloSphere {
                 .get(key)
                 .once(async (data) => {
                     clearTimeout(timeout);
-                   
+
                     if (!data) {
                         resolve(null);
                         return;
@@ -658,7 +667,7 @@ class HoloSphere {
                         // 2. User is the owner
                         // 3. User is in shared list
                         // 4. Data is from federation
-                        if (parsed.owner && 
+                        if (parsed.owner &&
                             this.currentSpace?.alias !== parsed.owner &&
                             (!parsed.shared || !parsed.shared.includes(this.currentSpace?.alias)) &&
                             (!parsed.federation || !parsed.federation.origin)) {
@@ -711,7 +720,7 @@ class HoloSphere {
         if (!data) {
             return true; // Nothing to delete
         }
-        
+
         if (data.owner && data.owner !== this.currentSpace.alias) {
             throw new Error('Unauthorized to delete this data');
         }
@@ -780,7 +789,7 @@ class HoloSphere {
                     .catch(error => {
                         console.error('Error in deleteAll:', error);
                         resolve(false);
-                });
+                    });
             });
         });
     }
@@ -985,12 +994,12 @@ class HoloSphere {
                 }
 
                 const keys = Object.keys(data).filter(key => key !== '_');
-                const promises = keys.map(key => 
+                const promises = keys.map(key =>
                     new Promise(async (resolveItem) => {
                         const itemData = await new Promise(resolveData => {
                             this.gun.get(this.appname).get(tableName).get(key).once(resolveData);
                         });
-                        
+
                         if (itemData) {
                             try {
                                 const parsed = await this.parse(itemData);
@@ -1088,7 +1097,7 @@ class HoloSphere {
                     }
 
                     const keys = Object.keys(data).filter(key => key !== '_');
-                    const promises = keys.map(key => 
+                    const promises = keys.map(key =>
                         new Promise((resolveDelete) => {
                             this.gun.get(this.appname)
                                 .get(tableName)
@@ -1120,21 +1129,62 @@ class HoloSphere {
 
     // ================================ COMPUTE FUNCTIONS ================================
     /**
-     * Computes summaries based on the content within a holon and lens.
+   
+   /**
+ * Computes operations across multiple layers up the hierarchy
+ * @param {string} holon - Starting holon identifier
+ * @param {string} lens - The lens to compute
+ * @param {object} options - Computation options
+ * @param {number} [maxLevels=15] - Maximum levels to compute up
+ */
+    async computeHierarchy(holon, lens, options, maxLevels = 15) {
+        let currentHolon = holon;
+        let currentRes = h3.getResolution(currentHolon);
+        const results = [];
+
+        while (currentRes > 0 && maxLevels > 0) {
+            try {
+                const result = await this.compute(currentHolon, lens, options);
+                if (result) {
+                    results.push(result);
+                }
+                currentHolon = h3.cellToParent(currentHolon, currentRes - 1);
+                currentRes--;
+                maxLevels--;
+            } catch (error) {
+                console.error('Error in compute hierarchy:', error);
+                break;
+            }
+        }
+
+        return results;
+    }
+
+    /* Computes operations on content within a holon and lens for one layer up.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens to compute.
-     * @param {string} operation - The operation to perform.
-     * @param {number} [depth=0] - Current recursion depth.
-     * @param {number} [maxDepth=15] - Maximum recursion depth.
+     * @param {object} options - Computation options
+     * @param {string} options.operation - The operation to perform ('summarize', 'aggregate', 'concatenate')
+     * @param {string[]} [options.fields] - Fields to perform operation on
+     * @param {string} [options.targetField] - Field to store the result in
      * @throws {Error} If parameters are invalid or missing
      */
-    async compute(holon, lens, operation, depth = 0, maxDepth = 15) {
+    async compute(holon, lens, options) {
         // Validate required parameters
-        if (!holon || !lens || !operation) {
+        if (!holon || !lens) {
             throw new Error('compute: Missing required parameters');
         }
 
-        // Validate holon format and resolution
+        // Convert string operation to options object
+        if (typeof options === 'string') {
+            options = { operation: options };
+        }
+
+        if (!options?.operation) {
+            throw new Error('compute: Missing required parameters');
+        }
+
+        // Validate holon format and resolution first
         let res;
         try {
             res = h3.getResolution(holon);
@@ -1146,140 +1196,107 @@ class HoloSphere {
             throw new Error('compute: Invalid holon resolution (must be between 1 and 15)');
         }
 
-        // Validate depth parameters
-        if (typeof depth !== 'number' || depth < 0) {
+        const {
+            operation,
+            fields = [],
+            targetField,
+            depth,
+            maxDepth
+        } = options;
+
+        // Validate depth parameters if provided
+        if (depth !== undefined && depth < 0) {
             throw new Error('compute: Invalid depth parameter');
         }
 
-        if (typeof maxDepth !== 'number' || maxDepth < 1 || maxDepth > 15) {
+        if (maxDepth !== undefined && (maxDepth < 1 || maxDepth > 15)) {
             throw new Error('compute: Invalid maxDepth parameter (must be between 1 and 15)');
         }
 
-        if (depth >= maxDepth) {
-            return;
-        }
-
         // Validate operation
-        if (typeof operation !== 'string' || !['summarize'].includes(operation)) {
-            throw new Error('compute: Invalid operation (must be "summarize")');
+        const validOperations = ['summarize', 'aggregate', 'concatenate'];
+        if (!validOperations.includes(operation)) {
+            throw new Error(`compute: Invalid operation (must be one of ${validOperations.join(', ')})`);
         }
 
         const parent = h3.cellToParent(holon, res - 1);
         const siblings = h3.cellToChildren(parent, res);
 
-        const content = [];
-        const promises = siblings.map(sibling => 
-            new Promise((resolve) => {
-                const timeout = setTimeout(() => {
-                    console.warn(`Timeout for sibling ${sibling}`);
-                    resolve();
-                }, 10000);
-
-                this.gun.get(this.appname)
-                    .get(sibling)
-                    .get(lens)
-                    .map()
-                    .once((data) => {
-                        clearTimeout(timeout);
-                        if (!data) {
-                            resolve();
-                            return;
-                        }
-
-                        try {
-                            // Parse the data if it's a string
-                            const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-                            if (parsed && parsed.content) {
-                                content.push(parsed.content);
-                            }
-                        } catch (error) {
-                            console.warn('Error parsing data:', error);
-                        }
-                        resolve();
-                    });
-            })
+        // Collect all content from siblings
+        const contents = await Promise.all(
+            siblings.map(sibling => this.getAll(sibling, lens))
         );
 
-        await Promise.all(promises);
+        const flatContents = contents.flat().filter(Boolean);
 
-        if (content.length > 0) {
+        if (flatContents.length > 0) {
             try {
-                const computed = await this.summarize(content.join('\n'));
-                if (computed) {
-                    const summaryId = `${parent}_summary`;
-                    await this.put(parent, lens, { 
-                        id: summaryId, 
-                        content: computed,
-                        timestamp: Date.now()
-                    });
+                let computed;
+                switch (operation) {
+                    case 'summarize':
+                        // For summarize, concatenate specified fields or use entire content
+                        const textToSummarize = fields.length > 0
+                            ? flatContents.map(item => fields.map(field => item[field]).filter(Boolean).join('\n')).join('\n')
+                            : JSON.stringify(flatContents);
+                        computed = await this.summarize(textToSummarize);
+                        break;
 
-                    if (res > 1) { // Only recurse if not at top level
-                        await this.compute(parent, lens, operation, depth + 1, maxDepth);
+                    case 'aggregate':
+                        // For aggregate, sum numeric fields
+                        computed = fields.reduce((acc, field) => {
+                            acc[field] = flatContents.reduce((sum, item) => {
+                                return sum + (Number(item[field]) || 0);
+                            }, 0);
+                            return acc;
+                        }, {});
+                        break;
+
+                    case 'concatenate':
+                        // For concatenate, combine arrays or strings
+                        computed = fields.reduce((acc, field) => {
+                            acc[field] = flatContents.reduce((combined, item) => {
+                                const value = item[field];
+                                if (Array.isArray(value)) {
+                                    return [...combined, ...value];
+                                } else if (value) {
+                                    return [...combined, value];
+                                }
+                                return combined;
+                            }, []);
+                            // Remove duplicates if array
+                            acc[field] = Array.from(new Set(acc[field]));
+                            return acc;
+                        }, {});
+                        break;
+                }
+
+                if (computed) {
+                    const resultId = `${parent}_${operation}`;
+                    const result = {
+                        id: resultId,
+                        timestamp: Date.now()
+                    };
+
+                    // Store result in targetField if specified, otherwise at root level
+                    if (targetField) {
+                        result[targetField] = computed;
+                    } else if (typeof computed === 'object') {
+                        Object.assign(result, computed);
+                    } else {
+                        result.value = computed;
                     }
+
+                    await this.put(parent, lens, result);
+                    return result;
                 }
             } catch (error) {
                 console.warn('Error in compute operation:', error);
-                // Don't throw here to maintain graceful handling of compute errors
+                throw error;
             }
         }
 
-        // Return successfully even if no content was found or processed
-        return;
+        return null;
     }
-
-    /**
-     * Clears all entities under a specific holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens to clear.
-     */
-    async clearlens(holon, lens) {
-        if (!holon || !lens) {
-            throw new Error('clearlens: Missing required parameters');
-        }
-
-        return new Promise((resolve, reject) => {
-            try {
-                const deletions = new Set();
-                const timeout = setTimeout(() => {
-                    if (deletions.size === 0) {
-                        resolve(); // No data to delete
-                    }
-                }, 1000);
-
-                this.gun.get(this.appname)
-                    .get(holon)
-                    .get(lens)
-                    .map()
-                    .once((data, key) => {
-                        if (data) {
-                            const deletion = new Promise((resolveDelete) => {
-                                this.gun.get(this.appname)
-                                    .get(holon)
-                                    .get(lens)
-                                    .get(key)
-                                    .put(null, ack => {
-                                        if (ack.err) {
-                                            console.error(`Failed to delete ${key}:`, ack.err);
-                                        }
-                                        resolveDelete();
-                                    });
-                            });
-                            deletions.add(deletion);
-                            deletion.finally(() => {
-                                deletions.delete(deletion);
-                                if (deletions.size === 0) {
-                                    clearTimeout(timeout);
-                                    resolve();
-                                }
-                            });
-                        }
-                    });
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
 
     /**
      * Summarizes provided history text using OpenAI.
@@ -1290,32 +1307,29 @@ class HoloSphere {
         if (!this.openai) {
             return 'OpenAI not initialized, please specify the API key in the constructor.'
         }
-        //const run = await this.openai.beta.threads.runs.retrieve(thread.id,run.id)
-        const assistant = await this.openai.beta.assistants.retrieve("asst_qhk79F8wV9BDNuwfOI80TqzC")
-        const thread = await this.openai.beta.threads.create()
-        const message = await this.openai.beta.threads.messages.create(thread.id, {
-            role: "user",
-            content: history
-        })
-        const run = await this.openai.beta.threads.runs.create(thread.id, {
-            assistant_id: assistant.id //,
-            //instructions: "What is the meaning of life?",
-        });
 
-        let runStatus = await this.openai.beta.threads.runs.retrieve(
-            thread.id,
-            run.id
-        );
-        // Polling mechanism to see if runStatus is completed
-        // This should be made more robust.
-        while (runStatus.status !== "completed") {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            runStatus = await this.openai.beta.threads.runs.retrieve(thread.id, run.id);
+        try {
+            const response = await this.openai.chat.completions.create({
+                model: "gpt-4",
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are a helpful assistant that summarizes text concisely while preserving key information. Keep summaries clear and focused."
+                    },
+                    {
+                        role: "user",
+                        content: history
+                    }
+                ],
+                temperature: 0.7,
+                max_tokens: 500
+            });
+
+            return response.choices[0].message.content.trim();
+        } catch (error) {
+            console.error('Error in summarize:', error);
+            throw new Error('Failed to generate summary');
         }
-        // Get the latest messages from the thread
-        const messages = await this.openai.beta.threads.messages.list(thread.id)
-        const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
-        return summary
     }
 
     /**
@@ -1409,45 +1423,44 @@ class HoloSphere {
      * @param {function} callback - The callback to execute on changes.
      */
     async subscribe(holon, lens, callback) {
-        if (!holon || !lens || !callback) {
-            throw new Error('subscribe: Missing required parameters');
-        }
-
-        const ref = this.gun.get(this.appname)
-            .get(holon)
-            .get(lens);
-
-        // Create a more robust handler
-        const handler = async (data, key) => {
-            if (!data || key === '_') return; // Skip empty data or Gun metadata
-
-            try {
-                const parsed = typeof data === 'string' ? await this.parse(data) : data;
-                if (parsed) {
-                    await callback(parsed);
-                }
-            } catch (error) {
-                console.warn('Subscription handler error:', error);
-            }
+        const subscriptionId = this.generateSubscriptionId();
+        this.subscriptions[subscriptionId] = {
+            query: { holon, lens },
+            callback,
+            active: true
         };
 
-        // Subscribe using Gun's map() and on()
-        const chain = ref.map();
-        chain.on(handler);
-
-        // Return subscription object
+        // Add cleanup to ensure callback isn't called after unsubscribe
         return {
-            off: () => {
-                if (chain) {
-                    chain.off();
+            unsubscribe: () => {
+                if (this.subscriptions[subscriptionId]) {
+                    delete this.subscriptions[subscriptionId];
                 }
             }
         };
     }
 
+    notifySubscribers(data) {
+        Object.values(this.subscriptions).forEach(subscription => {
+            if (subscription.active && this.matchesQuery(data, subscription.query)) {
+                subscription.callback(data);
+            }
+        });
+    }
+
     // Add ID generation method
     generateId() {
         return Date.now().toString(10) + Math.random().toString(2);
+    }
+
+    generateSubscriptionId() {
+        return Date.now().toString(10) + Math.random().toString(2);
+    }
+
+    matchesQuery(data, query) {
+        return data && query && 
+               data.holon === query.holon && 
+               data.lens === query.lens;
     }
 
     /**
@@ -1470,7 +1483,7 @@ class HoloSphere {
         try {
             // Generate key pair
             const pair = await Gun.SEA.pair();
-            
+
             // Create auth record with SEA
             const salt = await Gun.SEA.random(64).toString('base64');
             const hash = await Gun.SEA.work(password, salt);
@@ -1508,8 +1521,8 @@ class HoloSphere {
      */
     async login(spacename, password) {
         // Validate input
-        if (!spacename || !password || 
-            typeof spacename !== 'string' || 
+        if (!spacename || !password ||
+            typeof spacename !== 'string' ||
             typeof password !== 'string') {
             throw new Error('Invalid credentials format');
         }
@@ -1741,10 +1754,10 @@ class HoloSphere {
 
         // Get federation info for current space
         const fedInfo = await this.getFederation(this.currentSpace?.alias);
-        
+
         // Get local data
         const localData = await this.getAll(holon, lens);
-        
+
         // If no federation or not authenticated, return local data only
         if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
             return localData;
@@ -1831,15 +1844,15 @@ class HoloSphere {
         if (!removeDuplicates) {
             return allData;
         }
-        
+
         // Remove duplicates keeping the most recent version
         const uniqueMap = new Map();
         allData.forEach(item => {
             const id = item[idField];
             if (!id) return;
-            
+
             const existing = uniqueMap.get(id);
-            if (!existing || 
+            if (!existing ||
                 (item.federation?.timestamp > (existing.federation?.timestamp || 0))) {
                 uniqueMap.set(id, item);
             }
