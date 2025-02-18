@@ -12,6 +12,8 @@ class DB {
         this.dbName = dbName;
         this.preloadedDB = {};
         this.holosphere = new HoloSphere(dbName);
+       
+        
         this.db = 'gun'; // 'orbit' or 'gun' or 'both' (writing to both, reading from gub)
     }
 
@@ -19,6 +21,8 @@ class DB {
         try {
 
             this.gun = this.holosphere.gun;
+            //await this.holosphere.createSpace(this.dbName,'test');
+            await this.holosphere.login(this.dbName, process.env.HOLOSPHERE_KEY);
             
             if (this.db === 'orbit') {
                 this.ipfs = await create({
