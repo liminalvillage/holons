@@ -14,6 +14,7 @@ class HoloSphere {
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
     constructor(appname, strict = false, openaikey = null, gunInstance = null) {
+        console.log('HoloSphere v1.1.8'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -24,7 +25,7 @@ class HoloSphere {
 
         // Use provided Gun instance or create new one
         this.gun = gunInstance || Gun({
-            peers: ['https://gun.holons.io/gun', 'https://59.src.eco/gun'],
+            peers: ['https://gun.holons.io/gun'],
             axe: false,
             // uuid: (content) => { // generate a unique id for each node
             //     console.log('uuid', content);
@@ -65,68 +66,50 @@ class HoloSphere {
             throw new Error('setSchema: Schema must have a type field');
         }
 
-        if (this.strict) {
-            const metaSchema = {
-                type: 'object',
-                required: ['type', 'properties'],
+        const metaSchema = {
+            type: 'object',
+            required: ['type', 'properties'],
+            properties: {
+                type: { type: 'string' },
                 properties: {
-                    type: { type: 'string' },
-                    properties: {
+                    type: 'object',
+                    additionalProperties: {
                         type: 'object',
-                        additionalProperties: {
-                            type: 'object',
-                            required: ['type'],
-                            properties: {
-                                type: { type: 'string' }
-                            }
+                        required: ['type'],
+                        properties: {
+                            type: { type: 'string' }
                         }
-                    },
-                    required: {
-                        type: 'array',
-                        items: { type: 'string' }
                     }
+                },
+                required: {
+                    type: 'array',
+                    items: { type: 'string' }
                 }
-            };
-
-            const valid = this.validator.validate(metaSchema, schema);
-            if (!valid) {
-                throw new Error(`Invalid schema structure: ${JSON.stringify(this.validator.errors)}`);
             }
+        };
 
-            if (!schema.properties || typeof schema.properties !== 'object') {
-                throw new Error('Schema must have properties in strict mode');
-            }
-
-            if (!schema.required || !Array.isArray(schema.required) || schema.required.length === 0) {
-                throw new Error('Schema must have required fields in strict mode');
-            }
+        const valid = this.validator.validate(metaSchema, schema);
+        if (!valid) {
+            throw new Error(`Invalid schema structure: ${JSON.stringify(this.validator.errors)}`);
         }
 
-        return new Promise((resolve, reject) => {
-            try {
-                const schemaString = JSON.stringify(schema);
-                const schemaData = {
-                    schema: schemaString,
-                    timestamp: Date.now(),
-                    // Only set owner if there's an authenticated space
-                    ...(this.currentSpace && { owner: this.currentSpace.alias })
-                };
+        if (!schema.properties || typeof schema.properties !== 'object') {
+            throw new Error('Schema must have properties in strict mode');
+        }
 
-                this.gun.get(this.appname)
-                    .get(lens)
-                    .get('schema')
-                    .put(schemaData, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            // Add small delay to ensure data is written
-                            setTimeout(() => resolve(true), 50);
-                        }
-                    });
-            } catch (error) {
-                reject(error);
-            }
+        if (!schema.required || !Array.isArray(schema.required) || schema.required.length === 0) {
+            throw new Error('Schema must have required fields in strict mode');
+        }
+        
+        // Store schema in global table with lens as key
+        await this.putGlobal('schemas', {
+            id: lens,
+            schema: schema,
+            timestamp: Date.now(),
+            owner: this.currentSpace?.alias
         });
+
+        return true;
     }
 
     /**
@@ -139,39 +122,12 @@ class HoloSphere {
             throw new Error('getSchema: Missing lens parameter');
         }
 
-        return new Promise((resolve) => {
-            let timeout = setTimeout(() => {
-                console.warn('getSchema: Operation timed out');
-                resolve(null);
-            }, 5000);
+        const schemaData = await this.getGlobal('schemas', lens);
+        if (!schemaData || !schemaData.schema) {
+            return null;
+        }
 
-            this.gun.get(this.appname)
-                .get(lens)
-                .get('schema')
-                .once(data => {
-                    clearTimeout(timeout);
-                    if (!data) {
-                        resolve(null);
-                        return;
-                    }
-
-                    try {
-                        // Handle both new format and legacy format
-                        if (data.schema) {
-                            // New format with timestamp
-                            resolve(JSON.parse(data.schema));
-                        } else {
-                            // Legacy format or direct string
-                            const schemaStr = typeof data === 'string' ? data :
-                                Object.values(data).find(v => typeof v === 'string' && v.includes('"type":'));
-                            resolve(schemaStr ? JSON.parse(schemaStr) : null);
-                        }
-                    } catch (error) {
-                        console.error('getSchema: Error parsing schema:', error);
-                        resolve(null);
-                    }
-                });
-        });
+        return schemaData.schema;
     }
 
     // ================================ CONTENT FUNCTIONS ================================
@@ -567,11 +523,19 @@ class HoloSphere {
    * @returns {Promise<object>} - The parsed data.
    */
     async parse(rawData) {
+        let parsedData = {};
+
         if (!rawData) {
             throw new Error('parse: No data provided');
         }
 
         try {
+
+            if (typeof rawData === 'string') {
+                parsedData = await JSON.parse(rawData);
+            }
+
+
             if (rawData.soul) {
                 const data = await this.getNodeRef(rawData.soul).once();
                 if (!data) {
@@ -580,7 +544,7 @@ class HoloSphere {
                 return JSON.parse(data);
             }
 
-            let parsedData = {};
+       
             if (typeof rawData === 'object' && rawData !== null) {
                 if (rawData._ && rawData._["#"]) {
                     const pathParts = rawData._['#'].split('/');
@@ -600,11 +564,10 @@ class HoloSphere {
                 } else {
                     parsedData = rawData;
                 }
-            } else {
-                parsedData = JSON.parse(rawData);
             }
 
             return parsedData;
+
         } catch (error) {
             console.log("Parsing not a JSON, returning raw data", rawData);
             return rawData;
@@ -1423,22 +1386,26 @@ class HoloSphere {
      * @param {function} callback - The callback to execute on changes.
      */
     async subscribe(holon, lens, callback) {
-        const subscriptionId = this.generateSubscriptionId();
-        this.subscriptions[subscriptionId] = {
-            query: { holon, lens },
-            callback,
-            active: true
-        };
-
-        // Add cleanup to ensure callback isn't called after unsubscribe
+        const subscriptionId = this.generateId();
+        this.subscriptions[subscriptionId] =
+            this.gun.get(this.appname).get(holon).get(lens).map().on( async (data, key) => {
+                if (data) {
+                    try {
+                        let parsed = await this.parse(data)
+                        callback(parsed, key)
+                    } catch (error) {
+                        console.error('Error in subscribe:', error);
+                    }
+                }
+            })
         return {
             unsubscribe: () => {
-                if (this.subscriptions[subscriptionId]) {
-                    delete this.subscriptions[subscriptionId];
-                }
+                this.gun.get(this.appname).get(holon).get(lens).map().off()
+                delete this.subscriptions[subscriptionId];
             }
-        };
+        }
     }
+
 
     notifySubscribers(data) {
         Object.values(this.subscriptions).forEach(subscription => {
@@ -1453,14 +1420,10 @@ class HoloSphere {
         return Date.now().toString(10) + Math.random().toString(2);
     }
 
-    generateSubscriptionId() {
-        return Date.now().toString(10) + Math.random().toString(2);
-    }
-
     matchesQuery(data, query) {
-        return data && query && 
-               data.holon === query.holon && 
-               data.lens === query.lens;
+        return data && query &&
+            data.holon === query.holon &&
+            data.lens === query.lens;
     }
 
     /**

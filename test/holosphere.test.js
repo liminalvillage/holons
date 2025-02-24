@@ -7,10 +7,13 @@ describe('HoloSphere', () => {
         spacename: 'testuser',
         password: 'testpass'
     };
-    let holoSphere = new HoloSphere(testAppName, false);
+    let holoSphere;
+    let strictHoloSphere;
+
     beforeAll(async () => {
-        // Initialize HoloSphere once for all tests
-       
+        // Initialize HoloSphere instances once for all tests
+        holoSphere = new HoloSphere(testAppName, false);
+        strictHoloSphere = new HoloSphere(testAppName, true);
         
         // Set up test space and authenticate
         try {
@@ -26,15 +29,9 @@ describe('HoloSphere', () => {
             }
         }
         
-        // Ensure we're logged in
+        // Ensure both instances are logged in
         await holoSphere.login(testCredentials.spacename, testCredentials.password);
-    });
-
-    beforeEach(async () => {
-        // Ensure we're logged in before each test
-        if (!holoSphere.currentSpace || holoSphere.currentSpace.exp < Date.now()) {
-            await holoSphere.login(testCredentials.spacename, testCredentials.password);
-        }
+        await strictHoloSphere.login(testCredentials.spacename, testCredentials.password);
     });
 
     describe('Constructor', () => {
@@ -45,11 +42,8 @@ describe('HoloSphere', () => {
             expect(holoSphere.openai).toBeUndefined();
         });
 
-        test('should initialize with OpenAI when key provided', () => {
-            const hsWithAI = new HoloSphere(testAppName, false, 'fake-key');
-            expect(hsWithAI.openai).toBeDefined();
-            // Clean up additional instance
-            if (hsWithAI.gun) hsWithAI.gun.off();
+        test('should initialize with OpenAI', () => {
+            expect(new HoloSphere(testAppName, false, 'fake-key').openai).toBeDefined();
         });
     });
 
@@ -65,10 +59,8 @@ describe('HoloSphere', () => {
         };
 
         beforeEach(async () => {
-            // Ensure we're logged in before each schema test
-            if (!holoSphere.currentSpace || holoSphere.currentSpace.exp < Date.now()) {
-                await holoSphere.login(testCredentials.spacename, testCredentials.password);
-            }
+            // Clean up any existing schemas
+            await holoSphere.deleteAllGlobal('schemas');
         });
 
         test('should set and get schema', async () => {
@@ -84,11 +76,6 @@ describe('HoloSphere', () => {
         });
 
         test('should enforce strict mode schema validation', async () => {
-            const strictHoloSphere = new HoloSphere(testAppName, true);
-            
-            // Login to the strict instance
-            await strictHoloSphere.login(testCredentials.spacename, testCredentials.password);
-            
             const invalidSchema = {
                 type: 'object',
                 properties: {
@@ -98,9 +85,6 @@ describe('HoloSphere', () => {
 
             await expect(strictHoloSphere.setSchema(testLens, invalidSchema))
                 .rejects.toThrow();
-
-            // Clean up
-            await strictHoloSphere.logout();
         });
 
         test('should handle schema retrieval for non-existent lens', async () => {
@@ -110,10 +94,6 @@ describe('HoloSphere', () => {
 
         test('should maintain schema integrity across storage and retrieval', async () => {
             const testLens = 'schemaTestLens';
-            const strictHoloSphere = new HoloSphere(testAppName, true); 
-            
-            // Login to the strict instance
-            await strictHoloSphere.login(testCredentials.spacename, testCredentials.password);
             
             // Create test schemas of increasing complexity
             const testSchemas = [
@@ -151,7 +131,6 @@ describe('HoloSphere', () => {
 
                 // Store schema
                 await strictHoloSphere.setSchema(testLensWithIndex, schema);
-                
 
                 // Retrieve schema
                 const retrievedSchema = await strictHoloSphere.getSchema(testLensWithIndex);
@@ -187,17 +166,8 @@ describe('HoloSphere', () => {
 
                 // Clean up after each schema test
                 await strictHoloSphere.deleteAll('testHolon', testLensWithIndex);
-                await strictHoloSphere.gun.get(strictHoloSphere.appname)
-                    .get(testLensWithIndex)
-                    .get('schema')
-                    .put(null);
             }
-
-            // Clean up the strict instance
-            if (strictHoloSphere.gun) {
-                await strictHoloSphere.logout();
-            }
-        }, 10000); // Increase timeout to 10 seconds
+        }, 10000);
 
         test('should handle concurrent schema operations', async () => {
             const baseLens = 'concurrentSchemaTest';
@@ -272,10 +242,7 @@ describe('HoloSphere', () => {
 
         afterEach(async () => {
             // Clean up schemas after each test
-            await holoSphere.gun.get(holoSphere.appname)
-                    .get(testLens)
-                    .get('schema')
-                    .put(null);
+            await holoSphere.deleteAllGlobal('schemas');
         });
     });
 
@@ -355,11 +322,6 @@ describe('HoloSphere', () => {
         });
 
         test('should enforce strict mode data validation', async () => {
-            const strictHoloSphere = new HoloSphere(testAppName, true);
-            
-            // Login to the strict instance
-            await strictHoloSphere.login(testCredentials.spacename, testCredentials.password);
-            
             // Define schema for strict mode tests
             const strictSchema = {
                 type: 'object',
@@ -376,9 +338,6 @@ describe('HoloSphere', () => {
             // Try to put data without schema in strict mode
             await expect(strictHoloSphere.put(testHolon, 'no-schema-lens', validData))
                 .rejects.toThrow('Schema required in strict mode');
-
-            // Clean up
-            await strictHoloSphere.logout();
         });
 
         test('should maintain content integrity in holon storage', async () => {
@@ -1015,14 +974,13 @@ describe('HoloSphere', () => {
 
     describe('OpenAI Integration', () => {
         test('should handle missing OpenAI key', async () => {
-            const noAIHoloSphere = new HoloSphere('test');
-            const result = await noAIHoloSphere.summarize('test content');
-            expect(result).toBe('OpenAI not initialized, please specify the API key in the constructor.');
+            expect(await holoSphere.summarize('test content'))
+                .toBe('OpenAI not initialized, please specify the API key in the constructor.');
         });
 
         test.skip('should summarize content with valid OpenAI key', async () => {
-            const hsWithAI = new HoloSphere('test', false, process.env.OPENAI_API_KEY);
-            const summary = await hsWithAI.summarize('Test content to summarize');
+            const summary = await new HoloSphere('test', false, process.env.OPENAI_API_KEY)
+                .summarize('Test content to summarize');
             expect(typeof summary).toBe('string');
             expect(summary.length).toBeGreaterThan(0);
         });
@@ -1038,13 +996,21 @@ describe('HoloSphere', () => {
         await holoSphere.deleteAllGlobal('testTable');
         await holoSphere.deleteAllGlobal('testGlobalTable');
         await holoSphere.deleteAllGlobal('concurrentGlobalTest');
+        await holoSphere.deleteAllGlobal('schemas');
         
         // Clean up test space
         await holoSphere.deleteGlobal('spaces', testCredentials.spacename);
         
-        // Logout
+        // Logout both instances
         if (holoSphere.currentSpace) {
             await holoSphere.logout();
         }
+        if (strictHoloSphere.currentSpace) {
+            await strictHoloSphere.logout();
+        }
+
+        // Clean up Gun instances
+        if (holoSphere.gun) holoSphere.gun.off();
+        if (strictHoloSphere.gun) strictHoloSphere.gun.off();
     });
 }); 
