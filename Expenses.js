@@ -322,7 +322,7 @@ export default class Expenses {
                 });
             }
         });
-        let userNames= await Promise.all(userArray.map(user => this.getDisplayName(user)))
+        let userNames= await Promise.all(userArray.map(user => this.getDisplayName(chatID, user)))
         return { creditMatrix, userNames};
     }
 
@@ -332,18 +332,18 @@ export default class Expenses {
         const description = expense.description;
         
         // Get payer's info
-        const paidBy = await this.getDisplayName(expense.paidBy);
+        const paidBy = await this.getDisplayName(chatID, expense.paidBy);
 
         // Get all splitters' info and map to display names
-        const splitNames = await Promise.all(expense.splitWith.map(userId => this.getDisplayName(userId)));
+        const splitNames = await Promise.all(expense.splitWith.map(userId => this.getDisplayName(chatID, userId)));
         
         const splitWith = splitNames.join(", ");
 
         return i18next.t('expensemessage', { amount, currency, description, paidBy, splitWith });
     }
 
-    async getDisplayName(userId) {
-        const userInfo = await this.db.get(userId + '/users', userId);
+    async getDisplayName(chatId, userId) {
+        const userInfo = await this.db.get(chatId + '/users', userId);
         if (!userInfo) {
             return userId.toString();
         }
