@@ -19,17 +19,24 @@ class Checklists {
         this.bot.command('addcheck', (ctx) => this.addChecklistItem(ctx));
         this.bot.command('removecheck', (ctx) => this.removeChecklist(ctx));
         this.bot.command('removechecklistitem', (ctx) => this.removeChecklistItem(ctx));
+        this.bot.command('deletechecked', (ctx) => this.deleteCheckedItems(ctx));
         this.bot.command('checklists', (ctx) => this.showAllChecklists(ctx));
+        this.bot.command('agenda', (ctx) => this.showSpecialChecklist(ctx, 'agenda', '📅'));
+        this.bot.command('shopping', (ctx) => this.showSpecialChecklist(ctx, 'shopping', '🛒'));
+        
+        // Register actions (unified for all checklist types)
         this.bot.action(/check_(.+)/, (ctx) => this.toggleCheckItem(ctx));
         this.bot.action(/show_checklist_(.+)/, (ctx) => this.handleChecklistButton(ctx));
         this.bot.action(/clear_checklist_(.+)/, (ctx) => this.clearChecklist(ctx));
         this.bot.action(/add_item_to_(.+)/, (ctx) => this.handleAddItemButton(ctx));
         this.bot.action('new_checklist', (ctx) => this.handleNewChecklistButton(ctx));
-        this.bot.action('dummy_action', (ctx) => this.handleDummyAction(ctx));
         this.bot.action(/enter_remove_mode_(.+)/, (ctx) => this.enterRemoveMode(ctx));
         this.bot.action(/exit_remove_mode_(.+)/, (ctx) => this.exitRemoveMode(ctx));
         this.bot.action(/remove_item_(.+)/, (ctx) => this.removeItem(ctx));
         this.bot.action(/back_to_quest_(.+)/, (ctx) => this.handleBackToQuest(ctx));
+        this.bot.action('enter_delete_checklists_mode', (ctx) => this.enterDeleteChecklistsMode(ctx));
+        this.bot.action('exit_delete_checklists_mode', (ctx) => this.exitDeleteChecklistsMode(ctx));
+        this.bot.action(/delete_checklist_(.+)/, (ctx) => this.deleteChecklist(ctx));
     }
 
     setupScenes() {
@@ -50,6 +57,7 @@ class Checklists {
             const chatId = ctx.scene.state.chatId;
             const originalMessageId = ctx.scene.state.originalMessageId;
             const promptMessageId = ctx.scene.state.promptMessageId;
+            const isSpecial = ctx.scene.state.isSpecial;
             
             try {
                 // Get the checklist ID from the scene state
@@ -59,11 +67,12 @@ class Checklists {
                     return ctx.scene.leave();
                 }
 
-                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString());
-                if (!checklist) {
-                    await ctx.reply('Checklist not found');
-                    return ctx.scene.leave();
-                }
+                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString()) || {
+                    id: checklistId,
+                    items: [],
+                    created: new Date(),
+                    type: checklistId // For special checklists
+                };
 
                 // Add new items
                 const newItems = itemsText.split(',').map(text => ({
@@ -84,11 +93,12 @@ class Checklists {
                 }
 
                 // Update the original checklist message
+                const icon = this.getChecklistIcon(checklistId);
                 await ctx.telegram.editMessageText(
                     chatId,
                     originalMessageId,
                     null,
-                    `📋 ${checklist.questTitle || 'Checklist'}:`,
+                    `${icon} ${checklistId.toUpperCase()}:`,
                     this.getChecklistKeyboard(checklist)
                 );
 
@@ -130,7 +140,8 @@ class Checklists {
                 id: name,
                 items: items,
                 creator: ctx.from.id,
-                created: new Date()
+                created: new Date(),
+                type: 'checklist' // Add type field to identify regular checklists
             };
 
             await this.db.put(chatId + '/checklists', checklist);
@@ -155,28 +166,47 @@ class Checklists {
         await ctx.scene.enter('new_checklist_scene');
     }
 
-    async showAllChecklists(ctx) {
+    async showAllChecklists(ctx, deleteMode = false) {
         let chatID = ctx.chat.id;
         let lists = await this.db.getAll(chatID + '/checklists');
         
+        // Filter out subtask checklists and show only regular and special checklists
+        lists = lists.filter(list => !list.type || ['agenda', 'shopping'].includes(list.id));
+        
         const buttons = lists.map(list => {
+            if (deleteMode) {
+                return [Markup.button.callback(
+                    `❌ ${this.getChecklistIcon(list.id)} ${list.id}`,
+                    `delete_checklist_${list.id}`
+                )];
+            }
             const total = list.items.length;
             const checked = list.items.filter(item => item.checked).length;
             return [Markup.button.callback(
-                `📋 ${list.id}: ${checked}/${total} completed`,
+                `${this.getChecklistIcon(list.id)} ${list.id}: ${checked}/${total} completed`,
                 `show_checklist_${list.id}`
             )];
         });
 
-        // Add "New Checklist" button at the bottom
-        buttons.push([
-            Markup.button.callback('➕ New Checklist', 'new_checklist')
-        ]);
+        // Add control buttons at the bottom
+        if (deleteMode) {
+            buttons.push([
+                Markup.button.callback('🔙 Back', 'exit_delete_checklists_mode')
+            ]);
+        } else {
+            buttons.push([
+                Markup.button.callback('➕ New Checklist', 'new_checklist'),
+                Markup.button.callback('🗑️ Delete Checklists', 'enter_delete_checklists_mode')
+            ]);
+        }
 
-        ctx.reply(
-            'Available Checklists:',
-            Markup.inlineKeyboard(buttons)
-        );
+        const message = deleteMode ? 'Select checklists to delete:' : 'Available Checklists:';
+        
+        if (ctx.callbackQuery) {
+            await ctx.editMessageText(message, Markup.inlineKeyboard(buttons)).catch(error => console.log(error));
+        } else {
+            await ctx.reply(message, Markup.inlineKeyboard(buttons)).catch(error => console.log(error));
+        }
     }
 
     async createChecklist(ctx) {
@@ -202,7 +232,8 @@ class Checklists {
             id: name,
             items: items,
             creator: ctx.from.id,
-            created: new Date()
+            created: new Date(),
+            type: 'checklist' // Add type field to identify regular checklists
         };
 
         await this.db.put(chatID + '/checklists', checklist);
@@ -293,15 +324,18 @@ class Checklists {
         let checklist = await this.db.get(chatID + '/checklists', listName);
         
         if (!checklist || !checklist.items[itemIndex]) {
-            ctx.reply('Item not found.');
+            await ctx.answerCbQuery('Item not found');
             return;
         }
 
         checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
         await this.db.put(chatID + '/checklists', checklist);
 
-        ctx.editMessageText(
-            `📋 ${listName.toUpperCase()} Checklist:`,
+        const icon = this.getChecklistIcon(listName);
+        const title = `${icon} ${listName.toUpperCase()}:`;
+
+        await ctx.editMessageText(
+            title,
             this.getChecklistKeyboard(checklist)
         ).catch(error => console.log(error));
     }
@@ -328,19 +362,35 @@ class Checklists {
         let checklist = await this.db.get(chatID + '/checklists', listName);
         
         if (!checklist) {
-            ctx.reply(`Checklist "${listName}" not found.`);
+            await ctx.answerCbQuery('Checklist not found');
             return;
         }
 
-        checklist.items = checklist.items.map(item => ({
-            ...item,
-            checked: false
-        }));
+        if (listName === 'agenda') {
+            // For agenda, only remove checked items
+            const checkedItems = checklist.items.filter(item => item.checked);
+            if (checkedItems.length === 0) {
+                await ctx.answerCbQuery('No checked items to remove');
+                return;
+            }
+            checklist.items = checklist.items.filter(item => !item.checked);
+            await ctx.answerCbQuery(`Removed ${checkedItems.length} completed items ✓`);
+        } else {
+            // For other checklists, clear all checks
+            checklist.items = checklist.items.map(item => ({
+                ...item,
+                checked: false
+            }));
+            await ctx.answerCbQuery('Cleared all items');
+        }
 
         await this.db.put(chatID + '/checklists', checklist);
         
-        ctx.editMessageText(
-            `📋 ${listName.toUpperCase()} Checklist:`,
+        const icon = this.getChecklistIcon(listName);
+        const title = `${icon} ${listName.toUpperCase()}:`;
+
+        await ctx.editMessageText(
+            title,
             this.getChecklistKeyboard(checklist)
         ).catch(error => console.log(error));
     }
@@ -366,30 +416,45 @@ class Checklists {
             });
         }
 
-        // Always add the control buttons in a single row
-        buttons.push([
-            Markup.button.callback(
-                '➕ Add Item',
-                `add_item_to_${checklist.id}`
-            ),
-            Markup.button.callback(
-                removeMode ? '🔙 Back' : '🗑️ Remove',
-                removeMode ? `exit_remove_mode_${checklist.id}` : `enter_remove_mode_${checklist.id}`
-            ),
-            Markup.button.callback(
-                '🔄 Clear All',
-                `clear_checklist_${checklist.id}`
-            )
-        ]);
-
-        // Add back button in its own row if this is a task's checklist
-        if (checklist.questId) {
+        // Add control buttons based on checklist type
+        if (this.isSpecialChecklist(checklist.id)) {
+            if (checklist.id === 'agenda') {
+                buttons.push([
+                    Markup.button.callback('➕ Add Item', `add_item_to_${checklist.id}`),
+                    Markup.button.callback('🗑️ Remove Checked', `clear_checklist_${checklist.id}`)
+                ]);
+            } else {
+                // For shopping list and other special checklists
+                buttons.push([
+                    Markup.button.callback('➕ Add Item', `add_item_to_${checklist.id}`),
+                    Markup.button.callback('🗑️ Clear Completed', `clear_checklist_${checklist.id}`)
+                ]);
+            }
+        } else {
             buttons.push([
                 Markup.button.callback(
-                    '🔙 Back to Task',
-                    `back_to_quest_${checklist.chatId}_${checklist.questId}`
+                    '➕ Add Item',
+                    `add_item_to_${checklist.id}`
+                ),
+                Markup.button.callback(
+                    removeMode ? '🔙 Back' : '🗑️ Remove',
+                    removeMode ? `exit_remove_mode_${checklist.id}` : `enter_remove_mode_${checklist.id}`
+                ),
+                Markup.button.callback(
+                    '🔄 Clear All',
+                    `clear_checklist_${checklist.id}`
                 )
             ]);
+
+            // Add back button for quest checklists
+            if (checklist.questId) {
+                buttons.push([
+                    Markup.button.callback(
+                        '🔙 Back to Task',
+                        `back_to_quest_${checklist.chatId}_${checklist.questId}`
+                    )
+                ]);
+            }
         }
 
         return Markup.inlineKeyboard(buttons);
@@ -469,6 +534,45 @@ class Checklists {
         ).catch(error => console.log(error));
     }
 
+    async deleteCheckedItems(ctx) {
+        const [_, listName] = ctx.message.text.split(/\s+/);
+        if (!listName) {
+            ctx.reply('Please specify a checklist name. eg: /deletechecked morning');
+            return;
+        }
+
+        let chatID = ctx.chat.id;
+        let checklist = await this.db.get(chatID + '/checklists', listName);
+        
+        if (!checklist) {
+            ctx.reply(`Checklist "${listName}" not found.`);
+            return;
+        }
+
+        const initialLength = checklist.items.length;
+        const checkedItems = checklist.items.filter(item => item.checked);
+        
+        if (checkedItems.length === 0) {
+            ctx.reply(`No checked items found in checklist "${listName}".`);
+            return;
+        }
+
+        // Remove checked items
+        checklist.items = checklist.items.filter(item => !item.checked);
+        await this.db.put(chatID + '/checklists', checklist);
+
+        const removedCount = initialLength - checklist.items.length;
+        const removedItems = checkedItems.map(item => `"${item.text}"`).join(', ');
+        
+        await ctx.reply(`Removed ${removedCount} checked items from checklist "${listName}": ${removedItems}`);
+        
+        // Show the updated checklist
+        await ctx.reply(
+            `📋 ${listName.toUpperCase()} Checklist:`, 
+            this.getChecklistKeyboard(checklist)
+        );
+    }
+
     async addItemsToChecklist(listName, itemsText, chatId, ctx) {
         let checklist = await this.db.get(chatId + '/checklists', listName);
         
@@ -545,6 +649,84 @@ class Checklists {
     setQuestInstance(questInstance) {
         this.questInstance = questInstance;
         console.log('Quest instance set successfully');
+    }
+
+    async showSpecialChecklist(ctx, type, icon) {
+        const chatId = ctx.chat.id;
+        let checklist = await this.db.get(chatId + '/checklists', type) || {
+            id: type,
+            items: [],
+            created: new Date()
+        };
+
+        await ctx.reply(
+            `${icon} ${type.toUpperCase()}:`,
+            this.getChecklistKeyboard(checklist)
+        );
+    }
+
+    // Helper method to determine if a checklist is special
+    isSpecialChecklist(checklistId) {
+        return ['agenda', 'shopping'].includes(checklistId);
+    }
+
+    // Helper method to get checklist icon
+    getChecklistIcon(checklistId) {
+        switch(checklistId) {
+            case 'agenda': return '📅';
+            case 'shopping': return '🛒';
+            default: return '📋';
+        }
+    }
+
+    getSpecialChecklistKeyboard(checklist) {
+        let buttons = [];
+        
+        // Add item buttons if there are any
+        if (checklist.items.length > 0) {
+            buttons = checklist.items.map((item, index) => {
+                const status = item.checked ? '✅' : '⬜️';
+                return [Markup.button.callback(
+                    `${status} ${item.text}`,
+                    `${checklist.type}_check_${index}`
+                )];
+            });
+        }
+
+        // Add control buttons
+        buttons.push([
+            Markup.button.callback('➕ Add Item', `${checklist.type}_add`),
+            Markup.button.callback('🗑️ Clear Completed', `${checklist.type}_delete_checked`)
+        ]);
+
+        return Markup.inlineKeyboard(buttons);
+    }
+
+    async enterDeleteChecklistsMode(ctx) {
+        await ctx.answerCbQuery();
+        await this.showAllChecklists(ctx, true);
+    }
+
+    async exitDeleteChecklistsMode(ctx) {
+        await ctx.answerCbQuery();
+        await this.showAllChecklists(ctx, false);
+    }
+
+    async deleteChecklist(ctx) {
+        const listName = ctx.match[1];
+        let chatID = ctx.chat.id;
+        
+        // Don't allow deletion of special checklists
+        if (this.isSpecialChecklist(listName)) {
+            await ctx.answerCbQuery('Cannot delete special checklists');
+            return;
+        }
+
+        await this.db.del(chatID + '/checklists', listName);
+        await ctx.answerCbQuery(`Deleted checklist "${listName}"`);
+        
+        // Refresh the delete mode view
+        await this.showAllChecklists(ctx, true);
     }
 }
 
