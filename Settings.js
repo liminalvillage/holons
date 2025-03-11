@@ -442,15 +442,17 @@ export default class Settings {
 
         // Handle timezone region selection
         this.bot.action(/timezone_region_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
             const region = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             await ctx.editMessageText('Select timezone:', {
                 reply_markup: await this.getTimezoneKeyboard(chatID, region)
-            }).catch(e => console.log('Error in timezone region selection:', e));
+            });
         });
 
         // Handle timezone selection
         this.bot.action(/timezone_set_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
             const timezone = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -458,7 +460,7 @@ export default class Settings {
             await this.setSettings(settings);
             await ctx.editMessageText('Timezone set to: ' + timezone.split('/')[1].replace('_', ' '), {
                 reply_markup: await this.getTimezoneKeyboard(chatID)
-            }).catch(e => console.log('Error in timezone setting:', e));
+            });
         });
 
         // Add back the settings command handler
@@ -474,6 +476,7 @@ export default class Settings {
 
         // Handle settings menu callbacks
         this.bot.action(/settings_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
             const action = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -680,7 +683,7 @@ export default class Settings {
                     await ctx.reply(
                         "🌟 Welcome to Holons Bot! 🌟\n\n" +
                         "A Holon is a self-organizing entity that is both a whole and a part of a larger whole. This bot helps manage your Holon community by:\n\n" +
-                        "�� Purpose & Values:\n" +
+                        "🌟 Purpose & Values:\n" +
                         "• Define your Holon's purpose\n" +
                         "• Set core values that guide your community\n" +
                         "• Establish domains of accountability\n\n" +
@@ -710,6 +713,7 @@ export default class Settings {
 
         // Add language selection handlers
         this.bot.action(/language_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
             const language = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -717,14 +721,40 @@ export default class Settings {
             if (['en', 'it', 'es', 'fr'].includes(language)) {
                 settings.language = language;
                 await this.setSettings(settings);
-                
-                // Change i18next language
                 await i18next.changeLanguage(language);
-                
-                // Update the settings menu with new translations
-                await this.showSettingsMenu(ctx, true)
-                    .catch(e => console.log('Error updating settings menu after language change:', e));
+                await this.showSettingsMenu(ctx, true);
             }
+        });
+
+        this.bot.action(/settings_equation_change/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let weights = await this.getValueEquation(chatID);
+            await ctx.editMessageText('Value Equation:', {
+                reply_markup: this.equationInlineKeyboard(weights)
+            });
+        });
+
+        // Handle increment/decrement actions for value equation weights
+        this.bot.action(/^(increment|decrement)_(\w+)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const chatID = ctx.callbackQuery.message.chat.id;
+            const action = ctx.match[1];
+            const field = ctx.match[2];
+            
+            let weights = await this.getValueEquation(chatID);
+            
+            if (action === 'increment') {
+                weights[field]++;
+            } else {
+                weights[field] = Math.max(0, weights[field] - 1);
+            }
+            
+            await this.setValueEquation(chatID, weights);
+            
+            await ctx.editMessageText('Value Equation:', {
+                reply_markup: this.equationInlineKeyboard(weights)
+            });
         });
 
     }
