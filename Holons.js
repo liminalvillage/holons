@@ -1,5 +1,7 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
+import { Scenes } from 'telegraf';
+import * as utils from './utilities.js';
 
 import * as appreciative from './contracts/Appreciative.json' assert { type: "json" };
 import * as appreciativefactory from './contracts/AppreciativeFactory.json' assert { type: "json" };
@@ -29,6 +31,307 @@ export default class Holons {
     this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
     this.wallet = new ethers.Wallet(this.privateKey, this.provider);
 
+    // Create scenes for text input
+    this.createHolonScene = new Scenes.BaseScene('create_holon_scene');
+    this.createHolonScene.enter(async (ctx) => {
+      const flavors = await this.holonsContract.listFlavors();
+      
+      // Map of icons for each holon type
+      const flavorIcons = {
+        "Managed": "🔹",
+        "Zoned": "🔶",
+        "Splitter": "💱",
+        "Appreciative": "💯"
+      };
+      
+      await ctx.reply(
+        "Select a holon type to create:",
+        {
+          reply_markup: {
+            inline_keyboard: flavors.map(flavor => ([{ 
+              text: `${flavorIcons[flavor] || "🔸"} ${flavor}`, 
+              callback_data: `create_holon_${flavor}` 
+            }]))
+          }
+        }
+      );
+    });
+    
+    this.createHolonScene.action(/create_holon_(.+)/, async (ctx) => {
+      await ctx.answerCbQuery();
+      const flavor = ctx.match[1];
+      const chatID = utils.getChatId(ctx);
+      const userID = utils.getUserId(ctx);
+      
+      await ctx.reply(
+        `You selected ${flavor}. Do you want to proceed with creation?`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Yes", callback_data: `confirm_holon_creation_${flavor}` },
+                { text: "❌ No", callback_data: "holons_back" }
+              ]
+            ]
+          }
+        }
+      ).catch(error => {
+        console.error("Error editing message:", error);
+      });
+    });
+    
+    this.createHolonScene.action(/confirm_holon_creation_(.+)/, async (ctx) => {
+      await ctx.answerCbQuery();
+      const flavor = ctx.match[1];
+      const chatID = utils.getChatId(ctx);
+      const userID = utils.getUserId(ctx);
+      
+      await ctx.reply(`Creating ${flavor} holon... Please wait.`);
+      
+      try {
+        const creatorUserId = userID.toString();
+        const holonName = chatID.toString();
+        const parameterValue = flavor.toLowerCase() === "zoned" ? 5 : 0;
+        
+        const txParams = [flavor, creatorUserId, holonName, parameterValue];
+        
+        const createTx = await this.executeTransaction( 
+          this.holonsContract,
+          'newHolon',
+          txParams,
+          { gasLimit: 5000000 }
+        );
+        
+        // Don't await the transaction completion
+        this.waitForTransaction(
+          createTx, 
+          ctx,
+          `${flavor} holon created on ${this.network}`
+        );
+        
+        // Provide immediate feedback
+        await ctx.reply(`Transaction submitted. You will be notified when the ${flavor} holon is created.`);
+        
+        const newAddress = await this.holonsContract.toAddress(holonName);
+        await ctx.reply(`Holon address: ${newAddress}`);
+      } catch (error) {
+        console.error("Error creating holon:", error);
+        await ctx.reply(`Failed to create holon: ${error.message}`);
+      }
+      
+      await ctx.scene.leave();
+    });
+    
+    this.createHolonScene.action('cancel_create_holon', async (ctx) => {
+      await ctx.answerCbQuery();
+      await ctx.reply("Holon creation cancelled.");
+      await ctx.scene.leave();
+    });
+    
+    // Create token balance scene
+    this.tokenBalanceScene = new Scenes.BaseScene('token_balance_scene');
+    this.tokenBalanceScene.enter(async (ctx) => {
+      await ctx.reply("Please enter the token address to check balance:");
+    });
+    
+    this.tokenBalanceScene.on('text', async (ctx) => {
+      const chatID = utils.getChatId(ctx);
+      const tokenAddress = ctx.message.text.trim();
+      
+      // Validate the token address
+      if (!ethers.isAddress(tokenAddress)) {
+        await ctx.reply("Invalid token address. Please enter a valid Ethereum address.");
+        return;
+      }
+      
+      try {
+        let address = await this.holonsContract.toAddress(chatID.toString());
+        let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+        
+        // Get token balance for the contract itself
+        let tokenContract = new ethers.Contract(tokenAddress, ['function balanceOf(address) view returns (uint256)'], this.provider);
+        let contractBalance = await tokenContract.balanceOf(address);
+        
+        let users = await this.db.getAll(chatID.toString() + '/users');
+        if (!users || users.length === 0) {
+          await ctx.reply("No users found in the database.");
+          await ctx.scene.leave();
+          return;
+        }
+        
+        let userIds = users.map(user => user.id.toString());
+        
+        let balances = await Promise.all(userIds.map(async userId => 
+          await holon.tokenBalance(userId, tokenAddress)
+        ));
+        
+        let table = "User ID | Token Balance\n" +
+                    "--------|---------------\n" +
+                    userIds.map((userId, index) => 
+                      `${userId.padEnd(8)} | ${ethers.formatEther(balances[index])}`
+                    ).join('\n');
+        
+        let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+        message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `Contract Balance: ${ethers.formatEther(contractBalance)}\n`;
+        message += `Token Balances:\n\`\`\`\n${table}\n\`\`\``;
+        
+        // Add a back button if this was called from the menu
+        if (ctx.callbackQuery) {
+          return ctx.editMessageText(message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+            }
+          });
+        } else {
+          ctx.reply(message, { parse_mode: 'Markdown' });
+        }
+        
+        await ctx.scene.leave();
+      } catch (error) {
+        console.error("Error checking token balance:", error);
+        await ctx.reply("Error checking token balance: " + error.message);
+        await ctx.scene.leave();
+      }
+    });
+    
+    // Create claim scene
+    this.claimScene = new Scenes.BaseScene('claim_scene');
+    this.claimScene.enter(async (ctx) => {
+      await ctx.reply(`Please enter your wallet address on ${this.network} to claim tokens:`);
+    });
+    
+    this.claimScene.on('text', async (ctx) => {
+      const chatID = utils.getChatId(ctx);
+      const userID = utils.getUserId(ctx);
+      const beneficiaryAddress = ctx.message.text.trim();
+      
+      // Validate the Ethereum address
+      if (!ethers.isAddress(beneficiaryAddress)) {
+        await ctx.reply("Please provide a valid Ethereum address");
+        return;
+      }
+      
+      try {
+        let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+        if (holonAddress === '0x0000000000000000000000000000000000000000') {
+          await ctx.reply("No holon exists for this chat. Create one first with /createholon");
+          await ctx.scene.leave();
+          return;
+        }
+        
+        let holon = await this.getHolonContract(holonAddress);
+        
+        console.log("Claiming for userID:", userID.toString());
+        console.log("Beneficiary address:", beneficiaryAddress);
+        
+        // Execute the transaction using the contract's claim function
+        const tx = await this.executeTransaction(
+          holon,
+          'claim',
+          [userID.toString(), beneficiaryAddress],
+          {
+            gasLimit: 3000000,
+            maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+            maxFeePerGas: ethers.parseUnits("30", "gwei"),
+          }
+        );
+        
+        // Don't await the transaction completion
+        this.waitForTransaction(
+          tx,
+          ctx,
+          `Claim successful! Transaction hash: ${tx.hash}`
+        );
+        
+        // Provide immediate feedback
+        return ctx.reply(`Transaction submitted. You will be notified when your claim is processed.`);
+      } catch (error) {
+        console.error("Error in claim:", error);
+        return ctx.reply("Claim Failed: " + error.message);
+      }
+    });
+    
+    // Create reward scene
+    this.rewardScene = new Scenes.BaseScene('reward_scene');
+    this.rewardScene.enter(async (ctx) => {
+      await ctx.reply("Please enter the token address and amount to reward members.\nFormat: [token address] [amount]");
+    });
+    
+    this.rewardScene.on('text', async (ctx) => {
+      const chatID = utils.getChatId(ctx);
+      const args = ctx.message.text.split(" ").slice(1);
+      
+      if (args.length < 2) {
+        await ctx.reply("Please provide both token address and amount.\nFormat: [token address] [amount]");
+        return;
+      }
+      
+      const tokenAddress = args[0];
+      const amount = args[1];
+      
+      // Validate the token address
+      if (!ethers.isAddress(tokenAddress)) {
+        await ctx.reply("Invalid token address. Please enter a valid Ethereum address.");
+        return;
+      }
+      
+      try {
+        // Parse the amount with 18 decimals (adjust if needed)
+        const parsedAmount = ethers.parseUnits(amount, 18);
+        
+        let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+        let holon = new ethers.Contract(holonAddress, managed.default.abi, this.wallet);
+        
+        // First, approve the holon contract to spend tokens
+        let tokenContract = new ethers.Contract(tokenAddress, [
+          'function approve(address spender, uint256 amount) public returns (bool)',
+          'function allowance(address owner, address spender) public view returns (uint256)'
+        ], this.wallet);
+        
+        // Check current allowance
+        const currentAllowance = await tokenContract.allowance(this.wallet.address, holonAddress);
+        if (currentAllowance < parsedAmount) {
+          await ctx.reply("Approving token transfer...");
+          const approveTx = await tokenContract.approve(holonAddress, parsedAmount);
+          await approveTx.wait();
+          await ctx.reply('Approval transaction completed');
+        }
+        
+        await ctx.reply("Distributing reward... Please wait.");
+        
+        // Now call the reward function 
+        const tx = await holon.reward(tokenAddress, parsedAmount, {
+          gasLimit: 3000000,
+          maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+          maxFeePerGas: ethers.parseUnits("30", "gwei"),
+        });
+        
+        // Don't await the transaction completion
+        this.waitForTransaction(
+          tx,
+          ctx,
+          `Reward of ${ethers.formatUnits(parsedAmount, 18)} tokens successfully distributed to holon members.`
+        );
+        
+        // Provide immediate feedback
+        await ctx.reply(`Transaction submitted. You will be notified when the reward of ${ethers.formatUnits(parsedAmount, 18)} tokens is distributed.`);
+      } catch (error) {
+        console.error("Error in reward function:", error);
+        await ctx.reply("An error occurred while processing the reward: " + error.message);
+        await ctx.scene.leave();
+      }
+    });
+    
+    // Add scenes to bot stage if it exists
+    if (this.bot.stage) {
+      this.bot.stage.register(this.createHolonScene);
+      this.bot.stage.register(this.tokenBalanceScene);
+      this.bot.stage.register(this.claimScene);
+      this.bot.stage.register(this.rewardScene);
+    }
+
     // Fetch the deployment data: 
     const deploymentData = JSON.parse(fs.readFileSync('./contracts/deployment.json', 'utf-8'))[this.network];
     // Fetch the contract address
@@ -51,6 +354,7 @@ export default class Holons {
     // console.log("Wallet Network:", this.network);
 
     this.setupBotCommands();
+    this.setupCallbackHandlers();
   }
 
   setupBotCommands() {
@@ -69,9 +373,12 @@ export default class Holons {
     this.bot.command("setsplit", async (ctx) => this.handleSetSplitCommand(ctx));
     this.bot.command("appreciate", async(ctx) => this.handleAppreciateCommand(ctx));
     this.bot.command("addtozone", async (ctx) => this.handleAddToZoneCommand(ctx));
+    
+    // Add new command for the holons menu
+    this.bot.command("holons", async (ctx) => this.showHolonsMenu(ctx));
 
     this.bot.command("listmembers", async (ctx) => {
-      const chatID = ctx.message.chat.id;
+      const chatID = utils.getChatId(ctx);
       let address = await this.holonsContract.toAddress(chatID.toString());
       console.log("address from listmembers command: ", address);
       let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
@@ -86,13 +393,25 @@ export default class Holons {
       }
       // console.log("listing members from /listmembers command: ", members);
       if (membersLength > 0) {
-        let message = "Members:\n";
-        members.forEach((member, index) => {
-          message += `${index + 1}. ${member}\n`;
-        });
+        let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+        message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `Members (${membersLength}):\n`;
+        for (let i = 0; i < members.length; i++) {
+          const member = members[i];
+          try {
+            const user = await this.db.get('users', member);
+            if (user && user.first_name) {
+              message += `${i + 1}: ${user.first_name} ${user.last_name ? user.last_name.charAt(0) + '.' : ''} (${member})\n`;
+            } else {
+              message += `${i + 1}: ${member}\n`;
+            }
+          } catch (error) {
+            message += `${i + 1}: ${member}\n`;
+          }
+        }
         return ctx.reply(message);
       } else {
-        ctx.reply("No members found");
+        ctx.reply(`🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`);
       }
     });
 
@@ -101,6 +420,200 @@ export default class Holons {
       await this.addMembers(ctx);
       await this.syncScore(ctx);
     });
+  }
+
+  setupCallbackHandlers() {
+    // Handle holons menu callbacks
+    this.bot.action(/holons_(.+)/, async (ctx) => {
+      await ctx.answerCbQuery();
+      const action = ctx.match[1];
+      const chatID = utils.getChatId(ctx);
+      
+      switch(action) {
+        case 'create':
+          await ctx.scene.enter('create_holon_scene');
+          break;
+        case 'addmembers':
+          await this.addMembers(ctx);
+          break;
+        case 'syncscore':
+          await this.syncScore(ctx);
+          break;
+        case 'listmembers':
+          let address = await this.holonsContract.toAddress(chatID.toString());
+          let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+          let membersLength = await holon.getSize();
+          let members = [];
+          for(let i = 0; i< membersLength; i++){
+            let member = await holon.userIds(i);
+            members.push(member);
+          }
+          if (membersLength > 0) {
+            let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+            message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+            message += `Members (${membersLength}):\n`;
+            members.forEach((member, index) => {
+              message += `${index + 1}. ${member}\n`;
+            });
+            return ctx.editMessageText(message, {
+              reply_markup: {
+                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+              }
+            });
+          } else {
+            ctx.editMessageText(`🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`, {
+              reply_markup: {
+                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+              }
+            });
+          }
+          break;
+        case 'claim':
+          await ctx.scene.enter('claim_scene');
+          break;
+        case 'reward':
+          await ctx.scene.enter('reward_scene');
+          break;
+        case 'ethbalance':
+          await this.ethBalance(ctx);
+          break;
+        case 'tokenbalance':
+          await ctx.scene.enter('token_balance_scene');
+          break;
+        case 'zones':
+          // Check if the holon is of the "Zoned" type before showing zones
+          try {
+            const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+            if (holonAddress === '0x0000000000000000000000000000000000000000') {
+              return ctx.editMessageText("No holon exists for this chat", {
+                reply_markup: {
+                  inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                }
+              });
+            }
+            
+            const holon = await this.getHolonContract(holonAddress);
+            const flavor = await holon.flavor();
+            
+            if (flavor === "Zoned") {
+              await this.showZones(ctx);
+            } else {
+              return ctx.editMessageText(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`, {
+                reply_markup: {
+                  inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                }
+              });
+            }
+          } catch (error) {
+            console.error("Error checking holon type:", error);
+            return ctx.editMessageText("Error checking holon type", {
+              reply_markup: {
+                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+              }
+            });
+          }
+          break;
+        case 'holontypes':
+          await this.showHolonTypes(ctx);
+          break;
+        case 'back':
+          await this.showHolonsMenu(ctx, true);
+          break;
+        default:
+          await ctx.reply("Unknown action");
+      }
+    });
+  }
+
+  async showHolonsMenu(ctx, edit = false) {
+    const chatID = utils.getChatId(ctx);
+    
+    // Check if a holon exists for this chat
+    let holonAddress = '0x0000000000000000000000000000000000000000';
+    let isZonedHolon = false;
+    let holonFlavor = "";
+    
+    try {
+      holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      
+      // Check if the holon is of the "Zoned" type
+      if (holonAddress !== '0x0000000000000000000000000000000000000000') {
+        try {
+          const holon = await this.getHolonContract(holonAddress);
+          holonFlavor = await holon.flavor();
+          isZonedHolon = (holonFlavor === "Zoned");
+          console.log(`Holon flavor: ${holonFlavor}, isZonedHolon: ${isZonedHolon}`);
+        } catch (error) {
+          console.error("Error checking holon flavor:", error);
+        }
+      }
+    } catch (error) {
+      console.error("Error checking holon address:", error);
+    }
+    
+    const holonExists = holonAddress !== '0x0000000000000000000000000000000000000000';
+    
+    const menuMarkup = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🆕 Create Holon", callback_data: "holons_create" },
+            { text: "ℹ️ Holon Types", callback_data: "holons_holontypes" }
+          ]
+        ]
+      }
+    };
+    
+    // Only show these options if a holon exists
+    if (holonExists) {
+      // Common buttons for all holon types
+      menuMarkup.reply_markup.inline_keyboard.push(
+        [
+          { text: "➕ Add Members", callback_data: "holons_addmembers" },
+          { text: "👥 List Members", callback_data: "holons_listmembers" }
+        ],
+        [
+          { text: "🔄 Sync Score", callback_data: "holons_syncscore" },
+          { text: "💰 Claim Tokens", callback_data: "holons_claim" }
+        ],
+        [
+          { text: "🎁 Reward Members", callback_data: "holons_reward" },
+          { text: "⚖️ ETH Balance", callback_data: "holons_ethbalance" }
+        ],
+        [
+          { text: "🪙 Token Balance", callback_data: "holons_tokenbalance" }
+        ]
+      );
+      
+      // Only show zone-related buttons if the holon is of the "Zoned" type
+      if (isZonedHolon) {
+        menuMarkup.reply_markup.inline_keyboard.push(
+          [
+            { text: "🔍 Show Zones", callback_data: "holons_zones" }
+          ]
+        );
+      }
+    }
+    
+    // Create a more prominent message with the holon address at the top
+    let message;
+    if (holonExists) {
+      message = `🔷 HOLON ADDRESS 🔷\n\`${holonAddress}\`\n\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `Type: ${holonFlavor}\n`;
+      message += `Network: ${this.network}\n`;
+      message += `\nSelect an action from the menu below:`;
+    } else {
+      message = "No holon exists for this chat yet.\n\nCreate a new holon using the buttons below.";
+    }
+    
+    if (edit) {
+      return ctx.editMessageText(message, menuMarkup)
+        .catch(e => console.log('Error editing holons menu:', e));
+    } else {
+      return ctx.reply(message, menuMarkup)
+        .catch(e => console.log('Error showing holons menu:', e));
+    }
   }
 
   async reward(ctx) {
@@ -112,7 +625,7 @@ export default class Holons {
     const tokenAddress = args[0];
     console.log("tokenAddress from reward(): ", tokenAddress);
     const amount = ethers.parseUnits(args[1], 18); // Assuming 18 decimals, adjust if needed
-    const chatID = ctx.message.chat.id;
+    const chatID = utils.getChatId(ctx);
 
     try {
       let holonAddress = await this.holonsContract.toAddress(chatID.toString());
@@ -144,31 +657,47 @@ export default class Holons {
         maxFeePerGas: ethers.parseUnits("30", "gwei"),
       });
 
-      const receipt = await tx.wait();
-
-      if (receipt.status === 1) {
-        ctx.reply(`Reward of ${ethers.formatUnits(amount, 18)} tokens successfully distributed to holon members.`);
-      } else {
-        ctx.reply("Failed to distribute reward. Please try again.");
-      }
+      // Don't await the transaction completion
+      this.waitForTransaction(
+        tx,
+        ctx,
+        `Reward of ${ethers.formatUnits(amount, 18)} tokens successfully distributed to holon members.`
+      );
+      
+      // Provide immediate feedback
+      await ctx.reply(`Transaction submitted. You will be notified when the reward of ${ethers.formatUnits(amount, 18)} tokens is distributed.`);
     } catch (error) {
       console.error("Error in reward function:", error);
       ctx.reply("An error occurred while processing the reward: " + error.message);
+      await ctx.scene.leave();
     }
   }
 
   async ethBalance(ctx) {
-    const userID = ctx.message.from.id;
-    const chatID = ctx.message.chat.id;
+    const userID = utils.getUserId(ctx);
+    const chatID = utils.getChatId(ctx);
     let address = await this.holonsContract.toAddress(chatID.toString());
     let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
     let balance = await holon.etherBalance(userID.toString());
 
-    ctx.reply("Eth Balance: " + ethers.formatEther(balance));
+    let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `Eth Balance: ${ethers.formatEther(balance)}`;
+    
+    // Add a back button if this was called from the menu
+    if (ctx.callbackQuery) {
+      return ctx.editMessageText(message, {
+        reply_markup: {
+          inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+        }
+      });
+    } else {
+      ctx.reply(message);
+    }
   }
 
   async tokenBalance(ctx) {
-    const chatID = ctx.message.chat.id;
+    const chatID = utils.getChatId(ctx);
     const args = ctx.message.text.split(" ").slice(1);
     if (args.length < 1) {
       return ctx.reply("Usage: /tokenbalance [token address]");
@@ -216,15 +745,26 @@ export default class Holons {
                   `${userId.padEnd(8)} | ${ethers.formatEther(balances[index])}`
                 ).join('\n');
     
-    ctx.reply(
-      `Contract Balance: ${ethers.formatEther(contractBalance)}\n` +
-      `Token Balances:\n\`\`\`\n${table}\n\`\`\``, 
-      { parse_mode: 'Markdown' }
-    );
+    let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `Contract Balance: ${ethers.formatEther(contractBalance)}\n`;
+    message += `Token Balances:\n\`\`\`\n${table}\n\`\`\``;
+    
+    // Add a back button if this was called from the menu
+    if (ctx.callbackQuery) {
+      return ctx.editMessageText(message, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+        }
+      });
+    } else {
+      ctx.reply(message, { parse_mode: 'Markdown' });
+    }
   }
 
   async syncScore(ctx) {
-    const chatID = ctx.message.chat.id;
+    const chatID = utils.getChatId(ctx);
     let users = await this.db.getAll(chatID.toString() + '/users')
     if (!users) return ctx.reply("No users found");
     const equation = await this.settings.getValueEquation(chatID)
@@ -252,121 +792,50 @@ export default class Holons {
         maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
         maxFeePerGas: ethers.parseUnits("30", "gwei"),
       });
-      const receipt = await tx.wait();
       
-      if (receipt.status === 1) {
-        ctx.reply("Sync Successful");
-      } else {
-        ctx.reply("Sync Failed");
-      }
+      // Don't await the transaction completion
+      this.waitForTransaction(
+        tx,
+        ctx,
+        "Sync Successful"
+      );
+      
+      // Provide immediate feedback
+      await ctx.reply("Transaction submitted. You will be notified when the sync is completed.");
     } catch (error) {
       console.error("Error in syncScore:", error);
       ctx.reply("Sync Failed: " + error.message);
     }
   }
-
-  // we were having an issues with this method
-  // async claim(ctx) {
-  //   const chatID = ctx.message.chat.id;
-  //   const userID = ctx.message.from.id;
-  //   let holonAddress = await this.holonsContract.toAddress(chatID.toString());
-  //   let holon = await this.getHolonContract(holonAddress);
-  //   const args = ctx.message.text.split(" ").slice(1);
-  //   if (args.length < 1) {
-  //     return ctx.reply(`Usage: /claim [your wallet address on ${this.network}]`);
-  //   }
-  //   const address = args[0];
-    
-  //   try {
-  //     console.log("from claim() userID.toString(): ", userID.toString());
-  //     const tx = await holon.claim(userID.toString(), address, {
-  //       gasLimit: 3000000,
-  //       maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-  //       maxFeePerGas: ethers.parseUnits("30", "gwei"),
-  //     });
-  //     const receipt = await tx.wait();
-      
-  //     if (receipt.status === 1) {
-  //       return ctx.reply("Claim Successful");
-  //     } else {
-  //       return ctx.reply("Claim Failed");
-  //     }
-  //   } catch (error) {
-  //     console.error("Error in claim:", error);
-  //     return ctx.reply("Claim Failed: " + error.message);
-  //   }
-  // }
   
-  // potentionally corrected one
-  async claim(ctx) {
-    const chatID = ctx.message.chat.id;
-    const userID = ctx.message.from.id;
-    
-    try {
-      let holonAddress = await this.holonsContract.toAddress(chatID.toString());
-      if (holonAddress === '0x0000000000000000000000000000000000000000') {
-        return ctx.reply("No holon exists for this chat. Create one first with /createholon");
-      }
-  
-      const args = ctx.message.text.split(" ").slice(1);
-      if (args.length < 1) {
-        return ctx.reply(`Usage: /claim [your wallet address on ${this.network}]`);
-      }
-  
-      const beneficiaryAddress = args[0];
-      
-      // Validate the Ethereum address
-      if (!ethers.isAddress(beneficiaryAddress)) {
-        return ctx.reply("Please provide a valid Ethereum address");
-      }
-  
-      let holon = await this.getHolonContract(holonAddress);
-      
-      console.log("Claiming for userID:", userID.toString());
-      console.log("Beneficiary address:", beneficiaryAddress);
-  
-      // Execute the transaction using the contract's claim function
-      const tx = await this.executeTransaction(
-        holon,
-        'claim',
-        [userID.toString(), beneficiaryAddress],
-        {
-          gasLimit: 3000000,
-          maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-          maxFeePerGas: ethers.parseUnits("30", "gwei"),
-        }
-      );
-      
-      await ctx.reply("Transaction submitted. Waiting for confirmation...");
-      
-      const receipt = await tx.wait();
-      
-      if (receipt.status === 1) {
-        return ctx.reply(`Claim successful!\nTransaction hash: ${receipt.hash}`);
-      } else {
-        return ctx.reply("Claim failed during execution");
-      }
-    } catch (error) {
-      console.error("Error in claim:", error);
-      return ctx.reply("Claim Failed: " + error.message);
-    }
-  }
-
   async waitForTransaction(tx, context, successMessage) {
     try {
-      const receipt = await tx.wait();
-      if (receipt.status === 1) {
-        if (successMessage) {
-          await context.reply(successMessage);
+      // Don't await the transaction here, instead handle it asynchronously
+      tx.wait().then(receipt => {
+        if (receipt.status === 1) {
+          if (successMessage && context) {
+            context.reply(`✅ Transaction completed: ${successMessage}`);
+          }
+          return receipt;
+        } else {
+          if (context) {
+            context.reply("❌ Transaction failed during execution");
+          }
+          console.error("Transaction failed with status 0");
         }
-        return receipt;
-      } else {
-        throw new Error("Transaction failed");
-      }
+      }).catch(error => {
+        console.error("Transaction error:", error);
+        if (context) {
+          context.reply(`❌ Transaction failed: ${error.message}`);
+        }
+      });
+      
+      // Return the transaction immediately
+      return tx;
     } catch (error) {
-      console.error("Transaction error:", error);
+      console.error("Error setting up transaction wait:", error);
       if (context) {
-        await context.reply(`Transaction failed: ${error.message}`);
+        context.reply(`❌ Error setting up transaction: ${error.message}`);
       }
       throw error;
     }
@@ -423,8 +892,8 @@ export default class Holons {
     console.log("======== createHolon function called ========");
     try {
       // Log input parameters
-      const chatID = ctx.message.chat.id;
-      const userID = ctx.message.from.id;
+      const chatID = utils.getChatId(ctx);
+      const userID = utils.getUserId(ctx);
       const args = ctx.message.text.split(" ").slice(1);
       const flavor = args[0]; // First parameter is always the holon type
       
@@ -525,14 +994,17 @@ export default class Holons {
       console.log("- data:", createTx.data);
       console.log("- gasLimit:", createTx.gasLimit.toString());
   
-      // Wait for transaction
-      console.log("Waiting for transaction confirmation...");
-      await this.waitForTransaction(
+      // Don't wait for transaction
+      console.log("Setting up transaction notification...");
+      this.waitForTransaction(
         createTx, 
         ctx,
         `${flavor} holon created on ${this.network}`
       );
-      console.log("Transaction confirmed");
+      
+      // Provide immediate feedback
+      await ctx.reply(`Transaction submitted. You will be notified when the ${flavor} holon is created.`);
+      console.log("Immediate feedback provided to user");
   
       // Verify the result
       console.log("Verifying results...");
@@ -561,101 +1033,11 @@ export default class Holons {
     }
   }
 
-  // async addMembers(ctx) {
-  //   console.log("addMembers function called");
-  //   const args = ctx.message.text.split(" ").slice(1);
-  //   const chatID = ctx.message.chat.id;
-    
-  //   if (args.length === 0) {
-  //     return ctx.reply(
-  //       "Usage: /addmembers [ethereum_address1] [ethereum_address2] ...\n" +
-  //       "Example: /addmembers 0x123... 0x456..."
-  //     );
-  //   }
-
-  //   try {
-  //     const holonAddress = await this.holonsContract.toAddress(chatID.toString());
-  //     console.log("from addMembers(), holonAddress: ", holonAddress);
-  //     if (holonAddress === '0x0000000000000000000000000000000000000000') {
-  //       return ctx.reply("No holon exists for this chat. Create one first with /createholon");
-  //     }
-
-  //     const holon = await this.getHolonContract(holonAddress);
-  //     // console.log("holon: ", holon);
-      
-  //     // Validate all addresses first
-  //     // const invalidAddresses = args.filter(addr => !ethers.isAddress(addr));
-  //     // if (invalidAddresses.length > 0) {
-  //     //   return ctx.reply(
-  //     //     "Invalid Ethereum addresses detected:\n" +
-  //     //     invalidAddresses.join('\n') +
-  //     //     "\n\nPlease provide valid addresses."
-  //     //   );
-  //     // }
-
-  //     await ctx.reply(`Adding ${args.length} members... Please wait.`);
-      
-  //     let results = [];
-  //     for (const address of args) {
-  //       console.log("Member that is being added: ", address);
-  //       try {
-  //         // Check if already a member
-  //         const isMember = await holon.isMember(address);
-  //         if (isMember) {
-  //           results.push(`${address}: Already a member`);
-  //           continue;
-  //         }
-          
-  //         // adding a single member
-  //         // const tx = await this.executeTransaction(
-  //         //   holon,
-  //         //   'addMember(string)',
-  //         //   [address]
-  //         // );
-
-  //         // adding multiple memebers
-  //         const tx = await this.executeTransaction(
-  //           holon,
-  //           'addMembers(string[])',
-  //           ["test", "test1"]
-  //         );
-          
-  //         await this.waitForTransaction(tx);
-  //         results.push(`${address}: Added successfully`);
-          
-  //         // Add delay between transactions
-  //         await new Promise(resolve => setTimeout(resolve, 2000));
-  //       } catch (error) {
-  //         results.push(`${address}: Failed - ${error.message}`);
-  //       }
-  //     }
-
-  //     // Send results in batches to avoid message length limits
-  //     const batchSize = 10;
-  //     for (let i = 0; i < results.length; i += batchSize) {
-  //       const batch = results.slice(i, i + batchSize);
-  //       await ctx.reply(batch.join('\n'));
-  //     }
-
-  //   } catch (error) {
-  //     console.error("Error in addMembers:", error);
-  //     ctx.reply(`Failed to process members: ${error.message}`);
-  //   }
-  // }
-  // better version:
   async addMembers(ctx) {
     console.log("addMembers function called");
-    const args = ctx.message.text.split(" ").slice(1);
-    const chatID = ctx.message.chat.id;
-    const userID = ctx.message.from.id.toString(); // Get the user ID of the person who initiated the command
+    const chatID = utils.getChatId(ctx);
+    const userID = utils.getUserId(ctx); // Get the user ID of the person who initiated the command
     
-    // if (args.length === 0) {
-    //   return ctx.reply(
-    //     "Usage: /addmembers [ethereum_address1] [ethereum_address2] ...\n" +
-    //     "Example: /addmembers 0x123... 0x456..."
-    //   );
-    // }
-
     let users = await this.db.getAll(chatID.toString() + '/users');
     let userIds = users.map(user => user.id.toString());
 
@@ -688,8 +1070,11 @@ export default class Holons {
           isZoned ? [userID, userIds] : [userIds] // Include userID if holon is zoned
         );
 
-        await this.waitForTransaction(tx);
-        results.push(`Successfully added ${userIds.length} members`);
+        // Don't await the transaction completion
+        this.waitForTransaction(tx, ctx, `Successfully added ${userIds.length} members`);
+        
+        // Provide immediate feedback
+        results.push(`Transaction submitted. You will be notified when members are added.`);
       } catch (error) {
         console.error("Transaction error:", error);
         results.push(`Failed to add members: ${error.message}`);
@@ -813,10 +1198,34 @@ export default class Holons {
   async showHolonTypes(ctx) {
     try {
       const flavors = await this.holonsContract.listFlavors();
-      const message = "Available Holon Types:\n" + 
-                     flavors.join('\n') + 
-                     "\n\nTo create a holon, use:\n/createholon [type]";
-      ctx.reply(message);
+      
+      // Map of icons for each holon type
+      const flavorIcons = {
+        "Managed": "🔹",
+        "Zoned": "🔶",
+        "Splitter": "💱",
+        "Appreciative": "💯"
+      };
+      
+      // Create a formatted list with icons
+      const flavorsList = flavors.map(flavor => 
+        `${flavorIcons[flavor] || "🔸"} ${flavor}`
+      ).join('\n');
+      
+      const message = "🔷 Available Holon Types 🔷\n\n" + 
+                     flavorsList + 
+                     "\n\n📝 To create a holon, use:\n/createholon [type]";
+      
+      // Add a back button if this was called from the menu
+      if (ctx.callbackQuery) {
+        return ctx.editMessageText(message, {
+          reply_markup: {
+            inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+          }
+        });
+      } else {
+        ctx.reply(message);
+      }
     } catch (error) {
       console.error("Error fetching holon types:", error);
       ctx.reply("Error fetching holon types");
@@ -834,7 +1243,7 @@ export default class Holons {
 
     const [memberAddress, zoneNumberStr] = args;
     const zoneNumber = parseInt(zoneNumberStr);
-    const chatID = ctx.message.chat.id;
+    const chatID = utils.getChatId(ctx);
 
     if (!ethers.isAddress(memberAddress)) {
       return ctx.reply(`Invalid Ethereum address: ${memberAddress}`);
@@ -852,13 +1261,12 @@ export default class Holons {
 
       const holon = await this.getHolonContract(holonAddress);
       
-      // Check if this is actually a Zoned holon
-      try {
-        await holon.zoneCount();
-      } catch (error) {
-        return ctx.reply("This command only works with Zoned holons");
+      // Check if this is actually a Zoned holon by checking the flavor
+      const flavor = await holon.flavor();
+      if (flavor !== "Zoned") {
+        return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`);
       }
-
+      
       await ctx.reply(`Moving member to zone ${zoneNumber}... Please wait.`);
 
       const tx = await this.executeTransaction(
@@ -867,11 +1275,15 @@ export default class Holons {
         [memberAddress, zoneNumber]
       );
 
-      await this.waitForTransaction(
+      // Don't await the transaction completion
+      this.waitForTransaction(
         tx,
         ctx,
         `Successfully moved ${memberAddress} to zone ${zoneNumber}`
       );
+      
+      // Provide immediate feedback
+      await ctx.reply(`Transaction submitted. You will be notified when the member is moved to zone ${zoneNumber}.`);
 
     } catch (error) {
       console.error("Error moving to zone:", error);
@@ -884,62 +1296,72 @@ export default class Holons {
   }
 
   async showZones(ctx) {
-    const chatID = ctx.message.chat.id;
+    const chatID = utils.getChatId(ctx);
     
     try {
       let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      if (holonAddress === '0x0000000000000000000000000000000000000000') {
+        return ctx.reply("No holon exists for this chat");
+      }
+      
       let holon = await this.getHolonContract(holonAddress);
 
-      // Check if this is a Zoned holon
-      try {
-        await holon.nzones();
-      } catch (error) {
-        console.log("Error happened while calling holon.nzones() in `showZones`", error);
-        return ctx.reply("This command only works with Zoned holons");
+      // Check if this is a Zoned holon by checking the flavor
+      const flavor = await holon.flavor();
+      if (flavor !== "Zoned") {
+        return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`);
       }
 
-        // Retrieve all users from the database for the given chatID
-        const users = await this.db.getAll(chatID.toString() + '/users');
-        const userMap = users.reduce((map, user) => {
-            map[user.id] = user.username; // Assuming user.id is the address and user.username is the tag
-            return map;
-        }, {});
+      // Retrieve all users from the database for the given chatID
+      const users = await this.db.getAll(chatID.toString() + '/users');
+      const userMap = users.reduce((map, user) => {
+          map[user.id] = user.username; // Assuming user.id is the address and user.username is the tag
+          return map;
+      }, {});
 
-        // Try to get zones - this will only work for Zoned holons
-        try {
-            const zoneCount = Number(await holon.nzones()); // Convert BigInt to Number
-            let zoneMembers = [];
-            // Reverse the order of zones
-            for (let i = zoneCount; i >= 0; i--) {
-                const members = await holon.getZoneMembers(i);
-                console.log(`Zone ${i} members from the contract:`, members);
-                // Reverse the order of members within each zone
-                zoneMembers.push({
-                    zone: this.invertZone(i),
-                    members: [...members].reverse().map(member => userMap[member] || member)                    // Map to user tags
-                });
-            }
+      // Get zones from the Zoned holon
+      try {
+          const zoneCount = Number(await holon.nzones()); // Convert BigInt to Number
+          let zoneMembers = [];
+          // Reverse the order of zones
+          for (let i = zoneCount; i >= 0; i--) {
+              const members = await holon.getZoneMembers(i);
+              console.log(`Zone ${i} members from the contract:`, members);
+              // Reverse the order of members within each zone
+              zoneMembers.push({
+                  zone: this.invertZone(i),
+                  members: [...members].reverse().map(member => userMap[member] || member)                    // Map to user tags
+              });
+          }
 
-            let message = "Zone Members:\n";
-            zoneMembers.forEach(zone => {
-                message += `\nZone ${zone.zone}:\n`;
-                if (zone.members.length === 0) {
-                    message += "- Empty\n";
-                } else {
-                    zone.members.forEach(member => {
-                        message += `- @${member}\n`;
-                    });
-                }
+          let message = `🔷 HOLON ADDRESS 🔷\n\`${holonAddress}\`\n\n`;
+          message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+          message += "Zone Members:\n";
+          zoneMembers.forEach(zone => {
+              message += `\nZone ${zone.zone}:\n`;
+              if (zone.members.length === 0) {
+                  message += "- Empty\n";
+              } else {
+                  zone.members.forEach(member => {
+                      message += `- @${member}\n`;
+                  });
+              }
+          });
+
+          // Add a back button if this was called from the menu
+          if (ctx.callbackQuery) {
+            return ctx.editMessageText(message, {
+              reply_markup: {
+                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+              }
             });
-
+          } else {
             ctx.reply(message);
-        } catch (error) {
-            if (error.message.includes("not a zoned")) {
-                ctx.reply("This command only works with Zoned holons");
-            } else {
-                throw error;
-            }
-        }
+          }
+      } catch (error) {
+          console.error("Error retrieving zone members:", error);
+          ctx.reply("Failed to retrieve zone members: " + error.message);
+      }
     } catch (error) {
         console.error("Error showing zones:", error);
         ctx.reply("Failed to show zones: " + error.message);
@@ -982,7 +1404,7 @@ export default class Holons {
 
     const [memberAddress, sharesStr] = args;
     const shares = parseInt(sharesStr);
-    const chatID = ctx.message.chat.id;
+    const chatID = utils.getChatId(ctx);
 
     try {
       const holonAddress = await this.holonsContract.toAddress(chatID.toString());
@@ -1001,11 +1423,15 @@ export default class Holons {
         [memberAddress, shares]
       );
 
-      await this.waitForTransaction(
+      // Don't await the transaction completion
+      this.waitForTransaction(
         tx,
         ctx,
         `Successfully set shares for ${memberAddress} to ${shares}`
       );
+      
+      // Provide immediate feedback
+      await ctx.reply(`Transaction submitted. You will be notified when shares are set for ${memberAddress}.`);
 
     } catch (error) {
       console.error("Error setting shares:", error);
@@ -1071,7 +1497,7 @@ export default class Holons {
 
   async handleSetSplitCommand(ctx) {
     try {
-      const chatID = ctx.message.chat.id;
+      const chatID = utils.getChatId(ctx);
       const text = ctx.message.text;
 
       // Remove the command part and split the rest of the message
@@ -1154,7 +1580,8 @@ export default class Holons {
 
   async handleAppreciateCommand(ctx) {
     try {
-      const chatID = ctx.message.chat.id;
+      const chatID = utils.getChatId(ctx);
+      const userID = utils.getUserId(ctx);
       const text = ctx.message.text;
 
       // Remove the command part and split the rest of the message
@@ -1170,7 +1597,7 @@ export default class Holons {
       }
 
       // Call the appreciateUsersByUsername function with parsed data
-      await this.appreciateUsersByUsername(usernames, percentages, chatID, ctx.message.from.id);
+      await this.appreciateUsersByUsername(usernames, percentages, chatID, userID);
 
       ctx.reply("Appreciation set successfully.");
     } catch (error) {
@@ -1213,7 +1640,7 @@ export default class Holons {
     const zoneStr = args[1];
     console.log("Parsed command arguments:", { senderTag, userTag, zoneStr });
     const telegramZone = parseInt(zoneStr, 10);
-    const chatID = ctx.message.chat.id;
+    const chatID = utils.getChatId(ctx);
 
     try {
         const solidityZone = this.invertZone(telegramZone);
@@ -1224,6 +1651,13 @@ export default class Holons {
         }
 
         const holon = await this.getHolonContract(holonAddress);
+        
+        // Check if this is actually a Zoned holon by checking the flavor
+        const flavor = await holon.flavor();
+        if (flavor !== "Zoned") {
+            return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`);
+        }
+        
         const users = await this.db.getAll(chatID.toString() + '/users');
 
         // Retrieve users by tags
@@ -1238,15 +1672,73 @@ export default class Holons {
             [senderUser.id.toString(), user.id.toString(), solidityZone]
         );
 
-        await this.waitForTransaction(
+        // Don't await the transaction completion
+        this.waitForTransaction(
             tx,
             ctx,
             `Successfully added ${userTag} to zone ${telegramZone}`
         );
+        
+        // Provide immediate feedback
+        await ctx.reply(`Transaction submitted. You will be notified when ${userTag} is added to zone ${telegramZone}.`);
 
     } catch (error) {
         console.error("Error adding to zone:", error);
         ctx.reply(`Failed to add to zone: ${error.message}`);
+    }
+  }
+
+  async claim(ctx) {
+    const chatID = utils.getChatId(ctx);
+    const userID = utils.getUserId(ctx);
+    
+    try {
+      let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      if (holonAddress === '0x0000000000000000000000000000000000000000') {
+        return ctx.reply("No holon exists for this chat. Create one first with /createholon");
+      }
+  
+      const args = ctx.message.text.split(" ").slice(1);
+      if (args.length < 1) {
+        return ctx.reply(`Usage: /claim [your wallet address on ${this.network}]`);
+      }
+  
+      const beneficiaryAddress = args[0];
+      
+      // Validate the Ethereum address
+      if (!ethers.isAddress(beneficiaryAddress)) {
+        return ctx.reply("Please provide a valid Ethereum address");
+      }
+  
+      let holon = await this.getHolonContract(holonAddress);
+      
+      console.log("Claiming for userID:", userID.toString());
+      console.log("Beneficiary address:", beneficiaryAddress);
+  
+      // Execute the transaction using the contract's claim function
+      const tx = await this.executeTransaction(
+        holon,
+        'claim',
+        [userID.toString(), beneficiaryAddress],
+        {
+          gasLimit: 3000000,
+          maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+          maxFeePerGas: ethers.parseUnits("30", "gwei"),
+        }
+      );
+      
+      // Don't await the transaction completion
+      this.waitForTransaction(
+        tx,
+        ctx,
+        `Claim successful! Transaction hash: ${tx.hash}`
+      );
+      
+      // Provide immediate feedback
+      return ctx.reply(`Transaction submitted. You will be notified when your claim is processed.`);
+    } catch (error) {
+      console.error("Error in claim:", error);
+      return ctx.reply("Claim Failed: " + error.message);
     }
   }
 }
