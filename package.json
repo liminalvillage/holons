@@ -6,7 +6,7 @@
   "types": "holosphere.d.ts",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js ./test",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "build": "",
     "prepare": "npm run build"
   },

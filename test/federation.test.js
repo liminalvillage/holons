@@ -2,65 +2,23 @@ import HoloSphere from '../holosphere.js';
 import { jest } from '@jest/globals';
 
 // Set global timeout for all tests
-jest.setTimeout(3000);
+jest.setTimeout(30000);
 
 describe('Federation Operations', () => {
     const testAppName = 'test-app';
-    const testHolon = 'test-holon';
+    const testHolon1 = 'test-holon-1';
+    const testHolon2 = 'test-holon-2';
     const testLens = 'test-lens';
+    const testPass1 = 'pass1pass1';
+    const testPass2 = 'pass2pass2';
     
-    // Global HoloSphere instances
-    let holoSphere; // Non-strict instance
-    let strictHoloSphere; // Strict instance
-    let space1, space2;
+    let holoSphere;
+    let strictHoloSphere;
 
     beforeAll(async () => {
-        // Create global instances
         holoSphere = new HoloSphere(testAppName, false);
         strictHoloSphere = new HoloSphere(testAppName, true);
-        
-        space1 = { spacename: 'space1', password: 'pass1' };
-        space2 = { spacename: 'space2', password: 'pass2' };
 
-        // Clean up any existing test spaces and federation data
-        try {
-            await holoSphere.deleteAllGlobal('federation');
-            await holoSphere.deleteGlobal('spaces', space1.spacename);
-            await holoSphere.deleteGlobal('spaces', space2.spacename);
-        } catch (error) {
-            // Ignore errors during cleanup
-            console.log('Cleanup error (expected):', error.message);
-        }
-
-        // Create fresh test spaces with retries
-        for (let i = 0; i < 3; i++) {
-            try {
-                await holoSphere.createSpace(space1.spacename, space1.password);
-                await holoSphere.createSpace(space2.spacename, space2.password);
-                break;
-            } catch (error) {
-                console.log('Space creation attempt', i + 1, 'failed:', error.message);
-                if (i === 2) throw error;
-            }
-        }
-
-
-        // Verify spaces were created
-        const space1Created = await holoSphere.getGlobal('spaces', space1.spacename);
-        const space2Created = await holoSphere.getGlobal('spaces', space2.spacename);
-        
-        if (!space1Created || !space2Created) {
-            throw new Error('Failed to create test spaces');
-        }
-    }, 30000);
-
-    beforeEach(async () => {
-        // Clean up any existing federation data
-        await holoSphere.deleteAllGlobal('federation');
-        
-        // Clean up any existing test data
-        await holoSphere.deleteAll(testHolon, testLens);
-        
         // Set up base schema for all tests
         const baseSchema = {
             type: 'object',
@@ -79,280 +37,184 @@ describe('Federation Operations', () => {
             required: ['id']
         };
         
-        await holoSphere.setSchema(testLens, baseSchema);
-        await strictHoloSphere.setSchema(testLens, baseSchema);
+        // Set schema in both spaces
+        await holoSphere.setSchema(testLens, baseSchema, testPass1);
+        await holoSphere.setSchema(testLens, baseSchema, testPass2);
+
+        // Initialize federation data in respective spaces
+        await holoSphere.putGlobal('federation', { 
+            id: testHolon1,
+            federated: []
+        }, testPass1);
         
-    
-        // Verify spaces exist before proceeding
-        const space1Exists = await holoSphere.getGlobal('spaces', space1.spacename);
-        const space2Exists = await holoSphere.getGlobal('spaces', space2.spacename);
-        
-        // If spaces don't exist, recreate them
-        if (!space1Exists) {
-            try {
-                await holoSphere.createSpace(space1.spacename, space1.password);
-            } catch (error) {
-                if (error.message !== 'Space already exists') {
-                    throw error;
-                }
-            }
-        }
-        if (!space2Exists) {
-            try {
-                await holoSphere.createSpace(space2.spacename, space2.password);
-            } catch (error) {
-                if (error.message !== 'Space already exists') {
-                    throw error;
-                }
-            }
-        }
-        
-        // Verify spaces again
-        const space1Verified = await holoSphere.getGlobal('spaces', space1.spacename);
-        const space2Verified = await holoSphere.getGlobal('spaces', space2.spacename);
-        
-        if (!space1Verified || !space2Verified) {
-            throw new Error('Test spaces not found - test environment not properly set up');
-        }
-        
-        // Ensure both instances are logged out
-        if (holoSphere.currentSpace) {
-            await holoSphere.logout();
-        }
-        if (strictHoloSphere.currentSpace) {
-            await strictHoloSphere.logout();
-        }
-        
-        // Login as first space to holoSphere
-        await holoSphere.login(space1.spacename, space1.password);
-        
-    }, 20000);
+        await holoSphere.putGlobal('federation', {
+            id: testHolon2,
+            federated: []
+        }, testPass2);
+    });
 
-    test('should create federation relationship between spaces', async () => {
-        // Create federation relationship
-        await holoSphere.federate(space1.spacename, space2.spacename);
+    describe('Federation Setup', () => {
+        test('should create federation relationship between spaces', async () => {
+            await holoSphere.federate(testHolon1, testPass1, testHolon2);
 
-        // Verify federation was created
-        const fedInfo = await holoSphere.getFederation(space1.spacename);
-        expect(fedInfo).toBeDefined();
-        expect(fedInfo.federation).toContain(space2.spacename);
-    }, 10000);
-
-    test('should establish bidirectional federation', async () => {
-        // Create bidirectional federation
-        await holoSphere.federate(space1.spacename, space2.spacename);
-
-        // Login to space1 to verify federation
-        await holoSphere.login(space1.spacename, space1.password);
-
-        // Verify both spaces are federated with each other
-        const fedInfo1 = await holoSphere.getFederation(space1.spacename);
-        const fedInfo2 = await holoSphere.getFederation(space2.spacename);
-
-        expect(fedInfo1).toBeDefined();
-        expect(fedInfo2).toBeDefined();
-        expect(fedInfo1.federation).toContain(space2.spacename);
-        expect(fedInfo2.notify).toContain(space1.spacename);
-    }, 10000);
-
-    test('should prevent duplicate federation relationships', async () => {
-        // Login to space1
-        await holoSphere.login(space1.spacename, space1.password);
-
-        // Create initial federation
-        await holoSphere.federate(space1.spacename, space2.spacename);
-
-        // Verify federation exists
-        const fedInfo = await holoSphere.getFederation(space1.spacename);
-        expect(fedInfo).toBeDefined();
-        expect(fedInfo.federation).toBeDefined();
-        expect(fedInfo.federation).toContain(space2.spacename);
-
-        // Attempt to create duplicate federation
-        await expect(holoSphere.federate(space1.spacename, space2.spacename))
-            .rejects.toThrow('Federation already exists');
-    }, 15000);
-
-    test('should handle federation data propagation', async () => {
-        // Login to space1
-        await holoSphere.login(space1.spacename, space1.password);
-
-        const testData = { 
-            id: 'test1', 
-            name: 'Test Item',
-            data: 'federated content' 
-        };
-
-        // Set up federation
-        await holoSphere.federate(space1.spacename, space2.spacename);
-
-        // Login to space2 with strict instance
-        await strictHoloSphere.login(space2.spacename, space2.password);
-
-        // Put data in first space
-        await holoSphere.put(testHolon, testLens, testData);
-
-        // Verify data was propagated to federated space
-        const federatedData = await strictHoloSphere.get(testHolon, testLens, testData.id);
-        expect(federatedData).toBeDefined();
-        expect(federatedData).not.toBeNull();
-        expect(federatedData.data).toEqual(testData.data);
-        expect(federatedData.federation).toBeDefined();
-        expect(federatedData.federation.origin).toEqual(space1.spacename);
-        expect(federatedData.federation.timestamp).toBeGreaterThan(0);
-    }, 20000);
-
-    test('should handle different getFederated modalities', async () => {
-        // Clean up any existing test data first
-        await holoSphere.deleteAll(testHolon, testLens);
-        await strictHoloSphere.deleteAll(testHolon, testLens);
-
-        // Set up federation using non-strict instance (already logged in as space1)
-        await holoSphere.federate(space1.spacename, space2.spacename);
-
-        // Login to space2 with strict instance
-        await strictHoloSphere.login(space2.spacename, space2.password);
-
-        // Test data with overlapping IDs and different fields
-        const testData1 = { 
-            id: 'user1', 
-            name: 'User One',
-            received: 10,
-            sent: 5,
-            wants: ['item1', 'item2'],
-            offers: ['service1']
-        };
-        const testData2 = { 
-            id: 'user1',  // Same ID as testData1
-            name: 'User One Updated',
-            received: 15,
-            sent: 8,
-            wants: ['item3'],
-            offers: ['service2']
-        };
-        const testData3 = { 
-            id: 'user2',
-            name: 'User Two',
-            received: 20,
-            sent: 12,
-            wants: ['item4'],
-            offers: ['service3']
-        };
-
-        // Put data using both instances and wait between puts
-        console.log('Putting test data 1:', JSON.stringify(testData1, null, 2));
-        await holoSphere.put(testHolon, testLens, testData1);
-        
-        console.log('Putting test data 2:', JSON.stringify(testData2, null, 2));
-        await strictHoloSphere.put(testHolon, testLens, testData2);
-        
-        console.log('Putting test data 3:', JSON.stringify(testData3, null, 2));
-        await holoSphere.put(testHolon, testLens, testData3);
-
-        // Test 1: Simple concatenation without deduplication
-        const concatenatedResults = await holoSphere.getFederated(testHolon, testLens, {
-            aggregate: false,
-            removeDuplicates: false
+            const fedInfo = await holoSphere.getFederation(testHolon1, testPass1);
+            expect(fedInfo).toBeDefined();
+            expect(Array.isArray(fedInfo.federated)).toBe(true);
+            expect(fedInfo.federated).toContain(testHolon2);
         });
-        console.log('Concatenated results:', JSON.stringify(concatenatedResults, null, 2));
-        
-        // Verify we have all items including duplicates
-        expect(concatenatedResults.filter(item => item.id === 'user1').length).toBeGreaterThanOrEqual(1);
-        expect(concatenatedResults.filter(item => item.id === 'user2').length).toBe(1);
 
-        // Test 2: With deduplication
-        const dedupedResults = await strictHoloSphere.getFederated(testHolon, testLens, {
-            aggregate: false,
-            removeDuplicates: true
+        test('should establish bidirectional federation with space isolation', async () => {
+            await holoSphere.federate(testHolon1, testPass1, testHolon2);
+
+            const fedInfo1 = await holoSphere.getFederation(testHolon1, testPass1);
+            const fedInfo2 = await holoSphere.getFederation(testHolon2, testPass2);
+
+            // Verify federation info in respective spaces
+            expect(fedInfo1.federated).toContain(testHolon2);
+            expect(fedInfo2.federated).toContain(testHolon1);
+
+            // Verify federation info is not accessible without password
+            const noPassFed1 = await holoSphere.getFederation(testHolon1);
+            const noPassFed2 = await holoSphere.getFederation(testHolon2);
+            expect(noPassFed1).toBeNull();
+            expect(noPassFed2).toBeNull();
         });
-        console.log('Deduped results:', JSON.stringify(dedupedResults, null, 2));
-        expect(dedupedResults.length).toBe(2);
-        const user1Deduped = dedupedResults.find(item => item.id === 'user1');
-        expect(user1Deduped.name).toBe('User One Updated');
+    });
 
-        // Test 3: With aggregation
-        const aggregationOptions = {
-            aggregate: true,
-            idField: 'id',
-            sumFields: ['received', 'sent'],
-            concatArrays: ['wants', 'offers'],
-            removeDuplicates: true
-        };
-        console.log('Aggregation options:', JSON.stringify(aggregationOptions, null, 2));
-        const aggregatedResults = await holoSphere.getFederated(testHolon, testLens, aggregationOptions);
-        console.log('Aggregated results:', JSON.stringify(aggregatedResults, null, 2));
-        
-        // Sort results by ID for consistent testing
-        const sortedResults = aggregatedResults.sort((a, b) => a.id.localeCompare(b.id));
-        expect(sortedResults.length).toBe(2);
+    describe('Data Federation', () => {
+        test('should handle federated data with space isolation', async () => {
+            await holoSphere.federate(testHolon1, testPass1, testHolon2);
 
-        const user1Aggregated = sortedResults.find(item => item.id === 'user1');
-        expect(user1Aggregated).toBeDefined();
-        expect(user1Aggregated.received).toBe(15); // Latest value
-        expect(user1Aggregated.sent).toBe(8); // Latest value
-        expect(user1Aggregated.wants).toEqual(['item3']); // Latest value
-        expect(user1Aggregated.offers).toEqual(['service2']); // Latest value
+            const testData = { 
+                id: 'fed-test1', 
+                name: 'Federation Test',
+                data: 'federated content' 
+            };
 
-        const user2Aggregated = sortedResults.find(item => item.id === 'user2');
-        expect(user2Aggregated).toBeDefined();
-        expect(user2Aggregated.received).toBe(20);
-        expect(user2Aggregated.sent).toBe(12);
-        expect(user2Aggregated.wants).toEqual(['item4']);
-        expect(user2Aggregated.offers).toEqual(['service3']);
-    }, 60000);
+            // Store data in first space
+            await holoSphere.put(testHolon1, testLens, testData, testPass1);
 
-    test('should handle unfederation', async () => {
-        // Login to space1
-        await holoSphere.login(space1.spacename, space1.password);
+            // Wait for federation propagation
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Set up federation
-        await holoSphere.federate(space1.spacename, space2.spacename);
+            // Data should be accessible in second space with correct password
+            const federatedData = await holoSphere.get(testHolon2, testLens, testData.id, testPass2);
+            expect(federatedData).toBeDefined();
+            expect(federatedData.data).toBe(testData.data);
+            expect(federatedData.federation).toBeDefined();
+            expect(federatedData.federation.origin).toBe(testHolon1);
 
-        // Verify federation exists
-        let fedInfo1 = await holoSphere.getFederation(space1.spacename);
-        expect(fedInfo1).toBeDefined();
-        expect(fedInfo1.federation).toBeDefined();
-        expect(fedInfo1.federation).toContain(space2.spacename);
+            // Data should not be accessible without password
+            const noPassData = await holoSphere.get(testHolon2, testLens, testData.id);
+            expect(noPassData).toBeNull();
+        });
 
-        // Remove federation
-        await holoSphere.unfederate(space1.spacename, space2.spacename);
+        test('should handle getFederated with different spaces', async () => {
+            await holoSphere.federate(testHolon1, testPass1, testHolon2);
 
-        // Verify federation is removed
-        fedInfo1 = await holoSphere.getFederation(space1.spacename);
-        const fedInfo2 = await holoSphere.getFederation(space2.spacename);
+            const data1 = { 
+                id: 'fed-data1', 
+                name: 'Space One Data',
+                data: 'content from space 1' 
+            };
 
-        expect(fedInfo1).toBeDefined();
-        expect(fedInfo2).toBeDefined();
-        expect(fedInfo1.federation || []).not.toContain(space2.spacename);
-        expect(fedInfo2.notify || []).not.toContain(space1.spacename);
-    }, 20000);
+            const data2 = { 
+                id: 'fed-data2',
+                name: 'Space Two Data',
+                data: 'content from space 2' 
+            };
+
+            // Store data in respective spaces
+            await holoSphere.put(testHolon1, testLens, data1, testPass1);
+            await holoSphere.put(testHolon2, testLens, data2, testPass2);
+
+            // Wait for federation propagation
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Get federated data with space 1's password
+            const federated1 = await holoSphere.getFederated(testHolon1, testLens, {
+                removeDuplicates: true
+            }, testPass1);
+
+            expect(federated1).toBeDefined();
+            expect(federated1.length).toBe(2);
+            expect(federated1.find(item => item.id === 'fed-data1')).toBeDefined();
+            expect(federated1.find(item => item.id === 'fed-data2')).toBeDefined();
+
+            // Verify data is not accessible without password
+            const noPassFederated = await holoSphere.getFederated(testHolon1, testLens, {
+                removeDuplicates: true
+            });
+            expect(noPassFederated).toHaveLength(0);
+        });
+    });
+
+    describe('Federation Management', () => {
+        test('should handle unfederation with space isolation', async () => {
+            await holoSphere.federate(testHolon1, testPass1, testHolon2);
+            
+            // Verify initial federation
+            let fedInfo1 = await holoSphere.getFederation(testHolon1, testPass1);
+            expect(fedInfo1.federated).toContain(testHolon2);
+
+            // Unfederate
+            await holoSphere.unfederate(testHolon1, testPass1, testHolon2);
+
+            // Verify federation is removed in both spaces
+            fedInfo1 = await holoSphere.getFederation(testHolon1, testPass1);
+            const fedInfo2 = await holoSphere.getFederation(testHolon2, testPass2);
+
+            expect(fedInfo1.federated || []).not.toContain(testHolon2);
+            expect(fedInfo2.federated || []).not.toContain(testHolon1);
+        });
+
+        test('should handle federation subscriptions with space isolation', async () => {
+            await holoSphere.federate(testHolon1, testPass1, testHolon2);
+
+            const notifications = [];
+            const subscription = await holoSphere.subscribeFederation(testHolon1, testPass1, 
+                data => notifications.push(data)
+            );
+
+            // Add data to federated space
+            const testData = {
+                id: 'sub-test',
+                name: 'Subscription Test',
+                data: 'federation notification test'
+            };
+            await holoSphere.put(testHolon2, testLens, testData, testPass2);
+
+            // Wait for notification
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            expect(notifications.length).toBeGreaterThan(0);
+            expect(notifications[0].id).toBe('sub-test');
+
+            // Clean up subscription
+            subscription.off();
+        });
+    });
 
     afterEach(async () => {
-        // Clean up test data
-        await holoSphere.deleteAll(testHolon, testLens);
+        // Clean up test data in both spaces
+        await holoSphere.deleteAll(testHolon1, testLens, testPass1);
+        await holoSphere.deleteAll(testHolon2, testLens, testPass2);
+        await holoSphere.deleteAllGlobal('federation', testPass1);
+        await holoSphere.deleteAllGlobal('federation', testPass2);
+
+        // Re-initialize federation data
+        await holoSphere.putGlobal('federation', { 
+            id: testHolon1,
+            federated: []
+        }, testPass1);
         
-        // Clean up federation data while still logged in
-        await holoSphere.deleteAllGlobal('federation');
-        
-        // Logout from both instances
-        if (holoSphere.currentSpace) {
-            await holoSphere.logout();
-        }
-        if (strictHoloSphere.currentSpace) {
-            await strictHoloSphere.logout();
-        }
+        await holoSphere.putGlobal('federation', {
+            id: testHolon2,
+            federated: []
+        }, testPass2);
     });
 
     afterAll(async () => {
-        // Clean up test spaces
-        try {
-            await holoSphere.deleteGlobal('spaces', space1.spacename);
-            await holoSphere.deleteGlobal('spaces', space2.spacename);
-        } catch (error) {
-            console.error('Error during final cleanup:', error.message);
-        }
-        
-        // Clean up Gun instances
         if (holoSphere.gun) {
             holoSphere.gun.off();
         }

@@ -11,24 +11,11 @@ describe('AI Operations', () => {
     const testAppName = 'test-ai-app';
     const testHolon = h3.latLngToCell(40.7128, -74.0060, 7);
     const testLens = 'aiTestLens';
-    const testCredentials = {
-        spacename: 'aitest@example.com',
-        password: 'AiTest123!'
-    };
+    const testPassword = 'AiTest123!';
 
     beforeAll(async () => {
         holoSphere = new HoloSphere(testAppName, false, process.env.OPENAI_API_KEY);
         
-        // Clean up any existing test space and data
-        try {
-            await holoSphere.deleteAllGlobal('federation');
-            await holoSphere.deleteGlobal('spaces', testCredentials.spacename);
-        } catch (error) {
-            console.log('Cleanup error (can be ignored):', error);
-        }
-        // Create and login to test space
-        await holoSphere.createSpace(testCredentials.spacename, testCredentials.password);
-        await holoSphere.login(testCredentials.spacename, testCredentials.password);
         // Set up base schema for compute tests
         const baseSchema = {
             type: 'object',
@@ -37,13 +24,14 @@ describe('AI Operations', () => {
                 content: { type: 'string' },
                 value: { type: 'number' },
                 tags: { type: 'array', items: { type: 'string' } },
-                timestamp: { type: 'number' }
+                timestamp: { type: 'number' },
+                summary: { type: 'string' }
             },
-            required: ['id']
+            required: ['id', 'content']
         };
         
         await holoSphere.setSchema(testLens, baseSchema);
-    }, 30000);
+    });
 
     describe('Summarize Operations', () => {
         test('should generate summary from text content', async () => {
@@ -55,17 +43,16 @@ describe('AI Operations', () => {
             `;
 
             const summary = await holoSphere.summarize(testContent);
-            console.log("summary",summary);
             expect(summary).toBeDefined();
             expect(typeof summary).toBe('string');
             expect(summary.length).toBeGreaterThan(0);
-        }, 15000);
+        });
 
         test('should handle empty content gracefully', async () => {
             const summary = await holoSphere.summarize('');
             expect(summary).toBeDefined();
             expect(typeof summary).toBe('string');
-        }, 10000);
+        });
 
         test('should handle long content', async () => {
             const longContent = Array(10).fill(
@@ -78,7 +65,7 @@ describe('AI Operations', () => {
             expect(summary).toBeDefined();
             expect(typeof summary).toBe('string');
             expect(summary.length).toBeLessThan(longContent.length);
-        }, 20000);
+        });
 
         test('should fail gracefully without API key', async () => {
             const noKeyHoloSphere = new HoloSphere(testAppName, false);
@@ -89,14 +76,8 @@ describe('AI Operations', () => {
 
     describe('Compute Operations', () => {
         beforeEach(async () => {
-            // Ensure we're logged in
-            if (!holoSphere.currentSpace) {
-                await holoSphere.login(testCredentials.spacename, testCredentials.password);
-            }
-            
-            // Clean up any existing test data
-            await holoSphere.deleteAll(testHolon, testLens);
-        }, 15000);
+            await holoSphere.deleteAll(testHolon, testLens, testPassword);
+        });
 
         test('should compute summaries for nested holons', async () => {
             const childHolon = h3.cellToChildren(testHolon, 8)[0];
@@ -106,77 +87,75 @@ describe('AI Operations', () => {
                 timestamp: Date.now()
             };
 
-            // Put data in child holon
-            await holoSphere.put(childHolon, testLens, testData);
+            await holoSphere.put(childHolon, testLens, testData, testPassword);
 
-            // Compute summaries
             const result = await holoSphere.compute(childHolon, testLens, {
                 operation: 'summarize',
                 fields: ['content'],
                 targetField: 'summary'
-            });
+            }, testPassword);
 
             expect(result).toBeDefined();
             expect(result.id).toMatch(/_summarize$/);
             expect(result.summary).toBeDefined();
             expect(typeof result.summary).toBe('string');
-        }, 60000);
+        });
 
         test('should compute aggregations for numeric fields', async () => {
             const childHolon = h3.cellToChildren(testHolon, 8)[0];
             const testData = [
-                { id: 'test1', value: 10, timestamp: Date.now() },
-                { id: 'test2', value: 20, timestamp: Date.now() }
+                { id: 'test1', content: 'test content 1', value: 10, timestamp: Date.now() },
+                { id: 'test2', content: 'test content 2', value: 20, timestamp: Date.now() }
             ];
 
-            // Put test data
-            await Promise.all(testData.map(data => holoSphere.put(childHolon, testLens, data)));
+            await Promise.all(testData.map(data => 
+                holoSphere.put(childHolon, testLens, data, testPassword)
+            ));
 
-            // Compute aggregation
             const result = await holoSphere.compute(childHolon, testLens, {
                 operation: 'aggregate',
-                fields: ['value']
-            });
+                fields: ['value'],
+                targetField: 'value'
+            }, testPassword);
 
             expect(result).toBeDefined();
             expect(result.id).toMatch(/_aggregate$/);
             expect(result.value).toBe(30);
-        }, 30000);
+        });
 
         test('should compute concatenations for array fields', async () => {
             const childHolon = h3.cellToChildren(testHolon, 8)[0];
             const testData = [
-                { id: 'test1', tags: ['tag1', 'tag2'], timestamp: Date.now() },
-                { id: 'test2', tags: ['tag2', 'tag3'], timestamp: Date.now() }
+                { id: 'test1', content: 'test content 1', tags: ['tag1', 'tag2'], timestamp: Date.now() },
+                { id: 'test2', content: 'test content 2', tags: ['tag2', 'tag3'], timestamp: Date.now() }
             ];
 
-            // Put test data
-            await Promise.all(testData.map(data => holoSphere.put(childHolon, testLens, data)));
+            await Promise.all(testData.map(data => 
+                holoSphere.put(childHolon, testLens, data, testPassword)
+            ));
 
-            // Compute concatenation
             const result = await holoSphere.compute(childHolon, testLens, {
                 operation: 'concatenate',
-                fields: ['tags']
-            });
+                fields: ['tags'],
+                targetField: 'tags'
+            }, testPassword);
 
             expect(result).toBeDefined();
             expect(result.id).toMatch(/_concatenate$/);
             expect(result.tags).toEqual(['tag1', 'tag2', 'tag3']);
-        }, 30000);
-
+        });
 
         test('should handle empty holons', async () => {
-            // Clean up any existing data first
-            await holoSphere.deleteAll(testHolon, testLens);
+            await holoSphere.deleteAll(testHolon, testLens, testPassword);
        
-            // Try to compute on empty holon
             const result = await holoSphere.compute(testHolon, testLens, {
                 operation: 'summarize',
-                fields: ['content']
-            });
+                fields: ['content'],
+                targetField: 'summary'
+            }, testPassword);
     
             expect(result).toBeNull();
-        }, 30000);
+        });
 
         test('should compute hierarchy across multiple levels', async () => {
             const childHolon = h3.cellToChildren(testHolon, 9)[0];
@@ -188,15 +167,13 @@ describe('AI Operations', () => {
                 timestamp: Date.now()
             };
 
-            // Put test data
-            await holoSphere.put(childHolon, testLens, testData);
+            await holoSphere.put(childHolon, testLens, testData, testPassword);
       
-            // Compute hierarchy
             const results = await holoSphere.computeHierarchy(childHolon, testLens, {
                 operation: 'summarize',
                 fields: ['content'],
                 targetField: 'summary'
-            }, 3);
+            }, testPassword, 3);
          
             expect(Array.isArray(results)).toBe(true);
             expect(results.length).toBeGreaterThan(0);
@@ -205,29 +182,19 @@ describe('AI Operations', () => {
                 expect(result.summary).toBeDefined();
                 expect(typeof result.summary).toBe('string');
             });
-        }, 60000);
+        });
     });
 
     afterEach(async () => {
-        // Clean up test data
-        if (holoSphere.currentSpace) {
-            await holoSphere.deleteAll(testHolon, testLens);
-        }
-    }, 15000);
+        await holoSphere.deleteAll(testHolon, testLens, testPassword);
+    });
 
     afterAll(async () => {
-        // Clean up test space and data
-        try {
-            await holoSphere.deleteAll(testHolon, testLens);
-            await holoSphere.deleteGlobal('spaces', testCredentials.spacename);
-            await holoSphere.deleteAllGlobal('federation');
-        } catch (error) {
-            console.log('Cleanup error (can be ignored):', error);
-        }
+        await holoSphere.deleteAll(testHolon, testLens, testPassword);
+        await holoSphere.deleteAllGlobal('federation', testPassword);
 
-        // Clean up Gun instance
         if (holoSphere.gun) {
             holoSphere.gun.off();
         }
-    }, 30000);
+    });
 }); 

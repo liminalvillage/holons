@@ -14,7 +14,7 @@ class HoloSphere {
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
     constructor(appname, strict = false, openaikey = null, gunInstance = null) {
-        console.log('HoloSphere v1.1.8'); 
+        console.log('HoloSphere v1.1.5'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -23,14 +23,17 @@ class HoloSphere {
             validateSchema: true // Always validate schemas
         });
 
-        // Use provided Gun instance or create new one
-        this.gun = gunInstance || Gun({
-            peers: ['https://gun.holons.io/gun'],
-            axe: false,
-            // uuid: (content) => { // generate a unique id for each node
-            //     console.log('uuid', content);
-            //     return content;}
-        });
+        // Handle different ways of providing Gun instance or options
+        if (gunInstance && gunInstance.opt) {
+            // If an object with 'opt' property is passed, create a new Gun instance with those options
+            this.gun = Gun(gunInstance.opt);
+        } else {
+            // Use provided Gun instance or create new one with default options
+            this.gun = gunInstance || Gun({
+                peers: ['https://gun.holons.io/gun'],
+                axe: false,
+            });
+        }
 
         // Initialize SEA
         this.sea = SEA;
@@ -41,11 +44,171 @@ class HoloSphere {
             });
         }
 
-        // Add currentSpace property to track logged in space
-        this.currentSpace = null;
+        // Initialize spaces cache
+        this.spaces = {};
 
         // Initialize subscriptions
         this.subscriptions = {};
+    }
+
+    /**
+     * Gets or creates a space for holon data with improved security and reliability
+     * @private
+     */
+    async _getHolonSpace(holon, password = null) {
+        if (password) {
+            try {
+                const user = this.gun.user();
+                
+                // Add a timeout for authentication operations
+                const authWithTimeout = (operation) => {
+                    return Promise.race([
+                        operation,
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Authentication timeout')), 10000)
+                        )
+                    ]);
+                };
+                
+                try {
+                    // Try to authenticate with timeout
+                    await authWithTimeout(
+                        new Promise((resolve, reject) => {
+                            user.auth(holon, password, (ack) => {
+                                if (ack.err) reject(new Error(ack.err));
+                                else resolve();
+                            });
+                        })
+                    );
+                    console.log(`Authenticated as ${holon}`);
+                } catch (loginError) {
+                    console.log(`Failed to authenticate as ${holon}, attempting to create user`);
+                    // If authentication fails, try to create user and then authenticate
+                    await authWithTimeout(
+                        new Promise((resolve, reject) => {
+                            user.create(holon, password, (ack) => {
+                                if (ack.err) reject(new Error(ack.err));
+                                else {
+                                    user.auth(holon, password, (authAck) => {
+                                        if (authAck.err) reject(new Error(authAck.err));
+                                        else resolve();
+                                    });
+                                }
+                            });
+                        })
+                    );
+                    console.log(`Created and authenticated as ${holon}`);
+                }
+
+                // Get user data with timeout
+                const userData = await authWithTimeout(
+                    new Promise((resolve, reject) => {
+                        let handled = false;
+                        user.once(data => {
+                            if (!handled) {
+                                handled = true;
+                                if (!data || !data.pub) {
+                                    reject(new Error('Invalid user data'));
+                                } else {
+                                    resolve(data);
+                                }
+                            }
+                        });
+                    })
+                );
+
+                // Add a reference to the authenticated user for later use
+                return {
+                    ...userData,
+                    user: user  // Keep reference to the authenticated user
+                };
+            } catch (error) {
+                console.error('Failed to login or create user space:', error);
+                throw error;
+            }
+        }
+        else {
+            // For public spaces, just return the gun instance
+            return this.gun;
+        }
+    }
+
+    /**
+     * Gets or creates a space for global data with improved security and reliability
+     * @private
+     */
+    async _getGlobalSpace(tableName, password = null) {
+        if (password) {
+            try {
+                const user = this.gun.user();
+                
+                // Add a timeout for authentication operations
+                const authWithTimeout = (operation) => {
+                    return Promise.race([
+                        operation,
+                        new Promise((_, reject) => 
+                            setTimeout(() => reject(new Error('Authentication timeout')), 10000)
+                        )
+                    ]);
+                };
+                
+                try {
+                    // Try to authenticate with timeout
+                    await authWithTimeout(
+                        new Promise((resolve, reject) => {
+                            user.auth(tableName, password, (ack) => {
+                                if (ack.err) reject(new Error(ack.err));
+                                else resolve();
+                            });
+                        })
+                    );
+                } catch (loginError) {
+                    // If authentication fails, try to create user and then authenticate
+                    await authWithTimeout(
+                        new Promise((resolve, reject) => {
+                            user.create(tableName, password, (ack) => {
+                                if (ack.err) reject(new Error(ack.err));
+                                else {
+                                    user.auth(tableName, password, (authAck) => {
+                                        if (authAck.err) reject(new Error(authAck.err));
+                                        else resolve();
+                                    });
+                                }
+                            });
+                        })
+                    );
+                }
+
+                // Get user data with timeout
+                const userData = await authWithTimeout(
+                    new Promise((resolve, reject) => {
+                        let handled = false;
+                        user.once(data => {
+                            if (!handled) {
+                                handled = true;
+                                if (!data || !data.pub) {
+                                    reject(new Error('Invalid user data'));
+                                } else {
+                                    resolve(data);
+                                }
+                            }
+                        });
+                    })
+                );
+
+                // Add a reference to the authenticated user for later use
+                return {
+                    ...userData,
+                    user: user  // Keep reference to the authenticated user
+                };
+            } catch (error) {
+                console.error('Failed to login or create global space:', error);
+                throw error;
+            }
+        }
+        
+        // For public global space, just return the gun instance
+        return this.gun;
     }
 
     // ================================ SCHEMA FUNCTIONS ================================
@@ -137,91 +300,147 @@ class HoloSphere {
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens under which to store the content.
      * @param {object} data - The data to store.
+     * @param {string} [password] - Optional password for private space.
      * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
      */
-    async put(holon, lens, data) {
-        // Check authentication for data operations
-        if (!this.currentSpace) {
-            throw new Error('Unauthorized to modify this data');
-        }
-        this._checkSession();
-
-        // If updating existing data, check ownership
-        if (data.id) {
-            const existing = await this.get(holon, lens, data.id);
-            if (existing && existing.owner &&
-                existing.owner !== this.currentSpace.alias &&
-                !existing.federation) { // Skip ownership check for federated data
-                throw new Error('Unauthorized to modify this data');
-            }
-        }
-
-        // Add owner and federation information to data
-        const dataWithMeta = {
-            ...data,
-            owner: this.currentSpace.alias,
-            federation: {
-                origin: this.currentSpace.alias,
-                timestamp: Date.now()
-            }
-        };
-
-        if (!holon || !lens || !dataWithMeta) {
+    async put(holon, lens, data, password = null) {
+        if (!holon || !lens || !data) {
             throw new Error('put: Missing required parameters');
         }
 
-        if (!dataWithMeta.id) {
-            dataWithMeta.id = this.generateId();
+        if (!data.id) {
+            data.id = this.generateId();
         }
 
         // Get and validate schema first
         const schema = await this.getSchema(lens);
         if (schema) {
-            // Deep clone data to avoid modifying the original
-            const dataToValidate = JSON.parse(JSON.stringify(dataWithMeta));
+            const dataToValidate = JSON.parse(JSON.stringify(data));
             const valid = this.validator.validate(schema, dataToValidate);
 
             if (!valid) {
                 const errorMsg = `Schema validation failed: ${JSON.stringify(this.validator.errors)}`;
-                // Always throw on schema validation failure, regardless of strict mode
                 throw new Error(errorMsg);
             }
         } else if (this.strict) {
             throw new Error('Schema required in strict mode');
         }
 
-        // Store data in current space
-        const putResult = await new Promise((resolve, reject) => {
-            try {
-                const payload = JSON.stringify(dataWithMeta);
-                this.gun.get(this.appname)
-                    .get(holon)
-                    .get(lens)
-                    .get(dataWithMeta.id)
-                    .put(payload, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            // Notify subscribers after successful put
-                            this.notifySubscribers({
-                                holon,
-                                lens,
-                                ...dataWithMeta
-                            });
-                            resolve(true);
-                        }
-                    });
-            } catch (error) {
-                reject(error);
-            }
-        });
+        try {
+            const space = await this._getHolonSpace(holon, password);
+            
+            return await new Promise((resolve, reject) => {
+                try {
+                    const payload = JSON.stringify(data);
+                    
+                    if (password) {
+                        // For private data, use the authenticated user's space
+                        // This ensures only someone with the password can modify it
+                        space.user.get('private').get(lens).get(data.id).put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                this.notifySubscribers({
+                                    holon,
+                                    lens,
+                                    ...data
+                                });
+                                resolve(true);
+                            }
+                        });
+                    } else {
+                        // For public data, use the regular path
+                        this.gun.get(this.appname).get(holon).get(lens).get(data.id).put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                this.notifySubscribers({
+                                    holon,
+                                    lens,
+                                    ...data
+                                });
+                                resolve(true);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        } catch (error) {
+            console.error('Error in put:', error);
+            throw error;
+        }
+    }
 
-        // If successful, propagate to federated spaces
-        if (putResult) {
-            await this._propagateToFederation(holon, lens, dataWithMeta);
+    /**
+     * Retrieves content from the specified holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens from which to retrieve content.
+     * @param {string} key - The specific key to retrieve.
+     * @param {string} [password] - Optional password for private space.
+     * @returns {Promise<object|null>} - The retrieved content or null if not found.
+     */
+    async get(holon, lens, key, password = null) {
+        if (!holon || !lens || !key) {
+            console.error('get: Missing required parameters:', { holon, lens, key });
+            return null;
         }
 
-        return putResult;
+        const schema = await this.getSchema(lens);
+
+        try {
+            const space = await this._getHolonSpace(holon, password);
+
+            const result = await new Promise((resolve) => {
+                let timeout = setTimeout(() => {
+                    console.warn('get: Operation timed out');
+                    resolve(null);
+                }, 5000);
+
+                const handleData = async (data) => {
+                    clearTimeout(timeout);
+
+                    if (!data) {
+                        resolve(null);
+                        return;
+                    }
+
+                    try {
+                        const parsed = await this.parse(data);
+
+                        if (schema) {
+                            const valid = this.validator.validate(schema, parsed);
+                            if (!valid) {
+                                console.error('get: Invalid data according to schema:', this.validator.errors);
+                                if (this.strict) {
+                                    resolve(null);
+                                    return;
+                                }
+                            }
+                        }
+
+                        resolve(parsed);
+                    } catch (error) {
+                        console.error('Error parsing data:', error);
+                        resolve(null);
+                    }
+                };
+
+                if (password) {
+                    // For private data, use the authenticated user's space
+                    space.user.get('private').get(lens).get(key).once(handleData);
+                } else {
+                    // For public data, use the regular path
+                    this.gun.get(this.appname).get(holon).get(lens).get(key).once(handleData);
+                }
+            });
+
+            return result;
+        } catch (error) {
+            console.error('Error in get:', error);
+            return null;
+        }
     }
 
     /**
@@ -283,12 +502,13 @@ class HoloSphere {
     }
 
     /**
-     * Retrieves content from the specified holon and lens.
+     * Retrieves all content from the specified holon and lens.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens from which to retrieve content.
+     * @param {string} [password] - Optional password for private space.
      * @returns {Promise<Array<object>>} - The retrieved content.
      */
-    async getAll(holon, lens) {
+    async getAll(holon, lens, password = null) {
         if (!holon || !lens) {
             throw new Error('getAll: Missing required parameters');
         }
@@ -298,137 +518,44 @@ class HoloSphere {
             throw new Error('getAll: Schema required in strict mode');
         }
 
-        // Get local data
-        const localData = await this._getAllLocal(holon, lens, schema);
-
-        // If authenticated, get federated data
-        let federatedData = [];
-        if (this.currentSpace) {
-            federatedData = await this._getAllFederated(holon, lens, schema);
-        }
-
-        // Combine and deduplicate data based on ID
-        const combined = new Map();
-
-        // Add local data first
-        localData.forEach(item => {
-            if (item.id) {
-                combined.set(item.id, item);
-            }
-        });
-
-        // Add federated data, potentially overwriting local data if newer
-        federatedData.forEach(item => {
-            if (item.id) {
-                const existing = combined.get(item.id);
-                if (!existing ||
-                    (item.federation?.timestamp > (existing.federation?.timestamp || 0))) {
-                    combined.set(item.id, item);
-                }
-            }
-        });
-
-        return Array.from(combined.values());
-    }
-
-    /**
-     * Gets data from federated spaces
-     * @private
-     * @param {string} holon - The holon identifier
-     * @param {string} lens - The lens identifier
-     * @param {string} key - The key to get
-     * @returns {Promise<object|null>} - The federated data or null if not found
-     */
-    async _getFederatedData(holon, lens, key) {
         try {
-            const fedInfo = await this.getFederation(this.currentSpace.alias);
-            if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
-                return null;
-            }
+            const space = await this._getHolonSpace(holon, password);
 
-            // Try each federated space
-            for (const spaceId of fedInfo.federation) {
-                const result = await new Promise((resolve) => {
-                    this.gun.get(this.appname)
-                        .get(spaceId)
-                        .get(lens)
-                        .get(key)
-                        .once(async (data) => {
-                            if (!data) {
-                                resolve(null);
-                                return;
+            return new Promise((resolve) => {
+                const output = new Map();
+                let isResolved = false;
+
+                const hardTimeout = setTimeout(() => {
+                    cleanup();
+                    resolve(Array.from(output.values()));
+                }, 5000);
+
+                const cleanup = () => {
+                    clearTimeout(hardTimeout);
+                    isResolved = true;
+                };
+
+                const processData = async (data, key) => {
+                    if (!data || key === '_') return;
+
+                    try {
+                        const parsed = await this.parse(data);
+                        if (!parsed || !parsed.id) return;
+
+                        if (schema) {
+                            const valid = this.validator.validate(schema, parsed);
+                            if (valid || !this.strict) {
+                                output.set(parsed.id, parsed);
                             }
-                            try {
-                                const parsed = await this.parse(data);
-                                resolve(parsed);
-                            } catch (error) {
-                                console.warn(`Error parsing federated data from ${spaceId}:`, error);
-                                resolve(null);
-                            }
-                        });
-                });
-
-                if (result) {
-                    return result;
-                }
-            }
-        } catch (error) {
-            console.warn('Federation get error:', error);
-        }
-        return null;
-    }
-
-    /**
-     * Gets all data from local space
-     * @private
-     * @param {string} holon - The holon identifier
-     * @param {string} lens - The lens identifier
-     * @param {object} schema - The schema to validate against
-     * @returns {Promise<Array>} - Array of local data
-     */
-    async _getAllLocal(holon, lens, schema) {
-        return new Promise((resolve) => {
-            const output = new Map();
-            let isResolved = false;
-            let listener = null;
-
-            const hardTimeout = setTimeout(() => {
-                cleanup();
-                resolve(Array.from(output.values()));
-            }, 5000);
-
-            const cleanup = () => {
-                if (listener) {
-                    listener.off();
-                }
-                clearTimeout(hardTimeout);
-                isResolved = true;
-            };
-
-            const processData = async (data, key) => {
-                if (!data || key === '_') return;
-
-                try {
-                    const parsed = await this.parse(data);
-                    if (!parsed || !parsed.id) return;
-
-                    if (schema) {
-                        const valid = this.validator.validate(schema, parsed);
-                        if (valid || !this.strict) {
+                        } else {
                             output.set(parsed.id, parsed);
                         }
-                    } else {
-                        output.set(parsed.id, parsed);
+                    } catch (error) {
+                        console.error('Error processing data:', error);
                     }
-                } catch (error) {
-                    console.error('Error processing data:', error);
-                }
-            };
+                };
 
-            this.gun.get(this.appname)
-                .get(holon)
-                .get(lens)
-                .once(async (data) => {
+                const handleData = async (data) => {
                     if (!data) {
                         cleanup();
                         resolve([]);
@@ -450,69 +577,18 @@ class HoloSphere {
                         cleanup();
                         resolve([]);
                     }
-                });
-        });
-    }
+                };
 
-    /**
-     * Gets all data from federated spaces
-     * @private
-     * @param {string} holon - The holon identifier
-     * @param {string} lens - The lens identifier
-     * @param {object} schema - The schema to validate against
-     * @returns {Promise<Array>} - Array of federated data
-     */
-    async _getAllFederated(holon, lens, schema) {
-        try {
-            const fedInfo = await this.getFederation(this.currentSpace.alias);
-            if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
-                return [];
-            }
-
-            const federatedData = new Map();
-
-            // Get data from each federated space
-            const fedPromises = fedInfo.federation.map(spaceId =>
-                new Promise((resolve) => {
-                    this.gun.get(this.appname)
-                        .get(spaceId)
-                        .get(lens)
-                        .once(async (data) => {
-                            if (!data) {
-                                resolve();
-                                return;
-                            }
-
-                            const processPromises = Object.keys(data)
-                                .filter(key => key !== '_')
-                                .map(async key => {
-                                    try {
-                                        const parsed = await this.parse(data[key]);
-                                        if (parsed && parsed.id) {
-                                            if (schema) {
-                                                const valid = this.validator.validate(schema, parsed);
-                                                if (valid || !this.strict) {
-                                                    federatedData.set(parsed.id, parsed);
-                                                }
-                                            } else {
-                                                federatedData.set(parsed.id, parsed);
-                                            }
-                                        }
-                                    } catch (error) {
-                                        console.warn(`Error processing federated data from ${spaceId}:`, error);
-                                    }
-                                });
-
-                            await Promise.all(processPromises);
-                            resolve();
-                        });
-                })
-            );
-
-            await Promise.all(fedPromises);
-            return Array.from(federatedData.values());
+                if (password) {
+                    // For private data, use the authenticated user's space
+                    space.user.get('private').get(lens).once(handleData);
+                } else {
+                    // For public data, use the regular path
+                    this.gun.get(this.appname).get(holon).get(lens).once(handleData);
+                }
+            });
         } catch (error) {
-            console.warn('Federation getAll error:', error);
+            console.error('Error in getAll:', error);
             return [];
         }
     }
@@ -576,185 +652,115 @@ class HoloSphere {
     }
 
     /**
-     * Retrieves a specific key from the specified holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to retrieve the key.
-     * @param {string} key - The specific key to retrieve.
-     * @returns {Promise<object|null>} - The retrieved content or null if not found.
-     */
-    async get(holon, lens, key) {
-        if (!holon || !lens || !key) {
-            console.error('get: Missing required parameters:', { holon, lens, key });
-            return null;
-        }
-
-        // Get schema for validation
-        const schema = await this.getSchema(lens);
-
-        // First try to get from current space
-        const localResult = await new Promise((resolve) => {
-            let timeout = setTimeout(() => {
-                console.warn('get: Operation timed out');
-                resolve(null);
-            }, 5000);
-
-            this.gun.get(this.appname)
-                .get(holon)
-                .get(lens)
-                .get(key)
-                .once(async (data) => {
-                    clearTimeout(timeout);
-
-                    if (!data) {
-                        resolve(null);
-                        return;
-                    }
-
-                    try {
-                        const parsed = await this.parse(data);
-
-                        // Validate against schema if one exists
-                        if (schema) {
-                            const valid = this.validator.validate(schema, parsed);
-                            if (!valid) {
-                                console.error('get: Invalid data according to schema:', this.validator.errors);
-                                if (this.strict) {
-                                    resolve(null);
-                                    return;
-                                }
-                            }
-                        }
-
-                        // Check if user has access - only allow if:
-                        // 1. No owner (public data)
-                        // 2. User is the owner
-                        // 3. User is in shared list
-                        // 4. Data is from federation
-                        if (parsed.owner &&
-                            this.currentSpace?.alias !== parsed.owner &&
-                            (!parsed.shared || !parsed.shared.includes(this.currentSpace?.alias)) &&
-                            (!parsed.federation || !parsed.federation.origin)) {
-                            resolve(null);
-                            return;
-                        }
-
-                        resolve(parsed);
-                    } catch (error) {
-                        console.error('Error parsing data:', error);
-                        resolve(null);
-                    }
-                });
-        });
-
-        // If found locally, return it
-        if (localResult) {
-            return localResult;
-        }
-
-        // If not found locally and we're authenticated, try federated spaces
-        if (this.currentSpace) {
-            const fedResult = await this._getFederatedData(holon, lens, key);
-            if (fedResult) {
-                return fedResult;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Deletes a specific key from a given holon and lens.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens from which to delete the key.
      * @param {string} key - The specific key to delete.
+     * @param {string} [password] - Optional password for private space.
+     * @returns {Promise<boolean>} - Returns true if successful
      */
-    async delete(holon, lens, key) {
+    async delete(holon, lens, key, password = null) {
         if (!holon || !lens || !key) {
             throw new Error('delete: Missing required parameters');
         }
 
-        if (!this.currentSpace) {
-            throw new Error('Unauthorized to delete this data');
-        }
-        this._checkSession();
+        try {
+            // Get the appropriate space
+            const space = await this._getHolonSpace(holon, password);
 
-        // Check ownership before delete
-        const data = await this.get(holon, lens, key);
-        if (!data) {
-            return true; // Nothing to delete
-        }
-
-        if (data.owner && data.owner !== this.currentSpace.alias) {
-            throw new Error('Unauthorized to delete this data');
-        }
-
-        return new Promise((resolve, reject) => {
-            try {
-                this.gun.get(this.appname)
-                    .get(holon)
-                    .get(lens)
-                    .get(key)
-                    .put(null, ack => {
+            // Delete data from space
+            return new Promise((resolve, reject) => {
+                if (password) {
+                    // For private data, use the authenticated user's space
+                    space.user.get('private').get(lens).get(key).put(null, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
                             resolve(true);
                         }
                     });
-            } catch (error) {
-                reject(error);
-            }
-        });
+                } else {
+                    // For public data, use the regular path
+                    this.gun.get(this.appname).get(holon).get(lens).get(key).put(null, ack => {
+                        if (ack.err) {
+                            reject(new Error(ack.err));
+                        } else {
+                            resolve(true);
+                        }
+                    });
+                }
+            });
+        } catch (error) {
+            console.error('Error in delete:', error);
+            throw error;
+        }
     }
 
     /**
      * Deletes all keys from a given holon and lens.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens from which to delete all keys.
-     * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
+     * @param {string} [password] - Optional password for private space.
+     * @returns {Promise<boolean>} - Returns true if successful
      */
-    async deleteAll(holon, lens) {
+    async deleteAll(holon, lens, password = null) {
         if (!holon || !lens) {
             console.error('deleteAll: Missing holon or lens parameter');
             return false;
         }
 
-        return new Promise((resolve) => {
-            let deletionPromises = [];
+        try {
+            // Get the appropriate space
+            const space = await this._getHolonSpace(holon, password);
 
-            // First get all the data to find keys to delete
-            this.gun.get(this.appname).get(holon).get(lens).once((data) => {
-                if (!data) {
-                    resolve(true); // Nothing to delete
-                    return;
-                }
+            return new Promise((resolve) => {
+                let deletionPromises = [];
+                
+                const dataPath = password ? 
+                    space.user.get('private').get(lens) :
+                    this.gun.get(this.appname).get(holon).get(lens);
 
-                // Get all keys except Gun's metadata key '_'
-                const keys = Object.keys(data).filter(key => key !== '_');
+                // First get all the data to find keys to delete
+                dataPath.once((data) => {
+                    if (!data) {
+                        resolve(true); // Nothing to delete
+                        return;
+                    }
 
-                // Create deletion promises for each key
-                keys.forEach(key => {
-                    deletionPromises.push(
-                        new Promise((resolveDelete) => {
-                            this.gun.get(this.appname).get(holon).get(lens).get(key).put(null, ack => {
-                                resolveDelete(!!ack.ok); // Convert to boolean
-                            });
-                        })
-                    );
-                });
+                    // Get all keys except Gun's metadata key '_'
+                    const keys = Object.keys(data).filter(key => key !== '_');
 
-                // Wait for all deletions to complete
-                Promise.all(deletionPromises)
-                    .then(results => {
-                        const allSuccessful = results.every(result => result === true);
-                        resolve(allSuccessful);
-                    })
-                    .catch(error => {
-                        console.error('Error in deleteAll:', error);
-                        resolve(false);
+                    // Create deletion promises for each key
+                    keys.forEach(key => {
+                        deletionPromises.push(
+                            new Promise((resolveDelete) => {
+                                const deletePath = password ? 
+                                    space.user.get('private').get(lens).get(key) :
+                                    this.gun.get(this.appname).get(holon).get(lens).get(key);
+
+                                deletePath.put(null, ack => {
+                                    resolveDelete(!!ack.ok); // Convert to boolean
+                                });
+                            })
+                        );
                     });
+
+                    // Wait for all deletions to complete
+                    Promise.all(deletionPromises)
+                        .then(results => {
+                            const allSuccessful = results.every(result => result === true);
+                            resolve(allSuccessful);
+                        })
+                        .catch(error => {
+                            console.error('Error in deleteAll:', error);
+                            resolve(false);
+                        });
+                });
             });
-        });
+        } catch (error) {
+            console.error('Error in deleteAll:', error);
+            return false;
+        }
     }
 
     // ================================ NODE FUNCTIONS ================================
@@ -871,223 +877,301 @@ class HoloSphere {
      * Stores data in a global (non-holon-specific) table.
      * @param {string} tableName - The table name to store data in.
      * @param {object} data - The data to store. If it has an 'id' field, it will be used as the key.
+     * @param {string} [password] - Optional password for private space.
      * @returns {Promise<void>}
      */
-    async putGlobal(tableName, data) {
-        return new Promise((resolve, reject) => {
-            try {
-                if (!tableName || !data) {
-                    throw new Error('Table name and data are required');
-                }
-
-                if (data.id) {
-                    this.gun.get(this.appname).get(tableName).get(data.id).put(JSON.stringify(data), ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve();
-                        }
-                    });
-                } else {
-                    this.gun.get(this.appname).get(tableName).put(JSON.stringify(data), ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve();
-                        }
-                    });
-                }
-            } catch (error) {
-                reject(error);
+    async putGlobal(tableName, data, password = null) {
+        try {
+            if (!tableName || !data) {
+                throw new Error('Table name and data are required');
             }
-        });
+
+            // Get the appropriate space
+            const space = await this._getGlobalSpace(tableName, password);
+
+            return new Promise((resolve, reject) => {
+                const payload = JSON.stringify(data);
+                
+                if (password) {
+                    // For private data, use the authenticated user's space
+                    const path = space.user.get('private').get(tableName);
+                    
+                    if (data.id) {
+                        path.get(data.id).put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                resolve();
+                            }
+                        });
+                    } else {
+                        path.put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                resolve();
+                            }
+                        });
+                    }
+                } else {
+                    // For public data, use the regular path
+                    const path = this.gun.get(this.appname).get(tableName);
+                    
+                    if (data.id) {
+                        path.get(data.id).put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                resolve();
+                            }
+                        });
+                    } else {
+                        path.put(payload, ack => {
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                resolve();
+                            }
+                        });
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error in putGlobal:', error);
+            throw error;
+        }
     }
 
     /**
-    * Retrieves a specific key from a global table.
-    * @param {string} tableName - The table name to retrieve from.
-    * @param {string} key - The key to retrieve.
-    * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
-    */
-    async getGlobal(tableName, key) {
-        return new Promise((resolve) => {
-            this.gun.get(this.appname).get(tableName).get(key).once((data) => {
-                if (!data) {
-                    resolve(null);
-                    return;
-                }
-                try {
-                    const parsed = this.parse(data);
-                    resolve(parsed);
-                } catch (e) {
-                    resolve(null);
+     * Retrieves a specific key from a global table.
+     * @param {string} tableName - The table name to retrieve from.
+     * @param {string} key - The key to retrieve.
+     * @param {string} [password] - Optional password for private space.
+     * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
+     */
+    async getGlobal(tableName, key, password = null) {
+        try {
+            // Get the appropriate space
+            const space = await this._getGlobalSpace(tableName, password);
+
+            return new Promise((resolve) => {
+                const handleData = (data) => {
+                    if (!data) {
+                        resolve(null);
+                        return;
+                    }
+                    try {
+                        const parsed = this.parse(data);
+                        resolve(parsed);
+                    } catch (e) {
+                        resolve(null);
+                    }
+                };
+                
+                if (password) {
+                    // For private data, use the authenticated user's space
+                    space.user.get('private').get(tableName).get(key).once(handleData);
+                } else {
+                    // For public data, use the regular path
+                    this.gun.get(this.appname).get(tableName).get(key).once(handleData);
                 }
             });
-        });
+        } catch (error) {
+            console.error('Error in getGlobal:', error);
+            return null;
+        }
     }
-
-
 
     /**
      * Retrieves all data from a global table.
      * @param {string} tableName - The table name to retrieve data from.
-     * @returns {Promise<object|null>} - The parsed data from the table or null if not found.
+     * @param {string} [password] - Optional password for private space.
+     * @returns {Promise<Array<object>>} - The parsed data from the table as an array.
      */
-    async getAllGlobal(tableName) {
+    async getAllGlobal(tableName, password = null) {
         if (!tableName) {
             throw new Error('getAllGlobal: Missing table name parameter');
         }
 
-        return new Promise((resolve) => {
-            let output = [];
-            let isResolved = false;
-            let timeout = setTimeout(() => {
-                if (!isResolved) {
-                    isResolved = true;
-                    resolve(output);
-                }
-            }, 5000);
+        try {
+            // Get the appropriate space
+            const space = await this._getGlobalSpace(tableName, password);
 
-            this.gun.get(this.appname).get(tableName).once(async (data) => {
-                if (!data) {
-                    clearTimeout(timeout);
-                    isResolved = true;
-                    resolve([]);
-                    return;
-                }
+            return new Promise((resolve) => {
+                let output = [];
+                let isResolved = false;
+                let timeout = setTimeout(() => {
+                    if (!isResolved) {
+                        isResolved = true;
+                        resolve(output);
+                    }
+                }, 5000);
 
-                const keys = Object.keys(data).filter(key => key !== '_');
-                const promises = keys.map(key =>
-                    new Promise(async (resolveItem) => {
-                        const itemData = await new Promise(resolveData => {
-                            this.gun.get(this.appname).get(tableName).get(key).once(resolveData);
-                        });
+                const handleData = async (data) => {
+                    if (!data) {
+                        clearTimeout(timeout);
+                        isResolved = true;
+                        resolve([]);
+                        return;
+                    }
 
-                        if (itemData) {
-                            try {
-                                const parsed = await this.parse(itemData);
-                                if (parsed) output.push(parsed);
-                            } catch (error) {
-                                console.error('Error parsing data:', error);
+                    const keys = Object.keys(data).filter(key => key !== '_');
+                    const promises = keys.map(key =>
+                        new Promise(async (resolveItem) => {
+                            const itemPath = password ? 
+                                space.user.get('private').get(tableName).get(key) :
+                                this.gun.get(this.appname).get(tableName).get(key);
+
+                            const itemData = await new Promise(resolveData => {
+                                itemPath.once(resolveData);
+                            });
+
+                            if (itemData) {
+                                try {
+                                    const parsed = await this.parse(itemData);
+                                    if (parsed) output.push(parsed);
+                                } catch (error) {
+                                    console.error('Error parsing data:', error);
+                                }
                             }
-                        }
-                        resolveItem();
-                    })
-                );
+                            resolveItem();
+                        })
+                    );
 
-                await Promise.all(promises);
-                clearTimeout(timeout);
-                if (!isResolved) {
-                    isResolved = true;
-                    resolve(output);
+                    await Promise.all(promises);
+                    clearTimeout(timeout);
+                    if (!isResolved) {
+                        isResolved = true;
+                        resolve(output);
+                    }
+                };
+
+                if (password) {
+                    // For private data, use the authenticated user's space
+                    space.user.get('private').get(tableName).once(handleData);
+                } else {
+                    // For public data, use the regular path
+                    this.gun.get(this.appname).get(tableName).once(handleData);
                 }
             });
-        });
+        } catch (error) {
+            console.error('Error in getAllGlobal:', error);
+            return [];
+        }
     }
+
     /**
      * Deletes a specific key from a global table.
      * @param {string} tableName - The table name to delete from.
      * @param {string} key - The key to delete.
-     * @returns {Promise<void>}
+     * @param {string} [password] - Optional password for private space.
+     * @returns {Promise<boolean>}
      */
-    async deleteGlobal(tableName, key) {
+    async deleteGlobal(tableName, key, password = null) {
         if (!tableName || !key) {
             throw new Error('deleteGlobal: Missing required parameters');
         }
 
-        // Only check authentication for non-spaces tables
-        if (tableName !== 'spaces' && !this.currentSpace) {
-            throw new Error('Unauthorized to delete this data');
-        }
+        try {
+            // Get the appropriate space
+            const space = await this._getGlobalSpace(tableName, password);
 
-        // Skip session check for spaces table
-        if (tableName !== 'spaces') {
-            this._checkSession();
-        }
-
-        return new Promise((resolve, reject) => {
-            try {
-                this.gun.get(this.appname)
-                    .get(tableName)
-                    .get(key)
-                    .put(null, ack => {
+            return new Promise((resolve, reject) => {
+                if (password) {
+                    // For private data, use the authenticated user's space
+                    space.user.get('private').get(tableName).get(key).put(null, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
                             resolve(true);
                         }
                     });
-            } catch (error) {
-                reject(error);
-            }
-        });
+                } else {
+                    // For public data, use the regular path
+                    this.gun.get(this.appname).get(tableName).get(key).put(null, ack => {
+                        if (ack.err) {
+                            reject(new Error(ack.err));
+                        } else {
+                            resolve(true);
+                        }
+                    });
+                }
+            });
+        } catch (error) {
+            console.error('Error in deleteGlobal:', error);
+            throw error;
+        }
     }
 
     /**
      * Deletes an entire global table.
      * @param {string} tableName - The table name to delete.
-     * @returns {Promise<void>}
+     * @param {string} [password] - Optional password for private space.
+     * @returns {Promise<boolean>}
      */
-    async deleteAllGlobal(tableName) {
+    async deleteAllGlobal(tableName, password = null) {
         if (!tableName) {
             throw new Error('deleteAllGlobal: Missing table name parameter');
         }
 
-        // Only check authentication for non-spaces and non-federation tables
-        if (!['spaces', 'federation'].includes(tableName) && !this.currentSpace) {
-            throw new Error('Unauthorized to delete this data');
-        }
+        try {
+            // Get the appropriate space
+            const space = await this._getGlobalSpace(tableName, password);
 
-        // Skip session check for spaces and federation tables
-        if (!['spaces', 'federation'].includes(tableName)) {
-            this._checkSession();
-        }
+            return new Promise((resolve, reject) => {
+                try {
+                    const deletions = new Set();
+                    let timeout = setTimeout(() => {
+                        if (deletions.size === 0) {
+                            resolve(true); // No data to delete
+                        }
+                    }, 5000);
 
-        return new Promise((resolve, reject) => {
-            try {
-                const deletions = new Set();
-                let timeout = setTimeout(() => {
-                    if (deletions.size === 0) {
-                        resolve(true); // No data to delete
-                    }
-                }, 5000);
+                    const dataPath = password ? 
+                        space.user.get('private').get(tableName) :
+                        this.gun.get(this.appname).get(tableName);
 
-                this.gun.get(this.appname).get(tableName).once(async (data) => {
-                    if (!data) {
-                        clearTimeout(timeout);
-                        resolve(true);
-                        return;
-                    }
+                    dataPath.once(async (data) => {
+                        if (!data) {
+                            clearTimeout(timeout);
+                            resolve(true);
+                            return;
+                        }
 
-                    const keys = Object.keys(data).filter(key => key !== '_');
-                    const promises = keys.map(key =>
-                        new Promise((resolveDelete) => {
-                            this.gun.get(this.appname)
-                                .get(tableName)
-                                .get(key)
-                                .put(null, ack => {
+                        const keys = Object.keys(data).filter(key => key !== '_');
+                        const promises = keys.map(key =>
+                            new Promise((resolveDelete) => {
+                                const deletePath = password ? 
+                                    space.user.get('private').get(tableName).get(key) :
+                                    this.gun.get(this.appname).get(tableName).get(key);
+
+                                deletePath.put(null, ack => {
                                     if (ack.err) {
                                         console.error(`Failed to delete ${key}:`, ack.err);
                                     }
                                     resolveDelete();
                                 });
-                        })
-                    );
+                            })
+                        );
 
-                    try {
-                        await Promise.all(promises);
-                        // Finally delete the table itself
-                        this.gun.get(this.appname).get(tableName).put(null);
-                        clearTimeout(timeout);
-                        resolve(true);
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            } catch (error) {
-                reject(error);
-            }
-        });
+                        try {
+                            await Promise.all(promises);
+                            // Finally delete the table itself
+                            dataPath.put(null);
+                            clearTimeout(timeout);
+                            resolve(true);
+                        } catch (error) {
+                            reject(error);
+                        }
+                    });
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        } catch (error) {
+            console.error('Error in deleteAllGlobal:', error);
+            throw error;
+        }
     }
 
     // ================================ COMPUTE FUNCTIONS ================================
@@ -1425,119 +1509,6 @@ class HoloSphere {
             data.holon === query.holon &&
             data.lens === query.lens;
     }
-
-    /**
-     * Creates a new space with the given credentials
-     * @param {string} spacename - The space identifier/username
-     * @param {string} password - The space password
-     * @returns {Promise<boolean>} - True if space was created successfully
-     */
-    async createSpace(spacename, password) {
-        if (!spacename || !password) {
-            throw new Error('Invalid credentials format');
-        }
-
-        // Check if space already exists
-        const existingSpace = await this.getGlobal('spaces', spacename);
-        if (existingSpace) {
-            throw new Error('Space already exists');
-        }
-
-        try {
-            // Generate key pair
-            const pair = await Gun.SEA.pair();
-
-            // Create auth record with SEA
-            const salt = await Gun.SEA.random(64).toString('base64');
-            const hash = await Gun.SEA.work(password, salt);
-            const auth = {
-                salt: salt,
-                hash: hash,
-                pub: pair.pub
-            };
-
-            // Create space record with encrypted data
-            const space = {
-                alias: spacename,
-                auth: auth,
-                epub: pair.epub,
-                pub: pair.pub,
-                created: Date.now()
-            };
-
-            await this.putGlobal('spaces', {
-                ...space,
-                id: spacename
-            });
-
-            return true;
-        } catch (error) {
-            throw new Error(`Space creation failed: ${error.message}`);
-        }
-    }
-
-    /**
-     * Logs in to a space with the given credentials
-     * @param {string} spacename - The space identifier/username
-     * @param {string} password - The space password
-     * @returns {Promise<boolean>} - True if login was successful
-     */
-    async login(spacename, password) {
-        // Validate input
-        if (!spacename || !password ||
-            typeof spacename !== 'string' ||
-            typeof password !== 'string') {
-            throw new Error('Invalid credentials format');
-        }
-
-        try {
-            // Get space record
-            const space = await this.getGlobal('spaces', spacename);
-            if (!space || !space.auth) {
-                throw new Error('Invalid spacename or password');
-            }
-
-            // Verify password using SEA
-            const hash = await Gun.SEA.work(password, space.auth.salt);
-            if (hash !== space.auth.hash) {
-                throw new Error('Invalid spacename or password');
-            }
-
-            // Set current space with expiration
-            this.currentSpace = {
-                ...space,
-                exp: Date.now() + (24 * 60 * 60 * 1000) // 24 hour expiration
-            };
-
-            return true;
-        } catch (error) {
-            throw new Error('Authentication failed');
-        }
-    }
-
-    /**
-     * Logs out the current space
-     * @returns {Promise<void>}
-     */
-    async logout() {
-        this.currentSpace = null;
-    }
-
-    /**
-     * Checks if the current session is valid
-     * @private
-     */
-    _checkSession() {
-        if (!this.currentSpace) {
-            throw new Error('No active session');
-        }
-        if (this.currentSpace.exp < Date.now()) {
-            this.currentSpace = null;
-            throw new Error('Session expired');
-        }
-        return true;
-    }
-
     /**
      * Creates a federation relationship between two spaces
      * @param {string} spaceId1 - The first space ID
