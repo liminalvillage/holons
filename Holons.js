@@ -44,17 +44,39 @@ export default class Holons {
         "Appreciative": "💯"
       };
       
-      await ctx.reply(
-        "Select a holon type to create:",
-        {
-          reply_markup: {
-            inline_keyboard: flavors.map(flavor => ([{ 
-              text: `${flavorIcons[flavor] || "🔸"} ${flavor}`, 
-              callback_data: `create_holon_${flavor}` 
-            }]))
+      // Create inline keyboard with holon types and a back button
+      const inlineKeyboard = [
+        ...flavors.map(flavor => ([{ 
+          text: `${flavorIcons[flavor] || "🔸"} ${flavor}`, 
+          callback_data: `create_holon_${flavor}` 
+        }])),
+        // Add a back button at the bottom
+        [{ text: "◀️ Back", callback_data: "holons_back" }]
+      ];
+      
+      // If this is from a callback query, edit the message
+      if (ctx.callbackQuery) {
+        await ctx.editMessageText(
+          "Select a holon type to create:",
+          {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard
+            }
           }
-        }
-      );
+        ).catch(error => {
+          console.error("Error editing message:", error);
+        });
+      } else {
+        // Otherwise send a new message (first entry)
+        await ctx.reply(
+          "Select a holon type to create:",
+          {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard
+            }
+          }
+        );
+      }
     });
     
     this.createHolonScene.action(/create_holon_(.+)/, async (ctx) => {
@@ -63,7 +85,7 @@ export default class Holons {
       const chatID = utils.getChatId(ctx);
       const userID = utils.getUserId(ctx);
       
-      await ctx.reply(
+      await ctx.editMessageText(
         `You selected ${flavor}. Do you want to proceed with creation?`,
         {
           reply_markup: {
@@ -86,7 +108,8 @@ export default class Holons {
       const chatID = utils.getChatId(ctx);
       const userID = utils.getUserId(ctx);
       
-      await ctx.reply(`Creating ${flavor} holon... Please wait.`);
+      // Edit the message to show creation in progress
+      await ctx.editMessageText(`Creating ${flavor} holon... Please wait.`);
       
       try {
         const creatorUserId = userID.toString();
@@ -109,14 +132,26 @@ export default class Holons {
           `${flavor} holon created on ${this.network}`
         );
         
-        // Provide immediate feedback
-        await ctx.reply(`Transaction submitted. You will be notified when the ${flavor} holon is created.`);
+        // Update the message with transaction status
+        await ctx.editMessageText(
+          `Transaction submitted for ${flavor} holon creation.\n\nYou will be notified when the holon is created.`,
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
+            }
+          }
+        );
         
-        const newAddress = await this.holonsContract.toAddress(holonName);
-        await ctx.reply(`Holon address: ${newAddress}`);
       } catch (error) {
         console.error("Error creating holon:", error);
-        await ctx.reply(`Failed to create holon: ${error.message}`);
+        await ctx.editMessageText(
+          `Failed to create holon: ${error.message}`,
+          {
+            reply_markup: {
+              inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
+            }
+          }
+        );
       }
       
       await ctx.scene.leave();
@@ -124,7 +159,14 @@ export default class Holons {
     
     this.createHolonScene.action('cancel_create_holon', async (ctx) => {
       await ctx.answerCbQuery();
-      await ctx.reply("Holon creation cancelled.");
+      await ctx.editMessageText(
+        "Holon creation cancelled.",
+        {
+          reply_markup: {
+            inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
+          }
+        }
+      );
       await ctx.scene.leave();
     });
     
@@ -811,10 +853,12 @@ export default class Holons {
   async waitForTransaction(tx, context, successMessage) {
     try {
       // Don't await the transaction here, instead handle it asynchronously
-      tx.wait().then(receipt => {
+      tx.wait().then(async (receipt) => {
         if (receipt.status === 1) {
           if (successMessage && context) {
-            context.reply(`✅ Transaction completed: ${successMessage}`);
+            context.reply(`✅ Transaction completed: ${successMessage} ${tx.hash}`);
+            const newAddress = await this.holonsContract.toAddress(utils.getChatId(context).toString());
+            context.reply('New holon address: ' + newAddress);
           }
           return receipt;
         } else {
@@ -894,7 +938,7 @@ export default class Holons {
       // Log input parameters
       const chatID = utils.getChatId(ctx);
       const userID = utils.getUserId(ctx);
-      const args = ctx.message.text.split(" ").slice(1);
+      const args = utils.getParameters(ctx);
       const flavor = args[0]; // First parameter is always the holon type
       
       console.log("Input parameters:");
