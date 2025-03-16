@@ -4,252 +4,238 @@ import * as h3 from 'h3-js';
 import { jest } from '@jest/globals';
 
 // Increase timeout for all tests
-jest.setTimeout(60000);
+jest.setTimeout(3000);
 
 describe('HoloSphere Authentication and Authorization', () => {
     let holoSphere;
-    let gunInstance;
+    let strictHoloSphere;
     const testPassword = 'TestPass123!';
     const testHolon = 'test-holon';
     const testLens = 'test-lens';
 
-    // Helper function to create a Gun instance
-    const createGunInstance = () => {
-        const gunOptions = {
-            localStorage: false,
-            radisk: false,
-            file: false,
-            web: false,
-            multicast: false,
-            peers: [],
-            axe: false
-        };
-        return Gun(gunOptions);
-    };
-
-    // Helper function to wait for Gun operations
-    const waitForGun = (ms = 1000) => new Promise(resolve => setTimeout(resolve, ms));
-
     beforeAll(async () => {
-        // Create a custom Gun instance for testing with memory adapter
-        gunInstance = createGunInstance();
-        holoSphere = new HoloSphere('test-app', false, null, gunInstance);
-        
-        // Wait for Gun to initialize
-        await waitForGun(2000);
-    }, 60000);
+        holoSphere = new HoloSphere('test-app', false, null);
+        strictHoloSphere = new HoloSphere('test-app-strict', true, null);
+    });
 
     afterEach(async () => {
         // Clean up test data
         try {
             if (holoSphere) {
                 await holoSphere.deleteAll(testHolon, testLens);
-                await waitForGun(1000);
+            }
+            if (strictHoloSphere) {
+                await strictHoloSphere.deleteAll(testHolon, testLens);
             }
         } catch (error) {
             console.error('Error in afterEach cleanup:', error);
         }
-    }, 60000);
+    });
 
     afterAll(async () => {
-        try {
-            if (holoSphere) {
-                // Clean up subscriptions
-                await holoSphere.deleteAll(testHolon, testLens);
-                await waitForGun(1000);
-            }
-            
-            if (gunInstance) {
-                // Close all connections
-                gunInstance.off();
-            }
-            
-            // Clear references
-            holoSphere = null;
-            gunInstance = null;
-            
-            // Force cleanup in test environment
-            if (process.env.NODE_ENV === 'test') {
-                await waitForGun(1000);
-                process.exit(0);
-            }
-        } catch (error) {
-            console.error('Error in afterAll cleanup:', error);
+        // Clean up all test data
+        await holoSphere.deleteAll(testHolon, testLens);
+        await holoSphere.deleteAllGlobal('testTable');
+        
+        // Close Gun connections
+        if (holoSphere.gun) {
+            holoSphere.gun.off();
         }
-    }, 60000);
+        if (strictHoloSphere.gun) {
+            strictHoloSphere.gun.off();
+        }
+        
+        // Wait for connections to close
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    });
 
     describe('Authentication System', () => {
-        it('should authenticate with password and return user reference', async () => {
-            const space = await holoSphere._getHolonSpace(testHolon, testPassword);
-            expect(space).toBeDefined();
-            expect(space.user).toBeDefined();
-            expect(space.pub).toBeDefined();
-        }, 60000);
+        it('should authenticate with password and store/retrieve data', async () => {
+            const testData = { id: 'test1', value: 'private-data' };
+            
+            // Test storing with authentication
+            await holoSphere.put(testHolon, testLens, testData, testPassword);
+            
+            // Test retrieving with authentication
+            const result = await holoSphere.get(testHolon, testLens, testData.id, testPassword);
+            expect(result).toBeDefined();
+            expect(result.value).toBe(testData.value);
+        });
 
         it('should handle authentication errors gracefully', async () => {
+            const testData = { id: 'test2', value: 'private-data' };
+            
+            // Store data with correct password
+            await holoSphere.put(testHolon, testLens, testData, testPassword);
+            
+            // Try to retrieve with wrong password
+            const result = await holoSphere.get(testHolon, testLens, testData.id, 'wrong_password');
+            expect(result).toBeNull();
+        }, 10000);
+    });
+
+    describe('Schema Validation', () => {
+        it('should only validate schema in strict mode', async () => {
+            const schema = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    value: { type: 'number' }
+                },
+                required: ['id', 'value']
+            };
+            
+            // Set schema for both instances
+            await holoSphere.setSchema(testLens, schema);
+            await strictHoloSphere.setSchema(testLens, schema);
+            
+            const invalidData = { id: 'invalid' }; // Missing required 'value' field
+            
+            // Should work in non-strict mode
+            await expect(holoSphere.put(testHolon, testLens, invalidData)).resolves.toBeTruthy();
+            
+            // Should fail in strict mode
+            await expect(strictHoloSphere.put(testHolon, testLens, invalidData))
+                .rejects.toThrow('Schema validation failed');
+        }, 10000);
+
+        it('should require schema in strict mode', async () => {
+            const testData = { id: 'test', value: 123 };
+            
+            // Should work in non-strict mode without schema
+            await expect(holoSphere.put(testHolon, testLens, testData)).resolves.toBeTruthy();
+            
+            // Delete any existing schema
+            await strictHoloSphere.putGlobal('schemas', { id: testLens, schema: null });
+            
+            // Should fail in strict mode without schema
             try {
-                await holoSphere._getHolonSpace(testHolon, 'wrong_password');
+                await strictHoloSphere.put(testHolon, testLens, testData);
                 fail('Should have thrown an error');
             } catch (error) {
-                expect(error.message).toContain('Wrong user or password');
+                expect(error.message).toBe('Schema required in strict mode');
             }
-        }, 60000);
+        }, 10000);
     });
 
     describe('Private Data Operations', () => {
         it('should store and retrieve private data with password', async () => {
-            const testData = { name: 'test', value: 123 };
+            const testData = { id: 'test3', value: 123 };
             
             await holoSphere.put(testHolon, testLens, testData, testPassword);
-            await waitForGun(1000);
             
-            const result = await holoSphere.get(testHolon, testLens, testData.name, testPassword);
+            const result = await holoSphere.get(testHolon, testLens, testData.id, testPassword);
             expect(result).toEqual(testData);
-        }, 60000);
+        });
 
         it('should handle public data access', async () => {
-            const testData = { name: 'public', value: 456 };
+            const testData = { id: 'public', value: 456 };
             
             await holoSphere.put(testHolon, testLens, testData);
-            await waitForGun(1000);
             
-            const result = await holoSphere.get(testHolon, testLens, testData.name);
+            const result = await holoSphere.get(testHolon, testLens, testData.id);
             expect(result).toEqual(testData);
-        }, 60000);
+        });
 
-        it('should prevent unauthorized modification of private data', async () => {
-            const testData = { name: 'private', value: 789 };
+        it('should prevent unauthorized access to private data', async () => {
+            const testData = { id: 'private', value: 789 };
             
+            // Store with password
             await holoSphere.put(testHolon, testLens, testData, testPassword);
-            await waitForGun(1000);
             
-            // Try to modify without password
-            const modifiedData = { name: 'private', value: 999 };
-            await holoSphere.put(testHolon, testLens, modifiedData);
-            await waitForGun(1000);
-            
-            // Original data should still be accessible with password
-            const result = await holoSphere.get(testHolon, testLens, testData.name, testPassword);
-            expect(result).toEqual(testData);
-        }, 60000);
+            // Try to retrieve without password
+            const result = await holoSphere.get(testHolon, testLens, testData.id);
+            expect(result).toBeNull();
+        });
 
         it('should handle deletion of private data', async () => {
-            const testData = { name: 'delete', value: 101 };
+            const testData = { id: 'delete', value: 101 };
             
             await holoSphere.put(testHolon, testLens, testData, testPassword);
-            await waitForGun(1000);
+            await holoSphere.delete(testHolon, testLens, testData.id, testPassword);
             
-            await holoSphere.delete(testHolon, testLens, testData.name, testPassword);
-            await waitForGun(1000);
-            
-            const result = await holoSphere.get(testHolon, testLens, testData.name, testPassword);
+            const result = await holoSphere.get(testHolon, testLens, testData.id, testPassword);
             expect(result).toBeNull();
-        }, 60000);
+        });
 
         it('should handle multiple private data versions', async () => {
             const versions = [
-                { name: 'version1', value: 1 },
-                { name: 'version2', value: 2 },
-                { name: 'version3', value: 3 }
+                { id: 'version1', value: 1 },
+                { id: 'version2', value: 2 },
+                { id: 'version3', value: 3 }
             ];
             
+            // Clean up any existing data first
+            await holoSphere.deleteAll(testHolon, testLens, testPassword);
+            
+            // Store each version
             for (const data of versions) {
                 await holoSphere.put(testHolon, testLens, data, testPassword);
-                await waitForGun(1000);
             }
             
-            const result = await holoSphere.get(testHolon, testLens, versions[versions.length - 1].name, testPassword);
-            expect(result).toEqual(versions[versions.length - 1]);
-        }, 60000);
-
-        it('should handle getAll with private data', async () => {
-            const testData = {
-                key1: { name: 'first', value: 1 },
-                key2: { name: 'second', value: 2 }
-            };
+            // Wait a bit for data to settle
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
-            for (const [key, value] of Object.entries(testData)) {
-                await holoSphere.put(testHolon, testLens, value, testPassword);
-                await waitForGun(1000);
+            const results = await holoSphere.getAll(testHolon, testLens, testPassword);
+            expect(results.length).toBe(versions.length);
+            for (const version of versions) {
+                expect(results).toContainEqual(expect.objectContaining(version));
             }
-            
-            const result = await holoSphere.getAll(testHolon, testLens, testPassword);
-            expect(result).toEqual(testData);
-        }, 60000);
+        }, 10000);
     });
 
     describe('Global Data Operations', () => {
         it('should handle private global data', async () => {
-            const testData = { name: 'global', value: 111 };
+            const testData = { id: 'global', value: 111 };
             
             await holoSphere.putGlobal('testTable', testData, testPassword);
-            await waitForGun(1000);
             
-            const result = await holoSphere.getGlobal('testTable', testData.name, testPassword);
+            const result = await holoSphere.getGlobal('testTable', testData.id, testPassword);
             expect(result).toEqual(testData);
-        }, 60000);
+        });
 
         it('should handle public global data', async () => {
-            const testData = { name: 'public_global', value: 222 };
+            const testData = { id: 'public_global', value: 222 };
             
             await holoSphere.putGlobal('testTable', testData);
-            await waitForGun(1000);
             
-            const result = await holoSphere.getGlobal('testTable', testData.name);
+            const result = await holoSphere.getGlobal('testTable', testData.id);
             expect(result).toEqual(testData);
-        }, 60000);
+        });
 
         it('should handle getAllGlobal with private data', async () => {
-            const testData = {
-                global1: { name: 'first', value: 1 },
-                global2: { name: 'second', value: 2 }
-            };
+            const testData = [
+                { id: 'global1', value: 1 },
+                { id: 'global2', value: 2 }
+            ];
             
-            for (const [key, value] of Object.entries(testData)) {
-                await holoSphere.putGlobal('testTable', value, testPassword);
-                await waitForGun(1000);
+            // Clean up any existing data first
+            await holoSphere.deleteAllGlobal('testTable', testPassword);
+            
+            // Store each item
+            for (const data of testData) {
+                await holoSphere.putGlobal('testTable', data, testPassword);
             }
             
-            const result = await holoSphere.getAllGlobal('testTable', testPassword);
-            expect(result).toEqual(testData);
-        }, 60000);
+            // Wait a bit for data to settle
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const results = await holoSphere.getAllGlobal('testTable', testPassword);
+            expect(results.length).toBe(testData.length);
+            for (const data of testData) {
+                expect(results).toContainEqual(expect.objectContaining(data));
+            }
+        }, 10000);
 
         it('should handle deleteGlobal with private data', async () => {
-            const testData = { name: 'delete_global', value: 333 };
+            const testData = { id: 'delete_global', value: 333 };
             
             await holoSphere.putGlobal('testTable', testData, testPassword);
-            await waitForGun(1000);
             
-            await holoSphere.deleteGlobal('testTable', testData.name, testPassword);
-            await waitForGun(1000);
+            await holoSphere.deleteGlobal('testTable', testData.id, testPassword);
             
-            const result = await holoSphere.getGlobal('testTable', testData.name, testPassword);
+            const result = await holoSphere.getGlobal('testTable', testData.id, testPassword);
             expect(result).toBeNull();
-        }, 60000);
-    });
-
-    describe('Schema Validation', () => {
-        it('should validate data against schema', async () => {
-            const schema = {
-                type: 'object',
-                properties: {
-                    name: { type: 'string' },
-                    value: { type: 'number' }
-                },
-                required: ['name', 'value']
-            };
-            
-            await holoSphere.setSchema(testLens, schema);
-            await waitForGun(1000);
-            
-            const validData = { name: 'valid', value: 444 };
-            const invalidData = { name: 'invalid' };
-            
-            await holoSphere.put(testHolon, testLens, validData);
-            await waitForGun(1000);
-            
-            await expect(holoSphere.put(testHolon, testLens, invalidData))
-                .rejects.toThrow();
-        }, 60000);
+        });
     });
 }); 

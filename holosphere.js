@@ -51,166 +51,6 @@ class HoloSphere {
         this.subscriptions = {};
     }
 
-    /**
-     * Gets or creates a space for holon data with improved security and reliability
-     * @private
-     */
-    async _getHolonSpace(holon, password = null) {
-        if (password) {
-            try {
-                const user = this.gun.user();
-                
-                // Add a timeout for authentication operations
-                const authWithTimeout = (operation) => {
-                    return Promise.race([
-                        operation,
-                        new Promise((_, reject) => 
-                            setTimeout(() => reject(new Error('Authentication timeout')), 10000)
-                        )
-                    ]);
-                };
-                
-                try {
-                    // Try to authenticate with timeout
-                    await authWithTimeout(
-                        new Promise((resolve, reject) => {
-                            user.auth(holon, password, (ack) => {
-                                if (ack.err) reject(new Error(ack.err));
-                                else resolve();
-                            });
-                        })
-                    );
-                    console.log(`Authenticated as ${holon}`);
-                } catch (loginError) {
-                    console.log(`Failed to authenticate as ${holon}, attempting to create user`);
-                    // If authentication fails, try to create user and then authenticate
-                    await authWithTimeout(
-                        new Promise((resolve, reject) => {
-                            user.create(holon, password, (ack) => {
-                                if (ack.err) reject(new Error(ack.err));
-                                else {
-                                    user.auth(holon, password, (authAck) => {
-                                        if (authAck.err) reject(new Error(authAck.err));
-                                        else resolve();
-                                    });
-                                }
-                            });
-                        })
-                    );
-                    console.log(`Created and authenticated as ${holon}`);
-                }
-
-                // Get user data with timeout
-                const userData = await authWithTimeout(
-                    new Promise((resolve, reject) => {
-                        let handled = false;
-                        user.once(data => {
-                            if (!handled) {
-                                handled = true;
-                                if (!data || !data.pub) {
-                                    reject(new Error('Invalid user data'));
-                                } else {
-                                    resolve(data);
-                                }
-                            }
-                        });
-                    })
-                );
-
-                // Add a reference to the authenticated user for later use
-                return {
-                    ...userData,
-                    user: user  // Keep reference to the authenticated user
-                };
-            } catch (error) {
-                console.error('Failed to login or create user space:', error);
-                throw error;
-            }
-        }
-        else {
-            // For public spaces, just return the gun instance
-            return this.gun;
-        }
-    }
-
-    /**
-     * Gets or creates a space for global data with improved security and reliability
-     * @private
-     */
-    async _getGlobalSpace(tableName, password = null) {
-        if (password) {
-            try {
-                const user = this.gun.user();
-                
-                // Add a timeout for authentication operations
-                const authWithTimeout = (operation) => {
-                    return Promise.race([
-                        operation,
-                        new Promise((_, reject) => 
-                            setTimeout(() => reject(new Error('Authentication timeout')), 10000)
-                        )
-                    ]);
-                };
-                
-                try {
-                    // Try to authenticate with timeout
-                    await authWithTimeout(
-                        new Promise((resolve, reject) => {
-                            user.auth(tableName, password, (ack) => {
-                                if (ack.err) reject(new Error(ack.err));
-                                else resolve();
-                            });
-                        })
-                    );
-                } catch (loginError) {
-                    // If authentication fails, try to create user and then authenticate
-                    await authWithTimeout(
-                        new Promise((resolve, reject) => {
-                            user.create(tableName, password, (ack) => {
-                                if (ack.err) reject(new Error(ack.err));
-                                else {
-                                    user.auth(tableName, password, (authAck) => {
-                                        if (authAck.err) reject(new Error(authAck.err));
-                                        else resolve();
-                                    });
-                                }
-                            });
-                        })
-                    );
-                }
-
-                // Get user data with timeout
-                const userData = await authWithTimeout(
-                    new Promise((resolve, reject) => {
-                        let handled = false;
-                        user.once(data => {
-                            if (!handled) {
-                                handled = true;
-                                if (!data || !data.pub) {
-                                    reject(new Error('Invalid user data'));
-                                } else {
-                                    resolve(data);
-                                }
-                            }
-                        });
-                    })
-                );
-
-                // Add a reference to the authenticated user for later use
-                return {
-                    ...userData,
-                    user: user  // Keep reference to the authenticated user
-                };
-            } catch (error) {
-                console.error('Failed to login or create global space:', error);
-                throw error;
-            }
-        }
-        
-        // For public global space, just return the gun instance
-        return this.gun;
-    }
-
     // ================================ SCHEMA FUNCTIONS ================================
 
     /**
@@ -312,9 +152,12 @@ class HoloSphere {
             data.id = this.generateId();
         }
 
-        // Get and validate schema first
-        const schema = await this.getSchema(lens);
-        if (schema) {
+        // Get and validate schema only in strict mode
+        if (this.strict) {
+            const schema = await this.getSchema(lens);
+            if (!schema) {
+                throw new Error('Schema required in strict mode');
+            }
             const dataToValidate = JSON.parse(JSON.stringify(data));
             const valid = this.validator.validate(schema, dataToValidate);
 
@@ -322,21 +165,42 @@ class HoloSphere {
                 const errorMsg = `Schema validation failed: ${JSON.stringify(this.validator.errors)}`;
                 throw new Error(errorMsg);
             }
-        } else if (this.strict) {
-            throw new Error('Schema required in strict mode');
         }
 
         try {
-            const space = await this._getHolonSpace(holon, password);
+            const user = this.gun.user();
             
-            return await new Promise((resolve, reject) => {
+            if (password) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        user.auth(holon, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else resolve();
+                        });
+                    });
+                } catch (loginError) {
+                    // If authentication fails, try to create user and then authenticate
+                    await new Promise((resolve, reject) => {
+                        user.create(holon, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else {
+                                user.auth(holon, password, (authAck) => {
+                                    if (authAck.err) reject(new Error(authAck.err));
+                                    else resolve();
+                                });
+                            }
+                        });
+                    });
+                }
+            }
+
+            return new Promise((resolve, reject) => {
                 try {
                     const payload = JSON.stringify(data);
                     
                     if (password) {
                         // For private data, use the authenticated user's space
-                        // This ensures only someone with the password can modify it
-                        space.user.get('private').get(lens).get(data.id).put(payload, ack => {
+                        user.get('private').get(lens).get(data.id).put(payload, ack => {
                             if (ack.err) {
                                 reject(new Error(ack.err));
                             } else {
@@ -387,20 +251,44 @@ class HoloSphere {
             return null;
         }
 
-        const schema = await this.getSchema(lens);
+        // Only check schema in strict mode
+        let schema;
+        if (this.strict) {
+            schema = await this.getSchema(lens);
+            if (!schema) {
+                throw new Error('Schema required in strict mode');
+            }
+        }
 
         try {
-            const space = await this._getHolonSpace(holon, password);
+            const user = this.gun.user();
+            
+            if (password) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        user.auth(holon, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else resolve();
+                        });
+                    });
+                } catch (loginError) {
+                    // If authentication fails, try to create user and then authenticate
+                    await new Promise((resolve, reject) => {
+                        user.create(holon, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else {
+                                user.auth(holon, password, (authAck) => {
+                                    if (authAck.err) reject(new Error(authAck.err));
+                                    else resolve();
+                                });
+                            }
+                        });
+                    });
+                }
+            }
 
-            const result = await new Promise((resolve) => {
-                let timeout = setTimeout(() => {
-                    console.warn('get: Operation timed out');
-                    resolve(null);
-                }, 5000);
-
+            return new Promise((resolve) => {
                 const handleData = async (data) => {
-                    clearTimeout(timeout);
-
                     if (!data) {
                         resolve(null);
                         return;
@@ -429,14 +317,12 @@ class HoloSphere {
 
                 if (password) {
                     // For private data, use the authenticated user's space
-                    space.user.get('private').get(lens).get(key).once(handleData);
+                    user.get('private').get(lens).get(key).once(handleData);
                 } else {
                     // For public data, use the regular path
                     this.gun.get(this.appname).get(holon).get(lens).get(key).once(handleData);
                 }
             });
-
-            return result;
         } catch (error) {
             console.error('Error in get:', error);
             return null;
@@ -519,21 +405,10 @@ class HoloSphere {
         }
 
         try {
-            const space = await this._getHolonSpace(holon, password);
+            const user = this.gun.user();
 
             return new Promise((resolve) => {
                 const output = new Map();
-                let isResolved = false;
-
-                const hardTimeout = setTimeout(() => {
-                    cleanup();
-                    resolve(Array.from(output.values()));
-                }, 5000);
-
-                const cleanup = () => {
-                    clearTimeout(hardTimeout);
-                    isResolved = true;
-                };
 
                 const processData = async (data, key) => {
                     if (!data || key === '_') return;
@@ -557,7 +432,6 @@ class HoloSphere {
 
                 const handleData = async (data) => {
                     if (!data) {
-                        cleanup();
                         resolve([]);
                         return;
                     }
@@ -571,17 +445,16 @@ class HoloSphere {
 
                     try {
                         await Promise.all(initialPromises);
-                        cleanup();
                         resolve(Array.from(output.values()));
                     } catch (error) {
-                        cleanup();
+                        console.error('Error in getAll:', error);
                         resolve([]);
                     }
                 };
 
                 if (password) {
                     // For private data, use the authenticated user's space
-                    space.user.get('private').get(lens).once(handleData);
+                    user.get('private').get(lens).once(handleData);
                 } else {
                     // For public data, use the regular path
                     this.gun.get(this.appname).get(holon).get(lens).once(handleData);
@@ -666,13 +539,13 @@ class HoloSphere {
 
         try {
             // Get the appropriate space
-            const space = await this._getHolonSpace(holon, password);
+            const user = this.gun.user();
 
             // Delete data from space
             return new Promise((resolve, reject) => {
                 if (password) {
                     // For private data, use the authenticated user's space
-                    space.user.get('private').get(lens).get(key).put(null, ack => {
+                    user.get('private').get(lens).get(key).put(null, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
@@ -711,13 +584,13 @@ class HoloSphere {
 
         try {
             // Get the appropriate space
-            const space = await this._getHolonSpace(holon, password);
+            const user = this.gun.user();
 
             return new Promise((resolve) => {
                 let deletionPromises = [];
                 
                 const dataPath = password ? 
-                    space.user.get('private').get(lens) :
+                    user.get('private').get(lens) :
                     this.gun.get(this.appname).get(holon).get(lens);
 
                 // First get all the data to find keys to delete
@@ -735,7 +608,7 @@ class HoloSphere {
                         deletionPromises.push(
                             new Promise((resolveDelete) => {
                                 const deletePath = password ? 
-                                    space.user.get('private').get(lens).get(key) :
+                                    user.get('private').get(lens).get(key) :
                                     this.gun.get(this.appname).get(holon).get(lens).get(key);
 
                                 deletePath.put(null, ack => {
@@ -886,15 +759,38 @@ class HoloSphere {
                 throw new Error('Table name and data are required');
             }
 
-            // Get the appropriate space
-            const space = await this._getGlobalSpace(tableName, password);
+            const user = this.gun.user();
+            
+            if (password) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        user.auth(tableName, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else resolve();
+                        });
+                    });
+                } catch (loginError) {
+                    // If authentication fails, try to create user and then authenticate
+                    await new Promise((resolve, reject) => {
+                        user.create(tableName, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else {
+                                user.auth(tableName, password, (authAck) => {
+                                    if (authAck.err) reject(new Error(authAck.err));
+                                    else resolve();
+                                });
+                            }
+                        });
+                    });
+                }
+            }
 
             return new Promise((resolve, reject) => {
                 const payload = JSON.stringify(data);
                 
                 if (password) {
                     // For private data, use the authenticated user's space
-                    const path = space.user.get('private').get(tableName);
+                    const path = user.get('private').get(tableName);
                     
                     if (data.id) {
                         path.get(data.id).put(payload, ack => {
@@ -951,8 +847,31 @@ class HoloSphere {
      */
     async getGlobal(tableName, key, password = null) {
         try {
-            // Get the appropriate space
-            const space = await this._getGlobalSpace(tableName, password);
+            const user = this.gun.user();
+            
+            if (password) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        user.auth(tableName, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else resolve();
+                        });
+                    });
+                } catch (loginError) {
+                    // If authentication fails, try to create user and then authenticate
+                    await new Promise((resolve, reject) => {
+                        user.create(tableName, password, (ack) => {
+                            if (ack.err) reject(new Error(ack.err));
+                            else {
+                                user.auth(tableName, password, (authAck) => {
+                                    if (authAck.err) reject(new Error(authAck.err));
+                                    else resolve();
+                                });
+                            }
+                        });
+                    });
+                }
+            }
 
             return new Promise((resolve) => {
                 const handleData = (data) => {
@@ -970,7 +889,7 @@ class HoloSphere {
                 
                 if (password) {
                     // For private data, use the authenticated user's space
-                    space.user.get('private').get(tableName).get(key).once(handleData);
+                    user.get('private').get(tableName).get(key).once(handleData);
                 } else {
                     // For public data, use the regular path
                     this.gun.get(this.appname).get(tableName).get(key).once(handleData);
@@ -995,7 +914,7 @@ class HoloSphere {
 
         try {
             // Get the appropriate space
-            const space = await this._getGlobalSpace(tableName, password);
+            const user = this.gun.user();
 
             return new Promise((resolve) => {
                 let output = [];
@@ -1019,7 +938,7 @@ class HoloSphere {
                     const promises = keys.map(key =>
                         new Promise(async (resolveItem) => {
                             const itemPath = password ? 
-                                space.user.get('private').get(tableName).get(key) :
+                                user.get('private').get(tableName).get(key) :
                                 this.gun.get(this.appname).get(tableName).get(key);
 
                             const itemData = await new Promise(resolveData => {
@@ -1048,7 +967,7 @@ class HoloSphere {
 
                 if (password) {
                     // For private data, use the authenticated user's space
-                    space.user.get('private').get(tableName).once(handleData);
+                    user.get('private').get(tableName).once(handleData);
                 } else {
                     // For public data, use the regular path
                     this.gun.get(this.appname).get(tableName).once(handleData);
@@ -1074,12 +993,12 @@ class HoloSphere {
 
         try {
             // Get the appropriate space
-            const space = await this._getGlobalSpace(tableName, password);
+            const user = this.gun.user();
 
             return new Promise((resolve, reject) => {
                 if (password) {
                     // For private data, use the authenticated user's space
-                    space.user.get('private').get(tableName).get(key).put(null, ack => {
+                    user.get('private').get(tableName).get(key).put(null, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
@@ -1116,7 +1035,7 @@ class HoloSphere {
 
         try {
             // Get the appropriate space
-            const space = await this._getGlobalSpace(tableName, password);
+            const user = this.gun.user();
 
             return new Promise((resolve, reject) => {
                 try {
@@ -1128,7 +1047,7 @@ class HoloSphere {
                     }, 5000);
 
                     const dataPath = password ? 
-                        space.user.get('private').get(tableName) :
+                        user.get('private').get(tableName) :
                         this.gun.get(this.appname).get(tableName);
 
                     dataPath.once(async (data) => {
@@ -1142,7 +1061,7 @@ class HoloSphere {
                         const promises = keys.map(key =>
                             new Promise((resolveDelete) => {
                                 const deletePath = password ? 
-                                    space.user.get('private').get(tableName).get(key) :
+                                    user.get('private').get(tableName).get(key) :
                                     this.gun.get(this.appname).get(tableName).get(key);
 
                                 deletePath.put(null, ack => {
