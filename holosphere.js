@@ -763,25 +763,38 @@ class HoloSphere {
             
             if (password) {
                 try {
+                    // Try to authenticate first
                     await new Promise((resolve, reject) => {
                         user.auth(tableName, password, (ack) => {
                             if (ack.err) reject(new Error(ack.err));
                             else resolve();
                         });
                     });
-                } catch (loginError) {
-                    // If authentication fails, try to create user and then authenticate
-                    await new Promise((resolve, reject) => {
-                        user.create(tableName, password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else {
-                                user.auth(tableName, password, (authAck) => {
-                                    if (authAck.err) reject(new Error(authAck.err));
-                                    else resolve();
-                                });
-                            }
+                } catch (authError) {
+                    // If authentication fails, try to create user
+                    try {
+                        await new Promise((resolve, reject) => {
+                            user.create(tableName, password, (ack) => {
+                                if (ack.err && !ack.err.includes('already created')) {
+                                    reject(new Error(ack.err));
+                                } else {
+                                    // Whether user was created or already existed, try to authenticate
+                                    user.auth(tableName, password, (authAck) => {
+                                        if (authAck.err) reject(new Error(authAck.err));
+                                        else resolve();
+                                    });
+                                }
+                            });
                         });
-                    });
+                    } catch (createError) {
+                        // If both auth and create fail, try one last auth attempt
+                        await new Promise((resolve, reject) => {
+                            user.auth(tableName, password, (ack) => {
+                                if (ack.err) reject(new Error(ack.err));
+                                else resolve();
+                            });
+                        });
+                    }
                 }
             }
 
@@ -1432,16 +1445,18 @@ class HoloSphere {
      * Creates a federation relationship between two spaces
      * @param {string} spaceId1 - The first space ID
      * @param {string} spaceId2 - The second space ID
+     * @param {string} password1 - Password for the first space
+     * @param {string} [password2] - Optional password for the second space
      * @returns {Promise<boolean>} - True if federation was created successfully
      */
-    async federate(spaceId1, spaceId2) {
-        if (!spaceId1 || !spaceId2) {
+    async federate(spaceId1, spaceId2, password1, password2 = null) {
+        if (!spaceId1 || !spaceId2 || !password1) {
             throw new Error('federate: Missing required parameters');
         }
 
         // Get existing federation info for both spaces
-        let fedInfo1 = await this.getGlobal('federation', spaceId1);
-        let fedInfo2 = await this.getGlobal('federation', spaceId2);
+        let fedInfo1 = await this.getGlobal('federation', spaceId1, password1);
+        let fedInfo2 = await this.getGlobal('federation', spaceId2, password2);
 
         // Check if federation already exists
         if (fedInfo1 && fedInfo1.federation && fedInfo1.federation.includes(spaceId2)) {
@@ -1473,8 +1488,10 @@ class HoloSphere {
         fedInfo2.notify.push(spaceId1);
 
         // Save both federation records
-        await this.putGlobal('federation', fedInfo1);
-        await this.putGlobal('federation', fedInfo2);
+        await this.putGlobal('federation', fedInfo1, password1);
+        if (password2) {
+            await this.putGlobal('federation', fedInfo2, password2);
+        }
 
         return true;
     }
@@ -1482,16 +1499,17 @@ class HoloSphere {
     /**
      * Subscribes to federation notifications for a space
      * @param {string} spaceId - The space ID to subscribe to
+     * @param {string} password - Password for the space
      * @param {function} callback - The callback to execute on notifications
      * @returns {Promise<object>} - Subscription object with off() method
      */
-    async subscribeFederation(spaceId, callback) {
-        if (!spaceId || !callback) {
+    async subscribeFederation(spaceId, password, callback) {
+        if (!spaceId || !password || !callback) {
             throw new Error('subscribeFederation: Missing required parameters');
         }
 
         // Get federation info
-        const fedInfo = await this.getGlobal('federation', spaceId);
+        const fedInfo = await this.getGlobal('federation', spaceId, password);
         if (!fedInfo) {
             throw new Error('No federation info found for space');
         }
@@ -1530,38 +1548,41 @@ class HoloSphere {
     /**
      * Gets federation info for a space
      * @param {string} spaceId - The space ID
+     * @param {string} [password] - Optional password for the space
      * @returns {Promise<object|null>} - Federation info or null if not found
      */
-    async getFederation(spaceId) {
+    async getFederation(spaceId, password = null) {
         if (!spaceId) {
             throw new Error('getFederationInfo: Missing space ID');
         }
-        return await this.getGlobal('federation', spaceId);
+        return await this.getGlobal('federation', spaceId, password);
     }
 
     /**
      * Removes a federation relationship between spaces
      * @param {string} spaceId1 - The first space ID
      * @param {string} spaceId2 - The second space ID
+     * @param {string} password1 - Password for the first space
+     * @param {string} [password2] - Optional password for the second space
      * @returns {Promise<boolean>} - True if federation was removed successfully
      */
-    async unfederate(spaceId1, spaceId2) {
-        if (!spaceId1 || !spaceId2) {
+    async unfederate(spaceId1, spaceId2, password1, password2 = null) {
+        if (!spaceId1 || !spaceId2 || !password1) {
             throw new Error('unfederate: Missing required parameters');
         }
 
         // Get federation info for both spaces
-        const fedInfo1 = await this.getGlobal('federation', spaceId1);
-        const fedInfo2 = await this.getGlobal('federation', spaceId2);
+        const fedInfo1 = await this.getGlobal('federation', spaceId1, password1);
+        const fedInfo2 = await this.getGlobal('federation', spaceId2, password2);
 
         if (fedInfo1) {
             fedInfo1.federation = fedInfo1.federation.filter(id => id !== spaceId2);
-            await this.putGlobal('federation', fedInfo1);
+            await this.putGlobal('federation', fedInfo1, password1);
         }
 
-        if (fedInfo2) {
+        if (fedInfo2 && password2) {
             fedInfo2.notify = fedInfo2.notify.filter(id => id !== spaceId1);
-            await this.putGlobal('federation', fedInfo2);
+            await this.putGlobal('federation', fedInfo2, password2);
         }
 
         return true;
@@ -1570,10 +1591,11 @@ class HoloSphere {
     /**
      * Gets the name of a chat/space
      * @param {string} spaceId - The space ID
+     * @param {string} [password] - Optional password for the space
      * @returns {Promise<string>} - The space name or the ID if not found
      */
-    async getChatName(spaceId) {
-        const spaceInfo = await this.getGlobal('spaces', spaceId);
+    async getChatName(spaceId, password = null) {
+        const spaceInfo = await this.getGlobal('spaces', spaceId, password);
         return spaceInfo?.name || spaceId;
     }
 
@@ -1582,15 +1604,10 @@ class HoloSphere {
      * @param {string} holon - The holon identifier
      * @param {string} lens - The lens identifier
      * @param {object} options - Options for data retrieval and aggregation
-     * @param {boolean} options.aggregate - Whether to aggregate items with matching IDs (default: false)
-     * @param {string} options.idField - Field to use as identifier for aggregation (default: 'id')
-     * @param {string[]} options.sumFields - Numeric fields to sum during aggregation (e.g., ['received', 'sent'])
-     * @param {string[]} options.concatArrays - Array fields to concatenate during aggregation (e.g., ['wants', 'offers'])
-     * @param {boolean} options.removeDuplicates - Whether to remove duplicates when not aggregating (default: true)
-     * @param {function} options.mergeStrategy - Custom function to merge items during aggregation
+     * @param {string} [password] - Optional password for accessing private data
      * @returns {Promise<Array>} - Combined array of local and federated data
      */
-    async getFederated(holon, lens, options = {}) {
+    async getFederated(holon, lens, options = {}, password = null) {
         // Validate required parameters
         if (!holon || !lens) {
             throw new Error('getFederated: Missing required parameters');
@@ -1606,10 +1623,10 @@ class HoloSphere {
         } = options;
 
         // Get federation info for current space
-        const fedInfo = await this.getFederation(this.currentSpace?.alias);
+        const fedInfo = await this.getFederation(this.currentSpace?.alias, password);
 
         // Get local data
-        const localData = await this.getAll(holon, lens);
+        const localData = await this.getAll(holon, lens, password);
 
         // If no federation or not authenticated, return local data only
         if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
@@ -1620,7 +1637,7 @@ class HoloSphere {
         const federatedData = await Promise.all(
             fedInfo.federation.map(async (federatedSpace) => {
                 try {
-                    const data = await this.getAll(federatedSpace, lens);
+                    const data = await this.getAll(federatedSpace, lens, password);
                     return data || [];
                 } catch (error) {
                     console.warn(`Error getting data from federated space ${federatedSpace}:`, error);
@@ -1711,6 +1728,37 @@ class HoloSphere {
             }
         });
         return Array.from(uniqueMap.values());
+    }
+
+    /**
+     * Closes the HoloSphere instance and cleans up resources.
+     */
+    close() {
+        if (this.gun) {
+            // Unsubscribe from all subscriptions
+            Object.values(this.subscriptions).forEach(subscription => {
+                if (subscription.unsubscribe) {
+                    subscription.unsubscribe();
+                }
+            });
+
+            // Clear subscriptions
+            this.subscriptions = {};
+
+            // Close Gun connections
+            if (this.gun.back) {
+                const mesh = this.gun.back('opt.mesh');
+                if (mesh) {
+                    Object.keys(mesh.hear).forEach(key => {
+                        mesh.hear[key].length = 0;
+                    });
+                    mesh.hear = {};
+                }
+            }
+
+            // Clear all Gun instance listeners
+            this.gun.off();
+        }
     }
 }
 
