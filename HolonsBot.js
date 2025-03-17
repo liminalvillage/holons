@@ -142,7 +142,110 @@ class HolonsBot {
   setupTelegramCommands() {
 
     this.telebot.command('start', async (ctx) => {
-      ctx.reply('Hello! To start giving your groups coordination superpowers, just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n  ATTENTION: THIS IS A PREVIEW VERSION. ALL YOUR DATA MIGHT BE LOST AT ANY MOMENT, WITHOUT PRIOR NOTICE. PLEASE REPORT ANY BUGS OR ISSUES TO @RobertoValenti');
+      const chatID = ctx.chat.id;
+      
+      // Check if this is a private chat or a group chat
+      if (chatID > 0) {
+        // Private chat - Start personal holon onboarding
+        const personalWelcomeMessage = `
+🌟 *Welcome to your Personal Holon!* 🌟
+
+I'm here to help you manage your personal tasks, track your contributions across communities, and manage your token rewards.
+
+Let's set up your personal profile to get started.
+`;
+        await ctx.reply(personalWelcomeMessage, { parse_mode: 'Markdown' });
+        
+        // Initialize session data
+        ctx.session = ctx.session || {};
+        ctx.session.db = this.db;
+        
+        // Start the onboarding wizard for personal profile
+        try {
+          // Check if the user already has a profile
+          const userExists = await this.db.get('users', ctx.from.id);
+          
+          if (userExists) {
+            await ctx.reply(
+              "Welcome back! What would you like to do?",
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "🔄 Update My Profile", callback_data: "start_personal_wizard" }],
+                    [{ text: "💰 View My Tokens", callback_data: "view_personal_tokens" }],
+                    [{ text: "🔍 View My Contributions", callback_data: "view_personal_contributions" }]
+                  ]
+                }
+              }
+            );
+          } else {
+            // New user - start onboarding wizard
+            await ctx.reply(
+              "Let's create your personal profile. This will help you track your contributions and tokens across all communities.",
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "🚀 Start Setup", callback_data: "start_personal_wizard" }]
+                  ]
+                }
+              }
+            );
+          }
+        } catch (error) {
+          console.error("Error in personal start command:", error);
+          await ctx.reply("Sorry, there was an error starting the onboarding process. Please try again.");
+        }
+      } else {
+        // Group chat - Start group holon setup
+        const groupWelcomeMessage = `
+🌐 *Welcome to Group Holon Setup!* 🌐
+
+Let's configure your group's coordination system by defining:
+• 🎯 Purpose - What this group aims to achieve
+• 💫 Values - Core principles that guide your community
+• 🔧 Settings - Customize how Holon works in this group
+
+This will help create a more effective collaboration environment.
+`;
+        await ctx.reply(groupWelcomeMessage, { parse_mode: 'Markdown' });
+        
+        // Check if user is an admin
+        try {
+          const isAdmin = await this.isUserAdmin(ctx);
+          
+          if (isAdmin) {
+            // Show setup options for admins
+            await ctx.reply(
+              "As an admin, you can set up the group's holon configuration:",
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "🎯 Set Group Purpose", callback_data: "settings_purpose_change" }],
+                    [{ text: "💫 Define Group Values", callback_data: "settings_values_change" }],
+                    [{ text: "🔧 Configure Settings", callback_data: "settings_menu" }],
+                    [{ text: "💰 Set Up Token System", callback_data: "holons_create" }]
+                  ]
+                }
+              }
+            );
+          } else {
+            // Non-admin message
+            await ctx.reply(
+              "Only group administrators can set up the group holon configuration. Please ask an admin to run the /start command.",
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: "📚 Learn More About Holons", url: "https://holons.io" }]
+                  ]
+                }
+              }
+            );
+          }
+        } catch (error) {
+          console.error("Error in group start command:", error);
+          await ctx.reply("Sorry, there was an error checking your admin status. Please try again.");
+        }
+      }
     });
 
     this.telebot.command('help', async (ctx) => {
@@ -171,6 +274,188 @@ class HolonsBot {
     });
 
     this.telebot.on('callback_query', async (ctx) => {
+      const callbackData = ctx.callbackQuery.data;
+      
+      // Handle personal profile callbacks
+      if (callbackData === 'start_personal_wizard') {
+        await ctx.answerCbQuery('Starting personal setup...');
+        
+        // Initialize session data
+        ctx.session = ctx.session || {};
+        ctx.session.db = this.db;
+        ctx.session.stage = 0;
+        ctx.session.sequence = ['values', 'location', 'categories', 'questions'];
+        ctx.session.wizard = true;
+        ctx.session.id = ctx.from.id;
+        ctx.session.username = ctx.from.username;
+        ctx.session.first_name = ctx.from.first_name;
+        ctx.session.last_name = ctx.from.last_name;
+        
+        // Enter the first scene in the sequence
+        return ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
+      }
+      
+      if (callbackData === 'view_personal_tokens') {
+        await ctx.answerCbQuery('Fetching your tokens...');
+        
+        try {
+          // Get user's token balances across all holons
+          const userId = ctx.from.id.toString();
+          let message = '💰 *Your Token Balances* 💰\n\n';
+          
+          // Try to get user's holons
+          const userHolons = await this.holons.listHolonsOf(userId).catch(() => []);
+          
+          if (userHolons && userHolons.length > 0) {
+            for (const holonAddress of userHolons) {
+              const holon = await this.holons.getHolonContract(holonAddress);
+              const holonName = await holon.name().catch(() => 'Unknown Holon');
+              const ethBalance = await holon.etherBalance(userId).catch(() => '0');
+              
+              message += `*${holonName}*\n`;
+              message += `ETH: ${ethers.formatEther(ethBalance)}\n\n`;
+            }
+          } else {
+            message += "You don't have any tokens yet. Join a holon to start earning tokens!";
+          }
+          
+          await ctx.editMessageText(message, { 
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
+              ]
+            }
+          });
+        } catch (error) {
+          console.error("Error fetching token balances:", error);
+          await ctx.editMessageText("Sorry, there was an error fetching your token balances. Please try again later.", {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
+              ]
+            }
+          });
+        }
+      }
+      
+      if (callbackData === 'view_personal_contributions') {
+        await ctx.answerCbQuery('Fetching your contributions...');
+        
+        try {
+          // Get user's contributions across all groups
+          const userId = ctx.from.id;
+          let message = '🏆 *Your Contributions* 🏆\n\n';
+          
+          // Get all chats the user is part of
+          const userChats = await this.settings.getChats(ctx);
+          
+          if (userChats && userChats.length > 0) {
+            for (const chatId of userChats) {
+              try {
+                const user = await this.db.get(`${chatId}/users`, userId);
+                if (user) {
+                  const chatInfo = await ctx.telegram.getChat(chatId).catch(() => ({ title: 'Unknown Group' }));
+                  
+                  message += `*${chatInfo.title}*\n`;
+                  message += `Tasks Initiated: ${user.initiated?.length || 0}\n`;
+                  message += `Tasks Completed: ${user.completed?.length || 0}\n`;
+                  message += `Messages Sent: ${user.sent || 0}\n`;
+                  message += `Hours Contributed: ${user.hours || 0}\n\n`;
+                }
+              } catch (error) {
+                console.error(`Error getting user data for chat ${chatId}:`, error);
+              }
+            }
+          } else {
+            message += "You haven't made any contributions yet. Join a group to start contributing!";
+          }
+          
+          await ctx.editMessageText(message, { 
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
+              ]
+            }
+          });
+        } catch (error) {
+          console.error("Error fetching contributions:", error);
+          await ctx.editMessageText("Sorry, there was an error fetching your contributions. Please try again later.", {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
+              ]
+            }
+          });
+        }
+      }
+      
+      if (callbackData === 'personal_menu_back') {
+        await ctx.answerCbQuery();
+        
+        await ctx.editMessageText(
+          "Welcome back! What would you like to do?",
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🔄 Update My Profile", callback_data: "start_personal_wizard" }],
+                [{ text: "💰 View My Tokens", callback_data: "view_personal_tokens" }],
+                [{ text: "🔍 View My Contributions", callback_data: "view_personal_contributions" }]
+              ]
+            }
+          }
+        );
+      }
+      
+      // Handle settings menu callback
+      if (callbackData === 'settings_menu') {
+        await ctx.answerCbQuery();
+        
+        // Show the settings menu
+        await ctx.editMessageText(
+          "⚙️ *Group Settings* ⚙️\n\nCustomize how Holon works in this group:",
+          {
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🎯 Set Purpose", callback_data: "settings_purpose_change" }],
+                [{ text: "💫 Set Values", callback_data: "settings_values_change" }],
+                [{ text: "🏷️ Set Domains", callback_data: "settings_domains_change" }],
+                [{ text: "👥 Set Roles", callback_data: "settings_roles_change" }],
+                [{ text: "🔢 Value Equation", callback_data: "settings_equation" }],
+                [{ text: "🌐 Language", callback_data: "settings_language" }],
+                [{ text: "◀️ Back", callback_data: "settings_back_to_start" }]
+              ]
+            }
+          }
+        );
+      }
+      
+      // Handle back to start from settings
+      if (callbackData === 'settings_back_to_start') {
+        await ctx.answerCbQuery();
+        
+        const isAdmin = await this.isUserAdmin(ctx);
+        
+        if (isAdmin) {
+          await ctx.editMessageText(
+            "As an admin, you can set up the group's holon configuration:",
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "🎯 Set Group Purpose", callback_data: "settings_purpose_change" }],
+                  [{ text: "💫 Define Group Values", callback_data: "settings_values_change" }],
+                  [{ text: "🔧 Configure Settings", callback_data: "settings_menu" }],
+                  [{ text: "💰 Set Up Token System", callback_data: "holons_create" }]
+                ]
+              }
+            }
+          );
+        }
+      }
+      
+      // Pass to the original callback handler for other callbacks
       await this.handleCallbackQuery(ctx);
     });
 
@@ -183,23 +468,40 @@ class HolonsBot {
       
       if (botWasAdded) {
         const welcomeMessage = `
-Hello! I am Holon! 🌟
+🚀 *Welcome to Holon!* 🚀
 
-My purpose is to help communities coordinate and collaborate more effectively... at any scale!
+I'm your community coordination superpower, designed to help your group collaborate effectively, at any scale!
 
-Here are some key features to get started:
-• /task - Create and assign tasks
-• /request - Make requests to the group
-• /offer - Share what you can offer
-• /appreciate - Show appreciation to others
+⚠️ *Note:* This is a preview version. Your data may be lost during updates.
 
-Type / anytime to see the full list of commands.
+🔥 *Key Features:*
+• 📋 */task* - Create, assign and track tasks
+• 🙋 */request* - Make requests to the group
+• 🎁 */offer* - Share what you can offer
+• 💯 */appreciate* - Recognize contributions
+• 💰 */holons* - Create and manage token distribution based on your group's needs
 
-Note: This is a preview version. Your data may be lost during updates.
+⚙️ Type "/" anytime to see all available commands.
 
-Need help? Contact @RobertoValenti for feedback and support.`;
+Need help? Feature requests? Contact @RobertoValenti for support.`;
 
-        await ctx.reply(welcomeMessage);
+        await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+        
+        // Send a follow-up message about admin rights with a visual indicator
+        await ctx.reply(`
+⚠️ *ADMIN RIGHTS REQUIRED* ⚠️
+Holon needs to be able to read user input for key functionalities
+To make holons work properly, please:
+1. Go to group settings
+2. Select "Administrators"
+3. Add "Holon" as an admin
+4. Enable at minimum:
+   - Read messages
+   - Delete messages
+   - Pin messages
+
+Without these permissions, I won't be able to read your inputs and to clean after myself.`, 
+        { parse_mode: 'Markdown' });
       }
 
       // Add all new members to the database using Users module
@@ -302,6 +604,20 @@ Need help? Contact @RobertoValenti for feedback and support.`;
     const callbackData = ctx.callbackQuery.data;
     const chatID = ctx.update.callback_query.message.chat.id;
     const messageID = ctx.update.callback_query.message.message_id;
+
+    // Skip if the callback has already been handled in the main callback_query handler
+    const alreadyHandledCallbacks = [
+      'start_personal_wizard', 
+      'view_personal_tokens', 
+      'view_personal_contributions', 
+      'personal_menu_back',
+      'settings_menu',
+      'settings_back_to_start'
+    ];
+    
+    if (alreadyHandledCallbacks.some(prefix => callbackData === prefix || callbackData.startsWith(prefix + '_'))) {
+      return;
+    }
 
     try {
       // Handle schedule button click
@@ -645,6 +961,22 @@ Need help? Contact @RobertoValenti for feedback and support.`;
     // Add more type checks as needed
     
     return 'unknown';
+  }
+
+  // Helper method to check if a user is an admin in the group
+  async isUserAdmin(ctx) {
+    try {
+      // Get chat member info
+      const userId = ctx.from.id;
+      const chatId = ctx.chat.id;
+      const member = await ctx.telegram.getChatMember(chatId, userId);
+      
+      // Check if user is an admin or creator
+      return ['creator', 'administrator'].includes(member.status);
+    } catch (error) {
+      console.error("Error checking admin status:", error);
+      return false;
+    }
   }
 }
 

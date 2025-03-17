@@ -382,18 +382,15 @@ export default class Holons {
     const holonsABI = JSON.parse(fs.readFileSync('./contracts/Holons.json', 'utf-8')).abi; // Load ABI from the corresponding file
 
     console.log("Holons Contract Address: ", holonsAddress);
-    console.log("HolonsABI: ", holonsABI);
-    console.log("this.wallet: ", this.wallet);
+    console.log("Network: ", this.network);
+    console.log("Bot wallet: ", this.wallet.address);
 
     this.holonsContract = new ethers.Contract(
       holonsAddress,
       holonsABI,
       this.wallet
     );
-    // console.log("this.holonsContract: ", this.holonsContract);
-    // console.log("this.holonsContract.address: ", this.holonsContract.address);
-    // console.log("Wallet address:", this.wallet.address);
-    // console.log("Wallet Network:", this.network);
+   
 
     this.setupBotCommands();
     this.setupCallbackHandlers();
@@ -555,9 +552,6 @@ export default class Holons {
             });
           }
           break;
-        case 'holontypes':
-          await this.showHolonTypes(ctx);
-          break;
         case 'back':
           await this.showHolonsMenu(ctx, true);
           break;
@@ -599,8 +593,7 @@ export default class Holons {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "🆕 Create Holon", callback_data: "holons_create" },
-            { text: "ℹ️ Holon Types", callback_data: "holons_holontypes" }
+            { text: "🆕 Create Holon", callback_data: "holons_create" }
           ]
         ]
       }

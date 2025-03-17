@@ -143,7 +143,7 @@ export default class Quests {
                 await ctx.deleteMessage(quests[i].id.toString()).catch((err) => { });
                 //resend the message
                 const quest = quests[i];
-                await ctx.telegram.sendMessage(chatID, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (nctx) => {
+                await ctx.telegram.sendMessage(chatID, await this.createMessage(quest, language), await this.markup(quest, language)).catch((err) => { console.log(err) }).then(async (nctx) => {
                     this.db.del(chatID + '/quests', quest.id.toString())
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
@@ -337,14 +337,14 @@ export default class Quests {
 
             if (notifyChats && notifyChats.length > 0) {
                 let id = quest.chat * 2 + quest.id //*2 is a hack not to return similar indexes
-                let fedinfo = this.db.get('federation', id)
+                let fedinfo = await this.db.get('federation', id)
                 console.log(fedinfo)
                 if (!fedinfo || fedinfo == '' || fedinfo == undefined)
                     fedinfo = { id: id, all: [{ chat: quest.chat.toString(), id: quest.id.toString() }], type: 'quest' }  //TODO UPDATE JSON SCHEMA
                 //TODO CHECK FOR PROMISES TO RETURN
                 for (let i = 0; i < notifyChats.length; i++) {
                     const federatedChat = notifyChats[i];
-                    await ctx.telegram.sendMessage(federatedChat, createMessage(quest, language), markup(quest, language)).catch((err) => { console.log(err) }).then(async (fctx) => {
+                    await ctx.telegram.sendMessage(federatedChat, await this.createMessage(quest, language), this.markup(quest, language)).catch((err) => { console.log(err) }).then(async (fctx) => {
                         // save the federated message id
                         fedinfo.all.push({ chat: federatedChat.toString(), id: fctx.message_id.toString() })
                     })

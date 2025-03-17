@@ -23,6 +23,7 @@ questionsScene.on('text', async ctx => {
   
   ctx.session.currentquestion = 0;
   getQuestions(ctx.message.text).then((questions) => {
+    ctx.session.userResponses = [];
     ctx.session.question_sequence = questions.questions.map(question => question.id);
     ctx.reply('Thank you for your input. We will now ask you a few questions to better clarify your needs.');
     ctx.scene.enter('question_' + ctx.session.question_sequence[ctx.session.currentquestion] );
