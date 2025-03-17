@@ -23,7 +23,7 @@ export default class Expenses {
             const language = await this.settings.getLanguage(chatID)
             const result = await this.joinSplit(chatID, ctx.from.username || ctx.from.id, expenseID);
             if (result) {
-                ctx.telegram.editMessageText(chatID, messageID, null, await this.createMessage(result), Markup.inlineKeyboard([{ text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
+                ctx.telegram.editMessageText(chatID, messageID, null, await this.createMessage(chatID,result), Markup.inlineKeyboard([{ text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
             } else {
                 ctx.reply(i18next.t('expensejoinfail', { lng: language }));
             }
@@ -36,7 +36,7 @@ export default class Expenses {
             const language = await this.settings.getLanguage(chatID)
             const result = await this.splitAll(chatID, expenseID);
             if (result) {
-                let message = await this.createMessage(result);
+                let message = await this.createMessage(chatID,result);
                 ctx.telegram.editMessageText(chatID, messageID, null, message, Markup.inlineKeyboard([
                     { text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, 
                     { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${result.id}` }
@@ -73,7 +73,7 @@ export default class Expenses {
         }
         let message = ""//i18next.t('ledgerheader', { lng: language });
         for (const expense of expenses) {
-            message += 'id: ' + expense.id + ' \n' + await this.createMessage(expense) + '\n\n';
+            message += 'id: ' + expense.id + ' \n' + await this.createMessage(chatID,expense) + '\n\n';
         }
         //split message if too long
         if (message.length > 4096) {
@@ -107,7 +107,7 @@ export default class Expenses {
         const description = args.slice(2).join(' ');
         // TODO WARNING!!: messageID+1 is a dirty hack to get the id of the reply message as id of the expense. This will break if another message is sent at the same time
         const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.id, [chatID]);
-        ctx.reply(await this.createMessage(expense), Markup.inlineKeyboard(
+        ctx.reply(await this.createMessage(chatID, expense), Markup.inlineKeyboard(
             [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
         ));
     };
@@ -211,7 +211,7 @@ export default class Expenses {
             if (expense) {
                 expense.splitWith = expense.splitWith.filter(value => value != chatMember.user.id);
                 await this.db.put(chatID + '/expenses', expense)
-                ctx.telegram.editMessageText(chatID, expenseID, null, await this.createMessage(expense), Markup.inlineKeyboard(
+                ctx.telegram.editMessageText(chatID, expenseID, null, await this.createMessage(chatID,expense), Markup.inlineKeyboard(
                     [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
                 )).catch(err => console.log(err))
                 return expense;
@@ -267,7 +267,7 @@ export default class Expenses {
                 if (!expense.splitWith.includes(chatMember.user.id))
                     expense.splitWith.push(chatMember.user.id);
                 await this.db.put(chatID + '/expenses', expense)
-                ctx.telegram.editMessageText(chatID, expenseID, null, await this.createMessage(expense), Markup.inlineKeyboard(
+                ctx.telegram.editMessageText(chatID, expenseID, null, await this.createMessage(chatID, expense), Markup.inlineKeyboard(
                     [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
                 )).catch(err => console.log(err));
                 return expense;
@@ -326,7 +326,7 @@ export default class Expenses {
         return { creditMatrix, userNames};
     }
 
-    async createMessage(expense) {
+    async createMessage(chatID,expense) {
         const amount = expense.amount;
         const currency = expense.currency;
         const description = expense.description;

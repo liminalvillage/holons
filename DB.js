@@ -21,8 +21,6 @@ class DB {
         try {
 
             this.gun = this.holosphere.gun;
-            //await this.holosphere.createSpace(this.dbName,'test');
-            await this.holosphere.login(this.dbName, process.env.HOLOSPHERE_KEY);
             
             if (this.db === 'orbit') {
                 this.ipfs = await create({

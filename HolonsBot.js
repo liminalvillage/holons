@@ -216,7 +216,7 @@ This will help create a more effective collaboration environment.
           if (isAdmin) {
             // Show setup options for admins
             await ctx.reply(
-              "As an admin, you can set up the group's holon configuration:",
+              "As an admin, you can set up the group's holon configuration.",
               {
                 reply_markup: {
                   inline_keyboard: [
@@ -228,6 +228,12 @@ This will help create a more effective collaboration environment.
                 }
               }
             );
+            if (ctx.chat.type === 'group') {
+              await ctx.reply(
+                "⚠️ *ADMIN RIGHTS REQUIRED* ⚠️\nI need to be able to read user input for key functionalities\nTo make me work properly, please:\n1. Go to group settings\n2. Select 'Administrators'\n3. Add 'Holon' as an admin\n4. Enable at minimum:\n   - Read messages\n   - Delete messages\n   - Pin messages\nWithout these permissions, I won't be able to read your inputs and to clean after myself.",
+                { parse_mode: 'Markdown' }
+              );
+            }
           } else {
             // Non-admin message
             await ctx.reply(
