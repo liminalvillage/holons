@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import Gun from 'gun'
 import SEA from 'gun/sea.js'
 import Ajv2019 from 'ajv/dist/2019.js'
+import * as Federation from './federation.js';
 
 
 class HoloSphere {
@@ -14,7 +15,7 @@ class HoloSphere {
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
     constructor(appname, strict = false, openaikey = null, gunInstance = null) {
-        console.log('HoloSphere v1.1.5'); 
+        console.log('HoloSphere v1.1.8'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -43,9 +44,6 @@ class HoloSphere {
                 apiKey: openaikey,
             });
         }
-
-        // Initialize spaces cache
-        this.spaces = {};
 
         // Initialize subscriptions
         this.subscriptions = {};
@@ -108,8 +106,7 @@ class HoloSphere {
         await this.putGlobal('schemas', {
             id: lens,
             schema: schema,
-            timestamp: Date.now(),
-            owner: this.currentSpace?.alias
+            timestamp: Date.now()
         });
 
         return true;
@@ -173,24 +170,66 @@ class HoloSphere {
             if (password) {
                 try {
                     await new Promise((resolve, reject) => {
-                        user.auth(holon, password, (ack) => {
+                        user.auth(this.userName(holon), password, (ack) => {
                             if (ack.err) reject(new Error(ack.err));
                             else resolve();
                         });
                     });
                 } catch (loginError) {
                     // If authentication fails, try to create user and then authenticate
-                    await new Promise((resolve, reject) => {
-                        user.create(holon, password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else {
-                                user.auth(holon, password, (authAck) => {
-                                    if (authAck.err) reject(new Error(authAck.err));
-                                    else resolve();
-                                });
-                            }
+                    try {
+                        await new Promise((resolve, reject) => {
+                            user.create(this.userName(holon), password, (ack) => {
+                                if (ack.err) {
+                                    // Don't reject if the user is already being created or already exists
+                                    if (ack.err.includes('already being created') || 
+                                        ack.err.includes('already created')) {
+                                        console.warn(`User creation note: ${ack.err}, continuing...`);
+                                        // Try to authenticate again
+                                        user.auth(this.userName(holon), password, (authAck) => {
+                                            if (authAck.err) {
+                                                if (authAck.err.includes('already being created') || 
+                                                    authAck.err.includes('already created')) {
+                                                    console.warn(`Auth note: ${authAck.err}, continuing...`);
+                                                    resolve(); // Continue anyway
+                                                } else {
+                                                    reject(new Error(authAck.err));
+                                                }
+                                            } else {
+                                                resolve();
+                                            }
+                                        });
+                                    } else {
+                                        reject(new Error(ack.err));
+                                    }
+                                } else {
+                                    user.auth(this.userName(holon), password, (authAck) => {
+                                        if (authAck.err) reject(new Error(authAck.err));
+                                        else resolve();
+                                    });
+                                }
+                            });
                         });
-                    });
+                    } catch (createError) {
+                        // Try one last authentication
+                        try {
+                            await new Promise((resolve, reject) => {
+                                setTimeout(() => {
+                                    user.auth(this.userName(holon), password, (ack) => {
+                                        if (ack.err) {
+                                            // Continue even if auth fails at this point
+                                            console.warn(`Final auth attempt note: ${ack.err}, continuing with limited functionality`);
+                                            resolve();
+                                        } else {
+                                            resolve();
+                                        }
+                                    });
+                                }, 100); // Short delay before retry
+                            });
+                        } catch (finalAuthError) {
+                            console.warn('All authentication attempts failed, continuing with limited functionality');
+                        }
+                    }
                 }
             }
 
@@ -266,7 +305,7 @@ class HoloSphere {
             if (password) {
                 try {
                     await new Promise((resolve, reject) => {
-                        user.auth(holon, password, (ack) => {
+                        user.auth(this.userName(holon), password, (ack) => {
                             if (ack.err) reject(new Error(ack.err));
                             else resolve();
                         });
@@ -274,10 +313,10 @@ class HoloSphere {
                 } catch (loginError) {
                     // If authentication fails, try to create user and then authenticate
                     await new Promise((resolve, reject) => {
-                        user.create(holon, password, (ack) => {
+                        user.create(this.userName(holon), password, (ack) => {
                             if (ack.err) reject(new Error(ack.err));
                             else {
-                                user.auth(holon, password, (authAck) => {
+                                user.auth(this.userName(holon), password, (authAck) => {
                                     if (authAck.err) reject(new Error(authAck.err));
                                     else resolve();
                                 });
@@ -331,60 +370,23 @@ class HoloSphere {
 
     /**
      * Propagates data to federated spaces
-     * @private
      * @param {string} holon - The holon identifier
      * @param {string} lens - The lens identifier
      * @param {object} data - The data to propagate
+     * @param {object} [options] - Propagation options
+     * @returns {Promise<object>} - Result with success count and errors
+     */
+    async propagateToFederation(holon, lens, data, options = {}) {
+        return Federation.propagateToFederation(this, holon, lens, data, options);
+    }
+
+    /**
+     * @private
+     * @deprecated Use propagateToFederation instead
      */
     async _propagateToFederation(holon, lens, data) {
-        try {
-            // Get federation info for current space
-            const fedInfo = await this.getFederation(this.currentSpace.alias);
-            if (!fedInfo || !fedInfo.notify || fedInfo.notify.length === 0) {
-                return; // No federation to propagate to
-            }
-
-            // Propagate to each federated space
-            const propagationPromises = fedInfo.notify.map(spaceId =>
-                new Promise((resolve) => {
-                    // Store data in the federated space's lens
-                    this.gun.get(this.appname)
-                        .get(spaceId)
-                        .get(lens)
-                        .get(data.id)
-                        .put(JSON.stringify({
-                            ...data,
-                            federation: {
-                                ...data.federation,
-                                notified: Date.now()
-                            }
-                        }), ack => {
-                            if (ack.err) {
-                                console.warn(`Failed to propagate to space ${spaceId}:`, ack.err);
-                            }
-                            resolve();
-                        });
-
-                    // Also store in federation lens for notifications
-                    this.gun.get(this.appname)
-                        .get(spaceId)
-                        .get('federation')
-                        .get(data.id)
-                        .put(JSON.stringify({
-                            ...data,
-                            federation: {
-                                ...data.federation,
-                                notified: Date.now()
-                            }
-                        }));
-                })
-            );
-
-            await Promise.all(propagationPromises);
-        } catch (error) {
-            console.warn('Federation propagation error:', error);
-            // Don't throw here to avoid failing the original put
-        }
+        console.warn('_propagateToFederation is deprecated, use propagateToFederation instead');
+        return this.propagateToFederation(holon, lens, data);
     }
 
     /**
@@ -765,23 +767,39 @@ class HoloSphere {
                 try {
                     // Try to authenticate first
                     await new Promise((resolve, reject) => {
-                        user.auth(tableName, password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else resolve();
+                        user.auth(this.userName(tableName), password, (ack) => {
+                            if (ack.err) {
+                                // Handle wrong username/password gracefully
+                                if (ack.err.includes('Wrong user or password') || 
+                                    ack.err.includes('No user')) {
+                                    console.warn(`Authentication failed for ${tableName}: ${ack.err}`);
+                                    // Will try to create user next
+                                    reject(new Error(ack.err));
+                                } else {
+                                    reject(new Error(ack.err));
+                                }
+                            } else {
+                                resolve();
+                            }
                         });
                     });
                 } catch (authError) {
                     // If authentication fails, try to create user
                     try {
                         await new Promise((resolve, reject) => {
-                            user.create(tableName, password, (ack) => {
+                            user.create(this.userName(tableName), password, (ack) => {
+                                // Handle "User already created!" error gracefully
                                 if (ack.err && !ack.err.includes('already created')) {
                                     reject(new Error(ack.err));
                                 } else {
                                     // Whether user was created or already existed, try to authenticate
-                                    user.auth(tableName, password, (authAck) => {
-                                        if (authAck.err) reject(new Error(authAck.err));
-                                        else resolve();
+                                    user.auth(this.userName(tableName), password, (authAck) => {
+                                        if (authAck.err) {
+                                            console.warn(`Authentication failed after creation for ${tableName}: ${authAck.err}`);
+                                            reject(new Error(authAck.err));
+                                        } else {
+                                            resolve();
+                                        }
                                     });
                                 }
                             });
@@ -789,9 +807,14 @@ class HoloSphere {
                     } catch (createError) {
                         // If both auth and create fail, try one last auth attempt
                         await new Promise((resolve, reject) => {
-                            user.auth(tableName, password, (ack) => {
-                                if (ack.err) reject(new Error(ack.err));
-                                else resolve();
+                            user.auth(this.userName(tableName), password, (ack) => {
+                                if (ack.err) {
+                                    console.warn(`Final authentication attempt failed for ${tableName}: ${ack.err}`);
+                                    // Continue with operation even if auth fails
+                                    resolve();
+                                } else {
+                                    resolve();
+                                }
                             });
                         });
                     }
@@ -865,20 +888,38 @@ class HoloSphere {
             if (password) {
                 try {
                     await new Promise((resolve, reject) => {
-                        user.auth(tableName, password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else resolve();
+                        user.auth(this.userName(tableName), password, (ack) => {
+                            if (ack.err) {
+                                // Handle wrong username/password gracefully
+                                if (ack.err.includes('Wrong user or password') || 
+                                    ack.err.includes('No user')) {
+                                    console.warn(`Authentication failed for ${tableName}: ${ack.err}`);
+                                    // Will try to create user next
+                                    reject(new Error(ack.err));
+                                } else {
+                                    reject(new Error(ack.err));
+                                }
+                            } else {
+                                resolve();
+                            }
                         });
                     });
                 } catch (loginError) {
                     // If authentication fails, try to create user and then authenticate
                     await new Promise((resolve, reject) => {
-                        user.create(tableName, password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else {
-                                user.auth(tableName, password, (authAck) => {
-                                    if (authAck.err) reject(new Error(authAck.err));
-                                    else resolve();
+                        user.create(this.userName(tableName), password, (ack) => {
+                            // Handle "User already created!" error gracefully
+                            if (ack.err && !ack.err.includes('already created')) {
+                                reject(new Error(ack.err));
+                            } else {
+                                user.auth(this.userName(tableName), password, (authAck) => {
+                                    if (authAck.err) {
+                                        console.warn(`Authentication failed after creation for ${tableName}: ${authAck.err}`);
+                                        // Continue with operation even if auth fails
+                                        resolve();
+                                    } else {
+                                        resolve();
+                                    }
                                 });
                             }
                         });
@@ -1108,22 +1149,21 @@ class HoloSphere {
 
     // ================================ COMPUTE FUNCTIONS ================================
     /**
-   
-   /**
- * Computes operations across multiple layers up the hierarchy
- * @param {string} holon - Starting holon identifier
- * @param {string} lens - The lens to compute
- * @param {object} options - Computation options
- * @param {number} [maxLevels=15] - Maximum levels to compute up
- */
-    async computeHierarchy(holon, lens, options, maxLevels = 15) {
+     * Computes operations across multiple layers up the hierarchy
+     * @param {string} holon - Starting holon identifier
+     * @param {string} lens - The lens to compute
+     * @param {object} options - Computation options
+     * @param {number} [maxLevels=15] - Maximum levels to compute up
+     * @param {string} [password] - Optional password for private spaces
+     */
+    async computeHierarchy(holon, lens, options, maxLevels = 15, password = null) {
         let currentHolon = holon;
         let currentRes = h3.getResolution(currentHolon);
         const results = [];
 
         while (currentRes > 0 && maxLevels > 0) {
             try {
-                const result = await this.compute(currentHolon, lens, options);
+                const result = await this.compute(currentHolon, lens, options, password);
                 if (result) {
                     results.push(result);
                 }
@@ -1139,16 +1179,18 @@ class HoloSphere {
         return results;
     }
 
-    /* Computes operations on content within a holon and lens for one layer up.
+    /**
+     * Computes operations on content within a holon and lens for one layer up.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens to compute.
      * @param {object} options - Computation options
      * @param {string} options.operation - The operation to perform ('summarize', 'aggregate', 'concatenate')
      * @param {string[]} [options.fields] - Fields to perform operation on
      * @param {string} [options.targetField] - Field to store the result in
+     * @param {string} [password] - Optional password for private spaces
      * @throws {Error} If parameters are invalid or missing
      */
-    async compute(holon, lens, options) {
+    async compute(holon, lens, options, password = null) {
         // Validate required parameters
         if (!holon || !lens) {
             throw new Error('compute: Missing required parameters');
@@ -1203,7 +1245,7 @@ class HoloSphere {
 
         // Collect all content from siblings
         const contents = await Promise.all(
-            siblings.map(sibling => this.getAll(sibling, lens))
+            siblings.map(sibling => this.getAll(sibling, lens, password))
         );
 
         const flatContents = contents.flat().filter(Boolean);
@@ -1265,7 +1307,7 @@ class HoloSphere {
                         result.value = computed;
                     }
 
-                    await this.put(parent, lens, result);
+                    await this.put(parent, lens, result, password);
                     return result;
                 }
             } catch (error) {
@@ -1400,35 +1442,88 @@ class HoloSphere {
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens to subscribe to.
      * @param {function} callback - The callback to execute on changes.
+     * @returns {Promise<object>} - Subscription object with unsubscribe method
      */
     async subscribe(holon, lens, callback) {
+        if (!holon || !lens || typeof callback !== 'function') {
+            throw new Error('subscribe: Missing required parameters');
+        }
+
         const subscriptionId = this.generateId();
-        this.subscriptions[subscriptionId] =
-            this.gun.get(this.appname).get(holon).get(lens).map().on( async (data, key) => {
+        
+        try {
+            // Create the subscription
+            const gunSubscription = this.gun.get(this.appname).get(holon).get(lens).map().on(async (data, key) => {
                 if (data) {
                     try {
-                        let parsed = await this.parse(data)
-                        callback(parsed, key)
+                        let parsed = await this.parse(data);
+                        callback(parsed, key);
                     } catch (error) {
                         console.error('Error in subscribe:', error);
                     }
                 }
-            })
-        return {
-            unsubscribe: () => {
-                this.gun.get(this.appname).get(holon).get(lens).map().off()
-                delete this.subscriptions[subscriptionId];
-            }
+            });
+            
+            // Store the subscription with its ID
+            this.subscriptions[subscriptionId] = {
+                id: subscriptionId,
+                holon,
+                lens,
+                active: true,
+                gunSubscription
+            };
+            
+            // Return an object with unsubscribe method
+            return {
+                unsubscribe: () => {
+                    try {
+                        // Turn off the Gun subscription
+                        this.gun.get(this.appname).get(holon).get(lens).map().off();
+                        
+                        // Mark as inactive and remove from subscriptions
+                        if (this.subscriptions[subscriptionId]) {
+                            this.subscriptions[subscriptionId].active = false;
+                            delete this.subscriptions[subscriptionId];
+                        }
+                    } catch (error) {
+                        console.error('Error in unsubscribe:', error);
+                    }
+                }
+            };
+        } catch (error) {
+            console.error('Error creating subscription:', error);
+            throw error;
         }
     }
 
 
+    /**
+     * Notifies subscribers about data changes
+     * @param {object} data - The data to notify about
+     * @private
+     */
     notifySubscribers(data) {
-        Object.values(this.subscriptions).forEach(subscription => {
-            if (subscription.active && this.matchesQuery(data, subscription.query)) {
-                subscription.callback(data);
-            }
-        });
+        if (!data || !data.holon || !data.lens) {
+            return;
+        }
+        
+        try {
+            Object.values(this.subscriptions).forEach(subscription => {
+                if (subscription.active && 
+                    subscription.holon === data.holon && 
+                    subscription.lens === data.lens) {
+                    try {
+                        if (subscription.callback && typeof subscription.callback === 'function') {
+                            subscription.callback(data);
+                        }
+                    } catch (error) {
+                        console.warn('Error in subscription callback:', error);
+                    }
+                }
+            });
+        } catch (error) {
+            console.warn('Error notifying subscribers:', error);
+        }
     }
 
     // Add ID generation method
@@ -1436,11 +1531,8 @@ class HoloSphere {
         return Date.now().toString(10) + Math.random().toString(2);
     }
 
-    matchesQuery(data, query) {
-        return data && query &&
-            data.holon === query.holon &&
-            data.lens === query.lens;
-    }
+    // ================================ FEDERATION FUNCTIONS ================================
+
     /**
      * Creates a federation relationship between two spaces
      * @param {string} spaceId1 - The first space ID
@@ -1450,50 +1542,7 @@ class HoloSphere {
      * @returns {Promise<boolean>} - True if federation was created successfully
      */
     async federate(spaceId1, spaceId2, password1, password2 = null) {
-        if (!spaceId1 || !spaceId2 || !password1) {
-            throw new Error('federate: Missing required parameters');
-        }
-
-        // Get existing federation info for both spaces
-        let fedInfo1 = await this.getGlobal('federation', spaceId1, password1);
-        let fedInfo2 = await this.getGlobal('federation', spaceId2, password2);
-
-        // Check if federation already exists
-        if (fedInfo1 && fedInfo1.federation && fedInfo1.federation.includes(spaceId2)) {
-            throw new Error('Federation already exists');
-        }
-
-        // Create or update federation info for first space
-        if (!fedInfo1) {
-            fedInfo1 = {
-                id: spaceId1,
-                name: spaceId1,
-                federation: [],
-                notify: []
-            };
-        }
-        if (!fedInfo1.federation) fedInfo1.federation = [];
-        fedInfo1.federation.push(spaceId2);
-
-        // Create or update federation info for second space
-        if (!fedInfo2) {
-            fedInfo2 = {
-                id: spaceId2,
-                name: spaceId2,
-                federation: [],
-                notify: []
-            };
-        }
-        if (!fedInfo2.notify) fedInfo2.notify = [];
-        fedInfo2.notify.push(spaceId1);
-
-        // Save both federation records
-        await this.putGlobal('federation', fedInfo1, password1);
-        if (password2) {
-            await this.putGlobal('federation', fedInfo2, password2);
-        }
-
-        return true;
+        return Federation.federate(this, spaceId1, spaceId2, password1, password2);
     }
 
     /**
@@ -1501,48 +1550,13 @@ class HoloSphere {
      * @param {string} spaceId - The space ID to subscribe to
      * @param {string} password - Password for the space
      * @param {function} callback - The callback to execute on notifications
-     * @returns {Promise<object>} - Subscription object with off() method
+     * @param {object} [options] - Subscription options
+     * @param {string[]} [options.lenses] - Specific lenses to subscribe to (default: all)
+     * @param {number} [options.throttle] - Throttle notifications in ms (default: 0)
+     * @returns {Promise<object>} - Subscription object with unsubscribe() method
      */
-    async subscribeFederation(spaceId, password, callback) {
-        if (!spaceId || !password || !callback) {
-            throw new Error('subscribeFederation: Missing required parameters');
-        }
-
-        // Get federation info
-        const fedInfo = await this.getGlobal('federation', spaceId, password);
-        if (!fedInfo) {
-            throw new Error('No federation info found for space');
-        }
-
-        // Create subscription for each federated space
-        const subscriptions = [];
-        if (fedInfo.federation && fedInfo.federation.length > 0) {
-            for (const federatedSpace of fedInfo.federation) {
-                // Subscribe to all lenses in the federated space
-                const sub = await this.subscribe(federatedSpace, '*', async (data) => {
-                    try {
-                        // Only notify if the data has federation info and is from the federated space
-                        if (data && data.federation && data.federation.origin === federatedSpace) {
-                            await callback(data);
-                        }
-                    } catch (error) {
-                        console.warn('Federation notification error:', error);
-                    }
-                });
-                subscriptions.push(sub);
-            }
-        }
-
-        // Return combined subscription object
-        return {
-            off: () => {
-                subscriptions.forEach(sub => {
-                    if (sub && typeof sub.off === 'function') {
-                        sub.off();
-                    }
-                });
-            }
-        };
+    async subscribeFederation(spaceId, password, callback, options = {}) {
+        return Federation.subscribeFederation(this, spaceId, password, callback, options);
     }
 
     /**
@@ -1552,10 +1566,7 @@ class HoloSphere {
      * @returns {Promise<object|null>} - Federation info or null if not found
      */
     async getFederation(spaceId, password = null) {
-        if (!spaceId) {
-            throw new Error('getFederationInfo: Missing space ID');
-        }
-        return await this.getGlobal('federation', spaceId, password);
+        return Federation.getFederation(this, spaceId, password);
     }
 
     /**
@@ -1567,25 +1578,95 @@ class HoloSphere {
      * @returns {Promise<boolean>} - True if federation was removed successfully
      */
     async unfederate(spaceId1, spaceId2, password1, password2 = null) {
-        if (!spaceId1 || !spaceId2 || !password1) {
-            throw new Error('unfederate: Missing required parameters');
+        return Federation.unfederate(this, spaceId1, spaceId2, password1, password2);
+    }
+
+    /**
+     * Gets data from a holon and lens, including data from federated spaces with optional aggregation
+     * @param {string} holon - The holon identifier
+     * @param {string} lens - The lens identifier
+     * @param {object} options - Options for data retrieval and aggregation
+     * @param {string} [password] - Optional password for accessing private data
+     * @returns {Promise<Array>} - Combined array of local and federated data
+     */
+    async getFederated(holon, lens, options = {}, password = null) {
+        return Federation.getFederated(this, holon, lens, options, password);
+    }
+
+    /**
+     * Closes the HoloSphere instance and cleans up resources.
+     * @returns {Promise<void>}
+     */
+    async close() {
+        try {
+            if (this.gun) {
+                // Unsubscribe from all subscriptions
+                const subscriptionIds = Object.keys(this.subscriptions);
+                for (const id of subscriptionIds) {
+                    try {
+                        const subscription = this.subscriptions[id];
+                        if (subscription && subscription.active) {
+                            // Turn off the Gun subscription
+                            this.gun.get(this.appname)
+                                .get(subscription.holon)
+                                .get(subscription.lens)
+                                .map().off();
+                            
+                            // Mark as inactive
+                            subscription.active = false;
+                        }
+                    } catch (error) {
+                        console.warn(`Error cleaning up subscription ${id}:`, error);
+                    }
+                }
+
+                // Clear subscriptions
+                this.subscriptions = {};
+
+                // Close Gun connections
+                if (this.gun.back) {
+                    try {
+                        const mesh = this.gun.back('opt.mesh');
+                        if (mesh && mesh.hear) {
+                            try {
+                                // Safely clear mesh.hear without modifying function properties
+                                const hearKeys = Object.keys(mesh.hear);
+                                for (const key of hearKeys) {
+                                    // Check if it's an array before trying to clear it
+                                    if (Array.isArray(mesh.hear[key])) {
+                                        mesh.hear[key] = [];
+                                    }
+                                }
+                                
+                                // Create a new empty object for mesh.hear
+                                // Only if mesh.hear is not a function
+                                if (typeof mesh.hear !== 'function') {
+                                    mesh.hear = {};
+                                }
+                            } catch (meshError) {
+                                console.warn('Error cleaning up Gun mesh hear:', meshError);
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Error accessing Gun mesh:', error);
+                    }
+                }
+
+                // Clear all Gun instance listeners
+                try {
+                    this.gun.off();
+                } catch (error) {
+                    console.warn('Error turning off Gun listeners:', error);
+                }
+                
+                // Wait a moment for cleanup to complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            console.log('HoloSphere instance closed successfully');
+        } catch (error) {
+            console.error('Error closing HoloSphere instance:', error);
         }
-
-        // Get federation info for both spaces
-        const fedInfo1 = await this.getGlobal('federation', spaceId1, password1);
-        const fedInfo2 = await this.getGlobal('federation', spaceId2, password2);
-
-        if (fedInfo1) {
-            fedInfo1.federation = fedInfo1.federation.filter(id => id !== spaceId2);
-            await this.putGlobal('federation', fedInfo1, password1);
-        }
-
-        if (fedInfo2 && password2) {
-            fedInfo2.notify = fedInfo2.notify.filter(id => id !== spaceId1);
-            await this.putGlobal('federation', fedInfo2, password2);
-        }
-
-        return true;
     }
 
     /**
@@ -1600,165 +1681,14 @@ class HoloSphere {
     }
 
     /**
-     * Gets data from a holon and lens, including data from federated spaces with optional aggregation
-     * @param {string} holon - The holon identifier
-     * @param {string} lens - The lens identifier
-     * @param {object} options - Options for data retrieval and aggregation
-     * @param {string} [password] - Optional password for accessing private data
-     * @returns {Promise<Array>} - Combined array of local and federated data
+     * Creates a namespaced username for Gun authentication
+     * @private
+     * @param {string} spaceId - The space ID
+     * @returns {string} - Namespaced username
      */
-    async getFederated(holon, lens, options = {}, password = null) {
-        // Validate required parameters
-        if (!holon || !lens) {
-            throw new Error('getFederated: Missing required parameters');
-        }
-
-        const {
-            aggregate = false,
-            idField = 'id',
-            sumFields = [],
-            concatArrays = [],
-            removeDuplicates = true,
-            mergeStrategy = null
-        } = options;
-
-        // Get federation info for current space
-        const fedInfo = await this.getFederation(this.currentSpace?.alias, password);
-
-        // Get local data
-        const localData = await this.getAll(holon, lens, password);
-
-        // If no federation or not authenticated, return local data only
-        if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
-            return localData;
-        }
-
-        // Get data from each federated space
-        const federatedData = await Promise.all(
-            fedInfo.federation.map(async (federatedSpace) => {
-                try {
-                    const data = await this.getAll(federatedSpace, lens, password);
-                    return data || [];
-                } catch (error) {
-                    console.warn(`Error getting data from federated space ${federatedSpace}:`, error);
-                    return [];
-                }
-            })
-        );
-
-        // Combine all data
-        const allData = [...localData, ...federatedData.flat()];
-
-        // If aggregating, use enhanced aggregation logic
-        if (aggregate) {
-            const aggregated = new Map();
-
-            for (const item of allData) {
-                const itemId = item[idField];
-                if (!itemId) continue;
-
-                const existing = aggregated.get(itemId);
-                if (!existing) {
-                    aggregated.set(itemId, { ...item });
-                } else {
-                    // If custom merge strategy is provided, use it
-                    if (mergeStrategy && typeof mergeStrategy === 'function') {
-                        aggregated.set(itemId, mergeStrategy(existing, item));
-                        continue;
-                    }
-
-                    // Enhanced default merge strategy
-                    const merged = { ...existing };
-
-                    // Sum numeric fields
-                    for (const field of sumFields) {
-                        if (typeof item[field] === 'number') {
-                            merged[field] = (merged[field] || 0) + (item[field] || 0);
-                        }
-                    }
-
-                    // Concatenate and deduplicate array fields
-                    for (const field of concatArrays) {
-                        if (Array.isArray(item[field])) {
-                            const combinedArray = [
-                                ...(merged[field] || []),
-                                ...(item[field] || [])
-                            ];
-                            // Remove duplicates if elements are primitive
-                            merged[field] = Array.from(new Set(combinedArray));
-                        }
-                    }
-
-                    // Update federation metadata
-                    merged.federation = {
-                        ...merged.federation,
-                        timestamp: Math.max(
-                            merged.federation?.timestamp || 0,
-                            item.federation?.timestamp || 0
-                        ),
-                        origins: Array.from(new Set([
-                            ...(merged.federation?.origins || [merged.federation?.origin]),
-                            ...(item.federation?.origins || [item.federation?.origin])
-                        ]).filter(Boolean))
-                    };
-
-                    // Update the aggregated item
-                    aggregated.set(itemId, merged);
-                }
-            }
-
-            return Array.from(aggregated.values());
-        }
-
-        // If not aggregating, optionally remove duplicates based on idField
-        if (!removeDuplicates) {
-            return allData;
-        }
-
-        // Remove duplicates keeping the most recent version
-        const uniqueMap = new Map();
-        allData.forEach(item => {
-            const id = item[idField];
-            if (!id) return;
-
-            const existing = uniqueMap.get(id);
-            if (!existing ||
-                (item.federation?.timestamp > (existing.federation?.timestamp || 0))) {
-                uniqueMap.set(id, item);
-            }
-        });
-        return Array.from(uniqueMap.values());
-    }
-
-    /**
-     * Closes the HoloSphere instance and cleans up resources.
-     */
-    close() {
-        if (this.gun) {
-            // Unsubscribe from all subscriptions
-            Object.values(this.subscriptions).forEach(subscription => {
-                if (subscription.unsubscribe) {
-                    subscription.unsubscribe();
-                }
-            });
-
-            // Clear subscriptions
-            this.subscriptions = {};
-
-            // Close Gun connections
-            if (this.gun.back) {
-                const mesh = this.gun.back('opt.mesh');
-                if (mesh) {
-                    Object.keys(mesh.hear).forEach(key => {
-                        mesh.hear[key].length = 0;
-                    });
-                    mesh.hear = {};
-                }
-            }
-
-            // Clear all Gun instance listeners
-            this.gun.off();
-        }
+    userName(spaceId) {
+        if (!spaceId) return null;
+        return `${this.appname}:${spaceId}`;
     }
 }
 

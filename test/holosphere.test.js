@@ -55,8 +55,8 @@ describe('HoloSphere', () => {
             expect(holoSphere.gun).toBeDefined();
             expect(holoSphere.validator).toBeDefined();
             expect(holoSphere.openai).toBeUndefined();
-            expect(holoSphere.spaces).toBeDefined();
-            expect(holoSphere.spaces).toEqual({});
+            expect(holoSphere.subscriptions).toBeDefined();
+            expect(holoSphere.subscriptions).toEqual({});
         });
 
         test('should initialize with OpenAI', () => {
