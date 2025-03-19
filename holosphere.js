@@ -15,7 +15,7 @@ class HoloSphere {
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
     constructor(appname, strict = false, openaikey = null, gunInstance = null) {
-        console.log('HoloSphere v1.1.8'); 
+        console.log('HoloSphere v1.1.6'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
