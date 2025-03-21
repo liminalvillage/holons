@@ -138,9 +138,12 @@ class HoloSphere {
      * @param {string} lens - The lens under which to store the content.
      * @param {object} data - The data to store.
      * @param {string} [password] - Optional password for private space.
+     * @param {object} [options] - Additional options
+     * @param {boolean} [options.autoPropagateToFederation=false] - Whether to automatically propagate to federated spaces
+     * @param {object} [options.propagationOptions] - Options to pass to propagateToFederation
      * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
      */
-    async put(holon, lens, data, password = null) {
+    async put(holon, lens, data, password = null, options = {}) {
         if (!holon || !lens || !data) {
             throw new Error('put: Missing required parameters');
         }
@@ -237,34 +240,45 @@ class HoloSphere {
                 try {
                     const payload = JSON.stringify(data);
                     
+                    const putCallback = async (ack) => {
+                        if (ack.err) {
+                            reject(new Error(ack.err));
+                        } else {
+                            this.notifySubscribers({
+                                holon,
+                                lens,
+                                ...data
+                            });
+                            
+                            // Auto-propagate to federation if specified
+                            if (options.autoPropagateToFederation) {
+                                try {
+                                    const propagationResult = await this.propagateToFederation(
+                                        holon, 
+                                        lens, 
+                                        data, 
+                                        options.propagationOptions || {}
+                                    );
+                                    
+                                    // Still resolve with true even if propagation had errors
+                                    if (propagationResult.errors > 0) {
+                                        console.warn('Auto-propagation had errors:', propagationResult);
+                                    }
+                                } catch (propError) {
+                                    console.warn('Error in auto-propagation:', propError);
+                                }
+                            }
+                            
+                            resolve(true);
+                        }
+                    };
+                    
                     if (password) {
                         // For private data, use the authenticated user's space
-                        user.get('private').get(lens).get(data.id).put(payload, ack => {
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                this.notifySubscribers({
-                                    holon,
-                                    lens,
-                                    ...data
-                                });
-                                resolve(true);
-                            }
-                        });
+                        user.get('private').get(lens).get(data.id).put(payload, putCallback);
                     } else {
                         // For public data, use the regular path
-                        this.gun.get(this.appname).get(holon).get(lens).get(data.id).put(payload, ack => {
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                this.notifySubscribers({
-                                    holon,
-                                    lens,
-                                    ...data
-                                });
-                                resolve(true);
-                            }
-                        });
+                        this.gun.get(this.appname).get(holon).get(lens).get(data.id).put(payload, putCallback);
                     }
                 } catch (error) {
                     reject(error);
@@ -282,13 +296,17 @@ class HoloSphere {
      * @param {string} lens - The lens from which to retrieve content.
      * @param {string} key - The specific key to retrieve.
      * @param {string} [password] - Optional password for private space.
+     * @param {object} [options] - Additional options
+     * @param {boolean} [options.resolveReferences=true] - Whether to automatically resolve federation references
      * @returns {Promise<object|null>} - The retrieved content or null if not found.
      */
-    async get(holon, lens, key, password = null) {
+    async get(holon, lens, key, password = null, options = {}) {
         if (!holon || !lens || !key) {
             console.error('get: Missing required parameters:', { holon, lens, key });
             return null;
         }
+
+        const { resolveReferences = true } = options;
 
         // Only check schema in strict mode
         let schema;
@@ -336,6 +354,90 @@ class HoloSphere {
                     try {
                         const parsed = await this.parse(data);
 
+                        if (!parsed) {
+                            resolve(null);
+                            return;
+                        }
+
+                        // Check if this is a reference that needs to be resolved
+                        if (resolveReferences !== false && parsed) {
+                            // Check if this is a simple reference (id + soul)
+                            if (parsed.soul) {
+                                console.log(`Resolving simple reference with soul: ${parsed.soul}`);
+                                try {
+                                    // For direct soul resolution, we need to parse the soul to get the right path
+                                    const soulParts = parsed.soul.split('/');
+                                    if (soulParts.length >= 4) {  // Expected format: appname/holon/lens/key
+                                        const originHolon = soulParts[1];
+                                        const originLens = soulParts[2];
+                                        const originKey = soulParts[3];
+                                        
+                                        console.log(`Extracting from soul - holon: ${originHolon}, lens: ${originLens}, key: ${originKey}`);
+                                        
+                                        // Get original data using the extracted path components
+                                        const originalData = await this.get(
+                                            originHolon,
+                                            originLens,
+                                            originKey,
+                                            null,
+                                            { resolveReferences: false } // Prevent infinite recursion
+                                        );
+                                        
+                                        if (originalData) {
+                                            console.log(`Original data found through soul path resolution:`, originalData);
+                                            resolve({
+                                                ...originalData,
+                                                _federation: {
+                                                    isReference: true,
+                                                    resolved: true,
+                                                    soul: parsed.soul,
+                                                    timestamp: Date.now()
+                                                }
+                                            });
+                                            return;
+                                        } else {
+                                            console.warn(`Could not resolve reference: original data not found at extracted path`);
+                                        }
+                                    } else {
+                                        console.warn(`Soul doesn't match expected format: ${parsed.soul}`);
+                                    }
+                                } catch (error) {
+                                    console.warn(`Error resolving reference by soul: ${error.message}`);
+                                }
+                            }
+                            // Legacy federation reference
+                            else if (parsed._federation && parsed._federation.isReference) {
+                                console.log(`Resolving legacy federation reference from ${parsed._federation.origin}`);
+                                try {
+                                    const reference = parsed._federation;
+                                    const originalData = await this.get(
+                                        reference.origin,
+                                        reference.lens,
+                                        key,
+                                        null,
+                                        { resolveReferences: false } // Prevent infinite recursion
+                                    );
+                                    
+                                    if (originalData) {
+                                        return {
+                                            ...originalData,
+                                            _federation: {
+                                                ...reference,
+                                                resolved: true,
+                                                timestamp: Date.now()
+                                            }
+                                        };
+                                    } else {
+                                        console.warn(`Could not resolve legacy reference: original data not found`);
+                                        return parsed; // Return the reference if we can't resolve it
+                                    }
+                                } catch (error) {
+                                    console.warn(`Error resolving legacy reference: ${error.message}`);
+                                    return parsed;
+                                }
+                            }
+                        }
+
                         if (schema) {
                             const valid = this.validator.validate(schema, parsed);
                             if (!valid) {
@@ -366,6 +468,36 @@ class HoloSphere {
             console.error('Error in get:', error);
             return null;
         }
+    }
+
+    /**
+     * Retrieves a node directly using its soul path
+     * @param {string} soul - The soul path of the node
+     * @returns {Promise<any>} - The retrieved node or null if not found.
+     */
+    async getNodeBySoul(soul) {
+        if (!soul) {
+            throw new Error('getNodeBySoul: Missing soul parameter');
+        }
+
+        console.log(`getNodeBySoul: Accessing soul ${soul}`);
+
+        return new Promise((resolve) => {
+            try {
+                const ref = this.getNodeRef(soul);
+                ref.once((data) => {
+                    console.log(`getNodeBySoul: Retrieved data:`, data);
+                    if (!data) {
+                        resolve(null);
+                        return;
+                    }
+                    resolve(data);  // Return the data directly
+                });
+            } catch (error) {
+                console.error(`getNodeBySoul error:`, error);
+                resolve(null);
+            }
+        });
     }
 
     /**
@@ -1539,10 +1671,11 @@ class HoloSphere {
      * @param {string} spaceId2 - The second space ID
      * @param {string} password1 - Password for the first space
      * @param {string} [password2] - Optional password for the second space
+     * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications automatically
      * @returns {Promise<boolean>} - True if federation was created successfully
      */
-    async federate(spaceId1, spaceId2, password1, password2 = null) {
-        return Federation.federate(this, spaceId1, spaceId2, password1, password2);
+    async federate(spaceId1, spaceId2, password1, password2 = null, bidirectional = true) {
+        return Federation.federate(this, spaceId1, spaceId2, password1, password2, bidirectional);
     }
 
     /**
@@ -1582,15 +1715,14 @@ class HoloSphere {
     }
 
     /**
-     * Gets data from a holon and lens, including data from federated spaces with optional aggregation
-     * @param {string} holon - The holon identifier
-     * @param {string} lens - The lens identifier
-     * @param {object} options - Options for data retrieval and aggregation
-     * @param {string} [password] - Optional password for accessing private data
-     * @returns {Promise<Array>} - Combined array of local and federated data
+     * Get and aggregate data from federated spaces
+     * @param {string} holon The holon name
+     * @param {string} lens The lens name
+     * @param {Object} options Options for retrieval and aggregation
+     * @returns {Promise<Array>} Combined array of local and federated data
      */
-    async getFederated(holon, lens, options = {}, password = null) {
-        return Federation.getFederated(this, holon, lens, options, password);
+    async getFederated(holon, lens, options = {}) {
+        return Federation.getFederated(this, holon, lens, options);
     }
 
     /**
