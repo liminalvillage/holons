@@ -17,11 +17,12 @@ export default class Expenses {
         bot.command(['add'], async (ctx) => { this.addToSplit(ctx) });
         bot.command(['ledger'], async (ctx) => { this.ledger(ctx) });
         bot.action(/split:(.+)/, async (ctx) => {
-            const chatID = ctx.callbackQuery?.message?.chat?.id
-            const messageID = ctx.callbackQuery.message.message_id;
+            const chatID = utils.getChatId(ctx) 
+            const messageID = utils.getMessageId(ctx)
+            const userID = utils.getUserId(ctx);
             const expenseID = ctx.match[1];
             const language = await this.settings.getLanguage(chatID)
-            const result = await this.joinSplit(chatID, ctx.from.username || ctx.from.id, expenseID);
+            const result = await this.joinSplit(chatID, userID, expenseID);
             if (result) {
                 ctx.telegram.editMessageText(chatID, messageID, null, await this.createMessage(chatID,result), Markup.inlineKeyboard([{ text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
             } else {
@@ -150,7 +151,8 @@ export default class Expenses {
         if (expense) {
             if (!expense.splitWith.includes(userID)) { //add user to split
                 expense.splitWith.push(userID);
-                expense.splitWith.remove(chatID);
+                // Remove chatID if it exists in the array
+                expense.splitWith = expense.splitWith.filter(id => id !== chatID);
             }
             else {//remove user from split
                 expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != userID; });
@@ -343,6 +345,11 @@ export default class Expenses {
     }
 
     async getDisplayName(chatId, userId) {
+        if (userId == chatId) {
+            const groupInfo = await this.db.get(chatId + '/settings');
+            return "Holon"; //TODO maybe get the group name from the settings
+
+        }
         const userInfo = await this.db.get(chatId + '/users', userId);
         if (!userInfo) {
             return userId.toString();

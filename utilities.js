@@ -91,7 +91,7 @@ export const getDisplayName = (user) => {
   const firstName = user.first_name || "";
   const lastName = user.last_name || "";
   
-  if (!firstName && !lastName) return user.username || "Unknown";
+  if (!firstName && !lastName) return user.username || "Unknown User";
   
   return firstName + (lastName ? ` ${lastName.charAt(0)}.` : "");
 };
