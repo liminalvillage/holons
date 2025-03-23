@@ -57,61 +57,82 @@ class UI {
   }
 
   async getFederatedUsers(chatID) {
-    // get all users from the chat
-    let users = await this.db.getAll(chatID + '/users')
-
-    // get all users from the federation
-    let federation = await this.settings.getFederation(chatID)
-    if (federation)
-    for (let i = 0; i < federation.length; i++) {
-
-      let federatedusers = await this.db.getAll(federation[i] + '/users')
-      //check if the user is already in the list
-      for (let j = 0; j < federatedusers.length; j++) {
-        let user = federatedusers[j]
-        let found = false
-        for (let k = 0; k < users.length; k++) {
-          if (users[k].username === user.username) {
-            found = true
-            users[k].received += user.received
-            users[k].sent += user.sent
-            users[k].hours += user.hours
-            users[k].money += user.money
-            users[k].voice += user.voice
-            users[k].initiated = users[k].initiated.concat(user.initiated);
-            users[k].wants = users[k].wants.concat(user.wants);
-            users[k].offers = users[k].offers.concat(user.offers);
-            users[k].values = users[k].values.concat(user.values);
-            users[k].appreciated = users[k].appreciated.concat(user.appreciated);
-            users[k].completed = users[k].completed.concat(user.completed);
-            users[k].collaboration = users[k].collaboration.concat(user.collaboration);
+    // Get all users from the chat
+    let users = await this.db.getAll(chatID + '/users');
+    
+    try {
+      // Get users from federated spaces using holosphere's federated functionality
+      const federatedUsers = await this.db.holosphere.getFederated(chatID, 'users', {
+        aggregate: true,
+        idField: 'username',
+        sumFields: ['received', 'sent'],
+        includeFederated: true,
+        includeLocal: false
+      });
+      
+      // Combine local and federated users
+      if (federatedUsers && federatedUsers.length > 0) {
+        for (const fedUser of federatedUsers) {
+          let found = false;
+          for (let i = 0; i < users.length; i++) {
+            if (users[i].username === fedUser.username) {
+              // Merge user data
+              users[i].received = (users[i].received || 0) + (fedUser.received || 0);
+              users[i].sent = (users[i].sent || 0) + (fedUser.sent || 0);
+              found = true;
+              break;
+            }
+          }
+          
+          if (!found) {
+            // Add new federated user
+            users.push(fedUser);
           }
         }
-        if (!found) {
-          users.push(user)
-        }
       }
+    } catch (error) {
+      console.error('Error getting federated users:', error);
     }
-    return users
+    
+    return users;
   }
 
   async getFederatedQuests(chatID) {
-    let federation = await this.settings.getFederation(chatID)
-    let quests = await this.db.holosphere.getAll(chatID, 'quests')//.filter(quest => quest.status === 'ongoing')
-    for (let i = 0; i < federation.length; i++) {
-      let federatedquests = await this.db.getAll(federation[i] + '/quests')
-      quests = quests.concat(federatedquests)
+    try {
+      // Get quests from local and federated spaces using holosphere's federated functionality
+      const quests = await this.db.holosphere.getFederated(chatID, 'quests', {
+        aggregate: false,
+        includeLocal: true,
+        includeFederated: true
+      });
+      return quests || [];
+    } catch (error) {
+      console.error('Error getting federated quests:', error);
+      // Fallback to local quests only
+      return await this.db.holosphere.getAll(chatID, 'quests') || [];
     }
-    return quests
   }
 
   async getFederatedValues(chatID) {
-    let users = await this.getFederatedUsers(chatID)
-    let values
-    for (let i = 0; i < users.length; i++) {
-      values = values.concat(users.values)
+    try {
+      // First get all users with their values from both local and federated spaces
+      let users = await this.getFederatedUsers(chatID);
+      
+      // Extract and combine all values
+      let allValues = [];
+      for (let i = 0; i < users.length; i++) {
+        if (users[i].values && Array.isArray(users[i].values)) {
+          allValues = allValues.concat(users[i].values);
+        }
+      }
+      
+      // Remove duplicates
+      const uniqueValues = [...new Set(allValues)];
+      return uniqueValues;
+    } catch (error) {
+      console.error('Error getting federated values:', error);
+      return [];
     }
-    return values
   }
 
 

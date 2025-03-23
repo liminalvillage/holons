@@ -346,8 +346,8 @@ export default class Expenses {
 
     async getDisplayName(chatId, userId) {
         if (userId == chatId) {
-            const groupInfo = await this.db.get(chatId + '/settings');
-            return "Holon"; //TODO maybe get the group name from the settings
+            const groupInfo = await this.settings.getSettings(chatId).name;
+            return groupInfo || "This Holon"; //TODO maybe get the group name from the settings
 
         }
         const userInfo = await this.db.get(chatId + '/users', userId);

@@ -345,17 +345,41 @@ export default class Settings {
         })
 
         this.bot.command(['federate', 'spoon'], async (ctx) => {
-            if (utils.isAdmin(ctx)) this.federate(ctx)
+            if (utils.isAdmin(ctx)) this.federate(ctx).catch((e) => { console.log(e) })
             else ctx.reply('Only a chat admin can perform this action')
         }
         )
 
         this.bot.command('federation', async (ctx) => {
-
-            await this.getFederation(ctx)
-
-        }
-        )
+            try {
+                const chatID = utils.getChatId(ctx);
+                const fedInfo = await this.db.holosphere.getFederation(chatID);
+                
+                if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
+                    ctx.reply('This chat is not federated with any other spaces.');
+                    return;
+                }
+                
+                let message = 'Federation information:\n\n';
+                message += `This chat (${chatID}) is federated with:\n`;
+                
+                for (const space of fedInfo.federation) {
+                    message += `- ${space}\n`;
+                }
+                
+                if (fedInfo.notify && fedInfo.notify.length > 0) {
+                    message += '\nThis chat will notify:\n';
+                    for (const space of fedInfo.notify) {
+                        message += `- ${space}\n`;
+                    }
+                }
+                
+                ctx.reply(message);
+            } catch (error) {
+                console.error('Error getting federation info:', error);
+                ctx.reply('Error retrieving federation information: ' + error.message);
+            }
+        })
 
         this.bot.command(['separate', 'fork', 'spork'], async (ctx) => {
             if (utils.isAdmin(ctx)) await this.separate(ctx)
@@ -972,109 +996,54 @@ export default class Settings {
         ctx.reply('Admin changed to ' + admin)
     }
 
+    
+
     async federate(ctx) {
         const chatID = ctx.message.chat.id;
         const federationID = ctx.message.text.split(' ')[1];
 
         if (federationID === undefined || federationID === null) {
-            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456. This chat ID is ' + chatID)
-            return
+            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456. This chat ID is ' + chatID);
+            return;
         }
 
-        // Save federation info into the chat database
-        let fedinfo = await this.db.get('federation', chatID)
-
-        if (fedinfo && fedinfo.federation) {
-
-            if (fedinfo.federation.includes(federationID)) {
-                ctx.reply('This chat is already federated with ' + federationID)
-                return
-            } else {
-                fedinfo.federation.push(federationID.toString())
-                this.db.put('federation', fedinfo)
-            }
-        } else {
-            this.db.put('federation', {
-                id: chatID,
-                name: ctx.message.chat.title,
-                federation: [federationID.toString()],
-                notify: []
-            })
+        try {
+            // Use holosphere federate method
+            await this.db.holosphere.federate(chatID, federationID);
+            ctx.reply('This chat has been federated with ' + federationID);
+        } catch (error) {
+            console.error('Federation error:', error);
+            ctx.reply('Error creating federation: ' + error.message);
         }
-        // save who needs to be notified in the federation database
-        fedinfo = await this.db.get(federationID.toString())[0]
-        if (fedinfo) {
-            if (fedinfo.notify.includes(chatID)) {
-                ctx.reply('This chat is already federated with ' + federationID)
-                return
-            } else {
-                fedinfo.notify.push(chatID)
-                this.db.put('federation', fedinfo)
-            }
-        } else {
-            this.db.put('federation', {
-                id: federationID.toString(),
-                name: await utils.getChatName(ctx, federationID),
-                federation: [],
-                notify: [chatID]
-            })
-        }
-
-
-        // //federate one way
-        // let settings =  await this.getSettings(chatID)
-        // settings.federation.push(federationID)
-        // this.this.db.put(settings)
-        //federate the other way
-        // let settings =  await this.getSettings(federationID)
-        // settings.federation.push(chatID)
-        // this.this.db.put(settings)
-
-        ctx.reply('This chat has been federated with ' + federationID)
-        return
     }
 
-    // get the federation list from the database
     async separate(ctx) {
         const chatID = ctx.message.chat.id;
         const federationID = ctx.message.text.split(' ')[1];
+        
         if (federationID === undefined || federationID === null) {
-            ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456.')
-            return
+            ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456.');
+            return;
         }
-        // Save federation info into the chat database
-        let fedinfo = await this.db.get('federation', chatID)
-        if (!fedinfo || !fedinfo.federation) {
-            ctx.reply('You are not federated with ' + federationID)
-            return
+        
+        try {
+            // Use holosphere unfederate method
+            await this.db.holosphere.unfederate(chatID, federationID);
+            ctx.reply('Federation with ' + federationID + ' has been revoked');
+        } catch (error) {
+            console.error('Unfederation error:', error);
+            ctx.reply('Error removing federation: ' + error.message);
         }
-        //TODO REMOVE NOTIFY
-
-        //TODO REMOVE FEDERATION
-
-
-        // let settings =  await this.getSettings(federationID)
-        // let newfederation = settings.federation.filter(item => item !== chatID)
-        // if (newfederation.length === settings.federation.length) {
-        //     ctx.reply('You are not federated with ' + federationID)
-        //     return
-        // }
-        // await this.this.db.put(settings)
-
-
-        ctx.reply('Federation with ' + federationID + ' has been revoked')
-        return
     }
 
     async getFederation(chatID) {
-        let federation = await this.db.get('federation', chatID)
-        if (!federation || federation == []) {
-            return []
+        try {
+            // Use holosphere getFederation method
+            return await this.db.holosphere.getFederation(chatID);
+        } catch (error) {
+            console.error('Get federation error:', error);
+            return [];
         }
-        else
-            //federation = federation.filter(item => item.id === chatID)[0]
-            //console.log('This chat is federated with: ' + federation.federation + ' and will notify: ' + federation.notify)
-            return federation.federation
     }
 
     async setRoles(ctx) {
