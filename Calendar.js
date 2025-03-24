@@ -162,7 +162,7 @@ export class Calendar {
                 ctx.update.callback_query.message.message_id,
                 null,
                 l,
-                menu).then((msg_promise) => this.chats.set(msg_promise.chat.id, msg_promise.message_id));
+                menu).then((msg_promise) => this.chats.set(msg_promise.chat.id, msg_promise.message_id)).catch((err) => { console.log(err) });
             else
                 ctx.reply(l, menu).then((msg_promise) => this.chats.set(msg_promise.chat.id, msg_promise.message_id));
         },

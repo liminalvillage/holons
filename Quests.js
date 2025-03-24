@@ -92,7 +92,7 @@ export default class Quests {
     async delete(ctx) {
         console.log("DELETE ACTION");
         let chatID = ctx.message.chat.id;
-        let messageID =  ctx.message.text.split(' ')[1];
+        let messageID = ctx.message.text.split(' ')[1];
         this.db.del(chatID + '/quests', messageID.toString())
         ctx.reply('Quest deleted')
     }
@@ -148,10 +148,10 @@ export default class Quests {
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
                     quest.chat = nctx.chat.id;
-                    
+
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
-                    
+
                     // Update message and propagate to federated spaces
                     await this.updateMessage(ctx, quest, language)
                 })
@@ -317,8 +317,8 @@ export default class Quests {
                 quest.chat = nctx.channel.id;
             }
 
-            await this.db.put(chatID + '/quests', quest)
-
+            let fedInfo = await this.db.put(chatID + '/quests', quest)
+            console.log('FED RESULT', fedInfo)
             //Pin the message
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
 
@@ -330,36 +330,61 @@ export default class Quests {
 
             // PROPAGATE TO FEDERATED SPACES
             try {
-                // Get federation info to find out which spaces to notify with Telegram
-                const fedInfo = await this.db.holosphere.getFederation(chatID);
-                
-                // Use holosphere federation to propagate the quest data
-                const propagationResult = await this.db.holosphere.propagate(
-                    chatID,
-                    'quests',
-                    quest,
-                    {
-                        useReferences: true // Use soul references instead of duplicating data
+                for (const federatedChatId of fedInfo.notify) {
+                    console.log('processing federated chat', federatedChatId)
+                    // Skip if it's the same chat as the original
+                    if (federatedChatId === chatID) continue;
+
+                    // Create new message in the federated chat
+                    try {
+                        let newMessage;
+                        if (quest.picture) {
+                            newMessage = await ctx.telegram.sendPhoto(
+                                federatedChatId,
+                                quest.picture,
+                                {
+                                    caption: await this.createMessage(quest, language),
+                                    ...this.markup(quest, language)
+                                }
+                            ).catch((err) => { console.log(err) });
+                        } else {
+                            newMessage = await ctx.telegram.sendMessage(
+                                federatedChatId,
+                                await this.createMessage(quest, language),
+                                this.markup(quest, language)
+                            ).catch((err) => { console.log(err) });
+                        }
+
+                        // Pin the message
+                        await ctx.telegram.pinChatMessage(
+                            federatedChatId,
+                            newMessage.message_id,
+                            { disable_notification: true }
+                        ).catch(err => console.error(`Error pinning message in federated chat ${federatedChatId}:`, err));
+
+                        let federationKey = `${chatID}_${quest.id}_fedmsgs`;
+                        let federatedMessages = await this.db.get('federation_messages', federationKey) || {
+                            id: federationKey,
+                            chatId: chatID,
+                            questId: quest.id,
+                            messages: []
+                        }; 
+                        // Save the federation message tracking information
+                        if (federatedMessages.messages.length > 0) {
+                            await this.db.put('federation_messages', federatedMessages);
+                        }
+                        
+                        console.log(`Created new quest message in federated chat ${federatedChatId}`);
+                    } catch (error) {
+                        console.error(`Failed to create message in federated chat ${federatedChatId}:`, error);
                     }
-                );
-                
-                if (propagationResult && propagationResult.propagated) {
-                    console.log(`Quest propagated to ${propagationResult.success} federated spaces`);
-                    
-                    if (propagationResult.errors > 0) {
-                        console.warn(`Failed to propagate to ${propagationResult.errors} spaces:`, propagationResult.errorDetails);
-                    }
-                    
-                    // Federation messages are now handled in updateMessage
-                    // Don't create messages here to avoid duplicates
+
                 }
-                
-                // Save quest and update the message (which will also handle federation message creation)
-                await this.updateMessage(ctx, quest, language);
+
             } catch (error) {
                 console.error('Error propagating quest to federated spaces:', error);
             }
-            
+
             return quest
         }
     }
@@ -372,7 +397,7 @@ export default class Quests {
         try {
             let chatID = ctx.callbackQuery.data.split('_')[2];
             let messageID = ctx.callbackQuery.data.split('_')[3];
-         
+
 
             const language = await this.settings.getLanguage(chatID)
 
@@ -396,12 +421,12 @@ export default class Quests {
             // Check if the user has already joined the quest
             const userindex = quest.participants.findIndex(user => user.id === sender.id)
             if (userindex > -1) {
-                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`, 
+                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`,
                     { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
                 quest.participants.splice(userindex, 1);
             } else {
                 quest.participants.push(sender);
-                ctx.answerCbQuery(`${getDisplayName(sender)} has joined the quest "${quest.title}"`, 
+                ctx.answerCbQuery(`${getDisplayName(sender)} has joined the quest "${quest.title}"`,
                     { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             }
 
@@ -413,7 +438,7 @@ export default class Quests {
 
             // Update message and propagate to federated spaces
             await this.updateMessage(ctx, quest, language);
-            
+
         } catch (error) {
             console.error('Error in join function:', error);
         }
@@ -484,7 +509,7 @@ export default class Quests {
                 // First, check if there are federated messages for this quest
                 const federationKey = `${chatID}_${messageID}_fedmsgs`;
                 const federatedMessages = await this.db.get('federation_messages', federationKey);
-                
+
                 // If there are federated messages, unpin and delete them
                 if (federatedMessages && federatedMessages.messages && federatedMessages.messages.length > 0) {
                     for (const msgInfo of federatedMessages.messages) {
@@ -492,27 +517,27 @@ export default class Quests {
                             // Unpin the message
                             await ctx.telegram.unpinChatMessage(msgInfo.chatId, msgInfo.messageId)
                                 .catch(err => console.error(`Error unpinning message in federated chat ${msgInfo.chatId}:`, err));
-                            
+
                             // Delete the message
                             await ctx.telegram.deleteMessage(msgInfo.chatId, msgInfo.messageId)
                                 .catch(err => console.error(`Error deleting message in federated chat ${msgInfo.chatId}:`, err));
-                            
+
                             console.log(`Removed federated message in chat ${msgInfo.chatId}`);
                         } catch (error) {
                             console.error(`Failed to remove federated message in chat ${msgInfo.chatId}:`, error);
                         }
                     }
-                    
+
                     // Remove the federation messages tracking record
                     await this.db.del('federation_messages', federationKey);
                 }
-                
+
                 // Now delete quest from database
                 this.db.del(chatID + '/quests', messageID.toString());
-                
+
                 // Unpin the original message
                 ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
-                
+
                 // Delete the telegram message
                 ctx.deleteMessage(messageID.toString()).catch((err) => { });
             } catch (error) {
@@ -540,12 +565,12 @@ export default class Quests {
 
         const stopperindex = quest.stoppers.findIndex(user => user.id === sender.id)
         if (stopperindex > -1) {
-            ctx.reply(`${getDisplayName(sender)} has revoked its veto for the quest "${quest.title}"`, 
+            ctx.reply(`${getDisplayName(sender)} has revoked its veto for the quest "${quest.title}"`,
                 { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
             quest.stoppers.splice(stopperindex, 1);
         } else {
             quest.stoppers.push(sender);
-            ctx.reply(`${getDisplayName(sender)} has stopped the quest "${quest.title}". Please get in touch to address any concerns.`, 
+            ctx.reply(`${getDisplayName(sender)} has stopped the quest "${quest.title}". Please get in touch to address any concerns.`,
                 { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
         }
         if (quest.stoppers.length > 0)
@@ -576,7 +601,7 @@ export default class Quests {
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
         if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || isAdmin(ctx.from.id, chatID)) {
             quest.status = "completed";
-            
+
             // Create expense entries for all time tracked
             if (quest.timeTracking) {
                 for (const [userID, hours] of Object.entries(quest.timeTracking)) {
@@ -597,22 +622,22 @@ export default class Quests {
 
             // Update the message and propagate to federated spaces
             await this.updateMessage(ctx, quest, language);
-            
+
             // Unpin the message and any federated messages
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
-            
+
             // Also unpin any federated messages for this quest
             try {
                 const federationKey = `${chatID}_${messageID}_fedmsgs`;
                 const federatedMessages = await this.db.get('federation_messages', federationKey);
-                
+
                 if (federatedMessages && federatedMessages.messages && federatedMessages.messages.length > 0) {
                     for (const msgInfo of federatedMessages.messages) {
                         try {
                             // Unpin the federated message
                             await ctx.telegram.unpinChatMessage(msgInfo.chatId, msgInfo.messageId)
                                 .catch(err => console.error(`Error unpinning completed quest in federated chat ${msgInfo.chatId}:`, err));
-                            
+
                             console.log(`Unpinned completed quest in federated chat ${msgInfo.chatId}`);
                         } catch (error) {
                             console.error(`Failed to unpin completed quest in federated chat ${msgInfo.chatId}:`, error);
@@ -758,11 +783,11 @@ export default class Quests {
         //await sendToken(sender, 1, chatID)
         if (receivers > 0) {
             await this.users.saveUserAction(sender, "sent", action, 1, chatID)
-            ctx.reply(i18next.t('appreciationsuccess', { 
-                lng: language, 
-                sender: getDisplayName(sender), 
-                receivers: receivers, 
-                action: action 
+            ctx.reply(i18next.t('appreciationsuccess', {
+                lng: language,
+                sender: getDisplayName(sender),
+                receivers: receivers,
+                action: action
             })).catch((error) => console.log(error));
         }
         else
@@ -786,11 +811,11 @@ export default class Quests {
             if (language == undefined || language == '') {
                 language = await this.settings.getLanguage(quest.chat);
             }
-            
+
             // Update the message in original chat
             const message_id = quest.id;
             const chat_id = quest.chat;
-            
+
             if (quest.picture) {
                 await ctx.telegram.editMessageMedia(
                     chat_id,
@@ -813,15 +838,15 @@ export default class Quests {
                     this.markup(quest, language)
                 ).catch((err) => { console.error('Error updating text message:', err) });
             }
-            
+
             // Propagate changes to federated spaces
             try {
                 // Update quest in database first
                 await this.db.put(chat_id + '/quests', quest);
-                
+
                 // Get federation info to find out which spaces to notify with Telegram
                 const fedInfo = await this.db.holosphere.getFederation(chat_id);
-                
+
                 // Use holosphere federation to propagate the updated quest data
                 const propagationResult = await this.db.holosphere.propagate(
                     chat_id,
@@ -831,28 +856,28 @@ export default class Quests {
                         useReferences: true // Use soul references instead of duplicating data
                     }
                 );
-                
+
                 if (propagationResult && propagationResult.propagated) {
                     console.log(`Quest update propagated to ${propagationResult.success} federated spaces`);
-                    
+
                     // Also create/update Telegram messages in federated spaces
                     if (fedInfo && fedInfo.notify && fedInfo.notify.length > 0) {
                         // Track all the federated message IDs for this quest
                         let federationKey = `${chat_id}_${message_id}_fedmsgs`;
-                        let federatedMessages = await this.db.get('federation_messages', federationKey) || { 
+                        let federatedMessages = await this.db.get('federation_messages', federationKey) || {
                             id: federationKey,
-                            chatId: chat_id, 
-                            questId: message_id, 
-                            messages: [] 
+                            chatId: chat_id,
+                            questId: message_id,
+                            messages: []
                         };
-                        
+
                         for (const federatedChatId of fedInfo.notify) {
                             // Skip if it's the same chat as the original
                             if (federatedChatId === chat_id) continue;
-                            
+
                             // Check if we already have a message for this quest in this chat
                             const existingMsgInfo = federatedMessages.messages.find(m => m.chatId === federatedChatId);
-                            
+
                             if (existingMsgInfo) {
                                 // Update existing message
                                 try {
@@ -895,12 +920,12 @@ export default class Quests {
                                         );
                                     } else {
                                         newMessage = await ctx.telegram.sendMessage(
-                                            federatedChatId, 
+                                            federatedChatId,
                                             await this.createMessage(quest, language),
                                             this.markup(quest, language)
                                         );
                                     }
-                                    
+
                                     // Pin the message if it's not completed
                                     if (quest.status !== 'completed') {
                                         await ctx.telegram.pinChatMessage(
@@ -909,7 +934,7 @@ export default class Quests {
                                             { disable_notification: true }
                                         ).catch(err => console.error(`Error pinning message in federated chat ${federatedChatId}:`, err));
                                     }
-                                    
+
                                     // Store the new message information
                                     federatedMessages.messages.push({
                                         chatId: federatedChatId,
@@ -921,7 +946,7 @@ export default class Quests {
                                 }
                             }
                         }
-                        
+
                         // Save the updated federation message tracking information
                         await this.db.put('federation_messages', federatedMessages);
                     }
@@ -929,7 +954,7 @@ export default class Quests {
             } catch (error) {
                 console.error('Error propagating quest update to federated spaces:', error);
             }
-            
+
         } catch (error) {
             console.error('Error in updateMessage:', error);
         }
@@ -940,23 +965,23 @@ export default class Quests {
         try {
             const originalMessage = ctx.message.reply_to_message;
             const note = ctx.message.text;
-            
+
             // Extract quest ID from the original message
             const questId = this.extractQuestId(originalMessage);
-            
+
             if (!questId) {
                 console.log('Could not find quest ID');
                 return;
             }
-            
+
             // Get the quest from database
             const quest = await this.db.get(`${ctx.chat.id}/quests`, questId);
-            
+
             if (!quest) {
                 console.log('Quest not found');
                 return;
             }
-            
+
             // Add the note to the quest
             if (!quest.notes) quest.notes = [];
             quest.notes.push({
@@ -964,13 +989,13 @@ export default class Quests {
                 from: ctx.from,
                 timestamp: Date.now()
             });
-            
+
             // Save updated quest
             await this.db.put(`${ctx.chat.id}/quests`, quest);
-            
+
             // Update the original message to show the new note
             await this.updateMessage(ctx, quest);
-            
+
         } catch (error) {
             console.error('Error adding note to quest:', error);
         }
@@ -989,20 +1014,20 @@ export default class Quests {
         console.log("MORE ACTIONS");
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
-        
+
         const language = await this.settings.getLanguage(chatID)
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
-        
+
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-        
+
         // Create expanded markup with all buttons
         let buttons = this.getExpandedButtons(quest, language);
-        
+
         // Update message with expanded buttons
-        await ctx.editMessageReplyMarkup({ 
-            inline_keyboard: buttons 
+        await ctx.editMessageReplyMarkup({
+            inline_keyboard: buttons
         }).catch((err) => { console.log(err) });
-        
+
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
 
@@ -1010,37 +1035,37 @@ export default class Quests {
     async hideMoreActions(ctx) {
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
-        
+
         const language = await this.settings.getLanguage(chatID)
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
-        
+
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
-        
+
         // Update message with original markup
-        await ctx.editMessageReplyMarkup({ 
-            inline_keyboard: this.markup(quest, language).reply_markup.inline_keyboard 
+        await ctx.editMessageReplyMarkup({
+            inline_keyboard: this.markup(quest, language).reply_markup.inline_keyboard
         }).catch((err) => { console.log(err) });
-        
+
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
 
     // Add this helper method to get expanded buttons
     getExpandedButtons(quest, language) {
         let buttons = [];
-        
+
         if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
             // First row - essential actions
             buttons.push([
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Second row - time tracking
             buttons.push([
                 Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Third row - appreciation and schedule
             buttons.push([
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
@@ -1052,7 +1077,7 @@ export default class Quests {
                 Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'description_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Fifth row - stop and cancel
             buttons.push([
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
@@ -1075,7 +1100,7 @@ export default class Quests {
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Second row - appreciation and schedule
             buttons.push([
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
@@ -1093,7 +1118,7 @@ export default class Quests {
                 Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Second row
             buttons.push([
                 Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
@@ -1104,7 +1129,7 @@ export default class Quests {
                 Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Second row
             buttons.push([
                 Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
@@ -1121,12 +1146,12 @@ export default class Quests {
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Second row
             buttons.push([
                 Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Third row
             buttons.push([
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
@@ -1139,7 +1164,7 @@ export default class Quests {
                 Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
             ]);
         }
-        
+
         return buttons;
     }
 
@@ -1152,10 +1177,10 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatID)
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') { 
-            console.log('QUEST IS NOT FOUND'); 
+        if (!quest || quest == '') {
+            console.log('QUEST IS NOT FOUND');
             ctx.answerCbQuery('Quest not found')
-            return 
+            return
         }
 
         // Get the user who initiated the publish
@@ -1179,7 +1204,7 @@ export default class Quests {
 
             // Get the node from holosphere
             let node = await this.db.holosphere.getNode(chatID, 'quests', messageID)
-            
+
             if (!node) {
                 // Create node if it doesn't exist
                 node = {
@@ -1196,10 +1221,10 @@ export default class Quests {
             }
 
             // Publish to holosphere
-            await this.db.holosphere.put(hex, "quests", {'id': messageID, 'soul': this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID})
-            
+            await this.db.holosphere.put(hex, "quests", { 'id': messageID, 'soul': this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID })
+
             ctx.answerCbQuery('Quest published to hex ' + hex)
-            
+
             // Update the message to show it's been published
             quest.published = true
             await this.updateMessage(ctx, quest, language)
@@ -1219,10 +1244,10 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatID)
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') { 
-            console.log('QUEST IS NOT FOUND'); 
+        if (!quest || quest == '') {
+            console.log('QUEST IS NOT FOUND');
             ctx.answerCbQuery('Quest not found')
-            return 
+            return
         }
 
         // Get the user who initiated the broadcast
@@ -1246,7 +1271,7 @@ export default class Quests {
 
             // Get the node
             let node = await this.db.holosphere.getNode(chatID, 'quests', messageID)
-            
+
             if (!node) {
                 // Create node if it doesn't exist
                 node = {
@@ -1263,10 +1288,10 @@ export default class Quests {
             }
 
             // Upcast to holosphere
-            await this.db.holosphere.upcast(hex, 'quests', {id: messageID, soul: this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID })
-            
+            await this.db.holosphere.upcast(hex, 'quests', { id: messageID, soul: this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID })
+
             ctx.answerCbQuery('Quest broadcast to hex ' + hex)
-            
+
             // Update the message to show it's been broadcast
             quest.broadcasted = true
             await this.updateMessage(ctx, quest, language)
@@ -1355,10 +1380,10 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatId)
         let quest = await this.db.get(chatId + '/quests', messageId.toString())
 
-        if (!quest || quest == '') { 
-            console.log('QUEST IS NOT FOUND'); 
+        if (!quest || quest == '') {
+            console.log('QUEST IS NOT FOUND');
             ctx.answerCbQuery('Quest not found')
-            return 
+            return
         }
 
         if (!this.checklists) {
@@ -1384,7 +1409,7 @@ export default class Quests {
 
                 // Save the checklist
                 await this.db.put(chatId + '/checklists', checklist);
-                
+
                 // Update quest with checklist ID
                 quest.checklistId = messageId.toString();
                 await this.db.put(chatId + '/quests', quest);
@@ -1403,7 +1428,7 @@ export default class Quests {
     async handleBackToQuest(ctx) {
         const [chatId, questId] = ctx.match[1].split('_');
         const language = await this.settings.getLanguage(chatId);
-        
+
         try {
             const quest = await this.db.get(chatId + '/quests', questId);
             if (!quest) {
@@ -1416,7 +1441,7 @@ export default class Quests {
                 await this.createMessage(quest, language),
                 this.markup(quest, language)
             );
-            
+
             await ctx.answerCbQuery();
         } catch (error) {
             console.error('Error handling back to quest:', error);
@@ -1485,13 +1510,13 @@ export default class Quests {
             }
 
             // Enter scene for adding items with the necessary context
-            await ctx.scene.enter('add_item_scene', { 
+            await ctx.scene.enter('add_item_scene', {
                 checklistId: messageId,
                 chatId: chatId,
                 questId: checklist.questId,
                 questTitle: checklist.questTitle
             });
-            
+
             await ctx.answerCbQuery();
         } catch (error) {
             console.error('Error handling add item:', error);
@@ -1538,7 +1563,7 @@ export default class Quests {
 
         if (quest.participants.length > 0)
             message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => getDisplayName(u)).join(', ')} \n`;
-            
+
         // Add time tracking info if any time is logged
         if (quest.timeTracking && Object.keys(quest.timeTracking).length > 0) {
             message += `| ⏰ Time logged:\n`;
@@ -1552,7 +1577,7 @@ export default class Quests {
 
         if (quest.appreciation.length > 0)
             message += `| ${i18next.t('👍', { lng: language })} : ${[...quest.appreciation].map(u => getDisplayName(u)).join(', ')} \n`;
-        
+
         // Format date in a human-friendly way
         if (quest.when) {
             const date = new Date(quest.when);
@@ -1566,9 +1591,9 @@ export default class Quests {
             } else if (date.toDateString() === tomorrow.toDateString()) {
                 dateStr = `Tomorrow at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
             } else {
-                dateStr = date.toLocaleDateString(language, { 
+                dateStr = date.toLocaleDateString(language, {
                     weekday: 'long',
-                    month: 'long', 
+                    month: 'long',
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit'
@@ -1582,13 +1607,13 @@ export default class Quests {
         if (quest.status === "stopped")
             message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => getDisplayName(u)).join(', ')} \n`;
         message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;
-        
+
         // Add published and broadcast status
         if (quest.published)
             message += `| 📢 ${i18next.t('published', { lng: language })}\n`;
         if (quest.broadcasted)
             message += `| 🎭 ${i18next.t('broadcasted', { lng: language })}\n`;
-            
+
         return message;
     }
 
@@ -1703,13 +1728,13 @@ export default class Quests {
         this.descriptionScene.enter(async (ctx) => {
             const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
             const currentDescription = quest.description || '';
-            
+
             let message = '📝 *Description*\n\n';
             if (currentDescription) {
                 message += currentDescription + '\n\n';
             }
             message += 'Reply to this message to add or update the description.';
-            
+
             await ctx.reply(message, { parse_mode: 'Markdown' });
         });
 
@@ -1727,7 +1752,7 @@ export default class Quests {
 
                 // Update the original quest message
                 await this.updateMessage(ctx, quest);
-                
+
                 await ctx.reply('Description updated successfully!');
                 return ctx.scene.leave();
             } catch (error) {
@@ -1743,7 +1768,7 @@ export default class Quests {
         console.log("DESCRIPTION ACTION");
         const chatId = ctx.callbackQuery.message.chat.id;
         const messageId = ctx.callbackQuery.data.split('_')[3];
-        
+
         try {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
             if (!quest) {
@@ -1752,12 +1777,12 @@ export default class Quests {
             }
 
             // Enter scene for adding/viewing description
-            await ctx.scene.enter('description_scene', { 
+            await ctx.scene.enter('description_scene', {
                 questId: messageId,
                 chatId: chatId,
                 currentDescription: quest.description || ''
             });
-            
+
             await ctx.answerCbQuery();
         } catch (error) {
             console.error('Error handling description:', error);

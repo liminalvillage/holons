@@ -140,7 +140,7 @@ export default class Holons {
               inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
             }
           }
-        );
+        ).catch((err) => { console.log(err) });
         
       } catch (error) {
         console.error("Error creating holon:", error);
@@ -151,7 +151,7 @@ export default class Holons {
               inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
             }
           }
-        );
+        ).catch((err) => { console.log(err) });
       }
       
       await ctx.scene.leave();
@@ -166,7 +166,7 @@ export default class Holons {
             inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
           }
         }
-      );
+      ).catch((err) => { console.log(err) });
       await ctx.scene.leave();
     });
     
@@ -225,7 +225,7 @@ export default class Holons {
             reply_markup: {
               inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
             }
-          });
+          }).catch((err) => { console.log(err) });
         } else {
           ctx.reply(message, { parse_mode: 'Markdown' });
         }
@@ -528,7 +528,7 @@ export default class Holons {
                 reply_markup: {
                   inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
                 }
-              });
+              }).catch((err) => { console.log(err) });
             }
             
             const holon = await this.getHolonContract(holonAddress);
@@ -541,7 +541,7 @@ export default class Holons {
                 reply_markup: {
                   inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
                 }
-              });
+              }).catch((err) => { console.log(err) });
             }
           } catch (error) {
             console.error("Error checking holon type:", error);
@@ -549,7 +549,7 @@ export default class Holons {
               reply_markup: {
                 inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
               }
-            });
+            }).catch((err) => { console.log(err) });
           }
           break;
         case 'back':
@@ -725,9 +725,9 @@ export default class Holons {
         reply_markup: {
           inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
         }
-      });
+      }).catch((err) => { console.log(err) });
     } else {
-      ctx.reply(message);
+      ctx.reply(message).catch((err) => { console.log(err) });
     }
   }
 
@@ -792,9 +792,9 @@ export default class Holons {
         reply_markup: {
           inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
         }
-      });
+      }).catch((err) => { console.log(err) });
     } else {
-      ctx.reply(message, { parse_mode: 'Markdown' });
+      ctx.reply(message, { parse_mode: 'Markdown' }).catch((err) => { console.log(err) });
     }
   }
 
@@ -1259,9 +1259,9 @@ export default class Holons {
           reply_markup: {
             inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
           }
-        });
+        }).catch((err) => { console.log(err) });
       } else {
-        ctx.reply(message);
+        ctx.reply(message).catch((err) => { console.log(err) });
       }
     } catch (error) {
       console.error("Error fetching holon types:", error);
@@ -1391,9 +1391,9 @@ export default class Holons {
               reply_markup: {
                 inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
               }
-            });
+            }).catch((err) => { console.log(err) });
           } else {
-            ctx.reply(message);
+            ctx.reply(message).catch((err) => { console.log(err) });
           }
       } catch (error) {
           console.error("Error retrieving zone members:", error);

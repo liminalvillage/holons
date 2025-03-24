@@ -309,7 +309,7 @@ class Checklists {
             await ctx.editMessageText(
                 `📋 ${checklist.questTitle || 'Checklist'}:`,
                 this.getChecklistKeyboard(checklist)
-            );
+            ).catch((err) => { console.log(err) });
             
             await ctx.answerCbQuery();
         } catch (error) {

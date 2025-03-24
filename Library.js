@@ -111,7 +111,7 @@ class Library {
             const message = isOwner ? 
                 `You borrowed your own item: ${item}` : 
                 `${currentItem.borrower} borrowed ${item} for ${currentItem.credits} credits.`;
-            ctx.reply(message);
+            ctx.reply(message).catch((err) => { console.log(err) });
         }
     }
 

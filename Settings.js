@@ -17,8 +17,8 @@ export default class Settings {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
             const currentPurpose = settings.purpose || i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: currentPurpose }) + '\n\n' + 
-                           i18next.t('settings_send_new', { type: i18next.t('settings_purpose').toLowerCase() }))
+            await ctx.reply(i18next.t('settings_current', { value: currentPurpose }) + '\n\n' +
+                i18next.t('settings_send_new', { type: i18next.t('settings_purpose').toLowerCase() }))
                 .catch(e => console.log('Error in purpose scene enter:', e));
         });
         this.purposeScene.on('text', async (ctx) => {
@@ -27,7 +27,7 @@ export default class Settings {
             settings.purpose = ctx.message.text;
             await this.setSettings(settings);
             await ctx.scene.leave();
-            
+
             // Delete the scene messages
             try {
                 // Delete the user's input message
@@ -39,7 +39,7 @@ export default class Settings {
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
-            
+
             // Show purpose submenu
             await ctx.reply('Purpose Settings', {
                 reply_markup: {
@@ -57,11 +57,11 @@ export default class Settings {
         this.domainsScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentDomains = settings.domains && settings.domains.length > 0 ? 
-                '• ' + settings.domains.join('\n• ') : 
+            const currentDomains = settings.domains && settings.domains.length > 0 ?
+                '• ' + settings.domains.join('\n• ') :
                 i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentDomains }) + '\n\n' + 
-                           i18next.t('settings_send_new', { type: i18next.t('settings_domains').toLowerCase() }))
+            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentDomains }) + '\n\n' +
+                i18next.t('settings_send_new', { type: i18next.t('settings_domains').toLowerCase() }))
                 .catch(e => console.log('Error in domains scene enter:', e));
         });
         this.domainsScene.on('text', async (ctx) => {
@@ -74,7 +74,7 @@ export default class Settings {
             settings.domains = domains;
             await this.setSettings(settings);
             await ctx.scene.leave();
-            
+
             // Delete the scene messages
             try {
                 await ctx.deleteMessage(ctx.message.message_id);
@@ -83,23 +83,23 @@ export default class Settings {
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
-            
+
             // Show domains submenu
             const keyboard = [
                 [{ text: 'Current Domains:', callback_data: ' ' }]
             ];
-            
+
             domains.forEach(domain => {
                 keyboard.push([{ text: `• ${domain}`, callback_data: `domain_${domain}` }]);
             });
-            
+
             if (domains.length === 0) {
                 keyboard.push([{ text: 'No domains set', callback_data: ' ' }]);
             }
-            
+
             keyboard.push([{ text: '✏️ Change', callback_data: 'settings_domains_change' }]);
             keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-            
+
             await ctx.reply('Domains Settings', {
                 reply_markup: { inline_keyboard: keyboard }
             }).catch(e => console.log('Error showing domains menu:', e));
@@ -110,11 +110,11 @@ export default class Settings {
         this.valuesScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentValues = settings.values && settings.values.length > 0 ? 
-                '• ' + settings.values.join('\n• ') : 
+            const currentValues = settings.values && settings.values.length > 0 ?
+                '• ' + settings.values.join('\n• ') :
                 i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentValues }) + '\n\n' + 
-                           i18next.t('settings_send_new', { type: i18next.t('settings_values').toLowerCase() }))
+            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentValues }) + '\n\n' +
+                i18next.t('settings_send_new', { type: i18next.t('settings_values').toLowerCase() }))
                 .catch(e => console.log('Error in values scene enter:', e));
         });
         this.valuesScene.on('text', async (ctx) => {
@@ -127,7 +127,7 @@ export default class Settings {
             settings.values = values;
             await this.setSettings(settings);
             await ctx.scene.leave();
-            
+
             // Delete the scene messages
             try {
                 await ctx.deleteMessage(ctx.message.message_id);
@@ -136,23 +136,23 @@ export default class Settings {
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
-            
+
             // Show values submenu
             const keyboard = [
                 [{ text: 'Current Values:', callback_data: ' ' }]
             ];
-            
+
             values.forEach(value => {
                 keyboard.push([{ text: `• ${value}`, callback_data: `value_${value}` }]);
             });
-            
+
             if (values.length === 0) {
                 keyboard.push([{ text: 'No values set', callback_data: ' ' }]);
             }
-            
+
             keyboard.push([{ text: '✏️ Change', callback_data: 'settings_values_change' }]);
             keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-            
+
             await ctx.reply('Values Settings', {
                 reply_markup: { inline_keyboard: keyboard }
             }).catch(e => console.log('Error showing values menu:', e));
@@ -163,11 +163,11 @@ export default class Settings {
         this.rolesScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentRoles = settings.roles && settings.roles.length > 0 ? 
-                '• ' + settings.roles.join('\n• ') : 
+            const currentRoles = settings.roles && settings.roles.length > 0 ?
+                '• ' + settings.roles.join('\n• ') :
                 i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentRoles }) + '\n\n' + 
-                           i18next.t('settings_send_new', { type: i18next.t('settings_roles').toLowerCase() }))
+            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentRoles }) + '\n\n' +
+                i18next.t('settings_send_new', { type: i18next.t('settings_roles').toLowerCase() }))
                 .catch(e => console.log('Error in roles scene enter:', e));
         });
         this.rolesScene.on('text', async (ctx) => {
@@ -180,7 +180,7 @@ export default class Settings {
             settings.roles = roles;
             await this.setSettings(settings);
             await ctx.scene.leave();
-            
+
             // Delete the scene messages
             try {
                 await ctx.deleteMessage(ctx.message.message_id);
@@ -189,23 +189,23 @@ export default class Settings {
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
-            
+
             // Show roles submenu
             const keyboard = [
                 [{ text: 'Current Roles:', callback_data: ' ' }]
             ];
-            
+
             roles.forEach(role => {
                 keyboard.push([{ text: `• ${role}`, callback_data: `role_${role}` }]);
             });
-            
+
             if (roles.length === 0) {
                 keyboard.push([{ text: 'No roles set', callback_data: ' ' }]);
             }
-            
+
             keyboard.push([{ text: '✏️ Change', callback_data: 'settings_roles_change' }]);
             keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-            
+
             await ctx.reply('Roles Settings', {
                 reply_markup: { inline_keyboard: keyboard }
             }).catch(e => console.log('Error showing roles menu:', e));
@@ -217,8 +217,8 @@ export default class Settings {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
             const currentAdmin = settings.admin || i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: currentAdmin }) + '\n\n' + 
-                           i18next.t('settings_send_new', { type: i18next.t('settings_admin').toLowerCase() }))
+            await ctx.reply(i18next.t('settings_current', { value: currentAdmin }) + '\n\n' +
+                i18next.t('settings_send_new', { type: i18next.t('settings_admin').toLowerCase() }))
                 .catch(e => console.log('Error in admin scene enter:', e));
         });
         this.adminScene.on('text', async (ctx) => {
@@ -228,7 +228,7 @@ export default class Settings {
             settings.admin = admin;
             await this.setSettings(settings);
             await ctx.scene.leave();
-            
+
             // Delete the scene messages
             try {
                 await ctx.deleteMessage(ctx.message.message_id);
@@ -237,7 +237,7 @@ export default class Settings {
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
-            
+
             // Show admin submenu
             await ctx.reply('Admin Settings', {
                 reply_markup: {
@@ -256,8 +256,8 @@ export default class Settings {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
             const currentHex = settings.hex || i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: currentHex }) + '\n\n' + 
-                           i18next.t('settings_send_new', { type: i18next.t('settings_hex').toLowerCase() }))
+            await ctx.reply(i18next.t('settings_current', { value: currentHex }) + '\n\n' +
+                i18next.t('settings_send_new', { type: i18next.t('settings_hex').toLowerCase() }))
                 .catch(e => console.log('Error in hex scene enter:', e));
         });
         this.hexScene.on('text', async (ctx) => {
@@ -267,7 +267,7 @@ export default class Settings {
             settings.hex = hex;
             await this.setSettings(settings);
             await ctx.scene.leave();
-            
+
             // Delete the scene messages
             try {
                 await ctx.deleteMessage(ctx.message.message_id);
@@ -276,7 +276,7 @@ export default class Settings {
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
-            
+
             // Show hex submenu
             await ctx.reply('Hex Settings', {
                 reply_markup: {
@@ -297,7 +297,7 @@ export default class Settings {
         this.bot.stage.register(this.rolesScene);
         this.bot.stage.register(this.adminScene);
         this.bot.stage.register(this.hexScene);
-      
+
 
         // ================= ADMIN ===========================
 
@@ -334,6 +334,8 @@ export default class Settings {
                 this.db.drop(chatID + '/recurring')
 
                 this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
+                //clear federation
+                await this.clearFederation(ctx)
                 ctx.reply('Bot resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -354,26 +356,26 @@ export default class Settings {
             try {
                 const chatID = utils.getChatId(ctx);
                 const fedInfo = await this.db.holosphere.getFederation(chatID);
-                
+
                 if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
                     ctx.reply('This chat is not federated with any other spaces.');
                     return;
                 }
-                
+
                 let message = 'Federation information:\n\n';
                 message += `This chat (${chatID}) is federated with:\n`;
-                
+
                 for (const space of fedInfo.federation) {
                     message += `- ${space}\n`;
                 }
-                
+
                 if (fedInfo.notify && fedInfo.notify.length > 0) {
                     message += '\nThis chat will notify:\n';
                     for (const space of fedInfo.notify) {
                         message += `- ${space}\n`;
                     }
                 }
-                
+
                 ctx.reply(message);
             } catch (error) {
                 console.error('Error getting federation info:', error);
@@ -386,6 +388,14 @@ export default class Settings {
             else ctx.reply('Only a chat admin can perform this action')
         }
         )
+
+        // Add method to completely clear federation information
+        this.bot.command('clearFederation', async (ctx) => {
+            await this.clearFederation(ctx)
+        }
+        )
+
+        
 
         this.bot.command('setlanguage', async (ctx) => {
             if (utils.isAdmin(ctx)) await this.setLanguage(ctx)
@@ -443,7 +453,7 @@ export default class Settings {
             if (utils.isAdmin(ctx)) {
                 const chatID = ctx.message.chat.id;
                 const text = ctx.message.text.substring('/setDomains'.length).trim();
-                
+
                 if (!text) {
                     ctx.reply('Please specify the domains, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setDomains Managing community resources, Coordinating events, Maintaining channels\n\n2. Using newlines:\n/setDomains\nManaging community resources\nCoordinating events\nMaintaining channels');
                     return;
@@ -471,7 +481,7 @@ export default class Settings {
             const chatID = ctx.callbackQuery.message.chat.id;
             await ctx.editMessageText('Select timezone:', {
                 reply_markup: await this.getTimezoneKeyboard(chatID, region)
-            });
+            }).catch((err) => { console.log(err) });
         });
 
         // Handle timezone selection
@@ -484,7 +494,7 @@ export default class Settings {
             await this.setSettings(settings);
             await ctx.editMessageText('Timezone set to: ' + timezone.split('/')[1].replace('_', ' '), {
                 reply_markup: await this.getTimezoneKeyboard(chatID)
-            });
+            }).catch((err) => { console.log(err) });
         });
 
         // Add back the settings command handler
@@ -504,8 +514,8 @@ export default class Settings {
             const action = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
-            
-            switch(action) {
+
+            switch (action) {
                 case 'language':
                     await ctx.editMessageText('Select language:', {
                         reply_markup: await this.getLanguageKeyboard(chatID)
@@ -532,7 +542,7 @@ export default class Settings {
                                     [{ text: '« Back', callback_data: 'settings_back' }]
                                 ]
                             }
-                        });
+                        }).catch((err) => { console.log(err) });
                     } else {
                         ctx.reply('Only a chat admin can perform this action');
                     }
@@ -550,19 +560,19 @@ export default class Settings {
                         const keyboard = [
                             [{ text: 'Current Roles:', callback_data: ' ' }]
                         ];
-                        
+
                         // Add each role as a button
                         currentRoles.forEach(role => {
                             keyboard.push([{ text: `• ${role}`, callback_data: `role_${role}` }]);
                         });
-                        
+
                         if (currentRoles.length === 0) {
                             keyboard.push([{ text: 'No roles set', callback_data: ' ' }]);
                         }
-                        
+
                         keyboard.push([{ text: '✏️ Change', callback_data: 'settings_roles_change' }]);
                         keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-                        
+
                         await ctx.editMessageText('Roles Settings', {
                             reply_markup: { inline_keyboard: keyboard }
                         });
@@ -583,19 +593,19 @@ export default class Settings {
                         const keyboard = [
                             [{ text: 'Current Values:', callback_data: ' ' }]
                         ];
-                        
+
                         // Add each value as a button
                         currentValues.forEach(value => {
                             keyboard.push([{ text: `• ${value}`, callback_data: `value_${value}` }]);
                         });
-                        
+
                         if (currentValues.length === 0) {
                             keyboard.push([{ text: 'No values set', callback_data: ' ' }]);
                         }
-                        
+
                         keyboard.push([{ text: '✏️ Change', callback_data: 'settings_values_change' }]);
                         keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-                        
+
                         await ctx.editMessageText('Values Settings', {
                             reply_markup: { inline_keyboard: keyboard }
                         });
@@ -621,7 +631,7 @@ export default class Settings {
                                     [{ text: '« Back', callback_data: 'settings_back' }]
                                 ]
                             }
-                        });
+                        }).catch((err) => { console.log(err) });
                     } else {
                         ctx.reply('Only a chat admin can perform this action');
                     }
@@ -662,22 +672,22 @@ export default class Settings {
                         const keyboard = [
                             [{ text: 'Current Domains:', callback_data: ' ' }]
                         ];
-                        
+
                         // Add each domain as a button
                         currentDomains.forEach(domain => {
                             keyboard.push([{ text: `• ${domain}`, callback_data: `domain_${domain}` }]);
                         });
-                        
+
                         if (currentDomains.length === 0) {
                             keyboard.push([{ text: 'No domains set', callback_data: ' ' }]);
                         }
-                        
+
                         keyboard.push([{ text: '✏️ Change', callback_data: 'settings_domains_change' }]);
                         keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-                        
+
                         await ctx.editMessageText('Domains Settings', {
                             reply_markup: { inline_keyboard: keyboard }
-                        });
+                        }).catch((err) => { console.log(err) });
                     } else {
                         ctx.reply('Only a chat admin can perform this action');
                     }
@@ -698,7 +708,7 @@ export default class Settings {
                     let weights = await this.getValueEquation(chatID);
                     await ctx.editMessageText('Value Equation:', {
                         reply_markup: this.equationInlineKeyboard(weights)
-                    });
+                    }).catch((err) => { console.log(err) });
                     break;
                 case 'back':
                     await this.showSettingsMenu(ctx, true);
@@ -741,7 +751,7 @@ export default class Settings {
             const language = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
-            
+
             if (['en', 'it', 'es', 'fr'].includes(language)) {
                 settings.language = language;
                 await this.setSettings(settings);
@@ -756,7 +766,7 @@ export default class Settings {
             let weights = await this.getValueEquation(chatID);
             await ctx.editMessageText('Value Equation:', {
                 reply_markup: this.equationInlineKeyboard(weights)
-            });
+            }).catch((err) => { console.log(err) });
         });
 
         // Handle increment/decrement actions for value equation weights
@@ -765,20 +775,20 @@ export default class Settings {
             const chatID = ctx.callbackQuery.message.chat.id;
             const action = ctx.match[1];
             const field = ctx.match[2];
-            
+
             let weights = await this.getValueEquation(chatID);
-            
+
             if (action === 'increment') {
                 weights[field]++;
             } else {
                 weights[field] = Math.max(0, weights[field] - 1);
             }
-            
+
             await this.setValueEquation(chatID, weights);
-            
+
             await ctx.editMessageText('Value Equation:', {
                 reply_markup: this.equationInlineKeyboard(weights)
-            });
+            }).catch((err) => { console.log(err) });
         });
 
     }
@@ -996,7 +1006,7 @@ export default class Settings {
         ctx.reply('Admin changed to ' + admin)
     }
 
-    
+
 
     async federate(ctx) {
         const chatID = ctx.message.chat.id;
@@ -1020,12 +1030,12 @@ export default class Settings {
     async separate(ctx) {
         const chatID = ctx.message.chat.id;
         const federationID = ctx.message.text.split(' ')[1];
-        
+
         if (federationID === undefined || federationID === null) {
             ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456.');
             return;
         }
-        
+
         try {
             // Use holosphere unfederate method
             await this.db.holosphere.unfederate(chatID, federationID);
@@ -1043,6 +1053,80 @@ export default class Settings {
         } catch (error) {
             console.error('Get federation error:', error);
             return [];
+        }
+    }
+
+    async clearFederation(ctx) {
+        const chatID = ctx.message.chat.id;
+        const language = await this.getLanguage(chatID);
+
+            // Check if user has admin privileges
+            if (!utils.isAdmin(ctx.message.from.id, chatID)) {
+                return ctx.reply(i18next.t('adminonly', { lng: language }));
+            }
+
+        // Confirm the action with user
+        try {
+            // Get federation info first to see what we're about to delete
+            const fedInfo = await this.db.holosphere.getFederation(chatID);
+
+            if (!fedInfo) {
+                return ctx.reply('No federation configuration found for this space.');
+            }
+
+            // Create summary of what will be cleared
+            const federatedCount = fedInfo.federation?.length || 0;
+            const notifyCount = fedInfo.notify?.length || 0;
+
+                // Execute the clearing process
+                // 1. Create empty federation record
+                const emptyFedInfo = {
+                    id: chatID,
+                    name: await utils.getChatName(this.bot, chatID),
+                    federation: [],
+                    notify: [],
+                    timestamp: Date.now()
+                };
+
+                // 2. Update federation record
+                await this.db.holosphere.putGlobal('federation', emptyFedInfo);
+
+                // 3. Notify original federation partners that we've removed ourselves
+                if (fedInfo.federation && fedInfo.federation.length > 0) {
+                    for (const partnerSpace of fedInfo.federation) {
+                        try {
+                            // Get partner's federation info
+                            const partnerFedInfo = await this.db.holosphere.getFederation(partnerSpace);
+
+                            if (partnerFedInfo) {
+                                // Remove ourselves from their federation list
+                                if (partnerFedInfo.federation) {
+                                    partnerFedInfo.federation = partnerFedInfo.federation.filter(id => id !== chatID.toString());
+                                }
+
+                                // Remove ourselves from their notify list
+                                if (partnerFedInfo.notify) {
+                                    partnerFedInfo.notify = partnerFedInfo.notify.filter(id => id !== chatID.toString());
+                                }
+
+                                partnerFedInfo.timestamp = Date.now();
+
+                                // Save partner's updated federation info
+                                await this.db.holosphere.putGlobal('federation', partnerFedInfo);
+                                console.log(`Updated federation info for partner ${partnerSpace}`);
+                            }
+                        } catch (error) {
+                            console.warn(`Could not update federation info for partner ${partnerSpace}: ${error.message}`);
+                        }
+                    }
+                }
+
+                return ctx.reply('🗑️ All federation settings have been cleared. This space is no longer federated with any other spaces and will not receive or send tasks to other spaces.');
+            
+
+        } catch (error) {
+            console.error('Error clearing federation:', error);
+            return ctx.reply('Error clearing federation settings: ' + error.message);
         }
     }
 
@@ -1068,7 +1152,7 @@ export default class Settings {
         if (utils.isAdmin(ctx)) {
             const chatID = ctx.message.chat.id;
             const text = ctx.message.text.substring('/setValues'.length).trim();
-            
+
             if (!text) {
                 ctx.reply('Please specify the values, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setValues Collaboration, Communication, Pro-activity\n\n2. Using newlines:\n/setValues\nCollaboration\nCommunication\nPro-activity');
                 return;
@@ -1157,7 +1241,7 @@ export default class Settings {
     async showSettingsMenu(ctx, edit = false) {
         const chatID = ctx.chat?.id || ctx.callbackQuery.message.chat.id;
         let settings = await this.getSettings(chatID);
-        
+
         const menuMarkup = {
             reply_markup: {
                 inline_keyboard: [
@@ -1254,7 +1338,7 @@ export default class Settings {
     async getTimezoneKeyboard(chatID, region = null) {
         const timezones = {
             'Europe': [
-                'Europe/London', 'Europe/Paris', 'Europe/Berlin', 
+                'Europe/London', 'Europe/Paris', 'Europe/Berlin',
                 'Europe/Rome', 'Europe/Madrid', 'Europe/Moscow'
             ],
             'Americas': [
@@ -1290,14 +1374,14 @@ export default class Settings {
             ];
             for (let i = 0; i < timezones[region].length; i += 2) {
                 const row = [];
-                row.push({ 
-                    text: timezones[region][i].split('/')[1].replace('_', ' '), 
-                    callback_data: 'timezone_set_' + timezones[region][i] 
+                row.push({
+                    text: timezones[region][i].split('/')[1].replace('_', ' '),
+                    callback_data: 'timezone_set_' + timezones[region][i]
                 });
                 if (i + 1 < timezones[region].length) {
-                    row.push({ 
-                        text: timezones[region][i + 1].split('/')[1].replace('_', ' '), 
-                        callback_data: 'timezone_set_' + timezones[region][i + 1] 
+                    row.push({
+                        text: timezones[region][i + 1].split('/')[1].replace('_', ' '),
+                        callback_data: 'timezone_set_' + timezones[region][i + 1]
                     });
                 }
                 keyboard.push(row);

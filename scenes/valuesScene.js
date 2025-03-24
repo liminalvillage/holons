@@ -51,7 +51,7 @@ values.forEach(value => {
     // else
     //   ctx.session.selectedValues[value]=true;
     ctx.session.selectedValues[value] = !ctx.session.selectedValues[value];
-    ctx.editMessageText('Great! Now Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });
+    ctx.editMessageText('Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });
     //showValuesPage(ctx); // Refresh the page to allow further selection
   });
 });
@@ -59,12 +59,12 @@ values.forEach(value => {
 // Handle page navigation
 valuesScene.action('prev_page', (ctx) => {
   ctx.session.page--;
-  ctx.editMessageText('Great! Now Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });
+  ctx.editMessageText('Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });
 });
 
 valuesScene.action('next_page', (ctx) => {
   ctx.session.page++;
-  ctx.editMessageText('Great! Now Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });
+  ctx.editMessageText('Please select the values that represent you the most:', showValuesKeyboard(ctx)).catch((error) => {console.log(error)  });
 });
 
 valuesScene.action('done_picking', (ctx) => {

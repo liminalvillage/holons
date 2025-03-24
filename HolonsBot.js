@@ -332,7 +332,7 @@ This will help create a more effective collaboration environment.
                 [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
               ]
             }
-          });
+          }).catch((err) => { console.log(err) });
         } catch (error) {
           console.error("Error fetching token balances:", error);
           await ctx.editMessageText("Sorry, there was an error fetching your token balances. Please try again later.", {
@@ -341,7 +341,7 @@ This will help create a more effective collaboration environment.
                 [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
               ]
             }
-          });
+          }).catch((err) => { console.log(err) });
         }
       }
       
@@ -384,7 +384,7 @@ This will help create a more effective collaboration environment.
                 [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
               ]
             }
-          });
+          }).catch((err) => { console.log(err) });
         } catch (error) {
           console.error("Error fetching contributions:", error);
           await ctx.editMessageText("Sorry, there was an error fetching your contributions. Please try again later.", {
@@ -393,7 +393,7 @@ This will help create a more effective collaboration environment.
                 [{ text: "◀️ Back", callback_data: "personal_menu_back" }]
               ]
             }
-          });
+          }).catch((err) => { console.log(err) });
         }
       }
       
@@ -411,7 +411,7 @@ This will help create a more effective collaboration environment.
               ]
             }
           }
-        );
+        ).catch((err) => { console.log(err) });
       }
       
       // Handle settings menu callback
@@ -435,7 +435,7 @@ This will help create a more effective collaboration environment.
               ]
             }
           }
-        );
+        ).catch((err) => { console.log(err) });
       }
       
       // Handle back to start from settings
@@ -457,7 +457,7 @@ This will help create a more effective collaboration environment.
                 ]
               }
             }
-          );
+          ).catch((err) => { console.log(err) });
         }
       }
       

@@ -14,3 +14,4 @@ recordings/*
 certs/*
 .netlify/*
 data/%1C
+radata*
