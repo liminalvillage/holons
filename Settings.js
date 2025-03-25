@@ -517,6 +517,9 @@ export default class Settings {
             let settings = await this.getSettings(chatID);
 
             switch (action) {
+                case 'menu':
+                    await this.showSettingsMenu(ctx, true);
+                    break;
                 case 'language':
                     await ctx.editMessageText('Select language:', {
                         reply_markup: await this.getLanguageKeyboard(chatID)
@@ -1252,22 +1255,15 @@ export default class Settings {
                         { text: i18next.t('settings_theme') + ': ' + settings.theme, callback_data: 'settings_theme' }
                     ],
                     [
-                        { text: i18next.t('settings_level') + ': ' + settings.level, callback_data: 'settings_level' },
-                        { text: i18next.t('settings_timezone') + ': ' + (settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set')), callback_data: 'settings_timezone' }
-                    ],
-                    [
-                        { text: i18next.t('settings_admin') + ': ' + (settings.admin || i18next.t('settings_not_set')), callback_data: 'settings_admin' },
+                        { text: i18next.t('settings_timezone') + ': ' + (settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set')), callback_data: 'settings_timezone' },
                         { text: i18next.t('settings_purpose') + ': ' + (settings.purpose ? '✓' : i18next.t('settings_not_set')), callback_data: 'settings_purpose' }
                     ],
                     [
-                        { text: i18next.t('settings_domains') + ': ' + (settings.domains?.length || 0), callback_data: 'settings_domains' },
-                        { text: i18next.t('settings_roles') + ': ' + (settings.roles?.length || 0), callback_data: 'settings_roles' }
+                        { text: i18next.t('settings_roles') + ': ' + (settings.roles?.length || 0), callback_data: 'settings_roles' },
+                        { text: i18next.t('settings_values') + ': ' + (settings.values?.length || 0), callback_data: 'settings_values' }
                     ],
                     [
-                        { text: i18next.t('settings_values') + ': ' + (settings.values?.length || 0), callback_data: 'settings_values' },
-                        { text: i18next.t('settings_hex') + ': ' + (settings.hex || i18next.t('settings_not_set')), callback_data: 'settings_hex' }
-                    ],
-                    [
+                        { text: i18next.t('settings_hex') + ': ' + (settings.hex || i18next.t('settings_not_set')), callback_data: 'settings_hex' },
                         { text: i18next.t('settings_equation'), callback_data: 'settings_equation' }
                     ],
                     [

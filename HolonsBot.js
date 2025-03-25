@@ -196,16 +196,11 @@ Let's set up your personal profile to get started.
           await ctx.reply("Sorry, there was an error starting the onboarding process. Please try again.");
         }
       } else {
-        // Group chat - Start group holon setup
+        // Group chat - Show settings interface
         const groupWelcomeMessage = `
-🌐 *Welcome to Group Holon Setup!* 🌐
+🌟 *Welcome to Holon!* 🌟
 
-Let's configure your group's coordination system by defining:
-• 🎯 Purpose - What this group aims to achieve
-• 💫 Values - Core principles that guide your community
-• 🔧 Settings - Customize how Holon works in this group
-
-This will help create a more effective collaboration environment.
+I'm your community's coordination companion. Let's set up your group's configuration to get started.
 `;
         await ctx.reply(groupWelcomeMessage, { parse_mode: 'Markdown' });
         
@@ -214,30 +209,21 @@ This will help create a more effective collaboration environment.
           const isAdmin = await this.isUserAdmin(ctx);
           
           if (isAdmin) {
-            // Show setup options for admins
+            // Show settings button for admins
             await ctx.reply(
-              "As an admin, you can set up the group's holon configuration.",
+              "Configure your group's settings:",
               {
                 reply_markup: {
                   inline_keyboard: [
-                    [{ text: "🎯 Set Group Purpose", callback_data: "settings_purpose_change" }],
-                    [{ text: "💫 Define Group Values", callback_data: "settings_values_change" }],
-                    [{ text: "🔧 Configure Settings", callback_data: "settings_menu" }],
-                    [{ text: "💰 Set Up Token System", callback_data: "holons_create" }]
+                    [{ text: "⚙️ Configure Settings", callback_data: "settings_menu" }]
                   ]
                 }
               }
             );
-            if (ctx.chat.type === 'group') {
-              await ctx.reply(
-                "⚠️ *ADMIN RIGHTS REQUIRED* ⚠️\nI need to be able to read user input for key functionalities\nTo make me work properly, please:\n1. Go to group settings\n2. Select 'Administrators'\n3. Add 'Holon' as an admin\n4. Enable at minimum:\n   - Read messages\n   - Delete messages\n   - Pin messages\nWithout these permissions, I won't be able to read your inputs and to clean after myself.",
-                { parse_mode: 'Markdown' }
-              );
-            }
           } else {
             // Non-admin message
             await ctx.reply(
-              "Only group administrators can set up the group holon configuration. Please ask an admin to run the /start command.",
+              "Only group administrators can configure the group settings. Please ask an admin to run the /start command.",
               {
                 reply_markup: {
                   inline_keyboard: [
@@ -474,22 +460,49 @@ This will help create a more effective collaboration environment.
       
       if (botWasAdded) {
         const welcomeMessage = `
-🚀 *Welcome to Holon!* 🚀
+🌟 *Welcome to Holon!* 🌟
 
-I'm your community coordination superpower, designed to help your group collaborate effectively, at any scale!
+I'm your community's coordination companion, designed to help your group collaborate more effectively and build stronger connections. Here's what I can do:
 
-⚠️ *Note:* This is a preview version. Your data may be lost during updates.
+*🎯 Task Management*
+• Create and track tasks with \`/task\`
+• Set deadlines and reminders
+• Track time spent on activities
+• Create checklists for complex tasks
 
-🔥 *Key Features:*
-• 📋 */task* - Create, assign and track tasks
-• 🙋 */request* - Make requests to the group
-• 🎁 */offer* - Share what you can offer
-• 💯 */appreciate* - Recognize contributions
-• 💰 */holons* - Create and manage token distribution based on your group's needs
+*🤝 Community Engagement*
+• Make requests with \`/request\`
+• Share offers with \`/offer\`
+• Express appreciation with \`/appreciate\`
+• Track contributions and participation
 
-⚙️ Type "/" anytime to see all available commands.
+*💡 Knowledge Sharing*
+• Share ideas, lessons, and insights
+• Post questions and challenges
+• Document guidelines and best practices
+• Create and manage recurring tasks
 
-Need help? Feature requests? Contact @RobertoValenti for support.`;
+*💰 Value Recognition*
+• Set up token-based rewards
+• Track contributions across spaces
+• Recognize and reward participation
+• Build sustainable value systems
+
+*⚙️ Quick Start*
+1. Type \`/\` to see all available commands
+2. Start with a simple task: \`/task do something\`
+3. Try appreciation: \`/appreciate @someone\`
+4. Make a request: \`/request help needed\`
+
+Need help? Feature requests? Contact @RobertoValenti for support.
+
+⚠️ *Required Permissions*
+To work properly, I need:
+• Read messages
+• Delete messages
+• Pin messages
+
+Please add me as an admin with these permissions.`;
 
         await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
         
