@@ -957,23 +957,10 @@ Without these permissions, I won't be able to read your inputs and to clean afte
 
   // Add this helper method to determine message type
   determineMessageType(message) {
-    // Check message content/structure to determine type
-    
-    // Check if it's a quest message
-    if (message.text && (
-      message.text.startsWith('📋 Task:') ||
-      message.text.startsWith('🎯 Quest:') ||
-      message.text.includes('Status: pending') ||
-      message.text.includes('Status: done')
-    )) {
+    if (this.db.get(message.chat.id + '/quests', message.message_id)) {
       return 'quest';
     }
-    
-    // Check if it's an expense message
-    if (message.text && (
-      message.text.startsWith('💰 Expense:') ||
-      message.text.includes('Amount:')
-    )) {
+    if (this.db.get(message.chat.id + '/expenses', message.message_id)) {
       return 'expense';
     }
     

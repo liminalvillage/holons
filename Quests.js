@@ -206,8 +206,8 @@ export default class Quests {
     async quest(type, ctx) {
         console.log('NEW QUEST')
         // Get the message text and sender from the context
-        let chatID = ctx.message.chat.id;
-        let messageID = ctx.message.message_id;
+        let chatID = getChatId(ctx);
+        let messageID = getMessageId(ctx);
         const language = await this.settings.getLanguage(chatID)
         const text = ctx.message.text ? ctx.message.text : ctx.message.caption;
         if (type == 'any')
@@ -317,13 +317,13 @@ export default class Quests {
                 quest.chat = nctx.channel.id;
             }
 
+           
             await this.db.put(chatID + '/quests', quest)
+            //update the new message
+            await this.updateMessage(ctx, quest, language)
             
             //Pin the message
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
-
-            // Handle federated messages
-            await this.handleFederatedMessages(ctx, quest, language);
 
             //delete the original message
             this.bot.telegram.deleteMessage(chatID, messageID.toString()).catch((err) => { });
@@ -459,7 +459,7 @@ export default class Quests {
                         try {
                             // Unpin the message
                             await ctx.telegram.unpinChatMessage(msgInfo.chatId, msgInfo.messageId)
-                                .catch(err => console.error(`Error unpinning message in federated chat ${msgInfo.chatId}:`, err));
+                                .catch(err => { });
 
                             // Delete the message
                             await ctx.telegram.deleteMessage(msgInfo.chatId, msgInfo.messageId)
@@ -779,11 +779,12 @@ export default class Quests {
                 ).catch((err) => { console.error('Error updating text message:', err) });
             }
 
-            // Update quest in database
             await this.db.put(quest.chat + '/quests', quest);
 
             // Handle federated messages
             await this.handleFederatedMessages(ctx, quest, language);
+
+         
 
         } catch (error) {
             console.error('Error in updateMessage:', error);
@@ -792,12 +793,13 @@ export default class Quests {
 
     // Add this method to handle notes added to quests
     async addNote(ctx) {
+        let language = await this.settings.getLanguage(ctx.chat.id)
         try {
             const originalMessage = ctx.message.reply_to_message;
             const note = ctx.message.text;
 
             // Extract quest ID from the original message
-            const questId = this.extractQuestId(originalMessage);
+            const questId = originalMessage.message_id;
 
             if (!questId) {
                 console.log('Could not find quest ID');
@@ -824,19 +826,11 @@ export default class Quests {
             await this.db.put(`${ctx.chat.id}/quests`, quest);
 
             // Update the original message to show the new note
-            await this.updateMessage(ctx, quest);
+            await this.updateMessage(ctx, quest, language);
 
         } catch (error) {
             console.error('Error adding note to quest:', error);
         }
-    }
-
-    // Helper method to extract quest ID from message
-    extractQuestId(message) {
-        // Implement based on how you store quest IDs in messages
-        // This is just an example - adjust based on your actual implementation
-        const match = message.text.match(/ID: ([a-zA-Z0-9-]+)/);
-        return match ? match[1] : null;
     }
 
     // Add this new method to handle showing more actions
@@ -1449,7 +1443,6 @@ export default class Quests {
 
     markup(quest, language) {
         let mu
-
         if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
             mu = Markup.inlineKeyboard([
                 [
@@ -1461,7 +1454,7 @@ export default class Quests {
                     Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
-                    Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
                 ]
             ])
@@ -1643,7 +1636,8 @@ export default class Quests {
                 if (federatedChatId === quest.chat) continue;
 
                 // Find existing message for this federated chat
-                const existingMsg = federatedMessages.messages.find(m => m.chatId === federatedChatId);
+                const existingMsgIndex = federatedMessages.messages.findIndex(m => m.chatId === federatedChatId);
+                const existingMsg = existingMsgIndex > -1 ? federatedMessages.messages[existingMsgIndex] : null;
 
                 try {
                     if (existingMsg) {
@@ -1695,7 +1689,7 @@ export default class Quests {
                                 federatedChatId,
                                 newMessage.message_id,
                                 { disable_notification: true }
-                            ).catch(err => console.error(`Error pinning message in federated chat ${federatedChatId}:`, err));
+                            ).catch(err => { });
                         }
 
                         // Store the new message information
@@ -1707,6 +1701,10 @@ export default class Quests {
                     }
                 } catch (error) {
                     console.error(`Failed to handle message in federated chat ${federatedChatId}:`, error);
+                    // If we've failed to update an existing message, remove it from tracking
+                    if (existingMsgIndex > -1) {
+                        federatedMessages.messages.splice(existingMsgIndex, 1);
+                    }
                 }
             }
 

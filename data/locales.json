@@ -131,7 +131,8 @@
             "settings_no_items": "No {{type}} set",
             "tasks": "Tasks",
             "checklist": "Checklist",
-            "description": "Description"
+            "description": "Description",
+            "subtasks": "Subtasks"
         }
     },
     "it": {
@@ -257,7 +258,8 @@
             "settings_no_items": "Nessun {{type}} impostato",
             "tasks": "Compiti",
             "checklist": "Lista di controllo",
-            "description": "Descrizione"
+            "description": "Descrizione",
+            "subtasks": "Sottocompiti"
         }
     },
     "fiobbo": {
@@ -383,7 +385,8 @@
             "settings_no_items": "Nessun {{type}} impostato",
             "tasks": "Compiti",
             "checklist": "Lista di controllo",
-            "description": "Descrizione"
+            "description": "Descrizione",
+            "subtasks": "Sottocompiti"
         }
     },
     "week": {
@@ -593,7 +596,8 @@
             "settings_no_items": "No hay {{type}} establecidos",
             "tasks": "Tareas",
             "checklist": "Lista de verificación",
-            "description": "Descripción"
+            "description": "Descripción",
+            "subtasks": "Subtareas"
         }
     },
     "fr": {
@@ -728,7 +732,8 @@
             "settings_no_items": "Aucun {{type}} défini",
             "tasks": "Tâches",
             "checklist": "Liste de contrôle",
-            "description": "Description"
+            "description": "Description",
+            "subtasks": "Sous-tâches"
         }
     }
 }
