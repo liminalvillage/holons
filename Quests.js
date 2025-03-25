@@ -319,74 +319,14 @@ export default class Quests {
 
             await this.db.put(chatID + '/quests', quest)
             
-        
             //Pin the message
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
 
-            // update the markup
-            await this.updateMessage(ctx, quest, language)
+            // Handle federated messages
+            await this.handleFederatedMessages(ctx, quest, language);
 
             //delete the original message
             this.bot.telegram.deleteMessage(chatID, messageID.toString()).catch((err) => { });
-
-            // PROPAGATE TO FEDERATED SPACES
-            try {
-                let fedInfo = await this.db.holosphere.getFederation(chatID)
-                console.log('FED RESULT', fedInfo)
-                for (const federatedChatId of fedInfo.notify) {
-                    console.log('processing federated chat', federatedChatId)
-                    // Skip if it's the same chat as the original
-                    if (federatedChatId === chatID) continue;
-
-                    // Create new message in the federated chat
-                    try {
-                        let newMessage;
-                        if (quest.picture) {
-                            newMessage = await ctx.telegram.sendPhoto(
-                                federatedChatId,
-                                quest.picture,
-                                {
-                                    caption: await this.createMessage(quest, language),
-                                    ...this.markup(quest, language)
-                                }
-                            ).catch((err) => { console.log(err) });
-                        } else {
-                            newMessage = await ctx.telegram.sendMessage(
-                                federatedChatId,
-                                await this.createMessage(quest, language),
-                                this.markup(quest, language)
-                            ).catch((err) => { console.log(err) });
-                        }
-
-                        // Pin the message
-                        await ctx.telegram.pinChatMessage(
-                            federatedChatId,
-                            newMessage.message_id,
-                            { disable_notification: true }
-                        ).catch(err => console.error(`Error pinning message in federated chat ${federatedChatId}:`, err));
-
-                        let federationKey = `${chatID}_${quest.id}_fedmsgs`;
-                        let federatedMessages = await this.db.get('federation_messages', federationKey) || {
-                            id: federationKey,
-                            chatId: chatID,
-                            questId: quest.id,
-                            messages: []
-                        }; 
-                        // Save the federation message tracking information
-                        if (federatedMessages.messages.length > 0) {
-                            await this.db.put('federation_messages', federatedMessages);
-                        }
-                        
-                        console.log(`Created new quest message in federated chat ${federatedChatId}`);
-                    } catch (error) {
-                        console.error(`Failed to create message in federated chat ${federatedChatId}:`, error);
-                    }
-
-                }
-
-            } catch (error) {
-                console.error('Error propagating quest to federated spaces:', error);
-            }
 
             return quest
         }
@@ -816,13 +756,10 @@ export default class Quests {
             }
 
             // Update the message in original chat
-            const message_id = quest.id;
-            const chat_id = quest.chat;
-
             if (quest.picture) {
                 await ctx.telegram.editMessageMedia(
-                    chat_id,
-                    message_id,
+                    quest.chat,
+                    quest.id,
                     null,
                     {
                         type: 'photo',
@@ -834,129 +771,19 @@ export default class Quests {
             }
             else {
                 await ctx.telegram.editMessageText(
-                    chat_id,
-                    message_id,
+                    quest.chat,
+                    quest.id,
                     null,
                     await this.createMessage(quest, language),
                     this.markup(quest, language)
                 ).catch((err) => { console.error('Error updating text message:', err) });
             }
 
-            // Propagate changes to federated spaces
-            try {
-                // Update quest in database first
-                await this.db.put(chat_id + '/quests', quest);
+            // Update quest in database
+            await this.db.put(quest.chat + '/quests', quest);
 
-                // Get federation info to find out which spaces to notify with Telegram
-                const fedInfo = await this.db.holosphere.getFederation(chat_id);
-
-                // Use holosphere federation to propagate the updated quest data
-                const propagationResult = await this.db.holosphere.propagate(
-                    chat_id,
-                    'quests',
-                    quest,
-                    {
-                        useReferences: true // Use soul references instead of duplicating data
-                    }
-                );
-
-                if (propagationResult && propagationResult.propagated) {
-                    console.log(`Quest update propagated to ${propagationResult.success} federated spaces`);
-
-                    // ==================== Create/update Telegram messages in federated spaces
-                    if (fedInfo && fedInfo.notify && fedInfo.notify.length > 0) {
-                        // Track all the federated message IDs for this quest
-                        let federationKey = `${chat_id}_${message_id}_fedmsgs`;
-                        let federatedMessages = await this.db.get('federation_messages', federationKey) || {
-                            id: federationKey,
-                            chatId: chat_id,
-                            questId: message_id,
-                            messages: []
-                        };
-
-                        for (const federatedChatId of fedInfo.notify) {
-                            // Skip if it's the same chat as the original
-                            if (federatedChatId === chat_id) continue;
-
-                            // Check if we already have a message for this quest in this chat
-                            const existingMsgInfo = federatedMessages.messages.find(m => m.chatId === federatedChatId);
-
-                            if (existingMsgInfo) {
-                                // Update existing message
-                                try {
-                                    if (quest.picture) {
-                                        await ctx.telegram.editMessageMedia(
-                                            federatedChatId,
-                                            existingMsgInfo.messageId,
-                                            null,
-                                            {
-                                                type: 'photo',
-                                                media: quest.picture,
-                                                caption: await this.createMessage(quest, language)
-                                            },
-                                            this.markup(quest, language)
-                                        ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
-                                    } else {
-                                        await ctx.telegram.editMessageText(
-                                            federatedChatId,
-                                            existingMsgInfo.messageId,
-                                            null,
-                                            await this.createMessage(quest, language),
-                                            this.markup(quest, language)
-                                        ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
-                                    }
-                                } catch (error) {
-                                    console.error(`Failed to update message in federated chat ${federatedChatId}:`, error);
-                                }
-                            } else {
-                                // Create new message in the federated chat
-                                try {
-                                    let newMessage;
-                                    if (quest.picture) {
-                                        newMessage = await ctx.telegram.sendPhoto(
-                                            federatedChatId,
-                                            quest.picture,
-                                            {
-                                                caption: await this.createMessage(quest, language),
-                                                ...this.markup(quest, language)
-                                            }
-                                        );
-                                    } else {
-                                        newMessage = await ctx.telegram.sendMessage(
-                                            federatedChatId,
-                                            await this.createMessage(quest, language),
-                                            this.markup(quest, language)
-                                        );
-                                    }
-
-                                    // Pin the message if it's not completed
-                                    if (quest.status !== 'completed') {
-                                        await ctx.telegram.pinChatMessage(
-                                            federatedChatId,
-                                            newMessage.message_id,
-                                            { disable_notification: true }
-                                        ).catch(err => console.error(`Error pinning message in federated chat ${federatedChatId}:`, err));
-                                    }
-
-                                    // Store the new message information
-                                    federatedMessages.messages.push({
-                                        chatId: federatedChatId,
-                                        messageId: newMessage.message_id,
-                                        timestamp: Date.now()
-                                    });
-                                } catch (error) {
-                                    console.error(`Failed to create message in federated chat ${federatedChatId}:`, error);
-                                }
-                            }
-                        }
-
-                        // Save the updated federation message tracking information
-                        await this.db.put('federation_messages', federatedMessages);
-                    }
-                }
-            } catch (error) {
-                console.error('Error propagating quest update to federated spaces:', error);
-            }
+            // Handle federated messages
+            await this.handleFederatedMessages(ctx, quest, language);
 
         } catch (error) {
             console.error('Error in updateMessage:', error);
@@ -1790,6 +1617,106 @@ export default class Quests {
         } catch (error) {
             console.error('Error handling description:', error);
             await ctx.answerCbQuery('Error accessing description');
+        }
+    }
+
+    // Add this new helper method to handle federated messages
+    async handleFederatedMessages(ctx, quest, language) {
+        try {
+            // Get federation info to find out which spaces to notify
+            const fedInfo = await this.db.holosphere.getFederation(quest.chat);
+            if (!fedInfo?.notify?.length) {
+                return;
+            }
+
+            // Get existing federation tracking info
+            const federationKey = `${quest.chat}_${quest.id}_fedmsgs`;
+            let federatedMessages = await this.db.get('federation_messages', federationKey) || {
+                id: federationKey,
+                chatId: quest.chat,
+                questId: quest.id,
+                messages: []
+            };
+
+            for (const federatedChatId of fedInfo.notify) {
+                // Skip if it's the same chat as the original
+                if (federatedChatId === quest.chat) continue;
+
+                // Find existing message for this federated chat
+                const existingMsg = federatedMessages.messages.find(m => m.chatId === federatedChatId);
+
+                try {
+                    if (existingMsg) {
+                        // Update existing message
+                        if (quest.picture) {
+                            await ctx.telegram.editMessageMedia(
+                                federatedChatId,
+                                existingMsg.messageId,
+                                null,
+                                {
+                                    type: 'photo',
+                                    media: quest.picture,
+                                    caption: await this.createMessage(quest, language)
+                                },
+                                this.markup(quest, language)
+                            ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
+                        } else {
+                            await ctx.telegram.editMessageText(
+                                federatedChatId,
+                                existingMsg.messageId,
+                                null,
+                                await this.createMessage(quest, language),
+                                this.markup(quest, language)
+                            ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
+                        }
+                    } else {
+                        // Create new message
+                        let newMessage;
+                        if (quest.picture) {
+                            newMessage = await ctx.telegram.sendPhoto(
+                                federatedChatId,
+                                quest.picture,
+                                {
+                                    caption: await this.createMessage(quest, language),
+                                    ...this.markup(quest, language)
+                                }
+                            );
+                        } else {
+                            newMessage = await ctx.telegram.sendMessage(
+                                federatedChatId,
+                                await this.createMessage(quest, language),
+                                this.markup(quest, language)
+                            );
+                        }
+
+                        // Pin the message if quest is not completed
+                        if (quest.status !== 'completed') {
+                            await ctx.telegram.pinChatMessage(
+                                federatedChatId,
+                                newMessage.message_id,
+                                { disable_notification: true }
+                            ).catch(err => console.error(`Error pinning message in federated chat ${federatedChatId}:`, err));
+                        }
+
+                        // Store the new message information
+                        federatedMessages.messages.push({
+                            chatId: federatedChatId,
+                            messageId: newMessage.message_id,
+                            timestamp: Date.now()
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Failed to handle message in federated chat ${federatedChatId}:`, error);
+                }
+            }
+
+            // Save the updated federation message tracking information
+            if (federatedMessages.messages.length > 0) {
+                await this.db.put('federation_messages', federatedMessages);
+            }
+
+        } catch (error) {
+            console.error('Error handling federated messages:', error);
         }
     }
 }
