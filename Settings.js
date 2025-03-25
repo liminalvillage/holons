@@ -357,12 +357,13 @@ export default class Settings {
                 const chatID = utils.getChatId(ctx);
                 const fedInfo = await this.db.holosphere.getFederation(chatID);
 
-                if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
-                    ctx.reply('This chat is not federated with any other spaces.');
-                    return;
-                }
+               
 
                 let message = 'Federation information:\n\n';
+                if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
+                    message += 'This chat is not federated with any other spaces.'
+                }
+                else
                 message += `This chat (${chatID}) is federated with:\n`;
 
                 for (const space of fedInfo.federation) {
@@ -1009,7 +1010,7 @@ export default class Settings {
 
 
     async federate(ctx) {
-        const chatID = ctx.message.chat.id;
+        const chatID = ctx.message.chat.id.toString();
         const federationID = ctx.message.text.split(' ')[1];
 
         if (federationID === undefined || federationID === null) {
@@ -1019,6 +1020,7 @@ export default class Settings {
 
         try {
             // Use holosphere federate method
+            console.log('FEDERATING', chatID, federationID)
             await this.db.holosphere.federate(chatID, federationID);
             ctx.reply('This chat has been federated with ' + federationID);
         } catch (error) {

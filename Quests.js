@@ -317,8 +317,9 @@ export default class Quests {
                 quest.chat = nctx.channel.id;
             }
 
-            let fedInfo = await this.db.put(chatID + '/quests', quest)
-            console.log('FED RESULT', fedInfo)
+            await this.db.put(chatID + '/quests', quest)
+            
+        
             //Pin the message
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
 
@@ -330,6 +331,8 @@ export default class Quests {
 
             // PROPAGATE TO FEDERATED SPACES
             try {
+                let fedInfo = await this.db.holosphere.getFederation(chatID)
+                console.log('FED RESULT', fedInfo)
                 for (const federatedChatId of fedInfo.notify) {
                     console.log('processing federated chat', federatedChatId)
                     // Skip if it's the same chat as the original
@@ -860,7 +863,7 @@ export default class Quests {
                 if (propagationResult && propagationResult.propagated) {
                     console.log(`Quest update propagated to ${propagationResult.success} federated spaces`);
 
-                    // Also create/update Telegram messages in federated spaces
+                    // ==================== Create/update Telegram messages in federated spaces
                     if (fedInfo && fedInfo.notify && fedInfo.notify.length > 0) {
                         // Track all the federated message IDs for this quest
                         let federationKey = `${chat_id}_${message_id}_fedmsgs`;
