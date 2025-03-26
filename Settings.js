@@ -56,7 +56,7 @@ export default class Settings {
             const currentDomains = settings.domains && settings.domains.length > 0 ?
                 '• ' + settings.domains.join('\n• ') :
                 i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentDomains }) + '\n\n' +
+            await ctx.reply(
                 i18next.t('settings_send_new', { type: i18next.t('settings_domains').toLowerCase() }))
                 .catch(e => console.log('Error in domains scene enter:', e));
         });
@@ -99,7 +99,7 @@ export default class Settings {
             const currentValues = settings.values && settings.values.length > 0 ?
                 '• ' + settings.values.join('\n• ') :
                 i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentValues }) + '\n\n' +
+            await ctx.reply(
                 i18next.t('settings_send_new', { type: i18next.t('settings_values').toLowerCase() }))
                 .catch(e => console.log('Error in values scene enter:', e));
         });
@@ -137,12 +137,9 @@ export default class Settings {
 
         this.rolesScene = new Scenes.BaseScene('roles_scene');
         this.rolesScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            let settings = await this.getSettings(chatID);
-            const currentRoles = settings.roles && settings.roles.length > 0 ?
-                '• ' + settings.roles.join('\n• ') :
+            
                 i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: '\n' + currentRoles }) + '\n\n' +
+            await ctx.reply(
                 i18next.t('settings_send_new', { type: i18next.t('settings_roles').toLowerCase() }))
                 .catch(e => console.log('Error in roles scene enter:', e));
         });
@@ -182,8 +179,7 @@ export default class Settings {
         this.adminScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             let settings = await this.getSettings(chatID);
-            const currentAdmin = settings.admin || i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: currentAdmin }) + '\n\n' +
+            await ctx.reply(
                 i18next.t('settings_send_new', { type: i18next.t('settings_admin').toLowerCase() }))
                 .catch(e => console.log('Error in admin scene enter:', e));
         });
@@ -218,11 +214,8 @@ export default class Settings {
         this.adminScene.on('message', ctx => ctx.reply('Please send text only'));
 
         this.hexScene = new Scenes.BaseScene('hex_scene');
-        this.hexScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            let settings = await this.getSettings(chatID);
-            const currentHex = settings.hex || i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: currentHex }) + '\n\n' +
+        this.hexScene.enter(async (ctx) => {    
+            await ctx.reply(
                 i18next.t('settings_send_new', { type: i18next.t('settings_hex').toLowerCase() }))
                 .catch(e => console.log('Error in hex scene enter:', e));
         });
@@ -237,8 +230,6 @@ export default class Settings {
             // Delete the scene messages
             try {
                 await ctx.deleteMessage(ctx.message.message_id);
-                await ctx.deleteMessage(ctx.message.message_id - 1);
-                await ctx.deleteMessage(ctx.message.message_id - 2);
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
@@ -329,8 +320,8 @@ export default class Settings {
 
                 this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
                 //clear federation
-                await this.clearFederation(ctx)
-                ctx.reply('Bot resetted')
+                await this.db.holosphere.resetFederation(chatID)
+                ctx.reply('Holon resetted')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
             }
@@ -390,7 +381,6 @@ export default class Settings {
         }
         )
 
-        
 
         this.bot.command('setlanguage', async (ctx) => {
             if (utils.isAdmin(ctx)) await this.setLanguage(ctx)
@@ -431,10 +421,6 @@ export default class Settings {
             }
         });
 
-        this.bot.command('getvalues', async (ctx) => {
-            let settings = await this.getSettings(utils.getChatId(ctx));
-            ctx.reply('Current values:\n• ' + settings.values.join('\n• '));
-        });
 
         this.bot.command('setpurpose', async (ctx) => {
             if (utils.isAdmin(ctx)) {
@@ -444,10 +430,6 @@ export default class Settings {
             }
         });
 
-        this.bot.command('getpurpose', async (ctx) => {
-            let settings = await this.getSettings(utils.getChatId(ctx));
-            ctx.reply('Current purpose: ' + (settings.purpose || 'No purpose set'));
-        });
 
         this.bot.command('setdomains', async (ctx) => {
             if (utils.isAdmin(ctx)) {
@@ -810,11 +792,7 @@ export default class Settings {
             }
         });
 
-        // Add test commands
-        this.bot.command('testscene', (ctx) => ctx.scene.enter('test_scene'));
-        this.bot.command('addtest', (ctx) => ctx.scene.enter('add_test_scene'));
-        this.bot.command('testadd', (ctx) => ctx.scene.enter('add_array_item_scene', { type: 'values' }));
-        
+ 
         // Add a direct command to add values without scenes
         this.bot.command('addvalues', async (ctx) => {
             const text = ctx.message.text.replace('/addvalues', '').trim();
@@ -1132,11 +1110,6 @@ export default class Settings {
         ctx.reply('Theme changed to ' + theme)
     }
 
-    async getLevel(chatID) {
-        let settings = await this.getSettings(chatID)
-        return settings.level
-    }
-
     async setLevel(ctx) {
         const chatID = ctx.message.chat.id;
         const level = ctx.message.text.split(' ')[1];
@@ -1155,11 +1128,6 @@ export default class Settings {
         this.db.put(chatID + '/settings', settings)
         ctx.reply('Level changed to ' + level)
 
-    }
-
-    async getAdmin(chatID) {
-        let settings = await this.getSettings(chatID)
-        return settings.admin
     }
 
     async setAdmin(ctx) {
@@ -1226,79 +1194,7 @@ export default class Settings {
         }
     }
 
-    async clearFederation(ctx) {
-        const chatID = ctx.message.chat.id;
-        const language = await this.getLanguage(chatID);
-
-            // Check if user has admin privileges
-            if (!utils.isAdmin(ctx.message.from.id, chatID)) {
-                return ctx.reply(i18next.t('adminonly', { lng: language }));
-            }
-
-        // Confirm the action with user
-        try {
-            // Get federation info first to see what we're about to delete
-            const fedInfo = await this.db.holosphere.getFederation(chatID);
-
-            if (!fedInfo) {
-                return ctx.reply('No federation configuration found for this space.');
-            }
-
-            // Create summary of what will be cleared
-            const federatedCount = fedInfo.federation?.length || 0;
-            const notifyCount = fedInfo.notify?.length || 0;
-
-                // Execute the clearing process
-                // 1. Create empty federation record
-                const emptyFedInfo = {
-                    id: chatID,
-                    name: await utils.getChatName(this.bot, chatID),
-                    federation: [],
-                    notify: [],
-                    timestamp: Date.now()
-                };
-
-                // 2. Update federation record
-                await this.db.holosphere.putGlobal('federation', emptyFedInfo);
-
-                // 3. Notify original federation partners that we've removed ourselves
-                if (fedInfo.federation && fedInfo.federation.length > 0) {
-                    for (const partnerSpace of fedInfo.federation) {
-                        try {
-                            // Get partner's federation info
-                            const partnerFedInfo = await this.db.holosphere.getFederation(partnerSpace);
-
-                            if (partnerFedInfo) {
-                                // Remove ourselves from their federation list
-                                if (partnerFedInfo.federation) {
-                                    partnerFedInfo.federation = partnerFedInfo.federation.filter(id => id !== chatID.toString());
-                                }
-
-                                // Remove ourselves from their notify list
-                                if (partnerFedInfo.notify) {
-                                    partnerFedInfo.notify = partnerFedInfo.notify.filter(id => id !== chatID.toString());
-                                }
-
-                                partnerFedInfo.timestamp = Date.now();
-
-                                // Save partner's updated federation info
-                                await this.db.holosphere.putGlobal('federation', partnerFedInfo);
-                                console.log(`Updated federation info for partner ${partnerSpace}`);
-                            }
-                        } catch (error) {
-                            console.warn(`Could not update federation info for partner ${partnerSpace}: ${error.message}`);
-                        }
-                    }
-                }
-
-                return ctx.reply('🗑️ All federation settings have been cleared. This space is no longer federated with any other spaces and will not receive or send tasks to other spaces.');
-            
-
-        } catch (error) {
-            console.error('Error clearing federation:', error);
-            return ctx.reply('Error clearing federation settings: ' + error.message);
-        }
-    }
+    
 
     async setRoles(ctx) {
         const chatID = ctx.message.chat.id;
