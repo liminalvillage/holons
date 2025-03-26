@@ -11,6 +11,14 @@ export default class Settings {
         this.db = db
         this.bot = bot
 
+        // Add debug middleware for all actions
+        this.bot.use(async (ctx, next) => {
+            if (ctx.callbackQuery) {
+                console.log('DEBUG: Callback received:', ctx.callbackQuery.data);
+            }
+            return next();
+        });
+
         // Create scenes for text input
         this.purposeScene = new Scenes.BaseScene('purpose_scene');
         this.purposeScene.enter(async (ctx) => {
@@ -40,16 +48,8 @@ export default class Settings {
                 console.log('Error deleting messages:', e);
             }
 
-            // Show purpose submenu
-            await ctx.reply('Purpose Settings', {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: `Current: ${settings.purpose || 'Not set'}`, callback_data: ' ' }],
-                        [{ text: '✏️ Change', callback_data: 'settings_purpose_change' }],
-                        [{ text: '« Back', callback_data: 'settings_back' }]
-                    ]
-                }
-            }).catch(e => console.log('Error showing purpose menu:', e));
+            // Show purpose with new UI
+            await this.showArraySettingMenu(ctx, 'purpose', false);
         });
         this.purposeScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in purpose scene message:', e)));
 
@@ -84,25 +84,8 @@ export default class Settings {
                 console.log('Error deleting messages:', e);
             }
 
-            // Show domains submenu
-            const keyboard = [
-                [{ text: 'Current Domains:', callback_data: ' ' }]
-            ];
-
-            domains.forEach(domain => {
-                keyboard.push([{ text: `• ${domain}`, callback_data: `domain_${domain}` }]);
-            });
-
-            if (domains.length === 0) {
-                keyboard.push([{ text: 'No domains set', callback_data: ' ' }]);
-            }
-
-            keyboard.push([{ text: '✏️ Change', callback_data: 'settings_domains_change' }]);
-            keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-
-            await ctx.reply('Domains Settings', {
-                reply_markup: { inline_keyboard: keyboard }
-            }).catch(e => console.log('Error showing domains menu:', e));
+            // Show domains with new UI
+            await this.showArraySettingMenu(ctx, 'domains', false);
         });
         this.domainsScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in domains scene message:', e)));
 
@@ -137,25 +120,8 @@ export default class Settings {
                 console.log('Error deleting messages:', e);
             }
 
-            // Show values submenu
-            const keyboard = [
-                [{ text: 'Current Values:', callback_data: ' ' }]
-            ];
-
-            values.forEach(value => {
-                keyboard.push([{ text: `• ${value}`, callback_data: `value_${value}` }]);
-            });
-
-            if (values.length === 0) {
-                keyboard.push([{ text: 'No values set', callback_data: ' ' }]);
-            }
-
-            keyboard.push([{ text: '✏️ Change', callback_data: 'settings_values_change' }]);
-            keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-
-            await ctx.reply('Values Settings', {
-                reply_markup: { inline_keyboard: keyboard }
-            }).catch(e => console.log('Error showing values menu:', e));
+            // Show values with new UI
+            await this.showArraySettingMenu(ctx, 'values', false);
         });
         this.valuesScene.on('message', ctx => ctx.reply('Please send text only'));
 
@@ -190,25 +156,8 @@ export default class Settings {
                 console.log('Error deleting messages:', e);
             }
 
-            // Show roles submenu
-            const keyboard = [
-                [{ text: 'Current Roles:', callback_data: ' ' }]
-            ];
-
-            roles.forEach(role => {
-                keyboard.push([{ text: `• ${role}`, callback_data: `role_${role}` }]);
-            });
-
-            if (roles.length === 0) {
-                keyboard.push([{ text: 'No roles set', callback_data: ' ' }]);
-            }
-
-            keyboard.push([{ text: '✏️ Change', callback_data: 'settings_roles_change' }]);
-            keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-
-            await ctx.reply('Roles Settings', {
-                reply_markup: { inline_keyboard: keyboard }
-            }).catch(e => console.log('Error showing roles menu:', e));
+            // Show roles with new UI
+            await this.showArraySettingMenu(ctx, 'roles', false);
         });
         this.rolesScene.on('message', ctx => ctx.reply('Please send text only'));
 
@@ -290,14 +239,42 @@ export default class Settings {
         });
         this.hexScene.on('message', ctx => ctx.reply('Please send text only'));
 
-        // Register scenes
+        this.addArrayItemScene = new Scenes.BaseScene('add_array_item_scene');
+
+        // Create a simple test scene
+        this.testScene = new Scenes.BaseScene('test_scene');
+        this.testScene.enter(async (ctx) => {
+            await ctx.reply('You entered the test scene. Type something to continue.');
+        });
+        
+        this.testScene.on('text', async (ctx) => {
+            await ctx.reply(`You typed: ${ctx.message.text}`);
+            await ctx.scene.leave();
+        });
+        
+        // Add a test scene for adding items
+        this.addTestScene = new Scenes.BaseScene('add_test_scene');
+        this.addTestScene.enter(async (ctx) => {
+            await ctx.reply('Please enter items to add (comma separated):');
+        });
+        this.addTestScene.on('text', async (ctx) => {
+            await ctx.reply(`You would add: ${ctx.message.text}`);
+            await ctx.scene.leave();
+        });
+
+        // Register all scenes
         this.bot.stage.register(this.purposeScene);
         this.bot.stage.register(this.domainsScene);
         this.bot.stage.register(this.valuesScene);
         this.bot.stage.register(this.rolesScene);
         this.bot.stage.register(this.adminScene);
         this.bot.stage.register(this.hexScene);
+        this.bot.stage.register(this.addArrayItemScene);
+        this.bot.stage.register(this.testScene);
+        this.bot.stage.register(this.addTestScene);
 
+        // Call setupScenes to initialize scene handlers
+        this.setupScenes();
 
         // ================= ADMIN ===========================
 
@@ -450,6 +427,11 @@ export default class Settings {
             }
         });
 
+        this.bot.command('getpurpose', async (ctx) => {
+            let settings = await this.getSettings(utils.getChatId(ctx));
+            ctx.reply('Current purpose: ' + (settings.purpose || 'No purpose set'));
+        });
+
         this.bot.command('setdomains', async (ctx) => {
             if (utils.isAdmin(ctx)) {
                 const chatID = ctx.message.chat.id;
@@ -516,6 +498,12 @@ export default class Settings {
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
 
+            // Handle array settings - always use the new UI
+            if (['values', 'domains', 'roles', 'purpose'].includes(action)) {
+                await this.showArraySettingMenu(ctx, action);
+                return;
+            }
+
             switch (action) {
                 case 'menu':
                     await this.showSettingsMenu(ctx, true);
@@ -558,72 +546,6 @@ export default class Settings {
                         ctx.reply('Only a chat admin can perform this action');
                     }
                     break;
-                case 'roles':
-                    if (utils.isAdmin(ctx)) {
-                        const currentRoles = settings.roles || [];
-                        const keyboard = [
-                            [{ text: 'Current Roles:', callback_data: ' ' }]
-                        ];
-
-                        // Add each role as a button
-                        currentRoles.forEach(role => {
-                            keyboard.push([{ text: `• ${role}`, callback_data: `role_${role}` }]);
-                        });
-
-                        if (currentRoles.length === 0) {
-                            keyboard.push([{ text: 'No roles set', callback_data: ' ' }]);
-                        }
-
-                        keyboard.push([{ text: '✏️ Change', callback_data: 'settings_roles_change' }]);
-                        keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-
-                        await ctx.editMessageText('Roles Settings', {
-                            reply_markup: { inline_keyboard: keyboard }
-                        });
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
-                case 'roles_change':
-                    if (utils.isAdmin(ctx)) {
-                        await ctx.scene.enter('roles_scene');
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
-                case 'values':
-                    if (utils.isAdmin(ctx)) {
-                        const currentValues = settings.values || [];
-                        const keyboard = [
-                            [{ text: 'Current Values:', callback_data: ' ' }]
-                        ];
-
-                        // Add each value as a button
-                        currentValues.forEach(value => {
-                            keyboard.push([{ text: `• ${value}`, callback_data: `value_${value}` }]);
-                        });
-
-                        if (currentValues.length === 0) {
-                            keyboard.push([{ text: 'No values set', callback_data: ' ' }]);
-                        }
-
-                        keyboard.push([{ text: '✏️ Change', callback_data: 'settings_values_change' }]);
-                        keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-
-                        await ctx.editMessageText('Values Settings', {
-                            reply_markup: { inline_keyboard: keyboard }
-                        });
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
-                case 'values_change':
-                    if (utils.isAdmin(ctx)) {
-                        await ctx.scene.enter('values_scene');
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
                 case 'hex':
                     if (utils.isAdmin(ctx)) {
                         const currentHex = settings.hex || 'Not set';
@@ -643,62 +565,6 @@ export default class Settings {
                 case 'hex_change':
                     if (utils.isAdmin(ctx)) {
                         await ctx.scene.enter('hex_scene');
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
-                case 'purpose':
-                    if (utils.isAdmin(ctx)) {
-                        const currentPurpose = settings.purpose || 'Not set';
-                        await ctx.editMessageText('Purpose Settings', {
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: `Current: ${currentPurpose}`, callback_data: ' ' }],
-                                    [{ text: '✏️ Change', callback_data: 'settings_purpose_change' }],
-                                    [{ text: '« Back', callback_data: 'settings_back' }]
-                                ]
-                            }
-                        });
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
-                case 'purpose_change':
-                    if (utils.isAdmin(ctx)) {
-                        await ctx.scene.enter('purpose_scene');
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
-                case 'domains':
-                    if (utils.isAdmin(ctx)) {
-                        const currentDomains = settings.domains || [];
-                        const keyboard = [
-                            [{ text: 'Current Domains:', callback_data: ' ' }]
-                        ];
-
-                        // Add each domain as a button
-                        currentDomains.forEach(domain => {
-                            keyboard.push([{ text: `• ${domain}`, callback_data: `domain_${domain}` }]);
-                        });
-
-                        if (currentDomains.length === 0) {
-                            keyboard.push([{ text: 'No domains set', callback_data: ' ' }]);
-                        }
-
-                        keyboard.push([{ text: '✏️ Change', callback_data: 'settings_domains_change' }]);
-                        keyboard.push([{ text: '« Back', callback_data: 'settings_back' }]);
-
-                        await ctx.editMessageText('Domains Settings', {
-                            reply_markup: { inline_keyboard: keyboard }
-                        }).catch((err) => { console.log(err) });
-                    } else {
-                        ctx.reply('Only a chat admin can perform this action');
-                    }
-                    break;
-                case 'domains_change':
-                    if (utils.isAdmin(ctx)) {
-                        await ctx.scene.enter('domains_scene');
                     } else {
                         ctx.reply('Only a chat admin can perform this action');
                     }
@@ -785,7 +651,7 @@ export default class Settings {
             if (action === 'increment') {
                 weights[field]++;
             } else {
-                weights[field] = Math.max(0, weights[field] - 1);
+                weights[field]--;
             }
 
             await this.setValueEquation(chatID, weights);
@@ -795,6 +661,239 @@ export default class Settings {
             }).catch((err) => { console.log(err) });
         });
 
+        // Add array setting action handlers
+        ['values', 'domains', 'roles'].forEach(type => {
+            // Add change handler for entering add scene
+            this.bot.action(`settings_${type}_change`, async (ctx) => {
+                await ctx.answerCbQuery();
+                await ctx.scene.enter('add_array_item_scene', { type });
+            });
+
+            this.bot.action(`enter_remove_mode_${type}`, async (ctx) => {
+                await ctx.answerCbQuery();
+                await this.showArraySettingMenu(ctx, type, true);
+            });
+
+            this.bot.action(`exit_remove_mode_${type}`, async (ctx) => {
+                await ctx.answerCbQuery();
+                await this.showArraySettingMenu(ctx, type, false);
+            });
+
+            this.bot.action(new RegExp(`remove_${type}_(\\d+)`), async (ctx) => {
+                await ctx.answerCbQuery();
+                const index = parseInt(ctx.match[1]);
+                const chatID = ctx.chat.id;
+                let settings = await this.getSettings(chatID);
+                
+                if (!settings[type] || !settings[type][index]) {
+                    await ctx.reply(`Item not found in ${type}`);
+                    return;
+                }
+
+                // Remove the item
+                settings[type].splice(index, 1);
+                await this.setSettings(settings);
+
+                // Show updated menu in remove mode
+                await this.showArraySettingMenu(ctx, type, true);
+            });
+        });
+
+        // Register action handlers for settings
+        this.bot.action('settings', (ctx) => this.showSettingsMenu(ctx, true));
+        this.bot.action('settings_back', (ctx) => this.showSettingsMenu(ctx, true));
+        
+        // Handle array setting actions
+        this.bot.action(/settings_(values|domains|roles|purpose)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const type = ctx.match[1];
+            return this.showArraySettingMenu(ctx, type);
+        });
+        
+        // Handle entering remove mode
+        this.bot.action(/enter_remove_mode_(values|domains|roles|purpose)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const type = ctx.match[1];
+            return this.showArraySettingMenu(ctx, type, true);
+        });
+        
+        // Handle exiting remove mode
+        this.bot.action(/exit_remove_mode_(values|domains|roles|purpose)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const type = ctx.match[1];
+            return this.showArraySettingMenu(ctx, type, false);
+        });
+        
+        // Handle removing items
+        this.bot.action(/remove_(values|domains|roles|purpose)_(\d+)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const type = ctx.match[1];
+            const index = parseInt(ctx.match[2]);
+            const chatID = ctx.callbackQuery.message.chat.id;
+            
+            let settings = await this.getSettings(chatID);
+            if (!settings[type]) settings[type] = [];
+            
+            settings[type].splice(index, 1);
+            await this.setSettings(settings);
+            
+            return this.showArraySettingMenu(ctx, type, true);
+        });
+        
+        // Handle adding items with explicit handlers for each type
+        this.bot.action('settings_values_change', async (ctx) => {
+            console.log('VALUES ADD button clicked');
+            await ctx.answerCbQuery();
+            try {
+                return await ctx.scene.enter('add_array_item_scene', { type: 'values' });
+            } catch (error) {
+                console.error('Error entering values add scene:', error);
+                return ctx.reply('Error adding values. Please try again later.');
+            }
+        });
+        
+        this.bot.action('settings_domains_change', async (ctx) => {
+            console.log('DOMAINS ADD button clicked');
+            await ctx.answerCbQuery();
+            try {
+                return await ctx.scene.enter('add_array_item_scene', { type: 'domains' });
+            } catch (error) {
+                console.error('Error entering domains add scene:', error);
+                return ctx.reply('Error adding domains. Please try again later.');
+            }
+        });
+        
+        this.bot.action('settings_roles_change', async (ctx) => {
+            console.log('ROLES ADD button clicked');
+            await ctx.answerCbQuery();
+            try {
+                return await ctx.scene.enter('add_array_item_scene', { type: 'roles' });
+            } catch (error) {
+                console.error('Error entering roles add scene:', error);
+                return ctx.reply('Error adding roles. Please try again later.');
+            }
+        });
+        
+        this.bot.action('settings_purpose_change', async (ctx) => {
+            console.log('PURPOSE ADD button clicked');
+            await ctx.answerCbQuery();
+            try {
+                return await ctx.scene.enter('add_array_item_scene', { type: 'purpose' });
+            } catch (error) {
+                console.error('Error entering purpose add scene:', error);
+                return ctx.reply('Error adding purpose. Please try again later.');
+            }
+        });
+
+        // Add test commands
+        this.bot.command('testscene', (ctx) => ctx.scene.enter('test_scene'));
+        this.bot.command('addtest', (ctx) => ctx.scene.enter('add_test_scene'));
+        this.bot.command('testadd', (ctx) => ctx.scene.enter('add_array_item_scene', { type: 'values' }));
+        
+        // Add a direct command to add values without scenes
+        this.bot.command('addvalues', async (ctx) => {
+            const text = ctx.message.text.replace('/addvalues', '').trim();
+            if (!text) {
+                await ctx.reply('Please provide values to add, like: /addvalues value1, value2, value3');
+                return;
+            }
+            
+            const chatID = ctx.chat.id;
+            const values = text.split(/[,\n]/)
+                .map(v => v.trim())
+                .filter(v => v !== '');
+                
+            let settings = await this.getSettings(chatID);
+            
+            if (!settings.values) {
+                settings.values = [];
+            }
+            
+            settings.values.push(...values);
+            await this.setSettings(settings);
+            
+            await ctx.reply(`Added ${values.length} values: ${values.join(', ')}`);
+            await this.showArraySettingMenu(ctx, 'values', false);
+        });
+        
+        // Add direct commands for other types
+        this.bot.command('adddomains', async (ctx) => {
+            const text = ctx.message.text.replace('/adddomains', '').trim();
+            if (!text) {
+                await ctx.reply('Please provide domains to add, like: /adddomains domain1, domain2, domain3');
+                return;
+            }
+            
+            const chatID = ctx.chat.id;
+            const domains = text.split(/[,\n]/)
+                .map(d => d.trim())
+                .filter(d => d !== '');
+                
+            let settings = await this.getSettings(chatID);
+            
+            if (!settings.domains) {
+                settings.domains = [];
+            }
+            
+            settings.domains.push(...domains);
+            await this.setSettings(settings);
+            
+            await ctx.reply(`Added ${domains.length} domains: ${domains.join(', ')}`);
+            await this.showArraySettingMenu(ctx, 'domains', false);
+        });
+        
+        this.bot.command('addroles', async (ctx) => {
+            const text = ctx.message.text.replace('/addroles', '').trim();
+            if (!text) {
+                await ctx.reply('Please provide roles to add, like: /addroles role1, role2, role3');
+                return;
+            }
+            
+            const chatID = ctx.chat.id;
+            const roles = text.split(/[,\n]/)
+                .map(r => r.trim())
+                .filter(r => r !== '');
+                
+            let settings = await this.getSettings(chatID);
+            
+            if (!settings.roles) {
+                settings.roles = [];
+            }
+            
+            settings.roles.push(...roles);
+            await this.setSettings(settings);
+            
+            await ctx.reply(`Added ${roles.length} roles: ${roles.join(', ')}`);
+            await this.showArraySettingMenu(ctx, 'roles', false);
+        });
+
+        // Handle help messages for adding items
+        this.bot.action(/help_add_(values|domains|roles|purpose)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const type = ctx.match[1];
+            let message = '';
+            
+            if (type === 'purpose') {
+                message = 'To set your purpose, use the command:\n\n/setpurpose To create a thriving community through collaboration';
+            } else {
+                // For array types
+                const commandMap = {
+                    'values': '/addvalues',
+                    'domains': '/adddomains',
+                    'roles': '/addroles'
+                };
+                
+                const exampleMap = {
+                    'values': 'Collaboration, Innovation, Sustainability',
+                    'domains': 'Community Management, Content Creation, Development',
+                    'roles': 'Facilitator, Developer, Designer'
+                };
+                
+                message = `To add ${type}, use the command:\n\n${commandMap[type]} ${exampleMap[type]}\n\nYou can separate multiple items with commas.`;
+            }
+            
+            await ctx.reply(message);
+        });
     }
 
     async getHex(ctx) {
@@ -1244,7 +1343,12 @@ export default class Settings {
     // }
 
     async showSettingsMenu(ctx, edit = false) {
-        const chatID = ctx.chat?.id || ctx.callbackQuery.message.chat.id;
+        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!chatID) {
+            console.error('Could not determine chat ID');
+            return;
+        }
+
         let settings = await this.getSettings(chatID);
 
         const menuMarkup = {
@@ -1259,11 +1363,11 @@ export default class Settings {
                         { text: i18next.t('settings_purpose') + ': ' + (settings.purpose ? '✓' : i18next.t('settings_not_set')), callback_data: 'settings_purpose' }
                     ],
                     [
-                        { text: i18next.t('settings_roles') + ': ' + (settings.roles?.length || 0), callback_data: 'settings_roles' },
-                        { text: i18next.t('settings_values') + ': ' + (settings.values?.length || 0), callback_data: 'settings_values' }
+                        { text: `${this.getSettingIcon('roles')} ${i18next.t('settings_roles')}: ${settings.roles?.length || 0}`, callback_data: 'settings_roles' },
+                        { text: `${this.getSettingIcon('values')} ${i18next.t('settings_values')}: ${settings.values?.length || 0}`, callback_data: 'settings_values' }
                     ],
                     [
-                        { text: i18next.t('settings_hex') + ': ' + (settings.hex || i18next.t('settings_not_set')), callback_data: 'settings_hex' },
+                        { text: `${this.getSettingIcon('domains')} ${i18next.t('settings_domains')}: ${settings.domains?.length || 0}`, callback_data: 'settings_domains' },
                         { text: i18next.t('settings_equation'), callback_data: 'settings_equation' }
                     ],
                     [
@@ -1274,12 +1378,14 @@ export default class Settings {
             }
         };
 
-        if (edit) {
-            return ctx.editMessageText(i18next.t('settings'), menuMarkup)
-                .catch(e => console.log('Error editing settings menu:', e));
-        } else {
-            return ctx.reply(i18next.t('settings'), menuMarkup)
-                .catch(e => console.log('Error showing settings menu:', e));
+        try {
+            if (edit) {
+                await ctx.editMessageText(i18next.t('settings'), menuMarkup);
+            } else {
+                await ctx.reply(i18next.t('settings'), menuMarkup);
+            }
+        } catch (e) {
+            console.log('Error showing settings menu:', e);
         }
     }
 
@@ -1392,5 +1498,241 @@ export default class Settings {
     async getTimezone(chatID) {
         let settings = await this.getSettings(chatID);
         return settings.timezone || 'Not set';
+    }
+
+    // Add method to show array setting menu
+    async showArraySettingMenu(ctx, type, removeMode = false) {
+        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!chatID) {
+            console.error('Could not determine chat ID');
+            return;
+        }
+
+        let settings = await this.getSettings(chatID);
+        
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        // Special handling for purpose (which is a string, not an array)
+        if (type === 'purpose') {
+            const currentPurpose = settings.purpose || '';
+            
+            // Add header
+            keyboard.inline_keyboard.push([{
+                text: `🎯 ${i18next.t('settings_purpose')}`,
+                callback_data: ' '
+            }]);
+            
+            // Add current purpose (if any)
+            if (currentPurpose) {
+                keyboard.inline_keyboard.push([{
+                    text: `• ${currentPurpose}`,
+                    callback_data: 'purpose_view'
+                }]);
+            } else {
+                keyboard.inline_keyboard.push([{
+                    text: i18next.t('settings_not_set'),
+                    callback_data: ' '
+                }]);
+            }
+            
+            // Add control buttons
+            keyboard.inline_keyboard.push([{
+                text: '✏️ Edit Purpose',
+                callback_data: 'help_add_purpose'
+            }]);
+        } 
+        // For arrays (values, domains, roles)
+        else {
+            let items = settings[type] || [];
+            
+            // Add header with count
+            keyboard.inline_keyboard.push([{
+                text: `${this.getSettingIcon(type)} ${i18next.t(`settings_${type}`)}: ${items.length}`,
+                callback_data: ' '
+            }]);
+            
+            // Add items if there are any
+            if (items && items.length > 0) {
+                items.forEach((item, index) => {
+                    if (removeMode) {
+                        keyboard.inline_keyboard.push([{
+                            text: `❌ ${item}`,
+                            callback_data: `remove_${type}_${index}`
+                        }]);
+                    } else {
+                        keyboard.inline_keyboard.push([{
+                            text: `• ${item}`,
+                            callback_data: `${type}_${index}`
+                        }]);
+                    }
+                });
+            } else {
+                keyboard.inline_keyboard.push([{
+                    text: i18next.t('settings_no_items', { type: i18next.t(`settings_${type}`).toLowerCase() }),
+                    callback_data: ' '
+                }]);
+            }
+
+            // Add control buttons at the bottom
+            if (removeMode) {
+                keyboard.inline_keyboard.push([{
+                    text: '🔙 Exit Remove Mode',
+                    callback_data: `exit_remove_mode_${type}`
+                }]);
+            } else {
+                keyboard.inline_keyboard.push([
+                    {
+                        text: '➕ Add',
+                        callback_data: `help_add_${type}`
+                    },
+                    {
+                        text: '🗑️ Remove',
+                        callback_data: `enter_remove_mode_${type}`
+                    }
+                ]);
+            }
+        }
+
+        // Back button for all menu types
+        keyboard.inline_keyboard.push([{
+            text: '« Back to Settings',
+            callback_data: 'settings_back'
+        }]);
+        
+        try {
+            if (ctx.callbackQuery) {
+                await ctx.editMessageText(i18next.t('settings'), {
+                    reply_markup: keyboard
+                });
+            } else {
+                await ctx.reply(i18next.t('settings'), {
+                    reply_markup: keyboard
+                });
+            }
+        } catch (e) {
+            console.log(`Error showing ${type} menu:`, e);
+        }
+    }
+
+    // Helper method to get setting icon
+    getSettingIcon(type) {
+        switch(type) {
+            case 'values': return '💫';
+            case 'domains': return '🔍';
+            case 'roles': return '👥';
+            case 'purpose': return '🎯';
+            default: return '⚙️';
+        }
+    }
+
+    setupScenes() {
+        // Setup add array item scene
+        this.addArrayItemScene.enter(async (ctx) => {
+            try {
+                console.log('Enter add_array_item_scene');
+                
+                // Get the type from ctx.scene.state.type or directly from state
+                const type = ctx.scene.state.type || (ctx.scene.state.state ? ctx.scene.state.state.type : null);
+                console.log('Scene type:', type);
+                
+                if (!type) {
+                    console.error('Error: No type provided for add_array_item_scene');
+                    await ctx.reply('Error: Could not determine what to add. Please try again.');
+                    return ctx.scene.leave();
+                }
+                
+                // Store the message ID and chat ID
+                ctx.scene.state.chatId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+                ctx.scene.state.originalMessageId = ctx.callbackQuery?.message?.message_id;
+                
+                // Store the type
+                ctx.scene.state.type = type;
+                
+                // Send prompt message
+                console.log('Sending prompt for type:', type);
+                const promptMessage = await ctx.reply(`Please enter new ${type} (separate multiple items with commas or new lines):`);
+                
+                // Store prompt message ID for later deletion
+                ctx.scene.state.promptMessageId = promptMessage.message_id;
+            } catch (error) {
+                console.error('Error in addArrayItemScene.enter:', error);
+                await ctx.reply('An error occurred. Please try again.');
+                await ctx.scene.leave();
+            }
+        });
+
+        this.addArrayItemScene.on('text', async (ctx) => {
+            try {
+                console.log('Received text in add_array_item_scene');
+                const itemsText = ctx.message.text;
+                const chatId = ctx.scene.state.chatId || ctx.chat.id;
+                const type = ctx.scene.state.type;
+                
+                console.log('Processing text for type:', type);
+                
+                if (!type) {
+                    console.error('Error: No type stored in scene state');
+                    await ctx.reply('Error: Could not determine what to add. Please try again.');
+                    return ctx.scene.leave();
+                }
+                
+                let settings = await this.getSettings(chatId);
+
+                // Initialize array if it doesn't exist
+                if (!settings[type]) {
+                    settings[type] = [];
+                }
+
+                // Add new items
+                const newItems = itemsText
+                    .split(/[,\n]/)
+                    .map(text => text.trim())
+                    .filter(text => text !== '');
+                
+                console.log('Adding items:', newItems);
+
+                settings[type].push(...newItems);
+                await this.setSettings(settings);
+
+                // Delete the prompt message and user's input
+                try {
+                    if (ctx.scene.state.promptMessageId) {
+                        await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => {});
+                    }
+                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                } catch (error) {
+                    console.log('Error deleting messages:', error);
+                }
+
+                // Show updated array setting menu
+                console.log('Showing updated menu for type:', type);
+                await this.showArraySettingMenu(ctx, type, false);
+                await ctx.scene.leave();
+
+            } catch (error) {
+                console.error(`Error adding items:`, error);
+                await ctx.reply(`Error adding items. Please try again.`);
+                await ctx.scene.leave();
+            }
+        });
+    }
+
+    // Add setPurpose method
+    async setPurpose(ctx) {
+        const chatID = ctx.message.chat.id;
+        const text = ctx.message.text.replace('/setpurpose', '').trim();
+
+        if (!text) {
+            ctx.reply('Please provide a purpose. Example: /setpurpose To create a thriving community')
+            return;
+        }
+
+        let settings = await this.getSettings(chatID);
+        settings.purpose = text;
+        await this.setSettings(settings);
+        await ctx.reply(`Purpose set to: ${text}`);
+        await this.showArraySettingMenu(ctx, 'purpose', false);
     }
 }

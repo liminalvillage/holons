@@ -806,7 +806,7 @@ export default class Holons {
 
     let userids = users.map((user) => user.id.toString());
     let scores = users.map((user) => {
-      return (
+      return Math.max(0,
         user.initiated.length * equation.initiated +
         user.completed.length * equation.completed +
         user.sent * equation.sent +
