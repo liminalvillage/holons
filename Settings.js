@@ -34,22 +34,18 @@ export default class Settings {
             let settings = await this.getSettings(chatID);
             settings.purpose = ctx.message.text;
             await this.setSettings(settings);
-            await ctx.scene.leave();
-
-            // Delete the scene messages
+            
+            // Delete the scene messages and user input
             try {
-                // Delete the user's input message
-                await ctx.deleteMessage(ctx.message.message_id);
-                // Delete the scene's prompt message
-                await ctx.deleteMessage(ctx.message.message_id - 1);
-                // Delete the original settings message
-                await ctx.deleteMessage(ctx.message.message_id - 2);
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
 
             // Show purpose with new UI
             await this.showArraySettingMenu(ctx, 'purpose', false);
+            await ctx.scene.leave();
         });
         this.purposeScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in purpose scene message:', e)));
 
@@ -66,26 +62,33 @@ export default class Settings {
         });
         this.domainsScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
-            const domains = ctx.message.text
+            const newDomains = ctx.message.text
                 .split(/[,\n]/)
                 .map(d => d.trim())
                 .filter(d => d !== '');
+                
             let settings = await this.getSettings(chatID);
-            settings.domains = domains;
+            
+            // Initialize the array if it doesn't exist
+            if (!settings.domains) {
+                settings.domains = [];
+            }
+            
+            // Append new domains instead of replacing existing ones
+            settings.domains.push(...newDomains);
             await this.setSettings(settings);
-            await ctx.scene.leave();
 
-            // Delete the scene messages
+            // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id);
-                await ctx.deleteMessage(ctx.message.message_id - 1);
-                await ctx.deleteMessage(ctx.message.message_id - 2);
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
 
             // Show domains with new UI
             await this.showArraySettingMenu(ctx, 'domains', false);
+            await ctx.scene.leave();
         });
         this.domainsScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in domains scene message:', e)));
 
@@ -102,26 +105,33 @@ export default class Settings {
         });
         this.valuesScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
-            const values = ctx.message.text
+            const newValues = ctx.message.text
                 .split(/[,\n]/)
                 .map(v => v.trim())
                 .filter(v => v !== '');
+                
             let settings = await this.getSettings(chatID);
-            settings.values = values;
+            
+            // Initialize the array if it doesn't exist
+            if (!settings.values) {
+                settings.values = [];
+            }
+            
+            // Append new values instead of replacing existing ones
+            settings.values.push(...newValues);
             await this.setSettings(settings);
-            await ctx.scene.leave();
 
-            // Delete the scene messages
+            // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id);
-                await ctx.deleteMessage(ctx.message.message_id - 1);
-                await ctx.deleteMessage(ctx.message.message_id - 2);
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
 
             // Show values with new UI
             await this.showArraySettingMenu(ctx, 'values', false);
+            await ctx.scene.leave();
         });
         this.valuesScene.on('message', ctx => ctx.reply('Please send text only'));
 
@@ -138,26 +148,33 @@ export default class Settings {
         });
         this.rolesScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
-            const roles = ctx.message.text
+            const newRoles = ctx.message.text
                 .split(/[,\n]/)
                 .map(r => r.trim())
                 .filter(r => r !== '');
+                
             let settings = await this.getSettings(chatID);
-            settings.roles = roles;
+            
+            // Initialize the array if it doesn't exist
+            if (!settings.roles) {
+                settings.roles = [];
+            }
+            
+            // Append new roles instead of replacing existing ones
+            settings.roles.push(...newRoles);
             await this.setSettings(settings);
-            await ctx.scene.leave();
 
-            // Delete the scene messages
+            // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id);
-                await ctx.deleteMessage(ctx.message.message_id - 1);
-                await ctx.deleteMessage(ctx.message.message_id - 2);
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
 
             // Show roles with new UI
             await this.showArraySettingMenu(ctx, 'roles', false);
+            await ctx.scene.leave();
         });
         this.rolesScene.on('message', ctx => ctx.reply('Please send text only'));
 
@@ -443,15 +460,23 @@ export default class Settings {
                 }
 
                 // Split by both newlines and commas
-                const domains = text
+                const newDomains = text
                     .split(/[,\n]/)                    // Split by comma or newline
                     .map(d => d.trim())                // Trim whitespace
                     .filter(d => d !== '');            // Remove empty entries
 
                 let settings = await this.getSettings(chatID);
-                settings.domains = domains;
+                
+                // Initialize domains array if it doesn't exist
+                if (!settings.domains) {
+                    settings.domains = [];
+                }
+                
+                // Append new domains instead of replacing
+                settings.domains.push(...newDomains);
+                
                 await this.setSettings(settings);
-                ctx.reply('Domains set to:\n• ' + settings.domains.join('\n• '));
+                ctx.reply('Domains added:\n• ' + newDomains.join('\n• '));
             } else {
                 ctx.reply('Only admins can set the domains');
             }
@@ -850,20 +875,22 @@ export default class Settings {
             }
             
             const chatID = ctx.chat.id;
-            const roles = text.split(/[,\n]/)
+            const newRoles = text.split(/[,\n]/)
                 .map(r => r.trim())
                 .filter(r => r !== '');
                 
             let settings = await this.getSettings(chatID);
             
+            // Initialize roles array if it doesn't exist
             if (!settings.roles) {
                 settings.roles = [];
             }
             
-            settings.roles.push(...roles);
-            await this.setSettings(settings);
+            // Append new roles instead of replacing
+            settings.roles.push(...newRoles);
             
-            await ctx.reply(`Added ${roles.length} roles: ${roles.join(', ')}`);
+            await this.setSettings(settings);
+            await ctx.reply(`Added ${newRoles.length} roles: ${newRoles.join(', ')}`);
             await this.showArraySettingMenu(ctx, 'roles', false);
         });
 
@@ -871,6 +898,45 @@ export default class Settings {
         this.bot.action(/help_add_(values|domains|roles|purpose)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
+            
+            // Check if bot has delete_messages permission (indicating admin rights)
+            let botHasAdminRights = false;
+            try {
+                // Try to get the bot's member info from the chat
+                const chatId = ctx.chat.id;
+                if (chatId < 0) { // It's a group chat
+                    const botMember = await ctx.telegram.getChatMember(chatId, ctx.botInfo.id);
+                    botHasAdminRights = botMember && 
+                        (botMember.status === 'administrator' || botMember.status === 'creator') &&
+                        (botMember.can_delete_messages === true);
+                    
+                    console.log('Bot admin status:', botHasAdminRights);
+                }
+            } catch (error) {
+                console.error('Error checking bot admin status:', error);
+                botHasAdminRights = false;
+            }
+            
+            if (botHasAdminRights) {
+                // Bot has admin rights - enter the appropriate scene
+                try {
+                    switch(type) {
+                        case 'values':
+                            return await ctx.scene.enter('values_scene');
+                        case 'domains':
+                            return await ctx.scene.enter('domains_scene');
+                        case 'roles':
+                            return await ctx.scene.enter('roles_scene');
+                        case 'purpose':
+                            return await ctx.scene.enter('purpose_scene');
+                    }
+                } catch (error) {
+                    console.error(`Error entering ${type} scene:`, error);
+                    // Fall back to command instructions if scene entry fails
+                }
+            }
+            
+            // Bot doesn't have admin rights or scene entry failed - show command instructions
             let message = '';
             
             if (type === 'purpose') {
@@ -1236,15 +1302,24 @@ export default class Settings {
 
     async setRoles(ctx) {
         const chatID = ctx.message.chat.id;
-        const roles = utils.parseList(ctx.message.text)
+        const newRoles = utils.parseList(ctx.message.text);
 
-        if (roles === undefined || roles === null || roles === '') {
-            return ('Please specify the roles. Example: /setRoles role1 role2')
+        if (newRoles === undefined || newRoles === null || newRoles.length === 0) {
+            return ('Please specify the roles. Example: /setRoles role1 role2');
         }
-        let settings = await this.getSettings(chatID)
-        settings.roles = roles
-        this.db.put(chatID + '/settings', settings)
-        return settings.roles
+        
+        let settings = await this.getSettings(chatID);
+        
+        // Initialize roles array if it doesn't exist
+        if (!settings.roles) {
+            settings.roles = [];
+        }
+        
+        // Append new roles instead of replacing
+        settings.roles.push(...newRoles);
+        
+        await this.setSettings(settings);
+        return `Added roles: ${newRoles.join(', ')}`;
     }
 
     async getRoles(chatID) {
@@ -1263,15 +1338,23 @@ export default class Settings {
             }
 
             // Split by both newlines and commas
-            const values = text
+            const newValues = text
                 .split(/[,\n]/)                    // Split by comma or newline
                 .map(v => v.trim())                // Trim whitespace
                 .filter(v => v !== '');            // Remove empty entries
 
             let settings = await this.getSettings(chatID);
-            settings.values = values;
+            
+            // Initialize the array if it doesn't exist
+            if (!settings.values) {
+                settings.values = [];
+            }
+            
+            // Append new values instead of replacing existing ones
+            settings.values.push(...newValues);
+            
             await this.setSettings(settings);
-            ctx.reply('Values set to:\n• ' + settings.values.join('\n• ')).catch(e => console.log('Error in setValues reply:', e));
+            ctx.reply('Values added:\n• ' + newValues.join('\n• ')).catch(e => console.log('Error in setValues reply:', e));
         } else {
             ctx.reply('Only admins can set the values').catch(e => console.log('Error in setValues admin check:', e));
         }
