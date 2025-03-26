@@ -331,12 +331,13 @@ GPL-3.0-or-later
 
 # HoloSphere Federation
 
-HoloSphere provides a robust federation system that allows spaces to share data and messages across different chats. This document outlines the federation functionality and how to use it.
+HoloSphere provides a federation system that allows spaces to share data and messages across different holons. This document outlines the federation functionality and how to use it.
 
 ## Core Federation Features
 
 ### Space Federation
-- Create bidirectional relationships between spaces
+- Create relationships between spaces with clear source-target connections
+- Use soul references to maintain a single source of truth
 - Control data propagation between federated spaces
 - Manage notification settings for each space
 
@@ -349,50 +350,71 @@ HoloSphere provides a robust federation system that allows spaces to share data 
 
 ### Space Federation
 
-#### `federate(holosphere, spaceId1, spaceId2, password1, password2, bidirectional)`
+#### `federate(spaceId1, spaceId2, password1, password2, bidirectional)`
 Creates a federation relationship between two spaces.
 
 ```javascript
-await federate(holosphere, 'space1', 'space2', 'pass1', 'pass2', true);
+await holosphere.federate('space1', 'space2', 'pass1', 'pass2');
+```
+
+This sets up:
+- space1.federation includes space2
+- space2.notify includes space1
+
+Parameters:
+- `spaceId1`: First space ID (source space)
+- `spaceId2`: Second space ID (target space)
+- `password1`: Optional password for first space
+- `password2`: Optional password for second space
+- `bidirectional`: Whether to set up bidirectional notifications (default: true, but generally not needed)
+
+### Data Propagation
+
+#### `propagate(holon, lens, data, options)`
+Propagates data to federated spaces.
+
+```javascript
+await holosphere.propagate('space1', 'items', data, {
+  useReferences: true,         // Default: uses soul references 
+  targetSpaces: ['space2']     // Optional: specific targets
+});
 ```
 
 Parameters:
-- `holosphere`: HoloSphere instance
-- `spaceId1`: First space ID
-- `spaceId2`: Second space ID
-- `password1`: Optional password for first space
-- `password2`: Optional password for second space
-- `bidirectional`: Whether to set up bidirectional notifications (default: true)
+- `holon`: The holon identifier
+- `lens`: The lens identifier
+- `data`: The data to propagate
+- `options`: Propagation options
+
+Alternatively, you can use auto-propagation:
+
+```javascript
+await holosphere.put('space1', 'items', data, null, {
+  autoPropagate: true  // Enable auto-propagation
+});
+```
 
 ### Message Federation
 
-#### `federateMessage(holosphere, originalChatId, messageId, federatedChatId, federatedMessageId, type)`
+#### `federateMessage(originalChatId, messageId, federatedChatId, federatedMessageId, type)`
 Tracks a federated message across different chats.
 
 ```javascript
-await federateMessage(holosphere, 'chat1', 'msg1', 'chat2', 'msg2', 'quest');
+await holosphere.federateMessage('chat1', 'msg1', 'chat2', 'msg2', 'quest');
 ```
 
-Parameters:
-- `holosphere`: HoloSphere instance
-- `originalChatId`: Original chat ID
-- `messageId`: Original message ID
-- `federatedChatId`: Federated chat ID
-- `federatedMessageId`: Message ID in federated chat
-- `type`: Message type (e.g., 'quest', 'announcement')
-
-#### `getFederatedMessages(holosphere, originalChatId, messageId)`
+#### `getFederatedMessages(originalChatId, messageId)`
 Gets all federated messages for a given original message.
 
 ```javascript
-const messages = await getFederatedMessages(holosphere, 'chat1', 'msg1');
+const messages = await holosphere.getFederatedMessages('chat1', 'msg1');
 ```
 
-#### `updateFederatedMessages(holosphere, originalChatId, messageId, updateCallback)`
+#### `updateFederatedMessages(originalChatId, messageId, updateCallback)`
 Updates a message across all federated chats.
 
 ```javascript
-await updateFederatedMessages(holosphere, 'chat1', 'msg1', async (chatId, messageId) => {
+await holosphere.updateFederatedMessages('chat1', 'msg1', async (chatId, messageId) => {
     // Update message in this chat
 });
 ```
@@ -400,55 +422,50 @@ await updateFederatedMessages(holosphere, 'chat1', 'msg1', async (chatId, messag
 ## Usage Example
 
 ```javascript
-import { federate, federateMessage, updateFederatedMessages } from './federation.js';
-
 // Create federation between spaces
-await federate(holosphere, 'space1', 'space2');
+await holosphere.federate('space1', 'space2');
+
+// Store data in space1
+const data = { id: 'item1', value: 42 };
+await holosphere.put('space1', 'items', data);
+
+// Propagate to federated spaces
+await holosphere.propagate('space1', 'items', data);
+
+// Retrieve data from space2 (will resolve the reference)
+const item = await holosphere.get('space2', 'items', 'item1');
 
 // Track a federated message
-await federateMessage(holosphere, 'chat1', 'msg1', 'chat2', 'msg2', 'quest');
+await holosphere.federateMessage('chat1', 'msg1', 'chat2', 'msg2', 'quest');
 
 // Update message across all federated chats
-await updateFederatedMessages(holosphere, 'chat1', 'msg1', async (chatId, messageId) => {
+await holosphere.updateFederatedMessages('chat1', 'msg1', async (chatId, messageId) => {
     await updateMessageInChat(chatId, messageId);
 });
 ```
 
-## Data Structure
+## Soul References
 
-### Federation Info
+When using the default `useReferences: true` with propagation:
+
+1. Only a lightweight reference is stored in the federated space
+2. The reference contains the original item's ID and soul path
+3. When accessed, the reference is automatically resolved to the original data
+4. Changes to the original data are immediately visible through references
+
+This maintains a single source of truth while keeping storage efficient.
+
+## Federation Structure
+
+The federation system uses two key arrays to manage relationships:
+
 ```javascript
 {
     id: string,
     name: string,
-    federation: string[],  // List of federated space IDs
-    notify: string[],      // List of spaces to notify
+    federation: string[],  // Source spaces this holon federates with
+    notify: string[],      // Target spaces to notify of changes
     timestamp: number
 }
 ```
-
-### Message Tracking
-```javascript
-{
-    id: string,
-    originalChatId: string,
-    originalMessageId: string,
-    type: string,
-    messages: [
-        {
-            chatId: string,
-            messageId: string,
-            timestamp: number
-        }
-    ]
-}
-```
-
-## Best Practices
-
-1. Always use the federation functions to track messages across spaces
-2. Keep federation relationships bidirectional when possible
-3. Use appropriate message types for better tracking
-4. Handle errors gracefully in update callbacks
-5. Clean up old federation data when relationships are removed
 
