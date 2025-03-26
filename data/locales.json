@@ -173,13 +173,18 @@
             "settings_specify_level": "Please specify the level. Example: /setLevel 1",
             "settings_invalid_level": "Please specify \"1\", \"2\" or \"3\". Example: /setLevel 1",
             "settings_specify_admin": "Please specify the admin. Example: /setAdmin @admin",
+            "settings_select_admin": "Select an admin by clicking on a user:",
+            "settings_no_users": "No users found in this chat. Users will appear here after they interact with the bot.",
             "settings_specify_federation": "Please specify the ID you would like to federate with. Example: /federate 123456. This chat ID is {{chatID}}",
             "settings_specify_separation": "Please specify who you would like to revoke the federation with. Example: /separate 123456.",
             "settings_specify_roles": "Please specify the roles. Example: /setRoles role1 role2",
             "settings_specify_values": "Please specify the values, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setValues Collaboration, Communication, Pro-activity\n\n2. Using newlines:\n/setValues\nCollaboration\nCommunication\nPro-activity",
             "settings_select_language": "Select Language",
             "back_to_menu": "◀️ Back to Menu",
-            "back_to_task": "🔙 Back to Task"
+            "back_to_task": "🔙 Back to Task",
+            "settings_send_text_only": "Please send text only or use the buttons",
+            "settings_purpose_set": "Purpose set to: {{value}}",
+            "settings_specify_purpose": "Please provide a purpose. Example: /setpurpose To create a thriving community"
         }
     },
     "it": {
@@ -360,13 +365,18 @@
             "settings_specify_level": "Specifica il livello. Esempio: /setLevel 1",
             "settings_invalid_level": "Specifica \"1\", \"2\" o \"3\". Esempio: /setLevel 1",
             "settings_specify_admin": "Specifica l'amministratore. Esempio: /setAdmin @admin",
+            "settings_select_admin": "Seleziona un amministratore cliccando su un utente:",
+            "settings_no_users": "Nessun utente trovato in questa chat. Gli utenti appariranno qui dopo aver interagito con il bot.",
             "settings_specify_federation": "Specifica l'ID con cui vuoi federarti. Esempio: /federate 123456. L'ID di questa chat è {{chatID}}",
             "settings_specify_separation": "Specifica con chi vuoi revocare la federazione. Esempio: /separate 123456.",
             "settings_specify_roles": "Specifica i ruoli. Esempio: /setRoles role1 role2",
-            "settings_specify_values": "Specifica i valori, separati da virgole o nuove righe. Esempi:\n\n1. Usando le virgole:\n/setValues Collaborazione, Comunicazione, Pro-attività\n\n2. Usando nuove righe:\n/setValues\nCollaborazione\nComunicazione\nPro-attività",
+            "settings_specify_values": "Specifica i valori, separati da virgole o nuove righe. Esempi:\n\n1. Usando le virgole:\n/setValues Collaborazione, Comunicazione, Pro-attività\n\n2. Usando nuove righe:\n/setValues\nCollaborazione\nComunicazione\nProattività",
             "settings_select_language": "Seleziona Lingua",
             "back_to_menu": "◀️ Torna al Menu",
-            "back_to_task": "🔙 Torna al Compito"
+            "back_to_task": "🔙 Torna al Compito",
+            "settings_send_text_only": "Si prega di inviare solo testo o utilizzare i pulsanti",
+            "settings_purpose_set": "Scopo impostato a: {{value}}",
+            "settings_specify_purpose": "Si prega di fornire uno scopo. Esempio: /setpurpose Creare una comunità prospera attraverso la collaborazione"
         }
     },
     "fiobbo": {
@@ -547,13 +557,18 @@
             "settings_specify_level": "Specifica il livello. Esempio: /setLevel 1",
             "settings_invalid_level": "Specifica \"1\", \"2\" o \"3\". Esempio: /setLevel 1",
             "settings_specify_admin": "Specifica l'amministratore. Esempio: /setAdmin @admin",
+            "settings_select_admin": "Seleziona un amministratore cliccando su un utente:",
+            "settings_no_users": "Nessun utente trovato in questa chat. Gli utenti appariranno qui dopo aver interagito con il bot.",
             "settings_specify_federation": "Specifica l'ID con cui vuoi federarti. Esempio: /federate 123456. L'ID di questa chat è {{chatID}}",
             "settings_specify_separation": "Specifica con chi vuoi revocare la federazione. Esempio: /separate 123456.",
             "settings_specify_roles": "Specifica i ruoli. Esempio: /setRoles ruolo1 ruolo2",
             "settings_specify_values": "Specifica i valori, separati da virgole o nuove righe. Esempi:\n\n1. Usando virgole:\n/setValues Collaborazione, Comunicazione, Proattività\n\n2. Usando nuove righe:\n/setValues\nCollaborazione\nComunicazione\nProattività",
             "settings_select_language": "Seleziona Lingua",
             "back_to_menu": "◀️ Torna al Menu",
-            "back_to_task": "🔙 Torna al Compito"
+            "back_to_task": "🔙 Torna al Compito",
+            "settings_send_text_only": "Si prega di inviare solo testo o utilizzare i pulsanti",
+            "settings_purpose_set": "Scopo impostato a: {{value}}",
+            "settings_specify_purpose": "Si prega di fornire uno scopo. Esempio: /setpurpose Creare una comunità prospera attraverso la collaborazione"
         }
     },
     "week": {
@@ -815,13 +830,18 @@
             "settings_specify_level": "Veuillez spécifier le niveau. Exemple: /setLevel 1",
             "settings_invalid_level": "Veuillez spécifier \"1\", \"2\" ou \"3\". Exemple: /setLevel 1",
             "settings_specify_admin": "Veuillez spécifier l'administrateur. Exemple: /setAdmin @admin",
+            "settings_select_admin": "Sélectionnez un administrateur en cliquant sur un utilisateur:",
+            "settings_no_users": "Aucun utilisateur trouvé dans ce chat. Les utilisateurs apparaîtront ici après avoir interagi avec le bot.",
             "settings_specify_federation": "Veuillez spécifier l'ID avec lequel vous souhaitez vous fédérer. Exemple: /federate 123456. L'ID de ce chat est {{chatID}}",
             "settings_specify_separation": "Veuillez spécifier avec qui vous souhaitez révoquer la fédération. Exemple: /separate 123456.",
             "settings_specify_roles": "Veuillez spécifier les rôles. Exemple: /setRoles role1 role2",
             "settings_specify_values": "Veuillez spécifier les valeurs, séparées par des virgules ou des nouvelles lignes. Exemples:\n\n1. En utilisant des virgules:\n/setValues Colaboración, Comunicación, Proactividad\n\n2. En utilisant des nouvelles lignes:\n/setValues\nCollaboration\nComunicazione\nProactivité",
             "settings_select_language": "Seleccionar Idioma",
             "back_to_menu": "◀️ Volver al Menú",
-            "back_to_task": "🔙 Volver a la Tarea"
+            "back_to_task": "🔙 Volver a la Tarea",
+            "settings_send_text_only": "Por favor, envía solo texto o usa los botones",
+            "settings_purpose_set": "Propósito establecido a: {{value}}",
+            "settings_specify_purpose": "Por favor, proporciona un propósito. Ejemplo: /setpurpose Crear una comunidad próspera a través de la colaboración"
         }
     },
     "fr": {
@@ -1002,13 +1022,18 @@
             "settings_specify_level": "Veuillez spécifier le niveau. Exemple: /setLevel 1",
             "settings_invalid_level": "Veuillez spécifier \"1\", \"2\" ou \"3\". Exemple: /setLevel 1",
             "settings_specify_admin": "Veuillez spécifier l'administrateur. Exemple: /setAdmin @admin",
+            "settings_select_admin": "Sélectionnez un administrateur en cliquant sur un utilisateur:",
+            "settings_no_users": "Aucun utilisateur trouvé dans ce chat. Les utilisateurs apparaîtront ici après avoir interagi avec le bot.",
             "settings_specify_federation": "Veuillez spécifier l'ID avec lequel vous souhaitez vous fédérer. Exemple: /federate 123456. L'ID de ce chat est {{chatID}}",
             "settings_specify_separation": "Veuillez spécifier avec qui vous souhaitez révoquer la fédération. Exemple: /separate 123456.",
             "settings_specify_roles": "Veuillez spécifier les rôles. Exemple: /setRoles role1 role2",
             "settings_specify_values": "Veuillez spécifier les valeurs, séparées par des virgules ou des nouvelles lignes. Exemples:\n\n1. En utilisant des virgules:\n/setValues Collaboration, Communication, Proactivité\n\n2. En utilisant des nouvelles lignes:\n/setValues\nCollaboration\nCommunication\nProactivité",
             "settings_select_language": "Sélectionner la Langue",
             "back_to_menu": "◀️ Retour au Menu",
-            "back_to_task": "🔙 Retour à la Tâche"
+            "back_to_task": "🔙 Retour à la Tâche",
+            "settings_send_text_only": "Veuillez envoyer uniquement du texte ou utiliser les boutons",
+            "settings_purpose_set": "Objectif défini à: {{value}}",
+            "settings_specify_purpose": "Veuillez fournir un objectif. Exemple: /setpurpose Créer une communauté florissante grâce à la collaboration"
         }
     }
 }

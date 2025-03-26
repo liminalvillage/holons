@@ -11,14 +11,7 @@ export default class Settings {
         this.db = db
         this.bot = bot
 
-        // Add debug middleware for all actions
-        this.bot.use(async (ctx, next) => {
-            if (ctx.callbackQuery) {
-                console.log('DEBUG: Callback received:', ctx.callbackQuery.data);
-            }
-            return next();
-        });
-
+      
         // Create scenes for text input
         this.purposeScene = new Scenes.BaseScene('purpose_scene');
         this.purposeScene.enter(async (ctx) => {
@@ -178,47 +171,71 @@ export default class Settings {
         this.adminScene = new Scenes.BaseScene('admin_scene');
         this.adminScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
-            const admin = await utils.isAdmin(chatID);
-            // Show admin submenu
-            await ctx.reply(i18next.t('settings_admin_title'), {
-                reply_markup: await this.getAdminKeyboard(chatID)
-            }).catch(e => console.log('Error showing admin menu:', e));
+            
+            // Show admin selection keyboard with all available users
+            await this.showAdminSelectionMenu(ctx, false);
         });
+
+        this.adminScene.action(/admin_select_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const userId = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            
+            let settings = await this.getSettings(chatID);
+            settings.admin = userId;
+            await this.setSettings(settings);
+            
+            // Show updated admin selection menu
+            await this.showAdminSelectionMenu(ctx, true);
+        });
+
+        this.adminScene.action('admin_back', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.leave();
+            await this.showSettingsMenu(ctx, true);
+        });
+
         this.adminScene.on('text', async (ctx) => {
+            // For backward compatibility, also handle text input
             const chatID = ctx.message.chat.id;
             const admin = ctx.message.text.trim();
             let settings = await this.getSettings(chatID);
+            const language = settings.language;
+            
             settings.admin = admin;
             await this.setSettings(settings);
             await ctx.scene.leave();
 
             // Delete the scene messages
             try {
-                await ctx.deleteMessage(ctx.message.message_id);
-                await ctx.deleteMessage(ctx.message.message_id - 1);
-                await ctx.deleteMessage(ctx.message.message_id - 2);
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
 
-            // Show admin submenu
-            await ctx.reply(i18next.t('settings_admin_title'), {
-                reply_markup: await this.getAdminKeyboard(chatID)
-            }).catch(e => console.log('Error showing admin menu:', e));
+            // Show settings menu
+            await this.showSettingsMenu(ctx, false);
         });
-        this.adminScene.on('message', ctx => ctx.reply('Please send text only'));
+        this.adminScene.on('message', ctx => {
+            const chatId = ctx.message.chat.id;
+            this.getLanguage(chatId).then(language => {
+                ctx.reply(i18next.t('settings_send_text_only', { lng: language }))
+                    .catch(e => console.log('Error in admin scene message:', e));
+            });
+        });
 
         this.hexScene = new Scenes.BaseScene('hex_scene');
         this.hexScene.enter(async (ctx) => {    
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            
             await ctx.reply(
-                i18next.t('settings_send_new', { type: i18next.t('settings_hex').toLowerCase() })
+                i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_hex', { lng: language }).toLowerCase() })
             ).catch(e => console.log('Error in hex scene enter:', e));
 
-            // Get the chat ID from the context
-            const chatID = ctx.chat.id;
-            
             // Show hex submenu
-            await ctx.reply(i18next.t('settings_hex_title'), {
+            await ctx.reply(i18next.t('settings_hex_title', { lng: language }), {
                 reply_markup: await this.getHexKeyboard(chatID)
             }).catch(e => console.log('Error showing hex menu:', e));
         });
@@ -226,6 +243,8 @@ export default class Settings {
             const chatID = ctx.message.chat.id;
             const hex = ctx.message.text.trim();
             let settings = await this.getSettings(chatID);
+            const language = settings.language;
+            
             settings.hex = hex;
             await this.setSettings(settings);
             await ctx.scene.leave();
@@ -238,11 +257,16 @@ export default class Settings {
             }
 
             // Show hex submenu
-            await ctx.reply(i18next.t('settings_hex_title'), {
+            await ctx.reply(i18next.t('settings_hex_title', { lng: language }), {
                 reply_markup: await this.getHexKeyboard(chatID)
             }).catch(e => console.log('Error showing hex menu:', e));
         });
-        this.hexScene.on('message', ctx => ctx.reply('Please send text only'));
+        this.hexScene.on('message', ctx => {
+            const chatId = ctx.message.chat.id;
+            this.getLanguage(chatId).then(language => {
+                ctx.reply(i18next.t('settings_send_text_only', { lng: language }));
+            });
+        });
 
         this.addArrayItemScene = new Scenes.BaseScene('add_array_item_scene');
 
@@ -529,16 +553,7 @@ export default class Settings {
                     break;
                 case 'admin':
                     if (utils.isAdmin(ctx)) {
-                        const currentAdmin = settings.admin || i18next.t('settings_not_set');
-                        await ctx.editMessageText(i18next.t('settings_admin_title'), {
-                            reply_markup: await this.getAdminKeyboard(chatID)
-                        }).catch((err) => { console.log(err) });
-                    } else {
-                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
-                    }
-                    break;
-                case 'admin_change':
-                    if (utils.isAdmin(ctx)) {
+                        // Enter admin scene directly instead of showing intermediate screen
                         await ctx.scene.enter('admin_scene');
                     } else {
                         ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
@@ -546,16 +561,7 @@ export default class Settings {
                     break;
                 case 'hex':
                     if (utils.isAdmin(ctx)) {
-                        const currentHex = settings.hex || i18next.t('settings_not_set');
-                        await ctx.editMessageText(i18next.t('settings_hex_title'), {
-                            reply_markup: await this.getHexKeyboard(chatID)
-                        }).catch((err) => { console.log(err) });
-                    } else {
-                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
-                    }
-                    break;
-                case 'hex_change':
-                    if (utils.isAdmin(ctx)) {
+                        // Enter hex scene directly instead of showing intermediate screen
                         await ctx.scene.enter('hex_scene');
                     } else {
                         ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
@@ -1361,33 +1367,34 @@ export default class Settings {
         }
 
         let settings = await this.getSettings(chatID);
-
+        const language = settings.language;
+        
         const menuMarkup = {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: `${this.getSettingIcon('language')} ${i18next.t('settings_language')}: ${settings.language}`, callback_data: 'settings_language' },
-                        { text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme')}: ${settings.theme}`, callback_data: 'settings_theme' }
+                        { text: `${this.getSettingIcon('language')} ${i18next.t('settings_language', { lng: language })}: ${settings.language}`, callback_data: 'settings_language' },
+                        { text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme', { lng: language })}: ${settings.theme}`, callback_data: 'settings_theme' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone')}: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set')}`, callback_data: 'settings_timezone' },
-                        { text: `${this.getSettingIcon('purpose')} ${i18next.t('settings_purpose')}: ${settings.purpose ? '✓' : i18next.t('settings_not_set')}`, callback_data: 'settings_purpose' }
+                        { text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_timezone' },
+                        { text: `${this.getSettingIcon('purpose')} ${i18next.t('settings_purpose', { lng: language })}: ${settings.purpose ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_purpose' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('roles')} ${i18next.t('settings_roles')}: ${settings.roles?.length || 0}`, callback_data: 'settings_roles' },
-                        { text: `${this.getSettingIcon('values')} ${i18next.t('settings_values')}: ${settings.values?.length || 0}`, callback_data: 'settings_values' }
+                        { text: `${this.getSettingIcon('roles')} ${i18next.t('settings_roles', { lng: language })}: ${settings.roles?.length || 0}`, callback_data: 'settings_roles' },
+                        { text: `${this.getSettingIcon('values')} ${i18next.t('settings_values', { lng: language })}: ${settings.values?.length || 0}`, callback_data: 'settings_values' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('domains')} ${i18next.t('settings_domains')}: ${settings.domains?.length || 0}`, callback_data: 'settings_domains' },
-                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation')}`, callback_data: 'settings_equation' }
+                        { text: `${this.getSettingIcon('domains')} ${i18next.t('settings_domains', { lng: language })}: ${settings.domains?.length || 0}`, callback_data: 'settings_domains' },
+                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin')}: ${settings.admin ? '✓' : i18next.t('settings_not_set')}`, callback_data: 'settings_admin' },
-                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex')}: ${settings.hex ? '✓' : i18next.t('settings_not_set')}`, callback_data: 'settings_hex' }
+                        { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' },
+                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' }
                     ],
                     [
-                        { text: i18next.t('settings_help'), callback_data: 'settings_help' },
-                        { text: i18next.t('settings_support'), url: 'https://t.me/RobertoValenti' }
+                        { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
+                        { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/RobertoValenti' }
                     ]
                 ]
             }
@@ -1395,9 +1402,9 @@ export default class Settings {
 
         try {
             if (edit) {
-                await ctx.editMessageText(i18next.t('settings'), menuMarkup);
+                await ctx.editMessageText(i18next.t('settings', { lng: language }), menuMarkup);
             } else {
-                await ctx.reply(i18next.t('settings'), menuMarkup);
+                await ctx.reply(i18next.t('settings', { lng: language }), menuMarkup);
             }
         } catch (e) {
             console.log('Error showing settings menu:', e);
@@ -1406,10 +1413,11 @@ export default class Settings {
 
     async getLanguageKeyboard(chatID) {
         let settings = await this.getSettings(chatID);
+        const language = settings.language;
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('language')} ${i18next.t('settings_language')}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { value: settings.language }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('language')} ${i18next.t('settings_language', { lng: language })}`, callback_data: ' ' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: settings.language }), callback_data: ' ' }],
                 [
                     { text: '🇬🇧 English', callback_data: 'language_en' },
                     { text: '🇮🇹 Italian', callback_data: 'language_it' }
@@ -1418,38 +1426,40 @@ export default class Settings {
                     { text: '🇪🇸 Spanish', callback_data: 'language_es' },
                     { text: '🇫🇷 French', callback_data: 'language_fr' }
                 ],
-                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+                [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
         };
     }
 
     async getThemeKeyboard(chatID) {
         let settings = await this.getSettings(chatID);
+        const language = settings.language;
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme')}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { value: settings.theme }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme', { lng: language })}`, callback_data: ' ' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: settings.theme }), callback_data: ' ' }],
                 [
-                    { text: i18next.t('settings_theme_light'), callback_data: 'theme_light' },
-                    { text: i18next.t('settings_theme_dark'), callback_data: 'theme_dark' }
+                    { text: i18next.t('settings_theme_light', { lng: language }), callback_data: 'theme_light' },
+                    { text: i18next.t('settings_theme_dark', { lng: language }), callback_data: 'theme_dark' }
                 ],
-                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+                [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
         };
     }
 
     async getLevelKeyboard(chatID) {
         let settings = await this.getSettings(chatID);
+        const language = settings.language;
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('level')} ${i18next.t('settings_level')}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { value: 'Level ' + settings.level }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('level')} ${i18next.t('settings_level', { lng: language })}`, callback_data: ' ' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: 'Level ' + settings.level }), callback_data: ' ' }],
                 [
-                    { text: i18next.t('settings_level_1'), callback_data: 'level_1' },
-                    { text: i18next.t('settings_level_2'), callback_data: 'level_2' },
-                    { text: i18next.t('settings_level_3'), callback_data: 'level_3' }
+                    { text: i18next.t('settings_level_1', { lng: language }), callback_data: 'level_1' },
+                    { text: i18next.t('settings_level_2', { lng: language }), callback_data: 'level_2' },
+                    { text: i18next.t('settings_level_3', { lng: language }), callback_data: 'level_3' }
                 ],
-                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+                [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
         };
     }
@@ -1471,25 +1481,26 @@ export default class Settings {
         };
 
         let settings = await this.getSettings(chatID);
-        const currentTimezone = settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set');
+        const language = settings.language;
+        const currentTimezone = settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set', { lng: language });
 
         if (!region) {
             // Show regions
             return {
                 inline_keyboard: [
-                    [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone')}`, callback_data: ' ' }],
-                    [{ text: `${i18next.t('settings_current', { value: currentTimezone })}`, callback_data: ' ' }],
-                    [{ text: i18next.t('settings_region_europe'), callback_data: 'timezone_region_Europe' }],
-                    [{ text: i18next.t('settings_region_americas'), callback_data: 'timezone_region_Americas' }],
-                    [{ text: i18next.t('settings_region_asia_pacific'), callback_data: 'timezone_region_Asia/Pacific' }],
-                    [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+                    [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}`, callback_data: ' ' }],
+                    [{ text: `${i18next.t('settings_current', { lng: language, value: currentTimezone })}`, callback_data: ' ' }],
+                    [{ text: i18next.t('settings_region_europe', { lng: language }), callback_data: 'timezone_region_Europe' }],
+                    [{ text: i18next.t('settings_region_americas', { lng: language }), callback_data: 'timezone_region_Americas' }],
+                    [{ text: i18next.t('settings_region_asia_pacific', { lng: language }), callback_data: 'timezone_region_Asia/Pacific' }],
+                    [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
                 ]
             };
         } else {
             // Show timezones for selected region
             const keyboard = [
-                [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone')}`, callback_data: ' ' }],
-                [{ text: `${i18next.t('settings_current', { value: currentTimezone })}`, callback_data: ' ' }]
+                [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}`, callback_data: ' ' }],
+                [{ text: `${i18next.t('settings_current', { lng: language, value: currentTimezone })}`, callback_data: ' ' }]
             ];
             for (let i = 0; i < timezones[region].length; i += 2) {
                 const row = [];
@@ -1505,7 +1516,7 @@ export default class Settings {
                 }
                 keyboard.push(row);
             }
-            keyboard.push([{ text: i18next.t('settings_back_to_regions'), callback_data: 'settings_timezone' }]);
+            keyboard.push([{ text: i18next.t('settings_back_to_regions', { lng: language }), callback_data: 'settings_timezone' }]);
             return { inline_keyboard: keyboard };
         }
     }
@@ -1524,6 +1535,7 @@ export default class Settings {
         }
 
         let settings = await this.getSettings(chatID);
+        const language = settings.language;
         
         const keyboard = {
             inline_keyboard: []
@@ -1535,7 +1547,7 @@ export default class Settings {
             
             // Add header
             keyboard.inline_keyboard.push([{
-                text: `🎯 ${i18next.t('settings_purpose')}`,
+                text: `🎯 ${i18next.t('settings_purpose', { lng: language })}`,
                 callback_data: ' '
             }]);
             
@@ -1547,14 +1559,14 @@ export default class Settings {
                 }]);
             } else {
                 keyboard.inline_keyboard.push([{
-                    text: i18next.t('settings_not_set'),
+                    text: i18next.t('settings_not_set', { lng: language }),
                     callback_data: ' '
                 }]);
             }
             
             // Add control buttons
             keyboard.inline_keyboard.push([{
-                text: i18next.t('settings_edit_purpose'),
+                text: i18next.t('settings_edit_purpose', { lng: language }),
                 callback_data: 'help_add_purpose'
             }]);
         } 
@@ -1564,7 +1576,7 @@ export default class Settings {
             
             // Add header with count
             keyboard.inline_keyboard.push([{
-                text: `${this.getSettingIcon(type)} ${i18next.t(`settings_${type}`)}: ${items.length}`,
+                text: `${this.getSettingIcon(type)} ${i18next.t(`settings_${type}`, { lng: language })}: ${items.length}`,
                 callback_data: ' '
             }]);
             
@@ -1585,7 +1597,7 @@ export default class Settings {
                 });
             } else {
                 keyboard.inline_keyboard.push([{
-                    text: i18next.t('settings_no_items', { type: i18next.t(`settings_${type}`).toLowerCase() }),
+                    text: i18next.t('settings_no_items', { lng: language, type: i18next.t(`settings_${type}`, { lng: language }).toLowerCase() }),
                     callback_data: ' '
                 }]);
             }
@@ -1593,17 +1605,17 @@ export default class Settings {
             // Add control buttons at the bottom
             if (removeMode) {
                 keyboard.inline_keyboard.push([{
-                    text: i18next.t('settings_exit_remove_mode'),
+                    text: i18next.t('settings_exit_remove_mode', { lng: language }),
                     callback_data: `exit_remove_mode_${type}`
                 }]);
             } else {
                 keyboard.inline_keyboard.push([
                     {
-                        text: i18next.t('settings_add'),
+                        text: i18next.t('settings_add', { lng: language }),
                         callback_data: `help_add_${type}`
                     },
                     {
-                        text: i18next.t('settings_remove'),
+                        text: i18next.t('settings_remove', { lng: language }),
                         callback_data: `enter_remove_mode_${type}`
                     }
                 ]);
@@ -1612,17 +1624,17 @@ export default class Settings {
 
         // Back button for all menu types
         keyboard.inline_keyboard.push([{
-            text: i18next.t('settings_back_to_settings'),
+            text: i18next.t('settings_back_to_settings', { lng: language }),
             callback_data: 'settings_back'
         }]);
         
         try {
             if (ctx.callbackQuery) {
-                await ctx.editMessageText(i18next.t('settings'), {
+                await ctx.editMessageText(i18next.t('settings', { lng: language }), {
                     reply_markup: keyboard
                 });
             } else {
-                await ctx.reply(i18next.t('settings'), {
+                await ctx.reply(i18next.t('settings', { lng: language }), {
                     reply_markup: keyboard
                 });
             }
@@ -1746,40 +1758,125 @@ export default class Settings {
     async setPurpose(ctx) {
         const chatID = ctx.message.chat.id;
         const text = ctx.message.text.replace('/setpurpose', '').trim();
+        const language = await this.getLanguage(chatID);
 
         if (!text) {
-            ctx.reply('Please provide a purpose. Example: /setpurpose To create a thriving community')
+            ctx.reply(i18next.t('settings_specify_purpose', { lng: language }));
             return;
         }
 
         let settings = await this.getSettings(chatID);
         settings.purpose = text;
         await this.setSettings(settings);
-        await ctx.reply(`Purpose set to: ${text}`);
+        await ctx.reply(i18next.t('settings_purpose_set', { lng: language, value: text }));
         await this.showArraySettingMenu(ctx, 'purpose', false);
     }
 
     async getAdminKeyboard(chatID) {
-        const admin = await utils.isAdmin(chatID);
+        let settings = await this.getSettings(chatID);
+        const language = settings.language;
+        const admin = settings.admin || i18next.t('settings_not_set', { lng: language });
+        
+        // Simplify the keyboard since we no longer need the edit button
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin')}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { value: admin || i18next.t('settings_not_set') }), callback_data: ' ' }],
-                [{ text: '✏️ ' + i18next.t('settings_edit'), callback_data: 'settings_admin_change' }],
-                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+                [{ text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}`, callback_data: ' ' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: admin }), callback_data: ' ' }],
+                [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
         };
     }
 
     async getHexKeyboard(chatID) {
-        const hex = await this.getHex(chatID);
+        let settings = await this.getSettings(chatID);
+        const language = settings.language;
+        const hex = await this.getHex({ chat: { id: chatID } });
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex')}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { value: hex || i18next.t('settings_not_set') }), callback_data: ' ' }],
-                [{ text: '✏️ ' + i18next.t('settings_edit'), callback_data: 'settings_hex_change' }],
-                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+                [{ text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}`, callback_data: ' ' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: hex || i18next.t('settings_not_set', { lng: language }) }), callback_data: ' ' }],
+                [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
         };
+    }
+
+    async showAdminSelectionMenu(ctx, edit = false) {
+        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!chatID) {
+            console.error('Could not determine chat ID');
+            return;
+        }
+
+        let settings = await this.getSettings(chatID);
+        const language = settings.language;
+        const currentAdmin = settings.admin || '';
+
+        // Get all users from the chat
+        let users = [];
+        try {
+            // Use the Users class functionality to get chat users
+            users = await this.db.getAll(chatID + '/users');
+        } catch (error) {
+            console.error('Error getting users:', error);
+        }
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        // Add header
+        keyboard.inline_keyboard.push([{
+            text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}`,
+            callback_data: ' '
+        }]);
+
+        // Add each user as a button
+        if (users && users.length > 0) {
+            for (const user of users) {
+                // Skip users without proper identification
+                if (!user.id) continue;
+
+                // Create display name (prefer username, fallback to first_name or id)
+                const displayName = user.username ? 
+                    '@' + user.username : 
+                    (user.first_name || user.id.toString());
+                
+                // Add check mark if this is the current admin
+                const isAdmin = currentAdmin === user.id.toString() || 
+                                currentAdmin === user.username ||
+                                currentAdmin === '@' + user.username;
+                
+                keyboard.inline_keyboard.push([{
+                    text: `${isAdmin ? '✅ ' : ''}${displayName}`,
+                    callback_data: `admin_select_${user.id}`
+                }]);
+            }
+        } else {
+            keyboard.inline_keyboard.push([{
+                text: i18next.t('settings_no_users', { lng: language }),
+                callback_data: ' '
+            }]);
+        }
+
+        // Add back button
+        keyboard.inline_keyboard.push([{
+            text: i18next.t('settings_back', { lng: language }),
+            callback_data: 'admin_back'
+        }]);
+
+        // Display the keyboard
+        try {
+            if (edit && ctx.callbackQuery) {
+                await ctx.editMessageText(i18next.t('settings_select_admin', { lng: language }), {
+                    reply_markup: keyboard
+                });
+            } else {
+                await ctx.reply(i18next.t('settings_select_admin', { lng: language }), {
+                    reply_markup: keyboard
+                });
+            }
+        } catch (e) {
+            console.log('Error showing admin selection menu:', e);
+        }
     }
 }
