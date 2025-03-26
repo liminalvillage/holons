@@ -198,7 +198,29 @@
             "settings_notify_removed": "Notification to {{id}} has been removed",
             "settings_unfederation_error": "Error removing connection: {{error}}",
             "settings_unnotify_error": "Error removing notification: {{error}}",
-            "settings_federation_error": "Error: {{error}}"
+            "settings_federation_error": "Error: {{error}}",
+            
+            "settings_users": "👪 Users",
+            "settings_manage_users": "Manage Users",
+            "settings_users_added": "Successfully added {{count}} user(s): @{{users}}",
+            "settings_users_failed": "Failed to add {{count}} user(s): @{{users}}",
+            "settings_user_added": "User added successfully",
+            "settings_user_removed": "User removed successfully",
+            "settings_user_not_found": "User not found",
+            "settings_user_already_exists": "User with this ID already exists",
+            "settings_error_adding_user": "Error adding user: {{error}}",
+            "settings_error_removing_user": "Error removing user: {{error}}",
+            "settings_add_user": "➕ Add User",
+            "settings_remove_user": "🗑️ Remove User",
+            "settings_remove_users": "Remove Users",
+            "settings_select_user_to_remove": "Select user to remove",
+            "settings_add_user_instructions": "You can add a user in two ways:\n\n1. Mention the user directly with @ (e.g., @username)\n\n2. Enter user details manually in the format:\nID,username,first_name,last_name\n\nOnly ID is required. Example:\n123456789,johndoe,John,Doe",
+            "settings_invalid_user_format": "Invalid format. Please enter at least the user ID or mention a user with @.",
+            "settings_invalid_user_id": "Invalid user ID. Please enter a valid numeric ID.",
+            "settings_no_mentions": "No user mentions found. Please mention a user with @ or enter user details manually.",
+            "settings_need_user_id": "Could not get ID for @{{username}}. Please provide the numeric ID for this user in format: @{{username}},ID",
+            "settings_admin_cannot_remove": "Admin - cannot remove",
+            "settings_cannot_remove_admin": "Cannot remove admin user"
         }
     },
     "it": {
@@ -404,7 +426,29 @@
             "settings_notify_removed": "Notifica a {{id}} rimossa",
             "settings_unfederation_error": "Errore durante la rimozione della connessione: {{error}}",
             "settings_unnotify_error": "Errore durante la rimozione della notifica: {{error}}",
-            "settings_federation_error": "Errore: {{error}}"
+            "settings_federation_error": "Errore: {{error}}",
+            
+            "settings_users": "👪 Utenti",
+            "settings_manage_users": "Gestione Utenti",
+            "settings_users_added": "Aggiunto con successo {{count}} utente(i): @{{users}}",
+            "settings_users_failed": "Impossibile aggiungere {{count}} utente(i): @{{users}}",
+            "settings_user_added": "Utente aggiunto con successo",
+            "settings_user_removed": "Utente rimosso con successo",
+            "settings_user_not_found": "Utente non trovato",
+            "settings_user_already_exists": "Un utente con questo ID esiste già",
+            "settings_error_adding_user": "Errore durante l'aggiunta dell'utente: {{error}}",
+            "settings_error_removing_user": "Errore durante la rimozione dell'utente: {{error}}",
+            "settings_add_user": "➕ Aggiungi Utente",
+            "settings_remove_user": "🗑️ Rimuovi Utente",
+            "settings_remove_users": "Rimuovi Utenti",
+            "settings_select_user_to_remove": "Seleziona l'utente da rimuovere",
+            "settings_add_user_instructions": "Puoi aggiungere un utente in due modi:\n\n1. Menziona l'utente direttamente con @ (es., @nomeutente)\n\n2. Inserisci i dettagli dell'utente manualmente nel formato:\nID,nomeutente,nome,cognome\n\nSolo l'ID è obbligatorio. Esempio:\n123456789,johndoe,John,Doe",
+            "settings_invalid_user_format": "Formato non valido. Inserisci almeno l'ID utente o menziona un utente con @.",
+            "settings_invalid_user_id": "ID utente non valido. Inserisci un ID numerico valido.",
+            "settings_no_mentions": "Nessuna menzione utente trovata. Menziona un utente con @ o inserisci i dettagli dell'utente manualmente.",
+            "settings_need_user_id": "Impossibile ottenere l'ID per @{{username}}. Fornisci l'ID numerico per questo utente nel formato: @{{username}},ID",
+            "settings_admin_cannot_remove": "Admin - non rimovibile",
+            "settings_cannot_remove_admin": "Impossibile rimuovere l'utente amministratore"
         }
     },
     "fiobbo": {
@@ -610,7 +654,29 @@
             "settings_notify_removed": "Notifica a {{id}} rimossa",
             "settings_unfederation_error": "Errore durante la rimozione della connessione: {{error}}",
             "settings_unnotify_error": "Errore durante la rimozione della notifica: {{error}}",
-            "settings_federation_error": "Errore: {{error}}"
+            "settings_federation_error": "Errore: {{error}}",
+            
+            "settings_users": "👪 Utenti",
+            "settings_manage_users": "Gestione Utenti",
+            "settings_users_added": "Aggiunto con successo {{count}} utente(i): @{{users}}",
+            "settings_users_failed": "Impossibile aggiungere {{count}} utente(i): @{{users}}",
+            "settings_user_added": "Utente aggiunto con successo",
+            "settings_user_removed": "Utente rimosso con successo",
+            "settings_user_not_found": "Utente non trovato",
+            "settings_user_already_exists": "Un utente con questo ID esiste già",
+            "settings_error_adding_user": "Errore durante l'aggiunta dell'utente: {{error}}",
+            "settings_error_removing_user": "Errore durante la rimozione dell'utente: {{error}}",
+            "settings_add_user": "➕ Aggiungi Utente",
+            "settings_remove_user": "🗑️ Rimuovi Utente",
+            "settings_remove_users": "Rimuovi Utenti",
+            "settings_select_user_to_remove": "Seleziona l'utente da rimuovere",
+            "settings_add_user_instructions": "Puoi aggiungere un utente in due modi:\n\n1. Menziona l'utente direttamente con @ (es., @nomeutente)\n\n2. Inserisci i dettagli dell'utente manualmente nel formato:\nID,nomeutente,nome,cognome\n\nSolo l'ID è obbligatorio. Esempio:\n123456789,johndoe,John,Doe",
+            "settings_invalid_user_format": "Formato non valido. Inserisci almeno l'ID utente o menziona un utente con @.",
+            "settings_invalid_user_id": "ID utente non valido. Inserisci un ID numerico valido.",
+            "settings_no_mentions": "Nessuna menzione utente trovata. Menziona un utente con @ o inserisci i dettagli dell'utente manualmente.",
+            "settings_need_user_id": "Impossibile ottenere l'ID per @{{username}}. Fornisci l'ID numerico per questo utente nel formato: @{{username}},ID",
+            "settings_admin_cannot_remove": "Admin - non rimovibile",
+            "settings_cannot_remove_admin": "Impossibile rimuovere l'utente amministratore"
         }
     },
     "week": {
@@ -897,7 +963,29 @@
             "settings_notify_removed": "Notificación a {{id}} eliminada",
             "settings_unfederation_error": "Error al eliminar la conexión: {{error}}",
             "settings_unnotify_error": "Error al eliminar la notificación: {{error}}",
-            "settings_federation_error": "Error: {{error}}"
+            "settings_federation_error": "Error: {{error}}",
+            
+            "settings_users": "👪 Usuarios",
+            "settings_manage_users": "Gestionar Usuarios",
+            "settings_users_added": "Añadido con éxito {{count}} usuario(s): @{{users}}",
+            "settings_users_failed": "No se pudieron añadir {{count}} usuario(s): @{{users}}",
+            "settings_user_added": "Usuario añadido con éxito",
+            "settings_user_removed": "Usuario eliminado con éxito",
+            "settings_user_not_found": "Usuario no encontrado",
+            "settings_user_already_exists": "Ya existe un usuario con este ID",
+            "settings_error_adding_user": "Error al añadir usuario: {{error}}",
+            "settings_error_removing_user": "Error al eliminar usuario: {{error}}",
+            "settings_add_user": "➕ Añadir Usuario",
+            "settings_remove_user": "🗑️ Eliminar Usuario",
+            "settings_remove_users": "Eliminar Usuarios",
+            "settings_select_user_to_remove": "Seleccione usuario para eliminar",
+            "settings_add_user_instructions": "Puede añadir un usuario de dos maneras:\n\n1. Mencione al usuario directamente con @ (ej., @nombreusuario)\n\n2. Introduzca los detalles del usuario manualmente en el formato:\nID,nombreusuario,nombre,apellido\n\nSólo el ID es obligatorio. Ejemplo:\n123456789,johndoe,John,Doe",
+            "settings_invalid_user_format": "Formato no válido. Introduzca al menos el ID de usuario o mencione a un usuario con @.",
+            "settings_invalid_user_id": "ID de usuario no válido. Introduzca un ID numérico válido.",
+            "settings_no_mentions": "No se encontraron menciones de usuarios. Mencione a un usuario con @ o introduzca los detalles del usuario manualmente.",
+            "settings_need_user_id": "No se pudo obtener el ID para @{{username}}. Proporcione el ID numérico para este usuario en el formato: @{{username}},ID",
+            "settings_admin_cannot_remove": "Admin - no se puede eliminar",
+            "settings_cannot_remove_admin": "No se puede eliminar al usuario administrador"
         }
     },
     "fr": {
@@ -1103,7 +1191,29 @@
             "settings_notify_removed": "Notification à {{id}} supprimée",
             "settings_unfederation_error": "Erreur lors de la suppression de la connexion: {{error}}",
             "settings_unnotify_error": "Erreur lors de la suppression de la notification: {{error}}",
-            "settings_federation_error": "Erreur: {{error}}"
+            "settings_federation_error": "Erreur: {{error}}",
+            
+            "settings_users": "👪 Utilisateurs",
+            "settings_manage_users": "Gérer les Utilisateurs",
+            "settings_users_added": "{{count}} utilisateur(s) ajouté(s) avec succès: @{{users}}",
+            "settings_users_failed": "Échec de l'ajout de {{count}} utilisateur(s): @{{users}}",
+            "settings_user_added": "Utilisateur ajouté avec succès",
+            "settings_user_removed": "Utilisateur supprimé avec succès",
+            "settings_user_not_found": "Utilisateur non trouvé",
+            "settings_user_already_exists": "Un utilisateur avec cet ID existe déjà",
+            "settings_error_adding_user": "Erreur lors de l'ajout de l'utilisateur: {{error}}",
+            "settings_error_removing_user": "Erreur lors de la suppression de l'utilisateur: {{error}}",
+            "settings_add_user": "➕ Ajouter Utilisateur",
+            "settings_remove_user": "🗑️ Supprimer Utilisateur",
+            "settings_remove_users": "Supprimer des Utilisateurs",
+            "settings_select_user_to_remove": "Sélectionnez l'utilisateur à supprimer",
+            "settings_add_user_instructions": "Vous pouvez ajouter un utilisateur de deux façons:\n\n1. Mentionnez l'utilisateur directement avec @ (par ex., @nomutilisateur)\n\n2. Entrez les détails de l'utilisateur manuellement au format:\nID,nomutilisateur,prénom,nom\n\nSeul l'ID est obligatoire. Exemple:\n123456789,johndoe,John,Doe",
+            "settings_invalid_user_format": "Format invalide. Veuillez saisir au moins l'ID utilisateur ou mentionner un utilisateur avec @.",
+            "settings_invalid_user_id": "ID utilisateur invalide. Veuillez saisir un ID numérique valide.",
+            "settings_no_mentions": "Aucune mention d'utilisateur trouvée. Veuillez mentionner un utilisateur avec @ ou entrer les détails de l'utilisateur manuellement.",
+            "settings_need_user_id": "Impossible d'obtenir l'ID pour @{{username}}. Veuillez fournir l'ID numérique pour cet utilisateur au format: @{{username}},ID",
+            "settings_admin_cannot_remove": "Admin - ne peut pas être supprimé",
+            "settings_cannot_remove_admin": "Impossible de supprimer l'utilisateur administrateur"
         }
     }
 }
