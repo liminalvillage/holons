@@ -432,9 +432,7 @@ export default class Settings {
             
             await ctx.reply(
                 i18next.t('settings_add_user_instructions', { lng: language }) || 
-                'You can add a user in two ways:\n\n' +
-                '1. Mention the user directly with @ (e.g., @username)\n\n' +
-                '2. Enter user details manually in the format:\nID,username,first_name,last_name\n\nOnly ID is required. Example:\n123456789,johndoe,John,Doe'
+                'Please mention the user directly with @ (e.g., @username)\n' 
             );
         });
         
@@ -445,12 +443,21 @@ export default class Settings {
             
             try {
                 // Check if the message contains mentions
-                if (ctx.message.entities && ctx.message.entities.some(entity => entity.type === 'mention')) {
+                if (ctx.message.entities && ctx.message.entities.some(entity => entity.type === 'mention' || entity.type === 'text_mention')) {
                     await this.processUserMentions(ctx);
                     return;
                 }
                 
-                // No mentions, process as manual entry
+                // Check if this is a manual entry in the @username,ID format
+                const isManualEntry = await this.processManualUserEntry(ctx);
+                if (isManualEntry) {
+                    // The manual entry was processed successfully
+                    await ctx.scene.leave();
+                    await this.showUsersManagementMenu({ chat: { id: chatID } }, false);
+                    return;
+                }
+                
+                // No mentions, process as normal manual entry
                 // Parse user data (expects format: "id,username,first_name,last_name")
                 const parts = messageText.split(',').map(part => part.trim());
                 
@@ -483,7 +490,7 @@ export default class Settings {
                 
             } catch (error) {
                 console.error('Error adding user:', error);
-                await ctx.reply(i18next.t('settings_error_adding_user', { lng: language }) || 
+                await ctx.reply(i18next.t('settings_error_adding_user', { lng: language, error: error.message }) || 
                     'Error adding user: ' + error.message);
             }
         });
@@ -2448,9 +2455,12 @@ export default class Settings {
         const chatID = ctx.chat.id;
         const language = await this.getLanguage(chatID);
         const messageText = ctx.message.text;
-        const entities = ctx.message.entities.filter(entity => entity.type === 'mention');
         
-        if (entities.length === 0) {
+        // Handle both regular mentions and text_mentions
+        const entities = ctx.message.entities || [];
+        const mentions = entities.filter(entity => entity.type === 'mention' || entity.type === 'text_mention');
+        
+        if (mentions.length === 0) {
             await ctx.reply(i18next.t('settings_no_mentions', { lng: language }) || 
                 'No user mentions found. Please mention a user with @ or enter user details manually.');
             return;
@@ -2459,46 +2469,56 @@ export default class Settings {
         const addedUsers = [];
         const failedUsers = [];
         
-        for (const entity of entities) {
+        for (const entity of mentions) {
             try {
-                // Extract username from the mention
-                const username = messageText.substring(entity.offset + 1, entity.offset + entity.length);
+                let user = null;
                 
-                // Try to get user information from the chat
-                let user;
-                try {
-                    // Try to get user from chat members
-                    user = await ctx.getChatMember('@' + username);
+                // Handle different types of mentions
+                if (entity.type === 'text_mention' && entity.user) {
+                    // text_mention already contains the full user object
+                    user = entity.user;
+                } else if (entity.type === 'mention') {
+                    // Extract username from the mention
+                    const username = messageText.substring(entity.offset + 1, entity.offset + entity.length);
                     
-                    if (user && user.user) {
-                        user = user.user;
-                    } else {
-                        throw new Error('User not found in chat');
+                    // First check if user exists in our database
+                    user = await this.findUserInDatabase(chatID, username);
+                    
+                    // If not in database, try to get from Telegram
+                    if (!user) {
+                        user = await this.lookupUserByUsername(ctx, username);
                     }
-                } catch (e) {
-                    // If we can't get the user from chat, create a minimal user object
-                    user = {
-                        id: null,  // We don't know the ID, so we'll need additional info
-                        username: username,
-                        first_name: '',
-                        last_name: ''
-                    };
                     
-                    // Request additional information if we couldn't get the user ID
-                    await ctx.reply(i18next.t('settings_need_user_id', { lng: language, username: username }) || 
-                        `Could not get ID for @${username}. Please provide the numeric ID for this user in format: @${username},ID`);
-                    failedUsers.push(username);
-                    continue;
+                    // If still not found, store just the username for manual completion
+                    if (!user) {
+                        // Create a minimal user object with just the username
+                        user = {
+                            id: null,
+                            username: username,
+                            first_name: '',
+                            last_name: ''
+                        };
+                        
+                        // Ask for more info
+                        await ctx.reply(i18next.t('settings_need_user_id', { lng: language, username: username }) || 
+                            `Could not get ID for @${username}. Please provide the numeric ID for this user in format: @${username},ID`);
+                        failedUsers.push(username);
+                        continue;
+                    }
                 }
                 
-                // We got a valid user, add to database
-                if (user.id) {
+                // If we have a valid user with ID, add to database
+                if (user && user.id) {
                     await this.addUserToDatabase(chatID, user);
-                    addedUsers.push(username);
+                    addedUsers.push(user.username || user.id.toString());
                 }
             } catch (error) {
                 console.error('Error processing mention:', error);
-                failedUsers.push(messageText.substring(entity.offset, entity.offset + entity.length));
+                if (entity.type === 'mention') {
+                    failedUsers.push(messageText.substring(entity.offset + 1, entity.offset + entity.length));
+                } else {
+                    failedUsers.push('user');
+                }
             }
         }
         
@@ -2527,6 +2547,106 @@ export default class Settings {
         }
     }
     
+    // Find a user in our database by username
+    async findUserInDatabase(chatID, username) {
+        try {
+            const users = await this.db.getAll(chatID + '/users');
+            return users.find(user => 
+                user.username && 
+                user.username.toLowerCase() === username.toLowerCase()
+            );
+        } catch (error) {
+            console.error('Error finding user in database:', error);
+            return null;
+        }
+    }
+    
+    // Look up a user by username using Telegram API
+    async lookupUserByUsername(ctx, username) {
+        try {
+            // Try to get the user directly from chat members
+            try {
+                const chatMember = await ctx.getChatMember('@' + username);
+                if (chatMember && chatMember.user) {
+                    return chatMember.user;
+                }
+            } catch (e) {
+                // Continue with other methods if this fails
+                console.log('Could not get user directly, trying other methods');
+            }
+            
+            // Check chat administrators
+            const chatMembers = await ctx.getChatAdministrators();
+            for (const member of chatMembers) {
+                if (member.user && member.user.username && 
+                    member.user.username.toLowerCase() === username.toLowerCase()) {
+                    return member.user;
+                }
+            }
+            
+            // If user replied to a message, check if it's from the user we're looking for
+            if (ctx.message && ctx.message.reply_to_message) {
+                const replyMsg = ctx.message.reply_to_message;
+                if (replyMsg.from && replyMsg.from.username && 
+                    replyMsg.from.username.toLowerCase() === username.toLowerCase()) {
+                    return replyMsg.from;
+                }
+            }
+            
+            // Try to find the user in the current message's sender
+            if (ctx.message && ctx.message.from && 
+                ctx.message.from.username && 
+                ctx.message.from.username.toLowerCase() === username.toLowerCase()) {
+                return ctx.message.from;
+            }
+            
+            // If all else fails, return null
+            return null;
+        } catch (error) {
+            console.error('Error looking up user by username:', error);
+            return null;
+        }
+    }
+    
+    // Handle combined username+ID format for manual entry
+    async processManualUserEntry(ctx) {
+        const chatID = ctx.chat.id;
+        const language = await this.getLanguage(chatID);
+        const messageText = ctx.message.text.trim();
+        
+        // Check if this is a username,ID format from a previous failed mention
+        if (messageText.includes('@') && messageText.includes(',')) {
+            const parts = messageText.split(',').map(p => p.trim());
+            const usernameWithAt = parts[0];
+            
+            if (usernameWithAt.startsWith('@') && parts.length > 1) {
+                const username = usernameWithAt.substring(1);
+                const userId = parts[1];
+                
+                if (userId && !isNaN(parseInt(userId))) {
+                    // Create a user with the given username and ID
+                    const user = {
+                        id: parseInt(userId),
+                        username: username,
+                        first_name: parts.length > 2 ? parts[2] : username,
+                        last_name: parts.length > 3 ? parts[3] : ''
+                    };
+                    
+                    try {
+                        await this.addUserToDatabase(chatID, user);
+                        await ctx.reply(i18next.t('settings_user_added', { lng: language }));
+                        return true;
+                    } catch (error) {
+                        await ctx.reply(i18next.t('settings_error_adding_user', { lng: language, error: error.message }));
+                        return false;
+                    }
+                }
+            }
+        }
+        
+        return false; // Not a manual entry format
+    }
+    
     // Add user to database
     async addUserToDatabase(chatID, user) {
         // Get current users
@@ -2535,21 +2655,11 @@ export default class Settings {
         // Check if user already exists
         const existingUser = users.find(u => u.id && u.id.toString() === user.id.toString());
         if (existingUser) {
-            throw new Error(`User with ID ${user.id} already exists.`);
+            return false; // (`User with ID ${user.id} already exists.`);
         }
         
-        // Add the new user
-        users.push({
-            id: user.id,
-            username: user.username || '',
-            first_name: user.first_name || '',
-            last_name: user.last_name || ''
-        });
-        
-        // Update the database
-        for (let i = 0; i < users.length; i++) {
-            await this.db.put(chatID + '/users/' + i, users[i]);
-        }
+        await this.db.put(chatID + '/users', user);
+    
         
         return true;
     }
