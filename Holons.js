@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import * as fs from 'fs';
 import { Scenes } from 'telegraf';
 import * as utils from './utilities.js';
+import * as i18next from 'i18next';
 
 import * as appreciative from './contracts/Appreciative.json' assert { type: "json" };
 import * as appreciativefactory from './contracts/AppreciativeFactory.json' assert { type: "json" };
@@ -51,7 +52,7 @@ export default class Holons {
           callback_data: `create_holon_${flavor}` 
         }])),
         // Add a back button at the bottom
-        [{ text: "◀️ Back", callback_data: "holons_back" }]
+        [{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]
       ];
       
       // If this is from a callback query, edit the message
@@ -137,7 +138,7 @@ export default class Holons {
           `Transaction submitted for ${flavor} holon creation.\n\nYou will be notified when the holon is created.`,
           {
             reply_markup: {
-              inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
+              inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
             }
           }
         ).catch((err) => { console.log(err) });
@@ -148,7 +149,7 @@ export default class Holons {
           `Failed to create holon: ${error.message}`,
           {
             reply_markup: {
-              inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
+              inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
             }
           }
         ).catch((err) => { console.log(err) });
@@ -163,7 +164,7 @@ export default class Holons {
         "Holon creation cancelled.",
         {
           reply_markup: {
-            inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]]
+            inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
           }
         }
       ).catch((err) => { console.log(err) });
@@ -223,7 +224,7 @@ export default class Holons {
           return ctx.editMessageText(message, {
             parse_mode: 'Markdown',
             reply_markup: {
-              inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+              inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
             }
           }).catch((err) => { console.log(err) });
         } else {
@@ -496,13 +497,13 @@ export default class Holons {
             });
             return ctx.editMessageText(message, {
               reply_markup: {
-                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
               }
             });
           } else {
             ctx.editMessageText(`🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`, {
               reply_markup: {
-                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
               }
             });
           }
@@ -526,7 +527,7 @@ export default class Holons {
             if (holonAddress === '0x0000000000000000000000000000000000000000') {
               return ctx.editMessageText("No holon exists for this chat", {
                 reply_markup: {
-                  inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                  inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
                 }
               }).catch((err) => { console.log(err) });
             }
@@ -539,7 +540,7 @@ export default class Holons {
             } else {
               return ctx.editMessageText(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`, {
                 reply_markup: {
-                  inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                  inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
                 }
               }).catch((err) => { console.log(err) });
             }
@@ -547,7 +548,7 @@ export default class Holons {
             console.error("Error checking holon type:", error);
             return ctx.editMessageText("Error checking holon type", {
               reply_markup: {
-                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
               }
             }).catch((err) => { console.log(err) });
           }
@@ -723,7 +724,7 @@ export default class Holons {
     if (ctx.callbackQuery) {
       return ctx.editMessageText(message, {
         reply_markup: {
-          inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+          inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
         }
       }).catch((err) => { console.log(err) });
     } else {
@@ -790,7 +791,7 @@ export default class Holons {
       return ctx.editMessageText(message, {
         parse_mode: 'Markdown',
         reply_markup: {
-          inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+          inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
         }
       }).catch((err) => { console.log(err) });
     } else {
@@ -1257,7 +1258,7 @@ export default class Holons {
       if (ctx.callbackQuery) {
         return ctx.editMessageText(message, {
           reply_markup: {
-            inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+            inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
           }
         }).catch((err) => { console.log(err) });
       } else {
@@ -1389,7 +1390,7 @@ export default class Holons {
           if (ctx.callbackQuery) {
             return ctx.editMessageText(message, {
               reply_markup: {
-                inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
+                inline_keyboard: [[{ text: i18next.t("back_to_menu"), callback_data: "holons_back" }]]
               }
             }).catch((err) => { console.log(err) });
           } else {

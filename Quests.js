@@ -1304,7 +1304,7 @@ export default class Quests {
             // Add back button if this is a quest's checklist
             if (checklist.questId) {
                 keyboard.push([
-                    Markup.button.callback('🔙 Back to Task', `back_to_quest_${checklist.chatId}_${checklist.questId}`)
+                    Markup.button.callback(i18next.t('back_to_task'), `back_to_quest_${checklist.chatId}_${checklist.questId}`)
                 ]);
             }
 

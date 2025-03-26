@@ -178,10 +178,11 @@ export default class Settings {
         this.adminScene = new Scenes.BaseScene('admin_scene');
         this.adminScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
-            let settings = await this.getSettings(chatID);
-            await ctx.reply(
-                i18next.t('settings_send_new', { type: i18next.t('settings_admin').toLowerCase() }))
-                .catch(e => console.log('Error in admin scene enter:', e));
+            const admin = await utils.isAdmin(chatID);
+            // Show admin submenu
+            await ctx.reply(i18next.t('settings_admin_title'), {
+                reply_markup: await this.getAdminKeyboard(chatID)
+            }).catch(e => console.log('Error showing admin menu:', e));
         });
         this.adminScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -201,14 +202,8 @@ export default class Settings {
             }
 
             // Show admin submenu
-            await ctx.reply('Admin Settings', {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: `Current: ${admin || 'Not set'}`, callback_data: ' ' }],
-                        [{ text: '✏️ Change', callback_data: 'settings_admin_change' }],
-                        [{ text: '« Back', callback_data: 'settings_back' }]
-                    ]
-                }
+            await ctx.reply(i18next.t('settings_admin_title'), {
+                reply_markup: await this.getAdminKeyboard(chatID)
             }).catch(e => console.log('Error showing admin menu:', e));
         });
         this.adminScene.on('message', ctx => ctx.reply('Please send text only'));
@@ -216,8 +211,16 @@ export default class Settings {
         this.hexScene = new Scenes.BaseScene('hex_scene');
         this.hexScene.enter(async (ctx) => {    
             await ctx.reply(
-                i18next.t('settings_send_new', { type: i18next.t('settings_hex').toLowerCase() }))
-                .catch(e => console.log('Error in hex scene enter:', e));
+                i18next.t('settings_send_new', { type: i18next.t('settings_hex').toLowerCase() })
+            ).catch(e => console.log('Error in hex scene enter:', e));
+
+            // Get the chat ID from the context
+            const chatID = ctx.chat.id;
+            
+            // Show hex submenu
+            await ctx.reply(i18next.t('settings_hex_title'), {
+                reply_markup: await this.getHexKeyboard(chatID)
+            }).catch(e => console.log('Error showing hex menu:', e));
         });
         this.hexScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -235,14 +238,8 @@ export default class Settings {
             }
 
             // Show hex submenu
-            await ctx.reply('Hex Settings', {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: `Current: ${hex || 'Not set'}`, callback_data: ' ' }],
-                        [{ text: '✏️ Change', callback_data: 'settings_hex_change' }],
-                        [{ text: '« Back', callback_data: 'settings_back' }]
-                    ]
-                }
+            await ctx.reply(i18next.t('settings_hex_title'), {
+                reply_markup: await this.getHexKeyboard(chatID)
             }).catch(e => console.log('Error showing hex menu:', e));
         });
         this.hexScene.on('message', ctx => ctx.reply('Please send text only'));
@@ -516,74 +513,62 @@ export default class Settings {
                     await this.showSettingsMenu(ctx, true);
                     break;
                 case 'language':
-                    await ctx.editMessageText('Select language:', {
+                    await ctx.editMessageText(i18next.t('settings_select_language'), {
                         reply_markup: await this.getLanguageKeyboard(chatID)
                     }).catch(e => console.log('Error in language menu:', e));
                     break;
                 case 'theme':
-                    await ctx.editMessageText('Select theme:', {
+                    await ctx.editMessageText(i18next.t('settings_select_theme'), {
                         reply_markup: await this.getThemeKeyboard(chatID)
                     }).catch(e => console.log('Error in theme menu:', e));
                     break;
                 case 'level':
-                    await ctx.editMessageText('Select level:', {
+                    await ctx.editMessageText(i18next.t('settings_select_level'), {
                         reply_markup: await this.getLevelKeyboard(chatID)
                     }).catch(e => console.log('Error in level menu:', e));
                     break;
                 case 'admin':
                     if (utils.isAdmin(ctx)) {
-                        const currentAdmin = settings.admin || 'Not set';
-                        await ctx.editMessageText('Admin Settings', {
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: `Current: ${currentAdmin}`, callback_data: ' ' }],
-                                    [{ text: '✏️ Change', callback_data: 'settings_admin_change' }],
-                                    [{ text: '« Back', callback_data: 'settings_back' }]
-                                ]
-                            }
+                        const currentAdmin = settings.admin || i18next.t('settings_not_set');
+                        await ctx.editMessageText(i18next.t('settings_admin_title'), {
+                            reply_markup: await this.getAdminKeyboard(chatID)
                         }).catch((err) => { console.log(err) });
                     } else {
-                        ctx.reply('Only a chat admin can perform this action');
+                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
                     }
                     break;
                 case 'admin_change':
                     if (utils.isAdmin(ctx)) {
                         await ctx.scene.enter('admin_scene');
                     } else {
-                        ctx.reply('Only a chat admin can perform this action');
+                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
                     }
                     break;
                 case 'hex':
                     if (utils.isAdmin(ctx)) {
-                        const currentHex = settings.hex || 'Not set';
-                        await ctx.editMessageText('Hex Settings', {
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: `Current: ${currentHex}`, callback_data: ' ' }],
-                                    [{ text: '✏️ Change', callback_data: 'settings_hex_change' }],
-                                    [{ text: '« Back', callback_data: 'settings_back' }]
-                                ]
-                            }
+                        const currentHex = settings.hex || i18next.t('settings_not_set');
+                        await ctx.editMessageText(i18next.t('settings_hex_title'), {
+                            reply_markup: await this.getHexKeyboard(chatID)
                         }).catch((err) => { console.log(err) });
                     } else {
-                        ctx.reply('Only a chat admin can perform this action');
+                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
                     }
                     break;
                 case 'hex_change':
                     if (utils.isAdmin(ctx)) {
                         await ctx.scene.enter('hex_scene');
                     } else {
-                        ctx.reply('Only a chat admin can perform this action');
+                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
                     }
                     break;
                 case 'timezone':
-                    await ctx.editMessageText('Select region:', {
+                    await ctx.editMessageText(i18next.t('settings_select_timezone_region'), {
                         reply_markup: await this.getTimezoneKeyboard(chatID)
                     }).catch(e => console.log('Error in timezone menu:', e));
                     break;
                 case 'equation':
                     let weights = await this.getValueEquation(chatID);
-                    await ctx.editMessageText('Value Equation:', {
+                    await ctx.editMessageText(i18next.t('settings_equation_title'), {
                         reply_markup: this.equationInlineKeyboard(weights)
                     }).catch((err) => { console.log(err) });
                     break;
@@ -633,15 +618,61 @@ export default class Settings {
                 settings.language = language;
                 await this.setSettings(settings);
                 await i18next.changeLanguage(language);
+                await ctx.reply(i18next.t('settings_language_updated', { language: language }));
                 await this.showSettingsMenu(ctx, true);
             }
+        });
+
+        // Add theme selection handlers
+        this.bot.action(/theme_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const theme = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(chatID);
+
+            if (['light', 'dark'].includes(theme)) {
+                settings.theme = theme;
+                await this.setSettings(settings);
+                await ctx.reply(i18next.t('settings_theme_updated', { theme: theme }));
+                await this.showSettingsMenu(ctx, true);
+            }
+        });
+
+        // Add level selection handlers
+        this.bot.action(/level_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const level = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(chatID);
+
+            if (['1', '2', '3'].includes(level)) {
+                settings.level = parseInt(level);
+                await this.setSettings(settings);
+                await ctx.reply(i18next.t('settings_level_updated', { level: level }));
+                await this.showSettingsMenu(ctx, true);
+            }
+        });
+
+        // Handle timezone settings selection
+        this.bot.action(/timezone_set_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const timezone = ctx.match[1];
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(chatID);
+            settings.timezone = timezone;
+            await this.setSettings(settings);
+            const displayTimezone = timezone.split('/')[1].replace('_', ' ');
+            await ctx.reply(i18next.t('settings_timezone_updated', { timezone: displayTimezone }));
+            await ctx.editMessageText(i18next.t('settings_select_timezone_region'), {
+                reply_markup: await this.getTimezoneKeyboard(chatID)
+            }).catch((err) => { console.log(err) });
         });
 
         this.bot.action(/settings_equation_change/, async (ctx) => {
             await ctx.answerCbQuery();
             const chatID = ctx.callbackQuery.message.chat.id;
             let weights = await this.getValueEquation(chatID);
-            await ctx.editMessageText('Value Equation:', {
+            await ctx.editMessageText(i18next.t('settings_equation_title'), {
                 reply_markup: this.equationInlineKeyboard(weights)
             }).catch((err) => { console.log(err) });
         });
@@ -971,48 +1002,49 @@ export default class Settings {
 
     // TODO: move to utilities or UI
     equationInlineKeyboard(weights) {
-        const keyboard = [
-            [{ text: 'Current Value Equation Weights:', callback_data: ' ' }],
-            [{ text: '✏️ Change', callback_data: 'settings_equation_change' }],
-            [
-                { text: 'Initiated:', callback_data: 'null' },
-                { text: '<', callback_data: 'decrement_initiated' },
-                { text: weights.initiated.toString(), callback_data: 'null' },
-                { text: '>', callback_data: 'increment_initiated' }
-            ],
-            [
-                { text: 'Completed:', callback_data: 'null' },
-                { text: '<', callback_data: 'decrement_completed' },
-                { text: weights.completed.toString(), callback_data: 'null' },
-                { text: '>', callback_data: 'increment_completed' }
-            ],
-            [
-                { text: 'Sent:', callback_data: 'null' },
-                { text: '<', callback_data: 'decrement_sent' },
-                { text: weights.sent.toString(), callback_data: 'null' },
-                { text: '>', callback_data: 'increment_sent' }
-            ],
-            [
-                { text: 'Received:', callback_data: 'null' },
-                { text: '<', callback_data: 'decrement_received' },
-                { text: weights.received.toString(), callback_data: 'null' },
-                { text: '>', callback_data: 'increment_received' }
-            ],
-            [
-                { text: 'Hours:', callback_data: 'null' },
-                { text: '<', callback_data: 'decrement_hours' },
-                { text: weights.hours.toString(), callback_data: 'null' },
-                { text: '>', callback_data: 'increment_hours' }
-            ],
-            [
-                { text: 'Money:', callback_data: 'null' },
-                { text: '<', callback_data: 'decrement_money' },
-                { text: weights.money.toString(), callback_data: 'null' },
-                { text: '>', callback_data: 'increment_money' }
-            ],
-            [{ text: '« Back', callback_data: 'settings_back' }]
-        ];
-        return { inline_keyboard: keyboard };
+        return {
+            inline_keyboard: [
+                [{ text: i18next.t('settings_value_equation_weights'), callback_data: ' ' }],
+                [{ text: '✏️ ' + i18next.t('settings_edit'), callback_data: 'settings_equation_change' }],
+                [
+                    { text: i18next.t('settings_initiated'), callback_data: 'null' },
+                    { text: '<', callback_data: 'decrement_initiated' },
+                    { text: weights.initiated.toString(), callback_data: 'null' },
+                    { text: '>', callback_data: 'increment_initiated' }
+                ],
+                [
+                    { text: i18next.t('settings_completed'), callback_data: 'null' },
+                    { text: '<', callback_data: 'decrement_completed' },
+                    { text: weights.completed.toString(), callback_data: 'null' },
+                    { text: '>', callback_data: 'increment_completed' }
+                ],
+                [
+                    { text: i18next.t('settings_sent'), callback_data: 'null' },
+                    { text: '<', callback_data: 'decrement_sent' },
+                    { text: weights.sent.toString(), callback_data: 'null' },
+                    { text: '>', callback_data: 'increment_sent' }
+                ],
+                [
+                    { text: i18next.t('settings_received'), callback_data: 'null' },
+                    { text: '<', callback_data: 'decrement_received' },
+                    { text: weights.received.toString(), callback_data: 'null' },
+                    { text: '>', callback_data: 'increment_received' }
+                ],
+                [
+                    { text: i18next.t('settings_hours'), callback_data: 'null' },
+                    { text: '<', callback_data: 'decrement_hours' },
+                    { text: weights.hours.toString(), callback_data: 'null' },
+                    { text: '>', callback_data: 'increment_hours' }
+                ],
+                [
+                    { text: i18next.t('settings_money'), callback_data: 'null' },
+                    { text: '<', callback_data: 'decrement_money' },
+                    { text: weights.money.toString(), callback_data: 'null' },
+                    { text: '>', callback_data: 'increment_money' }
+                ],
+                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+            ]
+        };
     }
 
     getDefaultSettings(chatID, chatName) {
@@ -1334,12 +1366,12 @@ export default class Settings {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: i18next.t('settings_language') + ': ' + settings.language, callback_data: 'settings_language' },
-                        { text: i18next.t('settings_theme') + ': ' + settings.theme, callback_data: 'settings_theme' }
+                        { text: `${this.getSettingIcon('language')} ${i18next.t('settings_language')}: ${settings.language}`, callback_data: 'settings_language' },
+                        { text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme')}: ${settings.theme}`, callback_data: 'settings_theme' }
                     ],
                     [
-                        { text: i18next.t('settings_timezone') + ': ' + (settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set')), callback_data: 'settings_timezone' },
-                        { text: i18next.t('settings_purpose') + ': ' + (settings.purpose ? '✓' : i18next.t('settings_not_set')), callback_data: 'settings_purpose' }
+                        { text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone')}: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set')}`, callback_data: 'settings_timezone' },
+                        { text: `${this.getSettingIcon('purpose')} ${i18next.t('settings_purpose')}: ${settings.purpose ? '✓' : i18next.t('settings_not_set')}`, callback_data: 'settings_purpose' }
                     ],
                     [
                         { text: `${this.getSettingIcon('roles')} ${i18next.t('settings_roles')}: ${settings.roles?.length || 0}`, callback_data: 'settings_roles' },
@@ -1347,7 +1379,11 @@ export default class Settings {
                     ],
                     [
                         { text: `${this.getSettingIcon('domains')} ${i18next.t('settings_domains')}: ${settings.domains?.length || 0}`, callback_data: 'settings_domains' },
-                        { text: i18next.t('settings_equation'), callback_data: 'settings_equation' }
+                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation')}`, callback_data: 'settings_equation' }
+                    ],
+                    [
+                        { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin')}: ${settings.admin ? '✓' : i18next.t('settings_not_set')}`, callback_data: 'settings_admin' },
+                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex')}: ${settings.hex ? '✓' : i18next.t('settings_not_set')}`, callback_data: 'settings_hex' }
                     ],
                     [
                         { text: i18next.t('settings_help'), callback_data: 'settings_help' },
@@ -1372,8 +1408,8 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         return {
             inline_keyboard: [
+                [{ text: `${this.getSettingIcon('language')} ${i18next.t('settings_language')}`, callback_data: ' ' }],
                 [{ text: i18next.t('settings_current', { value: settings.language }), callback_data: ' ' }],
-                [{ text: i18next.t('settings_change'), callback_data: 'settings_language_select' }],
                 [
                     { text: '🇬🇧 English', callback_data: 'language_en' },
                     { text: '🇮🇹 Italian', callback_data: 'language_it' }
@@ -1391,8 +1427,8 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         return {
             inline_keyboard: [
+                [{ text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme')}`, callback_data: ' ' }],
                 [{ text: i18next.t('settings_current', { value: settings.theme }), callback_data: ' ' }],
-                [{ text: i18next.t('settings_change'), callback_data: 'settings_theme_select' }],
                 [
                     { text: i18next.t('settings_theme_light'), callback_data: 'theme_light' },
                     { text: i18next.t('settings_theme_dark'), callback_data: 'theme_dark' }
@@ -1406,8 +1442,8 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         return {
             inline_keyboard: [
+                [{ text: `${this.getSettingIcon('level')} ${i18next.t('settings_level')}`, callback_data: ' ' }],
                 [{ text: i18next.t('settings_current', { value: 'Level ' + settings.level }), callback_data: ' ' }],
-                [{ text: i18next.t('settings_change'), callback_data: 'settings_level_select' }],
                 [
                     { text: i18next.t('settings_level_1'), callback_data: 'level_1' },
                     { text: i18next.t('settings_level_2'), callback_data: 'level_2' },
@@ -1435,25 +1471,25 @@ export default class Settings {
         };
 
         let settings = await this.getSettings(chatID);
-        const currentTimezone = settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : 'Not set';
+        const currentTimezone = settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set');
 
         if (!region) {
             // Show regions
             return {
                 inline_keyboard: [
-                    [{ text: `Current: ${currentTimezone}`, callback_data: ' ' }],
-                    [{ text: '✏️ Change', callback_data: 'settings_timezone_select' }],
-                    [{ text: 'Europe', callback_data: 'timezone_region_Europe' }],
-                    [{ text: 'Americas', callback_data: 'timezone_region_Americas' }],
-                    [{ text: 'Asia/Pacific', callback_data: 'timezone_region_Asia/Pacific' }],
-                    [{ text: '« Back', callback_data: 'settings_back' }]
+                    [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone')}`, callback_data: ' ' }],
+                    [{ text: `${i18next.t('settings_current', { value: currentTimezone })}`, callback_data: ' ' }],
+                    [{ text: i18next.t('settings_region_europe'), callback_data: 'timezone_region_Europe' }],
+                    [{ text: i18next.t('settings_region_americas'), callback_data: 'timezone_region_Americas' }],
+                    [{ text: i18next.t('settings_region_asia_pacific'), callback_data: 'timezone_region_Asia/Pacific' }],
+                    [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
                 ]
             };
         } else {
             // Show timezones for selected region
             const keyboard = [
-                [{ text: `Current: ${currentTimezone}`, callback_data: ' ' }],
-                [{ text: '✏️ Change', callback_data: 'settings_timezone_select' }]
+                [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone')}`, callback_data: ' ' }],
+                [{ text: `${i18next.t('settings_current', { value: currentTimezone })}`, callback_data: ' ' }]
             ];
             for (let i = 0; i < timezones[region].length; i += 2) {
                 const row = [];
@@ -1469,7 +1505,7 @@ export default class Settings {
                 }
                 keyboard.push(row);
             }
-            keyboard.push([{ text: '« Back to Regions', callback_data: 'settings_timezone' }]);
+            keyboard.push([{ text: i18next.t('settings_back_to_regions'), callback_data: 'settings_timezone' }]);
             return { inline_keyboard: keyboard };
         }
     }
@@ -1518,7 +1554,7 @@ export default class Settings {
             
             // Add control buttons
             keyboard.inline_keyboard.push([{
-                text: '✏️ Edit Purpose',
+                text: i18next.t('settings_edit_purpose'),
                 callback_data: 'help_add_purpose'
             }]);
         } 
@@ -1557,17 +1593,17 @@ export default class Settings {
             // Add control buttons at the bottom
             if (removeMode) {
                 keyboard.inline_keyboard.push([{
-                    text: '🔙 Exit Remove Mode',
+                    text: i18next.t('settings_exit_remove_mode'),
                     callback_data: `exit_remove_mode_${type}`
                 }]);
             } else {
                 keyboard.inline_keyboard.push([
                     {
-                        text: '➕ Add',
+                        text: i18next.t('settings_add'),
                         callback_data: `help_add_${type}`
                     },
                     {
-                        text: '🗑️ Remove',
+                        text: i18next.t('settings_remove'),
                         callback_data: `enter_remove_mode_${type}`
                     }
                 ]);
@@ -1576,7 +1612,7 @@ export default class Settings {
 
         // Back button for all menu types
         keyboard.inline_keyboard.push([{
-            text: '« Back to Settings',
+            text: i18next.t('settings_back_to_settings'),
             callback_data: 'settings_back'
         }]);
         
@@ -1597,11 +1633,19 @@ export default class Settings {
 
     // Helper method to get setting icon
     getSettingIcon(type) {
+    return '';
         switch(type) {
             case 'values': return '💫';
             case 'domains': return '🔍';
             case 'roles': return '👥';
             case 'purpose': return '🎯';
+            case 'language': return '🌐';
+            case 'theme': return '🎨';
+            case 'timezone': return '🕒';
+            case 'admin': return '👑';
+            case 'hex': return '🔗';
+            case 'equation': return '⚖️';
+            case 'level': return '📊';
             default: return '⚙️';
         }
     }
@@ -1631,7 +1675,7 @@ export default class Settings {
                 
                 // Send prompt message
                 console.log('Sending prompt for type:', type);
-                const promptMessage = await ctx.reply(`Please enter new ${type} (separate multiple items with commas or new lines):`);
+                const promptMessage = await ctx.reply(i18next.t('settings_enter_new_items', { type: i18next.t(`settings_${type}`).toLowerCase() }));
                 
                 // Store prompt message ID for later deletion
                 ctx.scene.state.promptMessageId = promptMessage.message_id;
@@ -1713,5 +1757,29 @@ export default class Settings {
         await this.setSettings(settings);
         await ctx.reply(`Purpose set to: ${text}`);
         await this.showArraySettingMenu(ctx, 'purpose', false);
+    }
+
+    async getAdminKeyboard(chatID) {
+        const admin = await utils.isAdmin(chatID);
+        return {
+            inline_keyboard: [
+                [{ text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin')}`, callback_data: ' ' }],
+                [{ text: i18next.t('settings_current', { value: admin || i18next.t('settings_not_set') }), callback_data: ' ' }],
+                [{ text: '✏️ ' + i18next.t('settings_edit'), callback_data: 'settings_admin_change' }],
+                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+            ]
+        };
+    }
+
+    async getHexKeyboard(chatID) {
+        const hex = await this.getHex(chatID);
+        return {
+            inline_keyboard: [
+                [{ text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex')}`, callback_data: ' ' }],
+                [{ text: i18next.t('settings_current', { value: hex || i18next.t('settings_not_set') }), callback_data: ' ' }],
+                [{ text: '✏️ ' + i18next.t('settings_edit'), callback_data: 'settings_hex_change' }],
+                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+            ]
+        };
     }
 }

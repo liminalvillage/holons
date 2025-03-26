@@ -30,6 +30,7 @@ import Announcements from './Announcements.js';
 import Checklists from './Checklists.js';
 import Scheduler from './Scheduler.js';
 import CapitalGame from './CapitalGame.js';
+import i18next from 'i18next';
 
 
 // Delete lock file if it exists
@@ -417,7 +418,7 @@ I'm your community's coordination companion. Let's set up your group's configura
                 [{ text: "👥 Set Roles", callback_data: "settings_roles_change" }],
                 [{ text: "🔢 Value Equation", callback_data: "settings_equation" }],
                 [{ text: "🌐 Language", callback_data: "settings_language" }],
-                [{ text: "◀️ Back", callback_data: "settings_back_to_start" }]
+                [{ text: i18next.t("back_to_menu"), callback_data: "settings_back_to_start" }]
               ]
             }
           }

@@ -1,4 +1,5 @@
 import { Markup, Scenes } from 'telegraf';
+import i18next from 'i18next';
 
 class Checklists {
     constructor(bot, db) {
@@ -450,7 +451,7 @@ class Checklists {
             if (checklist.questId) {
                 buttons.push([
                     Markup.button.callback(
-                        '🔙 Back to Task',
+                        i18next.t('back_to_task'),
                         `back_to_quest_${checklist.chatId}_${checklist.questId}`
                     )
                 ]);
