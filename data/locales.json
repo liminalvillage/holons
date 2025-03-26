@@ -184,7 +184,21 @@
             "back_to_task": "🔙 Back to Task",
             "settings_send_text_only": "Please send text only or use the buttons",
             "settings_purpose_set": "Purpose set to: {{value}}",
-            "settings_specify_purpose": "Please provide a purpose. Example: /setpurpose To create a thriving community"
+            "settings_specify_purpose": "Please provide a purpose. Example: /setpurpose To create a thriving community",
+            "settings_federation": "🔄 Federation",
+            "settings_federation_title": "Federation Settings",
+            "settings_federation_added": "Federation with {{id}} created successfully",
+            "settings_federated_with": "Connected Holons:",
+            "settings_notifies": "Notifies:",
+            "settings_no_federation": "This chat is not federated with any other spaces",
+            "settings_add_federation": "➕ Add New Connection",
+            "settings_enter_federation_id": "Please enter the ID of the Holon you want to connect with:",
+            "settings_invalid_federation_id": "Invalid ID. Please enter a numeric Holon ID.",
+            "settings_federation_removed": "Connection with {{id}} has been removed",
+            "settings_notify_removed": "Notification to {{id}} has been removed",
+            "settings_unfederation_error": "Error removing connection: {{error}}",
+            "settings_unnotify_error": "Error removing notification: {{error}}",
+            "settings_federation_error": "Error: {{error}}"
         }
     },
     "it": {
@@ -376,7 +390,21 @@
             "back_to_task": "🔙 Torna al Compito",
             "settings_send_text_only": "Si prega di inviare solo testo o utilizzare i pulsanti",
             "settings_purpose_set": "Scopo impostato a: {{value}}",
-            "settings_specify_purpose": "Si prega di fornire uno scopo. Esempio: /setpurpose Creare una comunità prospera attraverso la collaborazione"
+            "settings_specify_purpose": "Si prega di fornire uno scopo. Esempio: /setpurpose Creare una comunità prospera attraverso la collaborazione",
+            "settings_federation": "🔄 Federazione",
+            "settings_federation_title": "Impostazioni Federazione",
+            "settings_federation_added": "Federazione con {{id}} creata con successo",
+            "settings_federated_with": "Holon Connessi:",
+            "settings_notifies": "Notifiche:",
+            "settings_no_federation": "Questa chat non è federata con altri spazi",
+            "settings_add_federation": "➕ Aggiungi Nuova Connessione",
+            "settings_enter_federation_id": "Inserisci l'ID dell'Holon a cui vuoi connetterti:",
+            "settings_invalid_federation_id": "ID non valido. Inserisci un ID numerico di Holon.",
+            "settings_federation_removed": "Connessione con {{id}} rimossa",
+            "settings_notify_removed": "Notifica a {{id}} rimossa",
+            "settings_unfederation_error": "Errore durante la rimozione della connessione: {{error}}",
+            "settings_unnotify_error": "Errore durante la rimozione della notifica: {{error}}",
+            "settings_federation_error": "Errore: {{error}}"
         }
     },
     "fiobbo": {
@@ -568,7 +596,21 @@
             "back_to_task": "🔙 Torna al Compito",
             "settings_send_text_only": "Si prega di inviare solo testo o utilizzare i pulsanti",
             "settings_purpose_set": "Scopo impostato a: {{value}}",
-            "settings_specify_purpose": "Si prega di fornire uno scopo. Esempio: /setpurpose Creare una comunità prospera attraverso la collaborazione"
+            "settings_specify_purpose": "Si prega di fornire uno scopo. Esempio: /setpurpose Creare una comunità prospera attraverso la collaborazione",
+            "settings_federation": "🔄 Federazione",
+            "settings_federation_title": "Impostazioni Federazione",
+            "settings_federation_added": "Federazione con {{id}} creata con successo",
+            "settings_federated_with": "Holon Connessi:",
+            "settings_notifies": "Notifiche:",
+            "settings_no_federation": "Questa chat non è federata con altri spazi",
+            "settings_add_federation": "➕ Aggiungi Nuova Connessione",
+            "settings_enter_federation_id": "Inserisci l'ID dell'Holon a cui vuoi connetterti:",
+            "settings_invalid_federation_id": "ID non valido. Inserisci un ID numerico di Holon.",
+            "settings_federation_removed": "Connessione con {{id}} rimossa",
+            "settings_notify_removed": "Notifica a {{id}} rimossa",
+            "settings_unfederation_error": "Errore durante la rimozione della connessione: {{error}}",
+            "settings_unnotify_error": "Errore durante la rimozione della notifica: {{error}}",
+            "settings_federation_error": "Errore: {{error}}"
         }
     },
     "week": {
@@ -841,7 +883,21 @@
             "back_to_task": "🔙 Volver a la Tarea",
             "settings_send_text_only": "Por favor, envía solo texto o usa los botones",
             "settings_purpose_set": "Propósito establecido a: {{value}}",
-            "settings_specify_purpose": "Por favor, proporciona un propósito. Ejemplo: /setpurpose Crear una comunidad próspera a través de la colaboración"
+            "settings_specify_purpose": "Por favor, proporciona un propósito. Ejemplo: /setpurpose Crear una comunidad próspera a través de la colaboración",
+            "settings_federation": "🔄 Federación",
+            "settings_federation_title": "Configuración de Federación",
+            "settings_federation_added": "Federación con {{id}} creada con éxito",
+            "settings_federated_with": "Holons Conectados:",
+            "settings_notifies": "Notifica a:",
+            "settings_no_federation": "Este chat no está federado con otros espacios",
+            "settings_add_federation": "➕ Añadir Nueva Conexión",
+            "settings_enter_federation_id": "Por favor, introduce el ID del Holon al que quieres conectarte:",
+            "settings_invalid_federation_id": "ID no válido. Por favor, introduce un ID numérico de Holon.",
+            "settings_federation_removed": "Conexión con {{id}} eliminada",
+            "settings_notify_removed": "Notificación a {{id}} eliminada",
+            "settings_unfederation_error": "Error al eliminar la conexión: {{error}}",
+            "settings_unnotify_error": "Error al eliminar la notificación: {{error}}",
+            "settings_federation_error": "Error: {{error}}"
         }
     },
     "fr": {
@@ -1033,7 +1089,21 @@
             "back_to_task": "🔙 Retour à la Tâche",
             "settings_send_text_only": "Veuillez envoyer uniquement du texte ou utiliser les boutons",
             "settings_purpose_set": "Objectif défini à: {{value}}",
-            "settings_specify_purpose": "Veuillez fournir un objectif. Exemple: /setpurpose Créer une communauté florissante grâce à la collaboration"
+            "settings_specify_purpose": "Veuillez fournir un objectif. Exemple: /setpurpose Créer une communauté florissante grâce à la collaboration",
+            "settings_federation": "🔄 Fédération",
+            "settings_federation_title": "Paramètres de Fédération",
+            "settings_federation_added": "Fédération avec {{id}} créée avec succès",
+            "settings_federated_with": "Holons Connectés:",
+            "settings_notifies": "Notifie:",
+            "settings_no_federation": "Ce chat n'est pas fédéré avec d'autres espaces",
+            "settings_add_federation": "➕ Ajouter Nouvelle Connexion",
+            "settings_enter_federation_id": "Veuillez entrer l'ID du Holon auquel vous souhaitez vous connecter:",
+            "settings_invalid_federation_id": "ID non valide. Veuillez entrer un ID numérique de Holon.",
+            "settings_federation_removed": "Connexion avec {{id}} supprimée",
+            "settings_notify_removed": "Notification à {{id}} supprimée",
+            "settings_unfederation_error": "Erreur lors de la suppression de la connexion: {{error}}",
+            "settings_unnotify_error": "Erreur lors de la suppression de la notification: {{error}}",
+            "settings_federation_error": "Erreur: {{error}}"
         }
     }
 }

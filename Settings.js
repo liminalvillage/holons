@@ -42,6 +42,57 @@ export default class Settings {
         });
         this.purposeScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in purpose scene message:', e)));
 
+        // Federation scene
+        this.federationScene = new Scenes.BaseScene('federation_scene');
+        this.federationScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            
+            await ctx.reply(i18next.t('settings_enter_federation_id', { lng: language }));
+        });
+        
+        this.federationScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            const federationID = ctx.message.text.trim();
+            const language = await this.getLanguage(chatID);
+            
+            try {
+                // Validate input
+                if (!federationID || isNaN(federationID)) {
+                    await ctx.reply(i18next.t('settings_invalid_federation_id', { lng: language }));
+                    return;
+                }
+                
+                // Federate with the provided ID
+                await this.db.holosphere.federate(chatID.toString(), federationID);
+                
+                // Delete the scene messages
+                try {
+                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                    await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                } catch (e) {
+                    console.log('Error deleting messages:', e);
+                }
+                
+                await ctx.reply(i18next.t('settings_federation_added', { lng: language, id: federationID }));
+                await ctx.scene.leave();
+                
+                // Show updated federation menu
+                await this.showFederationMenu(ctx, false);
+            } catch (error) {
+                console.error('Federation error:', error);
+                await ctx.reply(i18next.t('settings_federation_error', { lng: language, error: error.message }));
+                await ctx.scene.leave();
+            }
+        });
+        
+        this.federationScene.on('message', ctx => {
+            const chatId = ctx.message.chat.id;
+            this.getLanguage(chatId).then(language => {
+                ctx.reply(i18next.t('settings_send_text_only', { lng: language }));
+            });
+        });
+
         this.domainsScene = new Scenes.BaseScene('domains_scene');
         this.domainsScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
@@ -301,6 +352,7 @@ export default class Settings {
         this.bot.stage.register(this.addArrayItemScene);
         this.bot.stage.register(this.testScene);
         this.bot.stage.register(this.addTestScene);
+        this.bot.stage.register(this.federationScene);
 
         // Call setupScenes to initialize scene handlers
         this.setupScenes();
@@ -578,6 +630,13 @@ export default class Settings {
                         reply_markup: this.equationInlineKeyboard(weights)
                     }).catch((err) => { console.log(err) });
                     break;
+                case 'federation':
+                    if (utils.isAdmin(ctx)) {
+                        await this.showFederationMenu(ctx, true);
+                    } else {
+                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+                    }
+                    break;
                 case 'back':
                     await this.showSettingsMenu(ctx, true);
                     break;
@@ -829,7 +888,60 @@ export default class Settings {
             }
         });
 
- 
+        // Handle federation actions
+        this.bot.action('add_federation', async (ctx) => {
+            await ctx.answerCbQuery();
+            if (utils.isAdmin(ctx)) {
+                await ctx.scene.enter('federation_scene');
+            } else {
+                const chatID = ctx.callbackQuery.message.chat.id;
+                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+            }
+        });
+        
+        this.bot.action(/unfederate_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            if (utils.isAdmin(ctx)) {
+                const chatID = ctx.callbackQuery.message.chat.id;
+                const federationID = ctx.match[1];
+                const language = await this.getLanguage(chatID);
+                
+                try {
+                    await this.db.holosphere.unfederate(chatID.toString(), federationID);
+                    await ctx.reply(i18next.t('settings_federation_removed', { lng: language, id: federationID }));
+                    await this.showFederationMenu(ctx, true);
+                } catch (error) {
+                    console.error('Unfederation error:', error);
+                    await ctx.reply(i18next.t('settings_unfederation_error', { lng: language, error: error.message }));
+                }
+            } else {
+                const chatID = ctx.callbackQuery.message.chat.id;
+                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+            }
+        });
+        
+        this.bot.action(/unnotify_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            if (utils.isAdmin(ctx)) {
+                const chatID = ctx.callbackQuery.message.chat.id;
+                const notifyID = ctx.match[1];
+                const language = await this.getLanguage(chatID);
+                
+                try {
+                    // Use the direct holosphere method to remove notification instead of modifying and setting the full federation
+                    await this.db.holosphere.removeNotify(chatID.toString(), notifyID);
+                    await ctx.reply(i18next.t('settings_notify_removed', { lng: language, id: notifyID }));
+                    await this.showFederationMenu(ctx, true);
+                } catch (error) {
+                    console.error('Unnotify error:', error);
+                    await ctx.reply(i18next.t('settings_unnotify_error', { lng: language, error: error.message }));
+                }
+            } else {
+                const chatID = ctx.callbackQuery.message.chat.id;
+                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+            }
+        });
+
         // Add a direct command to add values without scenes
         this.bot.command('addvalues', async (ctx) => {
             const text = ctx.message.text.replace('/addvalues', '').trim();
@@ -909,7 +1021,7 @@ export default class Settings {
             await this.showArraySettingMenu(ctx, 'roles', false);
         });
 
-        // Handle help messages for adding items
+        // Add help messages for adding items
         this.bot.action(/help_add_(values|domains|roles|purpose)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
@@ -1393,6 +1505,9 @@ export default class Settings {
                         { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' }
                     ],
                     [
+                        { text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}`, callback_data: 'settings_federation' }
+                    ],
+                    [
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/RobertoValenti' }
                     ]
@@ -1658,6 +1773,7 @@ export default class Settings {
             case 'hex': return '🔗';
             case 'equation': return '⚖️';
             case 'level': return '📊';
+            case 'federation': return '🔄';
             default: return '⚙️';
         }
     }
@@ -1877,6 +1993,100 @@ export default class Settings {
             }
         } catch (e) {
             console.log('Error showing admin selection menu:', e);
+        }
+    }
+
+    async showFederationMenu(ctx, edit = false) {
+        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!chatID) {
+            console.error('Could not determine chat ID');
+            return;
+        }
+
+        let settings = await this.getSettings(chatID);
+        const language = settings.language;
+        
+        // Get federation info
+        const fedInfo = await this.db.holosphere.getFederation(chatID);
+        const federatedWith = fedInfo && fedInfo.federation ? fedInfo.federation : [];
+        const notifies = fedInfo && fedInfo.notify ? fedInfo.notify : [];
+        
+        const keyboard = {
+            inline_keyboard: []
+        };
+        
+        // Add header
+        keyboard.inline_keyboard.push([{
+            text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}`,
+            callback_data: ' '
+        }]);
+        
+        // Add federated chats section if any
+        if (federatedWith.length > 0) {
+            keyboard.inline_keyboard.push([{
+                text: i18next.t('settings_federated_with', { lng: language }),
+                callback_data: ' '
+            }]);
+            
+            for (const space of federatedWith) {
+                keyboard.inline_keyboard.push([{
+                    text: `${space}`,
+                    callback_data: ' '
+                }, {
+                    text: '❌',
+                    callback_data: `unfederate_${space}`
+                }]);
+            }
+        } else {
+            keyboard.inline_keyboard.push([{
+                text: i18next.t('settings_no_federation', { lng: language }),
+                callback_data: ' '
+            }]);
+        }
+        
+        // Add notified chats section if any
+        if (notifies.length > 0) {
+            keyboard.inline_keyboard.push([{
+                text: i18next.t('settings_notifies', { lng: language }),
+                callback_data: ' '
+            }]);
+            
+            for (const space of notifies) {
+                keyboard.inline_keyboard.push([{
+                    text: `${space}`,
+                    callback_data: ' '
+                }, {
+                    text: '❌',
+                    callback_data: `unnotify_${space}`
+                }]);
+            }
+        }
+        
+        // Add action buttons
+        keyboard.inline_keyboard.push([{
+            text: i18next.t('settings_add_federation', { lng: language }),
+            callback_data: 'add_federation'
+        }]);
+        
+        // Add back button
+        keyboard.inline_keyboard.push([{
+            text: i18next.t('settings_back', { lng: language }),
+            callback_data: 'settings_back'
+        }]);
+        
+        // Display the keyboard
+        try {
+            if (edit && ctx.callbackQuery) {
+                await ctx.editMessageText(i18next.t('settings_federation_title', { lng: language }), {
+                    reply_markup: keyboard
+                });
+            } else {
+                await ctx.reply(i18next.t('settings_federation_title', { lng: language }), {
+                    reply_markup: keyboard
+                });
+            }
+        } catch (e) {
+            console.log('Error showing federation menu:', e);
         }
     }
 }
