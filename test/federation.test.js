@@ -59,7 +59,7 @@ describe('Federation Tests', () => {
       };
       
       await holosphere.put(space1, 'items', testData);
-      await holosphere.propagateToFederation(space1, 'items', testData);
+      await holosphere.propagate(space1, 'items', testData);
       
       // Allow time for propagation
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -95,7 +95,7 @@ describe('Federation Tests', () => {
       await holosphere.put(space1, 'items', testData);
       
       // This propagation should not work due to missing notify setting
-      await holosphere.propagateToFederation(space1, 'items', testData);
+      await holosphere.propagate(space1, 'items', testData);
       
       // Allow time for propagation attempt
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -176,13 +176,13 @@ describe('Federation Tests', () => {
     });
   });
   
-  describe('propagateToFederation', () => {
+  describe('propagate', () => {
     test('should handle propagation to non-federated space gracefully', async () => {
       const space = `${testPrefix}no_fed_space`;
       const data = { id: 'test-item', value: 42 };
       
       // Try to propagate to a space with no federation
-      const result = await holosphere.propagateToFederation(space, 'items', data);
+      const result = await holosphere.propagate(space, 'items', data);
       
       // Should have a message property but not fail
       expect(result).toBeDefined();
@@ -207,7 +207,7 @@ describe('Federation Tests', () => {
       
       // Store data with auto-propagation enabled
       await holosphere.put(space1, 'items', testData, null, {
-        autoPropagateToFederation: true
+        autoPropagate: true
       });
       
       // Allow time for auto-propagation
@@ -250,7 +250,7 @@ describe('Federation Tests', () => {
       await holosphere.put(space1, 'items', testData);
       
       // Propagate with references
-      await holosphere.propagateToFederation(space1, 'items', testData, {
+      await holosphere.propagate(space1, 'items', testData, {
         useReferences: true
       });
       

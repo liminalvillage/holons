@@ -1,194 +1,125 @@
 # HoloSphere Federation
 
-This document explains how to use the federation functionality in HoloSphere, which allows different spaces to share data with each other.
+HoloSphere's federation system allows different holons (spaces) to share and access data from each other. Federation creates a relationship between spaces that enables data propagation and cross-space access.
 
-## What is Federation?
+## Key Concepts
 
-Federation in HoloSphere allows different spaces (data stores) to connect and share data with each other. This enables:
+- **Federation Relationship**: A connection between two spaces that allows data to flow between them.
+- **Soul References**: Lightweight references that point to data in its original location (single source of truth).
+- **Automatic Propagation**: Data is automatically propagated to federated spaces when adding new content.
+- **Bidirectional Federation**: By default, federation is set up to allow data flow in both directions.
 
-- Creating networks of connected spaces
-- Propagating data across these networks
-- Subscribing to changes in federated spaces
+## Automatic Federation System
 
-Federation can be either public (no authentication required) or private (password-protected).
+The HoloSphere federation system is designed to bye simple and automatic:
 
-## Core Federation Functions
+1. **Automatic Propagation**: When you store data using `put()`, it automatically propagates to federated spaces.
+2. **Soul References**: By default, references (not duplicated data) are stored in federated spaces.
+3. **Transparent Resolution**: When retrieving data, references are automatically resolved to the original data.
+4. **Single Source of Truth**: Changes to the original data are immediately reflected when accessed through references.
 
-### Creating a Federation
+## Creating Federation
 
-To create a federation between two spaces:
+Create federation relationships between spaces:
 
 ```javascript
-// Public federation (no passwords)
-// By default, sets up bidirectional notifications automatically
+// Create bidirectional federation (default)
 await holoSphere.federate('space1', 'space2');
 
-// Private federation (with passwords)
-await holoSphere.federate('space1', 'space2', 'password1', 'password2');
-
-// One-way federation (set bidirectional=false)
+// Create one-way federation (space1 can see space2's data, but not vice versa)
 await holoSphere.federate('space1', 'space2', null, null, false);
 ```
 
-The `federate` function now automatically sets up the bidirectional notify settings for proper data propagation. The optional `bidirectional` parameter (defaults to `true`) controls whether notifications are set up in both directions.
+## Storing and Propagating Data
 
-### Getting Federation Information
-
-To retrieve information about a space's federation:
+Data is automatically propagated to federated spaces when using `put()`:
 
 ```javascript
-// Public space
-const fedInfo = await holoSphere.getFederation('space1');
+const data = {
+  id: 'item1',
+  title: 'Federation Example',
+  value: 42
+};
 
-// Private space
-const fedInfo = await holoSphere.getFederation('space1', 'password1');
-```
-
-The returned object contains:
-- `id`: The space ID
-- `name`: The space name
-- `federation`: Array of space IDs that this space is federated with
-- `notify`: Array of space IDs that this space will propagate data to
-
-### Propagating Data to Federated Spaces
-
-There are two ways to propagate data to federated spaces:
-
-#### Method 1: Manual Propagation
-
-This is the original method where you explicitly call the propagation function:
-
-```javascript
-const data = { id: 'item1', value: 42 };
-
-// 1. Store data locally first
+// Store data in space1 and automatically propagate to federated spaces
 await holoSphere.put('space1', 'items', data);
-
-// 2. Explicitly propagate to federated spaces
-await holoSphere.propagateToFederation('space1', 'items', data);
-
-// 3. (Optional) Add a short delay to ensure propagation completes
-await new Promise(resolve => setTimeout(resolve, 1000));
 ```
 
-#### Method 2: Automatic Propagation
-
-With this method, data is automatically propagated when stored:
+If needed, you can disable automatic propagation:
 
 ```javascript
-const data = { id: 'item1', value: 42 };
-
-// Store data and automatically propagate to federated spaces
+// Store data without automatic propagation
 await holoSphere.put('space1', 'items', data, null, {
-  autoPropagateToFederation: true
+  autoPropagate: false
 });
-
-// Add a short delay to ensure propagation completes
-await new Promise(resolve => setTimeout(resolve, 1000));
 ```
 
-You can also customize the propagation options:
+## Accessing Federated Data
+
+### Direct Retrieval
+
+You can access data directly from any space:
 
 ```javascript
+// Retrieve data from space2 (will resolve reference if it's a reference)
+const data = await holoSphere.get('space2', 'items', 'item1');
+```
+
+### Aggregate Federated Data
+
+Use `getFederated()` to get data from multiple federated spaces:
+
+```javascript
+// Get combined data from the local space and all its federated spaces
+const federatedData = await holoSphere.getFederated('space2', 'items', {
+  resolveReferences: true,  // Default: true
+  idField: 'id'             // Field to use as the unique identifier
+});
+```
+
+## Hierarchical Data with Federation (Upcast)
+
+The `upcastWithFederation` method creates a hierarchical structure using federation:
+
+```javascript
+// Upcast content from a high-resolution holon to parent holons
+await holoSphere.upcastWithFederation(highResHolon, 'items', data);
+```
+
+This creates a federation relationship between each child and parent holon, storing soul references in the parent holons instead of duplicating the data.
+
+## Advanced Options
+
+### Configuring Propagation
+
+You can customize how data is propagated:
+
+```javascript
+// Store data with custom propagation options
 await holoSphere.put('space1', 'items', data, null, {
-  autoPropagateToFederation: true,
   propagationOptions: {
-    targetSpaces: ['specific-space-id'],  // Only propagate to specific spaces
-    addFederationMetadata: true  // Add federation metadata
+    useReferences: false,  // Store full copies instead of references
+    targetSpaces: ['space3', 'space4']  // Only propagate to specific spaces
   }
 });
 ```
 
-### Using References Instead of Data Duplication
-
-By default, HoloSphere now supports a reference-based approach to federation, which creates links to original data rather than duplicating it:
+### Removing Federation
 
 ```javascript
-const data = { id: 'item1', value: 42 };
-
-// Store data locally first
-await holoSphere.put('space1', 'items', data);
-
-// Propagate using references (default behavior)
-await holoSphere.propagateToFederation('space1', 'items', data);
-
-// To use the legacy approach with data duplication
-await holoSphere.propagateToFederation('space1', 'items', data, {
-  useReferences: false
-});
-```
-
-References provide several key advantages:
-- **Single Source of Truth**: Data exists in one place only, eliminating synchronization issues
-- **Automatic Updates**: Changes to original data are immediately reflected when references are accessed
-- **Reduced Storage**: Only stores a small reference object in federated spaces
-- **Preserved Origin**: Clear tracking of where data originated from
-
-When you access data through a reference, HoloSphere automatically resolves it to retrieve the original data. This is handled transparently when using `get()` or `getFederated()`:
-
-```javascript
-// Automatically resolves the reference to return the actual data
-const resolvedData = await holoSphere.get('space2', 'items', 'item1');
-
-// Access raw reference without resolving (if needed)
-const rawReference = await holoSphere.get('space2', 'items', 'item1', null, {
-  resolveReferences: false
-});
-
-// Federation metadata is preserved when references are resolved
-console.log('Original source:', resolvedData.federation.origin);
-```
-
-### Accessing Data Across Federated Spaces
-
-There are multiple ways to access data across federated spaces:
-
-#### Method 1: Using getFederated (Recommended)
-
-This retrieves data from both the local space and all federated spaces:
-
-```javascript
-// Get all items from local and federated spaces
-const allItems = await holoSphere.getFederated('space2', 'items');
-
-// Find a specific item by ID
-const item1 = allItems.find(item => item.id === 'item1');
-```
-
-#### Method 2: Direct Access
-
-After propagation, data may also be accessible directly:
-
-```javascript
-// Attempt to get item1 from space2 directly
-const item1FromSpace2 = await holoSphere.get('space2', 'items', 'item1');
-```
-
-### Subscribing to Federation Changes
-
-To subscribe to changes in a federation:
-
-```javascript
-// Subscribe
-const subscription = await holoSphere.subscribeFederation('space1', null, (data, originSpace, lens) => {
-  console.log(`Received data from ${originSpace}/${lens}:`, data);
-});
-
-// Later, unsubscribe
-subscription.unsubscribe();
-```
-
-### Removing a Federation
-
-To remove a federation between two spaces:
-
-```javascript
-// Public federation
+// Remove federation relationship
 await holoSphere.unfederate('space1', 'space2');
-
-// Private federation
-await holoSphere.unfederate('space1', 'space2', 'password1', 'password2');
 ```
+
+## Federation and Soul References
+
+HoloSphere uses a simplified reference system based on soul paths:
+
+1. A reference contains only an `id` and a `soul` property
+2. The soul path is in the format: `appname/holon/lens/key`
+3. When resolving a reference, HoloSphere follows the soul path to retrieve the original data
+
+This lightweight approach reduces data duplication while maintaining a single source of truth.
 
 ## Complete Example
 
@@ -221,7 +152,7 @@ async function federationExample() {
     
     // Store with auto-propagation
     await holoSphere.put(space1, 'items', item, null, {
-      autoPropagateToFederation: true
+      autoPropagate: true
     });
     
     // Step 4: Allow time for propagation
@@ -249,7 +180,7 @@ async function federationExample() {
     };
     
     await holoSphere.put(space1, 'items', updatedItem, null, {
-      autoPropagateToFederation: true
+      autoPropagate: true
     });
     
     // Allow time for propagation
@@ -296,8 +227,8 @@ This tests:
 1. **One-way Federation**: If you need a one-way federation (data should only flow in one direction), set `bidirectional=false` when calling `federate()`.
 
 2. **Data Propagation**: There are two ways to propagate data:
-   - **Automatic**: Set `autoPropagateToFederation: true` in the `put()` options (simplest approach)
-   - **Manual**: Explicitly call `propagateToFederation()` after storing data
+   - **Automatic**: Set `autoPropagate: true` in the `put()` options (simplest approach)
+   - **Manual**: Explicitly call `propagate()` after storing data
 
 3. **Authentication Errors**: When working with private federations, ensure passwords are correct and consistent.
 

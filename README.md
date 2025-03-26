@@ -329,3 +329,126 @@ Data in HoloSphere is organized by:
 
 GPL-3.0-or-later
 
+# HoloSphere Federation
+
+HoloSphere provides a robust federation system that allows spaces to share data and messages across different chats. This document outlines the federation functionality and how to use it.
+
+## Core Federation Features
+
+### Space Federation
+- Create bidirectional relationships between spaces
+- Control data propagation between federated spaces
+- Manage notification settings for each space
+
+### Message Federation
+- Track messages across federated spaces
+- Maintain message relationships between original and federated copies
+- Update messages consistently across all federated spaces
+
+## API Reference
+
+### Space Federation
+
+#### `federate(holosphere, spaceId1, spaceId2, password1, password2, bidirectional)`
+Creates a federation relationship between two spaces.
+
+```javascript
+await federate(holosphere, 'space1', 'space2', 'pass1', 'pass2', true);
+```
+
+Parameters:
+- `holosphere`: HoloSphere instance
+- `spaceId1`: First space ID
+- `spaceId2`: Second space ID
+- `password1`: Optional password for first space
+- `password2`: Optional password for second space
+- `bidirectional`: Whether to set up bidirectional notifications (default: true)
+
+### Message Federation
+
+#### `federateMessage(holosphere, originalChatId, messageId, federatedChatId, federatedMessageId, type)`
+Tracks a federated message across different chats.
+
+```javascript
+await federateMessage(holosphere, 'chat1', 'msg1', 'chat2', 'msg2', 'quest');
+```
+
+Parameters:
+- `holosphere`: HoloSphere instance
+- `originalChatId`: Original chat ID
+- `messageId`: Original message ID
+- `federatedChatId`: Federated chat ID
+- `federatedMessageId`: Message ID in federated chat
+- `type`: Message type (e.g., 'quest', 'announcement')
+
+#### `getFederatedMessages(holosphere, originalChatId, messageId)`
+Gets all federated messages for a given original message.
+
+```javascript
+const messages = await getFederatedMessages(holosphere, 'chat1', 'msg1');
+```
+
+#### `updateFederatedMessages(holosphere, originalChatId, messageId, updateCallback)`
+Updates a message across all federated chats.
+
+```javascript
+await updateFederatedMessages(holosphere, 'chat1', 'msg1', async (chatId, messageId) => {
+    // Update message in this chat
+});
+```
+
+## Usage Example
+
+```javascript
+import { federate, federateMessage, updateFederatedMessages } from './federation.js';
+
+// Create federation between spaces
+await federate(holosphere, 'space1', 'space2');
+
+// Track a federated message
+await federateMessage(holosphere, 'chat1', 'msg1', 'chat2', 'msg2', 'quest');
+
+// Update message across all federated chats
+await updateFederatedMessages(holosphere, 'chat1', 'msg1', async (chatId, messageId) => {
+    await updateMessageInChat(chatId, messageId);
+});
+```
+
+## Data Structure
+
+### Federation Info
+```javascript
+{
+    id: string,
+    name: string,
+    federation: string[],  // List of federated space IDs
+    notify: string[],      // List of spaces to notify
+    timestamp: number
+}
+```
+
+### Message Tracking
+```javascript
+{
+    id: string,
+    originalChatId: string,
+    originalMessageId: string,
+    type: string,
+    messages: [
+        {
+            chatId: string,
+            messageId: string,
+            timestamp: number
+        }
+    ]
+}
+```
+
+## Best Practices
+
+1. Always use the federation functions to track messages across spaces
+2. Keep federation relationships bidirectional when possible
+3. Use appropriate message types for better tracking
+4. Handle errors gracefully in update callbacks
+5. Clean up old federation data when relationships are removed
+

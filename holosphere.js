@@ -5,6 +5,7 @@ import SEA from 'gun/sea.js'
 import Ajv2019 from 'ajv/dist/2019.js'
 import * as Federation from './federation.js';
 
+export { federateMessage, getFederatedMessages, updateFederatedMessages, removeNotify } from './federation.js';
 
 class HoloSphere {
     /**
@@ -137,15 +138,16 @@ class HoloSphere {
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens under which to store the content.
      * @param {object} data - The data to store.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @param {object} [options] - Additional options
-     * @param {boolean} [options.autoPropagateToFederation=false] - Whether to automatically propagate to federated spaces
-     * @param {object} [options.propagationOptions] - Options to pass to propagateToFederation
+     * @param {boolean} [options.autoPropagate=true] - Whether to automatically propagate to federated holons (default: true)
+     * @param {object} [options.propagationOptions] - Options to pass to propagate
+     * @param {boolean} [options.propagationOptions.useReferences=true] - Whether to use references instead of duplicating data
      * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
      */
     async put(holon, lens, data, password = null, options = {}) {
         if (!holon || !lens || !data) {
-            throw new Error('put: Missing required parameters');
+            throw new Error('put: Missing required parameters:',  holon, lens, data );
         }
 
         if (!data.id) {
@@ -250,14 +252,23 @@ class HoloSphere {
                                 ...data
                             });
                             
-                            // Auto-propagate to federation if specified
-                            if (options.autoPropagateToFederation) {
+                            // Auto-propagate to federation by default
+                            const shouldPropagate = options.autoPropagate !== false;
+                            let propagationResult = null;
+                            
+                            if (shouldPropagate) {
                                 try {
-                                    const propagationResult = await this.propagateToFederation(
+                                    // Default to using references
+                                    const propagationOptions = {
+                                        useReferences: true,
+                                        ...options.propagationOptions
+                                    };
+                                    
+                                    propagationResult = await this.propagate(
                                         holon, 
                                         lens, 
                                         data, 
-                                        options.propagationOptions || {}
+                                        propagationOptions
                                     );
                                     
                                     // Still resolve with true even if propagation had errors
@@ -269,12 +280,15 @@ class HoloSphere {
                                 }
                             }
                             
-                            resolve(true);
+                            resolve({
+                                success: true,
+                                propagationResult
+                            });
                         }
                     };
                     
                     if (password) {
-                        // For private data, use the authenticated user's space
+                        // For private data, use the authenticated user's holon
                         user.get('private').get(lens).get(data.id).put(payload, putCallback);
                     } else {
                         // For public data, use the regular path
@@ -295,7 +309,7 @@ class HoloSphere {
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens from which to retrieve content.
      * @param {string} key - The specific key to retrieve.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @param {object} [options] - Additional options
      * @param {boolean} [options.resolveReferences=true] - Whether to automatically resolve federation references
      * @returns {Promise<object|null>} - The retrieved content or null if not found.
@@ -457,7 +471,7 @@ class HoloSphere {
                 };
 
                 if (password) {
-                    // For private data, use the authenticated user's space
+                    // For private data, use the authenticated user's holon
                     user.get('private').get(lens).get(key).once(handleData);
                 } else {
                     // For public data, use the regular path
@@ -501,31 +515,22 @@ class HoloSphere {
     }
 
     /**
-     * Propagates data to federated spaces
+     * Propagates data to federated holons
      * @param {string} holon - The holon identifier
      * @param {string} lens - The lens identifier
      * @param {object} data - The data to propagate
      * @param {object} [options] - Propagation options
      * @returns {Promise<object>} - Result with success count and errors
      */
-    async propagateToFederation(holon, lens, data, options = {}) {
-        return Federation.propagateToFederation(this, holon, lens, data, options);
-    }
-
-    /**
-     * @private
-     * @deprecated Use propagateToFederation instead
-     */
-    async _propagateToFederation(holon, lens, data) {
-        console.warn('_propagateToFederation is deprecated, use propagateToFederation instead');
-        return this.propagateToFederation(holon, lens, data);
+    async propagate(holon, lens, data, options = {}) {
+        return Federation.propagate(this, holon, lens, data, options);
     }
 
     /**
      * Retrieves all content from the specified holon and lens.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens from which to retrieve content.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<Array<object>>} - The retrieved content.
      */
     async getAll(holon, lens, password = null) {
@@ -587,7 +592,7 @@ class HoloSphere {
                 };
 
                 if (password) {
-                    // For private data, use the authenticated user's space
+                    // For private data, use the authenticated user's holon
                     user.get('private').get(lens).once(handleData);
                 } else {
                     // For public data, use the regular path
@@ -663,7 +668,7 @@ class HoloSphere {
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens from which to delete the key.
      * @param {string} key - The specific key to delete.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<boolean>} - Returns true if successful
      */
     async delete(holon, lens, key, password = null) {
@@ -672,13 +677,13 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate space
+            // Get the appropriate holon
             const user = this.gun.user();
 
-            // Delete data from space
+            // Delete data from holon
             return new Promise((resolve, reject) => {
                 if (password) {
-                    // For private data, use the authenticated user's space
+                    // For private data, use the authenticated user's holon
                     user.get('private').get(lens).get(key).put(null, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
@@ -707,7 +712,7 @@ class HoloSphere {
      * Deletes all keys from a given holon and lens.
      * @param {string} holon - The holon identifier.
      * @param {string} lens - The lens from which to delete all keys.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<boolean>} - Returns true if successful
      */
     async deleteAll(holon, lens, password = null) {
@@ -717,7 +722,7 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate space
+            // Get the appropriate holon
             const user = this.gun.user();
 
             return new Promise((resolve) => {
@@ -884,7 +889,7 @@ class HoloSphere {
      * Stores data in a global (non-holon-specific) table.
      * @param {string} tableName - The table name to store data in.
      * @param {object} data - The data to store. If it has an 'id' field, it will be used as the key.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<void>}
      */
     async putGlobal(tableName, data, password = null) {
@@ -957,7 +962,7 @@ class HoloSphere {
                 const payload = JSON.stringify(data);
                 
                 if (password) {
-                    // For private data, use the authenticated user's space
+                    // For private data, use the authenticated user's holon
                     const path = user.get('private').get(tableName);
                     
                     if (data.id) {
@@ -1010,7 +1015,7 @@ class HoloSphere {
      * Retrieves a specific key from a global table.
      * @param {string} tableName - The table name to retrieve from.
      * @param {string} key - The key to retrieve.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
      */
     async getGlobal(tableName, key, password = null) {
@@ -1074,7 +1079,7 @@ class HoloSphere {
                 };
                 
                 if (password) {
-                    // For private data, use the authenticated user's space
+                    // For private data, use the authenticated user's holon
                     user.get('private').get(tableName).get(key).once(handleData);
                 } else {
                     // For public data, use the regular path
@@ -1090,7 +1095,7 @@ class HoloSphere {
     /**
      * Retrieves all data from a global table.
      * @param {string} tableName - The table name to retrieve data from.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<Array<object>>} - The parsed data from the table as an array.
      */
     async getAllGlobal(tableName, password = null) {
@@ -1099,7 +1104,7 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate space
+            // Get the appropriate holon
             const user = this.gun.user();
 
             return new Promise((resolve) => {
@@ -1152,7 +1157,7 @@ class HoloSphere {
                 };
 
                 if (password) {
-                    // For private data, use the authenticated user's space
+                    // For private data, use the authenticated user's holon
                     user.get('private').get(tableName).once(handleData);
                 } else {
                     // For public data, use the regular path
@@ -1169,7 +1174,7 @@ class HoloSphere {
      * Deletes a specific key from a global table.
      * @param {string} tableName - The table name to delete from.
      * @param {string} key - The key to delete.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<boolean>}
      */
     async deleteGlobal(tableName, key, password = null) {
@@ -1178,12 +1183,12 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate space
+            // Get the appropriate holon
             const user = this.gun.user();
 
             return new Promise((resolve, reject) => {
                 if (password) {
-                    // For private data, use the authenticated user's space
+                    // For private data, use the authenticated user's holon
                     user.get('private').get(tableName).get(key).put(null, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
@@ -1211,7 +1216,7 @@ class HoloSphere {
     /**
      * Deletes an entire global table.
      * @param {string} tableName - The table name to delete.
-     * @param {string} [password] - Optional password for private space.
+     * @param {string} [password] - Optional password for private holon.
      * @returns {Promise<boolean>}
      */
     async deleteAllGlobal(tableName, password = null) {
@@ -1220,7 +1225,7 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate space
+            // Get the appropriate holon
             const user = this.gun.user();
 
             return new Promise((resolve, reject) => {
@@ -1286,7 +1291,7 @@ class HoloSphere {
      * @param {string} lens - The lens to compute
      * @param {object} options - Computation options
      * @param {number} [maxLevels=15] - Maximum levels to compute up
-     * @param {string} [password] - Optional password for private spaces
+     * @param {string} [password] - Optional password for private holons
      */
     async computeHierarchy(holon, lens, options, maxLevels = 15, password = null) {
         let currentHolon = holon;
@@ -1319,7 +1324,7 @@ class HoloSphere {
      * @param {string} options.operation - The operation to perform ('summarize', 'aggregate', 'concatenate')
      * @param {string[]} [options.fields] - Fields to perform operation on
      * @param {string} [options.targetField] - Field to store the result in
-     * @param {string} [password] - Optional password for private spaces
+     * @param {string} [password] - Optional password for private holons
      * @throws {Error} If parameters are invalid or missing
      */
     async compute(holon, lens, options, password = null) {
@@ -1486,26 +1491,51 @@ class HoloSphere {
     }
 
     /**
-     * Upcasts content to parent holonagons recursively.
+     * Upcasts content to parent holonagons recursively using federation and soul references.
+     * This is the modern implementation that uses federation references instead of duplicating data.
      * @param {string} holon - The current holon identifier.
      * @param {string} lens - The lens under which to upcast.
      * @param {object} content - The content to upcast.
-     * @returns {Promise<object>} - The upcasted content.
+     * @param {number} [maxLevels=15] - Maximum levels to upcast.
+     * @returns {Promise<object>} - The original content.
      */
-    async upcast(holon, lens, content) {
-        let res = h3.getResolution(holon)
-        if (res == 0) {
-            await this.put(holon, lens, content)
-            return content
+    async upcast(holon, lens, content, maxLevels = 15) {
+        // Store the actual content at the original resolution
+        await this.put(holon, lens, content);
+        
+        let res = h3.getResolution(holon);
+        
+        // If already at the highest level (res 0) or reached max levels, we're done
+        if (res === 0 || maxLevels <= 0) {
+            return content;
         }
-        else {
-            console.log('Upcasting ', holon, lens, content, res)
-            await this.put(holon, lens, content)
-            let parent = h3.cellToParent(holon, res - 1)
-            return this.upcast(parent, lens, content)
+        
+        // Get the parent cell
+        let parent = h3.cellToParent(holon, res - 1);
+        
+        // Create federation relationship if it doesn't exist
+        await this.federate(holon, parent);
+        
+        // Create a soul reference to store in the parent
+        const soul = `${this.appname}/${holon}/${lens}/${content.id}`;
+        const reference = {
+            id: content.id,
+            soul: soul
+        };
+        
+        // Store the reference in the parent cell
+        // We use { autoPropagate: false } to prevent circular propagation
+        await this.put(parent, lens, reference, null, { 
+            autoPropagate: false 
+        });
+        
+        // Continue upcasting with the parent
+        if (res > 1 && maxLevels > 1) {
+            return this.upcast(parent, lens, reference, maxLevels - 1);
         }
+        
+        return content;
     }
-
 
     /**
      * Updates the parent holon with a new report.
@@ -1666,56 +1696,77 @@ class HoloSphere {
     // ================================ FEDERATION FUNCTIONS ================================
 
     /**
-     * Creates a federation relationship between two spaces
-     * @param {string} spaceId1 - The first space ID
-     * @param {string} spaceId2 - The second space ID
-     * @param {string} password1 - Password for the first space
-     * @param {string} [password2] - Optional password for the second space
+     * Creates a federation relationship between two holons
+     * @param {string} holonId1 - The first holon ID
+     * @param {string} holonId2 - The second holon ID
+     * @param {string} password1 - Password for the first holon
+     * @param {string} [password2] - Optional password for the second holon
      * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications automatically
      * @returns {Promise<boolean>} - True if federation was created successfully
      */
-    async federate(spaceId1, spaceId2, password1, password2 = null, bidirectional = true) {
-        return Federation.federate(this, spaceId1, spaceId2, password1, password2, bidirectional);
+    async federate(holonId1, holonId2, password1, password2 = null, bidirectional = true) {
+        return Federation.federate(this, holonId1, holonId2, password1, password2, bidirectional);
     }
 
     /**
-     * Subscribes to federation notifications for a space
-     * @param {string} spaceId - The space ID to subscribe to
-     * @param {string} password - Password for the space
+     * Subscribes to federation notifications for a holon
+     * @param {string} holonId - The holon ID to subscribe to
+     * @param {string} password - Password for the holon
      * @param {function} callback - The callback to execute on notifications
      * @param {object} [options] - Subscription options
      * @param {string[]} [options.lenses] - Specific lenses to subscribe to (default: all)
      * @param {number} [options.throttle] - Throttle notifications in ms (default: 0)
      * @returns {Promise<object>} - Subscription object with unsubscribe() method
      */
-    async subscribeFederation(spaceId, password, callback, options = {}) {
-        return Federation.subscribeFederation(this, spaceId, password, callback, options);
+    async subscribeFederation(holonId, password, callback, options = {}) {
+        return Federation.subscribeFederation(this, holonId, password, callback, options);
     }
 
     /**
-     * Gets federation info for a space
-     * @param {string} spaceId - The space ID
-     * @param {string} [password] - Optional password for the space
+     * Gets federation info for a holon
+     * @param {string} holonId - The holon ID
+     * @param {string} [password] - Optional password for the holon
      * @returns {Promise<object|null>} - Federation info or null if not found
      */
-    async getFederation(spaceId, password = null) {
-        return Federation.getFederation(this, spaceId, password);
+    async getFederation(holonId, password = null) {
+        return Federation.getFederation(this, holonId, password);
     }
 
     /**
-     * Removes a federation relationship between spaces
-     * @param {string} spaceId1 - The first space ID
-     * @param {string} spaceId2 - The second space ID
-     * @param {string} password1 - Password for the first space
-     * @param {string} [password2] - Optional password for the second space
+     * Removes a federation relationship between holons
+     * @param {string} holonId1 - The first holon ID
+     * @param {string} holonId2 - The second holon ID
+     * @param {string} password1 - Password for the first holon
+     * @param {string} [password2] - Optional password for the second holon
      * @returns {Promise<boolean>} - True if federation was removed successfully
      */
-    async unfederate(spaceId1, spaceId2, password1, password2 = null) {
-        return Federation.unfederate(this, spaceId1, spaceId2, password1, password2);
+    async unfederate(holonId1, holonId2, password1, password2 = null) {
+        return await Federation.unfederate(this, holonId1, holonId2, password1, password2);
     }
 
     /**
-     * Get and aggregate data from federated spaces
+     * Removes a notification relationship between two spaces
+     * This removes spaceId2 from the notify list of spaceId1
+     * 
+     * @param {string} holonId1 - The space to modify (remove from its notify list)
+     * @param {string} holonId2 - The space to be removed from notifications
+     * @param {string} [password1] - Optional password for the first space
+     * @returns {Promise<boolean>} - True if notification was removed successfully
+     */
+    async removeNotify(holonId1, holonId2, password1 = null) {
+        console.log(`HoloSphere.removeNotify called: ${holonId1}, ${holonId2}`);
+        try {
+            const result = await Federation.removeNotify(this, holonId1, holonId2, password1);
+            console.log(`HoloSphere.removeNotify completed successfully: ${result}`);
+            return result;
+        } catch (error) {
+            console.error(`HoloSphere.removeNotify failed:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get and aggregate data from federated holons
      * @param {string} holon The holon name
      * @param {string} lens The lens name
      * @param {Object} options Options for retrieval and aggregation
@@ -1725,6 +1776,51 @@ class HoloSphere {
         return Federation.getFederated(this, holon, lens, options);
     }
 
+    /**
+     * Tracks a federated message across different chats
+     * @param {string} originalChatId - The ID of the original chat
+     * @param {string} messageId - The ID of the original message
+     * @param {string} federatedChatId - The ID of the federated chat
+     * @param {string} federatedMessageId - The ID of the message in the federated chat
+     * @param {string} type - The type of message (e.g., 'quest', 'announcement')
+     * @returns {Promise<void>}
+     */
+    async federateMessage(originalChatId, messageId, federatedChatId, federatedMessageId, type = 'generic') {
+        return Federation.federateMessage(this, originalChatId, messageId, federatedChatId, federatedMessageId, type);
+    }
+
+    /**
+     * Gets all federated messages for a given original message
+     * @param {string} originalChatId - The ID of the original chat
+     * @param {string} messageId - The ID of the original message
+     * @returns {Promise<Object|null>} The tracking information for the message
+     */
+    async getFederatedMessages(originalChatId, messageId) {
+        return Federation.getFederatedMessages(this, originalChatId, messageId);
+    }
+
+    /**
+     * Updates a federated message across all federated chats
+     * @param {string} originalChatId - The ID of the original chat
+     * @param {string} messageId - The ID of the original message
+     * @param {Function} updateCallback - Function to update the message in each chat
+     * @returns {Promise<void>}
+     */
+    async updateFederatedMessages(originalChatId, messageId, updateCallback) {
+        return Federation.updateFederatedMessages(this, originalChatId, messageId, updateCallback);
+    }
+
+    /**
+     * Resets the federation settings for a holon
+     * @param {string} holonId - The holon ID
+     * @param {string} [password] - Optional password for the holon
+     * @returns {Promise<boolean>} - True if federation was reset successfully
+     */
+    async resetFederation(holonId, password = null) {
+        return Federation.resetFederation(this, holonId, password);
+    }
+
+    // ================================ END FEDERATION FUNCTIONS ================================
     /**
      * Closes the HoloSphere instance and cleans up resources.
      * @returns {Promise<void>}
@@ -1802,25 +1898,14 @@ class HoloSphere {
     }
 
     /**
-     * Gets the name of a chat/space
-     * @param {string} spaceId - The space ID
-     * @param {string} [password] - Optional password for the space
-     * @returns {Promise<string>} - The space name or the ID if not found
-     */
-    async getChatName(spaceId, password = null) {
-        const spaceInfo = await this.getGlobal('spaces', spaceId, password);
-        return spaceInfo?.name || spaceId;
-    }
-
-    /**
      * Creates a namespaced username for Gun authentication
      * @private
-     * @param {string} spaceId - The space ID
+     * @param {string} holonId - The holon ID
      * @returns {string} - Namespaced username
      */
-    userName(spaceId) {
-        if (!spaceId) return null;
-        return `${this.appname}:${spaceId}`;
+    userName(holonId) {
+        if (!holonId) return null;
+        return `${this.appname}:${holonId}`;
     }
 }
 

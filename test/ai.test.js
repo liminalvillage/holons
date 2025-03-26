@@ -259,7 +259,7 @@ describe('AI Operations', () => {
             
             // Step 4: Propagate to federated space
             try {
-                const result = await holoSphere.propagateToFederation(testHolon, testLens, updatedData);
+                const result = await holoSphere.propagate(testHolon, testLens, updatedData);
                 
                 // Even if propagation fails due to auth, the function should complete
                 expect(result).toBeDefined();
@@ -383,7 +383,7 @@ describe('AI Operations', () => {
             
             try {
                 // This should complete even if auth fails
-                const result = await holoSphere.propagateToFederation(testHolon, testLens, testData);
+                const result = await holoSphere.propagate(testHolon, testLens, testData);
                 expect(result).toBeDefined();
                 // But might not have successfully propagated
             } catch (error) {

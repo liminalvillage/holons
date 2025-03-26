@@ -3,17 +3,21 @@
  * Provides methods for creating, managing, and using federated spaces
  */
 
+
 /**
  * Creates a federation relationship between two spaces
+ * Federation is bidirectional by default, and data propagation uses soul references by default.
+ * 
  * @param {object} holosphere - The HoloSphere instance
  * @param {string} spaceId1 - The first space ID
  * @param {string} spaceId2 - The second space ID
  * @param {string} [password1] - Optional password for the first space
  * @param {string} [password2] - Optional password for the second space
- * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications
+ * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications (default: true)
  * @returns {Promise<boolean>} - True if federation was created successfully
  */
 export async function federate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null, bidirectional = true) {
+    console.log('FEDERATING', spaceId1, spaceId2, password1, password2, bidirectional)
     if (!spaceId1 || !spaceId2) {
         throw new Error('federate: Missing required space IDs');
     }
@@ -23,120 +27,18 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
         throw new Error('Cannot federate a space with itself');
     }
 
-    // Verify access to both spaces before proceeding
-    let canAccessSpace1 = false;
-    let canAccessSpace2 = false;
-    
     try {
-        // Test authentication for first space
-        if (password1) {
-            try {
-                await new Promise((resolve, reject) => {
-                    const user = holosphere.gun.user();
-                    user.auth(holosphere.userName(spaceId1), password1, (ack) => {
-                        if (ack.err) {
-                            console.warn(`Authentication test for ${spaceId1} failed: ${ack.err}`);
-                            reject(new Error(`Authentication failed for ${spaceId1}: ${ack.err}`));
-                        } else {
-                            canAccessSpace1 = true;
-                            resolve();
-                        }
-                    });
-                });
-            } catch (error) {
-                // Try to create the user if authentication fails
-                try {
-                    await new Promise((resolve, reject) => {
-                        const user = holosphere.gun.user();
-                        user.create(holosphere.userName(spaceId1), password1, (ack) => {
-                            if (ack.err && !ack.err.includes('already created')) {
-                                reject(new Error(`User creation failed for ${spaceId1}: ${ack.err}`));
-                            } else {
-                                // Try to authenticate again
-                                user.auth(holosphere.userName(spaceId1), password1, (authAck) => {
-                                    if (authAck.err) {
-                                        reject(new Error(`Authentication failed after creation for ${spaceId1}: ${authAck.err}`));
-                                    } else {
-                                        canAccessSpace1 = true;
-                                        resolve();
-                                    }
-                                });
-                            }
-                        });
-                    });
-                } catch (createError) {
-                    console.warn(`Could not create or authenticate user for ${spaceId1}: ${createError.message}`);
-                    // Continue with limited functionality
-                }
-            }
-        } else {
-            // No password required, assume we can access
-            canAccessSpace1 = true;
-        }
-        
-        // Test authentication for second space if password provided
-        if (password2) {
-            try {
-                await new Promise((resolve, reject) => {
-                    const user = holosphere.gun.user();
-                    user.auth(holosphere.userName(spaceId2), password2, (ack) => {
-                        if (ack.err) {
-                            console.warn(`Authentication test for ${spaceId2} failed: ${ack.err}`);
-                            reject(new Error(`Authentication failed for ${spaceId2}: ${ack.err}`));
-                        } else {
-                            canAccessSpace2 = true;
-                            resolve();
-                        }
-                    });
-                });
-            } catch (error) {
-                // Try to create the user if authentication fails
-                try {
-                    await new Promise((resolve, reject) => {
-                        const user = holosphere.gun.user();
-                        user.create(holosphere.userName(spaceId2), password2, (ack) => {
-                            if (ack.err && !ack.err.includes('already created')) {
-                                reject(new Error(`User creation failed for ${spaceId2}: ${ack.err}`));
-                            } else {
-                                // Try to authenticate again
-                                user.auth(holosphere.userName(spaceId2), password2, (authAck) => {
-                                    if (authAck.err) {
-                                        reject(new Error(`Authentication failed after creation for ${spaceId2}: ${authAck.err}`));
-                                    } else {
-                                        canAccessSpace2 = true;
-                                        resolve();
-                                    }
-                                });
-                            }
-                        });
-                    });
-                } catch (createError) {
-                    console.warn(`Could not create or authenticate user for ${spaceId2}: ${createError.message}`);
-                    // Continue with limited functionality
-                }
-            }
-        } else {
-            // No password required, assume we can access
-            canAccessSpace2 = true;
-        }
-        
-        // Warn if we can't access one or both spaces
-        if (!canAccessSpace1) {
-            console.warn(`Limited access to space ${spaceId1} - federation may be incomplete`);
-        }
-        if (password2 && !canAccessSpace2) {
-            console.warn(`Limited access to space ${spaceId2} - federation may be incomplete`);
-        }
+        // Get or create federation info for first space (A)
+        let fedInfo1  = null;
 
-        // Get existing federation info for both spaces
-        let fedInfo1 = null;
-        let fedInfo2 = null;
-        
         try {
             fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1);
         } catch (error) {
             console.warn(`Could not get federation info for ${spaceId1}: ${error.message}`);
-            // Create new federation info if we couldn't get existing
+            // Create new federation info if it doesn't exist
+            
+        }
+        if (fedInfo1 == null) {
             fedInfo1 = {
                 id: spaceId1,
                 name: spaceId1,
@@ -146,88 +48,24 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
             };
         }
         
-        if (password2) {
-            try {
-                fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
-            } catch (error) {
-                console.warn(`Could not get federation info for ${spaceId2}: ${error.message}`);
-                // Create new federation info if we couldn't get existing
-                fedInfo2 = {
-                    id: spaceId2,
-                    name: spaceId2,
-                    federation: [],
-                    notify: [],
-                    timestamp: Date.now()
-                };
-            }
-        }
 
-        // Check if federation already exists
-        if (fedInfo1 && fedInfo1.federation && fedInfo1.federation.includes(spaceId2)) {
-            console.log(`Federation already exists between ${spaceId1} and ${spaceId2}`);
-            return true;
-        }
-
-        // Create or update federation info for first space
-        if (!fedInfo1) {
-            fedInfo1 = {
-                id: spaceId1,
-                name: spaceId1,
-                federation: [],
-                notify: [],
-                timestamp: Date.now()
-            };
-        }
-        
+        // Ensure arrays exist
         if (!fedInfo1.federation) fedInfo1.federation = [];
+        if (!fedInfo1.notify) fedInfo1.notify = [];
+
+        // Add space2 to space1's federation and notify lists if not already present
         if (!fedInfo1.federation.includes(spaceId2)) {
             fedInfo1.federation.push(spaceId2);
         }
-        
-        // Automatically add notify setting for space1 to notify space2
-        if (!fedInfo1.notify) fedInfo1.notify = [];
-        if (bidirectional && !fedInfo1.notify.includes(spaceId2)) {
-            fedInfo1.notify.push(spaceId2);
-        }
-        
+        // // Always add to notify list for the first space (primary direction)
+        // if (!fedInfo1.notify.includes(spaceId2)) {
+        //     fedInfo1.notify.push(spaceId2);
+        // }
+
+        // Update timestamp
         fedInfo1.timestamp = Date.now();
 
-        // Create or update federation info for second space
-        if (password2 && canAccessSpace2) {
-            if (!fedInfo2) {
-                fedInfo2 = {
-                    id: spaceId2,
-                    name: spaceId2,
-                    federation: [],
-                    notify: [],
-                    timestamp: Date.now()
-                };
-            }
-            
-            // Add space1 to space2's federation if not already there
-            if (!fedInfo2.federation) fedInfo2.federation = [];
-            if (!fedInfo2.federation.includes(spaceId1)) {
-                fedInfo2.federation.push(spaceId1);
-            }
-            
-            // Automatically add notify setting for space2 to notify space1
-            if (!fedInfo2.notify) fedInfo2.notify = [];
-            if (bidirectional && !fedInfo2.notify.includes(spaceId1)) {
-                fedInfo2.notify.push(spaceId1);
-            }
-            
-            fedInfo2.timestamp = Date.now();
-            
-            // Save second federation record if we have password and access
-            try {
-                await holosphere.putGlobal('federation', fedInfo2, password2);
-                console.log(`Updated federation info for ${spaceId2}`);
-            } catch (error) {
-                console.warn(`Could not update federation info for ${spaceId2}: ${error.message}`);
-            }
-        }
-
-        // Save first federation record
+        // Save updated federation info for space1
         try {
             await holosphere.putGlobal('federation', fedInfo1, password1);
             console.log(`Updated federation info for ${spaceId1}`);
@@ -236,6 +74,50 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
             throw new Error(`Failed to create federation: ${error.message}`);
         }
         
+        // If bidirectional is true, handle space2 (B) as well
+        //if (bidirectional && password2) {
+        {
+            let fedInfo2 = null;
+            try {
+                fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
+            } catch (error) {
+                console.warn(`Could not get federation info for ${spaceId2}: ${error.message}`);
+                // Create new federation info if it doesn't exist
+                
+            }
+            if (fedInfo2 == null) {
+                fedInfo2 = {
+                    id: spaceId2,
+                    name: spaceId2,
+                    federation: [],
+                    notify: [],
+                    timestamp: Date.now()
+                };
+            }
+            
+            // Add nEnsure arrays exist
+    
+            if (!fedInfo2.notify) fedInfo2.notify = [];
+
+            // Add space1 to space2's federation list if not already present
+            if (!fedInfo2.notify.includes(spaceId1)) {
+                fedInfo2.notify.push(spaceId1);
+            }
+ 
+
+            // Update timestamp
+            fedInfo2.timestamp = Date.now();
+
+            // Save updated federation info for space2
+            try {
+                await holosphere.putGlobal('federation', fedInfo2, password2);
+                console.log(`Updated federation info for ${spaceId2}`);
+            } catch (error) {
+                console.warn(`Could not update federation info for ${spaceId2}: ${error.message}`);
+                // Don't throw here as the main federation was successful
+            }
+        }
+
         // Create federation metadata record
         const federationMeta = {
             id: `${spaceId1}_${spaceId2}`,
@@ -457,6 +339,53 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
 }
 
 /**
+ * Removes a notification relationship between two spaces
+ * This removes spaceId2 from the notify list of spaceId1
+ * 
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} spaceId1 - The space to modify (remove from its notify list)
+ * @param {string} spaceId2 - The space to be removed from notifications
+ * @param {string} [password1] - Optional password for the first space
+ * @returns {Promise<boolean>} - True if notification was removed successfully
+ */
+export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = null) {
+    if (!spaceId1 || !spaceId2) {
+        throw new Error('removeNotify: Missing required space IDs');
+    }
+
+    try {
+        // Get federation info for space
+        let fedInfo = await holosphere.getGlobal('federation', spaceId1, password1);
+        
+        if (!fedInfo) {
+            throw new Error(`No federation info found for ${spaceId1}`);
+        }
+
+        // Ensure notify array exists
+        if (!fedInfo.notify) fedInfo.notify = [];
+        
+        // Remove space2 from space1's notify list if present
+        if (fedInfo.notify.includes(spaceId2)) {
+            fedInfo.notify = fedInfo.notify.filter(id => id !== spaceId2);
+            
+            // Update timestamp
+            fedInfo.timestamp = Date.now();
+            
+            // Save updated federation info
+            await holosphere.putGlobal('federation', fedInfo, password1);
+            console.log(`Removed ${spaceId2} from ${spaceId1}'s notify list`);
+            return true;
+        } else {
+            console.log(`${spaceId2} not found in ${spaceId1}'s notify list`);
+            return false;
+        }
+    } catch (error) {
+        console.error(`Remove notification failed: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
  * Get and combine data from local and federated sources
  * @param {HoloSphere} holosphere The HoloSphere instance
  * @param {string} holon The local holon name
@@ -481,7 +410,7 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
     // Set default options
     const { 
         aggregate = false,
-        idField = '_id',
+        idField = 'id',
         sumFields = [],
         concatArrays = [],
         removeDuplicates = true,
@@ -730,109 +659,330 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
  * @param {string} lens - The lens identifier
  * @param {object} data - The data to propagate
  * @param {object} [options] - Propagation options
- * @param {string[]} [options.targetSpaces] - Specific spaces to propagate to (default: all federated)
- * @param {boolean} [options.addFederationMetadata=true] - Whether to add federation metadata
  * @param {boolean} [options.useReferences=true] - Whether to use references instead of duplicating data
+ * @param {string[]} [options.targetSpaces] - Specific target spaces to propagate to (defaults to all federated spaces)
+ * @param {string} [options.password] - Password for accessing the source holon (if needed)
  * @returns {Promise<object>} - Result with success count and errors
  */
-export async function propagateToFederation(holosphere, holon, lens, data, options = {}) {
-    if (!holon || !lens || !data) {
-        return { message: 'Missing required parameters', errors: 1, success: 0 };
+export async function propagate(holosphere, holon, lens, data, options = {}) {
+    if (!holosphere || !holon || !lens || !data) {
+        throw new Error('propagate: Missing required parameters');
     }
-
+    // Default propagation options
     const {
-        targetSpaces = [],
-        addFederationMetadata = true,
-        useReferences = true
+        useReferences = true,
+        targetSpaces = null,
+        password = null
     } = options;
 
+    const result = {
+        success: 0,
+        errors: 0,
+        errorDetails: [],
+        propagated: false,
+        referencesUsed: useReferences
+    };
+
     try {
-        // Get federation info for the source holon
-        const fedInfo = await getFederation(holosphere, holon);
-        if (!fedInfo || !fedInfo.notify || fedInfo.notify.length === 0) {
+        // Get federation info for this holon using getFederation
+        const fedInfo = await getFederation(holosphere, holon, password);
+        
+        // If no federation info or no federation list, return with message
+        if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
             return {
-                message: `No federation notify settings found for ${holon}`,
-                errors: 0,
-                success: 0,
-                notPropagated: true
+                ...result,
+                message: `No federation found for ${holon}`
             };
         }
-
-        // Filter notify spaces based on targetSpaces if provided
-        const spacesToNotify = targetSpaces.length > 0 
-            ? fedInfo.notify.filter(space => targetSpaces.includes(space))
-            : fedInfo.notify;
-
-        if (spacesToNotify.length === 0) {
+        
+        // If no notification list or it's empty, return with message
+        if (!fedInfo.notify || fedInfo.notify.length === 0) {
             return {
-                message: 'No matching spaces to notify',
-                errors: 0,
-                success: 0,
-                notPropagated: true
+                ...result,
+                message: `No notification targets found for ${holon}`
             };
         }
-
-        let successes = 0;
-        let errors = 0;
-        const errorDetails = [];
-
-        // Create federation metadata
-        const dataWithMetadata = { ...data };
-        if (addFederationMetadata && !dataWithMetadata.federation) {
-            dataWithMetadata.federation = {
-                origin: holon,
-                timestamp: Date.now(),
-                propagated: true
+        
+        // Filter federation spaces to those in notify list
+        let spaces = fedInfo.notify;
+        
+        // Further filter by targetSpaces if provided
+        if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
+            spaces = spaces.filter(space => targetSpaces.includes(space));
+        }
+        
+        if (spaces.length === 0) {
+            return {
+                ...result,
+                message: 'No valid target spaces found after filtering'
             };
         }
-
-        // If using references, generate the soul path for the original data
-        const dataSoul = useReferences 
-            ? `${holosphere.appname}/${holon}/${lens}/${data.id}`
-            : null;
-            
-        console.log(`Using soul reference: ${dataSoul} for data:`, data.id);
-
-        // Create the reference object that will be stored in federated spaces
-        const referenceObject = useReferences 
-            ? {
-                id: data.id,
-                soul: dataSoul  // Store just the soul reference to the original data
-            }
-            : dataWithMetadata;
-
-        // Propagate to each space in the notify list
-        for (const targetSpace of spacesToNotify) {
+        
+        // For each target space, propagate the data
+        const propagatePromises = spaces.map(async (targetSpace) => {
             try {
-                // Skip self-propagation
-                if (targetSpace === holon) continue;
-
-                // Store either the reference or the full data in the target space
-                await holosphere.put(targetSpace, lens, referenceObject);
-                successes++;
+                // Get federation info for target space using getFederation
+                const targetFedInfo = await getFederation(holosphere, targetSpace);
+                
+                // If using references, create a soul reference instead of duplicating the data
+                if (useReferences) {
+                    // Create a soul path that points to the original data
+                    const soul = `${holosphere.appname}/${holon}/${lens}/${data.id}`;
+                    
+                    // Create a minimal reference object with just id and soul
+                    const reference = {
+                        id: data.id,
+                        soul: soul,
+                        _federation: {
+                            origin: holon,
+                            lens: lens,
+                            timestamp: Date.now()
+                        }
+                    };
+                    
+                    console.log(`Using soul reference: ${soul} for data: ${data.id}`);
+                    
+                    // Store the reference in the target space without propagation
+                    await holosphere.put(targetSpace, lens, reference, null, { autoPropagate: false });
+                    
+                    result.success++;
+                    return true;
+                } else {
+                    // If not using references, store a full copy without propagation
+                    const dataToStore = {
+                        ...data,
+                        _federation: {
+                            origin: holon,
+                            lens: lens,
+                            timestamp: Date.now()
+                        }
+                    };
+                    await holosphere.put(targetSpace, lens, dataToStore, null, { autoPropagate: false });
+                    result.success++;
+                    return true;
+                }
             } catch (error) {
-                console.error(`Error propagating to ${targetSpace}:`, error);
-                errors++;
-                errorDetails.push({
+                result.errors++;
+                result.errorDetails.push({
                     space: targetSpace,
                     error: error.message
                 });
+                return false;
             }
+        });
+        
+        await Promise.all(propagatePromises);
+        
+        result.propagated = result.success > 0;
+        return result;
+    } catch (error) {
+        console.error('Error in propagate:', error);
+        return {
+            ...result,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Tracks a federated message across different chats
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} originalChatId - The ID of the original chat
+ * @param {string} messageId - The ID of the original message
+ * @param {string} federatedChatId - The ID of the federated chat
+ * @param {string} federatedMessageId - The ID of the message in the federated chat
+ * @param {string} type - The type of message (e.g., 'quest', 'announcement')
+ * @returns {Promise<void>}
+ */
+export async function federateMessage(holosphere, originalChatId, messageId, federatedChatId, federatedMessageId, type = 'generic') {
+    const trackingKey = `${originalChatId}_${messageId}_fedmsgs`;
+    const tracking = await holosphere.getGlobal('federation_messages', trackingKey) || {
+        id: trackingKey,
+        originalChatId,
+        originalMessageId: messageId,
+        type,
+        messages: []
+    };
+
+    // Update or add the federated message info
+    const existingMsg = tracking.messages.find(m => m.chatId === federatedChatId);
+    if (existingMsg) {
+        existingMsg.messageId = federatedMessageId;
+        existingMsg.timestamp = Date.now();
+    } else {
+        tracking.messages.push({
+            chatId: federatedChatId,
+            messageId: federatedMessageId,
+            timestamp: Date.now()
+        });
+    }
+
+    await holosphere.putGlobal('federation_messages', tracking);
+}
+
+/**
+ * Gets all federated messages for a given original message
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} originalChatId - The ID of the original chat
+ * @param {string} messageId - The ID of the original message
+ * @returns {Promise<Object|null>} The tracking information for the message
+ */
+export async function getFederatedMessages(holosphere, originalChatId, messageId) {
+    const trackingKey = `${originalChatId}_${messageId}_fedmsgs`;
+    return await holosphere.getGlobal('federation_messages', trackingKey);
+}
+
+/**
+ * Updates a federated message across all federated chats
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} originalChatId - The ID of the original chat
+ * @param {string} messageId - The ID of the original message
+ * @param {Function} updateCallback - Function to update the message in each chat
+ * @returns {Promise<void>}
+ */
+export async function updateFederatedMessages(holosphere, originalChatId, messageId, updateCallback) {
+    const tracking = await getFederatedMessages(holosphere, originalChatId, messageId);
+    if (!tracking?.messages) return;
+
+    for (const msg of tracking.messages) {
+        try {
+            await updateCallback(msg.chatId, msg.messageId);
+        } catch (error) {
+            console.warn(`Failed to update federated message in chat ${msg.chatId}:`, error);
+        }
+    }
+}
+
+/**
+ * Resets all federation relationships for a space
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} spaceId - The ID of the space to reset federation for
+ * @param {string} [password] - Optional password for the space
+ * @param {object} [options] - Reset options
+ * @param {boolean} [options.notifyPartners=true] - Whether to notify federation partners about the reset
+ * @param {string} [options.spaceName] - Optional name for the space (defaults to spaceId if not provided)
+ * @returns {Promise<object>} - Result object with success/error info
+ */
+export async function resetFederation(holosphere, spaceId, password = null, options = {}) {
+    if (!spaceId) {
+        throw new Error('resetFederation: Missing required space ID');
+    }
+
+    const { 
+        notifyPartners = true,
+        spaceName = null
+    } = options;
+
+    const result = {
+        success: false,
+        federatedCount: 0,
+        notifyCount: 0,
+        partnersNotified: 0,
+        errors: []
+    };
+
+    try {
+        // Get current federation info to know what we're clearing
+        const fedInfo = await getFederation(holosphere, spaceId, password);
+        
+        if (!fedInfo) {
+            return {
+                ...result,
+                success: true,
+                message: 'No federation configuration found for this space'
+            };
         }
 
-        return {
-            success: successes,
-            errors,
-            errorDetails,
-            propagated: successes > 0,
-            referencesUsed: useReferences
+        // Store counts for reporting
+        result.federatedCount = fedInfo.federation?.length || 0;
+        result.notifyCount = fedInfo.notify?.length || 0;
+
+        // Create empty federation record
+        const emptyFedInfo = {
+            id: spaceId,
+            name: spaceName || spaceId,
+            federation: [],
+            notify: [],
+            timestamp: Date.now()
         };
+
+        // Update federation record with empty lists
+        await holosphere.putGlobal('federation', emptyFedInfo, password);
+
+        // Notify federation partners if requested
+        if (notifyPartners && fedInfo.federation && fedInfo.federation.length > 0) {
+            const updatePromises = fedInfo.federation.map(async (partnerSpace) => {
+                try {
+                    // Get partner's federation info
+                    const partnerFedInfo = await getFederation(holosphere, partnerSpace);
+                    
+                    if (partnerFedInfo) {
+                        // Remove this space from partner's federation list
+                        if (partnerFedInfo.federation) {
+                            partnerFedInfo.federation = partnerFedInfo.federation.filter(
+                                id => id !== spaceId.toString()
+                            );
+                        }
+                        
+                        // Remove this space from partner's notify list
+                        if (partnerFedInfo.notify) {
+                            partnerFedInfo.notify = partnerFedInfo.notify.filter(
+                                id => id !== spaceId.toString()
+                            );
+                        }
+                        
+                        partnerFedInfo.timestamp = Date.now();
+                        
+                        // Save partner's updated federation info
+                        await holosphere.putGlobal('federation', partnerFedInfo);
+                        console.log(`Updated federation info for partner ${partnerSpace}`);
+                        result.partnersNotified++;
+                        return true;
+                    }
+                    return false;
+                } catch (error) {
+                    console.warn(`Could not update federation info for partner ${partnerSpace}: ${error.message}`);
+                    result.errors.push({
+                        partner: partnerSpace,
+                        error: error.message
+                    });
+                    return false;
+                }
+            });
+            
+            await Promise.all(updatePromises);
+        }
+        
+        // Update federation metadata records if they exist
+        if (fedInfo.federation && fedInfo.federation.length > 0) {
+            for (const partnerSpace of fedInfo.federation) {
+                try {
+                    const metaId = `${spaceId}_${partnerSpace}`;
+                    const altMetaId = `${partnerSpace}_${spaceId}`;
+                    
+                    const meta = await holosphere.getGlobal('federationMeta', metaId) || 
+                                await holosphere.getGlobal('federationMeta', altMetaId);
+                    
+                    if (meta) {
+                        meta.status = 'inactive';
+                        meta.endedAt = Date.now();
+                        await holosphere.putGlobal('federationMeta', meta);
+                        console.log(`Updated federation metadata for ${spaceId} and ${partnerSpace}`);
+                    }
+                } catch (error) {
+                    console.warn(`Could not update federation metadata for ${partnerSpace}: ${error.message}`);
+                }
+            }
+        }
+        
+        result.success = true;
+        return result;
     } catch (error) {
-        console.error('Error in propagateToFederation:', error);
+        console.error(`Federation reset failed: ${error.message}`);
         return {
-            message: error.message,
-            errors: 1,
-            success: 0
+            ...result,
+            success: false,
+            error: error.message
         };
     }
 } 
