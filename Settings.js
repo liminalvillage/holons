@@ -1706,7 +1706,7 @@ export default class Settings {
         const language = settings.language;
         
         // Create the message with Holon ID shown at the top
-        const menuText = `${i18next.t('settings', { lng: language })}\n\n🆔 ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}`;
+        const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}`;
         
         const menuMarkup = {
             reply_markup: {

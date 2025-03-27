@@ -3,7 +3,7 @@ import {
     create
 } from 'ipfs';
 import OrbitDB from 'orbit-db';
-import HoloSphere from '../holosphere/holosphere.js';
+import HoloSphere from 'holosphere';
 
 class DB {
     constructor(dbName) {
