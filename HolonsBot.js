@@ -5,7 +5,7 @@ import Jimp from 'jimp';
 import axios from 'axios';
 import sharp from 'sharp';
 import fs from 'fs';
-import { Telegraf, Markup, Scenes,session } from 'telegraf';
+import { Telegraf, Markup, Scenes, session } from 'telegraf';
 import { Client, GatewayIntentBits } from 'discord.js';
 import DB from "./DB.js";
 import UI from './UI.js';
@@ -70,15 +70,15 @@ class HolonsBot {
   async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
     try {
       this.telebot = new Telegraf(telegramtoken);
-      
+
       // Initialize stage with ALL scenes at once
       console.log('Initializing stage');
       this.telebot.stage = new Scenes.Stage([]);
-      
+
       // Add session and stage middleware ONCE
       this.telebot.use(session());
       this.telebot.use(this.telebot.stage.middleware());
-      
+
       this.telebot.launch({ handlerTimeout: Infinity });
 
       if (process.env.MODE === 'development') {
@@ -144,28 +144,21 @@ class HolonsBot {
 
     this.telebot.command('start', async (ctx) => {
       const chatID = ctx.chat.id;
-      
+
       // Check if this is a private chat or a group chat
       if (chatID > 0) {
         // Private chat - Start personal holon onboarding
-        const personalWelcomeMessage = `
-🌟 *Welcome to your Personal Holon!* 🌟
+        await ctx.reply(i18next.t('personalWelcome'), { parse_mode: 'Markdown' });
 
-I'm here to help you manage your personal tasks, track your contributions across communities, and manage your token rewards.
-
-Let's set up your personal profile to get started.
-`;
-        await ctx.reply(personalWelcomeMessage, { parse_mode: 'Markdown' });
-        
         // Initialize session data
         ctx.session = ctx.session || {};
         ctx.session.db = this.db;
-        
+
         // Start the onboarding wizard for personal profile
         try {
           // Check if the user already has a profile
           const userExists = await this.db.get('users', ctx.from.id);
-          
+
           if (userExists) {
             await ctx.reply(
               "Welcome back! What would you like to do?",
@@ -198,17 +191,12 @@ Let's set up your personal profile to get started.
         }
       } else {
         // Group chat - Show settings interface
-        const groupWelcomeMessage = `
-🌟 *Welcome to Holon!* 🌟
+        await ctx.reply(i18next.t('groupWelcome'), { parse_mode: 'Markdown' });
 
-I'm your community's coordination companion. Let's set up your group's configuration to get started.
-`;
-        await ctx.reply(groupWelcomeMessage, { parse_mode: 'Markdown' });
-        
         // Check if user is an admin
         try {
           const isAdmin = await this.isUserAdmin(ctx);
-          
+
           if (isAdmin) {
             // Show settings button for admins
             await ctx.reply(
@@ -245,6 +233,45 @@ I'm your community's coordination companion. Let's set up your group's configura
       ctx.reply('Just type / for a list of possible commands and start playing with them. For instance \n /task do the dishes \n /request ride to the station \n /offer massage \n');
     });
 
+    this.telebot.command('more', async (ctx) => {
+      const moreMessage = `
+*🔄 Task Management*
+• \`/tasks\` - List all currently open tasks
+• \`/actions\` - View history of completed tasks
+
+*👥 Community Roles*
+• \`/assignroles\` - Automatically assign roles based on actions
+• \`/facilitate\` - Get advice on community issues
+
+*🛒 Shopping & Expenses*
+• \`/buy\` - Add items to shopping list (e.g. /buy milk)
+• \`/shopping\` - View clickable shopping list
+• \`/spent\` - Log expenses
+• \`/balance\` - View balance table
+
+*🌙 Lunation & Activities*
+• \`/prompt\` - See current lunation day and suggested team activity
+• \`/bigtalk\` - Engage in community-building conversations
+
+*💫 Values & Identity*
+• \`/ivalue\` - Set your personal values
+• \`/values\` - View shared values of users or community
+
+*🏷️ Content Management*
+• \`/tag\` - Save content under specific tags
+• \`/publish\` - Share content in the holosphere
+• \`/cast\` - Share content across all scales
+• \`/summarize\` - Create conversation summaries (use /done to finish)
+
+*🔄 Federation Tools*
+• \`/spoon\` - Connect chats to share actions and needs
+• \`/fork\` - Disconnect federated chats
+• \`/restart\` - Reset community settings
+
+Type \`/\` to see all available commands.`;
+      await ctx.reply(moreMessage, { parse_mode: 'Markdown' });
+    });
+
     if (process.env.MODE === 'development') {
 
       this.telebot.on('inline_query', async (ctx) => {
@@ -268,11 +295,11 @@ I'm your community's coordination companion. Let's set up your group's configura
 
     this.telebot.on('callback_query', async (ctx) => {
       const callbackData = ctx.callbackQuery.data;
-      
+
       // Handle personal profile callbacks
       if (callbackData === 'start_personal_wizard') {
         await ctx.answerCbQuery('Starting personal setup...');
-        
+
         // Initialize session data
         ctx.session = ctx.session || {};
         ctx.session.db = this.db;
@@ -283,36 +310,36 @@ I'm your community's coordination companion. Let's set up your group's configura
         ctx.session.username = ctx.from.username;
         ctx.session.first_name = ctx.from.first_name;
         ctx.session.last_name = ctx.from.last_name;
-        
+
         // Enter the first scene in the sequence
         return ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
       }
-      
+
       if (callbackData === 'view_personal_tokens') {
         await ctx.answerCbQuery('Fetching your tokens...');
-        
+
         try {
           // Get user's token balances across all holons
           const userId = ctx.from.id.toString();
           let message = '💰 *Your Token Balances* 💰\n\n';
-          
+
           // Try to get user's holons
           const userHolons = await this.holons.listHolonsOf(userId).catch(() => []);
-          
+
           if (userHolons && userHolons.length > 0) {
             for (const holonAddress of userHolons) {
               const holon = await this.holons.getHolonContract(holonAddress);
               const holonName = await holon.name().catch(() => 'Unknown Holon');
               const ethBalance = await holon.etherBalance(userId).catch(() => '0');
-              
+
               message += `*${holonName}*\n`;
               message += `ETH: ${ethers.formatEther(ethBalance)}\n\n`;
             }
           } else {
             message += "You don't have any tokens yet. Join a holon to start earning tokens!";
           }
-          
-          await ctx.editMessageText(message, { 
+
+          await ctx.editMessageText(message, {
             parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [
@@ -331,25 +358,25 @@ I'm your community's coordination companion. Let's set up your group's configura
           }).catch((err) => { console.log(err) });
         }
       }
-      
+
       if (callbackData === 'view_personal_contributions') {
         await ctx.answerCbQuery('Fetching your contributions...');
-        
+
         try {
           // Get user's contributions across all groups
           const userId = ctx.from.id;
           let message = '🏆 *Your Contributions* 🏆\n\n';
-          
+
           // Get all chats the user is part of
           const userChats = await this.settings.getChats(ctx);
-          
+
           if (userChats && userChats.length > 0) {
             for (const chatId of userChats) {
               try {
                 const user = await this.db.get(`${chatId}/users`, userId);
                 if (user) {
                   const chatInfo = await ctx.telegram.getChat(chatId).catch(() => ({ title: 'Unknown Group' }));
-                  
+
                   message += `*${chatInfo.title}*\n`;
                   message += `Tasks Initiated: ${user.initiated?.length || 0}\n`;
                   message += `Tasks Completed: ${user.completed?.length || 0}\n`;
@@ -363,8 +390,8 @@ I'm your community's coordination companion. Let's set up your group's configura
           } else {
             message += "You haven't made any contributions yet. Join a group to start contributing!";
           }
-          
-          await ctx.editMessageText(message, { 
+
+          await ctx.editMessageText(message, {
             parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [
@@ -383,10 +410,10 @@ I'm your community's coordination companion. Let's set up your group's configura
           }).catch((err) => { console.log(err) });
         }
       }
-      
+
       if (callbackData === 'personal_menu_back') {
         await ctx.answerCbQuery();
-        
+
         await ctx.editMessageText(
           "Welcome back! What would you like to do?",
           {
@@ -400,11 +427,11 @@ I'm your community's coordination companion. Let's set up your group's configura
           }
         ).catch((err) => { console.log(err) });
       }
-      
+
       // Handle settings menu callback
       if (callbackData === 'settings_menu') {
         await ctx.answerCbQuery();
-        
+
         // Show the settings menu
         await ctx.editMessageText(
           "⚙️ *Group Settings* ⚙️\n\nCustomize how Holon works in this group:",
@@ -424,13 +451,13 @@ I'm your community's coordination companion. Let's set up your group's configura
           }
         ).catch((err) => { console.log(err) });
       }
-      
+
       // Handle back to start from settings
       if (callbackData === 'settings_back_to_start') {
         await ctx.answerCbQuery();
-        
+
         const isAdmin = await this.isUserAdmin(ctx);
-        
+
         if (isAdmin) {
           await ctx.editMessageText(
             "As an admin, you can set up the group's holon configuration:",
@@ -447,7 +474,7 @@ I'm your community's coordination companion. Let's set up your group's configura
           ).catch((err) => { console.log(err) });
         }
       }
-      
+
       // Pass to the original callback handler for other callbacks
       await this.handleCallbackQuery(ctx);
     });
@@ -455,73 +482,55 @@ I'm your community's coordination companion. Let's set up your group's configura
     // Handler for new chat members
     this.telebot.on('new_chat_members', async (ctx) => {
       const newMembers = ctx.message.new_chat_members;
-      
+
       // Check if the bot itself was added to the group
       const botWasAdded = newMembers.some(member => member.id === ctx.botInfo.id);
-      
+
       if (botWasAdded) {
         const welcomeMessage = `
-🌟 *Welcome to Holon!* 🌟
+🌟 *Welcome to Holons!* 🌟
 
-I'm your community's coordination companion, designed to help your group collaborate more effectively and build stronger connections. Here's what I can do:
+I'm your fractal community coordination protocol. Here's how to get started:
 
-*🎯 Task Management*
-• Create and track tasks with \`/task\`
-• Set deadlines and reminders
-• Track time spent on activities
-• Create checklists for complex tasks
+1. Type \`/\` to see available commands
+2. Type \`/join\` or complete a task to start participating
+3. Type \`/dashboard\` to access your dashboard
 
-*🤝 Community Engagement*
-• Make requests with \`/request\`
-• Share offers with \`/offer\`
-• Express appreciation with \`/appreciate\`
-• Track contributions and participation
 
-*💡 Knowledge Sharing*
-• Share ideas, lessons, and insights
-• Post questions and challenges
-• Document guidelines and best practices
-• Create and manage recurring tasks
+*🎯 Core Commands*
+• \`/settings\` - Configure your group's settings, federation and more
+• \`/task\` - Create a new task (e.g. /task do the dishes)
+• \`/appreciate\` - Send appreciation (e.g. /appreciate @laura for cooking)
+• \`/request\` - Make a request (e.g. /request foot massage)
+• \`/offer\` - Share what you can offer (e.g. /offer yoga sessions)
+• \`/status\` - View community rankings
+• \`/board\` - See all requests and offers
 
-*💰 Value Recognition*
-• Set up token-based rewards
-• Track contributions across spaces
-• Recognize and reward participation
-• Build sustainable value systems
+*💰 Value Tracking / Mutual Credit System*
+• \`/spent\` - Log expenses (e.g. /spent 10 euros shopping)
+• \`/balance\` - View community balance (e.g. /balance euros)
 
-*⚙️ Quick Start*
-1. Type \`/\` to see all available commands
-2. Start with a simple task: \`/task do something\`
-3. Try appreciation: \`/appreciate @someone\`
-4. Make a request: \`/request help needed\`
+*🌐 Dashboard & Participation*
+• Complete tasks to earn points and rewards
+• Access your dashboard by typing /dashboard
 
-Need help? Feature requests? Contact @RobertoValenti for support.
+*🤝 Holonic Federation*
+• Connect with other holons to share information and rewards
+• Build a network of communities through the holonic federation
+• Share vouchers, resources and rewards and coordinate across communities and ecosystems
+
+Need help? Contact @RobertoValenti for support.
 
 ⚠️ *Required Permissions*
-To work properly, I need:
+To work properly, I need to be able to:
 • Read messages
 • Delete messages
 • Pin messages
 
 Please add me as an admin with these permissions.`;
 
-        await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
-        
-        // Send a follow-up message about admin rights with a visual indicator
-        await ctx.reply(`
-⚠️ *ADMIN RIGHTS REQUIRED* ⚠️
-Holon needs to be able to read user input for key functionalities
-To make holons work properly, please:
-1. Go to group settings
-2. Select "Administrators"
-3. Add "Holon" as an admin
-4. Enable at minimum:
-   - Read messages
-   - Delete messages
-   - Pin messages
 
-Without these permissions, I won't be able to read your inputs and to clean after myself.`, 
-        { parse_mode: 'Markdown' });
+        await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
       }
 
       // Add all new members to the database using Users module
@@ -532,7 +541,7 @@ Without these permissions, I won't be able to read your inputs and to clean afte
         try {
           // Use getUserInfo which will create the user if they don't exist
           await this.users.getUserInfo(member, ctx.chat.id);
-          
+
           // Save a join action for the user
           await this.users.saveUserAction(
             member,
@@ -627,14 +636,14 @@ Without these permissions, I won't be able to read your inputs and to clean afte
 
     // Skip if the callback has already been handled in the main callback_query handler
     const alreadyHandledCallbacks = [
-      'start_personal_wizard', 
-      'view_personal_tokens', 
-      'view_personal_contributions', 
+      'start_personal_wizard',
+      'view_personal_tokens',
+      'view_personal_contributions',
       'personal_menu_back',
       'settings_menu',
       'settings_back_to_start'
     ];
-    
+
     if (alreadyHandledCallbacks.some(prefix => callbackData === prefix || callbackData.startsWith(prefix + '_'))) {
       return;
     }
@@ -649,18 +658,18 @@ Without these permissions, I won't be able to read your inputs and to clean afte
       // Handle calendar date/time selection
       if (callbackData.startsWith('t_') || callbackData.startsWith('n_')) {
         const when = this.quests.calendar.clickButtonCalendar(ctx);
-        
+
         if (when === -1) return;
 
         // Get the original quest ID that was stored when schedule was clicked
         const questId = this.quests.calendar.questIds.get(chatID);
-        
+
         if (!questId) {
           console.log('No quest ID found in calendar data');
           await ctx.answerCbQuery('Could not find associated task');
           return;
         }
-        this.scheduler.updateTaskSchedule(chatID, questId, new Date(when), ctx ); 
+        this.scheduler.updateTaskSchedule(chatID, questId, new Date(when), ctx);
         // Get the quest from database
         const quest = await this.db.get(`${chatID}/quests`, questId);
         if (!quest) {
@@ -681,12 +690,12 @@ Without these permissions, I won't be able to read your inputs and to clean afte
         // Save and update
         await this.db.put(`${chatID}/quests`, quest);
         await this.quests.updateMessage(ctx, quest);
-        
+
         // Delete the calendar message
         await ctx.deleteMessage(messageID).catch(err => {
           console.log('Error deleting calendar message:', err);
         });
-        
+
         await ctx.answerCbQuery('Task scheduled successfully!');
       }
 
@@ -931,12 +940,12 @@ Without these permissions, I won't be able to read your inputs and to clean afte
   async handleReply(ctx) {
     try {
       const repliedMessage = ctx.message.reply_to_message;
-      
+
       // Check if the replied message is from the bot
       if (repliedMessage.from.id === ctx.botInfo.id) {
         // Try to determine the type of the original message
         const messageType = this.determineMessageType(repliedMessage);
-        
+
         // Handle based on message type
         switch (messageType) {
           case 'quest':
@@ -964,9 +973,9 @@ Without these permissions, I won't be able to read your inputs and to clean afte
     if (this.db.get(message.chat.id + '/expenses', message.message_id)) {
       return 'expense';
     }
-    
+
     // Add more type checks as needed
-    
+
     return 'unknown';
   }
 
@@ -977,7 +986,7 @@ Without these permissions, I won't be able to read your inputs and to clean afte
       const userId = ctx.from.id;
       const chatId = ctx.chat.id;
       const member = await ctx.telegram.getChatMember(chatId, userId);
-      
+
       // Check if user is an admin or creator
       return ['creator', 'administrator'].includes(member.status);
     } catch (error) {

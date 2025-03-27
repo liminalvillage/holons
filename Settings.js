@@ -22,6 +22,39 @@ export default class Settings {
                 i18next.t('settings_send_new', { type: i18next.t('settings_purpose').toLowerCase() }))
                 .catch(e => console.log('Error in purpose scene enter:', e));
         });
+
+        // Add name scene
+        this.nameScene = new Scenes.BaseScene('name_scene');
+        this.nameScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            let settings = await this.getSettings(chatID);
+            const currentName = settings.name || i18next.t('settings_not_set');
+            await ctx.reply(i18next.t('settings_current', { value: currentName }) + '\n\n' +
+                i18next.t('settings_send_new', { type: i18next.t('settings_name', { defaultValue: 'name' }).toLowerCase() }))
+                .catch(e => console.log('Error in name scene enter:', e));
+        });
+
+        this.nameScene.on('text', async (ctx) => {
+            const chatID = ctx.message.chat.id;
+            let settings = await this.getSettings(chatID);
+            settings.name = ctx.message.text;
+            await this.setSettings(settings);
+            
+            // Delete the scene messages and user input
+            try {
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+            } catch (e) {
+                console.log('Error deleting messages:', e);
+            }
+
+            // Show settings menu with updated name
+            await this.showSettingsMenu(ctx, false);
+            await ctx.scene.leave();
+        });
+
+        this.nameScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in name scene message:', e)));
+
         this.purposeScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -430,10 +463,17 @@ export default class Settings {
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
             
-            await ctx.reply(
+            // Store the context for later cleanup
+            ctx.scene.state.originalCtx = ctx;
+            
+            // Send instructions and store the message ID for later deletion
+            const promptMessage = await ctx.reply(
                 i18next.t('settings_add_user_instructions', { lng: language }) || 
-                'Please mention the user directly with @ (e.g., @username)\n' 
+                'You can add a user in two ways:\n\n1. Mention the user directly with @ (e.g., @username)\n\n2. Enter user details manually in the format:\nID,username,first_name,last_name\n\nOnly ID is required. Example:\n123456789,johndoe,John,Doe'
             );
+            
+            // Store the message ID for later deletion
+            ctx.scene.state.promptMessageId = promptMessage.message_id;
         });
         
         this.addUserScene.on('text', async (ctx) => {
@@ -442,6 +482,9 @@ export default class Settings {
             const messageText = ctx.message.text.trim();
             
             try {
+                // Store this message ID for later deletion
+                ctx.scene.state.userMessageId = ctx.message.message_id;
+                
                 // Check if the message contains mentions
                 if (ctx.message.entities && ctx.message.entities.some(entity => entity.type === 'mention' || entity.type === 'text_mention')) {
                     await this.processUserMentions(ctx);
@@ -452,8 +495,12 @@ export default class Settings {
                 const isManualEntry = await this.processManualUserEntry(ctx);
                 if (isManualEntry) {
                     // The manual entry was processed successfully
+                    // Clean up prompts before leaving
+                    await this.cleanupSceneMessages(ctx);
                     await ctx.scene.leave();
-                    await this.showUsersManagementMenu({ chat: { id: chatID } }, false);
+                    
+                    // Refresh the original context
+                    await this.showUsersManagementMenu(ctx, false);
                     return;
                 }
                 
@@ -484,9 +531,12 @@ export default class Settings {
                 
                 await this.addUserToDatabase(chatID, user);
                 
-                // Exit scene and show users management menu
+                // Clean up prompts before leaving
+                await this.cleanupSceneMessages(ctx);
                 await ctx.scene.leave();
-                await this.showUsersManagementMenu({ chat: { id: chatID } }, false);
+                
+                // Refresh the original context
+                await this.showUsersManagementMenu(ctx, false);
                 
             } catch (error) {
                 console.error('Error adding user:', error);
@@ -495,18 +545,20 @@ export default class Settings {
             }
         });
         
-        this.addUserScene.on('message', ctx => {
-            ctx.reply('Please send text only or mention a user with @.');
-        });
-        
         this.addUserScene.action('cancel_add_user', async (ctx) => {
             await ctx.answerCbQuery();
+            
+            // Clean up prompts before leaving
+            await this.cleanupSceneMessages(ctx);
             await ctx.scene.leave();
+            
+            // Return to users management menu
             await this.showUsersManagementMenu(ctx, true);
         });
 
         // Register all scenes
         this.bot.stage.register(this.purposeScene);
+        this.bot.stage.register(this.nameScene);
         this.bot.stage.register(this.domainsScene);
         this.bot.stage.register(this.valuesScene);
         this.bot.stage.register(this.rolesScene);
@@ -750,6 +802,9 @@ export default class Settings {
             }
 
             switch (action) {
+                case 'name':
+                    await ctx.scene.enter('name_scene');
+                    break;
                 case 'menu':
                     await this.showSettingsMenu(ctx, true);
                     break;
@@ -1650,9 +1705,15 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         const language = settings.language;
         
+        // Create the message with Holon ID shown at the top
+        const menuText = `${i18next.t('settings', { lng: language })}\n\n🆔 ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}`;
+        
         const menuMarkup = {
             reply_markup: {
                 inline_keyboard: [
+                    [
+                        { text: `✏️ ${i18next.t('settings_name', { lng: language, defaultValue: 'Name' })}: ${settings.name || i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_name' }
+                    ],
                     [
                         { text: `${this.getSettingIcon('language')} ${i18next.t('settings_language', { lng: language })}: ${settings.language}`, callback_data: 'settings_language' },
                         { text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme', { lng: language })}: ${settings.theme}`, callback_data: 'settings_theme' }
@@ -1680,6 +1741,10 @@ export default class Settings {
                     [
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/RobertoValenti' }
+                    ],
+                    // Add a full-width dashboard button at the bottom
+                    [
+                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `https://dashboard.holons.io/${chatID}/dashboard` }
                     ]
                 ]
             }
@@ -1687,9 +1752,9 @@ export default class Settings {
 
         try {
             if (edit) {
-                await ctx.editMessageText(i18next.t('settings', { lng: language }), menuMarkup);
+                await ctx.editMessageText(menuText, menuMarkup);
             } else {
-                await ctx.reply(i18next.t('settings', { lng: language }), menuMarkup);
+                await ctx.reply(menuText, menuMarkup);
             }
         } catch (e) {
             console.log('Error showing settings menu:', e);
@@ -2500,8 +2565,14 @@ export default class Settings {
                         };
                         
                         // Ask for more info
-                        await ctx.reply(i18next.t('settings_need_user_id', { lng: language, username: username }) || 
+                        const errorMsg = await ctx.reply(i18next.t('settings_need_user_id', { lng: language, username: username }) || 
                             `Could not get ID for @${username}. Please provide the numeric ID for this user in format: @${username},ID`);
+                        // Store the error message ID for potential cleanup
+                        if (!ctx.scene.state.errorMessageIds) {
+                            ctx.scene.state.errorMessageIds = [];
+                        }
+                        ctx.scene.state.errorMessageIds.push(errorMsg.message_id);
+                        
                         failedUsers.push(username);
                         continue;
                     }
@@ -2537,13 +2608,23 @@ export default class Settings {
         }
         
         if (resultMessage) {
-            await ctx.reply(resultMessage);
+            const resultMsg = await ctx.reply(resultMessage);
+            
+            // Store the result message ID for potential cleanup
+            if (!ctx.scene.state.resultMessageIds) {
+                ctx.scene.state.resultMessageIds = [];
+            }
+            ctx.scene.state.resultMessageIds.push(resultMsg.message_id);
         }
         
         // If we added all users successfully, exit the scene
         if (failedUsers.length === 0 && addedUsers.length > 0) {
+            // Clean up prompts before leaving
+            await this.cleanupSceneMessages(ctx);
             await ctx.scene.leave();
-            await this.showUsersManagementMenu({ chat: { id: chatID } }, false);
+            
+            // Return to users management menu with fresh UI
+            await this.showUsersManagementMenu(ctx, false);
         }
     }
     
@@ -2634,7 +2715,14 @@ export default class Settings {
                     
                     try {
                         await this.addUserToDatabase(chatID, user);
-                        await ctx.reply(i18next.t('settings_user_added', { lng: language }));
+                        const successMsg = await ctx.reply(i18next.t('settings_user_added', { lng: language }));
+                        
+                        // Store the success message ID for cleanup
+                        if (!ctx.scene.state.resultMessageIds) {
+                            ctx.scene.state.resultMessageIds = [];
+                        }
+                        ctx.scene.state.resultMessageIds.push(successMsg.message_id);
+                        
                         return true;
                     } catch (error) {
                         await ctx.reply(i18next.t('settings_error_adding_user', { lng: language, error: error.message }));
@@ -2662,5 +2750,36 @@ export default class Settings {
     
         
         return true;
+    }
+
+    // Helper method to clean up scene messages
+    async cleanupSceneMessages(ctx) {
+        try {
+            // Delete the prompt message if it exists
+            if (ctx.scene.state.promptMessageId) {
+                await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => {});
+            }
+            
+            // Delete the user's message if it exists
+            if (ctx.scene.state.userMessageId) {
+                await ctx.deleteMessage(ctx.scene.state.userMessageId).catch(() => {});
+            }
+            
+            // Delete any error messages
+            if (ctx.scene.state.errorMessageIds && ctx.scene.state.errorMessageIds.length > 0) {
+                for (const msgId of ctx.scene.state.errorMessageIds) {
+                    await ctx.deleteMessage(msgId).catch(() => {});
+                }
+            }
+            
+            // Delete any result messages
+            if (ctx.scene.state.resultMessageIds && ctx.scene.state.resultMessageIds.length > 0) {
+                for (const msgId of ctx.scene.state.resultMessageIds) {
+                    await ctx.deleteMessage(msgId).catch(() => {});
+                }
+            }
+        } catch (error) {
+            console.log('Error cleaning up scene messages:', error);
+        }
     }
 }
