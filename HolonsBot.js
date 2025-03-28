@@ -79,25 +79,6 @@ class HolonsBot {
       this.telebot.use(session());
       this.telebot.use(this.telebot.stage.middleware());
 
-      // Add direct callback query handler for join_holon
-      this.telebot.on('callback_query', async (ctx) => {
-        try {
-          if (ctx.callbackQuery.data === 'join_holon') {
-            console.log("Join holon handler triggered");
-            await ctx.answerCbQuery();
-
-            await this.users.getUserInfo(ctx.from, ctx.chat.id);
-            await ctx.reply("Welcome, " + ctx.from.first_name + "!");
-
-          }
-
-        } catch (error) {
-          console.error("Error in callback handler:", error);
-          await ctx.answerCbQuery("An error occurred. Please try again.").catch(() => { });
-          await ctx.reply("Sorry, there was an error processing your request. Please try again.").catch(() => { });
-        }
-      });
-
       this.telebot.launch({ handlerTimeout: Infinity });
 
       if (process.env.MODE === 'development') {
@@ -185,7 +166,7 @@ class HolonsBot {
                   inline_keyboard: [
                     //[{ text: i18next.t('personalWelcomeButtons.updateProfile'), callback_data: "start_personal_wizard" }],
                     [{ text: i18next.t('personalWelcomeButtons.configureSettings'), callback_data: "settings_menu" }],
-                    [{ text: i18next.t('personalWelcomeButtons.join'), callback_data: "join_holon" }],
+                    [{ text: i18next.t('personalWelcomeButtons.join'), callback_data: "join_community" }],
                     [{ text: i18next.t('personalWelcomeButtons.viewDashboard'), url: `https://dashboard.holons.io/${chatID}/dashboard` }]
                   ]
                 }
@@ -199,7 +180,7 @@ class HolonsBot {
                 inline_keyboard: [
                   //[{ text: i18next.t('personalWelcomeButtons.updateProfile'), callback_data: "start_personal_wizard" }],
                   [{ text: i18next.t('personalWelcomeButtons.configureSettings'), callback_data: "settings_menu" }],
-                  [{ text: i18next.t('personalWelcomeButtons.join'), callback_data: "join_holon" }],
+                  [{ text: i18next.t('personalWelcomeButtons.join'), callback_data: "join_community" }],
                   [{ text: i18next.t('personalWelcomeButtons.viewDashboard'), url: `https://dashboard.holons.io/${chatID}/dashboard` }]
                 ]
               }
@@ -306,7 +287,64 @@ Type \`/\` to see all available commands.`;
     this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, this.db));
     this.telebot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo', 'fiorino'], async (ctx) => this.quests.sendAppreciation(ctx));
 
-    // Action handler for join_holon is now handled in the init method - removing duplicate here
+    // Add action handler for join_community
+    this.telebot.action('join_community', async (ctx) => {
+      console.log("=== Join Community Action Handler Called ===");
+      console.log("User:", ctx.from);
+      console.log("Chat ID:", ctx.chat.id);
+      
+      try {
+        console.log("Getting user info...");
+        await this.users.getUserInfo(ctx.from, ctx.chat.id);
+        console.log("User info retrieved successfully");
+        
+        await ctx.reply("Welcome to the holon, " + ctx.from.first_name + "!");
+        console.log("Welcome message sent");
+
+        const userId = ctx.from.id;
+        console.log("Checking user profile for ID:", userId);
+        const userProfile = await this.db.get('users', userId);
+
+        if (!userProfile) {
+          console.log("No user profile found");
+          await ctx.reply("Please complete your profile first before joining a community.");
+          return;
+        }
+        console.log("User profile found");
+
+        console.log("Fetching available communities...");
+        const communities = await this.holons.listHolons();
+        console.log("Communities fetched:", communities);
+
+        if (!communities || communities.length === 0) {
+          console.log("No communities available");
+          await ctx.reply("No communities are available at the moment. Please check back later.");
+          return;
+        }
+
+        console.log("Creating keyboard with communities...");
+        const keyboard = communities.map(holon => ({
+          text: holon.name,
+          callback_data: `join_holon_${holon.address}`
+        }));
+        console.log("Keyboard created:", keyboard);
+
+        console.log("Sending community selection message...");
+        await ctx.reply(
+          "Select a community to join:",
+          {
+            reply_markup: {
+              inline_keyboard: keyboard.map(button => [button])
+            }
+          }
+        );
+        console.log("Community selection message sent");
+      } catch (error) {
+        console.error("Error in join community process:", error);
+        console.error("Error stack:", error.stack);
+        await ctx.reply("Sorry, there was an error joining the community. Please try again.");
+      }
+    });
   }
 
   setupTelegramHandlers() {
@@ -483,8 +521,47 @@ Please add me as an admin with these permissions.`;
       await ctx.answerCbQuery();
       console.log("Received callback query:", callbackData);
 
-      // Note: join_holon and join_holon_ prefix callbacks are now handled 
-      // in the direct callback handler registered in the init method
+      // Handle join specific holon callback
+      if (callbackData.startsWith('join_holon_')) {
+        console.log("Joining specific holon:", callbackData);
+        const holonAddress = callbackData.split('_')[2];
+        
+        try {
+          const userId = ctx.from.id;
+          const userProfile = await this.db.get('users', userId);
+
+          if (!userProfile) {
+            await ctx.reply("Please complete your profile first before joining a community.");
+            return;
+          }
+
+          // Get the holon contract
+          const holon = await this.holons.getHolonContract(holonAddress);
+          const holonName = await holon.name().catch(() => 'Unknown Holon');
+
+          // Join the holon
+          await this.holons.joinHolon(userId, holonAddress);
+          
+          await ctx.reply(`Successfully joined ${holonName}! Welcome to the community.`);
+          
+          // Update the message to show joined status
+          await ctx.editMessageText(
+            `You have joined ${holonName}!`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "✅ Joined", callback_data: "already_joined" }]
+                ]
+              }
+            }
+          ).catch(err => console.log('Error updating message:', err));
+
+        } catch (error) {
+          console.error("Error joining specific holon:", error);
+          await ctx.reply("Sorry, there was an error joining the community. Please try again.");
+        }
+        return;
+      }
 
       // Handle personal profile callbacks
       if (callbackData === 'start_personal_wizard') {
@@ -687,7 +764,7 @@ Please add me as an admin with these permissions.`;
 
         this.scheduler.updateTaskSchedule(chatID, questId, new Date(when), ctx);
         const quest = await this.db.get(`${chatID}/quests`, questId);
-
+        
         if (!quest) {
           console.log(`Quest ${questId} not found in database`);
           await ctx.answerCbQuery('Could not find the task');
