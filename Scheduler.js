@@ -74,7 +74,7 @@ class Scheduler {
                         },
                         from: task.initiator,
                         message_id: task.id,
-                        text: `/recurring ${task.title}`
+                        text: `/recurring ${task.frequency} ${task.title}`
                     },
                     from: task.initiator,
                     reply: (text, extra) => {
@@ -93,12 +93,12 @@ class Scheduler {
         const [frequency, ...taskDetails] = ctx.message.text.split(' ').slice(1);
         
         if (!frequency || taskDetails.length === 0) {
-            ctx.reply('Usage: /recurring [frequency] [task description]\nFrequencies: 1min, 30sec, daily, weekly, monthly, quarterly, yearly\nUse /when to set the start time');
+            ctx.reply('Usage: /recurring [frequency] [task description]\nFrequencies: daily, weekly, monthly, quarterly, yearly\nUse /when to set the start time');
             return;
         }
 
         // Validate frequency
-        const validFrequencies = ['1min', '30sec', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
+        const validFrequencies = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
         if (!validFrequencies.includes(frequency.toLowerCase())) {
             ctx.reply(`Invalid frequency. Please use one of: ${validFrequencies.join(', ')}`);
             return;
@@ -144,15 +144,117 @@ class Scheduler {
         // Create new cron job with the specific timezone if provided in the quest
         const timezone = task.timezone || 'UTC';
         const job = new CronJob(cronTime, async() => {
-            // Only create and send the quest when the timer triggers
-            const quest = await this.quests.quest('recurring', ctx);
-            if (!quest) {
-                console.error('Failed to create recurring quest');
-                return;
+            try {
+                // Store original task details for reference
+                const originalTask = {...task}; // Create a copy to ensure we don't modify the original
+                console.log('Running scheduled task for chatID:', originalTask.chatID);
+                
+                // Ensure we have a valid chat ID
+                if (!originalTask.chatID || originalTask.chatID === 0) {
+                    console.error('Invalid chatID in task:', originalTask);
+                    return;
+                }
+                
+                // Create mock context for quest creation with correct chat ID
+                const mockCtx = {
+                    chat: {
+                        id: originalTask.chatID
+                    },
+                    message: {
+                        from: originalTask.initiator,
+                        message_id: Date.now(), // Generate a new message ID
+                        text: `/recurring ${originalTask.title}`
+                    },
+                    from: originalTask.initiator,
+                    telegram: this.bot.telegram,
+                    reply: (text, extra) => {
+                        return this.bot.telegram.sendMessage(originalTask.chatID, text, extra);
+                    },
+                    platform: 'telegram'
+                };
+                
+                
+                // Create the quest using the task type (default to 'task' if not specified)
+                const quest = await this.quests.quest('recurring', mockCtx);
+                if (!quest) {
+                    console.error('Failed to create recurring quest');
+                    return;
+                }
+                
+                console.log('New quest created, quest ID:', quest.id, 'chat ID:', quest.chat);
+                
+                // Ensure quest has the correct chat ID
+                if (!quest.chat || quest.chat === 0) {
+                    quest.chat = originalTask.chatID;
+                    console.log('Corrected quest chat ID to:', quest.chat);
+                }
+                
+                // Copy details from original task
+                quest.frequency = originalTask.frequency === undefined ? null : originalTask.frequency;
+                quest.recurringTaskId = originalTask.id;
+                
+                // Only set originalTaskId if the questId exists
+                if (originalTask.questId) {
+                    quest.originalTaskId = originalTask.questId; // Reference to the original task
+                    console.log(`Linked to original task ID: ${originalTask.questId}`);
+                } else {
+                    console.log('No questId found in original task to reference');
+                }
+                
+                // Copy description if it exists
+                if (originalTask.description) {
+                    quest.description = originalTask.description;
+                }
+                
+                // Copy dependencies if they exist
+                if (originalTask.dependencies && originalTask.dependencies.length > 0) {
+                    quest.dependencies = [...originalTask.dependencies];
+                }
+                
+                // Copy checklist if it exists
+                if (originalTask.checklistId) {
+                    try {
+                        const originalChecklist = await this.db.get(originalTask.chatID + '/checklists', originalTask.checklistId);
+                        if (originalChecklist) {
+                            // Create a new checklist with copied items but unchecked
+                            const newChecklist = {
+                                id: quest.id.toString(),
+                                items: originalChecklist.items.map(item => ({...item, checked: false})),
+                                creator: quest.initiator.id,
+                                created: new Date(),
+                                questId: quest.id,
+                                questTitle: quest.title,
+                                chatId: quest.chat,
+                                isTaskChecklist: true
+                            };
+                            
+                            // Save new checklist
+                            await this.db.put(quest.chat + '/checklists', newChecklist);
+                            
+                            // Update quest with new checklist ID
+                            quest.checklistId = quest.id.toString();
+                        }
+                    } catch (error) {
+                        console.error('Error copying checklist:', error);
+                    }
+                }
+                
+                // Save the updated quest
+                console.log('Saving quest with chat ID:', quest.chat);
+                await this.db.put(quest.chat + '/quests', quest);
+                const language = await this.settings.getLanguage(chatID);
+                await this.quests.updateMessage(ctx, quest, language);
+                
+                // Add the quest id to the lookup table
+                await this.db.holosphere.putGlobal('recurringlookup', {
+                    id: chatID + '_' + quest.id, 
+                    taskID: task.id
+                });
+                console.log('Recurring Lookup TASK', chatID + '_' + quest.id, task.id);
+                
+            } catch (error) {
+                console.error('Error in scheduled task execution:', error);
             }
-            //add the quest id to the lookup table
-            await this.db.holosphere.putGlobal('recurringlookup', {id: chatID + '_' + quest.id,  taskID: task.id});
-            console.log('Recurring Lookup TASK', chatID + '_' + quest.id, task.id);
         }, null, true, timezone);
 
         // Store job reference
@@ -193,25 +295,73 @@ class Scheduler {
 
 
     async stopTask(taskId) {
-        const job = this.jobs.get(taskId);
-        if (job) {
-            job.stop();
-            this.jobs.delete(taskId);
+        try {
+            console.log('Stopping task:', taskId);
             
-            // Get all lookup records for this task
-            const lookups = await this.db.getAll('recurringlookup');
-            const relatedLookups = lookups.filter(lookup => lookup.taskID === taskId);
+            // Get the task to log details before deletion
+            const task = await this.db.holosphere.getGlobal('recurring', taskId);
+            if (task) {
+                console.log('Found task to stop, chat ID:', task.chatID);
+            } else {
+                console.log('Task not found, proceeding with cleanup anyway');
+            }
             
-            // Delete all lookup records
-            for (const lookup of relatedLookups) {
-                await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
+            // Stop running job if it exists
+            const job = this.jobs.get(taskId);
+            if (job) {
+                job.stop();
+                this.jobs.delete(taskId);
+                console.log('Stopped recurring job for task:', taskId);
+            } else {
+                console.log('No running job found for task:', taskId);
+            }
+            
+            // Find all lookup records for this task
+            try {
+                // Get all lookup records
+                const lookups = await this.db.holosphere.getAllGlobal('recurringlookup');
+                console.log('Found', lookups ? lookups.length : 0, 'lookup records to check');
+                
+                if (lookups && lookups.length > 0) {
+                    const relatedLookups = lookups.filter(lookup => lookup.taskID === taskId);
+                    console.log('Found', relatedLookups.length, 'lookup records to delete');
+                    
+                    // Delete all related lookup records
+                    for (const lookup of relatedLookups) {
+                        await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
+                        console.log('Deleted lookup record:', lookup.id);
+                    }
+                }
+            } catch (error) {
+                console.error('Error cleaning up lookup records:', error);
             }
             
             // Delete the main task
-            await this.db.holosphere.deleteGlobal('recurring', taskId);
+            if (task) {
+                await this.db.holosphere.deleteGlobal('recurring', taskId);
+                console.log('Deleted recurring task:', taskId);
+            }
+            
             return true;
+        } catch (error) {
+            console.error('Error stopping task:', error);
+            return false;
         }
-        return false;
+    }
+
+    async getRecurringTask(taskId) {
+        try {
+            console.log(`Getting recurring task: ${taskId}`);
+            const task = await this.db.holosphere.getGlobal('recurring', taskId);
+            if (!task) {
+                console.log(`No task found with ID: ${taskId}`);
+                return null;
+            }
+            return task;
+        } catch (error) {
+            console.error(`Error retrieving recurring task ${taskId}:`, error);
+            return null;
+        }
     }
 
     async updateTaskSchedule(chatId, questId, selectedDate, ctx) {
@@ -490,6 +640,20 @@ class Scheduler {
                 task.id = Date.now().toString();
             }
             
+            // Validate the chat ID
+            if (!task.chatID || task.chatID === 0) {
+                console.error('Invalid chatID in createRecurringTask:', task);
+                throw new Error('Invalid chat ID');
+            }
+            
+            console.log('Creating recurring task with chat ID:', task.chatID);
+            console.log('Task details:', {
+                id: task.id,
+                title: task.title,
+                frequency: task.frequency,
+                questId: task.questId || 'not set'
+            });
+            
             // Save to database
             await this.db.holosphere.putGlobal('recurring', task);
             
@@ -499,21 +663,27 @@ class Scheduler {
                 id: lookupId,
                 taskID: task.id
             });
+            console.log(`Created lookup reference: ${lookupId} -> ${task.id}`);
             
-            // Schedule the task
-            await this.scheduleTask(task, {
+            // Create a valid context for scheduling
+            const mockCtx = {
                 message: {
-                    chat: { id: task.chatID },
+                    chat: { 
+                        id: task.chatID
+                    },
                     from: task.initiator,
-                    text: `/recurring ${task.frequency} ${task.title}`
+                    text: `/recurring ${task.title}`
                 },
                 telegram: this.bot.telegram,
                 reply: (text, extra) => {
                     return this.bot.telegram.sendMessage(task.chatID, text, extra);
                 }
-            });
+            };
             
-            console.log('Created recurring task:', task.id);
+            // Schedule the task
+            await this.scheduleTask(task, mockCtx);
+            
+            console.log('Created recurring task:', task.id, 'for chat ID:', task.chatID);
             return task.id;
         } catch (error) {
             console.error('Error creating recurring task:', error);
@@ -529,8 +699,23 @@ class Scheduler {
                 throw new Error(`Task with ID ${taskId} not found`);
             }
             
-            // Update task properties
+            console.log('Updating recurring task:', taskId, 'for chat ID:', task.chatID);
+            
+            // Verify chatID exists and is valid
+            if (!task.chatID || task.chatID === 0) {
+                console.error('Invalid chatID in task to update:', task);
+                throw new Error('Invalid chat ID in existing task');
+            }
+            
+            // Update task properties but preserve the original chatID
+            const originalChatID = task.chatID;
             Object.assign(task, updates);
+            
+            // Ensure chatID wasn't lost or changed incorrectly
+            if (!task.chatID || task.chatID === 0) {
+                task.chatID = originalChatID;
+                console.log('Restored original chatID:', originalChatID);
+            }
             
             // Save updated task
             await this.db.holosphere.putGlobal('recurring', task);
@@ -542,20 +727,25 @@ class Scheduler {
                 this.jobs.delete(taskId);
             }
             
-            // Reschedule with updated parameters
-            await this.scheduleTask(task, {
+            // Create a valid context for rescheduling
+            const mockCtx = {
                 message: {
-                    chat: { id: task.chatID },
+                    chat: { 
+                        id: task.chatID 
+                    },
                     from: task.initiator,
-                    text: `/recurring ${task.frequency} ${task.title}`
+                    text: `/task ${task.title}`
                 },
                 telegram: this.bot.telegram,
                 reply: (text, extra) => {
                     return this.bot.telegram.sendMessage(task.chatID, text, extra);
                 }
-            });
+            };
             
-            console.log('Updated recurring task:', taskId);
+            // Reschedule with updated parameters
+            await this.scheduleTask(task, mockCtx);
+            
+            console.log('Updated recurring task:', taskId, 'for chat ID:', task.chatID);
             return true;
         } catch (error) {
             console.error('Error updating recurring task:', error);

@@ -86,8 +86,9 @@ export default class Quests {
         this.bot.action(/back_from_dependencies_(.+)/, (ctx) => this.backFromDependencies(ctx));
         this.bot.action(/remove_dependency_(.+)/, (ctx) => this.handleRemoveDependency(ctx));
         
-        // Add recurring action handler
+        // Add recurring action handlers
         this.bot.action(/recurring_quest_(.+)/, (ctx) => this.handleRecurringButton(ctx));
+        this.bot.action(/stop_recurring_(.+)/, (ctx) => this.handleStopRecurring(ctx));
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
@@ -234,9 +235,10 @@ export default class Quests {
 
         // Get category from chat topic if available
         let category = '';
-        if (ctx.message.chat.type === 'supergroup' || ctx.message.chat.type === 'channel') {
-            try {
-                if (ctx.message.message_thread_id) {
+        if (ctx.message?.chat?.type) 
+            if (ctx.message.chat.type === 'supergroup' || ctx.message.chat.type === 'channel') {
+                try {
+                    if (ctx.message.message_thread_id) {
                     // Get forum topic info using correct method name
                     const forumTopicInfo = await ctx.telegram.getForumTopicByID(
                         chatID,
@@ -259,7 +261,7 @@ export default class Quests {
         let quest = {
             id: '',
             version: '0.1',
-            chat: '',
+            chat: chatID,  // Initialize with the chat ID immediately
             initiator: sender,
             title: title,
             picture: picture,
@@ -281,6 +283,7 @@ export default class Quests {
             checklistId: null // Add checklist ID field
         }
 
+
         if (picture)
             ctx.replyWithPhoto(picture,
                 {
@@ -290,7 +293,11 @@ export default class Quests {
                 }).catch((err) => { console.log(err) }).then(async (nctx) => {
                     // Add the message id to the quest
                     quest.id = nctx.message_id;
-                    quest.chat = nctx.chat.id;
+                    // Only update chat ID if it's valid and not already set
+                    if (!quest.chat && nctx.chat.id) {
+                        quest.chat = nctx.chat.id;
+                    }
+                    console.log('Saving quest with ID:', quest.id, 'and chat ID:', quest.chat);
                     this.db.put(chatID + '/quests', quest)
                     //Pin the message
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -323,14 +330,20 @@ export default class Quests {
 
             if (ctx.platform !== 'discord') {
                 quest.id = nctx.message_id;
-                quest.chat = nctx.chat.id;
+                // Only update chat ID if it's valid and not already set correctly
+                if (!quest.chat || quest.chat === 0) {
+                    quest.chat = nctx.chat.id;
+                }
             }
             if (ctx.platform == 'discord') {
                 quest.id = nctx.id;
-                quest.chat = nctx.channel.id;
+                // Only update chat ID if it's valid and not already set correctly
+                if (!quest.chat || quest.chat === 0) {
+                    quest.chat = nctx.channel.id;
+                }
             }
 
-           
+            console.log('Saving quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest)
             //update the new message
             await this.updateMessage(ctx, quest, language)
@@ -904,18 +917,57 @@ export default class Quests {
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
 
-        const language = await this.settings.getLanguage(chatID)
-        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        const language = await this.settings.getLanguage(chatID);
+        let quest = await this.db.get(chatID + '/quests', messageID.toString());
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!quest || quest == '') { 
+            console.log('QUEST IS NOT FOUND');
+            ctx.answerCbQuery('Quest not found');
+            return;
+        }
+
+        console.log(`Showing expanded buttons for quest ${quest.id}, type: ${quest.type}, status: ${quest.status}`);
+        console.log(`Quest details: title=${quest.title}, frequency=${quest.frequency}, recurringTaskId=${quest.recurringTaskId}`);
 
         // Create expanded markup with all buttons
-        let buttons = this.getExpandedButtons(quest, language);
+        let expandedButtons = this.getExpandedButtons(quest, language);
+        
+        console.log(`Generated ${expandedButtons.length} button rows for expanded view`);
+        
+        if (expandedButtons.length === 0) {
+            console.error(`No expanded buttons generated for quest type: ${quest.type}`);
+            ctx.answerCbQuery('Error: Could not generate expanded buttons');
+            return;
+        }
 
-        // Update message with expanded buttons
-        await ctx.editMessageReplyMarkup({
-            inline_keyboard: buttons
-        }).catch((err) => { console.log(err) });
+        // Update message with expanded buttons - use the complete text + markup approach
+        try {
+            const message = await this.createMessage(quest, language);
+            
+            await ctx.editMessageText(
+                message,
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: expandedButtons
+                    }
+                }
+            );
+            console.log('Successfully updated message with expanded buttons');
+        } catch (err) {
+            console.error('Error updating message with expanded buttons:', err);
+            
+            // Fallback to just updating the markup if text update fails
+            try {
+                await ctx.editMessageReplyMarkup({
+                    inline_keyboard: expandedButtons
+                });
+                console.log('Successfully updated message with fallback method');
+            } catch (innerErr) { 
+                console.error('Fallback markup update also failed:', innerErr);
+                ctx.answerCbQuery('Error updating buttons. Please try again.');
+            }
+        }
 
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
@@ -925,15 +977,40 @@ export default class Quests {
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
 
-        const language = await this.settings.getLanguage(chatID)
-        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        const language = await this.settings.getLanguage(chatID);
+        let quest = await this.db.get(chatID + '/quests', messageID.toString());
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!quest || quest == '') { 
+            console.log('QUEST IS NOT FOUND');
+            ctx.answerCbQuery('Quest not found');
+            return;
+        }
 
-        // Update message with original markup
-        await ctx.editMessageReplyMarkup({
-            inline_keyboard: this.markup(quest, language).reply_markup.inline_keyboard
-        }).catch((err) => { console.log(err) });
+        console.log(`Hiding expanded buttons for quest ${quest.id}, type: ${quest.type}, status: ${quest.status}`);
+        console.log(`Quest details: title=${quest.title}, frequency=${quest.frequency}, recurringTaskId=${quest.recurringTaskId}`);
+
+        // Update message with original markup - use the complete text + markup approach
+        try {
+            const message = await this.createMessage(quest, language);
+            const markup = this.markup(quest, language);
+            
+            await ctx.editMessageText(
+                message,
+                {
+                    parse_mode: 'Markdown',
+                    ...markup
+                }
+            );
+        } catch (err) {
+            console.error('Error updating message with standard buttons:', err);
+            
+            // Fallback to just updating the markup if text update fails
+            await ctx.editMessageReplyMarkup(
+                this.markup(quest, language).reply_markup
+            ).catch((innerErr) => { 
+                console.error('Fallback markup update also failed:', innerErr);
+            });
+        }
 
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
@@ -941,8 +1018,11 @@ export default class Quests {
     // Add this helper method to get expanded buttons
     getExpandedButtons(quest, language) {
         let buttons = [];
+        
+        console.log(`Getting expanded buttons for quest type: ${quest.type}, status: ${quest.status}`);
 
-        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito'|| quest.type == 'recurring') {
+        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito' || quest.type == 'recurring') {
+            console.log(`Using task/recurring buttons layout for quest ${quest.id}`);
             // First row - essential actions
             buttons.push([
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
@@ -964,7 +1044,7 @@ export default class Quests {
             // Fourth row - description and checklist
             buttons.push([
                 Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'description_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
             ]);
             
             // Add new row for dependencies and recurring
@@ -972,7 +1052,7 @@ export default class Quests {
                 Markup.button.callback('🔗 ' + i18next.t('dependencies', { lng: language, defaultValue: 'Dependencies' }), 'dependencies_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language), 'recurring_quest_' + quest.chat + '_' + quest.id)
             ]);
-
+            
             // Fifth row - stop and cancel
             buttons.push([
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
@@ -990,6 +1070,7 @@ export default class Quests {
                 Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
             ]);
         } else if (quest.type == 'event') {
+            console.log(`Using event buttons layout for quest ${quest.id}`);
             // First row - essential actions
             buttons.push([
                 Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
@@ -1007,27 +1088,39 @@ export default class Quests {
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
             ]);
+            
+            // Last row - less actions button
+            buttons.push([
+                Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
+            ]);
         } else if (quest.type == 'proposal') {
+            console.log(`Using proposal buttons layout for quest ${quest.id}`);
             // First row
             buttons.push([
                 Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
             ]);
-
-            // Second row
+            
+            // Second row - appreciation
             buttons.push([
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Last row - less actions button
+            buttons.push([
+                Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
             ]);
         } else if (quest.type == 'offer' || quest.type == 'request') {
+            console.log(`Using offer/request buttons layout for quest ${quest.id}`);
             // First row
             buttons.push([
                 Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
-
-            // Second row
+            
+            // Second row - appreciation
             buttons.push([
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
             ]);
 
             // Third row - publish and broadcast
@@ -1035,8 +1128,33 @@ export default class Quests {
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
             ]);
-       
-    
+            
+            // Last row - less actions button
+            buttons.push([
+                Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
+            ]);
+        } else {
+            console.log(`Using default buttons layout for quest ${quest.id} with type ${quest.type}`);
+            // Default for other types - just appreciation and less actions
+            buttons.push([
+                Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            buttons.push([
+                Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
+            ]);
+        }
+
+        // Only show appreciation button for completed quests
+        if (quest.status === "completed") {
+            buttons = [
+                [
+                    Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
+                ],
+                [
+                    Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
+                ]
+            ];
         }
 
         return buttons;
@@ -1044,7 +1162,14 @@ export default class Quests {
 
     // Helper to get the recurring button text based on current frequency
     getRecurringButtonText(quest, language) {
-        const frequencyText = quest.frequency || i18next.t('never', { lng: language, defaultValue: 'Never' });
+        let frequencyText;
+        
+        if (quest.frequency === null || quest.frequency === undefined) {
+            frequencyText = i18next.t('never', { lng: language, defaultValue: 'Never' });
+        } else {
+            frequencyText = i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency });
+        }
+        
         return i18next.t('recurring', { lng: language, defaultValue: 'Recurring' }) + ': ' + frequencyText;
     }
 
@@ -1424,8 +1549,11 @@ export default class Quests {
         }
 
         // Add frequency for recurring tasks
-        if (quest.frequency) {
+        if (quest.frequency !== null && quest.frequency !== undefined) {
             message += `| 🔄 ${i18next.t('repeat', { lng: language, defaultValue: 'Repeat' })}: ${i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency })} \n`;
+        } else if (quest.recurringTaskId) {
+            // If this is a recurring task instance but frequency is null, show "Not recurring"
+            message += `| 🔄 ${i18next.t('repeat', { lng: language, defaultValue: 'Repeat' })}: ${i18next.t('never', { lng: language, defaultValue: 'Never' })} \n`;
         }
 
         if (quest.category) {
@@ -1516,8 +1644,9 @@ export default class Quests {
 
     markup(quest, language) {
         let mu
-        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito') {
-            mu = Markup.inlineKeyboard([
+        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito' || quest.type == 'recurring') {
+            // Create button rows
+            const buttons = [
                 [
                     Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
@@ -1525,15 +1654,21 @@ export default class Quests {
                 [
                     Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
-                ],
-                [
-                    Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
-                    Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language), 'recurring_quest_' + quest.chat + '_' + quest.id)
-                ],
-                [
-                    Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
                 ]
-            ])
+            ];
+
+            // Add tasks and recurring buttons
+            buttons.push([
+                Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language), 'recurring_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Add more actions button
+            buttons.push([
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
+            ]);
+
+            mu = Markup.inlineKeyboard(buttons);
         }
 
         if (quest.type == 'event') {
@@ -1588,17 +1723,6 @@ export default class Quests {
             )
         }
 
-        if (quest.type == 'recurring') {
-            mu = Markup.inlineKeyboard([
-                [
-                    Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
-                    Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
-                ],
-                [
-                    Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
-                ]
-            ])
-        }
 
         return mu
     }
@@ -1997,30 +2121,32 @@ export default class Quests {
         try {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
             if (!quest) {
+                console.log(`Quest not found for ID: ${messageId}`);
                 await ctx.answerCbQuery('Quest not found');
                 return;
             }
+            
+            console.log(`Handling recurring for quest ID: ${quest.id}, current frequency: ${quest.frequency}, has recurringTaskId: ${!!quest.recurringTaskId}, has originalTaskId: ${!!quest.originalTaskId}`);
 
             // Define the cycle of frequencies
             const frequencies = [
                 null, // "Never" - no recurring
-                '30sec', 
                 'daily',
                 'weekly',
-                'biweekly',
                 'monthly',
                 'quarterly',
-                'sixmonths',
                 'yearly'
             ];
 
             // Get current frequency index
             let currentIndex = frequencies.indexOf(quest.frequency);
             if (currentIndex === -1) currentIndex = 0; // Start at 'Never' if not found
+            console.log(`Current frequency index: ${currentIndex}`);
 
             // Cycle to next frequency
             currentIndex = (currentIndex + 1) % frequencies.length;
             quest.frequency = frequencies[currentIndex];
+            console.log(`New frequency: ${quest.frequency}`);
 
             // Get readable frequency name
             let frequencyName;
@@ -2029,16 +2155,86 @@ export default class Quests {
                 
                 // If changing from recurring to never, remove any existing recurring task
                 if (quest.recurringTaskId) {
-                    await this.removeRecurringTask(quest.recurringTaskId);
+                    console.log(`Removing recurring task: ${quest.recurringTaskId}`);
+                    const removed = await this.removeRecurringTask(quest.recurringTaskId);
+                    console.log(`Recurring task removal ${removed ? 'succeeded' : 'failed'}`);
+                    
+                    // Remove the ID reference regardless of removal success
                     delete quest.recurringTaskId;
                 }
             } else {
                 frequencyName = i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency });
                 
-                // Create or update recurring task
-                if (this.scheduler) {
+                // If this is a generated recurring quest (has recurringTaskId), we should update the original task instead
+                if (quest.recurringTaskId && !quest.originalTaskId) {
+                    console.log(`This quest has recurringTaskId ${quest.recurringTaskId}, updating that task's frequency instead of creating new one`);
+                    
+                    try {
+                        // Get the recurring task
+                        const task = await this.scheduler.getRecurringTask(quest.recurringTaskId);
+                        if (task) {
+                            // Update the task's frequency
+                            await this.scheduler.updateRecurringTask(quest.recurringTaskId, {
+                                frequency: quest.frequency
+                            });
+                            console.log(`Updated existing recurring task ${quest.recurringTaskId} with new frequency: ${quest.frequency}`);
+                        } else {
+                            console.log(`Recurring task ${quest.recurringTaskId} not found, will create new one`);
+                            // Fall back to creating a new task
+                            const taskId = await this.createOrUpdateRecurringTask(quest, language);
+                            quest.recurringTaskId = taskId;
+                        }
+                    } catch (error) {
+                        console.error('Error updating recurring task:', error);
+                        // Fall back to creating a new task
+                        const taskId = await this.createOrUpdateRecurringTask(quest, language);
+                        quest.recurringTaskId = taskId;
+                    }
+                }
+                // This is a regular quest (not generated and doesn't have recurringTaskId yet)
+                else if (!quest.recurringTaskId && this.scheduler) {
+                    console.log(`Creating new recurring task for frequency: ${quest.frequency}`);
                     const taskId = await this.createOrUpdateRecurringTask(quest, language);
                     quest.recurringTaskId = taskId;
+                    console.log(`Task ID set to: ${taskId}`);
+                }
+            }
+
+            // Check if this is a recurring instance and update the original task
+            if (quest.originalTaskId) {
+                try {
+                    // Get the original task
+                    const originalTask = await this.db.get(chatId + '/quests', quest.originalTaskId.toString());
+                    if (originalTask) {
+                        console.log(`Updating original task ${originalTask.id} with frequency: ${quest.frequency}`);
+                        
+                        // Sync the recurring state
+                        originalTask.frequency = quest.frequency;
+                        
+                        if (!quest.frequency) {
+                            // If setting to never, remove the recurring task
+                            if (originalTask.recurringTaskId) {
+                                console.log(`Removing original task's recurring task: ${originalTask.recurringTaskId}`);
+                                const removed = await this.removeRecurringTask(originalTask.recurringTaskId);
+                                console.log(`Original task's recurring task removal ${removed ? 'succeeded' : 'failed'}`);
+                                delete originalTask.recurringTaskId;
+                            }
+                        } else if (this.scheduler) {
+                            // Otherwise update the recurring task
+                            const taskId = await this.createOrUpdateRecurringTask(originalTask, language);
+                            originalTask.recurringTaskId = taskId;
+                            console.log(`Updated original task's recurring task ID to: ${taskId}`);
+                        }
+                        
+                        // Save the updated original task
+                        await this.db.put(chatId + '/quests', originalTask);
+                        console.log(`Original task ${originalTask.id} updated`);
+                        
+                        // Immediately update the original task's message
+                        await this.updateMessage(ctx, originalTask, language);
+                    }
+                } catch (error) {
+                    console.error('Error updating original task:', error);
                 }
             }
 
@@ -2068,19 +2264,17 @@ export default class Quests {
             // Format the frequency for scheduler
             let schedulerFrequency;
             switch (quest.frequency) {
-                case '30sec': schedulerFrequency = '30sec'; break;
                 case 'daily': schedulerFrequency = 'daily'; break;
                 case 'weekly': schedulerFrequency = 'weekly'; break;
-                case 'biweekly': schedulerFrequency = 'biweekly'; break; 
                 case 'monthly': schedulerFrequency = 'monthly'; break;
                 case 'quarterly': schedulerFrequency = 'quarterly'; break;
-                case 'sixmonths': schedulerFrequency = 'sixmonths'; break; 
                 case 'yearly': schedulerFrequency = 'yearly'; break;
                 default: schedulerFrequency = 'daily'; // Default
             }
 
             // Check if there's an existing task to update
             if (quest.recurringTaskId) {
+                console.log(`Updating existing recurring task ${quest.recurringTaskId} for quest ${quest.id}`);
                 // Update existing task
                 await this.scheduler.updateRecurringTask(quest.recurringTaskId, {
                     frequency: schedulerFrequency,
@@ -2088,20 +2282,25 @@ export default class Quests {
                 });
                 return quest.recurringTaskId;
             } else {
+                console.log(`Creating new recurring task for quest ${quest.id}`);
                 // Create a new task object
                 const task = {
                     id: quest.id,
                     chatID: quest.chat,
                     title: quest.title,
-                    frequency: schedulerFrequency,
+                    frequency: quest.frequency,
                     when: whenDate,
                     createdAt: new Date(),
                     initiator: quest.initiator,
-                    questId: quest.id
+                    questId: quest.id, // This is crucial for linking back to the original task
+                    description: quest.description,
+                    checklistId: quest.checklistId,
+                    dependencies: quest.dependencies
                 };
 
                 // Save to database using scheduler
                 const taskId = await this.scheduler.createRecurringTask(task);
+                console.log(`Created recurring task with ID ${taskId}`);
                 return taskId;
             }
         } catch (error) {
@@ -2121,6 +2320,83 @@ export default class Quests {
         } catch (error) {
             console.error('Error removing recurring task:', error);
             return false;
+        }
+    }
+
+    async handleStopRecurring(ctx) {
+        console.log("STOP RECURRING ACTION");
+        const chatId = ctx.callbackQuery.data.split('_')[2];
+        const messageId = ctx.callbackQuery.data.split('_')[3];
+        const language = await this.settings.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', messageId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            console.log(`Handling stop recurring for quest ID: ${quest.id}, has recurringTaskId: ${!!quest.recurringTaskId}, has originalTaskId: ${!!quest.originalTaskId}`);
+
+            // Set frequency to null (never)
+            quest.frequency = null;
+            
+            // Remove the recurring task
+            if (quest.recurringTaskId) {
+                console.log(`Removing recurring task: ${quest.recurringTaskId}`);
+                const removed = await this.removeRecurringTask(quest.recurringTaskId);
+                console.log(`Recurring task removal ${removed ? 'succeeded' : 'failed'}`);
+                delete quest.recurringTaskId;
+            } else {
+                console.log(`Quest has no recurringTaskId to remove`);
+            }
+            
+            // Check if this is a recurring instance and update the original task
+            if (quest.originalTaskId) {
+                try {
+                    // Get the original task
+                    const originalTask = await this.db.get(chatId + '/quests', quest.originalTaskId.toString());
+                    if (originalTask) {
+                        console.log(`Stopping recurring for original task ${originalTask.id}`);
+                        
+                        // Set frequency to null
+                        originalTask.frequency = null;
+                        
+                        // Remove recurring task reference
+                        if (originalTask.recurringTaskId) {
+                            console.log(`Removing original task's recurring task: ${originalTask.recurringTaskId}`);
+                            const removed = await this.removeRecurringTask(originalTask.recurringTaskId);
+                            console.log(`Original task's recurring task removal ${removed ? 'succeeded' : 'failed'}`);
+                            delete originalTask.recurringTaskId;
+                        } else {
+                            console.log(`Original task has no recurringTaskId to remove`);
+                        }
+                        
+                        // Save the updated original task
+                        await this.db.put(chatId + '/quests', originalTask);
+                        console.log(`Original task ${originalTask.id} updated to non-recurring`);
+                        
+                        // Update the original task's message
+                        await this.updateMessage(ctx, originalTask, language);
+                    } else {
+                        console.log(`Original task ${quest.originalTaskId} not found`);
+                    }
+                } catch (error) {
+                    console.error('Error updating original task:', error);
+                }
+            }
+
+            // Update the quest
+            await this.db.put(chatId + '/quests', quest);
+            console.log(`Quest ${quest.id} updated to non-recurring`);
+
+            // Update the message
+            await this.updateMessage(ctx, quest, language);
+
+            await ctx.answerCbQuery('Recurring task stopped');
+        } catch (error) {
+            console.error('Error handling stop recurring:', error);
+            await ctx.answerCbQuery('Error stopping recurring task');
         }
     }
 }
