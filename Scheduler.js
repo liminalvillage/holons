@@ -176,10 +176,14 @@ class Scheduler {
                 return `${minute} ${hour} * * *`; // Every day at specified hour:minute
             case 'weekly':
                 return `${minute} ${hour} * * ${date.getDay()}`; // Every week on same day at specified hour:minute
+            case 'biweekly':
+                return `${minute} ${hour} * * ${date.getDay()}/2`; // Every two weeks on same day
             case 'monthly':
                 return `${minute} ${hour} ${date.getDate()} * *`; // Same day each month at specified hour:minute
             case 'quarterly':
                 return `${minute} ${hour} ${date.getDate()} */3 *`; // Every third month on same day at specified hour:minute
+            case 'sixmonths':
+                return `${minute} ${hour} ${date.getDate()} */6 *`; // Every six months on same day
             case 'yearly':
                 return `${minute} ${hour} ${date.getDate()} ${date.getMonth() + 1} *`; // Same date each year at specified hour:minute
             default:
@@ -200,11 +204,11 @@ class Scheduler {
             
             // Delete all lookup records
             for (const lookup of relatedLookups) {
-                await this.db.del('recurringlookup', lookup.id);
+                await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
             }
             
             // Delete the main task
-            await this.db.del('recurring', taskId);
+            await this.db.holosphere.deleteGlobal('recurring', taskId);
             return true;
         }
         return false;
@@ -235,7 +239,7 @@ class Scheduler {
                     let task = await this.db.holosphere.getGlobal('recurring', recurringID.taskID);
                     if (task) {
                         task.when = selectedDate;
-                        await this.db.put('recurring', task);
+                        await this.db.holosphere.putGlobal('recurring', task);
                         await this.scheduleTask(task, ctx);
                     }
                 }
@@ -476,6 +480,86 @@ class Scheduler {
             console.error('Error in schedule:', error);
             console.error('Error stack:', error.stack);
             await ctx.answerCbQuery('Error showing calendar');
+        }
+    }
+
+    async createRecurringTask(task) {
+        try {
+            // Generate a unique ID if not provided
+            if (!task.id) {
+                task.id = Date.now().toString();
+            }
+            
+            // Save to database
+            await this.db.holosphere.putGlobal('recurring', task);
+            
+            // Create lookup reference
+            const lookupId = task.chatID + '_' + task.questId;
+            await this.db.holosphere.putGlobal('recurringlookup', {
+                id: lookupId,
+                taskID: task.id
+            });
+            
+            // Schedule the task
+            await this.scheduleTask(task, {
+                message: {
+                    chat: { id: task.chatID },
+                    from: task.initiator,
+                    text: `/recurring ${task.frequency} ${task.title}`
+                },
+                telegram: this.bot.telegram,
+                reply: (text, extra) => {
+                    return this.bot.telegram.sendMessage(task.chatID, text, extra);
+                }
+            });
+            
+            console.log('Created recurring task:', task.id);
+            return task.id;
+        } catch (error) {
+            console.error('Error creating recurring task:', error);
+            throw error;
+        }
+    }
+
+    async updateRecurringTask(taskId, updates) {
+        try {
+            // Get existing task
+            const task = await this.db.holosphere.getGlobal('recurring', taskId);
+            if (!task) {
+                throw new Error(`Task with ID ${taskId} not found`);
+            }
+            
+            // Update task properties
+            Object.assign(task, updates);
+            
+            // Save updated task
+            await this.db.holosphere.putGlobal('recurring', task);
+            
+            // Stop existing job
+            const existingJob = this.jobs.get(taskId);
+            if (existingJob) {
+                existingJob.stop();
+                this.jobs.delete(taskId);
+            }
+            
+            // Reschedule with updated parameters
+            await this.scheduleTask(task, {
+                message: {
+                    chat: { id: task.chatID },
+                    from: task.initiator,
+                    text: `/recurring ${task.frequency} ${task.title}`
+                },
+                telegram: this.bot.telegram,
+                reply: (text, extra) => {
+                    return this.bot.telegram.sendMessage(task.chatID, text, extra);
+                }
+            });
+            
+            console.log('Updated recurring task:', taskId);
+            return true;
+        } catch (error) {
+            console.error('Error updating recurring task:', error);
+            return false;
         }
     }
 }

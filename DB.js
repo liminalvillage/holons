@@ -311,6 +311,9 @@ class DB {
     deleteGunDB(table, key) {
         let [hex, lens] = table.split('/')
         console.log('deleteGunDB:', hex, lens, key);
+
+        if (lens === undefined) // TODO: this is a hack to get the lens and key from the key. Refactor from scheduler
+            [lens,key] = key.split('_')
         return this.holosphere.delete(hex, lens, key);
         return new Promise((resolve, reject) => {
             this.gun.get(this.dbName + '/' + table).get(key).put(null, ack => {
