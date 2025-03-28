@@ -25,11 +25,32 @@ class Scheduler {
         this.bot.command('droprecurring', async (ctx) => this.deleteTasks(ctx));
         this.bot.command('recurring', async (ctx) => this.addTask(ctx));
         this.bot.command('when', async (ctx) => this.handleWhenCommand(ctx));
-        this.bot.action(/remove_recurring_(.+)/, (ctx) => this.removeRecurringTask(ctx));
-        this.bot.action(/n_(.+)/, (ctx) => this.handleCalendarNavigation(ctx)); // Calendar navigation
-        this.bot.action(/t_(.+)_0$/, (ctx) => this.handleTimeSelection(ctx)); // Final time selection
-        this.bot.action(/t_(.+)_(0|1)[\+\-]/, (ctx) => this.handleTimeNavigation(ctx)); // Time navigation
-        this.bot.action(/t_(.+)_back/, (ctx) => this.handleBackToCalendar(ctx)); // Back to calendar
+        
+        // Add bot actions for callbacks
+        this.bot.action(/schedule_quest_(.+)/, async (ctx) => {
+            console.log("SCHEDULE ACTION - STARTING");
+            return await this.schedule(ctx);
+        });
+        
+        // Time selection handler
+        this.bot.action(/t_(.+)_0$/, async (ctx) => {
+            return await this.handleTimeSelection(ctx);
+        });
+
+        // Calendar navigation handler
+        this.bot.action(/n_(.+)/, async (ctx) => {
+            return await this.handleCalendarNavigation(ctx);
+        });
+
+        // Back to calendar handler
+        this.bot.action(/t_(.+)_back/, async (ctx) => {
+            return await this.handleBackToCalendar(ctx);
+        });
+
+        // Time navigation handler
+        this.bot.action(/t_(.+)_(0|1)[\+\-]/, async (ctx) => {
+            return await this.handleTimeNavigation(ctx);
+        });
     }
 
     async deleteTasks() {
@@ -314,13 +335,6 @@ class Scheduler {
         try {
             // Let the Calendar class handle the navigation
             const result = await this.calendar.clickButtonCalendar(ctx);
-            if (result !== -1) {
-                // If a date was selected, show time selector
-                const timeMarkup = this.calendar.createTimeSelector(result, true);
-                await ctx.editMessageReplyMarkup({
-                    reply_markup: timeMarkup
-                });
-            }
             await ctx.answerCbQuery();
         } catch (error) {
             console.error('Error handling calendar navigation:', error);
@@ -331,38 +345,60 @@ class Scheduler {
     async handleTimeSelection(ctx) {
         try {
             const chatId = ctx.callbackQuery.message.chat.id;
-            const messageId = ctx.callbackQuery.message.message_id;
-            
-            // Get the selected datetime from callback data
+            const calendarMsgId = ctx.callbackQuery.message.message_id;
             const dateTimeStr = ctx.match[1].split('_')[0];
             const selectedDate = new Date(dateTimeStr);
-            
-            // Get the quest ID that was stored when calendar was opened
+            // Get quest ID from calendar
             const questId = this.calendar.questIds.get(chatId);
+            
             if (!questId) {
-                console.log('No quest ID found in calendar data');
+                console.log('No quest ID found');
                 await ctx.answerCbQuery('Could not find associated task');
                 return;
             }
+            
+            // Get quest
+            const quest = await this.db.get(`${chatId}/quests`, questId);
 
-            // Update task schedule with the complete date and time
-            await this.updateTaskSchedule(chatId, questId, selectedDate, ctx);
             
-            // Get updated quest
-            const updatedQuest = await this.db.get(`${chatId}/quests`, questId);
+            if (!quest) {
+                await ctx.answerCbQuery('Task not found');
+                return;
+            }
             
-            // Clear stored quest ID
+            // Update quest
+            quest.status = 'scheduled';
+            quest.when = selectedDate;
+            await this.db.put(`${chatId}/quests`, quest);
+            
+            // Set reminder
+            setTimeout(() => {
+                this.quests.remind(ctx, quest);
+            }, new Date(selectedDate).getTime() - Date.now());
+
+            // Get language
+            const language = await this.settings.getLanguage(chatId);
+            
+            // Update calendar message with quest info
+            const messageText = await this.quests.createMessage(quest, language);
+            const markup = this.quests.markup(quest, language);
+            
+            await ctx.telegram.editMessageText(
+                chatId,
+                calendarMsgId,
+                null,
+                messageText,
+                markup
+            );
+              
+          // Clear stored quest ID
             this.calendar.questIds.delete(chatId);
             
-            // Restore quest message with its buttons
-            await this.quests.updateMessage(ctx, updatedQuest);
-            
-            // Acknowledge time selection
-            await ctx.answerCbQuery(`Scheduled for ${selectedDate.toLocaleString()}`);
-
+            await ctx.answerCbQuery('Task scheduled successfully!');
         } catch (error) {
-            console.error('Error handling time selection:', error);
-            await ctx.answerCbQuery('Error setting time');
+            console.error('Error in time selection:', error);
+            console.error(error.stack);
+            await ctx.answerCbQuery('Error scheduling task');
         }
     }
 
@@ -394,6 +430,51 @@ class Scheduler {
             await ctx.answerCbQuery();
         } catch (error) {
             console.error('Error going back to calendar:', error);
+            await ctx.answerCbQuery('Error showing calendar');
+        }
+    }
+
+    async schedule(ctx) {
+        console.log("SCHEDULE ACTION - STARTING");
+        try {
+            const chatId = ctx.callbackQuery.message.chat.id;
+            const questId = ctx.callbackQuery.data.split('_')[3];
+
+            console.log('Schedule parameters:', {
+                chatId,
+                questId,
+                callbackData: ctx.callbackQuery.data,
+                messageId: ctx.callbackQuery.message.message_id
+            });
+            
+            // Verify quest exists
+            const quest = await this.db.get(`${chatId}/quests`, questId);
+            console.log('Quest found:', quest ? 'YES' : 'NO');
+            
+            if (!quest) {
+                console.log(`Quest ${questId} not found`);
+                await ctx.answerCbQuery('Could not find the task');
+                return;
+            }
+
+            // Store quest ID for later retrieval
+            this.calendar.questIds.set(chatId, questId);
+            console.log('Stored quest ID in calendar:', questId);
+
+            // Generate calendar markup
+            const now = new Date();
+            now.setDate(1);
+            const calendarMarkup = this.calendar.createNavigationKeyboard(now);
+            console.log('Calendar markup generated - will show calendar');
+
+            // Show calendar
+            await ctx.editMessageReplyMarkup(calendarMarkup);
+            console.log('Calendar displayed - waiting for user to select date/time');
+
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error in schedule:', error);
+            console.error('Error stack:', error.stack);
             await ctx.answerCbQuery('Error showing calendar');
         }
     }

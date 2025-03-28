@@ -11,7 +11,7 @@ export default class Settings {
         this.db = db
         this.bot = bot
 
-      
+
         // Create scenes for text input
         this.purposeScene = new Scenes.BaseScene('purpose_scene');
         this.purposeScene.enter(async (ctx) => {
@@ -39,11 +39,11 @@ export default class Settings {
             let settings = await this.getSettings(chatID);
             settings.name = ctx.message.text;
             await this.setSettings(settings);
-            
+
             // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
@@ -60,11 +60,11 @@ export default class Settings {
             let settings = await this.getSettings(chatID);
             settings.purpose = ctx.message.text;
             await this.setSettings(settings);
-            
+
             // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
@@ -80,36 +80,36 @@ export default class Settings {
         this.federationScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
-            
+
             await ctx.reply(i18next.t('settings_enter_federation_id', { lng: language }));
         });
-        
+
         this.federationScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
             const federationID = ctx.message.text.trim();
             const language = await this.getLanguage(chatID);
-            
+
             try {
                 // Validate input
                 if (!federationID || isNaN(federationID)) {
                     await ctx.reply(i18next.t('settings_invalid_federation_id', { lng: language }));
                     return;
                 }
-                
+
                 // Federate with the provided ID
                 await this.db.holosphere.federate(chatID.toString(), federationID);
-                
+
                 // Delete the scene messages
                 try {
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                    await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                    await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                    await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
                 } catch (e) {
                     console.log('Error deleting messages:', e);
                 }
-                
+
                 await ctx.reply(i18next.t('settings_federation_added', { lng: language, id: federationID }));
                 await ctx.scene.leave();
-                
+
                 // Show updated federation menu
                 await this.showFederationMenu(ctx, false);
             } catch (error) {
@@ -118,7 +118,7 @@ export default class Settings {
                 await ctx.scene.leave();
             }
         });
-        
+
         this.federationScene.on('message', ctx => {
             const chatId = ctx.message.chat.id;
             this.getLanguage(chatId).then(language => {
@@ -143,22 +143,22 @@ export default class Settings {
                 .split(/[,\n]/)
                 .map(d => d.trim())
                 .filter(d => d !== '');
-                
+
             let settings = await this.getSettings(chatID);
-            
+
             // Initialize the array if it doesn't exist
             if (!settings.domains) {
                 settings.domains = [];
             }
-            
+
             // Append new domains instead of replacing existing ones
             settings.domains.push(...newDomains);
             await this.setSettings(settings);
 
             // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
@@ -186,22 +186,22 @@ export default class Settings {
                 .split(/[,\n]/)
                 .map(v => v.trim())
                 .filter(v => v !== '');
-                
+
             let settings = await this.getSettings(chatID);
-            
+
             // Initialize the array if it doesn't exist
             if (!settings.values) {
                 settings.values = [];
             }
-            
+
             // Append new values instead of replacing existing ones
             settings.values.push(...newValues);
             await this.setSettings(settings);
 
             // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
@@ -214,8 +214,8 @@ export default class Settings {
 
         this.rolesScene = new Scenes.BaseScene('roles_scene');
         this.rolesScene.enter(async (ctx) => {
-            
-                i18next.t('settings_not_set');
+
+            i18next.t('settings_not_set');
             await ctx.reply(
                 i18next.t('settings_send_new', { type: i18next.t('settings_roles').toLowerCase() }))
                 .catch(e => console.log('Error in roles scene enter:', e));
@@ -226,22 +226,22 @@ export default class Settings {
                 .split(/[,\n]/)
                 .map(r => r.trim())
                 .filter(r => r !== '');
-                
+
             let settings = await this.getSettings(chatID);
-            
+
             // Initialize the array if it doesn't exist
             if (!settings.roles) {
                 settings.roles = [];
             }
-            
+
             // Append new roles instead of replacing existing ones
             settings.roles.push(...newRoles);
             await this.setSettings(settings);
 
             // Delete the scene messages and user input
             try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
@@ -255,7 +255,7 @@ export default class Settings {
         this.adminScene = new Scenes.BaseScene('admin_scene');
         this.adminScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
-            
+
             // Show admin selection keyboard with all available users
             await this.showAdminSelectionMenu(ctx, false);
         });
@@ -264,11 +264,11 @@ export default class Settings {
             await ctx.answerCbQuery();
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
-            
+
             let settings = await this.getSettings(chatID);
             settings.admin = userId;
             await this.setSettings(settings);
-            
+
             // Show updated admin selection menu
             await this.showAdminSelectionMenu(ctx, true);
         });
@@ -285,15 +285,15 @@ export default class Settings {
             const admin = ctx.message.text.trim();
             let settings = await this.getSettings(chatID);
             const language = settings.language;
-            
+
             settings.admin = admin;
             await this.setSettings(settings);
             await ctx.scene.leave();
 
             // Delete the scene messages
             try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => {});
+                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
             } catch (e) {
                 console.log('Error deleting messages:', e);
             }
@@ -310,10 +310,10 @@ export default class Settings {
         });
 
         this.hexScene = new Scenes.BaseScene('hex_scene');
-        this.hexScene.enter(async (ctx) => {    
+        this.hexScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
-            
+
             await ctx.reply(
                 i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_hex', { lng: language }).toLowerCase() })
             ).catch(e => console.log('Error in hex scene enter:', e));
@@ -328,7 +328,7 @@ export default class Settings {
             const hex = ctx.message.text.trim();
             let settings = await this.getSettings(chatID);
             const language = settings.language;
-            
+
             settings.hex = hex;
             await this.setSettings(settings);
             await ctx.scene.leave();
@@ -359,12 +359,12 @@ export default class Settings {
         this.testScene.enter(async (ctx) => {
             await ctx.reply('You entered the test scene. Type something to continue.');
         });
-        
+
         this.testScene.on('text', async (ctx) => {
             await ctx.reply(`You typed: ${ctx.message.text}`);
             await ctx.scene.leave();
         });
-        
+
         // Add a test scene for adding items
         this.addTestScene = new Scenes.BaseScene('add_test_scene');
         this.addTestScene.enter(async (ctx) => {
@@ -380,25 +380,30 @@ export default class Settings {
         this.usersScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             
+            // Check if we're coming from a callback query (from settings menu)
+            const edit = Boolean(ctx.callbackQuery);
+            
             // Show users management menu
-            await this.showUsersManagementMenu(ctx, false);
+            await this.showUsersManagementMenu(ctx, edit);
         });
 
         this.usersScene.action(/user_info_(.+)/, async (ctx) => {
             await ctx.answerCbQuery();
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
-            
+
             // Show user info
             await this.showUserInfo(ctx, userId);
         });
 
         this.usersScene.action('users_back', async (ctx) => {
             await ctx.answerCbQuery();
+            console.log('Leaving users scene and returning to settings menu');
             await ctx.scene.leave();
+            // Always edit existing message when returning to settings
             await this.showSettingsMenu(ctx, true);
         });
-        
+
         // Add handlers for user management
         this.usersScene.action('add_user', async (ctx) => {
             await ctx.answerCbQuery();
@@ -419,78 +424,78 @@ export default class Settings {
             await ctx.answerCbQuery();
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
-            
+
             try {
                 // Get current users
                 let users = await this.db.getAll(chatID + '/users');
-                
+
                 // Find user index
                 const userIndex = users.findIndex(u => u.id.toString() === userId);
-                
+
                 if (userIndex === -1) {
                     await ctx.reply('User not found');
                     return;
                 }
-                
+
                 // Check if user is admin
                 let settings = await this.getSettings(chatID);
                 const user = users[userIndex];
-                const isAdmin = settings.admin === user.id.toString() || 
-                               settings.admin === user.username ||
-                               settings.admin === '@' + user.username;
-                               
+                const isAdmin = settings.admin === user.id.toString() ||
+                    settings.admin === user.username ||
+                    settings.admin === '@' + user.username;
+
                 if (isAdmin) {
                     await ctx.reply('Cannot remove admin user');
                     return;
                 }
 
-                await this.db.del(chatID + '/users/', userIndex);
-                
+                await this.db.del(chatID + '/users', user.id.toString());
+
                 await ctx.reply('User removed successfully');
-                
+
                 // Refresh the users list in remove mode
                 await this.showUsersManagementMenu(ctx, true, true);
-                
+
             } catch (error) {
                 console.error('Error removing user:', error);
                 await ctx.reply('Error removing user: ' + error.message);
             }
         });
-        
+
         // Add user scene
         this.addUserScene = new Scenes.BaseScene('add_user_scene');
         this.addUserScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
-            
+
             // Store the context for later cleanup
             ctx.scene.state.originalCtx = ctx;
-            
+
             // Send instructions and store the message ID for later deletion
             const promptMessage = await ctx.reply(
-                i18next.t('settings_add_user_instructions', { lng: language }) || 
+                i18next.t('settings_add_user_instructions', { lng: language }) ||
                 'You can add a user in two ways:\n\n1. Mention the user directly with @ (e.g., @username)\n\n2. Enter user details manually in the format:\nID,username,first_name,last_name\n\nOnly ID is required. Example:\n123456789,johndoe,John,Doe'
             );
-            
+
             // Store the message ID for later deletion
             ctx.scene.state.promptMessageId = promptMessage.message_id;
         });
-        
+
         this.addUserScene.on('text', async (ctx) => {
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
             const messageText = ctx.message.text.trim();
-            
+
             try {
                 // Store this message ID for later deletion
                 ctx.scene.state.userMessageId = ctx.message.message_id;
-                
+
                 // Check if the message contains mentions
                 if (ctx.message.entities && ctx.message.entities.some(entity => entity.type === 'mention' || entity.type === 'text_mention')) {
                     await this.processUserMentions(ctx);
                     return;
                 }
-                
+
                 // Check if this is a manual entry in the @username,ID format
                 const isManualEntry = await this.processManualUserEntry(ctx);
                 if (isManualEntry) {
@@ -498,60 +503,60 @@ export default class Settings {
                     // Clean up prompts before leaving
                     await this.cleanupSceneMessages(ctx);
                     await ctx.scene.leave();
-                    
+
                     // Refresh the original context
                     await this.showUsersManagementMenu(ctx, false);
                     return;
                 }
-                
+
                 // No mentions, process as normal manual entry
                 // Parse user data (expects format: "id,username,first_name,last_name")
                 const parts = messageText.split(',').map(part => part.trim());
-                
+
                 if (parts.length < 1) {
-                    await ctx.reply(i18next.t('settings_invalid_user_format', { lng: language }) || 
+                    await ctx.reply(i18next.t('settings_invalid_user_format', { lng: language }) ||
                         'Invalid format. Please enter at least the user ID or mention a user with @.');
                     return;
                 }
-                
+
                 // Create user object with minimum required field (id)
                 const userId = parts[0];
                 if (!userId || isNaN(parseInt(userId))) {
-                    await ctx.reply(i18next.t('settings_invalid_user_id', { lng: language }) || 
+                    await ctx.reply(i18next.t('settings_invalid_user_id', { lng: language }) ||
                         'Invalid user ID. Please enter a valid numeric ID.');
                     return;
                 }
-                
+
                 const user = {
                     id: parseInt(userId),
                     username: parts.length > 1 ? parts[1].replace('@', '') : '',
                     first_name: parts.length > 2 ? parts[2] : '',
                     last_name: parts.length > 3 ? parts[3] : ''
                 };
-                
+
                 await this.addUserToDatabase(chatID, user);
-                
+
                 // Clean up prompts before leaving
                 await this.cleanupSceneMessages(ctx);
                 await ctx.scene.leave();
-                
+
                 // Refresh the original context
                 await this.showUsersManagementMenu(ctx, false);
-                
+
             } catch (error) {
                 console.error('Error adding user:', error);
-                await ctx.reply(i18next.t('settings_error_adding_user', { lng: language, error: error.message }) || 
+                await ctx.reply(i18next.t('settings_error_adding_user', { lng: language, error: error.message }) ||
                     'Error adding user: ' + error.message);
             }
         });
-        
+
         this.addUserScene.action('cancel_add_user', async (ctx) => {
             await ctx.answerCbQuery();
-            
+
             // Clean up prompts before leaving
             await this.cleanupSceneMessages(ctx);
             await ctx.scene.leave();
-            
+
             // Return to users management menu
             await this.showUsersManagementMenu(ctx, true);
         });
@@ -632,14 +637,14 @@ export default class Settings {
                 const chatID = utils.getChatId(ctx);
                 const fedInfo = await this.db.holosphere.getFederation(chatID);
 
-               
+
 
                 let message = 'Federation information:\n\n';
                 if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
                     message += 'This chat is not federated with any other spaces.'
                 }
                 else
-                message += `This chat (${chatID}) is federated with:\n`;
+                    message += `This chat (${chatID}) is federated with:\n`;
 
                 for (const space of fedInfo.federation) {
                     message += `- ${space}\n`;
@@ -738,15 +743,15 @@ export default class Settings {
                     .filter(d => d !== '');            // Remove empty entries
 
                 let settings = await this.getSettings(chatID);
-                
+
                 // Initialize domains array if it doesn't exist
                 if (!settings.domains) {
                     settings.domains = [];
                 }
-                
+
                 // Append new domains instead of replacing
                 settings.domains.push(...newDomains);
-                
+
                 await this.setSettings(settings);
                 ctx.reply('Domains added:\n• ' + newDomains.join('\n• '));
             } else {
@@ -1011,7 +1016,7 @@ export default class Settings {
                 const index = parseInt(ctx.match[1]);
                 const chatID = ctx.chat.id;
                 let settings = await this.getSettings(chatID);
-                
+
                 if (!settings[type] || !settings[type][index]) {
                     await ctx.reply(`Item not found in ${type}`);
                     return;
@@ -1029,44 +1034,54 @@ export default class Settings {
         // Register action handlers for settings
         this.bot.action('settings', (ctx) => this.showSettingsMenu(ctx, true));
         this.bot.action('settings_back', (ctx) => this.showSettingsMenu(ctx, true));
-        
+
         // Handle array setting actions
         this.bot.action(/settings_(values|domains|roles|purpose)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type);
         });
-        
+
+        // Add handler for users settings
+        this.bot.action('settings_users', async (ctx) => {
+            await ctx.answerCbQuery();
+            // Store the original message ID in scene state
+            ctx.scene.state = { 
+                originalMessageId: ctx.callbackQuery.message.message_id 
+            };
+            await ctx.scene.enter('users_scene');
+        });
+
         // Handle entering remove mode
         this.bot.action(/enter_remove_mode_(values|domains|roles|purpose)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type, true);
         });
-        
+
         // Handle exiting remove mode
         this.bot.action(/exit_remove_mode_(values|domains|roles|purpose)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type, false);
         });
-        
+
         // Handle removing items
         this.bot.action(/remove_(values|domains|roles|purpose)_(\d+)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             const index = parseInt(ctx.match[2]);
             const chatID = ctx.callbackQuery.message.chat.id;
-            
+
             let settings = await this.getSettings(chatID);
             if (!settings[type]) settings[type] = [];
-            
+
             settings[type].splice(index, 1);
             await this.setSettings(settings);
-            
+
             return this.showArraySettingMenu(ctx, type, true);
         });
-        
+
         // Handle adding items with explicit handlers for each type
         this.bot.action('settings_values_change', async (ctx) => {
             console.log('VALUES ADD button clicked');
@@ -1078,7 +1093,7 @@ export default class Settings {
                 return ctx.reply('Error adding values. Please try again later.');
             }
         });
-        
+
         this.bot.action('settings_domains_change', async (ctx) => {
             console.log('DOMAINS ADD button clicked');
             await ctx.answerCbQuery();
@@ -1089,7 +1104,7 @@ export default class Settings {
                 return ctx.reply('Error adding domains. Please try again later.');
             }
         });
-        
+
         this.bot.action('settings_roles_change', async (ctx) => {
             console.log('ROLES ADD button clicked');
             await ctx.answerCbQuery();
@@ -1100,7 +1115,7 @@ export default class Settings {
                 return ctx.reply('Error adding roles. Please try again later.');
             }
         });
-        
+
         this.bot.action('settings_purpose_change', async (ctx) => {
             console.log('PURPOSE ADD button clicked');
             await ctx.answerCbQuery();
@@ -1122,14 +1137,14 @@ export default class Settings {
                 ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
             }
         });
-        
+
         this.bot.action(/unfederate_(.+)/, async (ctx) => {
             await ctx.answerCbQuery();
             if (utils.isAdmin(ctx)) {
                 const chatID = ctx.callbackQuery.message.chat.id;
                 const federationID = ctx.match[1];
                 const language = await this.getLanguage(chatID);
-                
+
                 try {
                     await this.db.holosphere.unfederate(chatID.toString(), federationID);
                     await ctx.reply(i18next.t('settings_federation_removed', { lng: language, id: federationID }));
@@ -1143,14 +1158,14 @@ export default class Settings {
                 ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
             }
         });
-        
+
         this.bot.action(/unnotify_(.+)/, async (ctx) => {
             await ctx.answerCbQuery();
             if (utils.isAdmin(ctx)) {
                 const chatID = ctx.callbackQuery.message.chat.id;
                 const notifyID = ctx.match[1];
                 const language = await this.getLanguage(chatID);
-                
+
                 try {
                     // Use the direct holosphere method to remove notification instead of modifying and setting the full federation
                     await this.db.holosphere.removeNotify(chatID.toString(), notifyID);
@@ -1173,25 +1188,25 @@ export default class Settings {
                 await ctx.reply('Please provide values to add, like: /addvalues value1, value2, value3');
                 return;
             }
-            
+
             const chatID = ctx.chat.id;
             const values = text.split(/[,\n]/)
                 .map(v => v.trim())
                 .filter(v => v !== '');
-                
+
             let settings = await this.getSettings(chatID);
-            
+
             if (!settings.values) {
                 settings.values = [];
             }
-            
+
             settings.values.push(...values);
             await this.setSettings(settings);
-            
+
             await ctx.reply(`Added ${values.length} values: ${values.join(', ')}`);
             await this.showArraySettingMenu(ctx, 'values', false);
         });
-        
+
         // Add direct commands for other types
         this.bot.command('adddomains', async (ctx) => {
             const text = ctx.message.text.replace('/adddomains', '').trim();
@@ -1199,47 +1214,47 @@ export default class Settings {
                 await ctx.reply('Please provide domains to add, like: /adddomains domain1, domain2, domain3');
                 return;
             }
-            
+
             const chatID = ctx.chat.id;
             const domains = text.split(/[,\n]/)
                 .map(d => d.trim())
                 .filter(d => d !== '');
-                
+
             let settings = await this.getSettings(chatID);
-            
+
             if (!settings.domains) {
                 settings.domains = [];
             }
-            
+
             settings.domains.push(...domains);
             await this.setSettings(settings);
-            
+
             await ctx.reply(`Added ${domains.length} domains: ${domains.join(', ')}`);
             await this.showArraySettingMenu(ctx, 'domains', false);
         });
-        
+
         this.bot.command('addroles', async (ctx) => {
             const text = ctx.message.text.replace('/addroles', '').trim();
             if (!text) {
                 await ctx.reply('Please provide roles to add, like: /addroles role1, role2, role3');
                 return;
             }
-            
+
             const chatID = ctx.chat.id;
             const newRoles = text.split(/[,\n]/)
                 .map(r => r.trim())
                 .filter(r => r !== '');
-                
+
             let settings = await this.getSettings(chatID);
-            
+
             // Initialize roles array if it doesn't exist
             if (!settings.roles) {
                 settings.roles = [];
             }
-            
+
             // Append new roles instead of replacing
             settings.roles.push(...newRoles);
-            
+
             await this.setSettings(settings);
             await ctx.reply(`Added ${newRoles.length} roles: ${newRoles.join(', ')}`);
             await this.showArraySettingMenu(ctx, 'roles', false);
@@ -1249,7 +1264,7 @@ export default class Settings {
         this.bot.action(/help_add_(values|domains|roles|purpose)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
-            
+
             // Check if bot has delete_messages permission (indicating admin rights)
             let botHasAdminRights = false;
             try {
@@ -1257,21 +1272,21 @@ export default class Settings {
                 const chatId = ctx.chat.id;
                 if (chatId < 0) { // It's a group chat
                     const botMember = await ctx.telegram.getChatMember(chatId, ctx.botInfo.id);
-                    botHasAdminRights = botMember && 
+                    botHasAdminRights = botMember &&
                         (botMember.status === 'administrator' || botMember.status === 'creator') &&
                         (botMember.can_delete_messages === true);
-                    
+
                     console.log('Bot admin status:', botHasAdminRights);
                 }
             } catch (error) {
                 console.error('Error checking bot admin status:', error);
                 botHasAdminRights = false;
             }
-            
+
             if (botHasAdminRights) {
                 // Bot has admin rights - enter the appropriate scene
                 try {
-                    switch(type) {
+                    switch (type) {
                         case 'values':
                             return await ctx.scene.enter('values_scene');
                         case 'domains':
@@ -1286,10 +1301,10 @@ export default class Settings {
                     // Fall back to command instructions if scene entry fails
                 }
             }
-            
+
             // Bot doesn't have admin rights or scene entry failed - show command instructions
             let message = '';
-            
+
             if (type === 'purpose') {
                 message = 'To set your purpose, use the command:\n\n/setpurpose To create a thriving community through collaboration';
             } else {
@@ -1299,16 +1314,16 @@ export default class Settings {
                     'domains': '/adddomains',
                     'roles': '/addroles'
                 };
-                
+
                 const exampleMap = {
                     'values': 'Collaboration, Innovation, Sustainability',
                     'domains': 'Community Management, Content Creation, Development',
                     'roles': 'Facilitator, Developer, Designer'
                 };
-                
+
                 message = `To add ${type}, use the command:\n\n${commandMap[type]} ${exampleMap[type]}\n\nYou can separate multiple items with commas.`;
             }
-            
+
             await ctx.reply(message);
         });
     }
@@ -1568,7 +1583,7 @@ export default class Settings {
         }
     }
 
-    
+
 
     async setRoles(ctx) {
         const chatID = ctx.message.chat.id;
@@ -1577,17 +1592,17 @@ export default class Settings {
         if (newRoles === undefined || newRoles === null || newRoles.length === 0) {
             return ('Please specify the roles. Example: /setRoles role1 role2');
         }
-        
+
         let settings = await this.getSettings(chatID);
-        
+
         // Initialize roles array if it doesn't exist
         if (!settings.roles) {
             settings.roles = [];
         }
-        
+
         // Append new roles instead of replacing
         settings.roles.push(...newRoles);
-        
+
         await this.setSettings(settings);
         return `Added roles: ${newRoles.join(', ')}`;
     }
@@ -1614,15 +1629,15 @@ export default class Settings {
                 .filter(v => v !== '');            // Remove empty entries
 
             let settings = await this.getSettings(chatID);
-            
+
             // Initialize the array if it doesn't exist
             if (!settings.values) {
                 settings.values = [];
             }
-            
+
             // Append new values instead of replacing existing ones
             settings.values.push(...newValues);
-            
+
             await this.setSettings(settings);
             ctx.reply('Values added:\n• ' + newValues.join('\n• ')).catch(e => console.log('Error in setValues reply:', e));
         } else {
@@ -1704,10 +1719,10 @@ export default class Settings {
 
         let settings = await this.getSettings(chatID);
         const language = settings.language;
-        
+
         // Create the message with Holon ID shown at the top
         const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}`;
-        
+
         const menuMarkup = {
             reply_markup: {
                 inline_keyboard: [
@@ -1886,7 +1901,7 @@ export default class Settings {
 
         let settings = await this.getSettings(chatID);
         const language = settings.language;
-        
+
         const keyboard = {
             inline_keyboard: []
         };
@@ -1894,13 +1909,13 @@ export default class Settings {
         // Special handling for purpose (which is a string, not an array)
         if (type === 'purpose') {
             const currentPurpose = settings.purpose || '';
-            
+
             // Add header
             keyboard.inline_keyboard.push([{
                 text: `🎯 ${i18next.t('settings_purpose', { lng: language })}`,
                 callback_data: ' '
             }]);
-            
+
             // Add current purpose (if any)
             if (currentPurpose) {
                 keyboard.inline_keyboard.push([{
@@ -1913,23 +1928,23 @@ export default class Settings {
                     callback_data: ' '
                 }]);
             }
-            
+
             // Add control buttons
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_edit_purpose', { lng: language }),
                 callback_data: 'help_add_purpose'
             }]);
-        } 
+        }
         // For arrays (values, domains, roles)
         else {
             let items = settings[type] || [];
-            
+
             // Add header with count
             keyboard.inline_keyboard.push([{
                 text: `${this.getSettingIcon(type)} ${i18next.t(`settings_${type}`, { lng: language })}: ${items.length}`,
                 callback_data: ' '
             }]);
-            
+
             // Add items if there are any
             if (items && items.length > 0) {
                 items.forEach((item, index) => {
@@ -1977,7 +1992,7 @@ export default class Settings {
             text: i18next.t('settings_back_to_settings', { lng: language }),
             callback_data: 'settings_back'
         }]);
-        
+
         try {
             if (ctx.callbackQuery) {
                 await ctx.editMessageText(i18next.t('settings', { lng: language }), {
@@ -1995,8 +2010,8 @@ export default class Settings {
 
     // Helper method to get setting icon
     getSettingIcon(type) {
-    return '';
-        switch(type) {
+        return '';
+        switch (type) {
             case 'values': return '💫';
             case 'domains': return '🔍';
             case 'roles': return '👥';
@@ -2019,28 +2034,28 @@ export default class Settings {
         this.addArrayItemScene.enter(async (ctx) => {
             try {
                 console.log('Enter add_array_item_scene');
-                
+
                 // Get the type from ctx.scene.state.type or directly from state
                 const type = ctx.scene.state.type || (ctx.scene.state.state ? ctx.scene.state.state.type : null);
                 console.log('Scene type:', type);
-                
+
                 if (!type) {
                     console.error('Error: No type provided for add_array_item_scene');
                     await ctx.reply('Error: Could not determine what to add. Please try again.');
                     return ctx.scene.leave();
                 }
-                
+
                 // Store the message ID and chat ID
                 ctx.scene.state.chatId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
                 ctx.scene.state.originalMessageId = ctx.callbackQuery?.message?.message_id;
-                
+
                 // Store the type
                 ctx.scene.state.type = type;
-                
+
                 // Send prompt message
                 console.log('Sending prompt for type:', type);
                 const promptMessage = await ctx.reply(i18next.t('settings_enter_new_items', { type: i18next.t(`settings_${type}`).toLowerCase() }));
-                
+
                 // Store prompt message ID for later deletion
                 ctx.scene.state.promptMessageId = promptMessage.message_id;
             } catch (error) {
@@ -2056,15 +2071,15 @@ export default class Settings {
                 const itemsText = ctx.message.text;
                 const chatId = ctx.scene.state.chatId || ctx.chat.id;
                 const type = ctx.scene.state.type;
-                
+
                 console.log('Processing text for type:', type);
-                
+
                 if (!type) {
                     console.error('Error: No type stored in scene state');
                     await ctx.reply('Error: Could not determine what to add. Please try again.');
                     return ctx.scene.leave();
                 }
-                
+
                 let settings = await this.getSettings(chatId);
 
                 // Initialize array if it doesn't exist
@@ -2077,7 +2092,7 @@ export default class Settings {
                     .split(/[,\n]/)
                     .map(text => text.trim())
                     .filter(text => text !== '');
-                
+
                 console.log('Adding items:', newItems);
 
                 settings[type].push(...newItems);
@@ -2086,9 +2101,9 @@ export default class Settings {
                 // Delete the prompt message and user's input
                 try {
                     if (ctx.scene.state.promptMessageId) {
-                        await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => {});
+                        await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => { });
                     }
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
+                    await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
                 } catch (error) {
                     console.log('Error deleting messages:', error);
                 }
@@ -2128,7 +2143,7 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         const language = settings.language;
         const admin = settings.admin || i18next.t('settings_not_set', { lng: language });
-        
+
         // Simplify the keyboard since we no longer need the edit button
         return {
             inline_keyboard: [
@@ -2189,15 +2204,15 @@ export default class Settings {
                 if (!user.id) continue;
 
                 // Create display name (prefer username, fallback to first_name or id)
-                const displayName = user.username ? 
-                    '@' + user.username : 
+                const displayName = user.username ?
+                    '@' + user.username :
                     (user.first_name || user.id.toString());
-                
+
                 // Add check mark if this is the current admin
-                const isAdmin = currentAdmin === user.id.toString() || 
-                                currentAdmin === user.username ||
-                                currentAdmin === '@' + user.username;
-                
+                const isAdmin = currentAdmin === user.id.toString() ||
+                    currentAdmin === user.username ||
+                    currentAdmin === '@' + user.username;
+
                 keyboard.inline_keyboard.push([{
                     text: `${isAdmin ? '✅ ' : ''}${displayName}`,
                     callback_data: `admin_select_${user.id}`
@@ -2241,29 +2256,29 @@ export default class Settings {
 
         let settings = await this.getSettings(chatID);
         const language = settings.language;
-        
+
         // Get federation info
         const fedInfo = await this.db.holosphere.getFederation(chatID);
         const federatedWith = fedInfo && fedInfo.federation ? fedInfo.federation : [];
         const notifies = fedInfo && fedInfo.notify ? fedInfo.notify : [];
-        
+
         const keyboard = {
             inline_keyboard: []
         };
-        
+
         // Add header
         keyboard.inline_keyboard.push([{
             text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}`,
             callback_data: ' '
         }]);
-        
+
         // Add federated chats section if any
         if (federatedWith.length > 0) {
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_federated_with', { lng: language }),
                 callback_data: ' '
             }]);
-            
+
             for (const space of federatedWith) {
                 keyboard.inline_keyboard.push([{
                     text: `${space}`,
@@ -2279,14 +2294,14 @@ export default class Settings {
                 callback_data: ' '
             }]);
         }
-        
+
         // Add notified chats section if any
         if (notifies.length > 0) {
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_notifies', { lng: language }),
                 callback_data: ' '
             }]);
-            
+
             for (const space of notifies) {
                 keyboard.inline_keyboard.push([{
                     text: `${space}`,
@@ -2297,19 +2312,19 @@ export default class Settings {
                 }]);
             }
         }
-        
+
         // Add action buttons
         keyboard.inline_keyboard.push([{
             text: i18next.t('settings_add_federation', { lng: language }),
             callback_data: 'add_federation'
         }]);
-        
+
         // Add back button
         keyboard.inline_keyboard.push([{
             text: i18next.t('settings_back', { lng: language }),
             callback_data: 'settings_back'
         }]);
-        
+
         // Display the keyboard
         try {
             if (edit && ctx.callbackQuery) {
@@ -2370,15 +2385,15 @@ export default class Settings {
                 if (!user.id) continue;
 
                 // Create display name (prefer username, fallback to first_name or id)
-                const displayName = user.username ? 
-                    '@' + user.username : 
+                const displayName = user.username ?
+                    '@' + user.username :
                     (user.first_name || user.id.toString());
-                
+
                 // Check if user is admin
-                const isAdmin = settings.admin === user.id.toString() || 
-                               settings.admin === user.username ||
-                               settings.admin === '@' + user.username;
-                
+                const isAdmin = settings.admin === user.id.toString() ||
+                    settings.admin === user.username ||
+                    settings.admin === '@' + user.username;
+
                 // In remove mode, show delete button except for admin
                 if (removeMode) {
                     if (!isAdmin) {
@@ -2434,11 +2449,16 @@ export default class Settings {
 
         // Display the keyboard
         try {
-            const messageText = removeMode 
+            const messageText = removeMode
                 ? (i18next.t('settings_select_user_to_remove', { lng: language }) || 'Select user to remove')
                 : (i18next.t('settings_manage_users', { lng: language }) || 'Manage Users');
-                
+
             if (edit && ctx.callbackQuery) {
+                await ctx.editMessageText(messageText, {
+                    reply_markup: keyboard
+                });
+            } else if (ctx.scene && ctx.scene.state && ctx.scene.state.originalMessageId && ctx.callbackQuery) {
+                // Edit the original settings message if we're coming from there
                 await ctx.editMessageText(messageText, {
                     reply_markup: keyboard
                 });
@@ -2457,7 +2477,7 @@ export default class Settings {
         const chatID = ctx.callbackQuery.message.chat.id;
         let settings = await this.getSettings(chatID);
         const language = settings.language;
-        
+
         // Get user details
         let user = null;
         try {
@@ -2466,32 +2486,32 @@ export default class Settings {
         } catch (error) {
             console.error('Error getting user info:', error);
         }
-        
+
         if (!user) {
             await ctx.reply(i18next.t('settings_user_not_found', { lng: language }));
             return;
         }
-        
+
         // Format user info
-        const displayName = user.username ? 
-            '@' + user.username : 
+        const displayName = user.username ?
+            '@' + user.username :
             (user.first_name || user.id.toString());
-            
-        const fullName = user.first_name && user.last_name ? 
-            `${user.first_name} ${user.last_name}` : 
+
+        const fullName = user.first_name && user.last_name ?
+            `${user.first_name} ${user.last_name}` :
             (user.first_name || '');
-            
-        const isAdmin = settings.admin === user.id.toString() || 
-                        settings.admin === user.username ||
-                        settings.admin === '@' + user.username;
-        
+
+        const isAdmin = settings.admin === user.id.toString() ||
+            settings.admin === user.username ||
+            settings.admin === '@' + user.username;
+
         // Create user info message
         let userInfo = `📋 *User Info*\n\n`;
         userInfo += `ID: \`${user.id}\`\n`;
         userInfo += `Username: ${user.username ? '@' + user.username : 'Not set'}\n`;
         userInfo += `Name: ${fullName || 'Not available'}\n`;
         userInfo += `Role: ${isAdmin ? 'Admin' : 'Member'}\n`;
-        
+
         // Add back button
         const keyboard = {
             inline_keyboard: [
@@ -2501,7 +2521,7 @@ export default class Settings {
                 }]
             ]
         };
-        
+
         // Display user info
         await ctx.editMessageText(userInfo, {
             reply_markup: keyboard,
@@ -2520,24 +2540,24 @@ export default class Settings {
         const chatID = ctx.chat.id;
         const language = await this.getLanguage(chatID);
         const messageText = ctx.message.text;
-        
+
         // Handle both regular mentions and text_mentions
         const entities = ctx.message.entities || [];
         const mentions = entities.filter(entity => entity.type === 'mention' || entity.type === 'text_mention');
-        
+
         if (mentions.length === 0) {
-            await ctx.reply(i18next.t('settings_no_mentions', { lng: language }) || 
+            await ctx.reply(i18next.t('settings_no_mentions', { lng: language }) ||
                 'No user mentions found. Please mention a user with @ or enter user details manually.');
             return;
         }
-        
+
         const addedUsers = [];
         const failedUsers = [];
-        
+
         for (const entity of mentions) {
             try {
                 let user = null;
-                
+
                 // Handle different types of mentions
                 if (entity.type === 'text_mention' && entity.user) {
                     // text_mention already contains the full user object
@@ -2545,15 +2565,15 @@ export default class Settings {
                 } else if (entity.type === 'mention') {
                     // Extract username from the mention
                     const username = messageText.substring(entity.offset + 1, entity.offset + entity.length);
-                    
+
                     // First check if user exists in our database
                     user = await this.findUserInDatabase(chatID, username);
-                    
+
                     // If not in database, try to get from Telegram
                     if (!user) {
                         user = await this.lookupUserByUsername(ctx, username);
                     }
-                    
+
                     // If still not found, store just the username for manual completion
                     if (!user) {
                         // Create a minimal user object with just the username
@@ -2563,21 +2583,21 @@ export default class Settings {
                             first_name: '',
                             last_name: ''
                         };
-                        
+
                         // Ask for more info
-                        const errorMsg = await ctx.reply(i18next.t('settings_need_user_id', { lng: language, username: username }) || 
+                        const errorMsg = await ctx.reply(i18next.t('settings_need_user_id', { lng: language, username: username }) ||
                             `Could not get ID for @${username}. Please provide the numeric ID for this user in format: @${username},ID`);
                         // Store the error message ID for potential cleanup
                         if (!ctx.scene.state.errorMessageIds) {
                             ctx.scene.state.errorMessageIds = [];
                         }
                         ctx.scene.state.errorMessageIds.push(errorMsg.message_id);
-                        
+
                         failedUsers.push(username);
                         continue;
                     }
                 }
-                
+
                 // If we have a valid user with ID, add to database
                 if (user && user.id) {
                     await this.addUserToDatabase(chatID, user);
@@ -2592,48 +2612,48 @@ export default class Settings {
                 }
             }
         }
-        
+
         // Report results
         let resultMessage = '';
-        
+
         if (addedUsers.length > 0) {
-            resultMessage += i18next.t('settings_users_added', { lng: language, count: addedUsers.length, users: addedUsers.join(', ') }) || 
+            resultMessage += i18next.t('settings_users_added', { lng: language, count: addedUsers.length, users: addedUsers.join(', ') }) ||
                 `Successfully added ${addedUsers.length} user(s): @${addedUsers.join(', @')}\n`;
         }
-        
+
         if (failedUsers.length > 0) {
-            resultMessage += i18next.t('settings_users_failed', { lng: language, count: failedUsers.length, users: failedUsers.join(', ') }) || 
+            resultMessage += i18next.t('settings_users_failed', { lng: language, count: failedUsers.length, users: failedUsers.join(', ') }) ||
                 `Failed to add ${failedUsers.length} user(s): @${failedUsers.join(', @')}\n` +
                 `Please provide more details for these users.`;
         }
-        
+
         if (resultMessage) {
             const resultMsg = await ctx.reply(resultMessage);
-            
+
             // Store the result message ID for potential cleanup
             if (!ctx.scene.state.resultMessageIds) {
                 ctx.scene.state.resultMessageIds = [];
             }
             ctx.scene.state.resultMessageIds.push(resultMsg.message_id);
         }
-        
+
         // If we added all users successfully, exit the scene
         if (failedUsers.length === 0 && addedUsers.length > 0) {
             // Clean up prompts before leaving
             await this.cleanupSceneMessages(ctx);
             await ctx.scene.leave();
-            
+
             // Return to users management menu with fresh UI
             await this.showUsersManagementMenu(ctx, false);
         }
     }
-    
+
     // Find a user in our database by username
     async findUserInDatabase(chatID, username) {
         try {
             const users = await this.db.getAll(chatID + '/users');
-            return users.find(user => 
-                user.username && 
+            return users.find(user =>
+                user.username &&
                 user.username.toLowerCase() === username.toLowerCase()
             );
         } catch (error) {
@@ -2641,7 +2661,7 @@ export default class Settings {
             return null;
         }
     }
-    
+
     // Look up a user by username using Telegram API
     async lookupUserByUsername(ctx, username) {
         try {
@@ -2655,32 +2675,34 @@ export default class Settings {
                 // Continue with other methods if this fails
                 console.log('Could not get user directly, trying other methods');
             }
-            
-            // Check chat administrators
-            const chatMembers = await ctx.getChatAdministrators();
-            for (const member of chatMembers) {
-                if (member.user && member.user.username && 
-                    member.user.username.toLowerCase() === username.toLowerCase()) {
-                    return member.user;
+
+            if (ctx.chat.type != 'private') {
+                // Check chat administrators
+                const chatMembers = await ctx.getChatAdministrators();
+                for (const member of chatMembers) {
+                    if (member.user && member.user.username &&
+                        member.user.username.toLowerCase() === username.toLowerCase()) {
+                        return member.user;
+                    }
                 }
             }
-            
+
             // If user replied to a message, check if it's from the user we're looking for
             if (ctx.message && ctx.message.reply_to_message) {
                 const replyMsg = ctx.message.reply_to_message;
-                if (replyMsg.from && replyMsg.from.username && 
+                if (replyMsg.from && replyMsg.from.username &&
                     replyMsg.from.username.toLowerCase() === username.toLowerCase()) {
                     return replyMsg.from;
                 }
             }
-            
+
             // Try to find the user in the current message's sender
-            if (ctx.message && ctx.message.from && 
-                ctx.message.from.username && 
+            if (ctx.message && ctx.message.from &&
+                ctx.message.from.username &&
                 ctx.message.from.username.toLowerCase() === username.toLowerCase()) {
                 return ctx.message.from;
             }
-            
+
             // If all else fails, return null
             return null;
         } catch (error) {
@@ -2688,22 +2710,22 @@ export default class Settings {
             return null;
         }
     }
-    
+
     // Handle combined username+ID format for manual entry
     async processManualUserEntry(ctx) {
         const chatID = ctx.chat.id;
         const language = await this.getLanguage(chatID);
         const messageText = ctx.message.text.trim();
-        
+
         // Check if this is a username,ID format from a previous failed mention
         if (messageText.includes('@') && messageText.includes(',')) {
             const parts = messageText.split(',').map(p => p.trim());
             const usernameWithAt = parts[0];
-            
+
             if (usernameWithAt.startsWith('@') && parts.length > 1) {
                 const username = usernameWithAt.substring(1);
                 const userId = parts[1];
-                
+
                 if (userId && !isNaN(parseInt(userId))) {
                     // Create a user with the given username and ID
                     const user = {
@@ -2712,17 +2734,17 @@ export default class Settings {
                         first_name: parts.length > 2 ? parts[2] : username,
                         last_name: parts.length > 3 ? parts[3] : ''
                     };
-                    
+
                     try {
                         await this.addUserToDatabase(chatID, user);
                         const successMsg = await ctx.reply(i18next.t('settings_user_added', { lng: language }));
-                        
+
                         // Store the success message ID for cleanup
                         if (!ctx.scene.state.resultMessageIds) {
                             ctx.scene.state.resultMessageIds = [];
                         }
                         ctx.scene.state.resultMessageIds.push(successMsg.message_id);
-                        
+
                         return true;
                     } catch (error) {
                         await ctx.reply(i18next.t('settings_error_adding_user', { lng: language, error: error.message }));
@@ -2731,24 +2753,24 @@ export default class Settings {
                 }
             }
         }
-        
+
         return false; // Not a manual entry format
     }
-    
+
     // Add user to database
     async addUserToDatabase(chatID, user) {
         // Get current users
         let users = await this.db.getAll(chatID + '/users');
-        
+
         // Check if user already exists
         const existingUser = users.find(u => u.id && u.id.toString() === user.id.toString());
         if (existingUser) {
             return false; // (`User with ID ${user.id} already exists.`);
         }
-        
+
         await this.db.put(chatID + '/users', user);
-    
-        
+
+
         return true;
     }
 
@@ -2757,25 +2779,25 @@ export default class Settings {
         try {
             // Delete the prompt message if it exists
             if (ctx.scene.state.promptMessageId) {
-                await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => {});
+                await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => { });
             }
-            
+
             // Delete the user's message if it exists
             if (ctx.scene.state.userMessageId) {
-                await ctx.deleteMessage(ctx.scene.state.userMessageId).catch(() => {});
+                await ctx.deleteMessage(ctx.scene.state.userMessageId).catch(() => { });
             }
-            
+
             // Delete any error messages
             if (ctx.scene.state.errorMessageIds && ctx.scene.state.errorMessageIds.length > 0) {
                 for (const msgId of ctx.scene.state.errorMessageIds) {
-                    await ctx.deleteMessage(msgId).catch(() => {});
+                    await ctx.deleteMessage(msgId).catch(() => { });
                 }
             }
-            
+
             // Delete any result messages
             if (ctx.scene.state.resultMessageIds && ctx.scene.state.resultMessageIds.length > 0) {
                 for (const msgId of ctx.scene.state.resultMessageIds) {
-                    await ctx.deleteMessage(msgId).catch(() => {});
+                    await ctx.deleteMessage(msgId).catch(() => { });
                 }
             }
         } catch (error) {

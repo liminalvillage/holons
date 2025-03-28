@@ -59,7 +59,7 @@ export default class Quests {
 
         // QUEST ACTIONS ====================================================
 
-        this.bot.action(/join_quest_(.+)/, (ctx) => this.join(ctx));
+        this.bot.action(/join_quest_(.+)/, (ctx) => {return this.join(ctx);});
         this.bot.action(/appreciate_quest_(.+)/, (ctx) => this.appreciate(ctx))
         this.bot.action(/schedule_quest_(.+)/, (ctx) => this.schedule(ctx));
         this.bot.action(/cancel_quest_(.+)/, (ctx) => this.cancel(ctx));
@@ -336,15 +336,17 @@ export default class Quests {
     // ========================== ACTIONS ==========================
 
     async join(ctx) {
-        console.log("JOIN ACTION");
+        console.log("JOIN ACTION - START");
+        console.log("Callback data:", ctx.callbackQuery.data);
         try {
             let chatID = ctx.callbackQuery.data.split('_')[2];
             let messageID = ctx.callbackQuery.data.split('_')[3];
-
-
+    
             const language = await this.settings.getLanguage(chatID)
 
             let quest = await this.db.get(chatID + '/quests', messageID.toString())
+    
+          
 
             if (!quest) {
                 console.log('QUEST IS NOT FOUND');
@@ -353,9 +355,15 @@ export default class Quests {
             }
 
             if (quest.status == 'completed') {
+                console.log("Quest already completed");
                 ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID })
                     .catch(err => console.error('Error answering callback query:', err));
                 return;
+            }
+
+            // Make sure participants array exists
+            if (!quest.participants) {
+                quest.participants = [];
             }
 
             // Get the user who reacted
@@ -363,27 +371,36 @@ export default class Quests {
 
             // Check if the user has already joined the quest
             const userindex = quest.participants.findIndex(user => user.id === sender.id)
+
+            
             if (userindex > -1) {
-                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`,
-                    { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`)
+                    .catch((err) => { console.log(err) });
                 quest.participants.splice(userindex, 1);
             } else {
                 quest.participants.push(sender);
-                ctx.answerCbQuery(`${getDisplayName(sender)} has joined the quest "${quest.title}"`,
-                    { reply_to_message_id: messageID }).catch((err) => { console.log(err) });
+                ctx.answerCbQuery(`${getDisplayName(sender)} has joined the quest "${quest.title}"`)
+                    .catch((err) => { console.log(err) });
             }
 
             // Check if the user has already appreciated the quest, remove if so
+            if (!quest.appreciation) {
+                quest.appreciation = [];
+            }
             const appreciationindex = quest.appreciation.findIndex(user => user.id === sender.id)
             if (appreciationindex > -1) {
                 quest.appreciation.splice(appreciationindex, 1);
             }
+
+            // Save the updated quest to the database first
+            await this.db.put(chatID + '/quests', quest);
 
             // Update message and propagate to federated spaces
             await this.updateMessage(ctx, quest, language);
 
         } catch (error) {
             console.error('Error in join function:', error);
+            ctx.answerCbQuery("Error processing join action").catch(err => console.log(err));
         }
     }
 
@@ -751,9 +768,24 @@ export default class Quests {
     // Function to update messages for a quest
     async updateMessage(ctx, quest, language) {
         try {
+            if (!quest) {
+                console.log("ERROR: Quest is null in updateMessage");
+                return;
+            }
+            
+            if (!quest.chat || !quest.id) {
+                console.log("ERROR: Quest missing chat or id:", quest);
+                return;
+            }
+            
             if (language == undefined || language == '') {
+               
                 language = await this.settings.getLanguage(quest.chat);
             }
+
+
+            const message = await this.createMessage(quest, language);
+            const markup = this.markup(quest, language);
 
             // Update the message in original chat
             if (quest.picture) {
@@ -764,28 +796,48 @@ export default class Quests {
                     {
                         type: 'photo',
                         media: quest.picture,
-                        caption: await this.createMessage(quest, language)
+                        caption: message
                     },
-                    this.markup(quest, language)
-                ).catch((err) => { console.error('Error updating media message:', err) });
+                    markup
+                ).catch((err) => { 
+                    console.error('Error updating media message:', err);
+                    // Try alternative approach if this fails
+                    return ctx.telegram.editMessageText(
+                        quest.chat,
+                        quest.id,
+                        null,
+                        message,
+                        markup
+                    ).catch(innerErr => console.error('Alternative update also failed:', innerErr));
+                });
             }
             else {
                 await ctx.telegram.editMessageText(
                     quest.chat,
                     quest.id,
                     null,
-                    await this.createMessage(quest, language),
-                    this.markup(quest, language)
-                ).catch((err) => { console.error('Error updating text message:', err) });
+                    message,
+                    markup
+                ).catch((err) => { 
+                    console.error('Error updating text message:', err);
+                    if (err.response && err.response.description === 'Bad Request: message is not modified') {
+                        console.log("Message not modified - this is usually ok");
+                    } else {
+                        console.error("Serious error updating message:", err);
+                    }
+                });
             }
 
+    
             await this.db.put(quest.chat + '/quests', quest);
 
+        
             // Handle federated messages
-            await this.handleFederatedMessages(ctx, quest, language);
+            await this.handleFederatedMessages(ctx, quest, language).catch(err => {
+                console.error("Error handling federated messages:", err);
+            });
 
-         
-
+ 
         } catch (error) {
             console.error('Error in updateMessage:', error);
         }
@@ -1357,7 +1409,7 @@ export default class Quests {
 
     // Function to create the message for a quest 
     async createMessage(quest, language) {
-        let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(30, ' ')} \n`;
+        let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title} \n`;
 
         // Add initiator info
         message += `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)} \n`;

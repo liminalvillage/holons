@@ -26,6 +26,22 @@ export class Calendar {
         this.questIds = new Map();
         this.addCustomStartMsg();
         this.libraryInitialization();
+
+        // Add bot actions for calendar navigation and time selection
+        if (this.bot) {
+            // Calendar navigation actions
+            this.bot.action(/n_(.+)_(?:--|\+\+|\+|-|0)/, async (ctx) => {
+                const result = await this.clickButtonCalendar(ctx);
+                if (result !== -1) {
+                    // If a date was selected, show time selector
+                    const timeMarkup = this.createTimeSelector(result, true);
+                    await ctx.editMessageReplyMarkup({
+                        reply_markup: timeMarkup
+                    });
+                }
+                await ctx.answerCbQuery();
+            });
+        }
     }
     NodeTelegramBotApi = {
         editMessageReplyMarkupCalendar(date, query) {
@@ -124,13 +140,11 @@ export class Calendar {
                         this.editMessageReplyMarkupTime(date, query, false);
                         break;
                     case '0':
-                        if (this.options.close_calendar === true) {
-                            this.deleteMessage(query);
-                            this.chats.delete(query.message.chat.id);
-                        }
+                        console.log('TIME SELECTION TRIGGERED:', dayjs(code[1]).format("YYYY-MM-DD HH:mm"));
                         const require = createRequire(import.meta.url);
                         require('dayjs/locale/' + this.options.language);
                         res = dayjs(code[1]).locale(this.options.language).format(this.options.date_format);
+                        console.log('RETURNING SELECTED TIME:', res);
                 }
             }
             return res;
@@ -217,10 +231,6 @@ export class Calendar {
                         this.editMessageReplyMarkupCalendar(date, ctx);
                         break;
                     case '0':
-                        if (this.options.close_calendar === true && this.options.time_selector_mod === false) {
-                            //this.deleteMessage(ctx);
-                            this.chats.delete(ctx.callbackQuery.message.chat.id);
-                        }
                         if (this.options.time_selector_mod === true) {
                             this.editMessageReplyMarkupTime(dayjs(code[1]).format("YYYY-MM-DD HH:mm"), ctx, true);
                         }
@@ -252,10 +262,6 @@ export class Calendar {
                         this.editMessageReplyMarkupTime(date, ctx, false);
                         break;
                     case '0':
-                        if (this.options.close_calendar === true) {
-                            //this.deleteMessage(ctx);
-                            this.chats.delete(ctx.callbackQuery.message.chat.id);
-                        }
                         const require = createRequire(import.meta.url);
                         require('dayjs/locale/' + this.options.language);
                         res = dayjs(code[1]).locale(this.options.language).format(this.options.date_format);
@@ -269,7 +275,6 @@ export class Calendar {
             now.setHours(0);
             now.setMinutes(0);
             now.setSeconds(0);
-            //this.chats.set(ctx.callbackQuery.message.chat.id*100, ctx.callbackQuery.message.message_id);
             this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), ctx, language);
         },
         startTimeSelector(ctx) {

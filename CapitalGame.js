@@ -8,7 +8,7 @@ class CapitalGame {
         
         // Register commands
         this.bot.command('capital', (ctx) => this.startGame(ctx));
-        this.bot.command('join', (ctx) => this.joinGame(ctx));
+        //this.bot.command('join', (ctx) => this.joinGame(ctx));
         this.bot.command('status', (ctx) => this.handleShowStatus(ctx));
         
         // Register action handlers for inline buttons
