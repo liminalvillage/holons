@@ -79,6 +79,12 @@ export default class Quests {
 
         // Add description action handler
         this.bot.action(/description_quest_(.+)/, (ctx) => this.handleDescription(ctx));
+        
+        // Add dependency action handlers
+        this.bot.action(/dependencies_quest_(.+)/, (ctx) => this.handleDependenciesButton(ctx));
+        this.bot.action(/set_dependency_(.+)/, (ctx) => this.handleSetDependency(ctx));
+        this.bot.action(/back_from_dependencies_(.+)/, (ctx) => this.backFromDependencies(ctx));
+        this.bot.action(/remove_dependency_(.+)/, (ctx) => this.handleRemoveDependency(ctx));
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
@@ -261,6 +267,7 @@ export default class Quests {
             participants: [],
             appreciation: [],
             stoppers: [],
+            dependencies: [], // Initialize empty dependencies array
             type: type,
             status: 'ongoing',
             category: category,
@@ -951,7 +958,12 @@ export default class Quests {
             // Fourth row - description and checklist
             buttons.push([
                 Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'description_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
+            // Add new row for dependencies
+            buttons.push([
+                Markup.button.callback('🔗 ' + i18next.t('dependencies', { lng: language, defaultValue: 'Dependencies' }), 'dependencies_quest_' + quest.chat + '_' + quest.id),
             ]);
 
             // Fifth row - stop and cancel
@@ -1428,6 +1440,23 @@ export default class Quests {
             message += `| 📑 ${i18next.t('category', { lng: language })}: ${quest.category} \n`;
         }
 
+        // Add dependencies if they exist
+        if (quest.dependencies && quest.dependencies.length > 0) {
+            message += `| 🔗 ${i18next.t('dependencies', { lng: language, defaultValue: 'Dependencies' })}: `;
+            const depTitles = [];
+            for (const depId of quest.dependencies) {
+                try {
+                    const depQuest = await this.db.get(quest.chat + '/quests', depId.toString());
+                    if (depQuest) {
+                        depTitles.push(depQuest.title);
+                    }
+                } catch (error) {
+                    console.error(`Error getting dependency ${depId}:`, error);
+                }
+            }
+            message += depTitles.join(', ') + '\n';
+        }
+
         // Add checklist progress if it exists
         if (quest.checklistId && this.checklists) {
             const checklist = await this.db.get(quest.chat + '/checklists', quest.checklistId);
@@ -1767,6 +1796,200 @@ export default class Quests {
 
         } catch (error) {
             console.error('Error handling federated messages:', error);
+        }
+    }
+
+    // Add dependency action handlers
+    async handleDependenciesButton(ctx) {
+        console.log("DEPENDENCIES ACTION");
+        const chatId = ctx.callbackQuery.message.chat.id;
+        const messageId = ctx.callbackQuery.data.split('_')[3];
+        const language = await this.settings.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', messageId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            // Get all ongoing quests in this chat
+            const allQuests = await this.db.getAll(chatId + '/quests');
+            const openQuests = allQuests.filter(q => 
+                q.status === 'ongoing' && 
+                q.id !== quest.id &&
+                (q.type === 'task' || q.type === 'quest' || q.type === 'todo' || q.type === 'mission') &&
+                // Filter out quests that are already dependencies
+                !(quest.dependencies && quest.dependencies.includes(q.id))
+            );
+
+            // Create a message showing current dependencies
+            let message = `🔗 *Dependencies for "${quest.title}"*\n\n`;
+            
+            // Initialize buttons array
+            const buttons = [];
+            
+            // Show current dependencies if any
+            if (quest.dependencies && quest.dependencies.length > 0) {
+                message += '*Current dependencies:*\n';
+                
+                // Add buttons to remove existing dependencies
+                for (const depId of quest.dependencies) {
+                    const depQuest = await this.db.get(chatId + '/quests', depId.toString());
+                    if (depQuest) {
+                        message += `- ${depQuest.title}\n`;
+                        buttons.push([
+                            Markup.button.callback(`🗑️ Remove: ${depQuest.title}`, `remove_dependency_${chatId}_${messageId}_${depId}`)
+                        ]);
+                    }
+                }
+                message += '\n';
+            } else {
+                message += '*No dependencies set*\n\n';
+            }
+            
+            if (openQuests.length === 0 && (!quest.dependencies || quest.dependencies.length === 0)) {
+                await ctx.answerCbQuery('No other open tasks available to set as dependencies');
+                return;
+            }
+            
+            // Add section header for adding new dependencies if we have open quests
+            if (openQuests.length > 0) {
+                message += 'Select a task to add as a dependency:';
+                
+                // Add buttons for each open quest that's not already a dependency
+                openQuests.forEach(q => {
+                    buttons.push([
+                        Markup.button.callback(`➕ ${q.title}`, `set_dependency_${chatId}_${messageId}_${q.id}`)
+                    ]);
+                });
+            }
+            
+            // Add a back button
+            buttons.push([
+                Markup.button.callback('↩️ Back', `back_from_dependencies_${chatId}_${messageId}`)
+            ]);
+
+            // Show the message with dependency options
+            await ctx.editMessageText(message, {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard(buttons)
+            });
+
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error handling dependencies:', error);
+            await ctx.answerCbQuery('Error managing dependencies');
+        }
+    }
+
+    async handleSetDependency(ctx) {
+        console.log("SET DEPENDENCY ACTION");
+        const chatId = ctx.callbackQuery.data.split('_')[2];
+        const questId = ctx.callbackQuery.data.split('_')[3];
+        const dependencyId = ctx.callbackQuery.data.split('_')[4];
+        const language = await this.settings.getLanguage(chatId);
+
+        try {
+            // Get the quest and dependency
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            const depQuest = await this.db.get(chatId + '/quests', dependencyId.toString());
+            
+            if (!quest || !depQuest) {
+                await ctx.answerCbQuery('Quest or dependency not found');
+                return;
+            }
+
+            // Initialize dependencies array if it doesn't exist
+            if (!quest.dependencies) {
+                quest.dependencies = [];
+            }
+
+            // Check if dependency already exists
+            if (quest.dependencies.includes(dependencyId)) {
+                await ctx.answerCbQuery('This dependency already exists');
+                return;
+            }
+
+            // Add the dependency
+            quest.dependencies.push(dependencyId);
+
+            // Save the updated quest
+            await this.db.put(chatId + '/quests', quest);
+
+            // Update the original quest message in the chat
+            await this.updateMessage(ctx, quest, language);
+
+            // Show updated dependencies view
+            await this.handleDependenciesButton(ctx);
+            
+            await ctx.answerCbQuery(`Added "${depQuest.title}" as a dependency`);
+        } catch (error) {
+            console.error('Error setting dependency:', error);
+            await ctx.answerCbQuery('Error setting dependency');
+        }
+    }
+
+    async backFromDependencies(ctx) {
+        console.log("BACK FROM DEPENDENCIES");
+        const parts = ctx.callbackQuery.data.split('_');
+        const chatId = parts[3]; 
+        const messageId = parts[4];
+        const language = await this.settings.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', messageId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            // Return to the quest view with expanded buttons
+            await ctx.editMessageText(
+                await this.createMessage(quest, language),
+                {
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard(this.getExpandedButtons(quest, language))
+                }
+            );
+
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error returning from dependencies:', error);
+            await ctx.answerCbQuery('Error returning to quest');
+        }
+    }
+
+    async handleRemoveDependency(ctx) {
+        console.log("REMOVE DEPENDENCY ACTION");
+        const chatId = ctx.callbackQuery.data.split('_')[2];
+        const questId = ctx.callbackQuery.data.split('_')[3];
+        const dependencyId = ctx.callbackQuery.data.split('_')[4];
+        const language = await this.settings.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!quest || !quest.dependencies) {
+                await ctx.answerCbQuery('Quest or dependencies not found');
+                return;
+            }
+
+            // Remove the dependency
+            quest.dependencies = quest.dependencies.filter(id => id !== dependencyId);
+
+            // Save the updated quest
+            await this.db.put(chatId + '/quests', quest);
+
+            // Update the quest message
+            await this.updateMessage(ctx, quest, language);
+
+            // Show updated dependencies view
+            await this.handleDependenciesButton(ctx);
+            
+            await ctx.answerCbQuery('Dependency removed');
+        } catch (error) {
+            console.error('Error removing dependency:', error);
+            await ctx.answerCbQuery('Error removing dependency');
         }
     }
 }
