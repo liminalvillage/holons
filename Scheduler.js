@@ -560,6 +560,17 @@ class Scheduler {
 
     async scheduleOneTimeReminder(quest, ctx) {
         try {
+            // Enhanced debug logging to help diagnose issues
+            console.log(`scheduleOneTimeReminder called for quest: ${quest.id} (${quest.title})`);
+            console.log(`Quest chat ID: ${quest.chat}, When date: ${quest.when}`);
+            console.log(`Quest status: ${quest.status}, Quest type: ${quest.type}`);
+            
+            if (ctx && ctx.callbackQuery) {
+                console.log(`Context chat ID: ${ctx.callbackQuery.message.chat.id}`);
+            } else {
+                console.log(`Context does not have callbackQuery, using quest.chat: ${quest.chat}`);
+            }
+            
             if (!quest.when) {
                 console.error('Cannot schedule reminder: no when date provided for quest', quest.id);
                 return;
@@ -567,6 +578,8 @@ class Scheduler {
             
             const reminderDate = new Date(quest.when);
             const now = new Date();
+            
+            console.log(`Current time: ${now}, Reminder time: ${reminderDate}`);
             
             // If the date is in the past, don't schedule
             if (reminderDate <= now) {
@@ -616,7 +629,7 @@ class Scheduler {
                         return;
                     }
                     
-                    // Create mockCtx for the reminder
+                    // Create mockCtx for the reminder with proper telegram instance
                     const mockCtx = {
                         callbackQuery: {
                             message: {
@@ -626,14 +639,32 @@ class Scheduler {
                                 message_id: freshQuest.id
                             }
                         },
+                        telegram: this.bot.telegram,
                         reply: (text, options) => {
                             return this.bot.telegram.sendMessage(freshQuest.chat, text, options);
-                        },
-                        telegram: this.bot.telegram
+                        }
                     };
                     
-                    // Send the reminder
-                    await this.quests.remind(mockCtx, freshQuest);
+                    // Try direct message approach first
+                    try {
+                        const language = await this.settings.getLanguage(freshQuest.chat);
+                        await this.bot.telegram.sendMessage(
+                            freshQuest.chat,
+                            `🔔 Reminder: "${freshQuest.title}" is starting now!`,
+                            { reply_to_message_id: freshQuest.id }
+                        );
+                        console.log(`Direct reminder sent for quest ${freshQuest.id} in chat ${freshQuest.chat}`);
+                    } catch (directError) {
+                        console.error('Error sending direct reminder message:', directError);
+                        
+                        // Fall back to using the remind method
+                        try {
+                            await this.quests.remind(mockCtx, freshQuest);
+                            console.log(`Fallback reminder sent for quest ${freshQuest.id}`);
+                        } catch (remindError) {
+                            console.error('Error in fallback reminder method:', remindError);
+                        }
+                    }
                     
                     // Stop and remove this job after execution
                     this.jobs.delete(reminderId);
@@ -1022,14 +1053,32 @@ class Scheduler {
                                                 message_id: reminder.questId
                                             }
                                         },
+                                        telegram: this.bot.telegram,
                                         reply: (text, options) => {
                                             return this.bot.telegram.sendMessage(reminder.chatId, text, options);
-                                        },
-                                        telegram: this.bot.telegram
+                                        }
                                     };
                                     
-                                    // Send the reminder
-                                    await this.quests.remind(mockCtx, freshQuest);
+                                    // Try direct message approach first
+                                    try {
+                                        const language = await this.settings.getLanguage(reminder.chatId);
+                                        await this.bot.telegram.sendMessage(
+                                            reminder.chatId,
+                                            `🔔 Reminder: "${freshQuest.title}" is starting now!`,
+                                            { reply_to_message_id: reminder.questId }
+                                        );
+                                        console.log(`Direct reminder sent for quest ${reminder.questId} in chat ${reminder.chatId}`);
+                                    } catch (directError) {
+                                        console.error('Error sending direct reminder message:', directError);
+                                        
+                                        // Fall back to using the remind method
+                                        try {
+                                            await this.quests.remind(mockCtx, freshQuest);
+                                            console.log(`Fallback reminder sent for quest ${reminder.questId}`);
+                                        } catch (remindError) {
+                                            console.error('Error in fallback reminder method:', remindError);
+                                        }
+                                    }
                                     
                                     // Clean up after execution
                                     this.jobs.delete(reminder.id);

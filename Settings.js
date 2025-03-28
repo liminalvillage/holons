@@ -1173,7 +1173,7 @@ export default class Settings {
 
                 try {
                     await this.db.holosphere.unfederate(chatID.toString(), federationID);
-                    await ctx.reply(i18next.t('settings_federation_removed', { lng: language, id: federationID }));
+                    await ctx.reply(i18next.t('settings_federation_removed', { lng: language, federationID: federationID }));
                     await this.showFederationMenu(ctx, true);
                 } catch (error) {
                     console.error('Unfederation error:', error);
@@ -1898,7 +1898,7 @@ export default class Settings {
                     ],
                     [
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
-                        { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/RobertoValenti' }
+                        { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
                     ],
                     // Add a full-width dashboard button at the bottom
                     [

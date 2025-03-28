@@ -844,7 +844,11 @@ export default class Quests {
             
             // Send the reminder
             await reply(
-                i18next.t("taskstarting", { quest: quest, lng: language }), 
+                i18next.t("taskstarting", { 
+                    quest: quest, 
+                    lng: language, 
+                    defaultValue: `🔔 Reminder: "${quest.title}" is starting now!` 
+                }), 
                 { reply_to_message_id: replyMessageId }
             );
             
@@ -857,7 +861,11 @@ export default class Quests {
                         if (ctx.telegram) {
                             await ctx.telegram.sendMessage(
                                 fed.chat,
-                                i18next.t("taskstarting", { quest: quest, lng: language }),
+                                i18next.t("taskstarting", { 
+                                    quest: quest, 
+                                    lng: language, 
+                                    defaultValue: `🔔 Reminder: "${quest.title}" is starting now!` 
+                                }),
                                 { reply_to_message_id: fed.message_id }
                             );
                             console.log(`Sent federated reminder to chat ${fed.chat}`);
@@ -2001,7 +2009,6 @@ export default class Quests {
 
     // Add dependency action handlers
     async handleDependenciesButton(ctx) {
-        console.log("DEPENDENCIES ACTION");
         const chatId = ctx.callbackQuery.message.chat.id;
         const messageId = ctx.callbackQuery.data.split('_')[3];
         const language = await this.settings.getLanguage(chatId);
@@ -2084,7 +2091,6 @@ export default class Quests {
     }
 
     async handleSetDependency(ctx) {
-        console.log("SET DEPENDENCY ACTION");
         const chatId = ctx.callbackQuery.data.split('_')[2];
         const questId = ctx.callbackQuery.data.split('_')[3];
         const dependencyId = ctx.callbackQuery.data.split('_')[4];
