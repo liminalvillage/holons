@@ -19,7 +19,9 @@ class Scheduler {
             time_step: '30m'
         });
         
+        // Load recurring tasks and one-time reminders
         this.loadTasks();
+        this.loadReminders();
 
         // Add calendar-related commands and handlers
         this.bot.command('droprecurring', async (ctx) => this.deleteTasks(ctx));
@@ -525,10 +527,10 @@ class Scheduler {
             quest.when = selectedDate;
             await this.db.put(`${chatId}/quests`, quest);
             
-            // Set reminder
-            setTimeout(() => {
-                this.quests.remind(ctx, quest);
-            }, new Date(selectedDate).getTime() - Date.now());
+            // Schedule reminder using the scheduler instead of setTimeout
+            await this.scheduleOneTimeReminder(quest, ctx);
+            
+            console.log(`Scheduled reminder for quest ${quest.id} at ${selectedDate}`);
 
             // Get language
             const language = await this.settings.getLanguage(chatId);
@@ -553,6 +555,200 @@ class Scheduler {
             console.error('Error in time selection:', error);
             console.error(error.stack);
             await ctx.answerCbQuery('Error scheduling task');
+        }
+    }
+
+    async scheduleOneTimeReminder(quest, ctx) {
+        try {
+            if (!quest.when) {
+                console.error('Cannot schedule reminder: no when date provided for quest', quest.id);
+                return;
+            }
+            
+            const reminderDate = new Date(quest.when);
+            const now = new Date();
+            
+            // If the date is in the past, don't schedule
+            if (reminderDate <= now) {
+                console.log(`Reminder date ${reminderDate} is in the past, not scheduling`);
+                return;
+            }
+            
+            // Cancel any existing reminder for this quest
+            if (quest.reminderId) {
+                await this.cancelReminder(quest.reminderId);
+                console.log(`Cancelled existing reminder ${quest.reminderId} for quest ${quest.id}`);
+            }
+            
+            console.log(`Creating one-time reminder for quest ${quest.id} (${quest.title}) at ${reminderDate}`);
+            
+            // Create a unique ID for this reminder job
+            const reminderId = `reminder_${quest.id}_${now.getTime()}`;
+            
+            // Calculate cron expression for the specific date and time
+            const minute = reminderDate.getMinutes();
+            const hour = reminderDate.getHours();
+            const day = reminderDate.getDate();
+            const month = reminderDate.getMonth() + 1; // Months are 0-indexed in JS
+            const cronExpression = `${minute} ${hour} ${day} ${month} *`; // At specific minute/hour/day/month
+            
+            console.log(`Reminder cron expression: ${cronExpression}`);
+            
+            // Create the job
+            const job = new CronJob(cronExpression, async() => {
+                try {
+                    console.log(`Executing reminder for quest ${quest.id}`);
+                    
+                    // Get fresh copy of the quest in case it was updated
+                    const freshQuest = await this.db.get(`${quest.chat}/quests`, quest.id);
+                    if (!freshQuest) {
+                        console.log(`Quest ${quest.id} no longer exists, skipping reminder`);
+                        // Clean up the reminder record since the quest no longer exists
+                        await this.deleteReminderRecord(reminderId);
+                        return;
+                    }
+                    
+                    // Check if the quest is still scheduled (not completed or cancelled)
+                    if (freshQuest.status !== 'scheduled') {
+                        console.log(`Quest ${quest.id} is no longer scheduled (status: ${freshQuest.status}), skipping reminder`);
+                        // Clean up the reminder record since the quest is not scheduled
+                        await this.deleteReminderRecord(reminderId);
+                        return;
+                    }
+                    
+                    // Create mockCtx for the reminder
+                    const mockCtx = {
+                        callbackQuery: {
+                            message: {
+                                chat: {
+                                    id: freshQuest.chat
+                                },
+                                message_id: freshQuest.id
+                            }
+                        },
+                        reply: (text, options) => {
+                            return this.bot.telegram.sendMessage(freshQuest.chat, text, options);
+                        },
+                        telegram: this.bot.telegram
+                    };
+                    
+                    // Send the reminder
+                    await this.quests.remind(mockCtx, freshQuest);
+                    
+                    // Stop and remove this job after execution
+                    this.jobs.delete(reminderId);
+                    job.stop();
+                    
+                    // Clean up the reminder from the global table
+                    await this.deleteReminderRecord(reminderId);
+                    
+                } catch (error) {
+                    console.error('Error executing reminder:', error);
+                }
+            }, null, false, 'UTC'); // Don't start job immediately
+            
+            // Store the job
+            this.jobs.set(reminderId, job);
+            
+            // Start the job
+            job.start();
+            
+            console.log(`One-time reminder ${reminderId} scheduled for ${reminderDate}`);
+            
+            // Save the reminder ID with the quest for potential cancellation
+            quest.reminderId = reminderId;
+            await this.db.put(`${quest.chat}/quests`, quest);
+            
+            // Store reminder data in global reminders table for persistence across restarts
+            await this.saveReminderRecord({
+                id: reminderId,
+                questId: quest.id,
+                chatId: quest.chat,
+                when: reminderDate,
+                cronExpression: cronExpression,
+                title: quest.title || "Task reminder",
+                createdAt: now
+            });
+            
+            return reminderId;
+        } catch (error) {
+            console.error('Error scheduling one-time reminder:', error);
+            return null;
+        }
+    }
+
+    async saveReminderRecord(reminder) {
+        try {
+            console.log(`Saving reminder record: ${reminder.id} for quest ${reminder.questId}`);
+            // Store in the global reminders table
+            await this.db.holosphere.putGlobal('reminders', reminder);
+            
+            // Create lookup reference for easy retrieval
+            await this.db.holosphere.putGlobal('reminderslookup', {
+                id: `${reminder.chatId}_${reminder.questId}`,
+                reminderId: reminder.id
+            });
+            
+            console.log(`Reminder ${reminder.id} saved to global table`);
+            return true;
+        } catch (error) {
+            console.error('Error saving reminder record:', error);
+            return false;
+        }
+    }
+    
+    async deleteReminderRecord(reminderId) {
+        try {
+            console.log(`Deleting reminder record: ${reminderId}`);
+            
+            // Get the reminder to find associated lookup
+            const reminder = await this.db.holosphere.getGlobal('reminders', reminderId);
+            if (reminder) {
+                // Delete the lookup record if it exists
+                const lookupId = `${reminder.chatId}_${reminder.questId}`;
+                await this.db.holosphere.deleteGlobal('reminderslookup', lookupId);
+                console.log(`Deleted reminder lookup: ${lookupId}`);
+            }
+            
+            // Delete the main reminder record
+            await this.db.holosphere.deleteGlobal('reminders', reminderId);
+            console.log(`Deleted reminder record: ${reminderId}`);
+            
+            return true;
+        } catch (error) {
+            console.error(`Error deleting reminder record ${reminderId}:`, error);
+            return false;
+        }
+    }
+
+    async cancelReminder(reminderId) {
+        try {
+            if (!reminderId) {
+                console.log('No reminder ID provided to cancel');
+                return false;
+            }
+            
+            console.log(`Cancelling reminder: ${reminderId}`);
+            
+            // Get the job from the jobs map
+            const job = this.jobs.get(reminderId);
+            
+            if (job) {
+                job.stop();
+                this.jobs.delete(reminderId);
+                console.log(`Stopped running reminder job: ${reminderId}`);
+            } else {
+                console.log(`No running job found for reminder: ${reminderId}`);
+            }
+            
+            // Delete the reminder from the global table
+            await this.deleteReminderRecord(reminderId);
+            
+            console.log(`Successfully cancelled reminder: ${reminderId}`);
+            return true;
+        } catch (error) {
+            console.error(`Error cancelling reminder ${reminderId}:`, error);
+            return false;
         }
     }
 
@@ -750,6 +946,128 @@ class Scheduler {
         } catch (error) {
             console.error('Error updating recurring task:', error);
             return false;
+        }
+    }
+
+    async loadReminders() {
+        console.log('Loading saved one-time reminders...');
+        try {
+            // Get all reminders from the global reminders table
+            const reminders = await this.db.holosphere.getAllGlobal('reminders');
+            let loadedReminders = 0;
+            
+            if (reminders && reminders.length > 0) {
+                console.log(`Found ${reminders.length} reminder(s) to load`);
+                
+                for (const reminder of reminders) {
+                    try {
+                        // Check if reminder is still valid
+                        const reminderDate = new Date(reminder.when);
+                        const now = new Date();
+                        
+                        // Skip reminders in the past
+                        if (reminderDate <= now) {
+                            console.log(`Reminder ${reminder.id} for quest ${reminder.questId} has passed, removing it`);
+                            await this.deleteReminderRecord(reminder.id);
+                            continue;
+                        }
+                        
+                        // Check if quest still exists
+                        try {
+                            const quest = await this.db.get(`${reminder.chatId}/quests`, reminder.questId);
+                            
+                            // Skip if quest doesn't exist anymore or is not scheduled
+                            if (!quest) {
+                                console.log(`Quest ${reminder.questId} for reminder ${reminder.id} no longer exists, removing reminder`);
+                                await this.deleteReminderRecord(reminder.id);
+                                continue;
+                            }
+                            
+                            if (quest.status !== 'scheduled') {
+                                console.log(`Quest ${reminder.questId} is no longer scheduled (status: ${quest.status}), removing reminder ${reminder.id}`);
+                                await this.deleteReminderRecord(reminder.id);
+                                continue;
+                            }
+                            
+                            // Create a CronJob for this reminder
+                            console.log(`Scheduling reminder ${reminder.id} for quest ${reminder.questId} at ${reminderDate}`);
+                            
+                            // Create the job with the saved cron expression
+                            const job = new CronJob(reminder.cronExpression, async() => {
+                                try {
+                                    console.log(`Executing reminder for quest ${reminder.questId}`);
+                                    
+                                    // Get fresh copy of the quest
+                                    const freshQuest = await this.db.get(`${reminder.chatId}/quests`, reminder.questId);
+                                    if (!freshQuest) {
+                                        console.log(`Quest ${reminder.questId} no longer exists, skipping reminder`);
+                                        await this.deleteReminderRecord(reminder.id);
+                                        return;
+                                    }
+                                    
+                                    // Check if the quest is still scheduled
+                                    if (freshQuest.status !== 'scheduled') {
+                                        console.log(`Quest ${reminder.questId} is no longer scheduled (status: ${freshQuest.status}), skipping reminder`);
+                                        await this.deleteReminderRecord(reminder.id);
+                                        return;
+                                    }
+                                    
+                                    // Create mockCtx for the reminder
+                                    const mockCtx = {
+                                        callbackQuery: {
+                                            message: {
+                                                chat: {
+                                                    id: reminder.chatId
+                                                },
+                                                message_id: reminder.questId
+                                            }
+                                        },
+                                        reply: (text, options) => {
+                                            return this.bot.telegram.sendMessage(reminder.chatId, text, options);
+                                        },
+                                        telegram: this.bot.telegram
+                                    };
+                                    
+                                    // Send the reminder
+                                    await this.quests.remind(mockCtx, freshQuest);
+                                    
+                                    // Clean up after execution
+                                    this.jobs.delete(reminder.id);
+                                    job.stop();
+                                    await this.deleteReminderRecord(reminder.id);
+                                    
+                                } catch (error) {
+                                    console.error(`Error executing reminder ${reminder.id}:`, error);
+                                }
+                            }, null, false, 'UTC');
+                            
+                            // Store job reference
+                            this.jobs.set(reminder.id, job);
+                            
+                            // Start the job
+                            job.start();
+                            
+                            loadedReminders++;
+                            console.log(`Successfully loaded reminder ${reminder.id} for quest ${reminder.questId}`);
+                            
+                        } catch (error) {
+                            console.error(`Error verifying quest for reminder ${reminder.id}:`, error);
+                            // Clean up invalid reminders
+                            await this.deleteReminderRecord(reminder.id);
+                        }
+                        
+                    } catch (error) {
+                        console.error(`Error loading reminder ${reminder.id}:`, error);
+                    }
+                }
+            } else {
+                console.log('No saved reminders found');
+            }
+            
+            console.log(`Successfully loaded ${loadedReminders} reminder(s)`);
+            
+        } catch (error) {
+            console.error('Error loading reminders:', error);
         }
     }
 }

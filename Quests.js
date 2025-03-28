@@ -280,7 +280,8 @@ export default class Quests {
             status: 'ongoing',
             category: category,
             timeTracking: {}, // Add time tracking object to store user contributions
-            checklistId: null // Add checklist ID field
+            checklistId: null, // Add checklist ID field
+            reminderId: null // Add reminder ID field
         }
 
 
@@ -492,6 +493,12 @@ export default class Quests {
         // Handle the reaction to the quest
         if (quest.initiator.id === ctx.from.id || isAdmin(ctx.from.id, chatID)) {
             try {
+                // Cancel any scheduled reminder
+                if (quest.reminderId && this.scheduler) {
+                    console.log(`Cancelling reminder ${quest.reminderId} for quest being deleted`);
+                    await this.scheduler.cancelReminder(quest.reminderId);
+                }
+                
                 // First, check if there are federated messages for this quest
                 const federationKey = `${chatID}_${messageID}_fedmsgs`;
                 const federatedMessages = await this.db.get('federation_messages', federationKey);
@@ -587,6 +594,13 @@ export default class Quests {
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
         if (quest.initiator.id === ctx.from.id || quest.participants.findIndex(user => user.id === ctx.from.id) > -1 || isAdmin(ctx.from.id, chatID)) {
             quest.status = "completed";
+
+            // Cancel any scheduled reminder
+            if (quest.reminderId && this.scheduler) {
+                console.log(`Cancelling reminder ${quest.reminderId} for completed quest`);
+                await this.scheduler.cancelReminder(quest.reminderId);
+                delete quest.reminderId;
+            }
 
             // Create expense entries for all time tracked
             if (quest.timeTracking) {
@@ -688,6 +702,14 @@ export default class Quests {
                 return;
             }
 
+            // Cancel any existing reminder
+            if (quest.reminderId && this.scheduler) {
+                console.log(`Cancelling existing reminder ${quest.reminderId} before rescheduling`);
+                await this.scheduler.cancelReminder(quest.reminderId);
+                delete quest.reminderId;
+                await this.db.put(`${chatID}/quests`, quest);
+            }
+
             // Pass the ctx object to showCalendar
             await this.scheduler.showCalendar(ctx, questID);
             await ctx.answerCbQuery();
@@ -785,10 +807,69 @@ export default class Quests {
 
     //remind the user that a quest is due
     async remind(ctx, quest) {
-        console.log("REMIND ACTION");
-        let language = await this.settings.getLanguage(ctx.callbackQuery.message.chat.id)
-        //TODO Notify federated chats
-        ctx.reply(i18next.t("taskstarting", { quest: quest, lng: language }), { reply_to_message_id: quest.id });
+        console.log("REMIND ACTION for quest:", quest.id);
+        
+        try {
+            // Get chat ID either from context or quest
+            let chatId;
+            if (ctx.callbackQuery && ctx.callbackQuery.message) {
+                chatId = ctx.callbackQuery.message.chat.id;
+            } else if (quest.chat) {
+                chatId = quest.chat;
+            } else {
+                console.error("Cannot determine chat ID for reminder");
+                return;
+            }
+            
+            // Get language for the chat
+            const language = await this.settings.getLanguage(chatId);
+            
+            // Create reply function if not available
+            const reply = ctx.reply || (
+                (text, options) => {
+                    if (ctx.telegram) {
+                        return ctx.telegram.sendMessage(chatId, text, options);
+                    } else {
+                        console.error("No telegram instance available for sending reminder");
+                        return null;
+                    }
+                }
+            );
+            
+            // Send reminder message
+            console.log(`Sending reminder for task "${quest.title}" in chat ${chatId}`);
+            
+            // Determine which message ID to reply to
+            let replyMessageId = quest.id;
+            
+            // Send the reminder
+            await reply(
+                i18next.t("taskstarting", { quest: quest, lng: language }), 
+                { reply_to_message_id: replyMessageId }
+            );
+            
+            console.log(`Reminder sent successfully for quest ${quest.id}`);
+            
+            // If the quest has federated messages, send reminders there too
+            if (quest.federated && quest.federated.length > 0) {
+                for (const fed of quest.federated) {
+                    try {
+                        if (ctx.telegram) {
+                            await ctx.telegram.sendMessage(
+                                fed.chat,
+                                i18next.t("taskstarting", { quest: quest, lng: language }),
+                                { reply_to_message_id: fed.message_id }
+                            );
+                            console.log(`Sent federated reminder to chat ${fed.chat}`);
+                        }
+                    } catch (error) {
+                        console.error(`Error sending federated reminder to ${fed.chat}:`, error);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error in remind method:", error);
+        }
     }
 
     // Function to update messages for a quest
