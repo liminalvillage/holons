@@ -78,6 +78,11 @@ export default class Settings {
         // Federation scene
         this.federationScene = new Scenes.BaseScene('federation_scene');
         this.federationScene.enter(async (ctx) => {
+            // Store original message ID if coming from a callback query
+            if (ctx.callbackQuery) {
+                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
+            }
+            
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
 
@@ -254,28 +259,43 @@ export default class Settings {
 
         this.adminScene = new Scenes.BaseScene('admin_scene');
         this.adminScene.enter(async (ctx) => {
+            // Store original message ID if coming from a callback query
+            if (ctx.callbackQuery) {
+                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
+            }
+            
             const chatID = ctx.chat.id;
-
-            // Show admin selection keyboard with all available users
-            await this.showAdminSelectionMenu(ctx, false);
+            const language = await this.getLanguage(chatID);
+            await ctx.reply(i18next.t('settings_enter_admin_username', { lng: language }));
         });
 
         this.adminScene.action(/admin_select_(.+)/, async (ctx) => {
             await ctx.answerCbQuery();
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
-
+            
+            // Get user details
+            const users = await this.db.getAll(chatID + '/users');
+            const user = users.find(u => u.id.toString() === userId);
+            
+            if (!user) {
+                await ctx.reply('User not found');
+                return;
+            }
+            
+            // Set as admin
             let settings = await this.getSettings(chatID);
-            settings.admin = userId;
+            settings.admin = user.id.toString();
             await this.setSettings(settings);
-
+            
             // Show updated admin selection menu
             await this.showAdminSelectionMenu(ctx, true);
         });
 
         this.adminScene.action('admin_back', async (ctx) => {
             await ctx.answerCbQuery();
-            await ctx.scene.leave();
+            console.log('Returning to settings menu from admin menu');
+            // Always edit existing message when returning to settings
             await this.showSettingsMenu(ctx, true);
         });
 
@@ -311,17 +331,22 @@ export default class Settings {
 
         this.hexScene = new Scenes.BaseScene('hex_scene');
         this.hexScene.enter(async (ctx) => {
+            // Store original message ID if coming from a callback query
+            if (ctx.callbackQuery) {
+                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
+            }
+            
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
 
-            await ctx.reply(
-                i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_hex', { lng: language }).toLowerCase() })
-            ).catch(e => console.log('Error in hex scene enter:', e));
-
-            // Show hex submenu
-            await ctx.reply(i18next.t('settings_hex_title', { lng: language }), {
-                reply_markup: await this.getHexKeyboard(chatID)
-            }).catch(e => console.log('Error showing hex menu:', e));
+            // Send prompt with instructions
+            const promptMessage = await ctx.reply(
+                i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_hex', { lng: language }).toLowerCase() }) ||
+                'Please enter the new hex value:'
+            );
+            
+            // Store the prompt message ID for later deletion
+            ctx.scene.state.promptMessageId = promptMessage.message_id;
         });
         this.hexScene.on('text', async (ctx) => {
             const chatID = ctx.message.chat.id;
@@ -329,21 +354,18 @@ export default class Settings {
             let settings = await this.getSettings(chatID);
             const language = settings.language;
 
+            // Store this message ID for later deletion
+            ctx.scene.state.userMessageId = ctx.message.message_id;
+
             settings.hex = hex;
             await this.setSettings(settings);
+            
+            // Clean up prompts before leaving
+            await this.cleanupSceneMessages(ctx);
             await ctx.scene.leave();
 
-            // Delete the scene messages
-            try {
-                await ctx.deleteMessage(ctx.message.message_id);
-            } catch (e) {
-                console.log('Error deleting messages:', e);
-            }
-
-            // Show hex submenu
-            await ctx.reply(i18next.t('settings_hex_title', { lng: language }), {
-                reply_markup: await this.getHexKeyboard(chatID)
-            }).catch(e => console.log('Error showing hex menu:', e));
+            // Show hex menu (consistent with purpose pattern)
+            await this.showHexMenu(ctx, false);
         });
         this.hexScene.on('message', ctx => {
             const chatId = ctx.message.chat.id;
@@ -396,13 +418,7 @@ export default class Settings {
             await this.showUserInfo(ctx, userId);
         });
 
-        this.usersScene.action('users_back', async (ctx) => {
-            await ctx.answerCbQuery();
-            console.log('Leaving users scene and returning to settings menu');
-            await ctx.scene.leave();
-            // Always edit existing message when returning to settings
-            await this.showSettingsMenu(ctx, true);
-        });
+        // users_back handler has been removed and consolidated with unified settings_back handler
 
         // Add handlers for user management
         this.usersScene.action('add_user', async (ctx) => {
@@ -829,12 +845,11 @@ export default class Settings {
                     }).catch(e => console.log('Error in level menu:', e));
                     break;
                 case 'admin':
-                    if (utils.isAdmin(ctx)) {
-                        // Enter admin scene directly instead of showing intermediate screen
-                        await ctx.scene.enter('admin_scene');
-                    } else {
-                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
-                    }
+                    // Store the original message ID in scene state before entering admin scene
+                    ctx.scene.state = { 
+                        originalMessageId: ctx.callbackQuery.message.message_id 
+                    };
+                    await this.showAdminSelectionMenu(ctx, true);
                     break;
                 case 'users':
                     // Enter users management scene
@@ -842,8 +857,8 @@ export default class Settings {
                     break;
                 case 'hex':
                     if (utils.isAdmin(ctx)) {
-                        // Enter hex scene directly instead of showing intermediate screen
-                        await ctx.scene.enter('hex_scene');
+                        // Show hex menu instead of entering scene directly
+                        await this.showHexMenu(ctx, true);
                     } else {
                         ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
                     }
@@ -1033,7 +1048,18 @@ export default class Settings {
 
         // Register action handlers for settings
         this.bot.action('settings', (ctx) => this.showSettingsMenu(ctx, true));
-        this.bot.action('settings_back', (ctx) => this.showSettingsMenu(ctx, true));
+        
+        // Unified back button handler for all settings menus
+        this.bot.action('settings_back', async (ctx) => {
+            await ctx.answerCbQuery();
+            console.log('Going back to settings menu');
+            // Leave any active scene
+            if (ctx.scene && ctx.scene.current) {
+                await ctx.scene.leave();
+            }
+            // Always edit existing message when returning to settings
+            await this.showSettingsMenu(ctx, true);
+        });
 
         // Handle array setting actions
         this.bot.action(/settings_(values|domains|roles|purpose)$/, async (ctx) => {
@@ -1325,6 +1351,123 @@ export default class Settings {
             }
 
             await ctx.reply(message);
+        });
+
+        // Action handler for adding federation (from federation keyboard)
+        this.bot.action('add_federation', async (ctx) => {
+            await ctx.answerCbQuery();
+            // Store the original message ID in scene state
+            ctx.scene.state = { 
+                originalMessageId: ctx.callbackQuery.message.message_id 
+            };
+            await ctx.scene.enter('federation_scene');
+        });
+        
+        // Federation and hex back handlers have been removed and consolidated with unified settings_back handler
+
+        // Setup add array item scene
+        this.addArrayItemScene.enter(async (ctx) => {
+            try {
+                console.log('Enter add_array_item_scene');
+
+                // Get the type from ctx.scene.state.type or directly from state
+                const type = ctx.scene.state.type || (ctx.scene.state.state ? ctx.scene.state.state.type : null);
+                console.log('Scene type:', type);
+
+                if (!type) {
+                    console.error('Error: No type provided for add_array_item_scene');
+                    await ctx.reply('Error: Could not determine what to add. Please try again.');
+                    return ctx.scene.leave();
+                }
+
+                // Store the message ID and chat ID
+                ctx.scene.state.chatId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+                ctx.scene.state.originalMessageId = ctx.callbackQuery?.message?.message_id;
+
+                // Store the type
+                ctx.scene.state.type = type;
+
+                // Send prompt message
+                console.log('Sending prompt for type:', type);
+                const promptMessage = await ctx.reply(i18next.t('settings_enter_new_items', { type: i18next.t(`settings_${type}`).toLowerCase() }));
+
+                // Store prompt message ID for later deletion
+                ctx.scene.state.promptMessageId = promptMessage.message_id;
+            } catch (error) {
+                console.error('Error in addArrayItemScene.enter:', error);
+                await ctx.reply('An error occurred. Please try again.');
+                await ctx.scene.leave();
+            }
+        });
+
+        this.addArrayItemScene.on('text', async (ctx) => {
+            try {
+                console.log('Received text in add_array_item_scene');
+                const itemsText = ctx.message.text;
+                const chatId = ctx.scene.state.chatId || ctx.chat.id;
+                const type = ctx.scene.state.type;
+
+                console.log('Processing text for type:', type);
+
+                if (!type) {
+                    console.error('Error: No type stored in scene state');
+                    await ctx.reply('Error: Could not determine what to add. Please try again.');
+                    return ctx.scene.leave();
+                }
+
+                let settings = await this.getSettings(chatId);
+
+                // Initialize array if it doesn't exist
+                if (!settings[type]) {
+                    settings[type] = [];
+                }
+
+                // Add new items
+                const newItems = itemsText
+                    .split(/[,\n]/)
+                    .map(text => text.trim())
+                    .filter(text => text !== '');
+
+                console.log('Adding items:', newItems);
+
+                settings[type].push(...newItems);
+                await this.setSettings(settings);
+
+                // Delete the prompt message and user's input
+                try {
+                    if (ctx.scene.state.promptMessageId) {
+                        await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => { });
+                    }
+                    await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                } catch (error) {
+                    console.log('Error deleting messages:', error);
+                }
+
+                // Show updated array setting menu
+                console.log('Showing updated menu for type:', type);
+                await this.showArraySettingMenu(ctx, type, false);
+                await ctx.scene.leave();
+
+            } catch (error) {
+                console.error(`Error adding items:`, error);
+                await ctx.reply(`Error adding items. Please try again.`);
+                await ctx.scene.leave();
+            }
+        });
+
+        // Simple action handler for viewing hex (just acknowledges the click)
+        this.bot.action('hex_view', async (ctx) => {
+            await ctx.answerCbQuery();
+        });
+        
+        // Action handler for editing hex (from hex menu)
+        this.bot.action('help_add_hex', async (ctx) => {
+            await ctx.answerCbQuery();
+            // Store the original message ID in scene state
+            ctx.scene.state = { 
+                originalMessageId: ctx.callbackQuery.message.message_id 
+            };
+            await ctx.scene.enter('hex_scene');
         });
     }
 
@@ -1881,7 +2024,7 @@ export default class Settings {
                 }
                 keyboard.push(row);
             }
-            keyboard.push([{ text: i18next.t('settings_back_to_regions', { lng: language }), callback_data: 'settings_timezone' }]);
+            keyboard.push([{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_timezone' }]);
             return { inline_keyboard: keyboard };
         }
     }
@@ -1931,7 +2074,7 @@ export default class Settings {
 
             // Add control buttons
             keyboard.inline_keyboard.push([{
-                text: i18next.t('settings_edit_purpose', { lng: language }),
+                text: `✏️ ${i18next.t('settings_edit', { lng: language })}`,
                 callback_data: 'help_add_purpose'
             }]);
         }
@@ -1989,7 +2132,7 @@ export default class Settings {
 
         // Back button for all menu types
         keyboard.inline_keyboard.push([{
-            text: i18next.t('settings_back_to_settings', { lng: language }),
+            text: i18next.t('settings_back', { lng: language }),
             callback_data: 'settings_back'
         }]);
 
@@ -2227,8 +2370,8 @@ export default class Settings {
 
         // Add back button
         keyboard.inline_keyboard.push([{
-            text: i18next.t('settings_back', { lng: language }),
-            callback_data: 'admin_back'
+            text: i18next.t('settings_back', { lng: language }) || 'Back',
+            callback_data: 'settings_back'
         }]);
 
         // Display the keyboard
@@ -2444,7 +2587,7 @@ export default class Settings {
         // Add back button
         keyboard.inline_keyboard.push([{
             text: i18next.t('settings_back', { lng: language }) || 'Back',
-            callback_data: 'users_back'
+            callback_data: 'settings_back'
         }]);
 
         // Display the keyboard
@@ -2517,7 +2660,7 @@ export default class Settings {
             inline_keyboard: [
                 [{
                     text: i18next.t('settings_back', { lng: language }),
-                    callback_data: 'users_back'
+                    callback_data: 'settings_back'
                 }]
             ]
         };
@@ -2750,13 +2893,12 @@ export default class Settings {
                         await ctx.reply(i18next.t('settings_error_adding_user', { lng: language, error: error.message }));
                         return false;
                     }
+                    }
                 }
             }
         }
 
-        return false; // Not a manual entry format
-    }
-
+   
     // Add user to database
     async addUserToDatabase(chatID, user) {
         // Get current users
@@ -2802,6 +2944,68 @@ export default class Settings {
             }
         } catch (error) {
             console.log('Error cleaning up scene messages:', error);
+        }
+    }
+
+    // Add method to show hex menu - follows the purpose pattern
+    async showHexMenu(ctx, edit = false) {
+        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!chatID) {
+            console.error('Could not determine chat ID');
+            return;
+        }
+
+        let settings = await this.getSettings(chatID);
+        const language = settings.language;
+        const currentHex = settings.hex || '';
+
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        // Add header
+        keyboard.inline_keyboard.push([{
+            text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}`,
+            callback_data: ' '
+        }]);
+
+        // Add current hex (if any)
+        if (currentHex) {
+            keyboard.inline_keyboard.push([{
+                text: `• ${currentHex}`,
+                callback_data: 'hex_view'
+            }]);
+        } else {
+            keyboard.inline_keyboard.push([{
+                text: i18next.t('settings_not_set', { lng: language }),
+                callback_data: ' '
+            }]);
+        }
+
+        // Add control buttons
+        keyboard.inline_keyboard.push([{
+            text: `✏️ ${i18next.t('settings_edit', { lng: language })}`,
+            callback_data: 'help_add_hex'
+        }]);
+
+        // Back button
+        keyboard.inline_keyboard.push([{
+            text: i18next.t('settings_back', { lng: language }),
+            callback_data: 'settings_back'
+        }]);
+
+        try {
+            if (edit && ctx.callbackQuery) {
+                await ctx.editMessageText(i18next.t('settings_hex_title', { lng: language }), {
+                    reply_markup: keyboard
+                });
+            } else {
+                await ctx.reply(i18next.t('settings_hex_title', { lng: language }), {
+                    reply_markup: keyboard
+                });
+            }
+        } catch (e) {
+            console.log('Error showing hex menu:', e);
         }
     }
 }
