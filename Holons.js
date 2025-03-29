@@ -930,9 +930,9 @@ export default class Holons {
     console.log("======== createHolon function called ========");
     try {
       // Log input parameters
-      const chatID = utils.getChatId(ctx);
-      const userID = utils.getUserId(ctx);
-      const args = utils.getParameters(ctx);
+      const chatID = ctx.message.chat.id;
+      const userID = ctx.message.from.id;
+      const args = ctx.message.text.split(" ").slice(1);
       const flavor = args[0]; // First parameter is always the holon type
       
       console.log("Input parameters:");
@@ -949,125 +949,96 @@ export default class Holons {
         );
       }
       
-      // Check Holons contract status
-      let currentAddress = this.holonsContract.target;
-      console.log("Holons contract details:");
-      console.log("- Holons contract address:", currentAddress);
-      // console.log("- Contract interface:", Object.keys(this.holonsContract.interface.functions));
+      // Get contract address and check interface
+      const holonsAddress = this.holonsContract.target;
+      console.log("Holons contract address:", holonsAddress);
       
-      const holonExists = currentAddress !== '0x0000000000000000000000000000000000000000';
-      console.log("- holonExists:", holonExists);
-  
-      // Verify flavor is supported
-      console.log("Checking supported flavors...");
-      const flavors = await this.holonsContract.listFlavors();
-      console.log("- Available flavors:", flavors);
-      console.log("- Is flavor supported:", flavors.includes(flavor));
+      // Debug contract interface
+      console.log("Contract inspection:");
+      console.log("- Contract target:", this.holonsContract.target);
+      console.log("- Has interface:", !!this.holonsContract.interface);
       
-      if (!flavors.includes(flavor)) {
-        console.log("Flavor not supported, returning early");
-        return ctx.reply(`Invalid holon type "${flavor}". Available types:\n${flavors.join('\n')}`);
-      }
-  
-      // Handle existing holon case
-      if (holonExists) {
-        const isConfirmed = args.includes("confirm");
-        console.log("- isConfirmed:", isConfirmed);
+      if (this.holonsContract.interface) {
+        console.log("- Interface fragments:", this.holonsContract.interface.fragments.map(f => f.name));
         
-        if (!isConfirmed) {
-          console.log("Confirmation required, returning early");
-          return ctx.reply(
-            `⚠️ WARNING: A holon already exists at ${currentAddress}\n\n` +
-            `Creating a new ${flavor} holon will replace the existing one.\n` +
-            `All existing members, balances, and data will be inaccessible!\n\n` +
-            `To confirm, reply with /createholon ${flavor} confirm`
-          );
+        if (this.holonsContract.interface.functions) {
+          console.log("- Functions:", Object.keys(this.holonsContract.interface.functions));
+        } else {
+          console.log("- No functions property on interface");
         }
-  
-        await ctx.reply(`Creating new ${flavor} holon to replace existing one... Please wait.`);
-      } else {
-        await ctx.reply(`Creating ${flavor} holon... Please wait.`);
       }
-  
+      
       // Prepare transaction parameters
       const creatorUserId = userID.toString();
-      const holonName = chatID.toString();
-      const parameterValue = flavor.toLowerCase() === "zoned" ? 5 : 0;
+      const holonName = `chat_${Math.abs(chatID)}`;
+      const parameterValue = 5;
       
-      console.log("Preparing transaction with parameters:");
-      console.log("- flavor:", flavor);
-      console.log("- creatorUserId:", creatorUserId);
-      console.log("- holonName:", holonName);
-      console.log("- parameterValue:", parameterValue);
+      await ctx.reply(`Creating ${flavor} holon... Please wait.`);
       
-      // Check if flavor is registered correctly
+      // Use a direct approach with encoded function call
+      console.log("Creating function data manually");
+      
+      // Try using the encodeFunctionData method
+      let encodedData;
       try {
-        const flavorAddress = await this.holonsContract.newFlavor(flavor);
-        console.log("- Flavor address for", flavor, ":", flavorAddress);
-      } catch (error) {
-        console.log("Error checking flavor address:", error.message);
+        console.log("Encoding function data for newHolonBundle");
+        encodedData = this.holonsContract.interface.encodeFunctionData(
+          "newHolonBundle", 
+          [creatorUserId, holonName, parameterValue]
+        );
+        console.log("Encoded data:", encodedData);
+      } 
+      catch (encodeError) {
+        console.error("Error encoding function data:", encodeError);
       }
       
-      // Execute transaction
-      console.log("Executing transaction...");
-      const txParams = [flavor, creatorUserId, holonName, parameterValue];
-      console.log("- txParams:", txParams);
+      // Send transaction using the signer directly
+      await ctx.reply(`Submitting transaction...`);
+      const signer = this.holonsContract.runner;
       
-      // Add logs for executeTransaction internals
-      console.log("- Contract:", this.holonsContract.target);
-      console.log("- Method:", 'newHolon');
-      console.log("- Function signature:", this.holonsContract.interface.getFunction('newHolon').format());
-      
-      const createTx = await this.executeTransaction( 
-        this.holonsContract,
-        'newHolon',
-        txParams,
-        { gasLimit: 5000000 } // Increase gas limit for complex contracts
-      );
-      
-      console.log("Transaction submitted:");
-      console.log("- txHash:", createTx.hash);
-      console.log("- from:", createTx.from);
-      console.log("- to:", createTx.to);
-      console.log("- data:", createTx.data);
-      console.log("- gasLimit:", createTx.gasLimit.toString());
-  
-      // Don't wait for transaction
-      console.log("Setting up transaction notification...");
-      this.waitForTransaction(
-        createTx, 
-        ctx,
-        `${flavor} holon created on ${this.network}`
-      );
-      
-      // Provide immediate feedback
-      await ctx.reply(`Transaction submitted. You will be notified when the ${flavor} holon is created.`);
-      console.log("Immediate feedback provided to user");
-  
-      // Verify the result
-      console.log("Verifying results...");
-      const newAddress = await this.holonsContract.toAddress(holonName);
-      console.log("- New holon address from toAddress mapping:", newAddress);
-      
-      if (newAddress === '0x0000000000000000000000000000000000000000') {
-        console.log("WARNING: Holon address is zero, storage operation may have failed");
+      if (!signer) {
+        return ctx.reply(`Error: No signer attached to contract. Cannot submit transaction.`);
+      }
+
+      console.log("About to send transaction with data:", {
+        to: holonsAddress,
+        dataLength: encodedData ? encodedData.length : 0,
+        dataPreview: encodedData ? encodedData.substring(0, 66) + '...' : 'none',
+        gasLimit: 10_000_000
+      });
+
+      // Add this debugging before sending the transaction
+      console.log("Contract connection check:");
+      console.log("- Contract has runner:", !!this.holonsContract.runner);
+      console.log("- Contract has provider:", !!this.holonsContract.provider);
+
+      try {
+        await this.holonsContract.newHolonBundle.staticCall(creatorUserId, holonName, parameterValue, { gasLimit: 10_000_000 })
+      } catch (simulationError) { 
+        console.error("Simulation error:", simulationError);
       }
       
-      return ctx.reply(`Holon address: ${newAddress}`);
-  
+      const tx = await this.holonsContract.newHolonBundle(creatorUserId, holonName, parameterValue, { gasLimit: 10_000_000 })
+
+
+      console.log("Transaction submitted:", tx.hash);
+      await ctx.reply(`Transaction submitted: ${tx.hash}\nWaiting for confirmation...`);
+      
+      const receipt = await tx.wait();
+      console.log("Transaction confirmed:", receipt);
+      
+      return ctx.reply(`✅ Holon creation transaction completed!\nHash: ${tx.hash}`);
+      
     } catch (error) {
       console.error("========== ERROR CREATING HOLON ==========");
-      console.error("Error object:", error);
+      console.error("Error:", error);
       console.error("Error message:", error.message);
       
-      // Extract more error details if available
-      if (error.error) console.error("Inner error:", error.error);
-      if (error.data) console.error("Error data:", error.data);
+      // More detailed error logging
       if (error.code) console.error("Error code:", error.code);
-      if (error.transaction) console.error("Transaction details:", error.transaction);
-      if (error.receipt) console.error("Transaction receipt:", error.receipt);
+      if (error.stack) console.error("Stack trace:", error.stack);
       
-      ctx.reply(`Failed to create holon: ${error.message}`);
+      return ctx.reply(`Failed to create holon: ${error.message}`);
     }
   }
 
