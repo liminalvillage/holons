@@ -218,7 +218,6 @@ export default class Quests {
         // Get the message text and sender from the context
         let chatID = getChatId(ctx);
         let messageID = getMessageId(ctx);
-        console.log('CHAT ID: ' + chatID)
         const language = await this.settings.getLanguage(chatID)
         const text = ctx.message.text ? ctx.message.text : ctx.message.caption;
         if (type == 'any')

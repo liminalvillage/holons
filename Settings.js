@@ -300,7 +300,7 @@ export default class Settings {
         // Register back button callback at bot level
         this.bot.action('settings_back', async (ctx) => {
             await ctx.answerCbQuery();
-            console.log('Returning to settings menu');
+    
             await this.showSettingsMenu(ctx, true);
         });
 
@@ -2036,37 +2036,31 @@ export default class Settings {
             inline_keyboard: []
         };
 
+        // Create message text
+        let messageText = '';
+
         // Special handling for purpose (which is a string, not an array)
         if (type === 'purpose') {
-            const currentPurpose = settings.purpose || '';
+            const currentPurpose = settings.purpose || i18next.t('settings_not_set', { lng: language });
+            
+            // Show purpose in message text
+            messageText = `🎯 *${i18next.t('settings_purpose', { lng: language })}*\n\n${currentPurpose}`;
 
-            // Add header
-            keyboard.inline_keyboard.push([{
-                text: `🎯 ${i18next.t('settings_purpose', { lng: language })}`,
-                callback_data: ' '
-            }]);
-
-            // Add current purpose (if any)
-            if (currentPurpose) {
-                keyboard.inline_keyboard.push([{
-                    text: `• ${currentPurpose}`,
-                    callback_data: 'purpose_view'
-                }]);
-            } else {
-                keyboard.inline_keyboard.push([{
-                    text: i18next.t('settings_not_set', { lng: language }),
-                    callback_data: ' '
-                }]);
-            }
-
-            // Add control buttons
-            keyboard.inline_keyboard.push([{
-                text: `✏️ ${i18next.t('settings_edit', { lng: language })}`,
-                callback_data: 'help_add_purpose'
-            }]);
+            // Only show edit and back buttons
+            keyboard.inline_keyboard = [
+                [{
+                    text: `✏️ ${i18next.t('settings_edit', { lng: language })}`,
+                    callback_data: 'help_add_purpose'
+                }],
+                [{
+                    text: i18next.t('settings_back', { lng: language }),
+                    callback_data: 'settings_back'
+                }]
+            ];
         }
         // For arrays (values, domains, roles)
         else {
+            messageText = i18next.t('settings', { lng: language });
             let items = settings[type] || [];
 
             // Add header with count
@@ -2115,22 +2109,24 @@ export default class Settings {
                     }
                 ]);
             }
-        }
 
-        // Back button for all menu types
-        keyboard.inline_keyboard.push([{
-            text: i18next.t('settings_back', { lng: language }),
-            callback_data: 'settings_back'
-        }]);
+            // Back button for all menu types
+            keyboard.inline_keyboard.push([{
+                text: i18next.t('settings_back', { lng: language }),
+                callback_data: 'settings_back'
+            }]);
+        }
 
         try {
             if (ctx.callbackQuery) {
-                await ctx.editMessageText(i18next.t('settings', { lng: language }), {
-                    reply_markup: keyboard
+                await ctx.editMessageText(messageText, {
+                    reply_markup: keyboard,
+                    parse_mode: 'Markdown'
                 });
             } else {
-                await ctx.reply(i18next.t('settings', { lng: language }), {
-                    reply_markup: keyboard
+                await ctx.reply(messageText, {
+                    reply_markup: keyboard,
+                    parse_mode: 'Markdown'
                 });
             }
         } catch (e) {
