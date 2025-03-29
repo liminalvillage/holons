@@ -343,7 +343,7 @@ I'm your fractal community coordination protocol. Here's how to get started:
 • Build a network of communities through the holonic federation
 • Share vouchers, resources and rewards and coordinate across communities and ecosystems
 
-Need help? Contact @RobertoValenti for support.
+Need help? Contact @HolonicDAO for support.
 
 ⚠️ *Required Permissions*
 To work properly, I need to be able to:

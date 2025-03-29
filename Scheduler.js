@@ -87,6 +87,7 @@ class Scheduler {
                 
                 this.scheduleTask(task, mockCtx);
             });
+            console.log('Successfully scheduled', tasks.length, 'recurring tasks');
         }
     }
 
@@ -135,7 +136,6 @@ class Scheduler {
             console.error('Invalid task, no when or frequency:', task);
             return;
         }
-        console.log('SCHEDULING TASK', task);
         // Use the 'when' field for the first occurrence
         const cronTime = this.getCronTime(task.frequency, task.when);
         if (!cronTime) {
