@@ -78,7 +78,7 @@ export default class Quests {
         this.bot.action(/add_item_to_(.+)/, (ctx) => this.handleAddItem(ctx));
 
         // Add description action handler
-        this.bot.action(/description_quest_(.+)/, (ctx) => this.handleDescription(ctx));
+        this.bot.action(/descriptions_quest_(.+)/, (ctx) => this.handleDescription(ctx));
         
         // Add dependency action handlers
         this.bot.action(/dependencies_quest_(.+)/, (ctx) => this.handleDependenciesButton(ctx));
@@ -1132,7 +1132,7 @@ export default class Quests {
 
             // Fourth row - description and checklist
             buttons.push([
-                Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'description_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'descriptions_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
             ]);
             
@@ -1841,20 +1841,16 @@ export default class Quests {
             const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
             const currentDescription = quest.description || '';
 
-            let message = '📝 *Description*\n\n';
-            if (currentDescription) {
-                message += currentDescription + '\n\n';
-            }
-            message += 'Reply to this message to add or update the description.';
-
-            await ctx.reply(message, { parse_mode: 'Markdown' });
+            // Simplified message
+            let message = '📝 Reply with a description for this task.';
+            
+            await ctx.reply(message);
         });
 
         this.descriptionScene.on('text', async (ctx) => {
             try {
                 const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
                 if (!quest) {
-                    await ctx.reply('Quest not found');
                     return ctx.scene.leave();
                 }
 
@@ -1865,11 +1861,9 @@ export default class Quests {
                 // Update the original quest message
                 await this.updateMessage(ctx, quest);
 
-                await ctx.reply('Description updated successfully!');
                 return ctx.scene.leave();
             } catch (error) {
                 console.error('Error updating description:', error);
-                await ctx.reply('Error updating description');
                 return ctx.scene.leave();
             }
         });
@@ -1888,11 +1882,10 @@ export default class Quests {
                 return;
             }
 
-            // Enter scene for adding/viewing description
+            // Enter scene for adding description
             await ctx.scene.enter('description_scene', {
                 questId: messageId,
-                chatId: chatId,
-                currentDescription: quest.description || ''
+                chatId: chatId
             });
 
             await ctx.answerCbQuery();
