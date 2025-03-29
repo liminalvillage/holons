@@ -7,7 +7,7 @@ export default class RSVP {
         this.db = db;
 
         this.bot.command('rsvp', (ctx) => this.rsvp(ctx));
-        bot.action(/participate_(.+)/, async (ctx) => { this.participate(ctx) });
+        this.bot.action(/participate_rsvp_(.+)/, async (ctx) => { this.participate(ctx) });
     }
 
     async rsvp (ctx) {
@@ -81,7 +81,7 @@ function createList(users, messageID) {
             console.log('participated is not an object')
         }
         let name = (user.first_name ? user.first_name : user.username) + (user.second_name ? ' ' + user.second_name : '');
-        mu.push([Markup.button.callback((user.participated[messageID] ? '✅ ' : '☑️ ') + name, `participate_${user.id}`)])
+        mu.push([Markup.button.callback((user.participated[messageID] ? '✅ ' : '☑️ ') + name, `participate_rsvp_${user.id}`)])
     })
     return mu;
 

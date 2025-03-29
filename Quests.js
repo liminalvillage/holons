@@ -59,7 +59,7 @@ export default class Quests {
 
         // QUEST ACTIONS ====================================================
 
-        this.bot.action(/join_quest_(.+)/, (ctx) => {return this.join(ctx);});
+        this.bot.action(/participate_quest_(.+)/, (ctx) => {return this.join(ctx);});
         this.bot.action(/appreciate_quest_(.+)/, (ctx) => this.appreciate(ctx))
         this.bot.action(/schedule_quest_(.+)/, (ctx) => this.schedule(ctx));
         this.bot.action(/cancel_quest_(.+)/, (ctx) => this.cancel(ctx));
@@ -1114,7 +1114,7 @@ export default class Quests {
             console.log(`Using task/recurring buttons layout for quest ${quest.id}`);
             // First row - essential actions
             buttons.push([
-                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('join', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
 
@@ -1162,7 +1162,7 @@ export default class Quests {
             console.log(`Using event buttons layout for quest ${quest.id}`);
             // First row - essential actions
             buttons.push([
-                Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('join', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
 
@@ -1186,7 +1186,7 @@ export default class Quests {
             console.log(`Using proposal buttons layout for quest ${quest.id}`);
             // First row
             buttons.push([
-                Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('agree', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
             ]);
             
@@ -1203,7 +1203,7 @@ export default class Quests {
             console.log(`Using offer/request buttons layout for quest ${quest.id}`);
             // First row
             buttons.push([
-                Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('accept', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
             
@@ -1737,7 +1737,7 @@ export default class Quests {
             // Create button rows
             const buttons = [
                 [
-                    Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('join', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
@@ -1763,7 +1763,7 @@ export default class Quests {
         if (quest.type == 'event') {
             mu = Markup.inlineKeyboard([
                 [
-                    Markup.button.callback(i18next.t('join', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('join', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
@@ -1775,7 +1775,7 @@ export default class Quests {
         if (quest.type == 'proposal') {
             mu = Markup.inlineKeyboard([
                 [
-                    Markup.button.callback(i18next.t('agree', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('agree', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
@@ -1794,7 +1794,7 @@ export default class Quests {
         if (quest.type == 'offer' || quest.type == 'request') {
             mu = Markup.inlineKeyboard([
                 [
-                    Markup.button.callback(i18next.t('accept', { lng: language }), 'join_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('accept', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
