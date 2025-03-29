@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName } from './utilities.js';
+import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName, isBotAdmin } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import Users from './Users.js';
 import { Scenes } from 'telegraf';
@@ -1602,13 +1602,17 @@ export default class Quests {
                 await ctx.answerCbQuery('Checklist not found');
                 return;
             }
+            
+            // Check if bot has admin rights using the utility function
+            const canReadMessages = await isBotAdmin(ctx);
 
             // Enter scene for adding items with the necessary context
             await ctx.scene.enter('add_item_scene', {
                 checklistId: messageId,
                 chatId: chatId,
                 questId: checklist.questId,
-                questTitle: checklist.questTitle
+                questTitle: checklist.questTitle,
+                canReadMessages: canReadMessages  // Pass the message reading permission status to the scene
             });
 
             await ctx.answerCbQuery();
@@ -1844,7 +1848,9 @@ export default class Quests {
             // Simplified message
             let message = '📝 Reply with a description for this task.';
             
-            await ctx.reply(message);
+            // Store the prompt message ID for later deletion
+            const promptMessage = await ctx.reply(message);
+            ctx.scene.state.promptMessageId = promptMessage.message_id;
         });
 
         this.descriptionScene.on('text', async (ctx) => {
@@ -1854,9 +1860,30 @@ export default class Quests {
                     return ctx.scene.leave();
                 }
 
+                // Store user's message ID for cleanup
+                ctx.scene.state.userMessageId = ctx.message.message_id;
+
                 // Update the description
                 quest.description = ctx.message.text;
                 await this.db.put(ctx.scene.state.chatId + '/quests', quest);
+
+                // Check if bot has permission to delete messages
+                const botHasAdminRights = await isBotAdmin(ctx);
+                
+                // Clean up messages if the bot has admin rights
+                if (botHasAdminRights) {
+                    try {
+                        // Delete the prompt message
+                        if (ctx.scene.state.promptMessageId) {
+                            await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => { });
+                        }
+                        
+                        // Delete the user's message
+                        await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
+                    } catch (error) {
+                        console.log('Error deleting messages:', error);
+                    }
+                }
 
                 // Update the original quest message
                 await this.updateMessage(ctx, quest);

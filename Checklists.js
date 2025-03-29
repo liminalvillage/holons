@@ -1,6 +1,6 @@
 import { Markup, Scenes } from 'telegraf';
 import i18next from 'i18next';
-
+import * as utils from './utilities.js';
 class Checklists {
     constructor(bot, db) {
         this.bot = bot;
@@ -24,6 +24,7 @@ class Checklists {
         this.bot.command('checklists', (ctx) => this.showAllChecklists(ctx));
         this.bot.command('agenda', (ctx) => this.showSpecialChecklist(ctx, 'agenda', '📅'));
         this.bot.command('shopping', (ctx) => this.showSpecialChecklist(ctx, 'shopping', '🛒'));
+        this.bot.command('additem', (ctx) => this.directAddItem(ctx));
         
         // Register actions (unified for all checklist types)
         this.bot.action(/check_(.+)/, (ctx) => this.toggleCheckItem(ctx));
@@ -47,8 +48,20 @@ class Checklists {
             ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
             ctx.scene.state.chatId = ctx.callbackQuery.message.chat.id;
             
+            const canReadMessages = await utils.isBotAdmin(ctx);
+            // Send different messages based on message reading rights
+            let promptText;  
+            
+            if (canReadMessages) {
+                promptText = 'Please enter the new items (comma-separated for multiple items):';
+            }
+            else {
+                promptText =   'Holons needs rights to read user input.\n\nAlternatively, you can use the /additem command followed by a comma-separated list: \n/additem item 1, item 2, item 3';
+            }
+           
+            
             // Send prompt message
-            const promptMessage = await ctx.reply('Please enter the new items (comma-separated for multiple items):');
+            const promptMessage = await ctx.reply(promptText);
             // Store prompt message ID for later deletion
             ctx.scene.state.promptMessageId = promptMessage.message_id;
         });
@@ -75,14 +88,28 @@ class Checklists {
                     type: checklistId // For special checklists
                 };
 
-                // Add new items
-                const newItems = itemsText.split(',').map(text => ({
-                    text: text.trim(),
-                    checked: false
-                })).filter(item => item.text);
+                // Check if text starts with /additem command
+                let newItems = [];
+                if (itemsText.startsWith('/additem')) {
+                    // Extract everything after "/additem "
+                    const commandItems = itemsText.substring(9).trim();
+                    newItems = commandItems.split(',').map(text => ({
+                        text: text.trim(),
+                        checked: false
+                    })).filter(item => item.text);
+                } else {
+                    // Process as normal text input
+                    newItems = itemsText.split(',').map(text => ({
+                        text: text.trim(),
+                        checked: false
+                    })).filter(item => item.text);
+                }
 
-                checklist.items.push(...newItems);
-                await this.db.put(chatId + '/checklists', checklist);
+                // Add items only if we have valid ones
+                if (newItems.length > 0) {
+                    checklist.items.push(...newItems);
+                    await this.db.put(chatId + '/checklists', checklist);
+                }
 
                 // Delete the prompt message
                 if (promptMessageId) {
@@ -110,6 +137,12 @@ class Checklists {
                 await ctx.reply('Error adding items to checklist');
                 await ctx.scene.leave();
             }
+        });
+
+        // Also handle '/additem' command directly in the scene
+        this.addItemScene.command('additem', async (ctx) => {
+            // Simply let the text handler process it
+            // The text handler already has logic to detect and process /additem commands
         });
 
         // Setup new checklist scene
@@ -254,6 +287,120 @@ class Checklists {
         }
 
         await this.addItemsToChecklist(listName, itemWords.join(' '), ctx.chat.id, ctx);
+    }
+
+    async directAddItem(ctx) {
+        const text = ctx.message.text.trim();
+        
+        // Check command format
+        if (text === '/additem' || !text.includes(' ')) {
+            ctx.reply('Please use format: /additem [checklist-name] [item1, item2, item3]');
+            return;
+        }
+        
+        // Extract checklist name and items
+        const withoutCommand = text.substring(8).trim();
+        const firstSpace = withoutCommand.indexOf(' ');
+        
+        if (firstSpace === -1) {
+            ctx.reply('Please provide items to add. Format: /additem [checklist-name] [item1, item2, item3]');
+            return;
+        }
+        
+        const checklistId = withoutCommand.substring(0, firstSpace).trim();
+        const itemsText = withoutCommand.substring(firstSpace + 1).trim();
+        
+        if (!itemsText) {
+            ctx.reply('Please provide items to add. Format: /additem [checklist-name] [item1, item2, item3]');
+            return;
+        }
+        
+        const chatId = ctx.chat.id;
+        
+        try {
+            // Get or create the checklist
+            const checklist = await this.db.get(chatId + '/checklists', checklistId);
+            
+            if (!checklist) {
+                // Check if this might be a quest ID instead, by looking for a quest with this ID
+                const quest = await this.db.get(chatId + '/quests', checklistId);
+                
+                if (quest) {
+                    // This might be a quest's task list - check if it has a checklistId
+                    if (quest.checklistId) {
+                        // Try to get the actual checklist
+                        const questChecklist = await this.db.get(chatId + '/checklists', quest.checklistId.toString());
+                        if (questChecklist) {
+                            // Process items for the quest's checklist
+                            return await this.processChecklistItems(questChecklist, itemsText, chatId, ctx);
+                        }
+                    }
+                    
+                    // Checklist doesn't exist yet, but this is a valid quest ID
+                    // Create a new checklist for this quest
+                    const newChecklist = {
+                        id: checklistId,
+                        items: [],
+                        creator: ctx.from.id,
+                        created: new Date(),
+                        questId: quest.id,
+                        questTitle: quest.title,
+                        chatId: chatId,
+                        isTaskChecklist: true
+                    };
+                    
+                    return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
+                }
+                
+                // Create a new regular checklist
+                const newChecklist = {
+                    id: checklistId,
+                    items: [],
+                    creator: ctx.from.id,
+                    created: new Date(),
+                    type: 'checklist'
+                };
+                
+                return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
+            }
+            
+            // Process items for an existing checklist
+            return await this.processChecklistItems(checklist, itemsText, chatId, ctx);
+            
+        } catch (error) {
+            console.error('Error adding items with /additem command:', error);
+            ctx.reply('Error adding items to checklist');
+        }
+    }
+    
+    // Helper method to process items for a checklist
+    async processChecklistItems(checklist, itemsText, chatId, ctx) {
+        // Parse and add items
+        const newItems = itemsText.split(',').map(text => ({
+            text: text.trim(),
+            checked: false
+        })).filter(item => item.text);
+        
+        if (newItems.length === 0) {
+            ctx.reply('No valid items found. Please use comma-separated list: /additem [checklist-name] [item1, item2, item3]');
+            return null;
+        }
+        
+        // Add the items to the checklist
+        checklist.items.push(...newItems);
+        await this.db.put(chatId + '/checklists', checklist);
+        
+        // Show success message with added items
+        const addedItemsText = newItems.map(item => `"${item.text}"`).join(', ');
+        ctx.reply(`Added ${newItems.length} items to ${checklist.questTitle ? 'task' : 'checklist'} "${checklist.id}": ${addedItemsText}`);
+        
+        // Show the updated checklist
+        await ctx.reply(
+            `${this.getChecklistIcon(checklist.id)} ${checklist.questTitle || checklist.id.toUpperCase()}:`,
+            this.getChecklistKeyboard(checklist)
+        );
+        
+        return checklist;
     }
 
     async removeChecklistItem(ctx) {

@@ -40,13 +40,12 @@ export default class Settings {
             settings.name = ctx.message.text;
             await this.setSettings(settings);
 
-            // Delete the scene messages and user input
-            try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
-            } catch (e) {
-                console.log('Error deleting messages:', e);
-            }
+            // Store message IDs for cleanup
+            ctx.scene.state.userMessageId = ctx.message.message_id;
+            ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
+            
+            // Clean up messages
+            await this.cleanupSceneMessages(ctx);
 
             // Show settings menu with updated name
             await this.showSettingsMenu(ctx, false);
@@ -61,13 +60,12 @@ export default class Settings {
             settings.purpose = ctx.message.text;
             await this.setSettings(settings);
 
-            // Delete the scene messages and user input
-            try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
-            } catch (e) {
-                console.log('Error deleting messages:', e);
-            }
+            // Store message IDs for cleanup
+            ctx.scene.state.userMessageId = ctx.message.message_id;
+            ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
+            
+            // Clean up messages
+            await this.cleanupSceneMessages(ctx);
 
             // Show purpose with new UI
             await this.showArraySettingMenu(ctx, 'purpose', false);
@@ -104,13 +102,12 @@ export default class Settings {
                 // Federate with the provided ID
                 await this.db.holosphere.federate(chatID.toString(), federationID);
 
-                // Delete the scene messages
-                try {
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                    await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
-                } catch (e) {
-                    console.log('Error deleting messages:', e);
-                }
+                // Store message IDs for cleanup
+                ctx.scene.state.userMessageId = ctx.message.message_id;
+                ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
+                
+                // Clean up messages
+                await this.cleanupSceneMessages(ctx);
 
                 await ctx.reply(i18next.t('settings_federation_added', { lng: language, id: federationID }));
                 await ctx.scene.leave();
@@ -243,13 +240,12 @@ export default class Settings {
             settings.roles.push(...newRoles);
             await this.setSettings(settings);
 
-            // Delete the scene messages and user input
-            try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
-            } catch (e) {
-                console.log('Error deleting messages:', e);
-            }
+            // Store message IDs for cleanup
+            ctx.scene.state.userMessageId = ctx.message.message_id;
+            ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
+            
+            // Clean up messages
+            await this.cleanupSceneMessages(ctx);
 
             // Show roles with new UI
             await this.showArraySettingMenu(ctx, 'roles', false);
@@ -308,15 +304,15 @@ export default class Settings {
 
             settings.admin = admin;
             await this.setSettings(settings);
+            
+            // Store message IDs for cleanup
+            ctx.scene.state.userMessageId = ctx.message.message_id;
+            ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
+            
+            // Clean up messages
+            await this.cleanupSceneMessages(ctx);
+            
             await ctx.scene.leave();
-
-            // Delete the scene messages
-            try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
-            } catch (e) {
-                console.log('Error deleting messages:', e);
-            }
 
             // Show settings menu
             await this.showSettingsMenu(ctx, false);
@@ -1291,23 +1287,9 @@ export default class Settings {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
 
-            // Check if bot has delete_messages permission (indicating admin rights)
-            let botHasAdminRights = false;
-            try {
-                // Try to get the bot's member info from the chat
-                const chatId = ctx.chat.id;
-                if (chatId < 0) { // It's a group chat
-                    const botMember = await ctx.telegram.getChatMember(chatId, ctx.botInfo.id);
-                    botHasAdminRights = botMember &&
-                        (botMember.status === 'administrator' || botMember.status === 'creator') &&
-                        (botMember.can_delete_messages === true);
-
-                    console.log('Bot admin status:', botHasAdminRights);
-                }
-            } catch (error) {
-                console.error('Error checking bot admin status:', error);
-                botHasAdminRights = false;
-            }
+            // Check if bot has admin rights using the utility function
+            const botHasAdminRights = await utils.isBotAdmin(ctx);
+            console.log('Bot admin status:', botHasAdminRights);
 
             if (botHasAdminRights) {
                 // Bot has admin rights - enter the appropriate scene
@@ -1432,16 +1414,12 @@ export default class Settings {
 
                 settings[type].push(...newItems);
                 await this.setSettings(settings);
-
-                // Delete the prompt message and user's input
-                try {
-                    if (ctx.scene.state.promptMessageId) {
-                        await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => { });
-                    }
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                } catch (error) {
-                    console.log('Error deleting messages:', error);
-                }
+                
+                // Store message ID for cleanup
+                ctx.scene.state.userMessageId = ctx.message.message_id;
+                
+                // Clean up messages using helper method with built-in admin check
+                await this.cleanupSceneMessages(ctx);
 
                 // Show updated array setting menu
                 console.log('Showing updated menu for type:', type);
@@ -2240,16 +2218,12 @@ export default class Settings {
 
                 settings[type].push(...newItems);
                 await this.setSettings(settings);
-
-                // Delete the prompt message and user's input
-                try {
-                    if (ctx.scene.state.promptMessageId) {
-                        await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => { });
-                    }
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                } catch (error) {
-                    console.log('Error deleting messages:', error);
-                }
+                
+                // Store message ID for cleanup
+                ctx.scene.state.userMessageId = ctx.message.message_id;
+                
+                // Clean up messages using helper method with built-in admin check
+                await this.cleanupSceneMessages(ctx);
 
                 // Show updated array setting menu
                 console.log('Showing updated menu for type:', type);
@@ -2919,6 +2893,14 @@ export default class Settings {
     // Helper method to clean up scene messages
     async cleanupSceneMessages(ctx) {
         try {
+            // Check if bot has admin rights before trying to delete messages
+            const botHasAdminRights = await utils.isBotAdmin(ctx);
+            
+            if (!botHasAdminRights) {
+                console.log('Cannot clean up messages: bot lacks necessary admin rights');
+                return;
+            }
+            
             // Delete the prompt message if it exists
             if (ctx.scene.state.promptMessageId) {
                 await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => { });

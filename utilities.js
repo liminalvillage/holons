@@ -85,6 +85,38 @@ export const isAdmin = async (ctx) => {
 
 }
 
+/**
+ * Check if the bot has admin rights in the current chat
+ * @param {Object} ctx - The Telegram context object
+ * @returns {Promise<boolean>} - True if bot has admin rights (or in private chat), false otherwise
+ */
+export const isBotAdmin = async (ctx) => {
+  try {
+    const chatId = getChatId(ctx);
+    
+    // Private chats don't require admin permissions
+    if (ctx.chat?.type === 'private') {
+      return true;
+    }
+    
+    // Group chats - check if the bot is an admin
+    if (chatId < 0) {
+      const botId = ctx.botInfo.id;
+      const botMember = await ctx.telegram.getChatMember(chatId, botId);
+      
+      // Check if bot is admin/creator and has necessary permissions
+      return botMember && 
+        (botMember.status === 'administrator' || botMember.status === 'creator') &&
+        (botMember.can_delete_messages === true);
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error checking bot admin status:', error);
+    return false;
+  }
+}
+
 export const getDisplayName = (user) => {
   if (!user) return "Unknown";
   
