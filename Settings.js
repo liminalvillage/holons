@@ -265,17 +265,19 @@ export default class Settings {
             await ctx.reply(i18next.t('settings_enter_admin_username', { lng: language }));
         });
 
-        this.adminScene.action(/admin_select_(.+)/, async (ctx) => {
+        // Register admin selection callback at bot level instead of scene level
+        this.bot.action(/admin_select_(.+)/, async (ctx) => {
             await ctx.answerCbQuery();
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
+            const language = await this.getLanguage(chatID);
             
             // Get user details
             const users = await this.db.getAll(chatID + '/users');
             const user = users.find(u => u.id.toString() === userId);
             
             if (!user) {
-                await ctx.reply('User not found');
+                await ctx.reply(i18next.t('settings_user_not_found', { lng: language }));
                 return;
             }
             
@@ -284,14 +286,21 @@ export default class Settings {
             settings.admin = user.id.toString();
             await this.setSettings(settings);
             
+            // Show success message
+            const displayName = user.username ? '@' + user.username : (user.first_name || user.id.toString());
+            await ctx.answerCbQuery(i18next.t('settings_admin_updated', { 
+                lng: language, 
+                admin: displayName 
+            }));
+            
             // Show updated admin selection menu
             await this.showAdminSelectionMenu(ctx, true);
         });
 
-        this.adminScene.action('admin_back', async (ctx) => {
+        // Register back button callback at bot level
+        this.bot.action('settings_back', async (ctx) => {
             await ctx.answerCbQuery();
-            console.log('Returning to settings menu from admin menu');
-            // Always edit existing message when returning to settings
+            console.log('Returning to settings menu');
             await this.showSettingsMenu(ctx, true);
         });
 
@@ -2298,7 +2307,6 @@ export default class Settings {
         // Get all users from the chat
         let users = [];
         try {
-            // Use the Users class functionality to get chat users
             users = await this.db.getAll(chatID + '/users');
         } catch (error) {
             console.error('Error getting users:', error);
@@ -2325,13 +2333,13 @@ export default class Settings {
                     '@' + user.username :
                     (user.first_name || user.id.toString());
 
-                // Add check mark if this is the current admin
+                // Add crown emoji if this is the current admin
                 const isAdmin = currentAdmin === user.id.toString() ||
                     currentAdmin === user.username ||
                     currentAdmin === '@' + user.username;
 
                 keyboard.inline_keyboard.push([{
-                    text: `${isAdmin ? '✅ ' : ''}${displayName}`,
+                    text: `${isAdmin ? '👑 ' : ''}${displayName}`,
                     callback_data: `admin_select_${user.id}`
                 }]);
             }
@@ -2344,7 +2352,7 @@ export default class Settings {
 
         // Add back button
         keyboard.inline_keyboard.push([{
-            text: i18next.t('settings_back', { lng: language }) || 'Back',
+            text: i18next.t('settings_back', { lng: language }),
             callback_data: 'settings_back'
         }]);
 
