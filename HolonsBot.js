@@ -84,8 +84,12 @@ class HolonsBot {
         if (ctx.callbackQuery) {
           this.users.getUserInfo(ctx.callbackQuery.from, ctx.callbackQuery.message?.chat?.id);
         }
+        if (ctx.message) {
+          this.users.getUserInfo(ctx.message.from, ctx.message.chat.id);
+        }
         return next();
       });
+
 
       this.telebot.launch({ handlerTimeout: Infinity });
 
@@ -199,7 +203,7 @@ class HolonsBot {
         }
       } else {
         // Group chat - Show settings interface
-        await ctx.reply(i18next.t('groupWelcome'), { parse_mode: 'Markdown' });
+        await ctx.reply(i18next.t('groupWelcome', { lng: language }), { parse_mode: 'Markdown' });
 
         // Check if user is an admin
         try {
@@ -242,42 +246,8 @@ class HolonsBot {
     });
 
     this.telebot.command('more', async (ctx) => {
-      const moreMessage = `
-*🔄 Task Management*
-• \`/tasks\` - List all currently open tasks
-• \`/actions\` - View history of completed tasks
-
-*👥 Community Roles*
-• \`/assignroles\` - Automatically assign roles based on actions
-• \`/facilitate\` - Get advice on community issues
-
-*🛒 Shopping & Expenses*
-• \`/buy\` - Add items to shopping list (e.g. /buy milk)
-• \`/shopping\` - View clickable shopping list
-• \`/spent\` - Log expenses
-• \`/balance\` - View balance table
-
-*🌙 Lunation & Activities*
-• \`/prompt\` - See current lunation day and suggested team activity
-• \`/bigtalk\` - Engage in community-building conversations
-
-*💫 Values & Identity*
-• \`/ivalue\` - Set your personal values
-• \`/values\` - View shared values of users or community
-
-*🏷️ Content Management*
-• \`/tag\` - Save content under specific tags
-• \`/publish\` - Share content in the holosphere
-• \`/cast\` - Share content across all scales
-• \`/summarize\` - Create conversation summaries (use /done to finish)
-
-*🔄 Federation Tools*
-• \`/spoon\` - Connect chats to share actions and needs
-• \`/fork\` - Disconnect federated chats
-• \`/restart\` - Reset community settings
-
-Type \`/\` to see all available commands.`;
-      await ctx.reply(moreMessage, { parse_mode: 'Markdown' });
+      const language = await this.settings.getLanguage(ctx.chat.id) || 'en';
+      await ctx.reply(i18next.t('moreMessage', { lng: language }), { parse_mode: 'Markdown' });
     });
 
     if (process.env.MODE === 'development') {
@@ -332,6 +302,13 @@ Type \`/\` to see all available commands.`;
           console.error(`Error processing new user ${member.id}:`, error);
         }
       }
+      await this.users.saveUserAction(
+        ctx.message.from,
+        'added_bot',
+        'Added bot to group',
+        0,
+        ctx.chat.id
+      );
     });
 
     // Add new handler for replies to messages
