@@ -103,8 +103,8 @@ class HolonsBot {
 
       this.setupTelegramCommands();
       this.setupTelegramHandlers();
-
       this.handleProcessEvents();
+
     } catch (error) {
       console.error('Error initializing:', error);
     }
@@ -165,30 +165,30 @@ class HolonsBot {
         try {
           // Check if the user already has a profile
           const userExists = await this.db.get('users', ctx.from.id);
-
+          const language = await this.settings.getLanguage(ctx.chat.id) || 'en';
           if (userExists) {
             await ctx.reply(
-              "Welcome back! What would you like to do?",
+              i18next.t('personalWelcomeBack', { lng: language }),
               {
                 reply_markup: {
                   inline_keyboard: [
                     //[{ text: i18next.t('personalWelcomeButtons.updateProfile'), callback_data: "start_personal_wizard" }],
-                    [{ text: i18next.t('personalWelcomeButtons.configureSettings'), callback_data: "settings_menu" }],
-                    [{ text: i18next.t('personalWelcomeButtons.viewDashboard'), url: `https://dashboard.holons.io/${chatID}/dashboard` }]
+                    [{ text: i18next.t('personalWelcomeButtons.configureSettings', { lng: language }), callback_data: "settings_menu" }],
+                    [{ text: i18next.t('personalWelcomeButtons.viewDashboard', { lng: language }), url: `https://dashboard.holons.io/${chatID}/dashboard` }]
                   ]
                 }
               }
             );
           } else {
             // New user - start onboarding wizard
-            await ctx.reply(i18next.t('personalWelcome'), {
+            await ctx.reply(i18next.t('personalWelcome', { lng: language }), {
               parse_mode: 'Markdown',
               reply_markup: {
                 inline_keyboard: [
                   //[{ text: i18next.t('personalWelcomeButtons.updateProfile'), callback_data: "start_personal_wizard" }],
-                  [{ text: i18next.t('personalWelcomeButtons.configureSettings'), callback_data: "settings_menu" }],
+                  [{ text: i18next.t('personalWelcomeButtons.configureSettings', { lng: language }), callback_data: "settings_menu" }],
 
-                  [{ text: i18next.t('personalWelcomeButtons.viewDashboard'), url: `https://dashboard.holons.io/${chatID}/dashboard` }]
+                  [{ text: i18next.t('personalWelcomeButtons.viewDashboard', { lng: language }), url: `https://dashboard.holons.io/${chatID}/dashboard` }]
                 ]
               }
             });
@@ -290,71 +290,25 @@ Type \`/\` to see all available commands.`;
         console.log(`Chosen product: ${ctx.chosenInlineResult.result_id}`);
       });
     }
-
-    this.telebot.command('fullrequest', async (ctx) => request.request('fullrequest', ctx, this.db));
-    this.telebot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo', 'fiorino'], async (ctx) => this.quests.sendAppreciation(ctx));
-
-
   }
 
   setupTelegramHandlers() {
     console.log("=== Setting up Telegram handlers ===");
+    
     this.telebot.on('photo', async (ctx) => {
       await this.handlePhoto(ctx);
     });
 
     // Handler for new chat members
     this.telebot.on('new_chat_members', async (ctx) => {
+ 
       const newMembers = ctx.message.new_chat_members;
-
       // Check if the bot itself was added to the group
       const botWasAdded = newMembers.some(member => member.id === ctx.botInfo.id);
 
       if (botWasAdded) {
-        const welcomeMessage = `
-🌟 *Welcome to Holons!* 🌟
-
-I'm your fractal community coordination protocol. Here's how to get started:
-
-1. Type \`/\` to see available commands
-2. Type \`/join\` or complete a task to start participating
-3. Type \`/dashboard\` to access your dashboard
-
-
-*🎯 Core Commands*
-• \`/settings\` - Configure your group's settings, federation and more
-• \`/task\` - Create a new task (e.g. /task do the dishes)
-• \`/appreciate\` - Send appreciation (e.g. /appreciate @laura for cooking)
-• \`/request\` - Make a request (e.g. /request foot massage)
-• \`/offer\` - Share what you can offer (e.g. /offer yoga sessions)
-• \`/status\` - View community rankings
-• \`/board\` - See all requests and offers
-
-*💰 Value Tracking / Mutual Credit System*
-• \`/spent\` - Log expenses (e.g. /spent 10 euros shopping)
-• \`/balance\` - View community balance (e.g. /balance euros)
-
-*🌐 Dashboard & Participation*
-• Complete tasks to earn points and rewards
-• Access your dashboard by typing /dashboard
-
-*🤝 Holonic Federation*
-• Connect with other holons to share information and rewards
-• Build a network of communities through the holonic federation
-• Share vouchers, resources and rewards and coordinate across communities and ecosystems
-
-Need help? Contact @HolonicDAO for support.
-
-⚠️ *Required Permissions*
-To work properly, I need to be able to:
-• Read messages
-• Delete messages
-• Pin messages
-
-Please add me as an admin with these permissions.`;
-
-
-        await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+        const language = await this.settings.getLanguage(ctx.chat.id) || 'en';
+        await ctx.reply(i18next.t('welcomeMessage', { lng: language }));
       }
 
       // Add all new members to the database using Users module
@@ -386,6 +340,10 @@ Please add me as an admin with these permissions.`;
       if (ctx.message.reply_to_message) {
         await this.handleReply(ctx);
       }
+    });
+
+    this.telebot.on('callback_query', async (ctx) => {
+      await this.handleCallbackQuery(ctx);
     });
   }
 
@@ -504,22 +462,6 @@ Please add me as an admin with these permissions.`;
     discordbot.login(discordtoken);
   }
 
-
-  handleCommand(msg) {
-    const commandBody = msg.content.substring(process.env.PREFIX.length).split(' ');
-    const command = commandBody[0];
-    switch (command) {
-      case 'quest':
-        this.quests.quest('quest', this.discord2telegram(msg), this.db);
-        break;
-      case 'task':
-        console.log('task');
-        break;
-      // Add more cases as needed
-      default:
-        console.log(`Unknown command: ${command}`);
-    }
-  }
 
   discord2telegram(interaction) {
     const ctx = {

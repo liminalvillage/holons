@@ -57,6 +57,9 @@ export default class Quests {
         this.bot.command(['richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'], async (ctx) => this.quest('request', ctx))
         this.bot.command(['offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'], async (ctx) => this.quest('offer', ctx))
 
+        //Send  Appreciation
+        this.bot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo', 'fiorino'], async (ctx) => this.sendAppreciation(ctx));
+
         // QUEST ACTIONS ====================================================
 
         this.bot.action(/participate_quest_(.+)/, (ctx) => {return this.join(ctx);});
@@ -107,21 +110,6 @@ export default class Quests {
         ctx.reply('Quest deleted')
     }
 
-    // Find the method that handles calendar date selection and add:
-    async handleCalendarDate(ctx, date) {
-        // ... existing date handling code ...
-
-        // If this is a recurring task, update its schedule
-        if (ctx.quest?.type === 'recurring') {
-            await this.scheduler?.updateTaskSchedule(
-                ctx.quest.chat,
-                ctx.quest.title,
-                date
-            );
-        }
-
-        // ... rest of the date handling code ...
-    }
 
     // this.bot.on('location', async (ctx) => this.location(ctx));
     // async location(ctx) {
@@ -177,9 +165,6 @@ export default class Quests {
         this.listtype(ctx, type)
     }
 
-    async listanytype(ctx) {
-
-    }
 
     async listtype(ctx) {
         let type = ctx.message.text.split(' ')[0].replace('/', '');
@@ -372,8 +357,6 @@ export default class Quests {
 
             let quest = await this.db.get(chatID + '/quests', messageID.toString())
     
-          
-
             if (!quest) {
                 console.log('QUEST IS NOT FOUND');
                 ctx.answerCbQuery('Quest not found').catch(err => console.error('Error answering callback query:', err));
