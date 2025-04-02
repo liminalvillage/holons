@@ -176,72 +176,15 @@ class HoloSphere {
         }
 
         try {
-            const user = this.gun.user();
-            
+            let user = null;
             if (password) {
-                try {
-                    await new Promise((resolve, reject) => {
-                        user.auth(this.userName(holon), password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else resolve();
-                        });
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(holon), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
                     });
-                } catch (loginError) {
-                    // If authentication fails, try to create user and then authenticate
-                    try {
-                        await new Promise((resolve, reject) => {
-                            user.create(this.userName(holon), password, (ack) => {
-                                if (ack.err) {
-                                    // Don't reject if the user is already being created or already exists
-                                    if (ack.err.includes('already being created') || 
-                                        ack.err.includes('already created')) {
-                                        console.warn(`User creation note: ${ack.err}, continuing...`);
-                                        // Try to authenticate again
-                                        user.auth(this.userName(holon), password, (authAck) => {
-                                            if (authAck.err) {
-                                                if (authAck.err.includes('already being created') || 
-                                                    authAck.err.includes('already created')) {
-                                                    console.warn(`Auth note: ${authAck.err}, continuing...`);
-                                                    resolve(); // Continue anyway
-                                                } else {
-                                                    reject(new Error(authAck.err));
-                                                }
-                                            } else {
-                                                resolve();
-                                            }
-                                        });
-                                    } else {
-                                        reject(new Error(ack.err));
-                                    }
-                                } else {
-                                    user.auth(this.userName(holon), password, (authAck) => {
-                                        if (authAck.err) reject(new Error(authAck.err));
-                                        else resolve();
-                                    });
-                                }
-                            });
-                        });
-                    } catch (createError) {
-                        // Try one last authentication
-                        try {
-                            await new Promise((resolve, reject) => {
-                                setTimeout(() => {
-                                    user.auth(this.userName(holon), password, (ack) => {
-                                        if (ack.err) {
-                                            // Continue even if auth fails at this point
-                                            console.warn(`Final auth attempt note: ${ack.err}, continuing with limited functionality`);
-                                            resolve();
-                                        } else {
-                                            resolve();
-                                        }
-                                    });
-                                }, 100); // Short delay before retry
-                            });
-                        } catch (finalAuthError) {
-                            console.warn('All authentication attempts failed, continuing with limited functionality');
-                        }
-                    }
-                }
+                });
             }
 
             return new Promise((resolve, reject) => {
@@ -293,13 +236,11 @@ class HoloSphere {
                         }
                     };
                     
-                    if (password) {
-                        // For private data, use the authenticated user's holon
-                        user.get('private').get(lens).get(data.id).put(payload, putCallback);
-                    } else {
-                        // For public data, use the regular path
-                        this.gun.get(this.appname).get(holon).get(lens).get(data.id).put(payload, putCallback);
-                    }
+                    const dataPath = password ? 
+                        user.get('private').get(lens).get(data.id) :
+                        this.gun.get(this.appname).get(holon).get(lens).get(data.id);
+
+                    dataPath.put(payload, putCallback);
                 } catch (error) {
                     reject(error);
                 }
@@ -338,30 +279,15 @@ class HoloSphere {
         }
 
         try {
-            const user = this.gun.user();
-            
+            let user = null;
             if (password) {
-                try {
-                    await new Promise((resolve, reject) => {
-                        user.auth(this.userName(holon), password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else resolve();
-                        });
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(holon), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
                     });
-                } catch (loginError) {
-                    // If authentication fails, try to create user and then authenticate
-                    await new Promise((resolve, reject) => {
-                        user.create(this.userName(holon), password, (ack) => {
-                            if (ack.err) reject(new Error(ack.err));
-                            else {
-                                user.auth(this.userName(holon), password, (authAck) => {
-                                    if (authAck.err) reject(new Error(authAck.err));
-                                    else resolve();
-                                });
-                            }
-                        });
-                    });
-                }
+                });
             }
 
             return new Promise((resolve) => {
@@ -476,13 +402,11 @@ class HoloSphere {
                     }
                 };
 
-                if (password) {
-                    // For private data, use the authenticated user's holon
-                    user.get('private').get(lens).get(key).once(handleData);
-                } else {
-                    // For public data, use the regular path
-                    this.gun.get(this.appname).get(holon).get(lens).get(key).once(handleData);
-                }
+                const dataPath = password ? 
+                    user.get('private').get(lens).get(key) :
+                    this.gun.get(this.appname).get(holon).get(lens).get(key);
+
+                dataPath.once(handleData);
             });
         } catch (error) {
             console.error('Error in get:', error);
@@ -502,7 +426,7 @@ class HoloSphere {
 
         console.log(`getNodeBySoul: Accessing soul ${soul}`);
 
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             try {
                 const ref = this.getNodeRef(soul);
                 ref.once((data) => {
@@ -515,7 +439,7 @@ class HoloSphere {
                 });
             } catch (error) {
                 console.error(`getNodeBySoul error:`, error);
-                resolve(null);
+                reject(error);
             }
         });
     }
@@ -690,30 +614,29 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate holon
-            const user = this.gun.user();
+            let user = null;
+            if (password) {
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(holon), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
+                    });
+                });
+            }
 
-            // Delete data from holon
             return new Promise((resolve, reject) => {
-                if (password) {
-                    // For private data, use the authenticated user's holon
-                    user.get('private').get(lens).get(key).put(null, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve(true);
-                        }
-                    });
-                } else {
-                    // For public data, use the regular path
-                    this.gun.get(this.appname).get(holon).get(lens).get(key).put(null, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve(true);
-                        }
-                    });
-                }
+                const dataPath = password ? 
+                    user.get('private').get(lens).get(key) :
+                    this.gun.get(this.appname).get(holon).get(lens).get(key);
+
+                dataPath.put(null, ack => {
+                    if (ack.err) {
+                        reject(new Error(ack.err));
+                    } else {
+                        resolve(true);
+                    }
+                });
             });
         } catch (error) {
             console.error('Error in delete:', error);
@@ -735,8 +658,16 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate holon
-            const user = this.gun.user();
+            let user = null;
+            if (password) {
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(holon), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
+                    });
+                });
+            }
 
             return new Promise((resolve) => {
                 let deletionPromises = [];
@@ -833,18 +764,22 @@ class HoloSphere {
             throw new Error('getNode: Missing required parameters');
         }
 
-        return new Promise((resolve) => {
-            this.gun.get(this.appname)
-                .get(holon)
-                .get(lens)
-                .get(key)
-                .once((data) => {
-                    if (!data) {
-                        resolve(null);
-                        return;
-                    }
-                    resolve(data);  // Return the data directly
-                });
+        return new Promise((resolve, reject) => {
+            try {
+                this.gun.get(this.appname)
+                    .get(holon)
+                    .get(lens)
+                    .get(key)
+                    .once((data) => {
+                        if (!data) {
+                            resolve(null);
+                            return;
+                        }
+                        resolve(data);  // Return the data directly
+                    });
+            } catch (error) {
+                reject(error);
+            }
         });
     }
 
@@ -911,111 +846,40 @@ class HoloSphere {
                 throw new Error('Table name and data are required');
             }
 
-            const user = this.gun.user();
-            
+            let user = null;
             if (password) {
-                try {
-                    // Try to authenticate first
-                    await new Promise((resolve, reject) => {
-                        user.auth(this.userName(tableName), password, (ack) => {
-                            if (ack.err) {
-                                // Handle wrong username/password gracefully
-                                if (ack.err.includes('Wrong user or password') || 
-                                    ack.err.includes('No user')) {
-                                    console.warn(`Authentication failed for ${tableName}: ${ack.err}`);
-                                    // Will try to create user next
-                                    reject(new Error(ack.err));
-                                } else {
-                                    reject(new Error(ack.err));
-                                }
-                            } else {
-                                resolve();
-                            }
-                        });
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(tableName), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
                     });
-                } catch (authError) {
-                    // If authentication fails, try to create user
-                    try {
-                        await new Promise((resolve, reject) => {
-                            user.create(this.userName(tableName), password, (ack) => {
-                                // Handle "User already created!" error gracefully
-                                if (ack.err && !ack.err.includes('already created')) {
-                                    reject(new Error(ack.err));
-                                } else {
-                                    // Whether user was created or already existed, try to authenticate
-                                    user.auth(this.userName(tableName), password, (authAck) => {
-                                        if (authAck.err) {
-                                            console.warn(`Authentication failed after creation for ${tableName}: ${authAck.err}`);
-                                            reject(new Error(authAck.err));
-                                        } else {
-                                            resolve();
-                                        }
-                                    });
-                                }
-                            });
-                        });
-                    } catch (createError) {
-                        // If both auth and create fail, try one last auth attempt
-                        await new Promise((resolve, reject) => {
-                            user.auth(this.userName(tableName), password, (ack) => {
-                                if (ack.err) {
-                                    console.warn(`Final authentication attempt failed for ${tableName}: ${ack.err}`);
-                                    // Continue with operation even if auth fails
-                                    resolve();
-                                } else {
-                                    resolve();
-                                }
-                            });
-                        });
-                    }
-                }
+                });
             }
 
             return new Promise((resolve, reject) => {
                 const payload = JSON.stringify(data);
                 
-                if (password) {
-                    // For private data, use the authenticated user's holon
-                    const path = user.get('private').get(tableName);
-                    
-                    if (data.id) {
-                        path.get(data.id).put(payload, ack => {
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                resolve();
-                            }
-                        });
-                    } else {
-                        path.put(payload, ack => {
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                resolve();
-                            }
-                        });
-                    }
+                const dataPath = password ? 
+                    user.get('private').get(tableName) :
+                    this.gun.get(this.appname).get(tableName);
+                
+                if (data.id) {
+                    dataPath.get(data.id).put(payload, ack => {
+                        if (ack.err) {
+                            reject(new Error(ack.err));
+                        } else {
+                            resolve();
+                        }
+                    });
                 } else {
-                    // For public data, use the regular path
-                    const path = this.gun.get(this.appname).get(tableName);
-                    
-                    if (data.id) {
-                        path.get(data.id).put(payload, ack => {
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                resolve();
-                            }
-                        });
-                    } else {
-                        path.put(payload, ack => {
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                resolve();
-                            }
-                        });
-                    }
+                    dataPath.put(payload, ack => {
+                        if (ack.err) {
+                            reject(new Error(ack.err));
+                        } else {
+                            resolve();
+                        }
+                    });
                 }
             });
         } catch (error) {
@@ -1033,48 +897,15 @@ class HoloSphere {
      */
     async getGlobal(tableName, key, password = null) {
         try {
-            const user = this.gun.user();
-            
+            let user = null;
             if (password) {
-                try {
-                    await new Promise((resolve, reject) => {
-                        user.auth(this.userName(tableName), password, (ack) => {
-                            if (ack.err) {
-                                // Handle wrong username/password gracefully
-                                if (ack.err.includes('Wrong user or password') || 
-                                    ack.err.includes('No user')) {
-                                    console.warn(`Authentication failed for ${tableName}: ${ack.err}`);
-                                    // Will try to create user next
-                                    reject(new Error(ack.err));
-                                } else {
-                                    reject(new Error(ack.err));
-                                }
-                            } else {
-                                resolve();
-                            }
-                        });
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(tableName), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
                     });
-                } catch (loginError) {
-                    // If authentication fails, try to create user and then authenticate
-                    await new Promise((resolve, reject) => {
-                        user.create(this.userName(tableName), password, (ack) => {
-                            // Handle "User already created!" error gracefully
-                            if (ack.err && !ack.err.includes('already created')) {
-                                reject(new Error(ack.err));
-                            } else {
-                                user.auth(this.userName(tableName), password, (authAck) => {
-                                    if (authAck.err) {
-                                        console.warn(`Authentication failed after creation for ${tableName}: ${authAck.err}`);
-                                        // Continue with operation even if auth fails
-                                        resolve();
-                                    } else {
-                                        resolve();
-                                    }
-                                });
-                            }
-                        });
-                    });
-                }
+                });
             }
 
             return new Promise((resolve) => {
@@ -1091,13 +922,11 @@ class HoloSphere {
                     }
                 };
                 
-                if (password) {
-                    // For private data, use the authenticated user's holon
-                    user.get('private').get(tableName).get(key).once(handleData);
-                } else {
-                    // For public data, use the regular path
-                    this.gun.get(this.appname).get(tableName).get(key).once(handleData);
-                }
+                const dataPath = password ? 
+                    user.get('private').get(tableName).get(key) :
+                    this.gun.get(this.appname).get(tableName).get(key);
+
+                dataPath.once(handleData);
             });
         } catch (error) {
             console.error('Error in getGlobal:', error);
@@ -1202,29 +1031,29 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate holon
-            const user = this.gun.user();
+            let user = null;
+            if (password) {
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(tableName), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
+                    });
+                });
+            }
 
             return new Promise((resolve, reject) => {
-                if (password) {
-                    // For private data, use the authenticated user's holon
-                    user.get('private').get(tableName).get(key).put(null, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve(true);
-                        }
-                    });
-                } else {
-                    // For public data, use the regular path
-                    this.gun.get(this.appname).get(tableName).get(key).put(null, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve(true);
-                        }
-                    });
-                }
+                const dataPath = password ? 
+                    user.get('private').get(tableName).get(key) :
+                    this.gun.get(this.appname).get(tableName).get(key);
+
+                dataPath.put(null, ack => {
+                    if (ack.err) {
+                        reject(new Error(ack.err));
+                    } else {
+                        resolve(true);
+                    }
+                });
             });
         } catch (error) {
             console.error('Error in deleteGlobal:', error);
@@ -1244,8 +1073,16 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate holon
-            const user = this.gun.user();
+            let user = null;
+            if (password) {
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(tableName), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
+                    });
+                });
+            }
 
             return new Promise((resolve, reject) => {
                 try {
@@ -1269,7 +1106,7 @@ class HoloSphere {
 
                         const keys = Object.keys(data).filter(key => key !== '_');
                         const promises = keys.map(key =>
-                            new Promise((resolveDelete) => {
+                            new Promise((resolveDelete, rejectDelete) => {
                                 const deletePath = password ? 
                                     user.get('private').get(tableName).get(key) :
                                     this.gun.get(this.appname).get(tableName).get(key);
@@ -1277,8 +1114,10 @@ class HoloSphere {
                                 deletePath.put(null, ack => {
                                     if (ack.err) {
                                         console.error(`Failed to delete ${key}:`, ack.err);
+                                        rejectDelete(new Error(ack.err));
+                                    } else {
+                                        resolveDelete();
                                     }
-                                    resolveDelete();
                                 });
                             })
                         );
