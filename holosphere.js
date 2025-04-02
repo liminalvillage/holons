@@ -29,7 +29,7 @@ class HoloSphere {
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
     constructor(appname, strict = false, openaikey = null) {
-        console.log('HoloSphere v1.1.9'); 
+        console.log('HoloSphere v1.1.10'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -846,6 +846,9 @@ class HoloSphere {
                 throw new Error('Table name and data are required');
             }
 
+            console.log('putGlobal - Input data:', data);
+            console.log('putGlobal - Table name:', tableName);
+
             let user = null;
             if (password) {
                 user = this.gun.user();
@@ -858,28 +861,38 @@ class HoloSphere {
             }
 
             return new Promise((resolve, reject) => {
-                const payload = JSON.stringify(data);
-                
-                const dataPath = password ? 
-                    user.get('private').get(tableName) :
-                    this.gun.get(this.appname).get(tableName);
-                
-                if (data.id) {
-                    dataPath.get(data.id).put(payload, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve();
-                        }
-                    });
-                } else {
-                    dataPath.put(payload, ack => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve();
-                        }
-                    });
+                try {
+                    const payload = JSON.stringify(data);
+                    console.log('putGlobal - Stringified payload:', payload);
+                    
+                    const dataPath = password ? 
+                        user.get('private').get(tableName) :
+                        this.gun.get(this.appname).get(tableName);
+                    
+                    if (data.id) {
+                        console.log('putGlobal - Using data.id as key:', data.id);
+                        // Store at the specific key path
+                        dataPath.get(data.id).put(payload, ack => {
+                            console.log('putGlobal - Put acknowledgment:', ack);
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                resolve();
+                            }
+                        });
+                    } else {
+                        console.log('putGlobal - No data.id, using direct put');
+                        dataPath.put(payload, ack => {
+                            console.log('putGlobal - Put acknowledgment:', ack);
+                            if (ack.err) {
+                                reject(new Error(ack.err));
+                            } else {
+                                resolve();
+                            }
+                        });
+                    }
+                } catch (error) {
+                    reject(error);
                 }
             });
         } catch (error) {
@@ -897,6 +910,8 @@ class HoloSphere {
      */
     async getGlobal(tableName, key, password = null) {
         try {
+            console.log('getGlobal - Input parameters:', { tableName, key, hasPassword: !!password });
+            
             let user = null;
             if (password) {
                 user = this.gun.user();
@@ -910,23 +925,31 @@ class HoloSphere {
 
             return new Promise((resolve) => {
                 const handleData = (data) => {
+                    console.log('getGlobal - Raw data received:', data);
+                    
                     if (!data) {
+                        console.log('getGlobal - No data received');
                         resolve(null);
                         return;
                     }
+                    
                     try {
-                        const parsed = this.parse(data);
+                        // The data should be a stringified JSON from putGlobal
+                        const parsed = JSON.parse(data);
+                        console.log('getGlobal - Parsed data:', parsed);
                         resolve(parsed);
                     } catch (e) {
+                        console.error('getGlobal - Error parsing data:', e);
                         resolve(null);
                     }
                 };
                 
                 const dataPath = password ? 
-                    user.get('private').get(tableName).get(key) :
-                    this.gun.get(this.appname).get(tableName).get(key);
+                    user.get('private').get(tableName) :
+                    this.gun.get(this.appname).get(tableName);
 
-                dataPath.once(handleData);
+                console.log('getGlobal - Setting up data listener');
+                dataPath.get(key).once(handleData);
             });
         } catch (error) {
             console.error('Error in getGlobal:', error);
@@ -1031,6 +1054,8 @@ class HoloSphere {
         }
 
         try {
+            console.log('deleteGlobal - Starting deletion:', { tableName, key, hasPassword: !!password });
+            
             let user = null;
             if (password) {
                 user = this.gun.user();
@@ -1044,15 +1069,29 @@ class HoloSphere {
 
             return new Promise((resolve, reject) => {
                 const dataPath = password ? 
-                    user.get('private').get(tableName).get(key) :
-                    this.gun.get(this.appname).get(tableName).get(key);
+                    user.get('private').get(tableName) :
+                    this.gun.get(this.appname).get(tableName);
 
-                dataPath.put(null, ack => {
-                    if (ack.err) {
-                        reject(new Error(ack.err));
-                    } else {
-                        resolve(true);
-                    }
+                console.log('deleteGlobal - Constructed base path:', dataPath._.back);
+
+                // First verify the data exists
+                dataPath.get(key).once((data) => {
+                    console.log('deleteGlobal - Data before deletion:', data);
+                    
+                    // Now perform the deletion
+                    dataPath.get(key).put(null, ack => {
+                        console.log('deleteGlobal - Deletion acknowledgment:', ack);
+                        if (ack.err) {
+                            console.error('deleteGlobal - Deletion error:', ack.err);
+                            reject(new Error(ack.err));
+                        } else {
+                            // Verify deletion
+                            dataPath.get(key).once((deletedData) => {
+                                console.log('deleteGlobal - Data after deletion:', deletedData);
+                                resolve(true);
+                            });
+                        }
+                    });
                 });
             });
         } catch (error) {
@@ -1465,8 +1504,12 @@ class HoloSphere {
      * @returns {Promise<object>} - Subscription object with unsubscribe method
      */
     async subscribe(holon, lens, callback) {
-        if (!holon || !lens || typeof callback !== 'function') {
-            throw new Error('subscribe: Missing required parameters');
+        if (!holon || !lens) {
+            throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
+        }
+        
+        if (!callback || !(callback instanceof Function)) {
+            throw new Error('subscribe: Callback must be a function');
         }
 
         const subscriptionId = this.generateId();
@@ -1490,6 +1533,7 @@ class HoloSphere {
                 holon,
                 lens,
                 active: true,
+                callback,
                 gunSubscription
             };
             
@@ -1497,8 +1541,10 @@ class HoloSphere {
             return {
                 unsubscribe: () => {
                     try {
-                        // Turn off the Gun subscription
-                        this.gun.get(this.appname).get(holon).get(lens).map().off();
+                        // Turn off the Gun subscription using the stored reference
+                        if (this.subscriptions[subscriptionId]?.gunSubscription) {
+                            this.subscriptions[subscriptionId].gunSubscription.off();
+                        }
                         
                         // Mark as inactive and remove from subscriptions
                         if (this.subscriptions[subscriptionId]) {
@@ -1515,7 +1561,6 @@ class HoloSphere {
             throw error;
         }
     }
-
 
     /**
      * Notifies subscribers about data changes
@@ -1692,11 +1737,10 @@ class HoloSphere {
                     try {
                         const subscription = this.subscriptions[id];
                         if (subscription && subscription.active) {
-                            // Turn off the Gun subscription
-                            this.gun.get(this.appname)
-                                .get(subscription.holon)
-                                .get(subscription.lens)
-                                .map().off();
+                            // Turn off the Gun subscription using the stored reference
+                            if (subscription.gunSubscription) {
+                                subscription.gunSubscription.off();
+                            }
                             
                             // Mark as inactive
                             subscription.active = false;

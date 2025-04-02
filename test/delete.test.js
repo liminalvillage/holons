@@ -113,6 +113,7 @@ describe('HoloSphere Deletion Tests', () => {
             // Verify global data exists
             const storedGlobalData = await holoSphere.getGlobal(testGlobalTable, globalData.id);
             expect(storedGlobalData).toBeDefined();
+            console.log(storedGlobalData);
             expect(storedGlobalData.value).toBe(globalData.value);
             
             // Delete global data
