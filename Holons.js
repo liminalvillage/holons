@@ -419,9 +419,15 @@ export default class Holons {
 
     this.bot.command("listmembers", async (ctx) => {
       const chatID = utils.getChatId(ctx);
-      let address = await this.holonsContract.toAddress(chatID.toString());
-      console.log("address from listmembers command: ", address);
-      let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+      // ^ This should be replaced with managed holon
+      // let address = await this.holonsContract.toAddress(chatID.toString());
+      // let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+      // ^ This should be replaced with managed holon
+      //#TODO: RESOLVE TECHNICAL DEBT - we should not be using this in every function.
+      const holonName = `chat_${Math.abs(chatID)}`; // 
+      // It should be part of the function that fetches the contract itself
+      let holon = await this.getManagedContract(holonName);
+      console.log("We actually fetched the managed contract from /listmmebers: ", holon);
       // holon.listMembers() does not actually exist - there is alternative getter function we could call - userIds
       // let members = await holon.listMembers();
       let membersLength = await holon.getSize();
@@ -433,7 +439,7 @@ export default class Holons {
       }
       // console.log("listing members from /listmembers command: ", members);
       if (membersLength > 0) {
-        let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+        let message = `🔷 HOLON ADDRESS 🔷\n\`${holon.target}\`\n\n`;
         message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
         message += `Members (${membersLength}):\n`;
         for (let i = 0; i < members.length; i++) {
