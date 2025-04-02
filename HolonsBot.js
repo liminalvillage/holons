@@ -318,10 +318,6 @@ class HolonsBot {
         await this.handleReply(ctx);
       }
     });
-
-    this.telebot.on('callback_query', async (ctx) => {
-      await this.handleCallbackQuery(ctx);
-    });
   }
 
   async handleInlineQuery(ctx) {

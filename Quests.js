@@ -253,6 +253,7 @@ export default class Quests {
             where: { latitude: '', longitude: '' },
             date: new Date().getTime(),
             when: '',
+            until: '',
             completed: '',
             participants: [],
             appreciation: [],
@@ -473,7 +474,7 @@ export default class Quests {
         if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
 
         // Handle the reaction to the quest
-        if (quest.initiator.id === ctx.from.id || isAdmin(ctx.from.id, chatID)) {
+        if (quest.initiator?.id === ctx.from.id || isAdmin(ctx.from.id, chatID)) {
             try {
                 // Cancel any scheduled reminder
                 if (quest.reminderId && this.scheduler) {
@@ -1681,29 +1682,34 @@ export default class Quests {
         // Format date in a human-friendly way
         if (quest.when) {
             const date = new Date(quest.when);
-            const today = new Date();
-            const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1);
 
-            let dateStr;
-            if (date.toDateString() === today.toDateString()) {
-                dateStr = `Today at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
-            } else if (date.toDateString() === tomorrow.toDateString()) {
-                dateStr = `Tomorrow at ${date.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}`;
-            } else {
-                dateStr = date.toLocaleDateString(language, {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-            }
+            let dateStr = date.toLocaleDateString(language, {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        
             message += `| ${i18next.t('📅', { lng: language })} : ${dateStr} \n`;
         }
 
+        if (quest.until) {
+            const date = new Date(quest.until);
+
+            let dateStr = date.toLocaleDateString(language, {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            message += `| ${i18next.t('🔚', { lng: language })} : ${dateStr} \n`;
+        }
+        
         if (quest.where?.lat)
             message += `| ${i18next.t('📍 ', { lng: language })}: ${quest.where.lat} : ${quest.where.lon}   \n`;
+        
         if (quest.status === "stopped")
             message += `| ${i18next.t('🛑', { lng: language })} : ${[...quest.stoppers].map(u => getDisplayName(u)).join(', ')} \n`;
         message += `| ${i18next.t('🚥', { lng: language })} : ${i18next.t(quest.status, { lng: language })}\n`;

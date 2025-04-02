@@ -100,7 +100,7 @@ class Server {
           res.sendFile(this.defaultAvatarPath);
         }
       } catch (error) {
-        console.error('Error retrieving the profile photo:', error);
+        console.error('Error retrieving the profile photo for user', userId);
         res.sendFile(this.defaultAvatarPath);
       }
     });

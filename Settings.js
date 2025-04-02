@@ -1456,6 +1456,420 @@ export default class Settings {
             };
             await ctx.scene.enter('hex_scene');
         });
+
+        // Create generalized scenes
+        this.textInputScene = new Scenes.BaseScene('text_input_scene');
+        this.textInputScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const { field, title, command } = ctx.scene.state;
+            
+            // Get current value
+            let settings = await this.getSettings(chatID);
+            const currentValue = settings[field] || i18next.t('settings_not_set', { lng: language });
+            
+            // Store original message ID if coming from callback
+            if (ctx.callbackQuery) {
+                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
+            }
+
+            // Check bot admin rights
+            const botHasAdminRights = await utils.isBotAdmin(ctx);
+            
+            if (botHasAdminRights) {
+                // Send interactive prompt
+                const promptMessage = await ctx.reply(
+                    i18next.t('settings_current', { lng: language, value: currentValue }) + '\n\n' +
+                    i18next.t('settings_send_new', { lng: language, type: title.toLowerCase() })
+                );
+                ctx.scene.state.promptMessageId = promptMessage.message_id;
+            } else {
+                // Send command instructions
+                await ctx.reply(
+                    i18next.t('settings_current', { lng: language, value: currentValue }) + '\n\n' +
+                    i18next.t('settings_use_command', { 
+                        lng: language, 
+                        command: command,
+                        example: `${command} new ${title.toLowerCase()}`
+                    })
+                );
+                await ctx.scene.leave();
+            }
+        });
+
+        this.textInputScene.on('text', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const { field } = ctx.scene.state;
+            
+            // Store message IDs for cleanup
+            ctx.scene.state.userMessageId = ctx.message.message_id;
+            
+            // Save the input
+            let settings = await this.getSettings(chatID);
+            settings[field] = ctx.message.text;
+            await this.setSettings(settings);
+            
+            // Clean up messages if bot has admin rights
+            const botHasAdminRights = await utils.isBotAdmin(ctx);
+            if (botHasAdminRights) {
+                await this.cleanupSceneMessages(ctx);
+            }
+
+            // Show updated menu
+            if (field === 'purpose') {
+                await this.showArraySettingMenu(ctx, 'purpose', false);
+            } else if (field === 'hex') {
+                await this.showHexMenu(ctx, false);
+            } else {
+                await this.showSettingsMenu(ctx, false);
+            }
+            
+            await ctx.scene.leave();
+        });
+
+        this.arrayInputScene = new Scenes.BaseScene('array_input_scene');
+        this.arrayInputScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const { field, title, command } = ctx.scene.state;
+
+            // Store original message ID if coming from callback
+            if (ctx.callbackQuery) {
+                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
+            }
+
+            // Check bot admin rights
+            const botHasAdminRights = await utils.isBotAdmin(ctx);
+            
+            if (botHasAdminRights) {
+                // Send interactive prompt
+                const promptMessage = await ctx.reply(
+                    i18next.t('settings_enter_new_items', { lng: language, type: title.toLowerCase() })
+                );
+                ctx.scene.state.promptMessageId = promptMessage.message_id;
+            } else {
+                // Send command instructions
+                await ctx.reply(
+                    i18next.t('settings_use_command_array', { 
+                        lng: language, 
+                        command: command,
+                        example: `${command} item1, item2, item3`
+                    })
+                );
+                await ctx.scene.leave();
+            }
+        });
+
+        this.arrayInputScene.on('text', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const { field } = ctx.scene.state;
+            
+            // Parse input into array
+            const newItems = ctx.message.text
+                .split(/[,\n]/)
+                .map(item => item.trim())
+                .filter(item => item !== '');
+
+            // Save to settings
+            let settings = await this.getSettings(chatID);
+            if (!settings[field]) {
+                settings[field] = [];
+            }
+            settings[field].push(...newItems);
+            await this.setSettings(settings);
+
+            // Store message IDs for cleanup
+            ctx.scene.state.userMessageId = ctx.message.message_id;
+            
+            // Clean up messages if bot has admin rights
+            const botHasAdminRights = await utils.isBotAdmin(ctx);
+            if (botHasAdminRights) {
+                await this.cleanupSceneMessages(ctx);
+            }
+
+            // Show updated menu
+            await this.showArraySettingMenu(ctx, field, false);
+            await ctx.scene.leave();
+        });
+
+        this.listPickerScene = new Scenes.BaseScene('list_picker_scene');
+        this.listPickerScene.enter(async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const { field, title, options, displayField } = ctx.scene.state;
+
+            // Create keyboard with options
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: title, callback_data: ' ' }],
+                    ...options.map(option => [{
+                        text: option[displayField],
+                        callback_data: `select_${field}_${option.id}`
+                    }]),
+                    [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
+                ]
+            };
+
+            await ctx.reply(i18next.t('settings_select_option', { lng: language, type: title }), {
+                reply_markup: keyboard
+            });
+        });
+
+        // Register the scenes
+        this.bot.stage.register(this.textInputScene);
+        this.bot.stage.register(this.arrayInputScene);
+        this.bot.stage.register(this.listPickerScene);
+
+        // Update action handlers to use new scenes
+        this.bot.action('settings_name', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('text_input_scene', {
+                field: 'name',
+                title: i18next.t('settings_name', { lng: await this.getLanguage(ctx.chat.id) }),
+                command: '/setname'
+            });
+        });
+
+        this.bot.action('settings_values_change', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('array_input_scene', {
+                field: 'values',
+                title: i18next.t('settings_values', { lng: await this.getLanguage(ctx.chat.id) }),
+                command: '/addvalues'
+            });
+        });
+
+        this.bot.action('settings_domains_change', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('array_input_scene', {
+                field: 'domains',
+                title: i18next.t('settings_domains', { lng: await this.getLanguage(ctx.chat.id) }),
+                command: '/adddomains'
+            });
+        });
+
+        this.bot.action('settings_roles_change', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('array_input_scene', {
+                field: 'roles',
+                title: i18next.t('settings_roles', { lng: await this.getLanguage(ctx.chat.id) }),
+                command: '/addroles'
+            });
+        });
+
+        this.bot.action('help_add_purpose', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('text_input_scene', {
+                field: 'purpose',
+                title: i18next.t('settings_purpose', { lng: await this.getLanguage(ctx.chat.id) }),
+                command: '/setpurpose'
+            });
+        });
+
+        this.bot.action('help_add_hex', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('text_input_scene', {
+                field: 'hex',
+                title: i18next.t('settings_hex', { lng: await this.getLanguage(ctx.chat.id) }),
+                command: '/sethex'
+            });
+        });
+
+        // Command handlers for non-admin scenarios
+        this.bot.command('setname', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length < 2) {
+                await ctx.reply(i18next.t('settings_usage', { 
+                    lng: language, 
+                    command: '/setname',
+                    example: '/setname new name'
+                }));
+                return;
+            }
+
+            const newName = args.slice(1).join(' ');
+            let settings = await this.getSettings(chatID);
+            settings.name = newName;
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_updated', { 
+                lng: language, 
+                field: i18next.t('settings_name', { lng: language }),
+                value: newName 
+            }));
+        });
+
+        this.bot.command('setpurpose', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length < 2) {
+                await ctx.reply(i18next.t('settings_usage', { 
+                    lng: language, 
+                    command: '/setpurpose',
+                    example: '/setpurpose new purpose'
+                }));
+                return;
+            }
+
+            const newPurpose = args.slice(1).join(' ');
+            let settings = await this.getSettings(chatID);
+            settings.purpose = newPurpose;
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_updated', { 
+                lng: language, 
+                field: i18next.t('settings_purpose', { lng: language }),
+                value: newPurpose 
+            }));
+        });
+
+        this.bot.command('sethex', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length < 2) {
+                await ctx.reply(i18next.t('settings_usage', { 
+                    lng: language, 
+                    command: '/sethex',
+                    example: '/sethex new hex'
+                }));
+                return;
+            }
+
+            const newHex = args.slice(1).join(' ');
+            let settings = await this.getSettings(chatID);
+            settings.hex = newHex;
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_updated', { 
+                lng: language, 
+                field: i18next.t('settings_hex', { lng: language }),
+                value: newHex 
+            }));
+        });
+
+        this.bot.command('addvalues', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length < 2) {
+                await ctx.reply(i18next.t('settings_usage_array', { 
+                    lng: language, 
+                    command: '/addvalues',
+                    example: '/addvalues value1, value2, value3'
+                }));
+                return;
+            }
+
+            const newValues = args.slice(1).join(' ').split(/[,\n]/).map(v => v.trim()).filter(v => v);
+            let settings = await this.getSettings(chatID);
+            if (!settings.values) settings.values = [];
+            settings.values.push(...newValues);
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_array_updated', { 
+                lng: language, 
+                field: i18next.t('settings_values', { lng: language }),
+                count: newValues.length 
+            }));
+        });
+
+        this.bot.command('adddomains', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length < 2) {
+                await ctx.reply(i18next.t('settings_usage_array', { 
+                    lng: language, 
+                    command: '/adddomains',
+                    example: '/adddomains domain1, domain2, domain3'
+                }));
+                return;
+            }
+
+            const newDomains = args.slice(1).join(' ').split(/[,\n]/).map(d => d.trim()).filter(d => d);
+            let settings = await this.getSettings(chatID);
+            if (!settings.domains) settings.domains = [];
+            settings.domains.push(...newDomains);
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_array_updated', { 
+                lng: language, 
+                field: i18next.t('settings_domains', { lng: language }),
+                count: newDomains.length 
+            }));
+        });
+
+        this.bot.command('addroles', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length < 2) {
+                await ctx.reply(i18next.t('settings_usage_array', { 
+                    lng: language, 
+                    command: '/addroles',
+                    example: '/addroles role1, role2, role3'
+                }));
+                return;
+            }
+
+            const newRoles = args.slice(1).join(' ').split(/[,\n]/).map(r => r.trim()).filter(r => r);
+            let settings = await this.getSettings(chatID);
+            if (!settings.roles) settings.roles = [];
+            settings.roles.push(...newRoles);
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_array_updated', { 
+                lng: language, 
+                field: i18next.t('settings_roles', { lng: language }),
+                count: newRoles.length 
+            }));
+        });
     }
 
     async getHex(ctx) {

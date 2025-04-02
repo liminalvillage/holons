@@ -830,7 +830,6 @@ class Scheduler {
             
             // Verify quest exists
             const quest = await this.db.get(`${chatId}/quests`, questId);
-            console.log('Quest found:', quest ? 'YES' : 'NO');
             
             if (!quest) {
                 console.log(`Quest ${questId} not found`);
@@ -1061,7 +1060,9 @@ class Scheduler {
                                     
                                     // Try direct message approach first
                                     try {
+                                        
                                         const language = await this.settings.getLanguage(reminder.chatId);
+                                        const timezone =
                                         await this.bot.telegram.sendMessage(
                                             reminder.chatId,
                                             `🔔 Reminder: "${freshQuest.title}" is starting now!`,
