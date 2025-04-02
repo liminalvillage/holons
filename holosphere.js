@@ -1,11 +1,24 @@
 import * as h3 from 'h3-js';
 import OpenAI from 'openai';
 import Gun from 'gun'
-import SEA from 'gun/sea.js'
 import Ajv2019 from 'ajv/dist/2019.js'
 import * as Federation from './federation.js';
 
-export { federateMessage, getFederatedMessages, updateFederatedMessages, removeNotify } from './federation.js';
+/**
+ * HoloSphere is a cutting-edge holonic communication infrastructure designed to facilitate
+ * the creation, validation, and sharing of information.. By leveraging advanced technologies
+ * such as H3 for geospatial indexing, OpenAI for natural language processing, and Gun for decentralized
+ * data storage, HoloSphere provides a robust platform for developers to build innovative stygmergic applications.
+ * 
+ * Key Features:
+ * - Geospatial indexing using H3
+ * - Natural language processing with OpenAI
+ * - Decentralized data storage with Gun
+ * - JSON schema validation with Ajv
+ * - Federation capabilities for distributed systems
+ * 
+ *
+ */
 
 class HoloSphere {
     /**
@@ -15,8 +28,8 @@ class HoloSphere {
      * @param {string|null} openaikey - The OpenAI API key.
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
-    constructor(appname, strict = false, openaikey = null, gunInstance = null) {
-        console.log('HoloSphere v1.1.7'); 
+    constructor(appname, strict = false, openaikey = null) {
+        console.log('HoloSphere v1.1.9'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -25,20 +38,13 @@ class HoloSphere {
             validateSchema: true // Always validate schemas
         });
 
-        // Handle different ways of providing Gun instance or options
-        if (gunInstance && gunInstance.opt) {
-            // If an object with 'opt' property is passed, create a new Gun instance with those options
-            this.gun = Gun(gunInstance.opt);
-        } else {
-            // Use provided Gun instance or create new one with default options
-            this.gun = gunInstance || Gun({
-                peers: ['https://gun.holons.io/gun'],
-                axe: false,
-            });
-        }
-
-        // Initialize SEA
-        this.sea = SEA;
+       
+        // Use provided Gun instance or create new one with default options
+        this.gun = Gun({
+            peers: ['https://gun.holons.io/gun'],
+            axe: false,
+        });
+    
 
         if (openaikey != null) {
             this.openai = new OpenAI({
