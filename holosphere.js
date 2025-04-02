@@ -550,7 +550,16 @@ class HoloSphere {
         }
 
         try {
-            const user = this.gun.user();
+            let user = null;
+            if (password) {
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(holon), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
+                    });
+                });
+            }
 
             return new Promise((resolve) => {
                 const output = new Map();
@@ -597,13 +606,11 @@ class HoloSphere {
                     }
                 };
 
-                if (password) {
-                    // For private data, use the authenticated user's holon
-                    user.get('private').get(lens).once(handleData);
-                } else {
-                    // For public data, use the regular path
-                    this.gun.get(this.appname).get(holon).get(lens).once(handleData);
-                }
+                const dataPath = password ? 
+                    user.get('private').get(lens) :
+                    this.gun.get(this.appname).get(holon).get(lens);
+
+                dataPath.once(handleData);
             });
         } catch (error) {
             console.error('Error in getAll:', error);
@@ -1110,8 +1117,16 @@ class HoloSphere {
         }
 
         try {
-            // Get the appropriate holon
-            const user = this.gun.user();
+            let user = null;
+            if (password) {
+                user = this.gun.user();
+                await new Promise((resolve, reject) => {
+                    user.auth(this.userName(tableName), password, (ack) => {
+                        if (ack.err) reject(new Error(ack.err));
+                        else resolve();
+                    });
+                });
+            }
 
             return new Promise((resolve) => {
                 let output = [];
@@ -1162,13 +1177,11 @@ class HoloSphere {
                     }
                 };
 
-                if (password) {
-                    // For private data, use the authenticated user's holon
-                    user.get('private').get(tableName).once(handleData);
-                } else {
-                    // For public data, use the regular path
-                    this.gun.get(this.appname).get(tableName).once(handleData);
-                }
+                const dataPath = password ? 
+                    user.get('private').get(tableName) :
+                    this.gun.get(this.appname).get(tableName);
+
+                dataPath.once(handleData);
             });
         } catch (error) {
             console.error('Error in getAllGlobal:', error);
