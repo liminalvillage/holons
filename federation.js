@@ -520,13 +520,13 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                         
                         console.log(`Extracting from soul - holon: ${originHolon}, lens: ${originLens}, key: ${originKey}`);
                         
-                        // Get original data using the extracted path
+                        // Get original data using the extracted path - always resolve references
                         const originalData = await holosphere.get(
                             originHolon,
                             originLens,
                             originKey,
                             null,
-                            { resolveReferences: false } // Prevent infinite recursion
+                            { resolveReferences: true } // Always resolve nested references
                         );
                         
                         console.log(`Original data found via soul path:`, JSON.stringify(originalData));
@@ -545,12 +545,45 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                             console.log(`Reference resolved successfully via soul path, processed item:`, JSON.stringify(result[i]));
                         } else {
                             console.warn(`Could not resolve reference: original data not found at extracted path`);
+                            // Instead of leaving the original reference, create an error object
+                            result[i] = {
+                                id: item.id,
+                                _federation: {
+                                    isReference: true,
+                                    resolved: false,
+                                    soul: item.soul,
+                                    error: 'Referenced data not found',
+                                    timestamp: Date.now()
+                                }
+                            };
                         }
                     } else {
                         console.warn(`Soul doesn't match expected format: ${item.soul}`);
+                        // Instead of leaving the original reference, create an error object
+                        result[i] = {
+                            id: item.id,
+                            _federation: {
+                                isReference: true,
+                                resolved: false,
+                                soul: item.soul,
+                                error: 'Invalid soul format',
+                                timestamp: Date.now()
+                            }
+                        };
                     }
                 } catch (refError) {
                     console.warn(`Error resolving reference by soul in getFederated: ${refError.message}`);
+                    // Instead of leaving the original reference, create an error object
+                    result[i] = {
+                        id: item.id,
+                        _federation: {
+                            isReference: true,
+                            resolved: false,
+                            soul: item.soul,
+                            error: refError.message || 'Error resolving reference',
+                            timestamp: Date.now()
+                        }
+                    };
                 }
             } 
             // For backward compatibility, check for old-style references
@@ -718,37 +751,50 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
             };
         }
         
+        // Check if data is already a reference
+        const isAlreadyReference = holosphere.isReference(data);
+        
         // For each target space, propagate the data
         const propagatePromises = spaces.map(async (targetSpace) => {
             try {
-                // Get federation info for target space using getFederation
-                const targetFedInfo = await getFederation(holosphere, targetSpace);
-                
-                // If using references, create a soul reference instead of duplicating the data
-                if (useReferences) {
-                    // Create a soul path that points to the original data
-                    const soul = `${holosphere.appname}/${holon}/${lens}/${data.id}`;
+                // If using references and data isn't already a reference, create a reference
+                if (useReferences && !isAlreadyReference) {
+                    // Create a reference object using the dedicated utility
+                    const reference = holosphere.createReference(holon, lens, data);
                     
-                    // Create a minimal reference object with just id and soul
-                    const reference = {
-                        id: data.id,
-                        soul: soul,
-                        _federation: {
-                            origin: holon,
-                            lens: lens,
-                            timestamp: Date.now()
-                        }
+                    // Add federation metadata
+                    reference._federation = {
+                        origin: holon,
+                        lens: lens,
+                        timestamp: Date.now()
                     };
                     
-                    console.log(`Using soul reference: ${soul} for data: ${data.id}`);
+                    console.log(`Using reference: ${reference.soul} for data: ${data.id}`);
                     
                     // Store the reference in the target space without propagation
                     await holosphere.put(targetSpace, lens, reference, null, { autoPropagate: false });
                     
                     result.success++;
                     return true;
-                } else {
-                    // If not using references, store a full copy without propagation
+                } 
+                // If already a reference, propagate it as is
+                else if (isAlreadyReference) {
+                    // Add federation metadata if needed
+                    const referenceToStore = {
+                        ...data,
+                        _federation: data._federation || {
+                            origin: holon,
+                            lens: lens,
+                            timestamp: Date.now()
+                        }
+                    };
+                    
+                    await holosphere.put(targetSpace, lens, referenceToStore, null, { autoPropagate: false });
+                    result.success++;
+                    return true;
+                } 
+                // Otherwise, store a full copy without propagation
+                else {
                     const dataToStore = {
                         ...data,
                         _federation: {

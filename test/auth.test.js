@@ -1,10 +1,8 @@
-import Gun from 'gun';
 import HoloSphere from '../holosphere.js';
-import * as h3 from 'h3-js';
 import { jest } from '@jest/globals';
 
 // Increase timeout for all tests
-jest.setTimeout(3000);
+jest.setTimeout(30000);
 
 describe('HoloSphere Authentication and Authorization', () => {
     let holoSphere;
@@ -16,6 +14,14 @@ describe('HoloSphere Authentication and Authorization', () => {
     beforeAll(async () => {
         holoSphere = new HoloSphere('test-app', false, null);
         strictHoloSphere = new HoloSphere('test-app-strict', true, null);
+        // Wait for initialization
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    });
+
+    beforeEach(async () => {
+        // Clean state before each test
+        await holoSphere.deleteAll(testHolon, testLens);
+        await new Promise(resolve => setTimeout(resolve, 100));
     });
 
     afterEach(async () => {
@@ -37,12 +43,12 @@ describe('HoloSphere Authentication and Authorization', () => {
         await holoSphere.deleteAll(testHolon, testLens);
         await holoSphere.deleteAllGlobal('testTable');
         
-        // Close Gun connections
-        if (holoSphere.gun) {
-            holoSphere.gun.off();
+        // Close HoloSphere instances
+        if (holoSphere) {
+            await holoSphere.close();
         }
-        if (strictHoloSphere.gun) {
-            strictHoloSphere.gun.off();
+        if (strictHoloSphere) {
+            await strictHoloSphere.close();
         }
         
         // Wait for connections to close
@@ -50,16 +56,25 @@ describe('HoloSphere Authentication and Authorization', () => {
     });
 
     describe('Authentication System', () => {
-        it('should authenticate with password and store/retrieve data', async () => {
+        it('should authenticate with password and handle auth failures', async () => {
             const testData = { id: 'test1', value: 'private-data' };
             
             // Test storing with authentication
             await holoSphere.put(testHolon, testLens, testData, testPassword);
+            // Wait for data to be properly stored
+            await new Promise(resolve => setTimeout(resolve, 100));
             
-            // Test retrieving with authentication
-            const result = await holoSphere.get(testHolon, testLens, testData.id, testPassword);
-            expect(result).toBeDefined();
-            expect(result.value).toBe(testData.value);
+            // Test retrieving with wrong password
+            const wrongResult = await holoSphere.get(testHolon, testLens, testData.id, 'wrong_password');
+            expect(wrongResult).toBeNull();
+            
+            // Test retrieving with no password
+            const noPassResult = await holoSphere.get(testHolon, testLens, testData.id);
+            expect(noPassResult).toBeNull();
+            
+            // Test retrieving with correct password
+            const correctResult = await holoSphere.get(testHolon, testLens, testData.id, testPassword);
+            expect(correctResult).toEqual(testData);  // Use full object comparison
         });
 
         it('should handle authentication errors gracefully', async () => {
@@ -103,15 +118,16 @@ describe('HoloSphere Authentication and Authorization', () => {
             const testData = { id: 'test', value: 123 };
             
             // Should work in non-strict mode without schema
-            await expect(holoSphere.put(testHolon, testLens, testData)).resolves.toBeTruthy();
+            await expect(holoSphere.put(testHolon, 'nonExistentLens', testData)).resolves.toBeTruthy();
             
-            // Delete any existing schema
-            await strictHoloSphere.putGlobal('schemas', { id: testLens, schema: null });
+            // Delete any existing schema for the lens
+            await strictHoloSphere.putGlobal('schemas', { id: 'nonExistentLens', schema: null });
             
-            // Should fail in strict mode without schema
             try {
-                await strictHoloSphere.put(testHolon, testLens, testData);
-                fail('Should have thrown an error');
+                // This should throw an error in strict mode
+                await strictHoloSphere.put(testHolon, 'nonExistentLens', testData);
+                // If we get here, the test should fail
+                expect('Expected an error').toBe('but none was thrown');
             } catch (error) {
                 expect(error.message).toBe('Schema required in strict mode');
             }

@@ -29,7 +29,7 @@ class HoloSphere {
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
     constructor(appname, strict = false, openaikey = null) {
-        console.log('HoloSphere v1.1.10'); 
+        console.log('HoloSphere v1.1.11'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -54,6 +54,9 @@ class HoloSphere {
 
         // Initialize subscriptions
         this.subscriptions = {};
+        
+        // Initialize schema cache
+        this.schemaCache = new Map();
     }
 
     // ================================ SCHEMA FUNCTIONS ================================
@@ -115,6 +118,12 @@ class HoloSphere {
             schema: schema,
             timestamp: Date.now()
         });
+        
+        // Update the cache with the new schema
+        this.schemaCache.set(lens, {
+            schema,
+            timestamp: Date.now()
+        });
 
         return true;
     }
@@ -122,19 +131,59 @@ class HoloSphere {
     /**
      * Retrieves the JSON schema for a specific lens.
      * @param {string} lens - The lens identifier.
+     * @param {object} [options] - Additional options
+     * @param {boolean} [options.useCache=true] - Whether to use the schema cache
+     * @param {number} [options.maxCacheAge=3600000] - Maximum cache age in milliseconds (default: 1 hour)
      * @returns {Promise<object|null>} - The retrieved schema or null if not found.
      */
-    async getSchema(lens) {
+    async getSchema(lens, options = {}) {
         if (!lens) {
             throw new Error('getSchema: Missing lens parameter');
         }
-
+        
+        const { useCache = true, maxCacheAge = 3600000 } = options;
+        
+        // Check cache first if enabled
+        if (useCache && this.schemaCache.has(lens)) {
+            const cached = this.schemaCache.get(lens);
+            const cacheAge = Date.now() - cached.timestamp;
+            
+            // Use cache if it's fresh enough
+            if (cacheAge < maxCacheAge) {
+                return cached.schema;
+            }
+        }
+        
+        // Cache miss or expired, fetch from storage
         const schemaData = await this.getGlobal('schemas', lens);
+        
         if (!schemaData || !schemaData.schema) {
             return null;
         }
-
+        
+        // Update cache with fetched schema
+        this.schemaCache.set(lens, {
+            schema: schemaData.schema,
+            timestamp: Date.now()
+        });
+        
         return schemaData.schema;
+    }
+
+    /**
+     * Clears the schema cache or a specific schema from the cache.
+     * @param {string} [lens] - Optional lens to clear from cache. If not provided, clears entire cache.
+     * @returns {boolean} - Returns true if successful
+     */
+    clearSchemaCache(lens = null) {
+        if (lens) {
+            // Clear specific schema
+            return this.schemaCache.delete(lens);
+        } else {
+            // Clear entire cache
+            this.schemaCache.clear();
+            return true;
+        }
     }
 
     // ================================ CONTENT FUNCTIONS ================================
@@ -160,8 +209,11 @@ class HoloSphere {
             data.id = this.generateId();
         }
 
-        // Get and validate schema only in strict mode
-        if (this.strict) {
+        // Check if this is a reference we're storing
+        const isRef = this.isReference(data);
+
+        // Get and validate schema only in strict mode for non-references
+        if (this.strict && !isRef) {
             const schema = await this.getSchema(lens);
             if (!schema) {
                 throw new Error('Schema required in strict mode');
@@ -195,14 +247,17 @@ class HoloSphere {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
-                            this.notifySubscribers({
-                                holon,
-                                lens,
-                                ...data
-                            });
+                            // Only notify subscribers for actual data, not references
+                            if (!isRef) {
+                                this.notifySubscribers({
+                                    holon,
+                                    lens,
+                                    ...data
+                                });
+                            }
                             
-                            // Auto-propagate to federation by default
-                            const shouldPropagate = options.autoPropagate !== false;
+                            // Auto-propagate to federation by default (if not a reference)
+                            const shouldPropagate = options.autoPropagate !== false && !isRef;
                             let propagationResult = null;
                             
                             if (shouldPropagate) {
@@ -231,6 +286,7 @@ class HoloSphere {
                             
                             resolve({
                                 success: true,
+                                isReference: isRef,
                                 propagationResult
                             });
                         }
@@ -306,84 +362,23 @@ class HoloSphere {
                         }
 
                         // Check if this is a reference that needs to be resolved
-                        if (resolveReferences !== false && parsed) {
-                            // Check if this is a simple reference (id + soul)
-                            if (parsed.soul) {
-                                console.log(`Resolving simple reference with soul: ${parsed.soul}`);
-                                try {
-                                    // For direct soul resolution, we need to parse the soul to get the right path
-                                    const soulParts = parsed.soul.split('/');
-                                    if (soulParts.length >= 4) {  // Expected format: appname/holon/lens/key
-                                        const originHolon = soulParts[1];
-                                        const originLens = soulParts[2];
-                                        const originKey = soulParts[3];
-                                        
-                                        console.log(`Extracting from soul - holon: ${originHolon}, lens: ${originLens}, key: ${originKey}`);
-                                        
-                                        // Get original data using the extracted path components
-                                        const originalData = await this.get(
-                                            originHolon,
-                                            originLens,
-                                            originKey,
-                                            null,
-                                            { resolveReferences: false } // Prevent infinite recursion
-                                        );
-                                        
-                                        if (originalData) {
-                                            console.log(`Original data found through soul path resolution:`, originalData);
-                                            resolve({
-                                                ...originalData,
-                                                _federation: {
-                                                    isReference: true,
-                                                    resolved: true,
-                                                    soul: parsed.soul,
-                                                    timestamp: Date.now()
-                                                }
-                                            });
-                                            return;
-                                        } else {
-                                            console.warn(`Could not resolve reference: original data not found at extracted path`);
-                                        }
-                                    } else {
-                                        console.warn(`Soul doesn't match expected format: ${parsed.soul}`);
-                                    }
-                                } catch (error) {
-                                    console.warn(`Error resolving reference by soul: ${error.message}`);
-                                }
-                            }
-                            // Legacy federation reference
-                            else if (parsed._federation && parsed._federation.isReference) {
-                                console.log(`Resolving legacy federation reference from ${parsed._federation.origin}`);
-                                try {
-                                    const reference = parsed._federation;
-                                    const originalData = await this.get(
-                                        reference.origin,
-                                        reference.lens,
-                                        key,
-                                        null,
-                                        { resolveReferences: false } // Prevent infinite recursion
-                                    );
-                                    
-                                    if (originalData) {
-                                        return {
-                                            ...originalData,
-                                            _federation: {
-                                                ...reference,
-                                                resolved: true,
-                                                timestamp: Date.now()
-                                            }
-                                        };
-                                    } else {
-                                        console.warn(`Could not resolve legacy reference: original data not found`);
-                                        return parsed; // Return the reference if we can't resolve it
-                                    }
-                                } catch (error) {
-                                    console.warn(`Error resolving legacy reference: ${error.message}`);
-                                    return parsed;
-                                }
+                        if (resolveReferences && this.isReference(parsed)) {
+                            const resolved = await this.resolveReference(parsed, {
+                                followReferences: true // Always follow nested references when resolving
+                            });
+                            
+                            if (schema && resolved._federation) {
+                                // Skip schema validation for resolved references
+                                resolve(resolved);
+                                return;
+                            } else if (resolved !== parsed) {
+                                // Reference was resolved successfully
+                                resolve(resolved);
+                                return;
                             }
                         }
 
+                        // Perform schema validation if needed
                         if (schema) {
                             const valid = this.validator.validate(schema, parsed);
                             if (!valid) {
@@ -494,6 +489,26 @@ class HoloSphere {
                     try {
                         const parsed = await this.parse(data);
                         if (!parsed || !parsed.id) return;
+
+                        // Check if this is a reference that needs to be resolved
+                        if (this.isReference(parsed)) {
+                            const resolved = await this.resolveReference(parsed, {
+                                followReferences: true // Always follow references
+                            });
+                            
+                            if (resolved !== parsed) {
+                                // Reference was resolved successfully
+                                if (schema) {
+                                    const valid = this.validator.validate(schema, resolved);
+                                    if (valid || !this.strict) {
+                                        output.set(resolved.id, resolved);
+                                    }
+                                } else {
+                                    output.set(resolved.id, resolved);
+                                }
+                                return;
+                            }
+                        }
 
                         if (schema) {
                             const valid = this.validator.validate(schema, parsed);
@@ -846,9 +861,6 @@ class HoloSphere {
                 throw new Error('Table name and data are required');
             }
 
-            console.log('putGlobal - Input data:', data);
-            console.log('putGlobal - Table name:', tableName);
-
             let user = null;
             if (password) {
                 user = this.gun.user();
@@ -863,17 +875,15 @@ class HoloSphere {
             return new Promise((resolve, reject) => {
                 try {
                     const payload = JSON.stringify(data);
-                    console.log('putGlobal - Stringified payload:', payload);
                     
                     const dataPath = password ? 
                         user.get('private').get(tableName) :
                         this.gun.get(this.appname).get(tableName);
                     
                     if (data.id) {
-                        console.log('putGlobal - Using data.id as key:', data.id);
                         // Store at the specific key path
                         dataPath.get(data.id).put(payload, ack => {
-                            console.log('putGlobal - Put acknowledgment:', ack);
+
                             if (ack.err) {
                                 reject(new Error(ack.err));
                             } else {
@@ -881,9 +891,7 @@ class HoloSphere {
                             }
                         });
                     } else {
-                        console.log('putGlobal - No data.id, using direct put');
                         dataPath.put(payload, ack => {
-                            console.log('putGlobal - Put acknowledgment:', ack);
                             if (ack.err) {
                                 reject(new Error(ack.err));
                             } else {
@@ -909,9 +917,7 @@ class HoloSphere {
      * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
      */
     async getGlobal(tableName, key, password = null) {
-        try {
-            console.log('getGlobal - Input parameters:', { tableName, key, hasPassword: !!password });
-            
+        try { 
             let user = null;
             if (password) {
                 user = this.gun.user();
@@ -924,22 +930,37 @@ class HoloSphere {
             }
 
             return new Promise((resolve) => {
-                const handleData = (data) => {
-                    console.log('getGlobal - Raw data received:', data);
-                    
+                const handleData = async (data) => {
                     if (!data) {
-                        console.log('getGlobal - No data received');
                         resolve(null);
                         return;
                     }
                     
                     try {
                         // The data should be a stringified JSON from putGlobal
-                        const parsed = JSON.parse(data);
-                        console.log('getGlobal - Parsed data:', parsed);
+                        const parsed = await this.parse(data);
+                        
+                        if (!parsed) {
+                            resolve(null);
+                            return;
+                        }
+                        
+                        // Check if this is a reference that needs to be resolved
+                        if (this.isReference(parsed)) {
+                            const resolved = await this.resolveReference(parsed, {
+                                followReferences: true // Always follow references
+                            });
+                            
+                            if (resolved !== parsed) {
+                                // Reference was resolved successfully
+                                resolve(resolved);
+                                return;
+                            }
+                        }
+                        
                         resolve(parsed);
                     } catch (e) {
-                        console.error('getGlobal - Error parsing data:', e);
+                        console.error('Error parsing data in getGlobal:', e);
                         resolve(null);
                     }
                 };
@@ -948,7 +969,6 @@ class HoloSphere {
                     user.get('private').get(tableName) :
                     this.gun.get(this.appname).get(tableName);
 
-                console.log('getGlobal - Setting up data listener');
                 dataPath.get(key).once(handleData);
             });
         } catch (error) {
@@ -1012,7 +1032,23 @@ class HoloSphere {
                             if (itemData) {
                                 try {
                                     const parsed = await this.parse(itemData);
-                                    if (parsed) output.push(parsed);
+                                    if (parsed) {
+                                        // Check if this is a reference that needs to be resolved
+                                        if (this.isReference(parsed)) {
+                                            const resolved = await this.resolveReference(parsed, {
+                                                followReferences: true // Always follow references
+                                            });
+                                            
+                                            if (resolved !== parsed) {
+                                                // Reference was resolved successfully
+                                                output.push(resolved);
+                                            } else {
+                                                output.push(parsed);
+                                            }
+                                        } else {
+                                            output.push(parsed);
+                                        }
+                                    }
                                 } catch (error) {
                                     console.error('Error parsing data:', error);
                                 }
@@ -1178,6 +1214,159 @@ class HoloSphere {
         } catch (error) {
             console.error('Error in deleteAllGlobal:', error);
             throw error;
+        }
+    }
+
+    // ================================ REFERENCE FUNCTIONS ================================
+
+    /**
+     * Creates a soul reference object for a data item
+     * @param {string} holon - The holon where the original data is stored
+     * @param {string} lens - The lens where the original data is stored
+     * @param {object} data - The data to create a reference for
+     * @returns {object} - A reference object with id and soul
+     */
+    createReference(holon, lens, data) {
+        if (!holon || !lens || !data || !data.id) {
+            throw new Error('createReference: Missing required parameters');
+        }
+        
+        const soul = `${this.appname}/${holon}/${lens}/${data.id}`;
+        return {
+            id: data.id,
+            soul: soul
+        };
+    }
+    
+    /**
+     * Parses a soul path into its components
+     * @param {string} soul - The soul path to parse
+     * @returns {object|null} - The parsed components or null if invalid format
+     */
+    parseSoulPath(soul) {
+        if (!soul || typeof soul !== 'string') {
+            return null;
+        }
+        
+        const soulParts = soul.split('/');
+        if (soulParts.length < 4) {
+            return null;
+        }
+        
+        return {
+            appname: soulParts[0],
+            holon: soulParts[1],
+            lens: soulParts[2],
+            key: soulParts[3]
+        };
+    }
+    
+    /**
+     * Checks if an object is a reference
+     * @param {object} data - The data to check
+     * @returns {boolean} - True if the object is a reference
+     */
+    isReference(data) {
+        if (!data || typeof data !== 'object') {
+            return false;
+        }
+        
+        // Check for direct soul reference
+        if (data.soul && typeof data.soul === 'string' && data.id) {
+            return true;
+        }
+        
+        // Check for legacy federation reference
+        if (data._federation && data._federation.isReference) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Resolves a reference to its actual data
+     * @param {object} reference - The reference to resolve
+     * @param {object} [options] - Optional parameters
+     * @param {boolean} [options.followReferences=true] - Whether to follow nested references
+     * @returns {Promise<object|null>} - The resolved data or null if not found
+     */
+    async resolveReference(reference, options = {}) {
+        if (!this.isReference(reference)) {
+            return reference; // Not a reference, return as is
+        }
+        
+        const { followReferences = true } = options;
+        
+        try {
+            // Handle direct soul reference
+            if (reference.soul) {
+                const soulInfo = this.parseSoulPath(reference.soul);
+                if (!soulInfo) {
+                    console.warn(`Invalid soul format: ${reference.soul}`);
+                    return reference;
+                }
+                
+                console.log(`Resolving reference with soul: ${reference.soul}`);
+                
+                // Get original data using the extracted path components
+                const originalData = await this.get(
+                    soulInfo.holon,
+                    soulInfo.lens,
+                    soulInfo.key,
+                    null,
+                    { resolveReferences: followReferences } // Control recursion
+                );
+                
+                if (originalData) {
+                    console.log(`Original data found through soul path resolution`);
+                    return {
+                        ...originalData,
+                        _federation: {
+                            isReference: true,
+                            resolved: true,
+                            soul: reference.soul,
+                            timestamp: Date.now()
+                        }
+                    };
+                } else {
+                    console.warn(`Could not resolve reference: original data not found at extracted path`);
+                    return reference; // Return original reference if resolution fails
+                }
+            }
+            
+            // Handle legacy federation reference
+            else if (reference._federation && reference._federation.isReference) {
+                const fedRef = reference._federation;
+                console.log(`Resolving legacy federation reference from ${fedRef.origin}`);
+                
+                const originalData = await this.get(
+                    fedRef.origin,
+                    fedRef.lens,
+                    reference.id || fedRef.key,
+                    null,
+                    { resolveReferences: followReferences }
+                );
+                
+                if (originalData) {
+                    return {
+                        ...originalData,
+                        _federation: {
+                            ...fedRef,
+                            resolved: true,
+                            timestamp: Date.now()
+                        }
+                    };
+                } else {
+                    console.warn(`Could not resolve legacy reference: original data not found`);
+                    return reference;
+                }
+            }
+            
+            return reference;
+        } catch (error) {
+            console.error(`Error resolving reference: ${error.message}`, error);
+            return reference;
         }
     }
 
@@ -1388,8 +1577,7 @@ class HoloSphere {
     }
 
     /**
-     * Upcasts content to parent holonagons recursively using federation and soul references.
-     * This is the modern implementation that uses federation references instead of duplicating data.
+     * Upcasts content to parent holonagons recursively using references.
      * @param {string} holon - The current holon identifier.
      * @param {string} lens - The lens under which to upcast.
      * @param {object} content - The content to upcast.
@@ -1410,18 +1598,10 @@ class HoloSphere {
         // Get the parent cell
         let parent = h3.cellToParent(holon, res - 1);
         
-        // Create federation relationship if it doesn't exist
-        await this.federate(holon, parent);
-        
-        // Create a soul reference to store in the parent
-        const soul = `${this.appname}/${holon}/${lens}/${content.id}`;
-        const reference = {
-            id: content.id,
-            soul: soul
-        };
+        // Create a reference to store in the parent
+        const reference = this.createReference(holon, lens, content);
         
         // Store the reference in the parent cell
-        // We use { autoPropagate: false } to prevent circular propagation
         await this.put(parent, lens, reference, null, { 
             autoPropagate: false 
         });
@@ -1508,7 +1688,7 @@ class HoloSphere {
             throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
         }
         
-        if (!callback || !(callback instanceof Function)) {
+        if (!callback || typeof callback !== 'function') {
             throw new Error('subscribe: Callback must be a function');
         }
 
@@ -1517,10 +1697,35 @@ class HoloSphere {
         try {
             // Create the subscription
             const gunSubscription = this.gun.get(this.appname).get(holon).get(lens).map().on(async (data, key) => {
+                // Check if subscription is still active before processing
+                if (!this.subscriptions[subscriptionId]?.active) {
+                    return;
+                }
+
                 if (data) {
                     try {
                         let parsed = await this.parse(data);
-                        callback(parsed, key);
+                        
+                        // Check if the parsed data is a reference that needs resolution
+                        if (parsed && this.isReference(parsed)) {
+                            const resolved = await this.resolveReference(parsed, {
+                                followReferences: true // Always follow references
+                            });
+                            
+                            if (resolved !== parsed) {
+                                // Reference was resolved successfully
+                                // Check again if subscription is still active
+                                if (this.subscriptions[subscriptionId]?.active) {
+                                    callback(resolved, key);
+                                }
+                                return;
+                            }
+                        }
+                        
+                        // Check again if subscription is still active before final callback
+                        if (this.subscriptions[subscriptionId]?.active) {
+                            callback(parsed, key);
+                        }
                     } catch (error) {
                         console.error('Error in subscribe:', error);
                     }
@@ -1541,16 +1746,18 @@ class HoloSphere {
             return {
                 unsubscribe: () => {
                     try {
+                        // Mark as inactive first to prevent any new callbacks
+                        if (this.subscriptions[subscriptionId]) {
+                            this.subscriptions[subscriptionId].active = false;
+                        }
+                        
                         // Turn off the Gun subscription using the stored reference
                         if (this.subscriptions[subscriptionId]?.gunSubscription) {
                             this.subscriptions[subscriptionId].gunSubscription.off();
                         }
                         
-                        // Mark as inactive and remove from subscriptions
-                        if (this.subscriptions[subscriptionId]) {
-                            this.subscriptions[subscriptionId].active = false;
-                            delete this.subscriptions[subscriptionId];
-                        }
+                        // Remove from subscriptions
+                        delete this.subscriptions[subscriptionId];
                     } catch (error) {
                         console.error('Error in unsubscribe:', error);
                     }
@@ -1752,29 +1959,66 @@ class HoloSphere {
 
                 // Clear subscriptions
                 this.subscriptions = {};
+                
+                // Clear schema cache
+                this.clearSchemaCache();
 
                 // Close Gun connections
                 if (this.gun.back) {
                     try {
+                        // Clean up mesh connections
                         const mesh = this.gun.back('opt.mesh');
-                        if (mesh && mesh.hear) {
-                            try {
-                                // Safely clear mesh.hear without modifying function properties
-                                const hearKeys = Object.keys(mesh.hear);
-                                for (const key of hearKeys) {
-                                    // Check if it's an array before trying to clear it
-                                    if (Array.isArray(mesh.hear[key])) {
-                                        mesh.hear[key] = [];
+                        if (mesh) {
+                            // Clean up mesh.hear
+                            if (mesh.hear) {
+                                try {
+                                    // Safely clear mesh.hear without modifying function properties
+                                    const hearKeys = Object.keys(mesh.hear);
+                                    for (const key of hearKeys) {
+                                        // Check if it's an array before trying to clear it
+                                        if (Array.isArray(mesh.hear[key])) {
+                                            mesh.hear[key] = [];
+                                        }
                                     }
+                                    
+                                    // Create a new empty object for mesh.hear
+                                    // Only if mesh.hear is not a function
+                                    if (typeof mesh.hear !== 'function') {
+                                        mesh.hear = {};
+                                    }
+                                } catch (meshError) {
+                                    console.warn('Error cleaning up Gun mesh hear:', meshError);
                                 }
-                                
-                                // Create a new empty object for mesh.hear
-                                // Only if mesh.hear is not a function
-                                if (typeof mesh.hear !== 'function') {
-                                    mesh.hear = {};
+                            }
+                            
+                            // Close any open sockets in the mesh
+                            if (mesh.way) {
+                                try {
+                                    Object.values(mesh.way).forEach(connection => {
+                                        if (connection && connection.wire && connection.wire.close) {
+                                            connection.wire.close();
+                                        }
+                                    });
+                                } catch (sockError) {
+                                    console.warn('Error closing mesh sockets:', sockError);
                                 }
-                            } catch (meshError) {
-                                console.warn('Error cleaning up Gun mesh hear:', meshError);
+                            }
+                            
+                            // Clear the peers list
+                            if (mesh.opt && mesh.opt.peers) {
+                                mesh.opt.peers = {};
+                            }
+                        }
+                        
+                        // Attempt to clean up any TCP connections
+                        if (this.gun.back('opt.web')) {
+                            try {
+                                const server = this.gun.back('opt.web');
+                                if (server && server.close) {
+                                    server.close();
+                                }
+                            } catch (webError) {
+                                console.warn('Error closing web server:', webError);
                             }
                         }
                     } catch (error) {

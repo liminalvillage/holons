@@ -36,12 +36,12 @@ describe('HoloSphere', () => {
         await holoSphere.deleteAll(testHolon, testLens);
         await holoSphere.deleteAllGlobal('testTable');
         
-        // Close Gun connections
-        if (holoSphere.gun) {
-            holoSphere.gun.off();
+        // Close HoloSphere instances
+        if (holoSphere) {
+            await holoSphere.close();
         }
-        if (strictHoloSphere.gun) {
-            strictHoloSphere.gun.off();
+        if (strictHoloSphere) {
+            await strictHoloSphere.close();
         }
         
         // Wait for connections to close
@@ -165,6 +165,190 @@ describe('HoloSphere', () => {
             await holoSphere.deleteGlobal( testLens, globalData.id);
             const deletedResult = await holoSphere.getGlobal( testLens, globalData.id);
             expect(deletedResult).toBeNull();
+        });
+    });
+
+    describe('Schema Functions', () => {
+        test('should set and get a schema', async () => {
+            const schema = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    value: { type: 'string' }
+                },
+                required: ['id', 'value']
+            };
+            
+            await holoSphere.setSchema('testLens', schema);
+            const retrieved = await holoSphere.getSchema('testLens');
+            
+            expect(retrieved).toEqual(schema);
+        });
+        
+        test('should cache schemas when fetched', async () => {
+            const schema = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    test: { type: 'string' }
+                },
+                required: ['id', 'test']
+            };
+            
+            // Clear any existing cache and set up fresh schema
+            holoSphere.clearSchemaCache();
+            await holoSphere.setSchema('cacheTestLens', schema);
+            
+            // Cache should be populated by setSchema
+            expect(holoSphere.schemaCache.has('cacheTestLens')).toBe(true);
+            
+            // Save the getGlobal method to create a spy
+            const originalGetGlobal = holoSphere.getGlobal;
+            let globalCalled = false;
+            
+            // Replace with a spy
+            holoSphere.getGlobal = async (...args) => {
+                globalCalled = true;
+                return originalGetGlobal.apply(holoSphere, args);
+            };
+            
+            // This call should use the cache and not call getGlobal
+            const cachedFetch = await holoSphere.getSchema('cacheTestLens');
+            expect(cachedFetch).toEqual(schema);
+            
+            // Verify getGlobal was not called because we used the cache
+            expect(globalCalled).toBe(false);
+            
+            // Now force a non-cached fetch
+            globalCalled = false;
+            const forcedFetch = await holoSphere.getSchema('cacheTestLens', { useCache: false });
+            expect(forcedFetch).toEqual(schema);
+            
+            // Verify getGlobal was called this time
+            expect(globalCalled).toBe(true);
+            
+            // Restore original method
+            holoSphere.getGlobal = originalGetGlobal;
+        });
+        
+        test('should respect cache max age', async () => {
+            const schema = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    age: { type: 'number' }
+                },
+                required: ['id', 'age']
+            };
+            
+            // Clear any existing cache
+            holoSphere.clearSchemaCache();
+            await holoSphere.setSchema('ageTestLens', schema);
+            
+            // First fetch to populate cache
+            await holoSphere.getSchema('ageTestLens');
+            
+            // Verify cache has the entry now
+            expect(holoSphere.schemaCache.has('ageTestLens')).toBe(true);
+            
+            // Manually set an old timestamp on the cache entry
+            const oldTimestamp = Date.now() - 3700000; // Older than the default maxCacheAge
+            holoSphere.schemaCache.set('ageTestLens', {
+                schema,
+                timestamp: oldTimestamp
+            });
+            
+            // Save the getGlobal method to create a spy
+            const originalGetGlobal = holoSphere.getGlobal;
+            let globalCalled = false;
+            
+            // Replace with a spy
+            holoSphere.getGlobal = async (...args) => {
+                globalCalled = true;
+                return originalGetGlobal.apply(holoSphere, args);
+            };
+            
+            // Call should bypass the cache due to age
+            const secondFetch = await holoSphere.getSchema('ageTestLens');
+            expect(secondFetch).toEqual(schema);
+            
+            // getGlobal should have been called again
+            expect(globalCalled).toBe(true);
+            
+            // Restore original method
+            holoSphere.getGlobal = originalGetGlobal;
+        });
+        
+        test('should clear cache properly', async () => {
+            const schema1 = {
+                type: 'object',
+                properties: { id: { type: 'string' } },
+                required: ['id']
+            };
+            
+            const schema2 = {
+                type: 'object',
+                properties: { name: { type: 'string' } },
+                required: ['name']
+            };
+            
+            // Set two schemas
+            await holoSphere.setSchema('clearTest1', schema1);
+            await holoSphere.setSchema('clearTest2', schema2);
+            
+            // Verify they're cached
+            expect(holoSphere.schemaCache.has('clearTest1')).toBe(true);
+            expect(holoSphere.schemaCache.has('clearTest2')).toBe(true);
+            
+            // Clear one schema
+            holoSphere.clearSchemaCache('clearTest1');
+            expect(holoSphere.schemaCache.has('clearTest1')).toBe(false);
+            expect(holoSphere.schemaCache.has('clearTest2')).toBe(true);
+            
+            // Clear all schemas
+            holoSphere.clearSchemaCache();
+            expect(holoSphere.schemaCache.has('clearTest1')).toBe(false);
+            expect(holoSphere.schemaCache.has('clearTest2')).toBe(false);
+        });
+
+        test('should provide significant performance improvement with caching', async () => {
+            const schema = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    value: { type: 'number' },
+                    name: { type: 'string' }
+                },
+                required: ['id', 'value']
+            };
+            
+            // Set up the schema
+            await holoSphere.setSchema('perfTestLens', schema);
+            
+            // Measure time without caching (force bypass)
+            const start1 = Date.now();
+            for (let i = 0; i < 100; i++) {
+                await holoSphere.getSchema('perfTestLens', { useCache: false });
+            }
+            const end1 = Date.now();
+            const timeWithoutCache = end1 - start1;
+            
+            // Measure time with caching
+            const start2 = Date.now();
+            for (let i = 0; i < 100; i++) {
+                await holoSphere.getSchema('perfTestLens');
+            }
+            const end2 = Date.now();
+            const timeWithCache = end2 - start2;
+            
+            console.log(`Performance comparison:
+                Without cache: ${timeWithoutCache}ms
+                With cache: ${timeWithCache}ms
+                Improvement factor: ${timeWithoutCache / timeWithCache}x
+            `);
+            
+            // The cached version should be at least 2x faster
+            expect(timeWithCache).toBeLessThan(timeWithoutCache / 2);
         });
     });
 }); 
