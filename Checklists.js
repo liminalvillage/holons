@@ -205,6 +205,18 @@ class Checklists {
         let chatID = ctx.chat.id;
         let lists = await this.db.getAll(chatID + '/checklists');
         
+        // Ensure all lists have a type, defaulting to 'checklist' for backward compatibility
+        lists = lists.map(list => {
+            if (!list.type) {
+                list.type = 'checklist'; // Default type
+            }
+            // Ensure special lists have the correct type based on ID
+            if (['agenda', 'shopping'].includes(list.id)) {
+                 list.type = list.id; // Assign 'agenda' or 'shopping' as type
+            }
+            return list;
+        });
+
         // Filter out subtask checklists and show only regular and special checklists
         lists = lists.filter(list => list.type === 'checklist' || ['agenda', 'shopping'].includes(list.id));
         
@@ -365,7 +377,14 @@ class Checklists {
                 return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
             }
             
-            // Process items for an existing checklist
+            // Existing checklist found - Ensure type is set
+            if (!checklist.type) {
+                checklist.type = 'checklist'; // Default type
+            }
+            // Ensure special list type is correct based on ID
+            if (['agenda', 'shopping'].includes(checklist.id)) {
+                 checklist.type = checklist.id; // Assign 'agenda' or 'shopping' as type
+            }
             return await this.processChecklistItems(checklist, itemsText, chatId, ctx);
             
         } catch (error) {
@@ -444,9 +463,8 @@ class Checklists {
         ctx.reply(`Removed checklist "${name}".`);
     }
 
-    async showChecklist(ctx) {
+    async showChecklist(ctx, checklistId) {
         const chatId = ctx.callbackQuery.message.chat.id;
-        const checklistId = ctx.match[1];
         if (!checklistId) {
             await ctx.answerCbQuery('No checklist ID provided');
             return;
@@ -502,6 +520,15 @@ class Checklists {
         if (!checklist) {
             console.log(`Checklist "${listName}" not found for chat ${chatID}.`);
             return;
+        }
+
+        // Ensure type exists, default to 'checklist'
+        if (!checklist.type) {
+            checklist.type = 'checklist';
+        }
+        // Ensure special list type is correct based on ID
+        if (['agenda', 'shopping'].includes(checklist.id)) {
+            checklist.type = checklist.id;
         }
 
         // Get the standard keyboard

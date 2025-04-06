@@ -1116,7 +1116,7 @@ export default class Quests {
             // Fourth row - description and checklist
             buttons.push([
                 Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 'descriptions_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('📋 ' + i18next.t('tasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id)
             ]);
             
             // Add new row for dependencies and recurring
@@ -1481,7 +1481,7 @@ export default class Quests {
                     questId: quest.id, // Store reference to the quest
                     questTitle: quest.title, // Store quest title for display
                     chatId: chatId, // Store chat ID for navigation
-                    isTaskChecklist: true // Flag to indicate this is a task's checklist
+                    type: 'task' // Explicitly set type for subtask checklists
                 };
 
                 // Save the checklist
@@ -1493,7 +1493,7 @@ export default class Quests {
             }
 
             // Let the Checklists class handle displaying the checklist
-            await this.checklists.showChecklist(ctx, messageId.toString());
+            await this.checklists.showChecklist(ctx, messageId.toString()); // Pass ID as second argument
 
         } catch (error) {
             console.error('Error handling checklist button:', error)
@@ -1658,7 +1658,7 @@ export default class Quests {
             const checklist = await this.db.get(quest.chat + '/checklists', quest.checklistId);
             if (checklist && checklist.items.length > 0) {
                 const completed = checklist.items.filter(item => item.checked).length;
-                message += `| 📋 Checklist: ${completed}/${checklist.items.length} completed\n`;
+                message += `| 📋 ${i18next.t('subtasks', { lng: language })}: ${completed}/${checklist.items.length} completed\n`;
             }
         }
 
