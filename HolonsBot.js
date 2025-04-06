@@ -154,8 +154,10 @@ class HolonsBot {
 
   setupTelegramCommands() {
     console.log("=== Setting up Telegram commands ===");
+    
     this.telebot.command('start', async (ctx) => {
       const chatID = ctx.chat.id;
+      const language = await this.settings.getLanguage(chatID) || 'en';
 
       // Check if this is a private chat or a group chat
       if (chatID > 0) {
@@ -169,7 +171,7 @@ class HolonsBot {
         try {
           // Check if the user already has a profile
           const userExists = await this.db.get('users', ctx.from.id);
-          const language = await this.settings.getLanguage(ctx.chat.id) || 'en';
+        
           if (userExists) {
             await ctx.reply(
               i18next.t('personalWelcomeBack', { lng: language }),
@@ -278,7 +280,7 @@ class HolonsBot {
 
       if (botWasAdded) {
         const language = await this.settings.getLanguage(ctx.chat.id) || 'en';
-        await ctx.reply(i18next.t('welcomeMessage', { lng: language }));
+        await ctx.reply(i18next.t('groupWelcome', { lng: language }));
       }
 
       // Add all new members to the database using Users module

@@ -39,6 +39,7 @@ class Checklists {
         this.bot.action('enter_delete_checklists_mode', (ctx) => this.enterDeleteChecklistsMode(ctx));
         this.bot.action('exit_delete_checklists_mode', (ctx) => this.exitDeleteChecklistsMode(ctx));
         this.bot.action(/delete_checklist_(.+)/, (ctx) => this.deleteChecklist(ctx));
+        this.bot.action('back_to_all_checklists', (ctx) => this.handleBackToChecklists(ctx));
     }
 
     setupScenes() {
@@ -205,7 +206,7 @@ class Checklists {
         let lists = await this.db.getAll(chatID + '/checklists');
         
         // Filter out subtask checklists and show only regular and special checklists
-        lists = lists.filter(list => !list.type || ['agenda', 'shopping'].includes(list.id));
+        lists = lists.filter(list => list.type === 'checklist' || ['agenda', 'shopping'].includes(list.id));
         
         const buttons = lists.map(list => {
             if (deleteMode) {
@@ -443,9 +444,13 @@ class Checklists {
         ctx.reply(`Removed checklist "${name}".`);
     }
 
-    async showChecklist(ctx, checklistId) {
+    async showChecklist(ctx) {
         const chatId = ctx.callbackQuery.message.chat.id;
-        
+        const checklistId = ctx.match[1];
+        if (!checklistId) {
+            await ctx.answerCbQuery('No checklist ID provided');
+            return;
+        }
         try {
             const checklist = await this.db.get(chatId + '/checklists', checklistId);
             if (!checklist) {
@@ -489,19 +494,38 @@ class Checklists {
     }
 
     async handleChecklistButton(ctx) {
+        await ctx.answerCbQuery();
         const listName = ctx.match[1];
         let chatID = ctx.chat.id;
         let checklist = await this.db.get(chatID + '/checklists', listName);
         
         if (!checklist) {
-            ctx.reply(`Checklist "${listName}" not found.`);
+            console.log(`Checklist "${listName}" not found for chat ${chatID}.`);
             return;
         }
 
-        // Show checklist in normal mode (removeMode = false)
-        await ctx.reply(`📋 ${listName.toUpperCase()} Checklist:`, 
-            this.getChecklistKeyboard(checklist, false)
-        );
+        // Get the standard keyboard
+        const keyboardMarkup = this.getChecklistKeyboard(checklist, false);
+
+        // Add "Back to Checklists" button if it's a regular checklist 
+        // (not special and not a quest checklist which has its own back button)
+        if (!this.isSpecialChecklist(checklist.id) && !checklist.questId) {
+            const backButton = [Markup.button.callback('🔙 Back to Checklists', 'back_to_all_checklists')];
+            // Ensure inline_keyboard exists before pushing
+            if (keyboardMarkup.reply_markup && keyboardMarkup.reply_markup.inline_keyboard) {
+                 keyboardMarkup.reply_markup.inline_keyboard.push(backButton);
+            } else {
+                // Fallback or create structure if needed, though getChecklistKeyboard should provide it
+                 keyboardMarkup.reply_markup = { inline_keyboard: [backButton] }; 
+            }
+        }
+
+        // Edit the message to show the checklist
+        const icon = this.getChecklistIcon(listName);
+        await ctx.editMessageText(
+            `${icon} ${listName.toUpperCase()} Checklist:`, 
+            keyboardMarkup
+        ).catch(error => console.log(`Error editing message for checklist ${listName}:`, error));
     }
 
     async clearChecklist(ctx) {
@@ -875,6 +899,13 @@ class Checklists {
         
         // Refresh the delete mode view
         await this.showAllChecklists(ctx, true);
+    }
+
+    // Method to handle going back to the list of all checklists
+    async handleBackToChecklists(ctx) {
+        await ctx.answerCbQuery();
+        // Call showAllChecklists, it will edit the message 
+        await this.showAllChecklists(ctx);
     }
 }
 
