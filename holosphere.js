@@ -367,6 +367,18 @@ class HoloSphere {
                                 followReferences: true // Always follow nested references when resolving
                             });
                             
+                            if (resolved === null) {
+                                // resolveReference signaled that the target data was not found.
+                                console.log(`Reference at ${holon}/${lens}/${key} points to non-existent data. Deleting reference.`);
+                                try {
+                                    await this.delete(holon, lens, key, password);
+                                } catch (deleteError) {
+                                    console.error(`Failed to delete invalid reference at ${holon}/${lens}/${key}:`, deleteError);
+                                }
+                                resolve(null); // Return null as the reference is invalid
+                                return;
+                            }
+
                             if (schema && resolved._federation) {
                                 // Skip schema validation for resolved references
                                 resolve(resolved);
@@ -951,6 +963,17 @@ class HoloSphere {
                                 followReferences: true // Always follow references
                             });
                             
+                            if (resolved === null) {
+                                console.log(`Reference at ${tableName}/${key} points to non-existent data. Deleting reference.`);
+                                try {
+                                    await this.deleteGlobal(tableName, key, password);
+                                } catch (deleteError) {
+                                    console.error(`Failed to delete invalid global reference at ${tableName}/${key}:`, deleteError);
+                                }
+                                resolve(null); // Return null as the reference is invalid
+                                return;
+                            }
+                            
                             if (resolved !== parsed) {
                                 // Reference was resolved successfully
                                 resolve(resolved);
@@ -1038,6 +1061,17 @@ class HoloSphere {
                                             const resolved = await this.resolveReference(parsed, {
                                                 followReferences: true // Always follow references
                                             });
+                                            
+                                            if (resolved === null) {
+                                                console.log(`Reference at ${tableName}/${key} points to non-existent data. Deleting reference.`);
+                                                try {
+                                                    await this.deleteGlobal(tableName, key, password);
+                                                } catch (deleteError) {
+                                                    console.error(`Failed to delete invalid global reference at ${tableName}/${key}:`, deleteError);
+                                                }
+                                                resolveItem();
+                                                return;
+                                            }
                                             
                                             if (resolved !== parsed) {
                                                 // Reference was resolved successfully
@@ -1276,11 +1310,6 @@ class HoloSphere {
             return true;
         }
         
-        // Check for legacy federation reference
-        if (data._federation && data._federation.isReference) {
-            return true;
-        }
-        
         return false;
     }
     
@@ -1289,14 +1318,21 @@ class HoloSphere {
      * @param {object} reference - The reference to resolve
      * @param {object} [options] - Optional parameters
      * @param {boolean} [options.followReferences=true] - Whether to follow nested references
-     * @returns {Promise<object|null>} - The resolved data or null if not found
+     * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
+     * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original reference for circular/invalid cases.
      */
     async resolveReference(reference, options = {}) {
         if (!this.isReference(reference)) {
             return reference; // Not a reference, return as is
         }
         
-        const { followReferences = true } = options;
+        const { followReferences = true, visited = new Set() } = options;
+        
+        // Check for circular reference
+        if (reference.soul && visited.has(reference.soul)) {
+            console.warn(`Circular reference detected for soul: ${reference.soul}. Returning original reference.`);
+            return reference;
+        }
         
         try {
             // Handle direct soul reference
@@ -1307,6 +1343,9 @@ class HoloSphere {
                     return reference;
                 }
                 
+                // Add current soul to visited set
+                visited.add(reference.soul);
+                
                 console.log(`Resolving reference with soul: ${reference.soul}`);
                 
                 // Get original data using the extracted path components
@@ -1315,8 +1354,14 @@ class HoloSphere {
                     soulInfo.lens,
                     soulInfo.key,
                     null,
-                    { resolveReferences: followReferences } // Control recursion
+                    { 
+                        resolveReferences: followReferences, // Control recursion
+                        visited: visited // Pass the visited set along
+                    } 
                 );
+                
+                // Remove from visited set after the call returns (optional, depends on desired behavior)
+                // visited.delete(reference.soul); 
                 
                 if (originalData) {
                     console.log(`Original data found through soul path resolution`);
@@ -1330,12 +1375,13 @@ class HoloSphere {
                         }
                     };
                 } else {
-                    console.warn(`Could not resolve reference: original data not found at extracted path`);
-                    return reference; // Return original reference if resolution fails
+                    console.warn(`Could not resolve reference: original data not found at ${soulInfo.holon}/${soulInfo.lens}/${soulInfo.key}. Returning null to signal deletion.`);
+                    return null; // Signal to the caller that the reference is invalid and should be deleted
                 }
             }
             
-            // Handle legacy federation reference
+            // Handle legacy federation reference (assuming these don't form loops with soul refs easily)
+            // Consider adding loop detection here as well if necessary.
             else if (reference._federation && reference._federation.isReference) {
                 const fedRef = reference._federation;
                 console.log(`Resolving legacy federation reference from ${fedRef.origin}`);
@@ -1345,7 +1391,10 @@ class HoloSphere {
                     fedRef.lens,
                     reference.id || fedRef.key,
                     null,
-                    { resolveReferences: followReferences }
+                    { 
+                        resolveReferences: followReferences, 
+                        visited: visited // Pass visited set here too if loops are possible
+                    }
                 );
                 
                 if (originalData) {
@@ -1367,6 +1416,14 @@ class HoloSphere {
         } catch (error) {
             console.error(`Error resolving reference: ${error.message}`, error);
             return reference;
+        } finally {
+            // Ensure the soul is removed if the function exits early due to error
+            // This removal might not be necessary depending on how you want to handle errors within a loop.
+            // If an error occurs during resolution, keeping it in 'visited' might prevent retries.
+            // If you want retries, uncomment the delete.
+            // if (reference.soul) {
+            //    visited.delete(reference.soul); 
+            // }
         }
     }
 
@@ -1711,6 +1768,18 @@ class HoloSphere {
                             const resolved = await this.resolveReference(parsed, {
                                 followReferences: true // Always follow references
                             });
+                            
+                            if (resolved === null) {
+                                console.log(`Reference at ${holon}/${lens}/${parsed.id} points to non-existent data. Deleting reference.`);
+                                try {
+                                     // Use parsed.id as the key for the reference
+                                    await this.delete(holon, lens, parsed.id, null); 
+                                } catch (deleteError) {
+                                    console.error(`Failed to delete invalid reference at ${holon}/${lens}/${parsed.id}:`, deleteError);
+                                }
+                                // Don't add to output, just return
+                                return; 
+                            }
                             
                             if (resolved !== parsed) {
                                 // Reference was resolved successfully
