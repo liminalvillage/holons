@@ -1,24 +1,18 @@
+/**
+ * @module holosphere
+ * @version 1.1.10
+ * @description Holonic Geospatial Communication Infrastructure
+ * @author Roberto Valenti
+ * @license GPL-3.0-or-later
+ */
+
 import * as h3 from 'h3-js';
 import OpenAI from 'openai';
 import Gun from 'gun'
 import Ajv2019 from 'ajv/dist/2019.js'
 import * as Federation from './federation.js';
 
-/**
- * HoloSphere is a cutting-edge holonic communication infrastructure designed to facilitate
- * the creation, validation, and sharing of information.. By leveraging advanced technologies
- * such as H3 for geospatial indexing, OpenAI for natural language processing, and Gun for decentralized
- * data storage, HoloSphere provides a robust platform for developers to build innovative stygmergic applications.
- * 
- * Key Features:
- * - Geospatial indexing using H3
- * - Natural language processing with OpenAI
- * - Decentralized data storage with Gun
- * - JSON schema validation with Ajv
- * - Federation capabilities for distributed systems
- * 
- *
- */
+
 
 class HoloSphere {
     /**
@@ -1380,39 +1374,7 @@ class HoloSphere {
                 }
             }
             
-            // Handle legacy federation reference (assuming these don't form loops with soul refs easily)
-            // Consider adding loop detection here as well if necessary.
-            else if (reference._federation && reference._federation.isReference) {
-                const fedRef = reference._federation;
-                console.log(`Resolving legacy federation reference from ${fedRef.origin}`);
-                
-                const originalData = await this.get(
-                    fedRef.origin,
-                    fedRef.lens,
-                    reference.id || fedRef.key,
-                    null,
-                    { 
-                        resolveReferences: followReferences, 
-                        visited: visited // Pass visited set here too if loops are possible
-                    }
-                );
-                
-                if (originalData) {
-                    return {
-                        ...originalData,
-                        _federation: {
-                            ...fedRef,
-                            resolved: true,
-                            timestamp: Date.now()
-                        }
-                    };
-                } else {
-                    console.warn(`Could not resolve legacy reference: original data not found`);
-                    return reference;
-                }
-            }
-            
-            return reference;
+            return reference; // Return original reference if resolution fails
         } catch (error) {
             console.error(`Error resolving reference: ${error.message}`, error);
             return reference;

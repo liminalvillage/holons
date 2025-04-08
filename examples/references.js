@@ -1,4 +1,4 @@
-import HoloSphere from './holosphere.js';
+import HoloSphere from '../holosphere.js';
 
 async function testReferenceFederation() {
     console.log('Starting reference federation test...');

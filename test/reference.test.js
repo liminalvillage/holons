@@ -56,16 +56,6 @@ describe('HoloSphere Reference System', () => {
             soul: 'testApp/testHolon/testLens/test-data-123'
         };
         
-        // Legacy federation reference
-        const legacyReference = {
-            id: 'test-data-456',
-            _federation: {
-                isReference: true,
-                origin: 'originHolon',
-                lens: 'originLens'
-            }
-        };
-        
         // Regular data (not a reference)
         const regularData = {
             id: 'test-data-789',
@@ -75,7 +65,6 @@ describe('HoloSphere Reference System', () => {
         
         // Test reference detection
         expect(holoSphere.isReference(soulReference)).toBe(true);
-        expect(holoSphere.isReference(legacyReference)).toBe(true);
         expect(holoSphere.isReference(regularData)).toBe(false);
         expect(holoSphere.isReference(null)).toBe(false);
         expect(holoSphere.isReference(undefined)).toBe(false);
