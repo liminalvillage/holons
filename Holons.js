@@ -1054,170 +1054,145 @@ export default class Holons {
 
   async createHolon(ctx) {
     console.log("======== createHolon function called ========");
+    // Send only one initial message
+    const initialMessage = await ctx.reply(`🛠️ Creating Holon Bundle... Please wait.`);
+    
     try {
       // Log input parameters
       const chatID = ctx.message.chat.id;
       const userID = ctx.message.from.id;
-      const args = ctx.message.text.split(" ").slice(1);
-      const flavor = args[0]; // First parameter is always the holon type
-      
+      // const args = ctx.message.text.split(" ").slice(1); // Not used currently
+
       console.log("Input parameters:");
       console.log("- chatID:", chatID, "(" + typeof chatID + ")");
       console.log("- userID:", userID, "(" + typeof userID + ")");
-      console.log("- args:", args);
-      
-      // Get contract address and check interface
+
       const holonsAddress = this.holonsContract.target;
       console.log("Holons contract address:", holonsAddress);
-      
-      // Debug contract interface
-      // console.log("Contract inspection:");
-      // console.log("- Contract target:", this.holonsContract.target);
-      // console.log("- Has interface:", !!this.holonsContract.interface);
-      
-      // if (this.holonsContract.interface) {
-      //   console.log("- Interface fragments:", this.holonsContract.interface.fragments.map(f => f.name));
-        
-      //   if (this.holonsContract.interface.functions) {
-      //     console.log("- Functions:", Object.keys(this.holonsContract.interface.functions));
-      //   } else {
-      //     console.log("- No functions property on interface");
-      //   }
-      // }
-      
-      // Prepare transaction parameters
+
       const creatorUserId = userID.toString();
-      //#TODO: Technical debt 1 - Revisit this as it was created in order to evade Solidity strings .concat issues, but the question is did we need it in the first place
-      // as we used chat_id + managed / zoned in contractsByType mapping, but we could have used simple getManaged, getZoned contract.
-      // It's definitely possible to get those contract, as Holons.sol have mapping of chatId -> Splitter address. From specific splitter we can just call getManaged
-      // and getZoned contract
       const holonName = `chat_${Math.abs(chatID)}`;
-      const parameterValue = 5;
+      const parameterValue = 5; 
       
-      await ctx.reply(`Creating holons... Please wait.`);
+      console.log(`Creating holon bundle with name: ${holonName}`);
+      // REMOVED: await ctx.reply(`Creating holon bundle (Splitter) for ${holonName}... Please wait.`);
+
+      // 1. Create the Holon Bundle (Splitter)
+      const txBundle = await this.holonsContract.newHolonBundle(creatorUserId, holonName, parameterValue, { gasLimit: 10_000_000 });
+      console.log("Transaction submitted for newHolonBundle:", txBundle.hash);
+      // REMOVED: await ctx.reply(`Transaction submitted for Holon Bundle: ${txBundle.hash}\nWaiting for confirmation...`);
       
-      // Use a direct approach with encoded function call
-      console.log("Creating function data manually");
-      
-      // Try using the encodeFunctionData method
-      let encodedData;
+      const receiptBundle = await txBundle.wait();
+      console.log("newHolonBundle transaction confirmed:", receiptBundle.status === 1 ? 'Success' : 'Failed');
+      if (receiptBundle.status !== 1) {
+        throw new Error(`Holon Bundle creation transaction failed (Hash: ${txBundle.hash})`);
+      }
+      // REMOVED: await ctx.reply(`✅ Holon Bundle (Splitter, Managed, Zoned) likely created successfully via newHolonBundle!`);
+
+      // 2. Retrieve the Splitter Address
+      console.log(`Retrieving Splitter address mapped in Holons contract for holonName: ${holonName}`);
+      const splitterAddress = await this.holonsContract.toAddress(holonName);
+      console.log(`Retrieved Splitter Address from Holons mapping: ${splitterAddress}`);
+
+      if (!splitterAddress || splitterAddress === '0x0000000000000000000000000000000000000000') {
+         console.warn(`Could not retrieve a Splitter address for ${holonName} from Holons.toAddress mapping. This might be normal if newHolonBundle doesn't map it there.`);
+         // REMOVED: await ctx.reply(`Splitter address not directly mapped in Holons contract (this might be normal).`);
+      } else {
+        console.log(`Splitter address found (from Holons mapping): ${splitterAddress}`);
+        // REMOVED: await ctx.reply(`Splitter address found (from Holons mapping): \`${splitterAddress}\``, { parse_mode: 'Markdown' });
+      }
+
+      // Check if splitterAddress is valid before proceeding
+      if (!splitterAddress || splitterAddress === '0x0000000000000000000000000000000000000000') {
+        throw new Error(`Failed to retrieve a valid Splitter address for ${holonName} after bundle creation.`);
+      }
+
+      // 3. Create Splitter Contract Instance
+      const splitterContract = new ethers.Contract(splitterAddress, splitter.default.abi, this.wallet);
+      console.log("Splitter contract instance created.");
+
+      // 4. Create Managed Contract
+      console.log(`Calling createManagedContract on ${splitterAddress} with user ${creatorUserId}, name ${holonName}, param ${parameterValue}`);
+      // --- Simulate Managed ---
       try {
-        console.log("Encoding function data for newHolonBundle");
-        encodedData = this.holonsContract.interface.encodeFunctionData(
-          "newHolonBundle", 
-          [creatorUserId, holonName, parameterValue]
-        );
-        // console.log("Encoded data:", encodedData);
-      } 
-      catch (encodeError) {
-        console.error("Error encoding function data:", encodeError);
+        await splitterContract.createManagedContract.staticCall(creatorUserId, holonName, parameterValue);
+        console.log("Managed contract creation simulation successful.");
+      } catch (simError) {
+        console.error("Managed contract creation simulation FAILED:", simError);
+        throw new Error(`Managed contract creation simulation failed: ${simError.message}`);
       }
-      
-      // Send transaction using the signer directly
-      await ctx.reply(`Submitting transaction...`);
-      const signer = this.holonsContract.runner;
-      
-      if (!signer) {
-        return ctx.reply(`Error: No signer attached to contract. Cannot submit transaction.`);
+      // --- End Simulation ---
+      // REMOVED: await ctx.reply(`Creating Managed Contract...`);
+      const txManaged = await splitterContract.createManagedContract(creatorUserId, holonName, parameterValue, { gasLimit: 3_000_000 }); 
+      console.log("Transaction submitted for createManagedContract:", txManaged.hash);
+      // REMOVED: await ctx.reply(`Transaction submitted for Managed Contract: ${txManaged.hash}\nWaiting for confirmation...`);
+
+      const receiptManaged = await txManaged.wait();
+      console.log("createManagedContract transaction confirmed:", receiptManaged.status === 1 ? 'Success' : 'Failed');
+       if (receiptManaged.status !== 1) {
+        throw new Error(`Managed Contract creation transaction failed (Hash: ${txManaged.hash})`);
       }
+      // REMOVED: await ctx.reply(`✅ Managed Contract created successfully!`);
 
-      // console.log("About to send transaction with data:", {
-      //   to: holonsAddress,
-      //   dataLength: encodedData ? encodedData.length : 0,
-      //   dataPreview: encodedData ? encodedData.substring(0, 66) + '...' : 'none',
-      //   gasLimit: 10_000_000
-      // });
-
-      // Add this debugging before sending the transaction
-      // console.log("Contract connection check:");
-      // console.log("- Contract has runner:", !!this.holonsContract.runner);
-      // console.log("- Contract has provider:", !!this.holonsContract.provider);
-
+      // 5. Create Zoned Contract
+      console.log(`Calling createZonedContract on ${splitterAddress} with user ${creatorUserId}, name ${holonName}, param ${parameterValue}`);
+      // --- Simulate Zoned ---
       try {
-        await this.holonsContract.newHolonBundle.staticCall(creatorUserId, holonName, parameterValue, { gasLimit: 10_000_000 })
-      } catch (simulationError) { 
-        console.error("Simulation error:", simulationError);
+        await splitterContract.createZonedContract.staticCall(creatorUserId, holonName, parameterValue);
+        console.log("Zoned contract creation simulation successful.");
+      } catch (simError) {
+        console.error("Zoned contract creation simulation FAILED:", simError);
+        // REMOVED: await ctx.reply(`⚠️ Zoned contract simulation failed: ${simError.message}. Attempting transaction anyway...`);
+         throw new Error(`Zoned contract creation simulation failed: ${simError.message}`); // Stop if simulation fails
       }
-      
-      const tx = await this.holonsContract.newHolonBundle(creatorUserId, holonName, parameterValue, { gasLimit: 10_000_000 })
+      // --- End Simulation ---
+      // REMOVED: await ctx.reply(`Creating Zoned Contract...`);
+      const txZoned = await splitterContract.createZonedContract(creatorUserId, holonName, parameterValue, { gasLimit: 6_000_000 }); 
+      console.log("Transaction submitted for createZonedContract:", txZoned.hash);
+      // REMOVED: await ctx.reply(`Transaction submitted for Zoned Contract: ${txZoned.hash}\nWaiting for confirmation...`);
 
+      const receiptZoned = await txZoned.wait();
+      console.log("createZonedContract transaction confirmed:", receiptZoned.status === 1 ? 'Success' : 'Failed');
+      if (receiptZoned.status !== 1) {
+        throw new Error(`Zoned Contract creation transaction failed (Hash: ${txZoned.hash})`);
+      }
+      // REMOVED: await ctx.reply(`✅ Zoned Contract created successfully!`);
 
-      console.log("Transaction submitted:", tx.hash);
-      await ctx.reply(`Transaction submitted: ${tx.hash}\nWaiting for confirmation...`);
-      
-      const receipt = await tx.wait();
-      console.log("Transaction confirmed:", receipt);
-      
-      return ctx.reply(`✅ Holon creation transaction completed!\nHash: ${tx.hash}`);
-      
+      // Edit the initial message on final success
+      await ctx.telegram.editMessageText(
+        ctx.chat.id, 
+        initialMessage.message_id, 
+        null, // inline_message_id
+        `✅✅✅ Holon Bundle initialization completed!\nTransaction Hash: ${txBundle.hash}`, 
+        { parse_mode: 'Markdown' }
+      );
+      // Keep the return for potential chaining/logging if needed server-side
+      return true; 
+
     } catch (error) {
       console.error("========== ERROR CREATING HOLON ==========");
       console.error("Error:", error);
       console.error("Error message:", error.message);
-      
+
       // More detailed error logging
       if (error.code) console.error("Error code:", error.code);
       if (error.stack) console.error("Stack trace:", error.stack);
-      
-      return ctx.reply(`Failed to create holon: ${error.message}`);
+      if (error.transactionHash) console.error("Failed Tx Hash:", error.transactionHash);
+      if (error.receipt) console.error("Failed Tx Receipt:", error.receipt);
+
+      // Edit the initial message on failure
+      await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        initialMessage.message_id,
+        null,
+        `❌ Failed during holon creation process: ${error.message}`
+      ).catch(editError => console.error("Error editing message on failure:", editError)); // Catch potential errors editing the message itself
+
+      // Keep the return for potential chaining/logging if needed server-side
+      return false;
     }
   }
-  // #TOOD: Previous. Delete once we create an alternative
-  // async addMembers(ctx) {
-  //   console.log("addMembers function called");
-  //   const chatID = utils.getChatId(ctx);
-  //   const userID = utils.getUserId(ctx); // Get the user ID of the person who initiated the command
-    
-  //   let users = await this.db.getAll(chatID.toString() + '/users');
-  //   let userIds = users.map(user => user.id.toString());
 
-  //   if (!users || users.length === 0) {
-  //     return ctx.reply("No users found in the database.");
-  //   }
-
-  //   try {
-  //     const holonAddress = await this.holonsContract.toAddress(chatID.toString());
-  //     console.log("from addMembers(), holonAddress: ", holonAddress);
-  //     if (holonAddress === '0x0000000000000000000000000000000000000000') {
-  //       return ctx.reply("No holon exists for this chat. Create one first with /createholon");
-  //     }
-
-  //     const holon = await this.getHolonContract(holonAddress);
-
-  //     // Determine if the holon is zoned by checking the flavor
-  //     const flavor = await holon.flavor();
-  //     const isZoned = (flavor === "Zoned");
-
-  //     console.log("adding members to a holon address: ", holonAddress);
-  //     await ctx.reply(`Adding ${users.length} members... Please wait.`);
-
-  //     let results = [];
-  //     try {
-  //       const tx = await this.executeTransaction(
-  //         holon,
-  //         'addMembers',
-  //         isZoned ? [userID, userIds] : [userIds] // Include userID if holon is zoned
-  //       );
-
-  //       // Don't await the transaction completion
-  //       this.waitForTransaction(tx, ctx, `Successfully added ${userIds.length} members`);
-        
-  //       // Provide immediate feedback
-  //       results.push(`Transaction submitted. You will be notified when members are added.`);
-  //     } catch (error) {
-  //       console.error("Transaction error:", error);
-  //       results.push(`Failed to add members: ${error.message}`);
-  //     }
-
-  //     // Send results
-  //     await ctx.reply(results.join('\n'));
-
-  //   } catch (error) {
-  //     console.error("Error in addMembers:", error);
-  //     ctx.reply(`Failed to process members: ${error.message}`);
-  //   }
-  // }
-  //#TODO: Write new implementation here
   async addMembersBundle(ctx){
     console.log("addMembersBundle function called");
     const chatID = utils.getChatId(ctx);
@@ -1244,7 +1219,7 @@ export default class Holons {
 
     try{
       holonAddressManaged = await this.getManagedContract(holonName);
-      //  console.log("holonAddressManaged from addMembersBundle: ", holonAddressManaged); // it's there, commenting it out 
+      console.log("holonAddressManaged from addMembersBundle: ", holonAddressManaged.target); // it's there, commenting it out 
       
     }catch(error){
       console.error("Cannot find holon, in this case it's Managed!");
@@ -1671,6 +1646,7 @@ export default class Holons {
     try {
       // First get the Splitter contract
       const splitterContract = await this.getSplitterContract(chatID);
+      console.log("splitterConract from getZonedContract: ", splitterContract.target);
       // console.log("from getZonedContract: splitter contract", splitterContract);
       
       if (!splitterContract) {
@@ -1735,6 +1711,8 @@ export default class Holons {
       // Get the Managed contract from the Splitter
       // console.log("Splitter ABI: ", splitter.default.abi); // It's there
       const managedContractAddress = await splitterContract.contractsByType(holonName);
+      console.log("splitter contract address: ", splitterContract.target)
+      console.log("managedContractAddress: ", managedContractAddress);
       const managedContract = new ethers.Contract(managedContractAddress, managed.default.abi, this.wallet);
       // console.log("Actual managed contract is there: ", managedContract); // It's there
       return managedContract;
@@ -1846,128 +1824,110 @@ export default class Holons {
   //   }
   // }
 
-  async setSplit(commandString, chatID) {
-    try {
-      if (!commandString || typeof commandString !== 'string') {
-        return {
-          success: false,
-          message: "Invalid command. Usage: /setsplit internal [number] external [number]",
-        };
-      }
-  
-      const cmdStr = commandString.trim();
-      if (cmdStr === '' || cmdStr === '/setsplit') {
-        return {
-          success: false,
-          message: "Invalid command. Usage: /setsplit internal [number] external [number]",
-        };
-      }
-  
-      const parts = cmdStr.replace(/^\/setsplit\s+/i, '').split(/\s+/);
-      console.log("Command parts:", parts);
-  
-      if (parts.length !== 4) {
-        return {
-          success: false,
-          message: "Invalid format. Use: /setsplit internal [number] external [number]",
-        };
-      }
-  
-      const allocations = {
-        internal: null,
-        external: null,
-      };
-  
-      for (let i = 0; i < parts.length; i += 2) {
-        const type = parts[i].toLowerCase();
-        const value = parseInt(parts[i + 1], 10);
-  
-        if (!(type in allocations)) {
-          return {
-            success: false,
-            message: `Invalid group type "${type}". Use "internal" and "external" only.`,
-          };
-        }
-  
-        if (isNaN(value)) {
-          return {
-            success: false,
-            message: `Invalid percentage value for "${type}". Must be a number.`,
-          };
-        }
-  
-        allocations[type] = value;
-      }
-  
-      // Ensure both values were set
-      if (allocations.internal === null || allocations.external === null) {
-        return {
-          success: false,
-          message: "Both internal and external percentages must be defined.",
-        };
-      }
-  
-      const totalPercentage = allocations.internal + allocations.external;
-      if (totalPercentage !== 100) {
-        return {
-          success: false,
-          message: "Total percentage must be 100.",
-        };
-      }
-  
-      const allocTypes = ['internal', 'external'];
-      const percentages = [allocations.internal, allocations.external];
-  
-      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
-      const holon = await this.getHolonContract(holonAddress);
-      const contractAddress = await this.holonsContract.getAddress();
-  
-      console.log("Contract Address:", contractAddress);
-  
-      const tx = await this.executeTransaction(
-        holon,
-        'setSplit',
-        [allocTypes, percentages]
-      );
-  
-      await tx.wait();
-      console.log("Split set successfully");
-  
-      return { success: true, message: "Split set successfully" };
-    } catch (error) {
-      console.error("Error setting split:", error);
-      return {
-        success: false,
-        message: error.message || "An unexpected error occurred.",
-      };
+  // Modified setSplit to accept parsed arguments instead of ctx
+  async setSplit(userTags, percentages, chatID) { // Added chatID, but might not be needed here
+    // Removed message parsing, as it's done in handleSetSplitCommand
+    // const message = ctx.message.text;
+    // const args = message.split(' ').slice(1);
+
+    if (userTags.length === 0 || percentages.length === 0 || userTags.length !== percentages.length) {
+      // Adjusted error message for clarity based on new input structure
+      console.log("❌ Error: Invalid input format. Ensure you provide pairs like 'internal 10 external 90'.");
+      // Throw an error instead of replying, so handleSetSplitCommand can catch it
+      throw new Error("Invalid input format. Ensure you provide pairs like 'internal 10 external 90'.");
+      // return ctx.reply("❌ Error: You must provide internal and external percentages.\nExample: /setsplit internal 10 external 90");
     }
+
+    const data = {};
+    // Use userTags and percentages directly
+    for (let i = 0; i < userTags.length; i++) {
+      const key = userTags[i]?.toLowerCase();
+      const value = percentages[i]; // Already parsed to int in handleSetSplitCommand
+
+      // Simplified validation as handleSetSplitCommand already parses ints
+      if (!key || isNaN(value)) { // Keep isNaN check just in case
+        console.log("❌ Error: Invalid format. Found non-number percentage or missing tag.");
+        throw new Error("Invalid format. Found non-number percentage or missing tag.");
+        // return ctx.reply("❌ Error: Invalid format. Make sure both internal and external are followed by numbers.");
+      }
+
+      if (key === 'internal' || key === 'external') {
+        data[key] = value;
+      } else {
+        // Handle unexpected tags if necessary, or ignore
+        console.log(`❓ Warning: Ignoring unknown tag '${key}'.`);
+      }
+    }
+
+    // Check both keys exist
+    if (typeof data.internal !== 'number' || typeof data.external !== 'number') {
+      console.log("❌ Error: Both 'internal' and 'external' values must be provided.");
+      throw new Error("Both 'internal' and 'external' values must be provided.");
+      // return ctx.reply("❌ Error: Both 'internal' and 'external' values must be provided.");
+    }
+
+    // Check sum == 100
+    if (data.internal + data.external !== 100) {
+      const errorMsg = `The sum must be 100. You provided internal ${data.internal}% and external ${data.external}%.`;
+      console.log(`❌ Error: ${errorMsg}`);
+      throw new Error(errorMsg); // Throw error
+      // return ctx.reply(`❌ Error: ${errorMsg}`);
+    }
+
+    // ✅ All good - Instead of replying, return the data or a success indicator
+    // We let handleSetSplitCommand handle the reply.
+    console.log(`✅ Split validated successfully for chat ${chatID || 'unknown'}! Internal: ${data.internal}%, External: ${data.external}%`);
+    // Optionally return the validated data if needed elsewhere
+    return { internal: data.internal, external: data.external };
+    // return ctx.reply(`✅ Split set successfully!\nInternal: ${data.internal}%\nExternal: ${data.external}%`);
   }
-  
 
   async handleSetSplitCommand(ctx) {
     try {
       const chatID = utils.getChatId(ctx);
       const text = ctx.message.text;
 
-      // Remove the command part and split the rest of the message
       const args = text.split(' ').slice(1);
 
-      // Separate user tags and percentages
       const userTags = [];
       const percentages = [];
 
+      // Basic check for even number of arguments
+      if (args.length % 2 !== 0 || args.length === 0) {
+          ctx.reply("Invalid format. Please provide pairs like 'internal 10 external 90'.");
+          return;
+      }
+
       for (let i = 0; i < args.length; i += 2) {
-        userTags.push(args[i]);
-        percentages.push(parseInt(args[i + 1], 10));
+        const tag = args[i];
+        const percentageStr = args[i + 1];
+        const percentage = parseInt(percentageStr, 10);
+
+        // Add validation during parsing in the handler
+        if (isNaN(percentage)) {
+            ctx.reply(`Invalid percentage value '${percentageStr}' for tag '${tag}'. Please provide numbers.`);
+            return;
+        }
+
+        userTags.push(tag);
+        percentages.push(percentage);
       }
 
       // Call the setSplit function with parsed data
-      await this.setSplit(userTags, percentages, chatID);
+      // No need to await if setSplit is purely synchronous validation now
+      // Or keep await if it might do async operations later (like DB save)
+      const validatedData = await this.setSplit(userTags, percentages, chatID);
 
-      ctx.reply("Split set successfully.");
+      // If setSplit completes without throwing, we can reply with success
+      // We can use the validatedData if needed
+      ctx.reply(`✅ Split set successfully!\nInternal: ${validatedData.internal}%\nExternal: ${validatedData.external}%`);
+
     } catch (error) {
-      console.error("Error handling setSplit command:", error);
-      ctx.reply("Failed to set split. Please check your input format.");
+      // Catch errors thrown by setSplit or other issues
+      console.error("Error handling setSplit command:", error.message); // Log the specific error message
+      // Reply with the specific error message from setSplit
+      ctx.reply(`❌ Error: ${error.message}`);
+      // Old generic reply: ctx.reply("Failed to set split. Please check your input format.");
     }
   }
 
