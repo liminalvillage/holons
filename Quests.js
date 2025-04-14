@@ -266,8 +266,7 @@ export default class Quests {
             category: category,
             timeTracking: {}, // Add time tracking object to store user contributions
             checklistId: null, // Add checklist ID field
-            reminderId: null, // Add reminder ID field
-            linkedUserIds: [] // Add array to track linked users
+            reminderId: null // Add reminder ID field
         }
 
 
@@ -335,9 +334,6 @@ export default class Quests {
             //update the new message
             await this.updateMessage(ctx, quest, language)
             
-            // Link quest to initiator in holosphere
-            await this._linkQuestToUserHolon(quest.initiator.id, quest);
-            
             //Pin the message
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
 
@@ -388,21 +384,11 @@ export default class Quests {
 
             
             if (userindex > -1) {
-                // User is already a participant - Clone the quest instead of leaving
-                console.log(`User ${sender.id} is already participating in quest ${quest.id}. Cloning...`);
-                await this._cloneAndInitiateQuest(ctx, quest, sender);
-                // Answer callback query to inform user
-                await ctx.answerCbQuery(`Created a new task based on "${quest.title}"`);
-                /* // Old logic: remove user
-                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`);
+                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`)
+                    .catch((err) => { console.log(err) });
                 quest.participants.splice(userindex, 1);
-                await this._unlinkQuestFromUserHolon(sender.id, quest);
-                */
             } else {
-                // User is joining for the first time
                 quest.participants.push(sender);
-                // Link quest to user in holosphere
-                await this._linkQuestToUserHolon(sender.id, quest);
                 ctx.answerCbQuery(`${getDisplayName(sender)} has joined the quest "${quest.title}"`)
                     .catch((err) => { console.log(err) });
             }
@@ -452,8 +438,6 @@ export default class Quests {
                 return;
             }
             quest.participants.splice(userindex, 1);
-            // Unlink quest from user in holosphere
-            await this._unlinkQuestFromUserHolon(sender.id, quest);
         }
 
         // Check if the user has already appreciated the quest, remove if so
@@ -470,8 +454,6 @@ export default class Quests {
             quest.appreciation.push(sender);
             // Send a message to confirm that the user joined the quest
             ctx.answerCbQuery(`${getDisplayName(sender)} appreciates the quest "${quest.title}"`);
-            // Link quest to user in holosphere
-            await this._linkQuestToUserHolon(sender.id, quest);
         }
 
 
@@ -500,52 +482,42 @@ export default class Quests {
                     await this.scheduler.cancelReminder(quest.reminderId);
                 }
                 
-                // BEFORE deleting the quest, unlink all users
-                if (quest.linkedUserIds && quest.linkedUserIds.length > 0) {
-                     console.log(`Quest ${quest.id} cancelled. Unlinking ${quest.linkedUserIds.length} users.`);
-                     // Create a copy of the array to avoid issues while iterating and modifying
-                     const usersToUnlink = [...quest.linkedUserIds]; 
-                     for (const userIdToUnlink of usersToUnlink) {
-                         // Pass the current quest object before it gets modified further
-                         await this._unlinkQuestFromUserHolon(userIdToUnlink, quest); 
-                     }
-                     // Clear the array on the object just in case before delete
-                     quest.linkedUserIds = []; 
+                // First, check if there are federated messages for this quest
+                const federationKey = `${chatID}_${messageID}_fedmsgs`;
+                const federatedMessages = await this.db.get('federation_messages', federationKey);
+
+                // If there are federated messages, unpin and delete them
+                if (federatedMessages && federatedMessages.messages && federatedMessages.messages.length > 0) {
+                    for (const msgInfo of federatedMessages.messages) {
+                        try {
+                            // Unpin the message
+                            await ctx.telegram.unpinChatMessage(msgInfo.chatId, msgInfo.messageId)
+                                .catch(err => { });
+
+                            // Delete the message
+                            await ctx.telegram.deleteMessage(msgInfo.chatId, msgInfo.messageId)
+                                .catch(err => console.error(`Error deleting message in federated chat ${msgInfo.chatId}:`, err));
+
+                            console.log(`Removed federated message in chat ${msgInfo.chatId}`);
+                        } catch (error) {
+                            console.error(`Failed to remove federated message in chat ${msgInfo.chatId}:`, error);
+                        }
+                    }
+
+                    // Remove the federation messages tracking record
+                    await this.db.del('federation_messages', federationKey);
                 }
 
                 // Now delete quest from database
-                console.log(`Deleting quest ${messageID} from main DB.`);
-                await this.db.del(chatID + '/quests', messageID.toString());
+                this.db.del(chatID + '/quests', messageID.toString());
 
-                // Unpin and delete the original message
-                console.log(`Unpinning/deleting original message ${messageID} in chat ${chatID}.`);
+                // Unpin the original message
                 ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
+
+                // Delete the telegram message
                 ctx.deleteMessage(messageID.toString()).catch((err) => { });
-
-                // Note: Federated message cleanup happens during _unlinkQuestFromUserHolon indirectly
-                // via the _propagateQuestUpdate call triggered by saving the modified quest... 
-                // Wait, no, that doesn't happen if we delete the quest first.
-                // _unlinkQuestFromUserHolon now handles deleting the private message.
-                // We still need to handle deleting the *federated* messages.
-                
-                // Explicitly delete federated messages tracking record
-                 const federationKey = `${chatID}_${messageID}_fedmsgs`;
-                 const federatedMessages = await this.db.get('federation_messages', federationKey);
-                 if (federatedMessages && federatedMessages.messages && federatedMessages.messages.length > 0) {
-                     console.log(`Deleting ${federatedMessages.messages.length} federated messages for cancelled quest ${messageID}.`);
-                     for (const msgInfo of federatedMessages.messages) {
-                         try {
-                             await ctx.telegram.unpinChatMessage(msgInfo.chatId, msgInfo.messageId).catch(() => {});
-                             await ctx.telegram.deleteMessage(msgInfo.chatId, msgInfo.messageId).catch(() => {});
-                         } catch (error) {
-                             console.error(`Failed to remove federated message in chat ${msgInfo.chatId}:`, error);
-                         }
-                     }
-                     await this.db.del('federation_messages', federationKey);
-                 }
-
             } catch (error) {
-                console.error('Error cancelling quest and cleaning up links/messages:', error);
+                console.error('Error cancelling quest and its federated messages:', error);
             }
         } else {
             ctx.answerCbQuery(i18next.t('onlyinitatorcancel', { lng: language }), { reply_to_message_id: messageID });
@@ -657,13 +629,6 @@ export default class Quests {
                 }
             } catch (error) {
                 console.error('Error handling federated messages for completed quest:', error);
-            }
-
-            // Unpin the private message for the user completing the action
-            const trackingKey = `private_${ctx.from.id}_${quest.chat}_${quest.id}`;
-            const trackingInfo = await this.db.get('user_private_quest_messages', trackingKey);
-            if (trackingInfo && trackingInfo.messageId) {
-                 await this.bot.telegram.unpinChatMessage(ctx.from.id, trackingInfo.messageId).catch(unpinErr => console.warn(`Could not unpin completed private message ${trackingInfo.messageId} for user ${ctx.from.id}: ${unpinErr.message}`));
             }
 
         } else {
@@ -2529,332 +2494,4 @@ export default class Quests {
             await ctx.answerCbQuery('Error stopping recurring task');
         }
     }
-
-    // ---- Holosphere Linking Helpers ----
-
-    async _linkQuestToUserHolon(userId, quest) {
-        if (!userId || !quest || !quest.id || !quest.chat) {
-            console.error('Invalid input for _linkQuestToUserHolon', { userId, questId: quest?.id });
-            return;
-        }
-        try {
-            const questSoul = `${this.db.holosphere.appname}/${quest.chat}/quests/${quest.id}`;
-            const userIdStr = userId.toString();
-            const questIdStr = quest.id.toString();
-
-            // 1. Ensure link record exists in user holon (without message ID initially)
-            const linkData = { 'id': questIdStr, 'soul': questSoul }; 
-            // Check if it exists first? No, put should overwrite/create.
-            console.log(`Ensuring link record for quest ${questIdStr} exists for user ${userIdStr}.`);
-            await this.db.holosphere.put(userIdStr, 'linked_quests', linkData);
-
-            // 2. Add user to quest's linkedUserIds in main DB if not present
-            if (!quest.linkedUserIds) {
-                quest.linkedUserIds = [];
-            }
-            if (!quest.linkedUserIds.includes(userId)) {
-                quest.linkedUserIds.push(userId);
-                console.log(`Added user ${userId} to linkedUserIds for quest ${quest.id}. Saving quest.`);
-                // Save the quest object back to the main DB
-                await this.db.put(quest.chat + '/quests', quest);
-            }
-
-            // Note: Sending/updating the private message happens in _propagateQuestUpdate
-
-        } catch (error) {
-            console.error(`Error linking quest ${quest.id} to user ${userId} (holosphere link / quest array update):`, error);
-        }
-    }
-
-    async _unlinkQuestFromUserHolon(userId, quest) {
-        if (!userId || !quest || !quest.id || !quest.chat) {
-            console.error('Invalid input for _unlinkQuestFromUserHolon', { userId, questId: quest?.id });
-            return;
-        }
-        try {
-            const userIdStr = userId.toString();
-            const questIdStr = quest.id.toString();
-
-            // 1. Remove user from quest's linkedUserIds in main DB
-            if (quest.linkedUserIds && quest.linkedUserIds.includes(userId)) {
-                quest.linkedUserIds = quest.linkedUserIds.filter(id => id !== userId);
-                console.log(`Removed user ${userId} from linkedUserIds for quest ${quest.id}. Saving quest.`);
-                 // Save the quest object back to the main DB
-                await this.db.put(quest.chat + '/quests', quest);
-            }
-
-            // 2. Get private message ID from link record
-            const linkData = await this.db.holosphere.get(userIdStr, 'linked_quests', questIdStr);
-            const privateMessageId = linkData?.privateMessageId;
-
-            // 3. Delete private message if ID exists
-            if (privateMessageId) {
-                const privateChatId = userId; // User ID is the chat ID
-                console.log(`Attempting to delete private message ${privateMessageId} for user ${userId}, quest ${quest.id}`);
-                try {
-                     // Attempt to unpin first
-                    await this.bot.telegram.unpinChatMessage(privateChatId, privateMessageId).catch(unpinErr => console.warn(`Could not unpin private message ${privateMessageId} for user ${userId}: ${unpinErr.message}`));
-                    // Attempt to delete the message
-                    await this.bot.telegram.deleteMessage(privateChatId, privateMessageId).catch(deleteErr => console.warn(`Could not delete private message ${privateMessageId} for user ${userId}: ${deleteErr.message}`));
-                } catch (delError) {
-                     console.error(`Error during private message deletion/unpin for user ${userId}, msg ${privateMessageId}:`, delError);
-                }
-            }
-
-            // 4. Delete the link record from user holon
-            console.log(`Deleting link record for quest ${questIdStr} from user ${userIdStr}.`);
-            await this.db.holosphere.del(userIdStr, 'linked_quests', questIdStr);
-
-        } catch (error) {
-            console.error(`Error unlinking quest ${quest.id} from user ${userId}:`, error);
-        }
-    }
-
-    // ---- End Holosphere Linking Helpers ----
-
-    // ---- Propagation Helper ----
-    async _propagateQuestUpdate(ctx, quest, language) {
-        if (!quest || !quest.id || !quest.chat) {
-            console.error('Invalid quest object for propagation');
-            return;
-        }
-        
-        // Part 1: Hex Federation (using federation_messages collection)
-        try {
-            const fedInfo = await this.db.holosphere.getFederation(quest.chat);
-            if (fedInfo?.notify?.length) {
-                const federationKey = `${quest.chat}_${quest.id}_fedmsgs`;
-                let federatedMessages = await this.db.get('federation_messages', federationKey) || {
-                    id: federationKey, chatId: quest.chat, questId: quest.id, messages: []
-                };
-                const messageContent = await this.createMessage(quest, language);
-                const markup = this.markup(quest, language);
-
-                for (const federatedChatId of fedInfo.notify) {
-                    if (federatedChatId === quest.chat) continue; // Skip original chat
-
-                    const existingMsgIndex = federatedMessages.messages.findIndex(m => m.chatId === federatedChatId);
-                    const existingMsg = existingMsgIndex > -1 ? federatedMessages.messages[existingMsgIndex] : null;
-                    let success = false;
-                    let newMessageId = null;
-
-                    try {
-                        if (existingMsg) {
-                            // Update existing federated message
-                            if (quest.picture) {
-                                await ctx.telegram.editMessageMedia(federatedChatId, existingMsg.messageId, null, {type: 'photo', media: quest.picture, caption: messageContent}, markup);
-                            } else {
-                                await ctx.telegram.editMessageText(federatedChatId, existingMsg.messageId, null, messageContent, markup);
-                            }
-                            newMessageId = existingMsg.messageId;
-                            success = true;
-                        } else {
-                            // Send new federated message
-                             let sentMessage;
-                            if (quest.picture) {
-                                sentMessage = await ctx.telegram.sendPhoto(federatedChatId, quest.picture, { caption: messageContent, ...markup });
-                            } else {
-                                sentMessage = await ctx.telegram.sendMessage(federatedChatId, messageContent, markup);
-                            }
-                            newMessageId = sentMessage.message_id;
-                            success = true;
-                        }
-
-                        // Handle pinning/unpinning in federated chat
-                        if (success && newMessageId) {
-                            if (quest.status === 'completed') {
-                                await ctx.telegram.unpinChatMessage(federatedChatId, newMessageId).catch(()=>{});
-                            } else {
-                                await ctx.telegram.pinChatMessage(federatedChatId, newMessageId, { disable_notification: true }).catch(()=>{});
-                            }
-                        }
-
-                        // Update tracking info if needed
-                        if (success && newMessageId && (!existingMsg || newMessageId !== existingMsg.messageId)) {
-                            const newTracking = { chatId: federatedChatId, messageId: newMessageId, timestamp: Date.now() };
-                            if (existingMsgIndex > -1) {
-                                federatedMessages.messages[existingMsgIndex] = newTracking;
-                            } else {
-                                federatedMessages.messages.push(newTracking);
-                            }
-                        }
-                    } catch (fedError) {
-                         console.error(`Failed to handle message in federated chat ${federatedChatId} for quest ${quest.id}:`, fedError);
-                         // Remove failed message from tracking if it existed
-                         if (existingMsgIndex > -1) {
-                            federatedMessages.messages.splice(existingMsgIndex, 1);
-                         }
-                    }
-                }
-                // Save updated federation tracking info
-                if (federatedMessages.messages.length > 0) {
-                   await this.db.put('federation_messages', federatedMessages);
-                } else {
-                   // Clean up if no messages left
-                   await this.db.del('federation_messages', federationKey).catch(()=>{});
-                }
-            }
-        } catch (error) {
-            console.error(`Error during hex federation propagation for quest ${quest.id}:`, error);
-        }
-
-        // Part 2: Private Copies for Linked Users (using user holon link record)
-        try {
-            if (quest.linkedUserIds && quest.linkedUserIds.length > 0) {
-                const messageContent = await this.createMessage(quest, language); // Prepare message once
-                const markup = this.markup(quest, language);
-
-                for (const userId of quest.linkedUserIds) {
-                    const userIdStr = userId.toString();
-                    const questIdStr = quest.id.toString();
-                    const privateChatId = userId; // UserID is the target chat
-
-                    try {
-                        // Get the link record from the user's holon
-                        let linkData = await this.db.holosphere.get(userIdStr, 'linked_quests', questIdStr);
-                        
-                        // If link record somehow doesn't exist, log it but continue
-                        if (!linkData) {
-                             console.warn(`Link data missing for user ${userIdStr}, quest ${questIdStr} during propagation. Skipping private copy update.`);
-                             continue; 
-                        }
-
-                        let existingPrivateMessageId = linkData.privateMessageId;
-                        let success = false;
-                        let newMessageId = null;
-
-                        // Try editing existing private message
-                        if (existingPrivateMessageId) {
-                            try {
-                                if (quest.picture) {
-                                    await this.bot.telegram.editMessageMedia(privateChatId, existingPrivateMessageId, null, { type: 'photo', media: quest.picture, caption: messageContent }, markup);
-                                } else {
-                                    await this.bot.telegram.editMessageText(privateChatId, existingPrivateMessageId, null, messageContent, markup);
-                                }
-                                newMessageId = existingPrivateMessageId;
-                                success = true;
-                                console.log(`Updated private message ${newMessageId} for user ${userId}`);
-                            } catch (editError) {
-                                console.warn(`Failed to edit private message ${existingPrivateMessageId} for user ${userId} (Quest ${quest.id}): ${editError.message}. Attempting send.`);
-                                existingPrivateMessageId = null; // Force send
-                            }
-                        }
-
-                        // Try sending new private message if edit failed or no existing ID
-                        if (!existingPrivateMessageId) {
-                            try {
-                                let sentMessage;
-                                if (quest.picture) {
-                                    sentMessage = await this.bot.telegram.sendPhoto(privateChatId, quest.picture, { caption: messageContent, ...markup });
-                                } else {
-                                    sentMessage = await this.bot.telegram.sendMessage(privateChatId, messageContent, markup);
-                                }
-                                newMessageId = sentMessage.message_id;
-                                success = true;
-                                console.log(`Sent new private message ${newMessageId} for user ${userId}`);
-                            } catch (sendError) {
-                                console.error(`Failed to send private message to user ${userId} (Quest ${quest.id}): ${sendError.message}`);
-                                success = false;
-                            }
-                        }
-
-                        // If send/edit successful, update link record and handle pin/unpin
-                        if (success && newMessageId) {
-                            // Update link record if message ID is new or changed
-                            if (newMessageId !== linkData.privateMessageId) {
-                                linkData.privateMessageId = newMessageId;
-                                console.log(`Updating link record for user ${userIdStr}, quest ${questIdStr} with msgId ${newMessageId}`);
-                                await this.db.holosphere.put(userIdStr, 'linked_quests', linkData);
-                            }
-
-                            // Handle pinning/unpinning in private chat
-                            if (quest.status === 'completed') {
-                                await this.bot.telegram.unpinChatMessage(privateChatId, newMessageId).catch(()=>{});
-                            } else {
-                                await this.bot.telegram.pinChatMessage(privateChatId, newMessageId, { disable_notification: true }).catch(()=>{});
-                            }
-                        } else if (!success) {
-                            // If sending/editing failed, maybe clear the message ID in the link data?
-                            if (linkData.privateMessageId) {
-                                 console.warn(`Clearing privateMessageId in link record for user ${userIdStr}, quest ${questIdStr} due to send/edit failure.`);
-                                 delete linkData.privateMessageId;
-                                 await this.db.holosphere.put(userIdStr, 'linked_quests', linkData);
-                            }
-                        }
-
-                    } catch (userError) {
-                        console.error(`Error processing private copy for user ${userId}, quest ${quest.id}:`, userError);
-                    }
-                } // End loop through linked users
-            }
-        } catch (error) {
-             console.error(`Error during private copy propagation for quest ${quest.id}:`, error);
-        }
-    }
-    // ---- End Propagation Helper ----
-
-    // ---- Quest Cloning Helper ----
-    async _cloneAndInitiateQuest(ctx, originalQuest, newInitiator) {
-        console.log(`Cloning quest ${originalQuest.id} for initiator ${newInitiator.id}`);
-        const language = await this.settings.getLanguage(originalQuest.chat);
-        const chatID = originalQuest.chat; // Use original chat ID for the new quest
-
-        // Create a deep copy (simple way using JSON parse/stringify)
-        let newQuest = JSON.parse(JSON.stringify(originalQuest));
-
-        // Reset/Modify fields for the new quest
-        newQuest.id = ''; // Will get assigned by new message
-        newQuest.initiator = newInitiator;
-        newQuest.participants = []; // Start with empty participants
-        newQuest.appreciation = [];
-        newQuest.stoppers = [];
-        newQuest.status = 'ongoing';
-        newQuest.date = new Date().getTime(); // Set creation date to now
-        newQuest.when = null;
-        newQuest.until = null;
-        newQuest.completed = null;
-        newQuest.timeTracking = {};
-        newQuest.checklistId = null; // Don't clone checklist items for simplicity
-        newQuest.reminderId = null;
-        newQuest.linkedUserIds = []; // Start with empty linked users
-        newQuest.published = false;
-        newQuest.broadcasted = false;
-        newQuest.recurringTaskId = null;
-        newQuest.frequency = null;
-        newQuest.originalTaskId = null; // It's a new base task
-        newQuest.dependencies = []; // Don't clone dependencies
-
-        // Keep: title, description, picture, type, category, where (optional)
-        // Maybe add prefix to title? e.g., newQuest.title = `Copy: ${originalQuest.title}`;
-
-        try {
-            let nctx;
-            // Send the new quest message
-            if (newQuest.picture) {
-                nctx = await ctx.telegram.sendPhoto(chatID, newQuest.picture, {
-                    caption: await this.createMessage(newQuest, language),
-                    parse_mode: 'Markdown',
-                    ...this.markup(newQuest, language)
-                });
-            } else {
-                 nctx = await ctx.telegram.sendMessage(chatID, await this.createMessage(newQuest, language), this.markup(newQuest, language));
-            }
-            
-            // Update quest with new ID and chat info
-            newQuest.id = nctx.message_id;
-            newQuest.chat = nctx.chat.id;
-            
-            console.log('Saving cloned quest with ID:', newQuest.id, 'and chat ID:', newQuest.chat);
-            await this.db.put(chatID + '/quests', newQuest);
-
-            // Update the markup of the newly sent message (might be redundant if markup sent correctly)
-            await this.updateMessage(ctx, newQuest, language); 
-
-            // Link the new quest to the new initiator in holosphere
-            await this._linkQuestToUserHolon(newInitiator.id, newQuest);
-
-            // Pin the new message
-            await this.bot.telegram.pinChatMessage(newQuest.chat, newQuest.id, { disable_notification: true }).catch((err) => { console.warn("Pinning failed for cloned quest:", err.message)}); 
-
-            console.log(`Successfully cloned quest ${originalQuest.id} into new quest ${newQuest.id}`);
-            return newQuest;
+}
