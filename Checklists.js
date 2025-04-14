@@ -15,7 +15,7 @@ class Checklists {
         this.setupScenes();
         
         // Register commands and actions
-        this.bot.command('checklist', (ctx) => this.handleChecklistCommand(ctx));
+        this.bot.command('checklist', (ctx) => this.showChecklist(ctx));
         this.bot.command('newchecklist', (ctx) => this.createChecklist(ctx));
         this.bot.command('addcheck', (ctx) => this.addChecklistItem(ctx));
         this.bot.command('removecheck', (ctx) => this.removeChecklist(ctx));
@@ -123,23 +123,12 @@ class Checklists {
 
                 // Update the original checklist message
                 const icon = this.getChecklistIcon(checklistId);
-                let finalKeyboard = this.getChecklistKeyboard(checklist);
-                // Add back button if not a quest checklist
-                if (!checklist.questId) {
-                    const backButton = [Markup.button.callback('🔙 Back to Checklists', 'back_to_all_checklists')];
-                    if (finalKeyboard.reply_markup && finalKeyboard.reply_markup.inline_keyboard) {
-                         finalKeyboard.reply_markup.inline_keyboard.push(backButton);
-                    } else {
-                         finalKeyboard.reply_markup = { inline_keyboard: [backButton] }; 
-                    }
-                }
-
                 await ctx.telegram.editMessageText(
                     chatId,
                     originalMessageId,
                     null,
                     `${icon} ${checklistId.toUpperCase()}:`,
-                    finalKeyboard // Use the potentially modified keyboard
+                    this.getChecklistKeyboard(checklist)
                 );
 
                 await ctx.scene.leave();
@@ -159,89 +148,62 @@ class Checklists {
 
         // Setup new checklist scene
         this.newChecklistScene.enter(async (ctx) => {
-            // Store original message details from scene state
-            ctx.scene.state.originalChatId = ctx.scene.state.originalChatId;
-            ctx.scene.state.originalMessageId = ctx.scene.state.originalMessageId;
-            
-            // Send prompt and store its ID
-            const promptMessage = await ctx.reply('Please enter a name for the new checklist:');
-            ctx.scene.state.promptMessageId = promptMessage.message_id;
+            await ctx.reply('Please enter a name for the new checklist, followed by comma-separated items (optional):\nExample: morning brush teeth, make bed, exercise');
         });
 
         this.newChecklistScene.on('text', async (ctx) => {
-            const name = ctx.message.text.trim(); // Treat the whole input as the name
-            // Retrieve original message context and prompt message ID
-            const originalChatId = ctx.scene.state.originalChatId;
-            const originalMessageId = ctx.scene.state.originalMessageId;
-            const promptMessageId = ctx.scene.state.promptMessageId;
-            const userMessageId = ctx.message.message_id;
-
-            // --- Defer deletions until after potential errors ---
-            const deleteMessages = async () => {
-                // Delete the bot's prompt message
-                if (promptMessageId) {
-                    await ctx.deleteMessage(promptMessageId).catch(() => {});
-                }
-                // Delete the user's input message
-                if (userMessageId) {
-                    await ctx.deleteMessage(userMessageId).catch(() => {});
-                }
-            };
+            const input = ctx.message.text;
+            const [name, ...itemsText] = input.split(/\s+(.+)/); // Split on first space
+            const chatId = ctx.chat.id;
             
-            if (!name) {
-                await ctx.reply('Checklist name cannot be empty.');
-                await deleteMessages();
-                return ctx.scene.leave();
-            }
-
-            // Add check for underscores
-            if (name.includes('_')) {
-                await ctx.reply('Checklist name cannot contain underscores. Please choose a different name.');
-                await deleteMessages();
-                return ctx.scene.leave();
-            }
-
-            if (await this.db.get(originalChatId + '/checklists', name)) {
+            if (await this.db.get(chatId + '/checklists', name)) {
                 await ctx.reply(`Checklist "${name}" already exists.`);
-                await deleteMessages();
                 return ctx.scene.leave();
             }
 
-            // Create checklist without items
+            // Parse items if they exist
+            const items = itemsText.length > 0 
+                ? itemsText[0].split(',')
+                    .map(item => ({
+                        text: item.trim(),
+                        checked: false
+                    }))
+                    .filter(item => item.text)
+                : [];
+
             const checklist = {
                 id: name,
-                items: [], // No items initially
+                items: items,
                 creator: ctx.from.id,
                 created: new Date(),
                 type: 'checklist' // Add type field to identify regular checklists
             };
 
-            await this.db.put(originalChatId + '/checklists', checklist);
+            await this.db.put(chatId + '/checklists', checklist);
+            await ctx.reply(`Created checklist "${name}"${items.length ? ' with initial items' : ''}.`);
             
-            // Clean up messages first
-            await deleteMessages();
-
-            // Refresh the original checklist message IN PLACE
-            // Use the modified showAllChecklists with original chat/message IDs
-            await this.showAllChecklists(ctx, false, originalChatId, originalMessageId);
+            // Show the checklist if items were added
+            if (items.length > 0) {
+                await ctx.reply(
+                    `📋 ${name.toUpperCase()} Checklist:`, 
+                    this.getChecklistKeyboard(checklist)
+                );
+            }
             
+            // Show updated list of checklists
+            await this.showAllChecklists(ctx);
             return ctx.scene.leave();
         });
     }
 
     async handleNewChecklistButton(ctx) {
-        await ctx.answerCbQuery(); // Answer immediately
-        // Pass original message details to the scene
-        await ctx.scene.enter('new_checklist_scene', {
-            originalChatId: ctx.callbackQuery.message.chat.id,
-            originalMessageId: ctx.callbackQuery.message.message_id
-        });
+        await ctx.answerCbQuery();
+        await ctx.scene.enter('new_checklist_scene');
     }
 
-    async showAllChecklists(ctx, deleteMode = false, chatId = null, messageId = null) {
-        // Use provided chatId or context's chatId
-        const targetChatId = chatId || ctx.chat.id;
-        let lists = await this.db.getAll(targetChatId + '/checklists');
+    async showAllChecklists(ctx, deleteMode = false) {
+        let chatID = ctx.chat.id;
+        let lists = await this.db.getAll(chatID + '/checklists');
         
         // Ensure all lists have a type, defaulting to 'checklist' for backward compatibility
         lists = lists.map(list => {
@@ -286,23 +248,11 @@ class Checklists {
         }
 
         const message = deleteMode ? 'Select checklists to delete:' : 'Available Checklists:';
-        const keyboard = Markup.inlineKeyboard(buttons);
-
-        // If chatId and messageId are provided, edit that specific message
-        if (targetChatId && messageId) {
-            try {
-                await ctx.telegram.editMessageText(targetChatId, messageId, null, message, keyboard);
-            } catch (error) {
-                console.log('Error editing specific message in showAllChecklists:', error);
-                // Fallback: try replying if edit fails (e.g., message too old)
-                if (ctx) { // Ensure ctx exists for fallback reply
-                   await ctx.reply(message, keyboard).catch(e => console.log('Fallback reply error:', e));
-                }
-            }
-        } else if (ctx.callbackQuery) { // Existing logic for callback query context
-            await ctx.editMessageText(message, keyboard).catch(error => console.log(error));
-        } else { // Existing logic for command context
-            await ctx.reply(message, keyboard).catch(error => console.log(error));
+        
+        if (ctx.callbackQuery) {
+            await ctx.editMessageText(message, Markup.inlineKeyboard(buttons)).catch(error => console.log(error));
+        } else {
+            await ctx.reply(message, Markup.inlineKeyboard(buttons)).catch(error => console.log(error));
         }
     }
 
@@ -464,22 +414,10 @@ class Checklists {
         const addedItemsText = newItems.map(item => `"${item.text}"`).join(', ');
         ctx.reply(`Added ${newItems.length} items to ${checklist.questTitle ? 'task' : 'checklist'} "${checklist.id}": ${addedItemsText}`);
         
-        // Get base keyboard
-        let finalKeyboard = this.getChecklistKeyboard(checklist);
-        // Add back button if not a quest checklist
-        if (!checklist.questId) {
-            const backButton = [Markup.button.callback('🔙 Back to Checklists', 'back_to_all_checklists')];
-            if (finalKeyboard.reply_markup && finalKeyboard.reply_markup.inline_keyboard) {
-                 finalKeyboard.reply_markup.inline_keyboard.push(backButton);
-            } else {
-                 finalKeyboard.reply_markup = { inline_keyboard: [backButton] }; 
-            }
-        }
-
-        // Show the updated checklist with the potentially added back button
+        // Show the updated checklist
         await ctx.reply(
             `${this.getChecklistIcon(checklist.id)} ${checklist.questTitle || checklist.id.toUpperCase()}:`,
-            finalKeyboard
+            this.getChecklistKeyboard(checklist)
         );
         
         return checklist;
@@ -525,35 +463,29 @@ class Checklists {
         ctx.reply(`Removed checklist "${name}".`);
     }
 
-    async handleChecklistCommand(ctx) {
-        const text = ctx.message.text;
-        const parts = text.split(/\s+/); // Split by whitespace
-        const command = parts[0]; // Should be /checklist
-        const checklistName = parts.length > 1 ? parts.slice(1).join(' ') : null; // Get the rest as name
-        const chatId = ctx.chat.id;
-
-        if (!checklistName) {
-            await ctx.reply('Please specify a checklist name. Usage: /checklist <name>');
+    async showChecklist(ctx, checklistId) {
+        const chatId = ctx.callbackQuery.message.chat.id;
+        if (!checklistId) {
+            await ctx.answerCbQuery('No checklist ID provided');
             return;
         }
-
         try {
-            const checklist = await this.db.get(`${chatId}/checklists`, checklistName);
+            const checklist = await this.db.get(chatId + '/checklists', checklistId);
             if (!checklist) {
-                await ctx.reply(`Checklist "${checklistName}" not found.`);
+                await ctx.answerCbQuery('Checklist not found');
                 return;
             }
 
-            // Prepare and send the checklist message
-            const baseKeyboard = this.getChecklistKeyboard(checklist);
-            const finalKeyboard = this._getKeyboardWithBackButton(checklist, baseKeyboard);
-            const title = this._getChecklistTitle(checklist);
+            // Edit current message to show checklist
+            await ctx.editMessageText(
+                `📋 ${checklist.questTitle || 'Checklist'}:`,
+                this.getChecklistKeyboard(checklist)
+            ).catch((err) => { console.log(err) });
             
-            await ctx.reply(title, finalKeyboard);
-
-        } catch (error) { 
-            console.error(`Error handling /checklist command for "${checklistName}":`, error);
-            await ctx.reply('An error occurred while retrieving the checklist.');
+            await ctx.answerCbQuery();
+        } catch (error) {
+            console.error('Error showing checklist:', error);
+            await ctx.answerCbQuery('Error displaying checklist');
         }
     }
 
@@ -570,14 +502,12 @@ class Checklists {
         checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
         await this.db.put(chatID + '/checklists', checklist);
 
-        // Get base keyboard and add back button if needed
-        const baseKeyboard = this.getChecklistKeyboard(checklist);
-        const finalKeyboard = this._getKeyboardWithBackButton(checklist, baseKeyboard);
-        const title = this._getChecklistTitle(checklist);
+        const icon = this.getChecklistIcon(listName);
+        const title = `${icon} ${listName.toUpperCase()}:`;
 
         await ctx.editMessageText(
             title,
-            finalKeyboard
+            this.getChecklistKeyboard(checklist)
         ).catch(error => console.log(error));
     }
 
@@ -601,15 +531,27 @@ class Checklists {
             checklist.type = checklist.id;
         }
 
-        // Get the keyboard with the back button logic applied
-        const baseKeyboard = this.getChecklistKeyboard(checklist, false);
-        const finalKeyboard = this._getKeyboardWithBackButton(checklist, baseKeyboard);
-        const title = this._getChecklistTitle(checklist);
+        // Get the standard keyboard
+        const keyboardMarkup = this.getChecklistKeyboard(checklist, false);
+
+        // Add "Back to Checklists" button if it's a regular checklist 
+        // (not special and not a quest checklist which has its own back button)
+        if (!this.isSpecialChecklist(checklist.id) && !checklist.questId) {
+            const backButton = [Markup.button.callback('🔙 Back to Checklists', 'back_to_all_checklists')];
+            // Ensure inline_keyboard exists before pushing
+            if (keyboardMarkup.reply_markup && keyboardMarkup.reply_markup.inline_keyboard) {
+                 keyboardMarkup.reply_markup.inline_keyboard.push(backButton);
+            } else {
+                // Fallback or create structure if needed, though getChecklistKeyboard should provide it
+                 keyboardMarkup.reply_markup = { inline_keyboard: [backButton] }; 
+            }
+        }
 
         // Edit the message to show the checklist
+        const icon = this.getChecklistIcon(listName);
         await ctx.editMessageText(
-            title, 
-            finalKeyboard
+            `${icon} ${listName.toUpperCase()} Checklist:`, 
+            keyboardMarkup
         ).catch(error => console.log(`Error editing message for checklist ${listName}:`, error));
     }
 
@@ -623,37 +565,32 @@ class Checklists {
             return;
         }
 
-        let message = '';
         if (listName === 'agenda') {
             // For agenda, only remove checked items
-            const initialLength = checklist.items.length;
-            checklist.items = checklist.items.filter(item => !item.checked);
-            const removedCount = initialLength - checklist.items.length;
-            if (removedCount === 0) {
+            const checkedItems = checklist.items.filter(item => item.checked);
+            if (checkedItems.length === 0) {
                 await ctx.answerCbQuery('No checked items to remove');
                 return;
             }
-            message = `Removed ${removedCount} completed items ✓`;
+            checklist.items = checklist.items.filter(item => !item.checked);
+            await ctx.answerCbQuery(`Removed ${checkedItems.length} completed items ✓`);
         } else {
             // For other checklists, clear all checks
             checklist.items = checklist.items.map(item => ({
                 ...item,
                 checked: false
             }));
-            message = 'Cleared all items';
+            await ctx.answerCbQuery('Cleared all items');
         }
 
-        await ctx.answerCbQuery(message);
         await this.db.put(chatID + '/checklists', checklist);
         
-        // Get keyboard and title, then update message
-        const baseKeyboard = this.getChecklistKeyboard(checklist);
-        const finalKeyboard = this._getKeyboardWithBackButton(checklist, baseKeyboard);
-        const title = this._getChecklistTitle(checklist);
+        const icon = this.getChecklistIcon(listName);
+        const title = `${icon} ${listName.toUpperCase()}:`;
 
         await ctx.editMessageText(
             title,
-            finalKeyboard
+            this.getChecklistKeyboard(checklist)
         ).catch(error => console.log(error));
     }
 
@@ -748,14 +685,9 @@ class Checklists {
             return;
         }
 
-        // Get keyboard and title, then update message
-        const baseKeyboard = this.getChecklistKeyboard(checklist, true);
-        const finalKeyboard = this._getKeyboardWithBackButton(checklist, baseKeyboard);
-        const title = this._getChecklistTitle(checklist, true); // Indicate remove mode for title if needed
-
         await ctx.editMessageText(
-            title,
-            finalKeyboard
+            `📋 ${listName.toUpperCase()} Checklist:\nSelect items to remove:`,
+            this.getChecklistKeyboard(checklist, true)
         ).catch(error => console.log(error));
     }
 
@@ -770,27 +702,20 @@ class Checklists {
             return;
         }
 
-        // Get keyboard and title, then update message
-        const baseKeyboard = this.getChecklistKeyboard(checklist, false);
-        const finalKeyboard = this._getKeyboardWithBackButton(checklist, baseKeyboard);
-        const title = this._getChecklistTitle(checklist);
-
         await ctx.editMessageText(
-            title,
-            finalKeyboard
+            `📋 ${listName.toUpperCase()} Checklist:`,
+            this.getChecklistKeyboard(checklist, false)
         ).catch(error => console.log(error));
     }
 
     async removeItem(ctx) {
         await ctx.answerCbQuery();
-        const [listName, itemIndexStr] = ctx.match[1].split('_');
-        const itemIndex = parseInt(itemIndexStr);
+        const [listName, itemIndex] = ctx.match[1].split('_');
         let chatID = ctx.chat.id;
         let checklist = await this.db.get(chatID + '/checklists', listName);
         
         if (!checklist || !checklist.items[itemIndex]) {
-            // Use editMessageText to inform user within the same message context
-            await ctx.editMessageText('Item not found.').catch(e => console.log(e));
+            ctx.reply('Item not found.');
             return;
         }
 
@@ -798,20 +723,13 @@ class Checklists {
         const removedItemText = checklist.items[itemIndex].text;
 
         // Remove the item
-        checklist.items.splice(itemIndex, 1); // Use splice for direct modification
+        checklist.items = checklist.items.filter((_, index) => index !== parseInt(itemIndex));
         await this.db.put(chatID + '/checklists', checklist);
-
-        // Get keyboard and title, then update message
-        const baseKeyboard = this.getChecklistKeyboard(checklist, true);
-        const finalKeyboard = this._getKeyboardWithBackButton(checklist, baseKeyboard);
-        // Modify title slightly for remove context
-        const baseTitle = this._getChecklistTitle(checklist, true); // true might indicate remove mode
-        const title = `${baseTitle}\nRemoved "${removedItemText}"`;
 
         // Update the message with the new keyboard, staying in remove mode
         await ctx.editMessageText(
-            title,
-            finalKeyboard // Use the modified keyboard
+            `📋 ${listName.toUpperCase()} Checklist:\nRemoved "${removedItemText}"`,
+            this.getChecklistKeyboard(checklist, true)
         ).catch(error => console.log(error));
     }
 
@@ -881,22 +799,10 @@ class Checklists {
         const itemsAdded = newItems.map(item => `"${item.text}"`).join(', ');
         await ctx.reply(`Added ${newItems.length} items to checklist "${listName}": ${itemsAdded}`);
         
-        // Get base keyboard
-        let finalKeyboard = this.getChecklistKeyboard(checklist);
-        // Add back button if not a quest checklist
-        if (!checklist.questId) {
-            const backButton = [Markup.button.callback('🔙 Back to Checklists', 'back_to_all_checklists')];
-            if (finalKeyboard.reply_markup && finalKeyboard.reply_markup.inline_keyboard) {
-                 finalKeyboard.reply_markup.inline_keyboard.push(backButton);
-            } else {
-                 finalKeyboard.reply_markup = { inline_keyboard: [backButton] }; 
-            }
-        }
-
-        // Show the updated checklist with the potentially added back button
+        // Show the updated checklist
         await ctx.reply(
-            `${this.getChecklistIcon(checklist.id)} ${listName.toUpperCase()} Checklist:`,
-            finalKeyboard
+            `📋 ${listName.toUpperCase()} Checklist:`, 
+            this.getChecklistKeyboard(checklist)
         );
 
         return checklist;
@@ -972,51 +878,27 @@ class Checklists {
         }
     }
 
-    // --- Start Helper Methods ---
-
-    // Helper method to get the standard title string for a checklist
-    _getChecklistTitle(checklist, inRemoveMode = false) {
-        const icon = this.getChecklistIcon(checklist.id);
-        let titleText = checklist.questTitle || checklist.id.toUpperCase();
-        // Suffix changes slightly based on context
-        let suffix = ':';
-        if (checklist.isTaskChecklist && !checklist.questTitle) {
-            // If it's a task checklist but somehow lost its title, use ID
-            titleText = `Task (${checklist.id})`; 
-        } else if (checklist.questTitle) {
-            // If it has a quest title, no extra suffix needed
-            titleText = checklist.questTitle;
-            suffix = ':'; // Or maybe specific task suffix? Keep it simple for now.
-        } else {
-            // Regular or special checklist
-             suffix = ' Checklist:';
+    getSpecialChecklistKeyboard(checklist) {
+        let buttons = [];
+        
+        // Add item buttons if there are any
+        if (checklist.items.length > 0) {
+            buttons = checklist.items.map((item, index) => {
+                const status = item.checked ? '✅' : '⬜️';
+                return [Markup.button.callback(
+                    `${status} ${item.text}`,
+                    `${checklist.type}_check_${index}`
+                )];
+            });
         }
 
-        // Optional: Add indicator for remove mode
-        // if (inRemoveMode) { ... }
+        // Add control buttons
+        buttons.push([
+            Markup.button.callback('➕ Add Item', `${checklist.type}_add`),
+            Markup.button.callback('🗑️ Clear Completed', `${checklist.type}_delete_checked`)
+        ]);
 
-        const baseTitle = `${icon} ${titleText}${suffix}`;
-        // Add padding with non-breaking spaces to encourage full-width buttons
-        const padding = '\u00A0'.repeat(50); // Adjust count as needed
-        return baseTitle + padding;
-    }
-
-    // Helper method to add the 'Back to Checklists' button if applicable
-    _getKeyboardWithBackButton(checklist, baseKeyboard) {
-        if (!checklist.questId) {
-            const backButton = [Markup.button.callback('🔙 Back to Checklists', 'back_to_all_checklists')];
-            
-            // Ensure reply_markup and inline_keyboard exist
-            if (!baseKeyboard.reply_markup) {
-                baseKeyboard.reply_markup = { inline_keyboard: [] };
-            } else if (!baseKeyboard.reply_markup.inline_keyboard) {
-                 baseKeyboard.reply_markup.inline_keyboard = [];
-            }
-
-            // Add the back button as a new row
-            baseKeyboard.reply_markup.inline_keyboard.push(backButton);
-        }
-        return baseKeyboard;
+        return Markup.inlineKeyboard(buttons);
     }
 
     async enterDeleteChecklistsMode(ctx) {
