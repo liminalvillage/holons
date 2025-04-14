@@ -40,19 +40,40 @@ describe('HoloSphere Authentication and Authorization', () => {
 
     afterAll(async () => {
         // Clean up all test data
-        await holoSphere.deleteAll(testHolon, testLens);
-        await holoSphere.deleteAllGlobal('testTable');
-        
+        try {
+            if (holoSphere) {
+                await holoSphere.deleteAll(testHolon, testLens);
+                await holoSphere.deleteAllGlobal('testTable');
+            }
+            // Assuming strict instance uses the same testHolon/testLens/testTable
+            if (strictHoloSphere) {
+                 await strictHoloSphere.deleteAll(testHolon, testLens);
+                 await strictHoloSphere.deleteAllGlobal('testTable');
+            }
+        } catch (error) {
+            console.error('Error during afterAll data cleanup:', error);
+        }
+
         // Close HoloSphere instances
-        if (holoSphere) {
-            await holoSphere.close();
+        try {
+            if (holoSphere) {
+                console.log('Closing non-strict HoloSphere instance...');
+                await holoSphere.close();
+                console.log('Non-strict HoloSphere instance closed.');
+            }
+            if (strictHoloSphere) {
+                console.log('Closing strict HoloSphere instance...');
+                await strictHoloSphere.close();
+                console.log('Strict HoloSphere instance closed.');
+            }
+        } catch (error) {
+             console.error('Error during afterAll close:', error);
         }
-        if (strictHoloSphere) {
-            await strictHoloSphere.close();
-        }
-        
-        // Wait for connections to close
-        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Add a slightly longer, more explicit wait after close calls
+        console.log('Waiting extra time for cleanup...');
+        await new Promise(resolve => setTimeout(resolve, 2000)); 
+        console.log('Finished afterAll.');
     });
 
     describe('Authentication System', () => {

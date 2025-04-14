@@ -11,6 +11,13 @@ import OpenAI from 'openai';
 import Gun from 'gun'
 import Ajv2019 from 'ajv/dist/2019.js'
 import * as Federation from './federation.js';
+import * as SchemaOps from './schema.js';
+import * as ContentOps from './content.js';
+import * as NodeOps from './node.js';
+import * as GlobalOps from './global.js';
+import * as RefOps from './reference.js';
+import * as ComputeOps from './compute.js';
+import * as Utils from './utils.js';
 
 
 
@@ -62,64 +69,8 @@ class HoloSphere {
      * @returns {Promise} - Resolves when the schema is set.
      */
     async setSchema(lens, schema) {
-        if (!lens || !schema) {
-            throw new Error('setSchema: Missing required parameters');
-        }
-
-        // Basic schema validation
-        if (!schema.type || typeof schema.type !== 'string') {
-            throw new Error('setSchema: Schema must have a type field');
-        }
-
-        const metaSchema = {
-            type: 'object',
-            required: ['type', 'properties'],
-            properties: {
-                type: { type: 'string' },
-                properties: {
-                    type: 'object',
-                    additionalProperties: {
-                        type: 'object',
-                        required: ['type'],
-                        properties: {
-                            type: { type: 'string' }
-                        }
-                    }
-                },
-                required: {
-                    type: 'array',
-                    items: { type: 'string' }
-                }
-            }
-        };
-
-        const valid = this.validator.validate(metaSchema, schema);
-        if (!valid) {
-            throw new Error(`Invalid schema structure: ${JSON.stringify(this.validator.errors)}`);
-        }
-
-        if (!schema.properties || typeof schema.properties !== 'object') {
-            throw new Error('Schema must have properties in strict mode');
-        }
-
-        if (!schema.required || !Array.isArray(schema.required) || schema.required.length === 0) {
-            throw new Error('Schema must have required fields in strict mode');
-        }
-        
-        // Store schema in global table with lens as key
-        await this.putGlobal('schemas', {
-            id: lens,
-            schema: schema,
-            timestamp: Date.now()
-        });
-        
-        // Update the cache with the new schema
-        this.schemaCache.set(lens, {
-            schema,
-            timestamp: Date.now()
-        });
-
-        return true;
+        // Delegate to the external function
+        return SchemaOps.setSchema(this, lens, schema);
     }
 
     /**
@@ -131,37 +82,8 @@ class HoloSphere {
      * @returns {Promise<object|null>} - The retrieved schema or null if not found.
      */
     async getSchema(lens, options = {}) {
-        if (!lens) {
-            throw new Error('getSchema: Missing lens parameter');
-        }
-        
-        const { useCache = true, maxCacheAge = 3600000 } = options;
-        
-        // Check cache first if enabled
-        if (useCache && this.schemaCache.has(lens)) {
-            const cached = this.schemaCache.get(lens);
-            const cacheAge = Date.now() - cached.timestamp;
-            
-            // Use cache if it's fresh enough
-            if (cacheAge < maxCacheAge) {
-                return cached.schema;
-            }
-        }
-        
-        // Cache miss or expired, fetch from storage
-        const schemaData = await this.getGlobal('schemas', lens);
-        
-        if (!schemaData || !schemaData.schema) {
-            return null;
-        }
-        
-        // Update cache with fetched schema
-        this.schemaCache.set(lens, {
-            schema: schemaData.schema,
-            timestamp: Date.now()
-        });
-        
-        return schemaData.schema;
+        // Delegate to the external function
+        return SchemaOps.getSchema(this, lens, options);
     }
 
     /**
@@ -170,14 +92,8 @@ class HoloSphere {
      * @returns {boolean} - Returns true if successful
      */
     clearSchemaCache(lens = null) {
-        if (lens) {
-            // Clear specific schema
-            return this.schemaCache.delete(lens);
-        } else {
-            // Clear entire cache
-            this.schemaCache.clear();
-            return true;
-        }
+        // Delegate to the external function
+        return SchemaOps.clearSchemaCache(this, lens);
     }
 
     // ================================ CONTENT FUNCTIONS ================================
@@ -195,110 +111,8 @@ class HoloSphere {
      * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
      */
     async put(holon, lens, data, password = null, options = {}) {
-        if (!holon || !lens || !data) {
-            throw new Error('put: Missing required parameters:',  holon, lens, data );
-        }
-
-        if (!data.id) {
-            data.id = this.generateId();
-        }
-
-        // Check if this is a reference we're storing
-        const isRef = this.isReference(data);
-
-        // Get and validate schema only in strict mode for non-references
-        if (this.strict && !isRef) {
-            const schema = await this.getSchema(lens);
-            if (!schema) {
-                throw new Error('Schema required in strict mode');
-            }
-            const dataToValidate = JSON.parse(JSON.stringify(data));
-            const valid = this.validator.validate(schema, dataToValidate);
-
-            if (!valid) {
-                const errorMsg = `Schema validation failed: ${JSON.stringify(this.validator.errors)}`;
-                throw new Error(errorMsg);
-            }
-        }
-
-        try {
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(holon), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve, reject) => {
-                try {
-                    const payload = JSON.stringify(data);
-                    
-                    const putCallback = async (ack) => {
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            // Only notify subscribers for actual data, not references
-                            if (!isRef) {
-                                this.notifySubscribers({
-                                    holon,
-                                    lens,
-                                    ...data
-                                });
-                            }
-                            
-                            // Auto-propagate to federation by default (if not a reference)
-                            const shouldPropagate = options.autoPropagate !== false && !isRef;
-                            let propagationResult = null;
-                            
-                            if (shouldPropagate) {
-                                try {
-                                    // Default to using references
-                                    const propagationOptions = {
-                                        useReferences: true,
-                                        ...options.propagationOptions
-                                    };
-                                    
-                                    propagationResult = await this.propagate(
-                                        holon, 
-                                        lens, 
-                                        data, 
-                                        propagationOptions
-                                    );
-                                    
-                                    // Still resolve with true even if propagation had errors
-                                    if (propagationResult.errors > 0) {
-                                        console.warn('Auto-propagation had errors:', propagationResult);
-                                    }
-                                } catch (propError) {
-                                    console.warn('Error in auto-propagation:', propError);
-                                }
-                            }
-                            
-                            resolve({
-                                success: true,
-                                isReference: isRef,
-                                propagationResult
-                            });
-                        }
-                    };
-                    
-                    const dataPath = password ? 
-                        user.get('private').get(lens).get(data.id) :
-                        this.gun.get(this.appname).get(holon).get(lens).get(data.id);
-
-                    dataPath.put(payload, putCallback);
-                } catch (error) {
-                    reject(error);
-                }
-            });
-        } catch (error) {
-            console.error('Error in put:', error);
-            throw error;
-        }
+        // Delegate to the external function
+        return ContentOps.put(this, holon, lens, data, password, options);
     }
 
     /**
@@ -312,107 +126,91 @@ class HoloSphere {
      * @returns {Promise<object|null>} - The retrieved content or null if not found.
      */
     async get(holon, lens, key, password = null, options = {}) {
-        if (!holon || !lens || !key) {
-            console.error('get: Missing required parameters:', { holon, lens, key });
-            return null;
-        }
+        // Delegate to the external function
+        return ContentOps.get(this, holon, lens, key, password, options);
+    }
 
-        const { resolveReferences = true } = options;
+    /**
+     * Retrieves all content from the specified holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens from which to retrieve content.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<Array<object>>} - The retrieved content.
+     */
+    async getAll(holon, lens, password = null) {
+        // Delegate to the external function
+        return ContentOps.getAll(this, holon, lens, password);
+    }
 
-        // Only check schema in strict mode
-        let schema;
-        if (this.strict) {
-            schema = await this.getSchema(lens);
-            if (!schema) {
-                throw new Error('Schema required in strict mode');
-            }
-        }
+    /**
+   * Parses data from GunDB, handling various data formats and references.
+   * @param {*} data - The data to parse, could be a string, object, or GunDB reference.
+   * @returns {Promise<object>} - The parsed data.
+   */
+    async parse(rawData) {
+        // Delegate to the external function
+        return ContentOps.parse(this, rawData);
+    }
 
-        try {
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(holon), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
+    /**
+     * Deletes a specific key from a given holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens from which to delete the key.
+     * @param {string} key - The specific key to delete.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<boolean>} - Returns true if successful
+     */
+    async delete(holon, lens, key, password = null) {
+        // Delegate to the external function (renamed to deleteFunc in module)
+        return ContentOps.deleteFunc(this, holon, lens, key, password);
+    }
 
-            return new Promise((resolve) => {
-                const handleData = async (data) => {
-                    if (!data) {
-                        resolve(null);
-                        return;
-                    }
+    /**
+     * Deletes all keys from a given holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens from which to delete all keys.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<boolean>} - Returns true if successful
+     */
+    async deleteAll(holon, lens, password = null) {
+        // Delegate to the external function
+        return ContentOps.deleteAll(this, holon, lens, password);
+    }
 
-                    try {
-                        const parsed = await this.parse(data);
+    // ================================ NODE FUNCTIONS ================================
 
-                        if (!parsed) {
-                            resolve(null);
-                            return;
-                        }
 
-                        // Check if this is a reference that needs to be resolved
-                        if (resolveReferences && this.isReference(parsed)) {
-                            const resolved = await this.resolveReference(parsed, {
-                                followReferences: true // Always follow nested references when resolving
-                            });
-                            
-                            if (resolved === null) {
-                                // resolveReference signaled that the target data was not found.
-                                console.log(`Reference at ${holon}/${lens}/${key} points to non-existent data. Deleting reference.`);
-                                try {
-                                    await this.delete(holon, lens, key, password);
-                                } catch (deleteError) {
-                                    console.error(`Failed to delete invalid reference at ${holon}/${lens}/${key}:`, deleteError);
-                                }
-                                resolve(null); // Return null as the reference is invalid
-                                return;
-                            }
+    /**
+     * Stores a specific gun node in a given holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens under which to store the node.
+     * @param {object} data - The node to store.
+     */
+    async putNode(holon, lens, data) {
+        // Delegate to the external function
+        return NodeOps.putNode(this, holon, lens, data);
+    }
 
-                            if (schema && resolved._federation) {
-                                // Skip schema validation for resolved references
-                                resolve(resolved);
-                                return;
-                            } else if (resolved !== parsed) {
-                                // Reference was resolved successfully
-                                resolve(resolved);
-                                return;
-                            }
-                        }
+    /**
+     * Retrieves a specific gun node from the specified holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens identifier.
+     * @param {string} key - The specific key to retrieve.
+     * @returns {Promise<any>} - The retrieved node or null if not found.
+     */
+    async getNode(holon, lens, key) {
+        // Delegate to the external function
+        return NodeOps.getNode(this, holon, lens, key);
+    }
 
-                        // Perform schema validation if needed
-                        if (schema) {
-                            const valid = this.validator.validate(schema, parsed);
-                            if (!valid) {
-                                console.error('get: Invalid data according to schema:', this.validator.errors);
-                                if (this.strict) {
-                                    resolve(null);
-                                    return;
-                                }
-                            }
-                        }
-
-                        resolve(parsed);
-                    } catch (error) {
-                        console.error('Error parsing data:', error);
-                        resolve(null);
-                    }
-                };
-
-                const dataPath = password ? 
-                    user.get('private').get(lens).get(key) :
-                    this.gun.get(this.appname).get(holon).get(lens).get(key);
-
-                dataPath.once(handleData);
-            });
-        } catch (error) {
-            console.error('Error in get:', error);
-            return null;
-        }
+    /**
+     * Retrieves a Gun node reference using its soul path
+     * @param {string} soul - The soul path of the node
+     * @returns {Gun.ChainReference} - The Gun node reference
+     */
+    getNodeRef(soul) {
+        // Delegate to the external function
+        return NodeOps.getNodeRef(this, soul);
     }
 
     /**
@@ -421,28 +219,190 @@ class HoloSphere {
      * @returns {Promise<any>} - The retrieved node or null if not found.
      */
     async getNodeBySoul(soul) {
-        if (!soul) {
-            throw new Error('getNodeBySoul: Missing soul parameter');
-        }
+        // Delegate to the external function
+        return NodeOps.getNodeBySoul(this, soul);
+    }
 
-        console.log(`getNodeBySoul: Accessing soul ${soul}`);
+    /**
+     * Deletes a specific gun node from a given holon and lens.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens identifier.
+     * @param {string} key - The key of the node to delete.
+     * @returns {Promise<boolean>} - Returns true if successful
+     */
+    async deleteNode(holon, lens, key) {
+        // Delegate to the external function
+        return NodeOps.deleteNode(this, holon, lens, key);
+    }
 
-        return new Promise((resolve, reject) => {
-            try {
-                const ref = this.getNodeRef(soul);
-                ref.once((data) => {
-                    console.log(`getNodeBySoul: Retrieved data:`, data);
-                    if (!data) {
-                        resolve(null);
-                        return;
-                    }
-                    resolve(data);  // Return the data directly
-                });
-            } catch (error) {
-                console.error(`getNodeBySoul error:`, error);
-                reject(error);
-            }
-        });
+    // ================================ GLOBAL FUNCTIONS ================================
+    /**
+     * Stores data in a global (non-holon-specific) table.
+     * @param {string} tableName - The table name to store data in.
+     * @param {object} data - The data to store. If it has an 'id' field, it will be used as the key.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<void>}
+     */
+    async putGlobal(tableName, data, password = null) {
+        // Delegate to the external function
+        return GlobalOps.putGlobal(this, tableName, data, password);
+    }
+
+    /**
+     * Retrieves a specific key from a global table.
+     * @param {string} tableName - The table name to retrieve from.
+     * @param {string} key - The key to retrieve.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
+     */
+    async getGlobal(tableName, key, password = null) {
+        // Delegate to the external function
+        return GlobalOps.getGlobal(this, tableName, key, password);
+    }
+
+    /**
+     * Retrieves all data from a global table.
+     * @param {string} tableName - The table name to retrieve data from.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<Array<object>>} - The parsed data from the table as an array.
+     */
+    async getAllGlobal(tableName, password = null) {
+        // Delegate to the external function
+        return GlobalOps.getAllGlobal(this, tableName, password);
+    }
+
+    /**
+     * Deletes a specific key from a global table.
+     * @param {string} tableName - The table name to delete from.
+     * @param {string} key - The key to delete.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<boolean>}
+     */
+    async deleteGlobal(tableName, key, password = null) {
+        // Delegate to the external function
+        return GlobalOps.deleteGlobal(this, tableName, key, password);
+    }
+
+    /**
+     * Deletes an entire global table.
+     * @param {string} tableName - The table name to delete.
+     * @param {string} [password] - Optional password for private holon.
+     * @returns {Promise<boolean>}
+     */
+    async deleteAllGlobal(tableName, password = null) {
+        // Delegate to the external function
+        return GlobalOps.deleteAllGlobal(this, tableName, password);
+    }
+
+    // ================================ REFERENCE FUNCTIONS ================================
+
+    /**
+     * Creates a soul reference object for a data item
+     * @param {string} holon - The holon where the original data is stored
+     * @param {string} lens - The lens where the original data is stored
+     * @param {object} data - The data to create a reference for
+     * @returns {object} - A reference object with id and soul
+     */
+    createReference(holon, lens, data) {
+        // Delegate to the external function
+        return RefOps.createReference(this, holon, lens, data);
+    }
+    
+    /**
+     * Parses a soul path into its components
+     * @param {string} soul - The soul path to parse
+     * @returns {object|null} - The parsed components or null if invalid format
+     */
+    parseSoulPath(soul) {
+        // Delegate to the external function (doesn't need instance)
+        return RefOps.parseSoulPath(soul);
+    }
+    
+    /**
+     * Checks if an object is a reference
+     * @param {object} data - The data to check
+     * @returns {boolean} - True if the object is a reference
+     */
+    isReference(data) {
+        // Delegate to the external function (doesn't need instance)
+        return RefOps.isReference(data);
+    }
+    
+    /**
+     * Resolves a reference to its actual data
+     * @param {object} reference - The reference to resolve
+     * @param {object} [options] - Optional parameters
+     * @param {boolean} [options.followReferences=true] - Whether to follow nested references
+     * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
+     * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original reference for circular/invalid cases.
+     */
+    async resolveReference(reference, options = {}) {
+        // Delegate to the external function
+        return RefOps.resolveReference(this, reference, options);
+    }
+
+    // ================================ COMPUTE FUNCTIONS ================================
+    /**
+     * Computes operations across multiple layers up the hierarchy
+     * @param {string} holon - Starting holon identifier
+     * @param {string} lens - The lens to compute
+     * @param {object} options - Computation options
+     * @param {number} [maxLevels=15] - Maximum levels to compute up
+     * @param {string} [password] - Optional password for private holons
+     */
+    async computeHierarchy(holon, lens, options, maxLevels = 15, password = null) {
+        // Delegate to the external function
+        return ComputeOps.computeHierarchy(this, holon, lens, options, maxLevels, password);
+    }
+
+    /**
+     * Computes operations on content within a holon and lens for one layer up.
+     * @param {string} holon - The holon identifier.
+     * @param {string} lens - The lens to compute.
+     * @param {object} options - Computation options
+     * @param {string} options.operation - The operation to perform ('summarize', 'aggregate', 'concatenate')
+     * @param {string[]} [options.fields] - Fields to perform operation on
+     * @param {string} [options.targetField] - Field to store the result in
+     * @param {string} [password] - Optional password for private holons
+     * @throws {Error} If parameters are invalid or missing
+     */
+    async compute(holon, lens, options, password = null) {
+        // Delegate to the external function
+        return ComputeOps.compute(this, holon, lens, options, password);
+    }
+
+    /**
+     * Summarizes provided history text using OpenAI.
+     * @param {string} history - The history text to summarize.
+     * @returns {Promise<string>} - The summarized text.
+     */
+    async summarize(history) {
+        // Delegate to the external function
+        return ComputeOps.summarize(this, history);
+    }
+
+    /**
+     * Upcasts content to parent holonagons recursively using references.
+     * @param {string} holon - The current holon identifier.
+     * @param {string} lens - The lens under which to upcast.
+     * @param {object} content - The content to upcast.
+     * @param {number} [maxLevels=15] - Maximum levels to upcast.
+     * @returns {Promise<object>} - The original content.
+     */
+    async upcast(holon, lens, content, maxLevels = 15) {
+        // Delegate to the external function
+        return ComputeOps.upcast(this, holon, lens, content, maxLevels);
+    }
+
+    /**
+     * Updates the parent holon with a new report.
+     * @param {string} id - The child holon identifier.
+     * @param {string} report - The report to update.
+     * @returns {Promise<object>} - The updated parent information.
+     */
+    async updateParent(id, report) {
+        // Delegate to the external function
+        return ComputeOps.updateParent(this, id, report);
     }
 
     /**
@@ -458,1203 +418,6 @@ class HoloSphere {
     }
 
     /**
-     * Retrieves all content from the specified holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to retrieve content.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<Array<object>>} - The retrieved content.
-     */
-    async getAll(holon, lens, password = null) {
-        if (!holon || !lens) {
-            throw new Error('getAll: Missing required parameters');
-        }
-
-        const schema = await this.getSchema(lens);
-        if (!schema && this.strict) {
-            throw new Error('getAll: Schema required in strict mode');
-        }
-
-        try {
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(holon), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve) => {
-                const output = new Map();
-
-                const processData = async (data, key) => {
-                    if (!data || key === '_') return;
-
-                    try {
-                        const parsed = await this.parse(data);
-                        if (!parsed || !parsed.id) return;
-
-                        // Check if this is a reference that needs to be resolved
-                        if (this.isReference(parsed)) {
-                            const resolved = await this.resolveReference(parsed, {
-                                followReferences: true // Always follow references
-                            });
-                            
-                            if (resolved !== parsed) {
-                                // Reference was resolved successfully
-                                if (schema) {
-                                    const valid = this.validator.validate(schema, resolved);
-                                    if (valid || !this.strict) {
-                                        output.set(resolved.id, resolved);
-                                    }
-                                } else {
-                                    output.set(resolved.id, resolved);
-                                }
-                                return;
-                            }
-                        }
-
-                        if (schema) {
-                            const valid = this.validator.validate(schema, parsed);
-                            if (valid || !this.strict) {
-                                output.set(parsed.id, parsed);
-                            }
-                        } else {
-                            output.set(parsed.id, parsed);
-                        }
-                    } catch (error) {
-                        console.error('Error processing data:', error);
-                    }
-                };
-
-                const handleData = async (data) => {
-                    if (!data) {
-                        resolve([]);
-                        return;
-                    }
-
-                    const initialPromises = [];
-                    Object.keys(data)
-                        .filter(key => key !== '_')
-                        .forEach(key => {
-                            initialPromises.push(processData(data[key], key));
-                        });
-
-                    try {
-                        await Promise.all(initialPromises);
-                        resolve(Array.from(output.values()));
-                    } catch (error) {
-                        console.error('Error in getAll:', error);
-                        resolve([]);
-                    }
-                };
-
-                const dataPath = password ? 
-                    user.get('private').get(lens) :
-                    this.gun.get(this.appname).get(holon).get(lens);
-
-                dataPath.once(handleData);
-            });
-        } catch (error) {
-            console.error('Error in getAll:', error);
-            return [];
-        }
-    }
-
-    /**
-   * Parses data from GunDB, handling various data formats and references.
-   * @param {*} data - The data to parse, could be a string, object, or GunDB reference.
-   * @returns {Promise<object>} - The parsed data.
-   */
-    async parse(rawData) {
-        let parsedData = {};
-
-        if (!rawData) {
-            throw new Error('parse: No data provided');
-        }
-
-        try {
-
-            if (typeof rawData === 'string') {
-                parsedData = await JSON.parse(rawData);
-            }
-
-
-            if (rawData.soul) {
-                const data = await this.getNodeRef(rawData.soul).once();
-                if (!data) {
-                    throw new Error('Referenced data not found');
-                }
-                return JSON.parse(data);
-            }
-
-       
-            if (typeof rawData === 'object' && rawData !== null) {
-                if (rawData._ && rawData._["#"]) {
-                    const pathParts = rawData._['#'].split('/');
-                    if (pathParts.length < 4) {
-                        throw new Error('Invalid reference format');
-                    }
-                    parsedData = await this.get(pathParts[1], pathParts[2], pathParts[3]);
-                    if (!parsedData) {
-                        throw new Error('Referenced data not found');
-                    }
-                } else if (rawData._ && rawData._['>']) {
-                    const nodeValue = Object.values(rawData).find(v => typeof v !== 'object' && v !== '_');
-                    if (!nodeValue) {
-                        throw new Error('Invalid node data');
-                    }
-                    parsedData = JSON.parse(nodeValue);
-                } else {
-                    parsedData = rawData;
-                }
-            }
-
-            return parsedData;
-
-        } catch (error) {
-            console.log("Parsing not a JSON, returning raw data", rawData);
-            return rawData;
-            //throw new Error(`Parse error: ${error.message}`);
-        }
-    }
-
-    /**
-     * Deletes a specific key from a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to delete the key.
-     * @param {string} key - The specific key to delete.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>} - Returns true if successful
-     */
-    async delete(holon, lens, key, password = null) {
-        if (!holon || !lens || !key) {
-            throw new Error('delete: Missing required parameters');
-        }
-
-        try {
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(holon), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve, reject) => {
-                const dataPath = password ? 
-                    user.get('private').get(lens).get(key) :
-                    this.gun.get(this.appname).get(holon).get(lens).get(key);
-
-                dataPath.put(null, ack => {
-                    if (ack.err) {
-                        reject(new Error(ack.err));
-                    } else {
-                        resolve(true);
-                    }
-                });
-            });
-        } catch (error) {
-            console.error('Error in delete:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Deletes all keys from a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to delete all keys.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>} - Returns true if successful
-     */
-    async deleteAll(holon, lens, password = null) {
-        if (!holon || !lens) {
-            console.error('deleteAll: Missing holon or lens parameter');
-            return false;
-        }
-
-        try {
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(holon), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve) => {
-                let deletionPromises = [];
-                
-                const dataPath = password ? 
-                    user.get('private').get(lens) :
-                    this.gun.get(this.appname).get(holon).get(lens);
-
-                // First get all the data to find keys to delete
-                dataPath.once((data) => {
-                    if (!data) {
-                        resolve(true); // Nothing to delete
-                        return;
-                    }
-
-                    // Get all keys except Gun's metadata key '_'
-                    const keys = Object.keys(data).filter(key => key !== '_');
-
-                    // Create deletion promises for each key
-                    keys.forEach(key => {
-                        deletionPromises.push(
-                            new Promise((resolveDelete) => {
-                                const deletePath = password ? 
-                                    user.get('private').get(lens).get(key) :
-                                    this.gun.get(this.appname).get(holon).get(lens).get(key);
-
-                                deletePath.put(null, ack => {
-                                    resolveDelete(!!ack.ok); // Convert to boolean
-                                });
-                            })
-                        );
-                    });
-
-                    // Wait for all deletions to complete
-                    Promise.all(deletionPromises)
-                        .then(results => {
-                            const allSuccessful = results.every(result => result === true);
-                            resolve(allSuccessful);
-                        })
-                        .catch(error => {
-                            console.error('Error in deleteAll:', error);
-                            resolve(false);
-                        });
-                });
-            });
-        } catch (error) {
-            console.error('Error in deleteAll:', error);
-            return false;
-        }
-    }
-
-    // ================================ NODE FUNCTIONS ================================
-
-
-    /**
-     * Stores a specific gun node in a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens under which to store the node.
-     * @param {object} data - The node to store.
-     */
-    async putNode(holon, lens, data) {
-        if (!holon || !lens || !data) {
-            throw new Error('putNode: Missing required parameters');
-        }
-
-        return new Promise((resolve, reject) => {
-            try {
-                this.gun.get(this.appname)
-                    .get(holon)
-                    .get(lens)
-                    .get('value')  // Store at 'value' key
-                    .put(data.value, ack => {  // Store the value directly
-                        if (ack.err) {
-                            reject(new Error(ack.err));
-                        } else {
-                            resolve(true);
-                        }
-                    });
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    /**
-     * Retrieves a specific gun node from the specified holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens identifier.
-     * @param {string} key - The specific key to retrieve.
-     * @returns {Promise<any>} - The retrieved node or null if not found.
-     */
-    async getNode(holon, lens, key) {
-        if (!holon || !lens || !key) {
-            throw new Error('getNode: Missing required parameters');
-        }
-
-        return new Promise((resolve, reject) => {
-            try {
-                this.gun.get(this.appname)
-                    .get(holon)
-                    .get(lens)
-                    .get(key)
-                    .once((data) => {
-                        if (!data) {
-                            resolve(null);
-                            return;
-                        }
-                        resolve(data);  // Return the data directly
-                    });
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    getNodeRef(soul) {
-        if (typeof soul !== 'string' || !soul) {
-            throw new Error('getNodeRef: Invalid soul parameter');
-        }
-
-        const parts = soul.split('/').filter(part => {
-            if (!part.trim() || /[<>:"/\\|?*]/.test(part)) {
-                throw new Error('getNodeRef: Invalid path segment');
-            }
-            return part.trim();
-        });
-
-        if (parts.length === 0) {
-            throw new Error('getNodeRef: Invalid soul format');
-        }
-
-        let ref = this.gun.get(this.appname);
-        parts.forEach(part => {
-            ref = ref.get(part);
-        });
-        return ref;
-    }
-
-    /**
-     * Deletes a specific gun node from a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens identifier.
-     * @param {string} key - The key of the node to delete.
-     * @returns {Promise<boolean>} - Returns true if successful
-     */
-    async deleteNode(holon, lens, key) {
-        if (!holon || !lens || !key) {
-            throw new Error('deleteNode: Missing required parameters');
-        }
-        return new Promise((resolve, reject) => {
-            this.gun.get(this.appname)
-                .get(holon)
-                .get(lens)
-                .get(key)
-                .put(null, ack => {
-                    if (ack.err) {
-                        reject(new Error(ack.err));
-                    } else {
-                        resolve(true);
-                    }
-                });
-        });
-    }
-
-    // ================================ GLOBAL FUNCTIONS ================================
-    /**
-     * Stores data in a global (non-holon-specific) table.
-     * @param {string} tableName - The table name to store data in.
-     * @param {object} data - The data to store. If it has an 'id' field, it will be used as the key.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<void>}
-     */
-    async putGlobal(tableName, data, password = null) {
-        try {
-            if (!tableName || !data) {
-                throw new Error('Table name and data are required');
-            }
-
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(tableName), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve, reject) => {
-                try {
-                    const payload = JSON.stringify(data);
-                    
-                    const dataPath = password ? 
-                        user.get('private').get(tableName) :
-                        this.gun.get(this.appname).get(tableName);
-                    
-                    if (data.id) {
-                        // Store at the specific key path
-                        dataPath.get(data.id).put(payload, ack => {
-
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                resolve();
-                            }
-                        });
-                    } else {
-                        dataPath.put(payload, ack => {
-                            if (ack.err) {
-                                reject(new Error(ack.err));
-                            } else {
-                                resolve();
-                            }
-                        });
-                    }
-                } catch (error) {
-                    reject(error);
-                }
-            });
-        } catch (error) {
-            console.error('Error in putGlobal:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Retrieves a specific key from a global table.
-     * @param {string} tableName - The table name to retrieve from.
-     * @param {string} key - The key to retrieve.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
-     */
-    async getGlobal(tableName, key, password = null) {
-        try { 
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(tableName), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve) => {
-                const handleData = async (data) => {
-                    if (!data) {
-                        resolve(null);
-                        return;
-                    }
-                    
-                    try {
-                        // The data should be a stringified JSON from putGlobal
-                        const parsed = await this.parse(data);
-                        
-                        if (!parsed) {
-                            resolve(null);
-                            return;
-                        }
-                        
-                        // Check if this is a reference that needs to be resolved
-                        if (this.isReference(parsed)) {
-                            const resolved = await this.resolveReference(parsed, {
-                                followReferences: true // Always follow references
-                            });
-                            
-                            if (resolved === null) {
-                                console.log(`Reference at ${tableName}/${key} points to non-existent data. Deleting reference.`);
-                                try {
-                                    await this.deleteGlobal(tableName, key, password);
-                                } catch (deleteError) {
-                                    console.error(`Failed to delete invalid global reference at ${tableName}/${key}:`, deleteError);
-                                }
-                                resolve(null); // Return null as the reference is invalid
-                                return;
-                            }
-                            
-                            if (resolved !== parsed) {
-                                // Reference was resolved successfully
-                                resolve(resolved);
-                                return;
-                            }
-                        }
-                        
-                        resolve(parsed);
-                    } catch (e) {
-                        console.error('Error parsing data in getGlobal:', e);
-                        resolve(null);
-                    }
-                };
-                
-                const dataPath = password ? 
-                    user.get('private').get(tableName) :
-                    this.gun.get(this.appname).get(tableName);
-
-                dataPath.get(key).once(handleData);
-            });
-        } catch (error) {
-            console.error('Error in getGlobal:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Retrieves all data from a global table.
-     * @param {string} tableName - The table name to retrieve data from.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<Array<object>>} - The parsed data from the table as an array.
-     */
-    async getAllGlobal(tableName, password = null) {
-        if (!tableName) {
-            throw new Error('getAllGlobal: Missing table name parameter');
-        }
-
-        try {
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(tableName), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve) => {
-                let output = [];
-                let isResolved = false;
-                let timeout = setTimeout(() => {
-                    if (!isResolved) {
-                        isResolved = true;
-                        resolve(output);
-                    }
-                }, 5000);
-
-                const handleData = async (data) => {
-                    if (!data) {
-                        clearTimeout(timeout);
-                        isResolved = true;
-                        resolve([]);
-                        return;
-                    }
-
-                    const keys = Object.keys(data).filter(key => key !== '_');
-                    const promises = keys.map(key =>
-                        new Promise(async (resolveItem) => {
-                            const itemPath = password ? 
-                                user.get('private').get(tableName).get(key) :
-                                this.gun.get(this.appname).get(tableName).get(key);
-
-                            const itemData = await new Promise(resolveData => {
-                                itemPath.once(resolveData);
-                            });
-
-                            if (itemData) {
-                                try {
-                                    const parsed = await this.parse(itemData);
-                                    if (parsed) {
-                                        // Check if this is a reference that needs to be resolved
-                                        if (this.isReference(parsed)) {
-                                            const resolved = await this.resolveReference(parsed, {
-                                                followReferences: true // Always follow references
-                                            });
-                                            
-                                            if (resolved === null) {
-                                                console.log(`Reference at ${tableName}/${key} points to non-existent data. Deleting reference.`);
-                                                try {
-                                                    await this.deleteGlobal(tableName, key, password);
-                                                } catch (deleteError) {
-                                                    console.error(`Failed to delete invalid global reference at ${tableName}/${key}:`, deleteError);
-                                                }
-                                                resolveItem();
-                                                return;
-                                            }
-                                            
-                                            if (resolved !== parsed) {
-                                                // Reference was resolved successfully
-                                                output.push(resolved);
-                                            } else {
-                                                output.push(parsed);
-                                            }
-                                        } else {
-                                            output.push(parsed);
-                                        }
-                                    }
-                                } catch (error) {
-                                    console.error('Error parsing data:', error);
-                                }
-                            }
-                            resolveItem();
-                        })
-                    );
-
-                    await Promise.all(promises);
-                    clearTimeout(timeout);
-                    if (!isResolved) {
-                        isResolved = true;
-                        resolve(output);
-                    }
-                };
-
-                const dataPath = password ? 
-                    user.get('private').get(tableName) :
-                    this.gun.get(this.appname).get(tableName);
-
-                dataPath.once(handleData);
-            });
-        } catch (error) {
-            console.error('Error in getAllGlobal:', error);
-            return [];
-        }
-    }
-
-    /**
-     * Deletes a specific key from a global table.
-     * @param {string} tableName - The table name to delete from.
-     * @param {string} key - The key to delete.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>}
-     */
-    async deleteGlobal(tableName, key, password = null) {
-        if (!tableName || !key) {
-            throw new Error('deleteGlobal: Missing required parameters');
-        }
-
-        try {
-            console.log('deleteGlobal - Starting deletion:', { tableName, key, hasPassword: !!password });
-            
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(tableName), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve, reject) => {
-                const dataPath = password ? 
-                    user.get('private').get(tableName) :
-                    this.gun.get(this.appname).get(tableName);
-
-                console.log('deleteGlobal - Constructed base path:', dataPath._.back);
-
-                // First verify the data exists
-                dataPath.get(key).once((data) => {
-                    console.log('deleteGlobal - Data before deletion:', data);
-                    
-                    // Now perform the deletion
-                    dataPath.get(key).put(null, ack => {
-                        console.log('deleteGlobal - Deletion acknowledgment:', ack);
-                        if (ack.err) {
-                            console.error('deleteGlobal - Deletion error:', ack.err);
-                            reject(new Error(ack.err));
-                        } else {
-                            // Verify deletion
-                            dataPath.get(key).once((deletedData) => {
-                                console.log('deleteGlobal - Data after deletion:', deletedData);
-                                resolve(true);
-                            });
-                        }
-                    });
-                });
-            });
-        } catch (error) {
-            console.error('Error in deleteGlobal:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Deletes an entire global table.
-     * @param {string} tableName - The table name to delete.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>}
-     */
-    async deleteAllGlobal(tableName, password = null) {
-        if (!tableName) {
-            throw new Error('deleteAllGlobal: Missing table name parameter');
-        }
-
-        try {
-            let user = null;
-            if (password) {
-                user = this.gun.user();
-                await new Promise((resolve, reject) => {
-                    user.auth(this.userName(tableName), password, (ack) => {
-                        if (ack.err) reject(new Error(ack.err));
-                        else resolve();
-                    });
-                });
-            }
-
-            return new Promise((resolve, reject) => {
-                try {
-                    const deletions = new Set();
-                    let timeout = setTimeout(() => {
-                        if (deletions.size === 0) {
-                            resolve(true); // No data to delete
-                        }
-                    }, 5000);
-
-                    const dataPath = password ? 
-                        user.get('private').get(tableName) :
-                        this.gun.get(this.appname).get(tableName);
-
-                    dataPath.once(async (data) => {
-                        if (!data) {
-                            clearTimeout(timeout);
-                            resolve(true);
-                            return;
-                        }
-
-                        const keys = Object.keys(data).filter(key => key !== '_');
-                        const promises = keys.map(key =>
-                            new Promise((resolveDelete, rejectDelete) => {
-                                const deletePath = password ? 
-                                    user.get('private').get(tableName).get(key) :
-                                    this.gun.get(this.appname).get(tableName).get(key);
-
-                                deletePath.put(null, ack => {
-                                    if (ack.err) {
-                                        console.error(`Failed to delete ${key}:`, ack.err);
-                                        rejectDelete(new Error(ack.err));
-                                    } else {
-                                        resolveDelete();
-                                    }
-                                });
-                            })
-                        );
-
-                        try {
-                            await Promise.all(promises);
-                            // Finally delete the table itself
-                            dataPath.put(null);
-                            clearTimeout(timeout);
-                            resolve(true);
-                        } catch (error) {
-                            reject(error);
-                        }
-                    });
-                } catch (error) {
-                    reject(error);
-                }
-            });
-        } catch (error) {
-            console.error('Error in deleteAllGlobal:', error);
-            throw error;
-        }
-    }
-
-    // ================================ REFERENCE FUNCTIONS ================================
-
-    /**
-     * Creates a soul reference object for a data item
-     * @param {string} holon - The holon where the original data is stored
-     * @param {string} lens - The lens where the original data is stored
-     * @param {object} data - The data to create a reference for
-     * @returns {object} - A reference object with id and soul
-     */
-    createReference(holon, lens, data) {
-        if (!holon || !lens || !data || !data.id) {
-            throw new Error('createReference: Missing required parameters');
-        }
-        
-        const soul = `${this.appname}/${holon}/${lens}/${data.id}`;
-        return {
-            id: data.id,
-            soul: soul
-        };
-    }
-    
-    /**
-     * Parses a soul path into its components
-     * @param {string} soul - The soul path to parse
-     * @returns {object|null} - The parsed components or null if invalid format
-     */
-    parseSoulPath(soul) {
-        if (!soul || typeof soul !== 'string') {
-            return null;
-        }
-        
-        const soulParts = soul.split('/');
-        if (soulParts.length < 4) {
-            return null;
-        }
-        
-        return {
-            appname: soulParts[0],
-            holon: soulParts[1],
-            lens: soulParts[2],
-            key: soulParts[3]
-        };
-    }
-    
-    /**
-     * Checks if an object is a reference
-     * @param {object} data - The data to check
-     * @returns {boolean} - True if the object is a reference
-     */
-    isReference(data) {
-        if (!data || typeof data !== 'object') {
-            return false;
-        }
-        
-        // Check for direct soul reference
-        if (data.soul && typeof data.soul === 'string' && data.id) {
-            return true;
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Resolves a reference to its actual data
-     * @param {object} reference - The reference to resolve
-     * @param {object} [options] - Optional parameters
-     * @param {boolean} [options.followReferences=true] - Whether to follow nested references
-     * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
-     * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original reference for circular/invalid cases.
-     */
-    async resolveReference(reference, options = {}) {
-        if (!this.isReference(reference)) {
-            return reference; // Not a reference, return as is
-        }
-        
-        const { followReferences = true, visited = new Set() } = options;
-        
-        // Check for circular reference
-        if (reference.soul && visited.has(reference.soul)) {
-            console.warn(`Circular reference detected for soul: ${reference.soul}. Returning original reference.`);
-            return reference;
-        }
-        
-        try {
-            // Handle direct soul reference
-            if (reference.soul) {
-                const soulInfo = this.parseSoulPath(reference.soul);
-                if (!soulInfo) {
-                    console.warn(`Invalid soul format: ${reference.soul}`);
-                    return reference;
-                }
-                
-                // Add current soul to visited set
-                visited.add(reference.soul);
-                
-                console.log(`Resolving reference with soul: ${reference.soul}`);
-                
-                // Get original data using the extracted path components
-                const originalData = await this.get(
-                    soulInfo.holon,
-                    soulInfo.lens,
-                    soulInfo.key,
-                    null,
-                    { 
-                        resolveReferences: followReferences, // Control recursion
-                        visited: visited // Pass the visited set along
-                    } 
-                );
-                
-                // Remove from visited set after the call returns (optional, depends on desired behavior)
-                // visited.delete(reference.soul); 
-                
-                if (originalData) {
-                    console.log(`Original data found through soul path resolution`);
-                    return {
-                        ...originalData,
-                        _federation: {
-                            isReference: true,
-                            resolved: true,
-                            soul: reference.soul,
-                            timestamp: Date.now()
-                        }
-                    };
-                } else {
-                    console.warn(`Could not resolve reference: original data not found at ${soulInfo.holon}/${soulInfo.lens}/${soulInfo.key}. Returning null to signal deletion.`);
-                    return null; // Signal to the caller that the reference is invalid and should be deleted
-                }
-            }
-            
-            return reference; // Return original reference if resolution fails
-        } catch (error) {
-            console.error(`Error resolving reference: ${error.message}`, error);
-            return reference;
-        } finally {
-            // Ensure the soul is removed if the function exits early due to error
-            // This removal might not be necessary depending on how you want to handle errors within a loop.
-            // If an error occurs during resolution, keeping it in 'visited' might prevent retries.
-            // If you want retries, uncomment the delete.
-            // if (reference.soul) {
-            //    visited.delete(reference.soul); 
-            // }
-        }
-    }
-
-    // ================================ COMPUTE FUNCTIONS ================================
-    /**
-     * Computes operations across multiple layers up the hierarchy
-     * @param {string} holon - Starting holon identifier
-     * @param {string} lens - The lens to compute
-     * @param {object} options - Computation options
-     * @param {number} [maxLevels=15] - Maximum levels to compute up
-     * @param {string} [password] - Optional password for private holons
-     */
-    async computeHierarchy(holon, lens, options, maxLevels = 15, password = null) {
-        let currentHolon = holon;
-        let currentRes = h3.getResolution(currentHolon);
-        const results = [];
-
-        while (currentRes > 0 && maxLevels > 0) {
-            try {
-                const result = await this.compute(currentHolon, lens, options, password);
-                if (result) {
-                    results.push(result);
-                }
-                currentHolon = h3.cellToParent(currentHolon, currentRes - 1);
-                currentRes--;
-                maxLevels--;
-            } catch (error) {
-                console.error('Error in compute hierarchy:', error);
-                break;
-            }
-        }
-
-        return results;
-    }
-
-    /**
-     * Computes operations on content within a holon and lens for one layer up.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens to compute.
-     * @param {object} options - Computation options
-     * @param {string} options.operation - The operation to perform ('summarize', 'aggregate', 'concatenate')
-     * @param {string[]} [options.fields] - Fields to perform operation on
-     * @param {string} [options.targetField] - Field to store the result in
-     * @param {string} [password] - Optional password for private holons
-     * @throws {Error} If parameters are invalid or missing
-     */
-    async compute(holon, lens, options, password = null) {
-        // Validate required parameters
-        if (!holon || !lens) {
-            throw new Error('compute: Missing required parameters');
-        }
-
-        // Convert string operation to options object
-        if (typeof options === 'string') {
-            options = { operation: options };
-        }
-
-        if (!options?.operation) {
-            throw new Error('compute: Missing required parameters');
-        }
-
-        // Validate holon format and resolution first
-        let res;
-        try {
-            res = h3.getResolution(holon);
-        } catch (error) {
-            throw new Error('compute: Invalid holon format');
-        }
-
-        if (res < 1 || res > 15) {
-            throw new Error('compute: Invalid holon resolution (must be between 1 and 15)');
-        }
-
-        const {
-            operation,
-            fields = [],
-            targetField,
-            depth,
-            maxDepth
-        } = options;
-
-        // Validate depth parameters if provided
-        if (depth !== undefined && depth < 0) {
-            throw new Error('compute: Invalid depth parameter');
-        }
-
-        if (maxDepth !== undefined && (maxDepth < 1 || maxDepth > 15)) {
-            throw new Error('compute: Invalid maxDepth parameter (must be between 1 and 15)');
-        }
-
-        // Validate operation
-        const validOperations = ['summarize', 'aggregate', 'concatenate'];
-        if (!validOperations.includes(operation)) {
-            throw new Error(`compute: Invalid operation (must be one of ${validOperations.join(', ')})`);
-        }
-
-        const parent = h3.cellToParent(holon, res - 1);
-        const siblings = h3.cellToChildren(parent, res);
-
-        // Collect all content from siblings
-        const contents = await Promise.all(
-            siblings.map(sibling => this.getAll(sibling, lens, password))
-        );
-
-        const flatContents = contents.flat().filter(Boolean);
-
-        if (flatContents.length > 0) {
-            try {
-                let computed;
-                switch (operation) {
-                    case 'summarize':
-                        // For summarize, concatenate specified fields or use entire content
-                        const textToSummarize = fields.length > 0
-                            ? flatContents.map(item => fields.map(field => item[field]).filter(Boolean).join('\n')).join('\n')
-                            : JSON.stringify(flatContents);
-                        computed = await this.summarize(textToSummarize);
-                        break;
-
-                    case 'aggregate':
-                        // For aggregate, sum numeric fields
-                        computed = fields.reduce((acc, field) => {
-                            acc[field] = flatContents.reduce((sum, item) => {
-                                return sum + (Number(item[field]) || 0);
-                            }, 0);
-                            return acc;
-                        }, {});
-                        break;
-
-                    case 'concatenate':
-                        // For concatenate, combine arrays or strings
-                        computed = fields.reduce((acc, field) => {
-                            acc[field] = flatContents.reduce((combined, item) => {
-                                const value = item[field];
-                                if (Array.isArray(value)) {
-                                    return [...combined, ...value];
-                                } else if (value) {
-                                    return [...combined, value];
-                                }
-                                return combined;
-                            }, []);
-                            // Remove duplicates if array
-                            acc[field] = Array.from(new Set(acc[field]));
-                            return acc;
-                        }, {});
-                        break;
-                }
-
-                if (computed) {
-                    const resultId = `${parent}_${operation}`;
-                    const result = {
-                        id: resultId,
-                        timestamp: Date.now()
-                    };
-
-                    // Store result in targetField if specified, otherwise at root level
-                    if (targetField) {
-                        result[targetField] = computed;
-                    } else if (typeof computed === 'object') {
-                        Object.assign(result, computed);
-                    } else {
-                        result.value = computed;
-                    }
-
-                    await this.put(parent, lens, result, password);
-                    return result;
-                }
-            } catch (error) {
-                console.warn('Error in compute operation:', error);
-                throw error;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Summarizes provided history text using OpenAI.
-     * @param {string} history - The history text to summarize.
-     * @returns {Promise<string>} - The summarized text.
-     */
-    async summarize(history) {
-        if (!this.openai) {
-            return 'OpenAI not initialized, please specify the API key in the constructor.'
-        }
-
-        try {
-            const response = await this.openai.chat.completions.create({
-                model: "gpt-4",
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are a helpful assistant that summarizes text concisely while preserving key information. Keep summaries clear and focused."
-                    },
-                    {
-                        role: "user",
-                        content: history
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 500
-            });
-
-            return response.choices[0].message.content.trim();
-        } catch (error) {
-            console.error('Error in summarize:', error);
-            throw new Error('Failed to generate summary');
-        }
-    }
-
-    /**
-     * Upcasts content to parent holonagons recursively using references.
-     * @param {string} holon - The current holon identifier.
-     * @param {string} lens - The lens under which to upcast.
-     * @param {object} content - The content to upcast.
-     * @param {number} [maxLevels=15] - Maximum levels to upcast.
-     * @returns {Promise<object>} - The original content.
-     */
-    async upcast(holon, lens, content, maxLevels = 15) {
-        // Store the actual content at the original resolution
-        await this.put(holon, lens, content);
-        
-        let res = h3.getResolution(holon);
-        
-        // If already at the highest level (res 0) or reached max levels, we're done
-        if (res === 0 || maxLevels <= 0) {
-            return content;
-        }
-        
-        // Get the parent cell
-        let parent = h3.cellToParent(holon, res - 1);
-        
-        // Create a reference to store in the parent
-        const reference = this.createReference(holon, lens, content);
-        
-        // Store the reference in the parent cell
-        await this.put(parent, lens, reference, null, { 
-            autoPropagate: false 
-        });
-        
-        // Continue upcasting with the parent
-        if (res > 1 && maxLevels > 1) {
-            return this.upcast(parent, lens, reference, maxLevels - 1);
-        }
-        
-        return content;
-    }
-
-    /**
-     * Updates the parent holon with a new report.
-     * @param {string} id - The child holon identifier.
-     * @param {string} report - The report to update.
-     * @returns {Promise<object>} - The updated parent information.
-     */
-    async updateParent(id, report) {
-        let cellinfo = await this.getCellInfo(id)
-        let res = h3.getResolution(id)
-        let parent = h3.cellToParent(id, res - 1)
-        let parentInfo = await this.getCellInfo(parent)
-        parentInfo.wisdom[id] = report
-        //update summary
-        let summary = await this.summarize(Object.values(parentInfo.wisdom).join('\n'))
-        parentInfo.summary = summary
-
-        await this.db.put('cell', parentInfo)
-        return parentInfo
-    }
-
-
-    /**
      * Converts latitude and longitude to a holon identifier.
      * @param {number} lat - The latitude.
      * @param {number} lng - The longitude.
@@ -1662,7 +425,8 @@ class HoloSphere {
      * @returns {Promise<string>} - The resulting holon identifier.
      */
     async getHolon(lat, lng, resolution) {
-        return h3.latLngToCell(lat, lng, resolution);
+        // Delegate to the external function
+        return Utils.getHolon(lat, lng, resolution);
     }
 
     /**
@@ -1672,13 +436,8 @@ class HoloSphere {
      * @returns {Array<string>} - List of holon identifiers.
      */
     getScalespace(lat, lng) {
-        let list = []
-        let cell = h3.latLngToCell(lat, lng, 14);
-        list.push(cell)
-        for (let i = 13; i >= 0; i--) {
-            list.push(h3.cellToParent(cell, i))
-        }
-        return list
+        // Delegate to the external function
+        return Utils.getScalespace(lat, lng);
     }
 
     /**
@@ -1687,12 +446,8 @@ class HoloSphere {
      * @returns {Array<string>} - List of holon identifiers.
      */
     getHolonScalespace(holon) {
-        let list = []
-        let res = h3.getResolution(holon)
-        for (let i = res; i >= 0; i--) {
-            list.push(h3.cellToParent(holon, i))
-        }
-        return list
+        // Delegate to the external function
+        return Utils.getHolonScalespace(holon);
     }
 
     /**
@@ -1703,101 +458,8 @@ class HoloSphere {
      * @returns {Promise<object>} - Subscription object with unsubscribe method
      */
     async subscribe(holon, lens, callback) {
-        if (!holon || !lens) {
-            throw new Error('subscribe: Missing holon or lens parameters:', holon, lens);
-        }
-        
-        if (!callback || typeof callback !== 'function') {
-            throw new Error('subscribe: Callback must be a function');
-        }
-
-        const subscriptionId = this.generateId();
-        
-        try {
-            // Create the subscription
-            const gunSubscription = this.gun.get(this.appname).get(holon).get(lens).map().on(async (data, key) => {
-                // Check if subscription is still active before processing
-                if (!this.subscriptions[subscriptionId]?.active) {
-                    return;
-                }
-
-                if (data) {
-                    try {
-                        let parsed = await this.parse(data);
-                        
-                        // Check if the parsed data is a reference that needs resolution
-                        if (parsed && this.isReference(parsed)) {
-                            const resolved = await this.resolveReference(parsed, {
-                                followReferences: true // Always follow references
-                            });
-                            
-                            if (resolved === null) {
-                                console.log(`Reference at ${holon}/${lens}/${parsed.id} points to non-existent data. Deleting reference.`);
-                                try {
-                                     // Use parsed.id as the key for the reference
-                                    await this.delete(holon, lens, parsed.id, null); 
-                                } catch (deleteError) {
-                                    console.error(`Failed to delete invalid reference at ${holon}/${lens}/${parsed.id}:`, deleteError);
-                                }
-                                // Don't add to output, just return
-                                return; 
-                            }
-                            
-                            if (resolved !== parsed) {
-                                // Reference was resolved successfully
-                                // Check again if subscription is still active
-                                if (this.subscriptions[subscriptionId]?.active) {
-                                    callback(resolved, key);
-                                }
-                                return;
-                            }
-                        }
-                        
-                        // Check again if subscription is still active before final callback
-                        if (this.subscriptions[subscriptionId]?.active) {
-                            callback(parsed, key);
-                        }
-                    } catch (error) {
-                        console.error('Error in subscribe:', error);
-                    }
-                }
-            });
-            
-            // Store the subscription with its ID
-            this.subscriptions[subscriptionId] = {
-                id: subscriptionId,
-                holon,
-                lens,
-                active: true,
-                callback,
-                gunSubscription
-            };
-            
-            // Return an object with unsubscribe method
-            return {
-                unsubscribe: () => {
-                    try {
-                        // Mark as inactive first to prevent any new callbacks
-                        if (this.subscriptions[subscriptionId]) {
-                            this.subscriptions[subscriptionId].active = false;
-                        }
-                        
-                        // Turn off the Gun subscription using the stored reference
-                        if (this.subscriptions[subscriptionId]?.gunSubscription) {
-                            this.subscriptions[subscriptionId].gunSubscription.off();
-                        }
-                        
-                        // Remove from subscriptions
-                        delete this.subscriptions[subscriptionId];
-                    } catch (error) {
-                        console.error('Error in unsubscribe:', error);
-                    }
-                }
-            };
-        } catch (error) {
-            console.error('Error creating subscription:', error);
-            throw error;
-        }
+        // Delegate to the external function
+        return Utils.subscribe(this, holon, lens, callback);
     }
 
     /**
@@ -1806,32 +468,14 @@ class HoloSphere {
      * @private
      */
     notifySubscribers(data) {
-        if (!data || !data.holon || !data.lens) {
-            return;
-        }
-        
-        try {
-            Object.values(this.subscriptions).forEach(subscription => {
-                if (subscription.active && 
-                    subscription.holon === data.holon && 
-                    subscription.lens === data.lens) {
-                    try {
-                        if (subscription.callback && typeof subscription.callback === 'function') {
-                            subscription.callback(data);
-                        }
-                    } catch (error) {
-                        console.warn('Error in subscription callback:', error);
-                    }
-                }
-            });
-        } catch (error) {
-            console.warn('Error notifying subscribers:', error);
-        }
+        // Delegate to the external function
+        return Utils.notifySubscribers(this, data);
     }
 
     // Add ID generation method
     generateId() {
-        return Date.now().toString(10) + Math.random().toString(2);
+        // Delegate to the external function
+        return Utils.generateId();
     }
 
     // ================================ FEDERATION FUNCTIONS ================================
@@ -1967,111 +611,8 @@ class HoloSphere {
      * @returns {Promise<void>}
      */
     async close() {
-        try {
-            if (this.gun) {
-                // Unsubscribe from all subscriptions
-                const subscriptionIds = Object.keys(this.subscriptions);
-                for (const id of subscriptionIds) {
-                    try {
-                        const subscription = this.subscriptions[id];
-                        if (subscription && subscription.active) {
-                            // Turn off the Gun subscription using the stored reference
-                            if (subscription.gunSubscription) {
-                                subscription.gunSubscription.off();
-                            }
-                            
-                            // Mark as inactive
-                            subscription.active = false;
-                        }
-                    } catch (error) {
-                        console.warn(`Error cleaning up subscription ${id}:`, error);
-                    }
-                }
-
-                // Clear subscriptions
-                this.subscriptions = {};
-                
-                // Clear schema cache
-                this.clearSchemaCache();
-
-                // Close Gun connections
-                if (this.gun.back) {
-                    try {
-                        // Clean up mesh connections
-                        const mesh = this.gun.back('opt.mesh');
-                        if (mesh) {
-                            // Clean up mesh.hear
-                            if (mesh.hear) {
-                                try {
-                                    // Safely clear mesh.hear without modifying function properties
-                                    const hearKeys = Object.keys(mesh.hear);
-                                    for (const key of hearKeys) {
-                                        // Check if it's an array before trying to clear it
-                                        if (Array.isArray(mesh.hear[key])) {
-                                            mesh.hear[key] = [];
-                                        }
-                                    }
-                                    
-                                    // Create a new empty object for mesh.hear
-                                    // Only if mesh.hear is not a function
-                                    if (typeof mesh.hear !== 'function') {
-                                        mesh.hear = {};
-                                    }
-                                } catch (meshError) {
-                                    console.warn('Error cleaning up Gun mesh hear:', meshError);
-                                }
-                            }
-                            
-                            // Close any open sockets in the mesh
-                            if (mesh.way) {
-                                try {
-                                    Object.values(mesh.way).forEach(connection => {
-                                        if (connection && connection.wire && connection.wire.close) {
-                                            connection.wire.close();
-                                        }
-                                    });
-                                } catch (sockError) {
-                                    console.warn('Error closing mesh sockets:', sockError);
-                                }
-                            }
-                            
-                            // Clear the peers list
-                            if (mesh.opt && mesh.opt.peers) {
-                                mesh.opt.peers = {};
-                            }
-                        }
-                        
-                        // Attempt to clean up any TCP connections
-                        if (this.gun.back('opt.web')) {
-                            try {
-                                const server = this.gun.back('opt.web');
-                                if (server && server.close) {
-                                    server.close();
-                                }
-                            } catch (webError) {
-                                console.warn('Error closing web server:', webError);
-                            }
-                        }
-                    } catch (error) {
-                        console.warn('Error accessing Gun mesh:', error);
-                    }
-                }
-
-                // Clear all Gun instance listeners
-                try {
-                    this.gun.off();
-                } catch (error) {
-                    console.warn('Error turning off Gun listeners:', error);
-                }
-                
-                // Wait a moment for cleanup to complete
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            
-            console.log('HoloSphere instance closed successfully');
-        } catch (error) {
-            console.error('Error closing HoloSphere instance:', error);
-        }
+        // Delegate to the external function
+        return Utils.close(this);
     }
 
     /**
@@ -2081,8 +622,8 @@ class HoloSphere {
      * @returns {string} - Namespaced username
      */
     userName(holonId) {
-        if (!holonId) return null;
-        return `${this.appname}:${holonId}`;
+        // Delegate to the external function
+        return Utils.userName(this, holonId);
     }
 }
 

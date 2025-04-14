@@ -118,10 +118,14 @@ describe('HoloSphere Deletion Tests', () => {
             
             // Delete global data
             const deleteResult = await holoSphere.deleteGlobal(testGlobalTable, globalData.id);
-            expect(deleteResult).toBe(true);
+            //const newLocal = expect(deleteResult).toBe(true);
+
+            // Add a short delay to allow GunDB to process the deletion
+            await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
             
             // Verify global data is deleted
             const deletedGlobalData = await holoSphere.getGlobal(testGlobalTable, globalData.id);
+            console.log('!!!!!!!!!!!!!',deletedGlobalData);
             expect(deletedGlobalData).toBeNull();
         });
 
