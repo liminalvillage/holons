@@ -72,8 +72,10 @@ export default class Quests {
         this.bot.action(/less_actions_(.+)/, (ctx) => this.hideMoreActions(ctx));
         this.bot.action(/publish_quest_(.+)/, (ctx) => this.publish(ctx));
         this.bot.action(/broadcast_quest_(.+)/, (ctx) => this.broadcast(ctx));
-        this.bot.action(/add_time_quest_(.+)/, (ctx) => this.addTime(ctx));
-        this.bot.action(/subtract_time_quest_(.+)/, (ctx) => this.subtractTime(ctx));
+        this.bot.action(/add_time_quest_(.+)/, (ctx) => this.addTime(ctx, 0.25));
+        this.bot.action(/subtract_time_quest_(.+)/, (ctx) => this.subtractTime(ctx, 0.25));
+        this.bot.action(/add_1h_quest_(.+)/, (ctx) => this.addTime(ctx,1));
+        this.bot.action(/subtract_1h_quest_(.+)/, (ctx) => this.subtractTime(ctx,1));
 
         // Add checklist action handler
         this.bot.action(/checklist_quest_(.+)/, (ctx) => this.handleChecklistButton(ctx));
@@ -332,7 +334,7 @@ export default class Quests {
             console.log('Saving quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest)
             //update the new message
-            await this.updateMessage(ctx, quest, language)
+            await this.updateMessage(ctx, quest, language, false)
             
             //Pin the message
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -406,7 +408,8 @@ export default class Quests {
             await this.db.put(chatID + '/quests', quest);
 
             // Update message and propagate to federated spaces
-            await this.updateMessage(ctx, quest, language);
+            // Request standard markup after join
+            await this.updateMessage(ctx, quest, language, false);
 
         } catch (error) {
             console.error('Error in join function:', error);
@@ -458,7 +461,10 @@ export default class Quests {
 
 
         // Update message 
-        await this.updateMessage(ctx, quest, language);
+        // await this.updateMessage(ctx, quest, language); // Original line - Keep default (expanded)
+        // await this.updateMessage(ctx, quest, language); // Use default (expanded) -> Previous change
+        // console.log(`[Appreciate] Requesting standard markup for quest ${messageID}`); // <-- Remove log
+        await this.updateMessage(ctx, quest, language, false); // Request standard markup
     }
 
     async cancel(ctx) {
@@ -522,6 +528,10 @@ export default class Quests {
         } else {
             ctx.answerCbQuery(i18next.t('onlyinitatorcancel', { lng: language }), { reply_to_message_id: messageID });
         }
+
+        // Update the message
+        // await this.updateMessage(ctx, quest, language); // Original line - Keep default (expanded)
+        await this.updateMessage(ctx, quest, language, false); // Request standard markup
     }
 
     async stop(ctx) {
@@ -604,7 +614,8 @@ export default class Quests {
             }
 
             // Update the message and propagate to federated spaces
-            await this.updateMessage(ctx, quest, language);
+            // Request standard markup after complete
+            await this.updateMessage(ctx, quest, language, false);
 
             // Unpin the message and any federated messages
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
@@ -864,7 +875,7 @@ export default class Quests {
     }
 
     // Function to update messages for a quest
-    async updateMessage(ctx, quest, language) {
+    async updateMessage(ctx, quest, language, useExpandedMarkup = true) { // Default to expanded markup
         try {
             if (!quest) {
                 console.log("ERROR: Quest is null in updateMessage");
@@ -883,7 +894,13 @@ export default class Quests {
 
 
             const message = await this.createMessage(quest, language);
-            const markup = this.markup(quest, language);
+            // const markup = this.markup(quest, language); // Original line
+            // Choose markup based on the flag
+            // console.log(`[updateMessage] Called for quest ${quest.id}. useExpandedMarkup = ${useExpandedMarkup}`); // <-- Remove log
+            const markupConfig = useExpandedMarkup
+                ? { reply_markup: { inline_keyboard: this.getExpandedButtons(quest, language) } }
+                : this.markup(quest, language);
+            // console.log(`[updateMessage] Intending to use ${useExpandedMarkup ? 'expanded (getExpandedButtons)' : 'standard (markup)'} buttons.`); // <-- Remove log
 
             // Update the message in original chat
             if (quest.picture) {
@@ -896,8 +913,9 @@ export default class Quests {
                         media: quest.picture,
                         caption: message
                     },
-                    markup
-                ).catch((err) => { 
+                    // markup // Original line
+                    markupConfig
+                ).catch((err) => {
                     console.error('Error updating media message:', err);
                     // Try alternative approach if this fails
                     return ctx.telegram.editMessageText(
@@ -905,7 +923,8 @@ export default class Quests {
                         quest.id,
                         null,
                         message,
-                        markup
+                        // markup // Original line
+                        markupConfig
                     ).catch(innerErr => console.error('Alternative update also failed:', innerErr));
                 });
             }
@@ -915,7 +934,8 @@ export default class Quests {
                     quest.id,
                     null,
                     message,
-                    markup
+                    // markup // Original line
+                    markupConfig
                 ).catch((err) => { 
                     console.error('Error updating text message:', err);
                     if (err.response && err.response.description === 'Bad Request: message is not modified') {
@@ -997,15 +1017,9 @@ export default class Quests {
             ctx.answerCbQuery('Quest not found');
             return;
         }
-
-        console.log(`Showing expanded buttons for quest ${quest.id}, type: ${quest.type}, status: ${quest.status}`);
-        console.log(`Quest details: title=${quest.title}, frequency=${quest.frequency}, recurringTaskId=${quest.recurringTaskId}`);
-
         // Create expanded markup with all buttons
         let expandedButtons = this.getExpandedButtons(quest, language);
-        
-        console.log(`Generated ${expandedButtons.length} button rows for expanded view`);
-        
+          
         if (expandedButtons.length === 0) {
             console.error(`No expanded buttons generated for quest type: ${quest.type}`);
             ctx.answerCbQuery('Error: Could not generate expanded buttons');
@@ -1025,19 +1039,16 @@ export default class Quests {
                     }
                 }
             );
-            console.log('Successfully updated message with expanded buttons');
         } catch (err) {
-            console.error('Error updating message with expanded buttons:', err);
             
             // Fallback to just updating the markup if text update fails
             try {
                 await ctx.editMessageReplyMarkup({
                     inline_keyboard: expandedButtons
                 });
-                console.log('Successfully updated message with fallback method');
             } catch (innerErr) { 
                 console.error('Fallback markup update also failed:', innerErr);
-                ctx.answerCbQuery('Error updating buttons. Please try again.');
+                ctx.answerCbQuery('Error updating buttons.');
             }
         }
 
@@ -1057,10 +1068,6 @@ export default class Quests {
             ctx.answerCbQuery('Quest not found');
             return;
         }
-
-        console.log(`Hiding expanded buttons for quest ${quest.id}, type: ${quest.type}, status: ${quest.status}`);
-        console.log(`Quest details: title=${quest.title}, frequency=${quest.frequency}, recurringTaskId=${quest.recurringTaskId}`);
-
         // Update message with original markup - use the complete text + markup approach
         try {
             const message = await this.createMessage(quest, language);
@@ -1074,7 +1081,6 @@ export default class Quests {
                 }
             );
         } catch (err) {
-            console.error('Error updating message with standard buttons:', err);
             
             // Fallback to just updating the markup if text update fails
             await ctx.editMessageReplyMarkup(
@@ -1091,27 +1097,33 @@ export default class Quests {
     getExpandedButtons(quest, language) {
         let buttons = [];
         
-        console.log(`Getting expanded buttons for quest type: ${quest.type}, status: ${quest.status}`);
-
-        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito' || quest.type == 'recurring') {
-            console.log(`Using task/recurring buttons layout for quest ${quest.id}`);
+         if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito' || quest.type == 'recurring') {
             // First row - essential actions
             buttons.push([
                 Markup.button.callback(i18next.t('join', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
-
-            // Second row - time tracking
-            buttons.push([
-                Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
-            ]);
-
-            // Third row - appreciation and schedule
+            // Second  row - appreciation and schedule
             buttons.push([
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
             ]);
+
+            // Fifth row - stop and cancel
+            buttons.push([
+                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+            // Third row - time tracking
+            buttons.push([
+                Markup.button.callback('⏰ -1h', 'subtract_1h_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ +1h', 'add_1h_quest_' + quest.chat + '_' + quest.id)
+            ]);
+
+        
 
             // Fourth row - description and checklist
             buttons.push([
@@ -1125,11 +1137,7 @@ export default class Quests {
                 Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language), 'recurring_quest_' + quest.chat + '_' + quest.id)
             ]);
             
-            // Fifth row - stop and cancel
-            buttons.push([
-                Markup.button.callback(i18next.t('stop', { lng: language }), 'stop_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback(i18next.t('cancel', { lng: language }), 'cancel_quest_' + quest.chat + '_' + quest.id)
-            ]);
+      
 
             // Sixth row - publish and broadcast
             buttons.push([
@@ -1304,7 +1312,8 @@ export default class Quests {
 
             // Update the message to show it's been published
             quest.published = true
-            await this.updateMessage(ctx, quest, language)
+            // await this.updateMessage(ctx, quest, language) // Original line - Keep default (expanded)
+            await this.updateMessage(ctx, quest, language); // Use default (expanded)
 
         } catch (error) {
             console.error('Error publishing quest:', error)
@@ -1379,7 +1388,7 @@ export default class Quests {
         }
     }
 
-    async addTime(ctx) {
+    async addTime(ctx, amount) {
         console.log("ADD TIME ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[3];
         let messageID = ctx.callbackQuery.data.split('_')[4];
@@ -1397,8 +1406,8 @@ export default class Quests {
             quest.timeTracking[userId] = 0;
         }
 
-        // Add 15 minutes (0.25 hours)
-        quest.timeTracking[userId] += 0.25;
+        // add amount of time to the user
+        quest.timeTracking[userId] += amount;
 
         // Add user to participants if they're not already in the list
         const userIndex = quest.participants.findIndex(user => user.id === sender.id);
@@ -1409,10 +1418,10 @@ export default class Quests {
         // Update the message and propagate to federated spaces
         await this.updateMessage(ctx, quest, language);
 
-        ctx.answerCbQuery(`Added 15 minutes to ${getDisplayName(sender)}'s time on "${quest.title}"`);
+        ctx.answerCbQuery(`Added ${amount} hours to ${getDisplayName(sender)}'s time on "${quest.title}"`);
     }
 
-    async subtractTime(ctx) {
+    async subtractTime(ctx, amount) {
         console.log("SUBTRACT TIME ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[3];
         let messageID = ctx.callbackQuery.data.split('_')[4];
@@ -1431,8 +1440,8 @@ export default class Quests {
         }
 
         // Only subtract if there's time logged
-        if (quest.timeTracking[userId] >= 0.25) {
-            quest.timeTracking[userId] -= 0.25;
+        if (quest.timeTracking[userId] >= amount) {
+            quest.timeTracking[userId] -= amount;
 
             // If user has no more time logged, remove them from participants
             if (quest.timeTracking[userId] === 0) {
@@ -1442,7 +1451,7 @@ export default class Quests {
             // Update the message and propagate to federated spaces
             await this.updateMessage(ctx, quest, language);
 
-            ctx.answerCbQuery(`Removed 15 minutes from ${getDisplayName(sender)}'s time on "${quest.title}"`);
+            ctx.answerCbQuery(`Removed ${amount } hours from ${getDisplayName(sender)}'s time on "${quest.title}"`);
         } else {
             ctx.answerCbQuery(`No time logged for ${getDisplayName(sender)} to remove`);
         }
@@ -1725,38 +1734,15 @@ export default class Quests {
 
     markup(quest, language) {
         let mu
-        if (quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito' || quest.type == 'recurring') {
-            // Create button rows
-            const buttons = [
+        if (quest.type == 'event'|| quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito' || quest.type == 'recurring') {
+            mu = Markup.inlineKeyboard([
                 [
                     Markup.button.callback(i18next.t('join', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                     Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
-                    Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
-                    Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id)
-                ]
-            ];
-
-            // Add tasks and recurring buttons
-            buttons.push([
-                Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 'checklist_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language), 'recurring_quest_' + quest.chat + '_' + quest.id)
-            ]);
-
-            // Add more actions button
-            buttons.push([
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
-            ]);
-
-            mu = Markup.inlineKeyboard(buttons);
-        }
-
-        if (quest.type == 'event') {
-            mu = Markup.inlineKeyboard([
-                [
-                    Markup.button.callback(i18next.t('join', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
-                    Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
+                    Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id),
+                    Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
                 ],
                 [
                     Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 'more_actions_' + quest.chat + '_' + quest.id)
