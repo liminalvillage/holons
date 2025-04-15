@@ -4,6 +4,9 @@ import { jest } from '@jest/globals';
 // Configure Jest
 jest.setTimeout(30000); // 30 second timeout
 
+// Utility to wait for GunDB propagation
+const waitForGun = (delay = 250) => new Promise(resolve => setTimeout(resolve, delay));
+
 describe('HoloSphere Deletion Tests', () => {
     const testAppName = 'test-app-deletion';
     const testHolon = 'testHolonDeletion';
@@ -106,26 +109,22 @@ describe('HoloSphere Deletion Tests', () => {
         test('should delete global items properly', async () => {
             // Create global test data
             const globalData = { id: 'global-delete-test', value: 'global delete me' };
-            
-            // Store global data
-            await holoSphere.putGlobal(testGlobalTable, globalData);
-            
-            // Verify global data exists
-            const storedGlobalData = await holoSphere.getGlobal(testGlobalTable, globalData.id);
-            expect(storedGlobalData).toBeDefined();
-            console.log(storedGlobalData);
-            expect(storedGlobalData.value).toBe(globalData.value);
-            
-            // Delete global data
-            const deleteResult = await holoSphere.deleteGlobal(testGlobalTable, globalData.id);
-            //const newLocal = expect(deleteResult).toBe(true);
 
-            // Add a short delay to allow GunDB to process the deletion
-            await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
-            
-            // Verify global data is deleted
+            // 1. Store global data
+            await holoSphere.putGlobal(testGlobalTable, globalData);
+
+            // 2. Wait significantly for put to settle
+            await waitForGun(1500); // Generous wait after put
+
+            // 3. Delete global data
+            const deleteResult = await holoSphere.deleteGlobal(testGlobalTable, globalData.id);
+            expect(deleteResult).toBe(true);
+
+            // 4. Wait for delete to settle
+            await waitForGun(500); // Wait after delete
+
+            // 5. Verify global data is deleted
             const deletedGlobalData = await holoSphere.getGlobal(testGlobalTable, globalData.id);
-            console.log('!!!!!!!!!!!!!',deletedGlobalData);
             expect(deletedGlobalData).toBeNull();
         });
 

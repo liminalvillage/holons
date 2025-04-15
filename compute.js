@@ -211,7 +211,7 @@ export async function summarize(holoInstance, history) {
 }
 
 /**
- * Upcasts content to parent holonagons recursively using references.
+ * Upcasts content to parent holonagons recursively using holograms.
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
  * @param {string} holon - The current holon identifier.
  * @param {string} lens - The lens under which to upcast.
@@ -233,18 +233,19 @@ export async function upcast(holoInstance, holon, lens, content, maxLevels = 15)
     // Get the parent cell
     let parent = h3.cellToParent(holon, res - 1);
 
-    // Create a reference to store in the parent using instance's createReference
-    const reference = holoInstance.createReference(holon, lens, content);
+    // Create a hologram to store in the parent using instance's createHologram
+    const hologram = holoInstance.createHologram(holon, lens, content);
 
-    // Store the reference in the parent cell using instance's put
-    await holoInstance.put(parent, lens, reference, null, {
+    // Store the hologram in the parent cell using instance's put
+    await holoInstance.put(parent, lens, hologram, null, {
         autoPropagate: false
     });
 
     // Continue upcasting with the parent using instance's upcast
     if (res > 1 && maxLevels > 1) {
         // Recursively call the instance's upcast method
-        return holoInstance.upcast(parent, lens, reference, maxLevels - 1);
+        // Pass the *hologram* to the next level, not the original content
+        return holoInstance.upcast(parent, lens, hologram, maxLevels - 1);
     }
 
     return content;

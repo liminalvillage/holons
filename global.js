@@ -34,9 +34,8 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
                     holoInstance.gun.get(holoInstance.appname).get(tableName);
 
                 if (data.id) {
-                    // Store at the specific key path
-                    dataPath.get(data.id).put(payload, ack => {
-
+                    const itemPath = dataPath.get(data.id);
+                    itemPath.put(payload, ack => {
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
@@ -83,7 +82,7 @@ export async function getGlobal(holoInstance, tableName, key, password = null) {
             });
         }
 
-        return new Promise((resolve) => {
+        return new Promise(async (resolve) => {
             const handleData = async (data) => {
                 if (!data) {
                     resolve(null);
@@ -99,25 +98,25 @@ export async function getGlobal(holoInstance, tableName, key, password = null) {
                         return;
                     }
 
-                    // Check if this is a reference that needs to be resolved
-                    if (holoInstance.isReference(parsed)) { // Use instance's isReference
-                        const resolved = await holoInstance.resolveReference(parsed, { // Use instance's resolveReference
-                            followReferences: true // Always follow references
+                    // Check if this is a hologram that needs to be resolved
+                    if (holoInstance.isHologram(parsed)) { // Use instance's isHologram
+                        const resolved = await holoInstance.resolveHologram(parsed, { // Use instance's resolveHologram
+                            followHolograms: true // Always follow holograms
                         });
 
                         if (resolved === null) {
-                            console.log(`Reference at ${tableName}/${key} points to non-existent data. Deleting reference.`);
+                            console.log(`Hologram at ${tableName}/${key} points to non-existent data. Deleting hologram.`);
                             try {
                                 await holoInstance.deleteGlobal(tableName, key, password); // Use instance's deleteGlobal
                             } catch (deleteError) {
-                                console.error(`Failed to delete invalid global reference at ${tableName}/${key}:`, deleteError);
+                                console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
                             }
-                            resolve(null); // Return null as the reference is invalid
+                            resolve(null); // Return null as the hologram is invalid
                             return;
                         }
 
                         if (resolved !== parsed) {
-                            // Reference was resolved successfully
+                            // Hologram was resolved successfully
                             resolve(resolved);
                             return;
                         }
@@ -134,7 +133,8 @@ export async function getGlobal(holoInstance, tableName, key, password = null) {
                 user.get('private').get(tableName) :
                 holoInstance.gun.get(holoInstance.appname).get(tableName);
 
-            dataPath.get(key).once(handleData);
+            const itemPath = dataPath.get(key);
+            itemPath.once(handleData);
         });
     } catch (error) {
         console.error('Error in getGlobal:', error);
@@ -199,27 +199,28 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
                             try {
                                 const parsed = await holoInstance.parse(itemData); // Use instance's parse
                                 if (parsed) {
-                                    // Check if this is a reference that needs to be resolved
-                                    if (holoInstance.isReference(parsed)) { // Use instance's isReference
-                                        const resolved = await holoInstance.resolveReference(parsed, { // Use instance's resolveReference
-                                            followReferences: true // Always follow references
+                                    // Check if this is a hologram that needs to be resolved
+                                    if (holoInstance.isHologram(parsed)) { // Use instance's isHologram
+                                        const resolved = await holoInstance.resolveHologram(parsed, { // Use instance's resolveHologram
+                                            followHolograms: true // Always follow holograms
                                         });
 
                                         if (resolved === null) {
-                                            console.log(`Reference at ${tableName}/${key} points to non-existent data. Deleting reference.`);
+                                            console.log(`Hologram at ${tableName}/${key} points to non-existent data. Deleting hologram.`);
                                             try {
                                                 await holoInstance.deleteGlobal(tableName, key, password); // Use instance's deleteGlobal
                                             } catch (deleteError) {
-                                                console.error(`Failed to delete invalid global reference at ${tableName}/${key}:`, deleteError);
+                                                console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
                                             }
                                             resolveItem();
                                             return;
                                         }
 
                                         if (resolved !== parsed) {
-                                            // Reference was resolved successfully
+                                            // Hologram was resolved successfully
                                             output.push(resolved);
                                         } else {
+                                            // If resolution didn't change it (e.g., circular ref guard), push original parsed (which is a hologram)
                                             output.push(parsed);
                                         }
                                     } else {

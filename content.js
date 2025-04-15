@@ -10,7 +10,7 @@
  * @param {object} [options] - Additional options
  * @param {boolean} [options.autoPropagate=true] - Whether to automatically propagate to federated holons (default: true)
  * @param {object} [options.propagationOptions] - Options to pass to propagate
- * @param {boolean} [options.propagationOptions.useReferences=true] - Whether to use references instead of duplicating data
+ * @param {boolean} [options.propagationOptions.useHolograms=true] - Whether to use holograms instead of duplicating data
  * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
  */
 export async function put(holoInstance, holon, lens, data, password = null, options = {}) {
@@ -22,11 +22,11 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         data.id = holoInstance.generateId();
     }
 
-    // Check if this is a reference we're storing
-    const isRef = holoInstance.isReference(data);
+    // Check if this is a hologram we're storing
+    const isHolo = holoInstance.isHologram(data);
 
-    // Get and validate schema only in strict mode for non-references
-    if (holoInstance.strict && !isRef) {
+    // Get and validate schema only in strict mode for non-holograms
+    if (holoInstance.strict && !isHolo) {
         const schema = await holoInstance.getSchema(lens);
         if (!schema) {
             throw new Error('Schema required in strict mode');
@@ -60,8 +60,8 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                     if (ack.err) {
                         reject(new Error(ack.err));
                     } else {
-                        // Only notify subscribers for actual data, not references
-                        if (!isRef) {
+                        // Only notify subscribers for actual data, not holograms
+                        if (!isHolo) {
                             holoInstance.notifySubscribers({
                                 holon,
                                 lens,
@@ -69,15 +69,15 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                             });
                         }
 
-                        // Auto-propagate to federation by default (if not a reference)
-                        const shouldPropagate = options.autoPropagate !== false && !isRef;
+                        // Auto-propagate to federation by default (if not a hologram)
+                        const shouldPropagate = options.autoPropagate !== false && !isHolo;
                         let propagationResult = null;
 
                         if (shouldPropagate) {
                             try {
-                                // Default to using references
+                                // Default to using holograms
                                 const propagationOptions = {
-                                    useReferences: true,
+                                    useHolograms: true,
                                     ...options.propagationOptions
                                 };
 
@@ -99,7 +99,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
                         resolve({
                             success: true,
-                            isReference: isRef,
+                            isHologram: isHolo,
                             propagationResult
                         });
                     }
@@ -128,19 +128,21 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
  * @param {string} key - The specific key to retrieve.
  * @param {string} [password] - Optional password for private holon.
  * @param {object} [options] - Additional options
- * @param {boolean} [options.resolveReferences=true] - Whether to automatically resolve federation references
+ * @param {boolean} [options.resolveHolograms=true] - Whether to automatically resolve holograms
+ * @param {object} [options.validationOptions] - Options passed to the schema validator
  * @returns {Promise<object|null>} - The retrieved content or null if not found.
  */
 export async function get(holoInstance, holon, lens, key, password = null, options = {}) {
     if (!holon || !lens || !key) {
-        console.error('get: Missing required parameters:', { holon, lens, key });
+        console.error('get: Missing required parameters');
         return null;
     }
 
-    const { resolveReferences = true } = options;
+    // Destructure options, including visited
+    const { resolveHolograms = true, validationOptions = {}, visited } = options;
 
-    // Only check schema in strict mode
-    let schema;
+    // Get schema for validation if in strict mode
+    let schema = null;
     if (holoInstance.strict) {
         schema = await holoInstance.getSchema(lens);
         if (!schema) {
@@ -168,39 +170,34 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                 }
 
                 try {
-                    const parsed = await holoInstance.parse(data); // Use instance's parse
+                    let parsed = await holoInstance.parse(data);
+                    console.log(`### get/handleData received raw data:`, data, `| Parsed:`, parsed);
 
                     if (!parsed) {
+                        console.log('### get/handleData resolving null because parsed is null/falsy');
                         resolve(null);
                         return;
                     }
 
-                    // Check if this is a reference that needs to be resolved
-                    if (resolveReferences && holoInstance.isReference(parsed)) {
-                        const resolved = await holoInstance.resolveReference(parsed, {
-                            followReferences: true // Always follow nested references when resolving
+                    // Check if this is a hologram that needs to be resolved
+                    if (resolveHolograms && holoInstance.isHologram(parsed)) {
+                        const resolved = await holoInstance.resolveHologram(parsed, {
+                            followHolograms: resolveHolograms,
+                            visited: visited
                         });
 
+                        console.log(`### get/handleData received resolved value:`, resolved);
+
                         if (resolved === null) {
-                            // resolveReference signaled that the target data was not found.
-                            console.log(`Reference at ${holon}/${lens}/${key} points to non-existent data. Deleting reference.`);
-                            try {
-                                await holoInstance.delete(holon, lens, key, password); // Use instance's delete
-                            } catch (deleteError) {
-                                console.error(`Failed to delete invalid reference at ${holon}/${lens}/${key}:`, deleteError);
-                            }
-                            resolve(null); // Return null as the reference is invalid
-                            return;
+                            console.warn(`Hologram at ${holon}/${lens}/${key} points to non-existent data. Resolving null.`);
+                            resolve(null);
+                            // Throw after resolving to ensure handleData execution stops
+                            throw new Error(`RESOLVED_NULL:${key}`); 
                         }
 
-                        if (schema && resolved._federation) {
-                            // Skip schema validation for resolved references
-                            resolve(resolved);
-                            return;
-                        } else if (resolved !== parsed) {
-                            // Reference was resolved successfully
-                            resolve(resolved);
-                            return;
+                        if (resolved !== parsed) {
+                            console.log(`### get/handleData using resolved data:`, resolved);
+                            parsed = resolved;
                         }
                     }
 
@@ -216,10 +213,21 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                         }
                     }
 
+                    console.log(`### get/handleData resolving final value:`, parsed);
                     resolve(parsed);
                 } catch (error) {
-                    console.error('Error parsing data:', error);
-                    resolve(null);
+                    // Catch specific errors if needed, otherwise log and resolve null
+                    if (error.message?.startsWith('RESOLVED_NULL')) {
+                        // This is expected when resolving a null, already handled by resolve(null)
+                        console.log(`Caught RESOLVED_NULL for key ${key}, already resolved null.`);
+                    } else if (error.message?.startsWith('CIRCULAR_REFERENCE')) {
+                         console.warn(`Caught circular reference during get/handleData for key ${key}. Resolving null.`);
+                         // Resolve null to indicate failure due to loop
+                         resolve(null);
+                    } else {
+                        console.error('Error processing data in get/handleData:', error);
+                        resolve(null);
+                    }
                 }
             };
 
@@ -275,14 +283,14 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                     const parsed = await holoInstance.parse(data); // Use instance's parse
                     if (!parsed || !parsed.id) return;
 
-                    // Check if this is a reference that needs to be resolved
-                    if (holoInstance.isReference(parsed)) {
-                        const resolved = await holoInstance.resolveReference(parsed, {
-                            followReferences: true // Always follow references
+                    // Check if this is a hologram that needs to be resolved
+                    if (holoInstance.isHologram(parsed)) {
+                        const resolved = await holoInstance.resolveHologram(parsed, {
+                            followHolograms: true
                         });
 
                         if (resolved !== parsed) {
-                            // Reference was resolved successfully
+                            // Hologram was resolved successfully
                             if (schema) {
                                 const valid = holoInstance.validator.validate(schema, resolved);
                                 if (valid || !holoInstance.strict) {
@@ -349,56 +357,55 @@ export async function getAll(holoInstance, holon, lens, password = null) {
  * @returns {Promise<object>} - The parsed data.
  */
 export async function parse(holoInstance, rawData) {
-    let parsedData = {};
-
-    if (!rawData) {
-        throw new Error('parse: No data provided');
+    if (rawData === null || rawData === undefined) {
+        console.warn('Parse received null or undefined data.');
+        return null;
     }
 
-    try {
-
-        if (typeof rawData === 'string') {
-            parsedData = await JSON.parse(rawData);
+    // 1. Handle string data (attempt JSON parse)
+    if (typeof rawData === 'string') {
+        try {
+            return JSON.parse(rawData);
+        } catch (error) {
+            // It's a string, but not valid JSON. Return null.
+            console.warn("Data was a string but not valid JSON, returning null:", rawData);
+            return null;
         }
-
-
-        if (rawData.soul) {
-            const data = await holoInstance.getNodeRef(rawData.soul).once(); // Use instance's getNodeRef
-            if (!data) {
-                throw new Error('Referenced data not found');
-            }
-            return JSON.parse(data);
-        }
-
-
-        if (typeof rawData === 'object' && rawData !== null) {
-            if (rawData._ && rawData._["#"]) {
-                const pathParts = rawData._['#'].split('/');
-                if (pathParts.length < 4) {
-                    throw new Error('Invalid reference format');
-                }
-                parsedData = await holoInstance.get(pathParts[1], pathParts[2], pathParts[3]); // Use instance's get
-                if (!parsedData) {
-                    throw new Error('Referenced data not found');
-                }
-            } else if (rawData._ && rawData._['>']) {
-                const nodeValue = Object.values(rawData).find(v => typeof v !== 'object' && v !== '_');
-                if (!nodeValue) {
-                    throw new Error('Invalid node data');
-                }
-                parsedData = JSON.parse(nodeValue);
-            } else {
-                parsedData = rawData;
-            }
-        }
-
-        return parsedData;
-
-    } catch (error) {
-        console.log("Parsing not a JSON, returning raw data", rawData);
-        return rawData;
-        //throw new Error(`Parse error: ${error.message}`);
     }
+
+    // 2. Handle object data
+    if (typeof rawData === 'object' && rawData !== null) {
+        // Check for GunDB soul link (less common now?)
+        if (rawData.soul && typeof rawData.soul === 'string' && rawData.id) {
+             // This looks like a Hologram object based on structure.
+             // Return it as is; resolution happens later if needed.
+             return rawData;
+        } else if (holoInstance.isHologram(rawData)) {
+             // Explicitly check using isHologram (might be redundant if structure check above is reliable)
+             return rawData;
+        } else if (rawData._) {
+            // Handle potential GunDB metadata remnants (attempt cleanup)
+            console.warn('Parsing raw Gun object with metadata (_) - attempting cleanup:', rawData);
+            const potentialData = Object.keys(rawData).reduce((acc, k) => {
+                if (k !== '_') {
+                    acc[k] = rawData[k];
+                }
+                return acc;
+            }, {});
+            if (Object.keys(potentialData).length === 0) {
+                console.warn('Raw Gun object had only metadata (_), returning null.');
+                return null;
+            }
+            return potentialData; // Return cleaned-up object
+        } else {
+            // Assume it's a regular plain object
+            return rawData;
+        }
+    }
+
+    // 3. Handle other unexpected types
+    console.warn("Parsing encountered unexpected data type, returning null:", typeof rawData, rawData);
+    return null;
 }
 
 /**

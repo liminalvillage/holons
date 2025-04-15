@@ -66,9 +66,9 @@ await holoSphere.put('space1', 'items', data, null, {
 You can access data directly from any space:
 
 ```javascript
-// Retrieve data from space2 (will resolve reference if it's a reference)
+// Retrieve data from space2 (will resolve hologram if it's a hologram)
 const data = await holoSphere.get('space2', 'items', 'item1', null, {
-  resolveReferences: true  // Default is true
+  resolveHolograms: true  // Default is true
 });
 ```
 
@@ -79,25 +79,25 @@ Use `getFederated()` to get data from multiple federated spaces:
 ```javascript
 // Get combined data from the local space and all its federated spaces
 const federatedData = await holoSphere.getFederated('space2', 'items', {
-  resolveReferences: true,  // Default: true
+  resolveHolograms: true,  // Default: true
   idField: 'id'             // Field to use as the unique identifier
 });
 ```
 
-## Soul References
+## Soul Holograms
 
-HoloSphere uses a simplified reference system based on soul paths:
+HoloSphere uses a simplified hologram system based on soul paths:
 
-1. A reference contains only an `id` and a `soul` property
+1. A hologram contains only an `id` and a `soul` property
 2. The soul path is in the format: `appname/holon/lens/key`
-3. When resolving a reference, HoloSphere follows the soul path to retrieve the original data
+3. When resolving a hologram, HoloSphere follows the soul path to retrieve the original data
 
-By default, federation propagation uses references instead of duplicating data. This can be controlled:
+By default, federation propagation uses holograms instead of duplicating data. This can be controlled:
 
 ```javascript
-// Propagate with full data copy instead of references
+// Propagate with full data copy instead of holograms
 await holoSphere.propagate('space1', 'items', data, {
-  useReferences: false
+  useHolograms: false
 });
 ```
 
@@ -150,7 +150,7 @@ async function federationExample() {
     // Allow time for propagation
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // Step 5: Access data from space2 (resolves reference)
+    // Step 5: Access data from space2 (resolves hologram)
     const itemFromSpace2 = await holoSphere.get(space2, 'items', 'item1');
     console.log('Item from space2:', itemFromSpace2);
     
@@ -163,10 +163,10 @@ async function federationExample() {
     
     await holoSphere.put(space1, 'items', updatedItem);
     
-    // Since we're using soul references, the update is immediately visible
-    // through the reference without needing to propagate again
+    // Since we're using soul holograms, the update is immediately visible
+    // through the hologram without needing to propagate again
     
-    // Verify update is visible through the reference
+    // Verify update is visible through the hologram
     const updatedItemFromSpace2 = await holoSphere.get(space2, 'items', 'item1');
     console.log('Updated item from space2:', updatedItemFromSpace2);
     
@@ -193,7 +193,7 @@ federationExample().catch(console.error);
    - The notify list includes the target space
 
 3. **Reference Resolution**: If you're getting reference objects instead of the actual data:
-   - Make sure `resolveReferences` is set to `true` (it's the default)
+   - Make sure `resolveHolograms` is set to `true` (it's the default)
    - Check that the original data still exists at the referenced location
 
 4. **Timing Issues**: Data propagation is asynchronous. Add small delays (500-1000ms) between operations to allow propagation to complete.
@@ -207,7 +207,7 @@ federationExample().catch(console.error);
 2. **Explicit Propagation**: Unless you're using `autoPropagate`, always call `propagate()` explicitly after storing data that should be shared.
 
 3. **Choose the Right Propagation Method**:
-   - Use `useReferences: true` (default) to keep a single source of truth
-   - Use `useReferences: false` only when you need independent copies
+   - Use `useHolograms: true` (default) to keep a single source of truth
+   - Use `useHolograms: false` only when you need independent copies
 
 4. **Cleanup**: Always close the HoloSphere instance when done to prevent resource leaks. 

@@ -15,7 +15,7 @@ import * as SchemaOps from './schema.js';
 import * as ContentOps from './content.js';
 import * as NodeOps from './node.js';
 import * as GlobalOps from './global.js';
-import * as RefOps from './reference.js';
+import * as RefOps from './hologram.js';
 import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
 
@@ -297,15 +297,15 @@ class HoloSphere {
     // ================================ REFERENCE FUNCTIONS ================================
 
     /**
-     * Creates a soul reference object for a data item
+     * Creates a soul hologram object for a data item
      * @param {string} holon - The holon where the original data is stored
      * @param {string} lens - The lens where the original data is stored
-     * @param {object} data - The data to create a reference for
-     * @returns {object} - A reference object with id and soul
+     * @param {object} data - The data to create a hologram for
+     * @returns {object} - A hologram object with id and soul
      */
-    createReference(holon, lens, data) {
+    createHologram(holon, lens, data) {
         // Delegate to the external function
-        return RefOps.createReference(this, holon, lens, data);
+        return RefOps.createHologram(this, holon, lens, data);
     }
     
     /**
@@ -319,26 +319,26 @@ class HoloSphere {
     }
     
     /**
-     * Checks if an object is a reference
+     * Checks if an object is a hologram
      * @param {object} data - The data to check
-     * @returns {boolean} - True if the object is a reference
+     * @returns {boolean} - True if the object is a hologram
      */
-    isReference(data) {
+    isHologram(data) {
         // Delegate to the external function (doesn't need instance)
-        return RefOps.isReference(data);
+        return RefOps.isHologram(data);
     }
     
     /**
-     * Resolves a reference to its actual data
-     * @param {object} reference - The reference to resolve
+     * Resolves a hologram to its actual data
+     * @param {object} hologram - The hologram to resolve
      * @param {object} [options] - Optional parameters
-     * @param {boolean} [options.followReferences=true] - Whether to follow nested references
+     * @param {boolean} [options.followHolograms=true] - Whether to follow nested holograms
      * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
-     * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original reference for circular/invalid cases.
+     * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original hologram for circular/invalid cases.
      */
-    async resolveReference(reference, options = {}) {
+    async resolveHologram(hologram, options = {}) {
         // Delegate to the external function
-        return RefOps.resolveReference(this, reference, options);
+        return RefOps.resolveHologram(this, hologram, options);
     }
 
     // ================================ COMPUTE FUNCTIONS ================================

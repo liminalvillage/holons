@@ -2,8 +2,8 @@
  * Federation propagation options interface
  */
 interface PropagationOptions {
-  /** Whether to use references instead of duplicating data (default: true) */
-  useReferences?: boolean;
+  /** Whether to use holograms instead of duplicating data (default: true) */
+  useHolograms?: boolean;
   /** Specific target spaces to propagate to (default: all federated spaces) */
   targetSpaces?: string[];
   /** Password for accessing the source holon (if needed) */
@@ -24,8 +24,29 @@ interface PutOptions {
  * Get options interface
  */
 interface GetOptions {
-  /** Whether to automatically resolve federation references (default: true) */
-  resolveReferences?: boolean;
+  /** Whether to automatically resolve holograms (default: true) */
+  resolveHolograms?: boolean;
+  /** Options passed to the schema validator */
+  validationOptions?: object;
+}
+
+/**
+ * Resolve Hologram options interface
+ */
+interface ResolveHologramOptions {
+  /** Whether to follow nested holograms (default: true) */
+  followHolograms?: boolean;
+  /** Internal use: Tracks visited souls to prevent loops */
+  visited?: Set<string>;
+}
+
+/**
+ * Represents a Hologram object, typically containing an id and a soul path.
+ */
+interface Hologram {
+  id: string;
+  soul: string;
+  [key: string]: any; // Allow other properties, e.g., _federation
 }
 
 /**
@@ -231,6 +252,32 @@ declare class HoloSphere {
      * @returns {Promise<boolean>} - Returns true if successful
      */
     deleteNode(holon: string, lens: string, key: string): Promise<boolean>;
+
+    // ================================ HOLOGRAM FUNCTIONS ================================
+
+    /**
+     * Creates a soul hologram object for a data item.
+     * @param {string} holon - The holon where the original data is stored.
+     * @param {string} lens - The lens where the original data is stored.
+     * @param {object} data - The data to create a hologram for. Must have an 'id' field.
+     * @returns {Hologram} - A hologram object containing id and soul.
+     */
+    createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
+
+    /**
+     * Checks if an object is a hologram (has id and soul).
+     * @param {any} data - The data to check.
+     * @returns {boolean} - True if the object is considered a hologram.
+     */
+    isHologram(data: any): data is Hologram;
+
+    /**
+     * Resolves a hologram to its actual data by following its soul path.
+     * @param {Hologram} hologram - The hologram object to resolve.
+     * @param {ResolveHologramOptions} [options] - Options for resolution.
+     * @returns {Promise<object|null>} - The resolved data, null if not found, or the original hologram in case of loops/errors.
+     */
+    resolveHologram(hologram: Hologram, options?: ResolveHologramOptions): Promise<object | null>;
 
     // ================================ GLOBAL FUNCTIONS ================================
 

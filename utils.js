@@ -62,51 +62,32 @@ export async function subscribe(holoInstance, holon, lens, callback) {
     const subscriptionId = holoInstance.generateId(); // Use instance's generateId
 
     try {
-        // Create the subscription
-        const gunSubscription = holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).map().on(async (data, key) => {
-            // Check if subscription is still active before processing
-            if (!holoInstance.subscriptions[subscriptionId]?.active) {
+        // Get the Gun chain up to the map()
+        const mapChain = holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).map();
+
+        // Create the subscription by calling .on() on the map chain
+        const gunListener = mapChain.on(async (data, key) => { // Renamed variable
+            // Check if subscription ID still exists (might have been unsubscribed)
+            if (!holoInstance.subscriptions[subscriptionId]) {
                 return;
             }
 
             if (data) {
                 try {
-                    let parsed = await holoInstance.parse(data); // Use instance's parse
-
-                    // Check if the parsed data is a reference that needs resolution
-                    if (parsed && holoInstance.isReference(parsed)) { // Use instance's isReference
-                        const resolved = await holoInstance.resolveReference(parsed, { // Use instance's resolveReference
-                            followReferences: true // Always follow references
-                        });
-
-                        if (resolved === null) {
-                            console.log(`Reference at ${holon}/${lens}/${parsed.id} points to non-existent data. Deleting reference.`);
-                            try {
-                                // Use parsed.id as the key for the reference
-                                await holoInstance.delete(holon, lens, parsed.id, null); // Use instance's delete
-                            } catch (deleteError) {
-                                console.error(`Failed to delete invalid reference at ${holon}/${lens}/${parsed.id}:`, deleteError);
-                            }
-                            // Don't add to output, just return
-                            return;
-                        }
-
+                    let parsed = await holoInstance.parse(data);
+                    if (parsed && holoInstance.isHologram(parsed)) {
+                        const resolved = await holoInstance.resolveHologram(parsed, { followHolograms: true });
                         if (resolved !== parsed) {
-                            // Reference was resolved successfully
-                            // Check again if subscription is still active
-                            if (holoInstance.subscriptions[subscriptionId]?.active) {
-                                callback(resolved, key);
-                            }
-                            return;
+                            parsed = resolved;
                         }
                     }
 
-                    // Check again if subscription is still active before final callback
-                    if (holoInstance.subscriptions[subscriptionId]?.active) {
+                    // Check again if subscription ID still exists before calling callback
+                    if (holoInstance.subscriptions[subscriptionId]) {
                         callback(parsed, key);
                     }
                 } catch (error) {
-                    console.error('Error in subscribe:', error);
+                    console.error('Error processing subscribed data:', error);
                 }
             }
         });
@@ -116,29 +97,31 @@ export async function subscribe(holoInstance, holon, lens, callback) {
             id: subscriptionId,
             holon,
             lens,
-            active: true,
             callback,
-            gunSubscription
+            mapChain: mapChain,       // Store the map chain
+            gunListener: gunListener  // Store the listener too (optional, maybe needed for close?)
         };
 
         // Return an object with unsubscribe method
         return {
-            unsubscribe: () => {
+            unsubscribe: async () => {
+                const sub = holoInstance.subscriptions[subscriptionId];
+                if (!sub) {
+                    return;
+                }
+
                 try {
-                    // Mark as inactive first to prevent any new callbacks
-                    if (holoInstance.subscriptions[subscriptionId]) {
-                        holoInstance.subscriptions[subscriptionId].active = false;
-                    }
+                    // Turn off the Gun subscription using the stored mapChain reference
+                    if (sub.mapChain) { // Check if mapChain exists
+                        sub.mapChain.off(); // Call off() on the chain where .on() was attached
+                        // Optional: Add delay back? Let's omit for now.
+                        // await new Promise(res => setTimeout(res, 50));
+                    } // We might not need to call off() on gunListener explicitly
 
-                    // Turn off the Gun subscription using the stored reference
-                    if (holoInstance.subscriptions[subscriptionId]?.gunSubscription) {
-                        holoInstance.subscriptions[subscriptionId].gunSubscription.off();
-                    }
-
-                    // Remove from subscriptions
+                    // Remove from subscriptions object AFTER turning off listener
                     delete holoInstance.subscriptions[subscriptionId];
                 } catch (error) {
-                    console.error('Error in unsubscribe:', error);
+                    console.error(`Error during unsubscribe logic for ${subscriptionId}:`, error);
                 }
             }
         };
@@ -161,8 +144,7 @@ export function notifySubscribers(holoInstance, data) {
 
     try {
         Object.values(holoInstance.subscriptions).forEach(subscription => {
-            if (subscription.active &&
-                subscription.holon === data.holon &&
+            if (subscription.holon === data.holon &&
                 subscription.lens === data.lens) {
                 try {
                     if (subscription.callback && typeof subscription.callback === 'function') {
@@ -196,14 +178,14 @@ export async function close(holoInstance) {
             for (const id of subscriptionIds) {
                 try {
                     const subscription = holoInstance.subscriptions[id];
-                    if (subscription && subscription.active) {
-                        // Turn off the Gun subscription using the stored reference
-                        if (subscription.gunSubscription) {
-                            subscription.gunSubscription.off();
-                        }
-
-                        // Mark as inactive
-                        subscription.active = false;
+                    if (subscription) {
+                        // Turn off the Gun subscription using the stored mapChain reference
+                        if (subscription.mapChain) {
+                            subscription.mapChain.off();
+                        } // Also turn off listener directly? Might be redundant.
+                        // if (subscription.gunListener) {
+                        //     subscription.gunListener.off();
+                        // }
                     }
                 } catch (error) {
                     console.warn(`Error cleaning up subscription ${id}:`, error);

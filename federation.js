@@ -692,7 +692,7 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
  * @param {string} lens - The lens identifier
  * @param {object} data - The data to propagate
  * @param {object} [options] - Propagation options
- * @param {boolean} [options.useReferences=true] - Whether to use references instead of duplicating data
+ * @param {boolean} [options.useHolograms=true] - Use holograms for propagation (default: true)
  * @param {string[]} [options.targetSpaces] - Specific target spaces to propagate to (defaults to all federated spaces)
  * @param {string} [options.password] - Password for accessing the source holon (if needed)
  * @returns {Promise<object>} - Result with success count and errors
@@ -702,18 +702,13 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         throw new Error('propagate: Missing required parameters');
     }
     // Default propagation options
-    const {
-        useReferences = true,
-        targetSpaces = null,
-        password = null
-    } = options;
+    const { useHolograms = true, targetSpaces = null, password = null } = options;
 
     const result = {
         success: 0,
         errors: 0,
-        errorDetails: [],
-        propagated: false,
-        referencesUsed: useReferences
+        skipped: 0,
+        messages: []
     };
 
     try {
@@ -751,68 +746,53 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
             };
         }
         
-        // Check if data is already a reference
-        const isAlreadyReference = holosphere.isReference(data);
+        // Check if data is already a hologram
+        const isAlreadyHologram = holosphere.isHologram(data);
+
+        // If data is already a hologram, don't re-wrap it
+        if (isAlreadyHologram && useHolograms) {
+            console.log(`Data is already a hologram, propagating as is: ${data.soul}`);
+        }
+
+        // If propagating a non-hologram and useHolograms is false, add warning
+        if (!isAlreadyHologram && !useHolograms) {
+            console.warn(`Propagating full data copy for ${data.id}. Consider using holograms for efficiency.`);
+        }
         
         // For each target space, propagate the data
         const propagatePromises = spaces.map(async (targetSpace) => {
             try {
-                // If using references and data isn't already a reference, create a reference
-                if (useReferences && !isAlreadyReference) {
-                    // Create a reference object using the dedicated utility
-                    const reference = holosphere.createReference(holon, lens, data);
+                // If using holograms and data isn't already a hologram, create a hologram
+                if (useHolograms && !isAlreadyHologram) {
+                    // Create a hologram object using the dedicated utility
+                    const hologram = holosphere.createHologram(holon, lens, data);
                     
-                    // Add federation metadata
-                    reference._federation = {
+                    // Add federation metadata (optional, could be inside hologram creation)
+                    hologram._federation = {
                         origin: holon,
                         lens: lens,
                         timestamp: Date.now()
                     };
                     
-                    console.log(`Using reference: ${reference.soul} for data: ${data.id}`);
+                    console.log(`Using hologram: ${hologram.soul} for data: ${data.id}`);
                     
-                    // Store the reference in the target space without propagation
-                    await holosphere.put(targetSpace, lens, reference, null, { autoPropagate: false });
+                    // Store the hologram in the target space without further propagation
+                    await holosphere.put(targetSpace, lens, hologram, null, { autoPropagate: false });
                     
                     result.success++;
                     return true;
                 } 
-                // If already a reference, propagate it as is
-                else if (isAlreadyReference) {
-                    // Add federation metadata if needed
-                    const referenceToStore = {
-                        ...data,
-                        _federation: data._federation || {
-                            origin: holon,
-                            lens: lens,
-                            timestamp: Date.now()
-                        }
-                    };
-                    
-                    await holosphere.put(targetSpace, lens, referenceToStore, null, { autoPropagate: false });
+
+                // Otherwise, store the original data (either full data or an existing hologram)
+                // Prevent further auto-propagation from the target
+                await holosphere.put(targetSpace, lens, data, null, { autoPropagate: false });
+
                     result.success++;
                     return true;
-                } 
-                // Otherwise, store a full copy without propagation
-                else {
-                    const dataToStore = {
-                        ...data,
-                        _federation: {
-                            origin: holon,
-                            lens: lens,
-                            timestamp: Date.now()
-                        }
-                    };
-                    await holosphere.put(targetSpace, lens, dataToStore, null, { autoPropagate: false });
-                    result.success++;
-                    return true;
-                }
             } catch (error) {
+                console.error(`Error propagating to ${targetSpace}:`, error);
                 result.errors++;
-                result.errorDetails.push({
-                    space: targetSpace,
-                    error: error.message
-                });
+                result.messages.push(`Error propagating ${data.id} to ${targetSpace}: ${error.message}`);
                 return false;
             }
         });

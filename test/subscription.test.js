@@ -6,22 +6,39 @@ jest.setTimeout(30000);
 
 describe('Subscription Tests', () => {
   let holosphere;
-  const testHolon = `test_subscription_${Date.now()}`;
+  let testAppName; // Make app name dynamic
+  const testHolonBase = 'test_subscription_holon';
   const testLens = 'items';
+  let testHolon; // Make holon dynamic
   
-  beforeEach(() => {
-    // Create a fresh HoloSphere instance for each test
-    holosphere = new HoloSphere('testApp', false);
+  beforeEach(async () => {
+    // Create a fresh HoloSphere instance with unique names for each test
+    testAppName = `testApp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    testHolon = `${testHolonBase}_${Date.now()}`;
+    holosphere = new HoloSphere(testAppName, false);
+    // Add a small delay after initialization
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
   
   afterEach(async () => {
-    // Clean up resources
+    // Clean up resources and potentially test data
     try {
-      await holosphere.close();
+      if (holosphere) {
+        // Attempt to delete data created in the test holon/lenses
+        try {
+           await holosphere.deleteAll(testHolon, testLens);
+           await holosphere.deleteAll(testHolon, 'differentLens');
+           // Wait a bit for deletes to process
+           await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (deleteError) {
+            console.warn(`Error during test cleanup deleteAll:`, deleteError);
+        }
+        await holosphere.close();
+      }
     } catch (error) {
-      console.warn('Error closing HoloSphere:', error);
+      console.warn('Error during afterEach cleanup:', error);
     }
-    jest.clearAllMocks();
+    // jest.clearAllMocks(); // Not needed if not using jest.fn()
   });
   
   test('should properly clean up subscription when unsubscribing', async () => {
@@ -32,7 +49,7 @@ describe('Subscription Tests', () => {
     };
     
     // Create a mock callback function
-  function mockCallback (data) {
+    function mockCallback (data) {
       console.log('Callback received:', data);
     }
     
@@ -47,11 +64,10 @@ describe('Subscription Tests', () => {
     
     // Verify the subscription object has the expected structure
     expect(holosphere.subscriptions[subscriptionId]).toBeDefined();
-    expect(holosphere.subscriptions[subscriptionId].active).toBe(true);
     expect(holosphere.subscriptions[subscriptionId].holon).toBe(testHolon);
     expect(holosphere.subscriptions[subscriptionId].lens).toBe(testLens);
     expect(holosphere.subscriptions[subscriptionId].callback).toBe(mockCallback);
-    expect(holosphere.subscriptions[subscriptionId].gunSubscription).toBeDefined();
+    expect(holosphere.subscriptions[subscriptionId].mapChain).toBeDefined();
     
     // Now unsubscribe
     await subscription.unsubscribe();
@@ -64,104 +80,123 @@ describe('Subscription Tests', () => {
   test('should not receive updates after unsubscribing', async () => {
     // Create test data
     const testData = {
-      id: 'test-item',
-      value: 'Test value'
+      id: 'test-item-unsub',
+      value: 'Initial value for unsub test'
     };
-    
-    // Create a mock callback function
-    const mockCallback = jest.fn((data) => {
-      console.log('Callback received:', data);
-    });
-    
+
+    // Use a flag to track callback execution
+    let callbackFired = false;
+    let receivedData = null;
+    const dataCallback = (data) => {
+      console.log('Callback received (unsub test):', data);
+      callbackFired = true;
+      receivedData = data;
+    };
+
     // Set up subscription
-    const subscription = await holosphere.subscribe(testHolon, testLens, mockCallback);
-    
+    const subscription = await holosphere.subscribe(testHolon, testLens, dataCallback);
+
     // Store data to trigger subscription
     await holosphere.put(testHolon, testLens, testData);
-    
+
     // Wait a bit for the subscription to trigger
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Verify callback was called
-    expect(mockCallback).toHaveBeenCalled();
-    
-    // Reset the mock
-    mockCallback.mockClear();
-    
+    expect(callbackFired).toBe(true);
+    expect(receivedData).toEqual(expect.objectContaining(testData));
+
+    // Reset the flag
+    callbackFired = false;
+    receivedData = null;
+
     // Unsubscribe
     await subscription.unsubscribe();
-    
+
     // Store more data
-    const newData = { ...testData, value: 'Updated value' };
+    const newData = { ...testData, value: 'Updated value after unsub' };
     await holosphere.put(testHolon, testLens, newData);
-    
+
     // Wait a bit to ensure no callbacks are triggered
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Verify callback was NOT called after unsubscribing
-    expect(mockCallback).not.toHaveBeenCalled();
+    expect(callbackFired).toBe(false);
+    expect(receivedData).toBeNull();
   });
   
   test('should handle multiple subscriptions and unsubscriptions correctly', async () => {
-    // Create mock callbacks
-    const mockCallback1 = jest.fn((data) => {
-      console.log('Callback 1 received:', data);
-    });
-    const mockCallback2 = jest.fn((data) => {
-      console.log('Callback 2 received:', data);
-    });
-    const mockCallback3 = jest.fn((data) => {
-      console.log('Callback 3 received:', data);
-    });
-    
+    // Use flags to track callback execution
+    let callback1Fired = false;
+    let callback2Fired = false;
+    let callback3Fired = false;
+    let dataForCb1 = null;
+
+    const cb1 = (data) => {
+      console.log('Callback 1 received (multi test):', data);
+      callback1Fired = true;
+      dataForCb1 = data;
+    };
+    const cb2 = (data) => {
+      console.log('Callback 2 received (multi test):', data);
+      callback2Fired = true;
+    };
+    const cb3 = (data) => {
+      console.log('Callback 3 received (multi test):', data);
+      callback3Fired = true;
+    };
+
     // Set up multiple subscriptions
-    const subscription1 = await holosphere.subscribe(testHolon, testLens, mockCallback1);
-    const subscription2 = await holosphere.subscribe(testHolon, testLens, mockCallback2);
-    const subscription3 = await holosphere.subscribe(testHolon, 'differentLens', mockCallback3);
-    
+    const subscription1 = await holosphere.subscribe(testHolon, testLens, cb1);
+    const subscription2 = await holosphere.subscribe(testHolon, testLens, cb2);
+    const subscription3 = await holosphere.subscribe(testHolon, 'differentLens', cb3);
+
     // Verify subscriptions were created
     expect(Object.keys(holosphere.subscriptions).length).toBe(3);
-    
-    // Unsubscribe from one subscription
+
+    // Unsubscribe from one subscription (subscription2)
     await subscription2.unsubscribe();
-    
+
     // Verify only the correct subscription was removed
     expect(Object.keys(holosphere.subscriptions).length).toBe(2);
-    
+
     // Create test data
     const testData = {
-      id: 'test-item',
-      value: 'Test value'
+      id: 'test-item-multi',
+      value: 'Test value for multi sub'
     };
-    
+
     // Store data to trigger remaining subscriptions
     await holosphere.put(testHolon, testLens, testData);
-    
+
     // Wait a bit for the subscription to trigger
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Verify only active callbacks were called
-    expect(mockCallback1).toHaveBeenCalled();
-    expect(mockCallback2).not.toHaveBeenCalled();
-    expect(mockCallback3).not.toHaveBeenCalled(); // Different lens
-    
+    expect(callback1Fired).toBe(true);
+    expect(dataForCb1).toEqual(expect.objectContaining(testData));
+    expect(callback2Fired).toBe(false); // This callback should not have fired
+    expect(callback3Fired).toBe(false); // Different lens
+
     // Unsubscribe from all remaining subscriptions
     await subscription1.unsubscribe();
     await subscription3.unsubscribe();
-    
+
     // Verify all subscriptions were removed
     expect(Object.keys(holosphere.subscriptions).length).toBe(0);
   });
   
   test('should clean up subscriptions when closing HoloSphere instance', async () => {
-    // Create mock callback
-    const mockCallback = jest.fn((data) => {
-      console.log('Callback received:', data);
-    });
-    
+    // Use a flag - not strictly needed for assertion but good practice
+    let callbackFired = false;
+    const dataCallback = (data) => {
+      console.log('Callback received (close test):', data);
+      callbackFired = true;
+    };
+
     // Set up subscription
-    await holosphere.subscribe(testHolon, testLens, mockCallback);
-    
+    await holosphere.subscribe(testHolon, testLens, dataCallback);
+
     // Verify subscription was created
     expect(Object.keys(holosphere.subscriptions).length).toBe(1);
     
@@ -303,7 +338,7 @@ describe('Subscription Tests', () => {
     }
     
     // Try to resolve the reference to verify it works correctly
-    const resolvedData = await holosphere.get(referenceHolon, testLens, originalData.id, null, { resolveReferences: true });
+    const resolvedData = await holosphere.get(referenceHolon, testLens, originalData.id, null, { resolveHolograms: true });
     console.log('Resolved data:', resolvedData);
     
     // The resolved data should not be null
