@@ -60,6 +60,28 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                     if (ack.err) {
                         reject(new Error(ack.err));
                     } else {
+                        // --- Start: Hologram Tracking Logic ---
+                        if (isHolo) {
+                            try {
+                                const targetSoulInfo = holoInstance.parseSoulPath(data.soul);
+                                if (targetSoulInfo) {
+                                    const targetNodeRef = holoInstance.getNodeRef(data.soul);
+                                    // Construct the soul of the hologram *being stored*
+                                    const storedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${data.id}`;
+                                    
+                                    // Use the stored hologram's soul as the key in the _holograms set
+                                    targetNodeRef.get('_holograms').get(storedHologramSoul).put(true); // Store simple marker
+                                    
+                                    console.log(`Added hologram ${storedHologramSoul} to target ${data.soul}\'s _holograms set.`);
+                                } else {
+                                    console.warn(`Could not parse target soul ${data.soul} for hologram tracking.`);
+                                }
+                            } catch (trackingError) {
+                                console.warn(`Error updating _holograms set for target ${data.soul}:`, trackingError);
+                            }
+                        }
+                        // --- End: Hologram Tracking Logic ---
+                        
                         // Only notify subscribers for actual data, not holograms
                         if (!isHolo) {
                             holoInstance.notifySubscribers({
@@ -434,11 +456,43 @@ export async function deleteFunc(holoInstance, holon, lens, key, password = null
             });
         }
 
-        return new Promise((resolve, reject) => {
-            const dataPath = password ?
-                user.get('private').get(lens).get(key) :
-                holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+        // --- Start: Hologram Tracking Removal ---
+        const dataPath = password ?
+            user.get('private').get(lens).get(key) :
+            holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
 
+        // 1. Get the data first to check if it's a hologram
+        const dataToDelete = await new Promise((resolve) => dataPath.once(resolve));
+
+        // 2. If it is a hologram, try to remove its reference from the target
+        if (dataToDelete && holoInstance.isHologram(dataToDelete)) {
+            try {
+                const targetSoul = dataToDelete.soul;
+                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+                
+                if (targetSoulInfo) {
+                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                    // The soul of the hologram being deleted IS the soul of dataPath
+                    const deletedHologramSoul = Gun.node.soul(dataToDelete);
+                    
+                    if(deletedHologramSoul) {
+                        // Remove the entry from the target's _holograms set by putting null
+                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null);
+                        console.log(`Removed hologram ${deletedHologramSoul} from target ${targetSoul}\'s _holograms set.`);
+                    } else {
+                        console.warn(`Could not determine soul for hologram being deleted at ${holon}/${lens}/${key}`);
+                    }
+                } else {
+                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal.`);
+                }
+            } catch (trackingError) {
+                console.warn(`Error removing hologram reference from target ${dataToDelete.soul}:`, trackingError);
+            }
+        }
+        // --- End: Hologram Tracking Removal ---
+
+        // 3. Proceed with the actual deletion
+        return new Promise((resolve, reject) => {
             dataPath.put(null, ack => {
                 if (ack.err) {
                     reject(new Error(ack.err));

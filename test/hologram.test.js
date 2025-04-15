@@ -249,4 +249,68 @@ describe('HoloSphere Reference System', () => {
         expect(resolved2._meta.soul).toBe(hologram.soul);
     });
 
+    // --- Tests for _holograms tracking ---
+    test('should add hologram soul to target _holograms set on put', async () => {
+        // 1. Store original data
+        const targetData = { id: 'target-for-tracking', value: 'Track me' };
+        await holoSphere.put(testHolon, testLens, targetData);
+        await waitForGun();
+        const targetSoul = `${appName}/${testHolon}/${testLens}/target-for-tracking`;
+
+        // 2. Store a hologram pointing to the original data
+        const hologramData = holoSphere.createHologram(testHolon, testLens, targetData);
+        const hologramStorage = { id: 'hologram-tracker-1', soul: hologramData.soul };
+        await holoSphere.put(testHolon, 'otherLens', hologramStorage); // Store in different lens
+        await waitForGun(500); // Longer wait for tracking update
+        const storedHologramSoul = `${appName}/${testHolon}/otherLens/hologram-tracker-1`;
+
+        // 3. Get the target node reference and fetch the _holograms set
+        const targetNodeRef = holoSphere.getNodeRef(targetSoul);
+        const hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
+
+        // 4. Verify the _holograms set exists and contains the stored hologram's soul
+        expect(hologramsSet).toBeDefined();
+        // Gun stores set members as keys, excluding metadata '_'
+        const hologramKeys = Object.keys(hologramsSet).filter(k => k !== '_');
+        expect(hologramKeys).toContain(storedHologramSoul);
+        expect(hologramsSet[storedHologramSoul]).toBe(true); // Check the value stored
+    });
+
+    test('should remove hologram soul from target _holograms set on delete', async () => {
+        // 1. Store original data
+        const targetData = { id: 'target-for-delete-tracking', value: 'Untrack me' };
+        await holoSphere.put(testHolon, testLens, targetData);
+        await waitForGun();
+        const targetSoul = `${appName}/${testHolon}/${testLens}/target-for-delete-tracking`;
+
+        // 2. Store a hologram pointing to the original data
+        const hologramData = holoSphere.createHologram(testHolon, testLens, targetData);
+        const hologramStorage = { id: 'hologram-tracker-2', soul: hologramData.soul };
+        await holoSphere.put(testHolon, 'otherLens', hologramStorage); // Store in different lens
+        await waitForGun(500); // Wait for put and tracking update
+        const storedHologramSoul = `${appName}/${testHolon}/otherLens/hologram-tracker-2`;
+
+        // 3. Verify hologram was added to tracking initially
+        const targetNodeRef = holoSphere.getNodeRef(targetSoul);
+        let hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
+        expect(hologramsSet).toBeDefined();
+        expect(hologramsSet[storedHologramSoul]).toBe(true);
+
+        // 4. Delete the hologram
+        await holoSphere.delete(testHolon, 'otherLens', 'hologram-tracker-2');
+        await waitForGun(500); // Wait for delete and tracking update
+
+        // 5. Fetch the _holograms set again
+        hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
+
+        // 6. Verify the hologram's soul is no longer in the _holograms set
+        expect(hologramsSet).toBeDefined();
+        // Check that the key has been nulled out by Gun
+        expect(hologramsSet[storedHologramSoul]).toBeNull();
+        // Optionally, check that the key is not present after filtering metadata
+        const hologramKeys = Object.keys(hologramsSet).filter(k => k !== '_');
+        expect(hologramKeys).not.toContain(storedHologramSoul);
+    });
+    // --- End tests for _holograms tracking ---
+
 });
