@@ -267,30 +267,45 @@ class Scheduler {
     }
 
     getCronTime(frequency, whenDate) {
-        const date = new Date(whenDate);
-        const hour = date.getHours();
-        const minute = date.getMinutes();
-        
+        // Ensure whenDate is a Date object
+        const date = (whenDate instanceof Date) ? whenDate : new Date(whenDate);
+        // Use UTC components for scheduling
+        const minute = date.getUTCMinutes();
+        const hour = date.getUTCHours();
+        const dayOfMonth = date.getUTCDate();
+        const month = date.getUTCMonth() + 1; // Cron months are 1-indexed
+        const dayOfWeek = date.getUTCDay(); // 0 for Sunday
+
         switch (frequency.toLowerCase()) {
             case '1min':
                 return '*/1 * * * *'; // Every minute
             case '30sec':
                 return '*/30 * * * * *'; // Every 30 seconds
             case 'daily':
-                return `${minute} ${hour} * * *`; // Every day at specified hour:minute
+                return `${minute} ${hour} * * *`; // Every day at specified UTC hour:minute
             case 'weekly':
-                return `${minute} ${hour} * * ${date.getDay()}`; // Every week on same day at specified hour:minute
+                return `${minute} ${hour} * * ${dayOfWeek}`; // Every week on same UTC day at specified UTC hour:minute
             case 'biweekly':
-                return `${minute} ${hour} * * ${date.getDay()}/2`; // Every two weeks on same day
+                // Cron doesn't directly support bi-weekly easily.
+                // This attempts it but might not be perfect across month/year boundaries.
+                // A more robust solution might involve checking the week number within the job.
+                // Schedule weekly and check if it's the correct week inside the job execution.
+                // For simplicity here, we schedule for the specific day of week.
+                // The execution logic would need to check if it should run this specific week.
+                // Alternatively, schedule two monthly jobs? This gets complex.
+                // Let's keep the weekly trigger for now.
+                console.warn("Bi-weekly scheduling using cron is approximated to weekly. Execution logic should verify week.");
+                return `${minute} ${hour} * * ${dayOfWeek}`;
             case 'monthly':
-                return `${minute} ${hour} ${date.getDate()} * *`; // Same day each month at specified hour:minute
+                return `${minute} ${hour} ${dayOfMonth} * *`; // Same day each month at specified UTC hour:minute
             case 'quarterly':
-                return `${minute} ${hour} ${date.getDate()} */3 *`; // Every third month on same day at specified hour:minute
+                return `${minute} ${hour} ${dayOfMonth} */3 *`; // Every third month on same day at specified UTC hour:minute
             case 'sixmonths':
-                return `${minute} ${hour} ${date.getDate()} */6 *`; // Every six months on same day
+                return `${minute} ${hour} ${dayOfMonth} */6 *`; // Every six months on same day
             case 'yearly':
-                return `${minute} ${hour} ${date.getDate()} ${date.getMonth() + 1} *`; // Same date each year at specified hour:minute
+                return `${minute} ${hour} ${dayOfMonth} ${month} *`; // Same date each year at specified UTC hour:minute
             default:
+                console.error(`Invalid frequency provided to getCronTime: ${frequency}`);
                 return null;
         }
     }
@@ -598,16 +613,16 @@ class Scheduler {
             // Create a unique ID for this reminder job
             const reminderId = `reminder_${quest.id}_${now.getTime()}`;
             
-            // Calculate cron expression for the specific date and time
-            const minute = reminderDate.getMinutes();
-            const hour = reminderDate.getHours();
-            const day = reminderDate.getDate();
-            const month = reminderDate.getMonth() + 1; // Months are 0-indexed in JS
-            const cronExpression = `${minute} ${hour} ${day} ${month} *`; // At specific minute/hour/day/month
-            
-            console.log(`Reminder cron expression: ${cronExpression}`);
-            
-            // Create the job
+            // Calculate cron expression for the specific date and time using UTC components
+            const minute = reminderDate.getUTCMinutes();
+            const hour = reminderDate.getUTCHours();
+            const day = reminderDate.getUTCDate();
+            const month = reminderDate.getUTCMonth() + 1; // Months are 1-indexed in JS, Cron months are 1-indexed
+            const cronExpression = `${minute} ${hour} ${day} ${month} *`; // At specific UTC minute/hour/day/month
+
+            console.log(`Reminder cron expression (UTC): ${cronExpression}`);
+
+            // Create the job, explicitly setting the timezone to UTC
             const job = new CronJob(cronExpression, async() => {
                 try {
                     console.log(`Executing reminder for quest ${quest.id}`);
@@ -676,7 +691,7 @@ class Scheduler {
                 } catch (error) {
                     console.error('Error executing reminder:', error);
                 }
-            }, null, false, 'UTC'); // Don't start job immediately
+            }, null, false, 'UTC'); // Explicitly set timezone to UTC
             
             // Store the job
             this.jobs.set(reminderId, job);

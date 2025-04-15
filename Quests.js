@@ -1623,10 +1623,12 @@ export default class Quests {
 
     // Function to create the message for a quest 
     async createMessage(quest, language) {
-        let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title} \n`;
+        let message = `| ${i18next.t(quest.type.charAt(0).toUpperCase() + quest.type.slice(1), { lng: language })}: ${quest.title.padEnd(200) }
+`;
 
         // Add initiator info
-        message += `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)} \n`;
+        message += `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)} 
+`;
 
         // Add description if it exists
         if (quest.description) {
@@ -1691,28 +1693,66 @@ export default class Quests {
         // Format date in a human-friendly way
         if (quest.when) {
             const date = new Date(quest.when);
+            // Get chat timezone setting, default to UTC if not set
+            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'UTC';
 
-            let dateStr = date.toLocaleDateString(language, {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        
+            let dateStr = 'Invalid Date';
+            try {
+                dateStr = date.toLocaleDateString(language, {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    timeZone: chatTimezone, // Use the chat's timezone for display
+                    timeZoneName: 'short' // Optionally add timezone name (e.g., PST, CET)
+                });
+            } catch (e) {
+                console.error(`Error formatting date with timezone ${chatTimezone}:`, e);
+                // Fallback to UTC display if timezone is invalid
+                dateStr = date.toLocaleDateString(language, {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    timeZone: 'UTC',
+                    timeZoneName: 'short'
+                });
+            }
+
             message += `| ${i18next.t('📅', { lng: language })} : ${dateStr} \n`;
         }
 
         if (quest.until) {
             const date = new Date(quest.until);
+            // Get chat timezone setting, default to UTC if not set
+            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'UTC';
 
-            let dateStr = date.toLocaleDateString(language, {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
+            let dateStr = 'Invalid Date';
+            try {
+                dateStr = date.toLocaleDateString(language, {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    timeZone: chatTimezone, // Use the chat's timezone for display
+                    timeZoneName: 'short'
+                });
+            } catch (e) {
+                console.error(`Error formatting date with timezone ${chatTimezone}:`, e);
+                // Fallback to UTC display if timezone is invalid
+                dateStr = date.toLocaleDateString(language, {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    timeZone: 'UTC',
+                    timeZoneName: 'short'
+                });
+            }
             message += `| ${i18next.t('🔚', { lng: language })} : ${dateStr} \n`;
         }
         
