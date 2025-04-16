@@ -98,18 +98,15 @@ class UI {
   }
 
   async getFederatedQuests(chatID) {
+    // Fetches only local quests for now to ensure message_thread_id is present for filtering.
+    // Federation logic was removed for simplification during topic filter debugging.
     try {
-      // Get quests from local and federated spaces using holosphere's federated functionality
-      const quests = await this.db.holosphere.getFederated(chatID, 'quests', {
-        aggregate: false,
-        includeLocal: true,
-        includeFederated: true
-      });
-      return quests || [];
+      const localQuests = await this.db.getAll(chatID + '/quests') || [];
+      // console.log(`[UI.js] Fetched ${localQuests.length} local quests directly.`); // Keep log commented unless debugging
+      return localQuests;
     } catch (error) {
-      console.error('Error getting federated quests:', error);
-      // Fallback to local quests only
-      return await this.db.holosphere.getAll(chatID, 'quests') || [];
+      console.error('Error getting local quests in getFederatedQuests:', error);
+      return []; // Return empty array on error
     }
   }
 
@@ -281,9 +278,18 @@ class UI {
     // Get a list of incomplete quests
     let chatID = ctx.message.chat.id
     const language = await this.settings.getLanguage(chatID)
+    const isTopic = ctx.message.is_topic_message;
+    const threadId = isTopic ? ctx.message.message_thread_id : null;
 
     let quests = await this.getFederatedQuests(chatID)
-     quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled')) //TODO:Reenable this filter
+    // Initial filter for type and status
+    quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled'))
+
+    // If in a topic, filter further by message_thread_id
+    if (isTopic && threadId) {
+      quests = quests.filter(quest => quest.message_thread_id === threadId);
+    }
+
     // Create a table header
     this.getQuestsTable(quests, chatID).then((path) => {
       //send the image
