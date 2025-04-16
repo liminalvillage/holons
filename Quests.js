@@ -472,66 +472,86 @@ export default class Quests {
 
         let chatID = ctx.callbackQuery.data.split('_')[2];
         let messageID = ctx.callbackQuery.data.split('_')[3];
+        const language = await this.settings.getLanguage(chatID);
 
-        const language = await this.settings.getLanguage(chatID)
+        let quest;
+        try {
+            quest = await this.db.get(chatID + '/quests', messageID.toString());
+        } catch (err) {
+            console.error(`Error fetching quest ${messageID} for cancellation check:`, err);
+            quest = null; // Treat fetch error same as not found for initial check
+        }
 
-        let quest = await this.db.get(chatID + '/quests', messageID.toString())
+        // If quest doesn't exist, delete the message regardless of permission
+        if (!quest) {
+            console.log(`QUEST ${messageID} IS NOT FOUND or error fetching. Deleting message.`);
+            try {
+                await ctx.deleteMessage(messageID.toString());
+            } catch (err) {
+                console.error(`Error deleting message ${messageID} (quest not found):`, err);
+            }
+            ctx.answerCbQuery('Quest not found or already cancelled.').catch(err => console.error('Error answering callback query:', err));
+            return;
+        }
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        // Quest exists, now check permissions
+        const hasPermission = quest.initiator?.id === ctx.from.id || await isAdmin(ctx.from.id, chatID);
 
-        // Handle the reaction to the quest
-        if (quest.initiator?.id === ctx.from.id || isAdmin(ctx.from.id, chatID)) {
+        if (hasPermission) {
+            console.log(`User ${ctx.from.id} has permission to cancel quest ${messageID}. Proceeding with cancellation.`);
             try {
                 // Cancel any scheduled reminder
                 if (quest.reminderId && this.scheduler) {
-                    console.log(`Cancelling reminder ${quest.reminderId} for quest being deleted`);
+                    console.log(`Cancelling reminder ${quest.reminderId} for quest being cancelled`);
                     await this.scheduler.cancelReminder(quest.reminderId);
                 }
-                
-                // First, check if there are federated messages for this quest
+
+                // Handle federated messages (unpin/delete)
                 const federationKey = `${chatID}_${messageID}_fedmsgs`;
                 const federatedMessages = await this.db.get('federation_messages', federationKey);
-
-                // If there are federated messages, unpin and delete them
                 if (federatedMessages && federatedMessages.messages && federatedMessages.messages.length > 0) {
                     for (const msgInfo of federatedMessages.messages) {
                         try {
-                            // Unpin the message
                             await ctx.telegram.unpinChatMessage(msgInfo.chatId, msgInfo.messageId)
-                                .catch(err => { });
-
-                            // Delete the message
+                                .catch(err => { console.warn(`Could not unpin federated msg ${msgInfo.messageId}: ${err.description || err.message}`) });
                             await ctx.telegram.deleteMessage(msgInfo.chatId, msgInfo.messageId)
                                 .catch(err => console.error(`Error deleting message in federated chat ${msgInfo.chatId}:`, err));
-
                             console.log(`Removed federated message in chat ${msgInfo.chatId}`);
                         } catch (error) {
                             console.error(`Failed to remove federated message in chat ${msgInfo.chatId}:`, error);
                         }
                     }
-
-                    // Remove the federation messages tracking record
                     await this.db.del('federation_messages', federationKey);
                 }
 
-                // Now delete quest from database
-                this.db.del(chatID + '/quests', messageID.toString());
+                // Delete quest from database
+                await this.db.del(chatID + '/quests', messageID.toString());
 
-                // Unpin the original message
-                ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
+                // Unpin the original message (if not deleted yet)
+                await ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => {
+                    console.warn(`Could not unpin original msg ${messageID} (might be deleted): ${err.description || err.message}`);
+                });
 
-                // Delete the telegram message
-                ctx.deleteMessage(messageID.toString()).catch((err) => { });
+                // Delete the original message
+                try {
+                    await ctx.deleteMessage(messageID.toString());
+                     console.log(`Deleted message ${messageID} after successful cancellation.`);
+                } catch (err) {
+                    // Log error, message might already be deleted by earlier step or permission issues
+                    console.error(`Error deleting message ${messageID} after cancellation:`, err);
+                }
+
+                ctx.answerCbQuery('Quest cancelled.').catch(err => console.error('Error answering callback query:', err));
+
             } catch (error) {
-                console.error('Error cancelling quest and its federated messages:', error);
+                console.error('Error during cancellation process (with permission):', error);
+                ctx.answerCbQuery('Error during cancellation process.').catch(err => console.error('Error answering callback query:', err));
             }
         } else {
-            ctx.answerCbQuery(i18next.t('onlyinitatorcancel', { lng: language }), { reply_to_message_id: messageID });
+            // No permission, quest exists. Send error message, DO NOT delete.
+             console.log(`User ${ctx.from.id} lacks permission to cancel existing quest ${messageID}.`);
+            ctx.answerCbQuery(i18next.t('onlyinitatorcancel', { lng: language })).catch(err => console.error('Error answering callback query:', err));
         }
-
-        // Update the message
-        // await this.updateMessage(ctx, quest, language); // Original line - Keep default (expanded)
-        await this.updateMessage(ctx, quest, language, false); // Request standard markup
     }
 
     async stop(ctx) {
@@ -607,7 +627,7 @@ export default class Quests {
                             'hour',
                             quest.title,
                             userID,
-                            [chatID]
+                            [6152474485]
                         );
                     }
                 }
@@ -1693,8 +1713,8 @@ export default class Quests {
         // Format date in a human-friendly way
         if (quest.when) {
             const date = new Date(quest.when);
-            // Get chat timezone setting, default to UTC if not set
-            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'UTC';
+            // Get chat timezone setting, default to Europe/Rome if not set
+            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'Europe/Rome'; // <-- Changed default
 
             let dateStr = 'Invalid Date';
             try {
@@ -1704,19 +1724,19 @@ export default class Quests {
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
-                    timeZone: chatTimezone, // Use the chat's timezone for display
+                    timeZone: chatTimezone, // Use the chat's timezone (or default) for display
                     timeZoneName: 'short' // Optionally add timezone name (e.g., PST, CET)
                 });
             } catch (e) {
                 console.error(`Error formatting date with timezone ${chatTimezone}:`, e);
-                // Fallback to UTC display if timezone is invalid
-                dateStr = date.toLocaleDateString(language, {
+                // Fallback to Europe/Rome display if timezone is invalid
+                dateStr = date.toLocaleDateString(language, { // <-- Changed default in fallback
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
-                    timeZone: 'UTC',
+                    timeZone: 'Europe/Rome', // <-- Changed default in fallback
                     timeZoneName: 'short'
                 });
             }
@@ -1726,8 +1746,8 @@ export default class Quests {
 
         if (quest.until) {
             const date = new Date(quest.until);
-            // Get chat timezone setting, default to UTC if not set
-            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'UTC';
+            // Get chat timezone setting, default to Europe/Rome if not set
+            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'Europe/Rome'; // <-- Changed default
 
             let dateStr = 'Invalid Date';
             try {
@@ -1737,19 +1757,19 @@ export default class Quests {
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
-                    timeZone: chatTimezone, // Use the chat's timezone for display
+                    timeZone: chatTimezone, // Use the chat's timezone (or default) for display
                     timeZoneName: 'short'
                 });
             } catch (e) {
                 console.error(`Error formatting date with timezone ${chatTimezone}:`, e);
-                // Fallback to UTC display if timezone is invalid
-                dateStr = date.toLocaleDateString(language, {
+                // Fallback to Europe/Rome display if timezone is invalid
+                dateStr = date.toLocaleDateString(language, { // <-- Changed default in fallback
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
-                    timeZone: 'UTC',
+                    timeZone: 'Europe/Rome', // <-- Changed default in fallback
                     timeZoneName: 'short'
                 });
             }

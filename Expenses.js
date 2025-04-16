@@ -107,7 +107,8 @@ export default class Expenses {
 
         const description = args.slice(2).join(' ');
         // TODO WARNING!!: messageID+1 is a dirty hack to get the id of the reply message as id of the expense. This will break if another message is sent at the same time
-        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.id, [chatID]);
+        // TODO: BOT ID IS HARDCODED, switch to either chatID or variable bot id 
+        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.id, [6152474485]);
         ctx.reply(await this.createMessage(chatID, expense), Markup.inlineKeyboard(
             [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
         ));
@@ -145,19 +146,20 @@ export default class Expenses {
         return expense;
     }
 
+    // add user to split TODO: BOT ID IS HARDCODED, switch to either chatID or variable bot id 
     async joinSplit(chatID, userID, expenseID) {
         let expense = await this.db.get(chatID + '/expenses', expenseID)
 
         if (expense) {
             if (!expense.splitWith.includes(userID)) { //add user to split
                 expense.splitWith.push(userID);
-                // Remove chatID if it exists in the array
-                expense.splitWith = expense.splitWith.filter(id => id !== chatID);
+                // Remove holonsID if it exists in the array 
+                expense.splitWith = expense.splitWith.filter(id => id !== 6152474485);
             }
             else {//remove user from split
                 expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != userID; });
                 if (expense.splitWith.length == 0) {
-                    expense.splitWith.push(chatID);
+                    expense.splitWith.push(6152474485);
                 }
             }
         
@@ -294,38 +296,75 @@ export default class Expenses {
     }
 
     async calculateCredits(chatID, currency) {
+        // Validate and normalize currency input
         if (currency == null || currency.length == 0)
             return false;
         if (typeof currency === 'string' || currency instanceof String) {
             currency = currency.toLowerCase().replace(/s$/, '');
         } else {
             console.error('currency is not a string:', currency);
+            // Potentially return an error or use a default value
+            return false; 
         }
-
         currency = currency.replace(/[^a-z]/g, '');
 
-        let expenses = await this.db.getAll(chatID + '/expenses')
-        let users = await this.db.getAll(chatID + '/users')
-        let userArray = users.map(user => user.id)
+        // Fetch data from the database
+        let expenses = await this.db.getAll(chatID + '/expenses');
+        let users = await this.db.getAll(chatID + '/users');
+
+        // Early exit if no users are found
+        if (!users || users.length === 0) {
+            console.log('No users found for credit calculation in chat:', chatID);
+            return { creditMatrix: [], userNames: [] }; // Return empty structure
+        }
+
+        let userArray = users.map(user => user.id);
         let creditMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
 
+        // Process each expense to calculate credits
         expenses.forEach(expense => {
-            if (expense.currency == currency) {
-                const amountPerPerson = expense.amount / (expense.splitWith.length > 0 ? expense.splitWith.length : 1);
+            // Ensure the expense currency matches the requested currency (case-insensitive)
+            if (expense.currency && expense.currency.toLowerCase() === currency.toLowerCase()) {
+                // Ensure splitWith is an array, default to empty if not
+                const splitWithArray = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+                const numberOfSplitters = splitWithArray.length > 0 ? splitWithArray.length : 1;
+                const amountPerPerson = expense.amount / numberOfSplitters;
+
                 const payerIndex = userArray.indexOf(expense.paidBy);
-                expense.splitWith.forEach(member => {
-                    const memberIndex = userArray.indexOf(member);
-                    if (memberIndex === -1 || payerIndex === -1)
-                        return
+
+                // Ensure payer is found in the user list
+                if (payerIndex === -1) {
+                    console.warn(`Payer ID ${expense.paidBy} not found in user list for expense ${expense.id}`);
+                    return; // Skip this expense if payer not found
+                }
+
+                splitWithArray.forEach(memberId => {
+                    const memberIndex = userArray.indexOf(memberId);
+
+                    // Ensure member is found in the user list
+                    if (memberIndex === -1) {
+                        console.warn(`Member ID ${memberId} not found in user list for expense ${expense.id}`);
+                        return; // Skip this member if not found
+                    }
+
+                    // Update the credit matrix, avoiding self-credit updates
                     if (payerIndex !== memberIndex) {
-                        creditMatrix[payerIndex][memberIndex] += amountPerPerson;
-                        creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
+                        // Ensure the matrix indices are valid before assignment
+                        if (creditMatrix[payerIndex] && creditMatrix[memberIndex]) {
+                           creditMatrix[payerIndex][memberIndex] += amountPerPerson;
+                           creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
+                        } else {
+                           console.error(`Invalid indices for credit matrix update: payerIndex=${payerIndex}, memberIndex=${memberIndex}`);
+                        }
                     }
                 });
             }
         });
-        let userNames= await Promise.all(userArray.map(user => this.getDisplayName(chatID, user)))
-        return { creditMatrix, userNames};
+
+        // Get display names for the users involved
+        let userNames = await Promise.all(userArray.map(userId => this.getDisplayName(chatID, userId)));
+
+        return { creditMatrix, userNames };
     }
 
     async createMessage(chatID,expense) {
@@ -345,6 +384,10 @@ export default class Expenses {
     }
 
     async getDisplayName(chatId, userId) {
+        if (userId == 6152474485) {
+            return "Holons";
+        }
+
         if (userId == chatId) {
             const groupInfo = await this.settings.getSettings(chatId).name;
             return groupInfo || "This Holon"; //TODO maybe get the group name from the settings
