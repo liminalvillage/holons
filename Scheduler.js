@@ -1,5 +1,13 @@
 import { CronJob } from 'cron';
 import { Calendar } from './Calendar.js';
+import i18next from 'i18next';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc.js'; // Import UTC plugin
+import timezone from 'dayjs/plugin/timezone.js'; // Import timezone plugin
+
+// Extend dayjs with plugins
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 class Scheduler {
     constructor(bot, db, quests, settings) {
@@ -289,7 +297,6 @@ class Scheduler {
                 // Cron doesn't directly support bi-weekly easily.
                 // This attempts it but might not be perfect across month/year boundaries.
                 // A more robust solution might involve checking the week number within the job.
-                // Schedule weekly and check if it's the correct week inside the job execution.
                 // For simplicity here, we schedule for the specific day of week.
                 // The execution logic would need to check if it should run this specific week.
                 // Alternatively, schedule two monthly jobs? This gets complex.
@@ -517,8 +524,32 @@ class Scheduler {
         try {
             const chatId = ctx.callbackQuery.message.chat.id;
             const calendarMsgId = ctx.callbackQuery.message.message_id;
+            // Assuming dateTimeStr is 'YYYY-MM-DD HH:mm' from the calendar callback
             const dateTimeStr = ctx.match[1].split('_')[0];
-            const selectedDate = new Date(dateTimeStr);
+
+            // --- Use dayjs for timezone-aware parsing --- 
+            let chatTimezone = await this.settings.getTimezone(chatId);
+
+            // Validate timezone and set default if invalid or "Not set"
+            if (!chatTimezone || chatTimezone === 'Not set') {
+                console.log(`Invalid or missing timezone for chat ${chatId}: '${chatTimezone}', defaulting to UTC.`);
+                chatTimezone = 'UTC'; // Default to UTC if missing or explicitly "Not set"
+            }
+
+            // Parse the date/time string in the specified chat timezone
+            const localSelectedDayjs = dayjs.tz(dateTimeStr, "YYYY-MM-DD HH:mm", chatTimezone);
+
+            // Validate the parsed date (this will catch invalid timezones passed to dayjs.tz)
+            if (!localSelectedDayjs.isValid()) {
+                console.error(`Could not parse dateTimeStr into a valid dayjs object: ${dateTimeStr} with timezone ${chatTimezone}`);
+                await ctx.answerCbQuery('Error parsing selected time.');
+                return;
+            }
+
+            // Convert to standard JavaScript Date object (which is always UTC)
+            const selectedDate = localSelectedDayjs.toDate(); 
+            // -------------------------------------------
+
             // Get quest ID from calendar
             const questId = this.calendar.questIds.get(chatId);
             
@@ -539,18 +570,18 @@ class Scheduler {
             
             // Update quest
             quest.status = 'scheduled';
-            quest.when = selectedDate;
+            quest.when = selectedDate; // Store the UTC Date object
             await this.db.put(`${chatId}/quests`, quest);
             
             // Schedule reminder using the scheduler instead of setTimeout
             await this.scheduleOneTimeReminder(quest, ctx);
             
-            console.log(`Scheduled reminder for quest ${quest.id} at ${selectedDate}`);
+            console.log(`Scheduled reminder for quest ${quest.id} at ${selectedDate.toISOString()} (UTC)`); // Log ISO string (UTC)
 
             // Get language
             const language = await this.settings.getLanguage(chatId);
             
-            // Update calendar message with quest info
+            // Update calendar message with quest info (createMessage handles display timezone)
             const messageText = await this.quests.createMessage(quest, language);
             const markup = this.quests.markup(quest, language);
             
@@ -665,7 +696,7 @@ class Scheduler {
                         const language = await this.settings.getLanguage(freshQuest.chat);
                         await this.bot.telegram.sendMessage(
                             freshQuest.chat,
-                            `🔔 Reminder: "${freshQuest.title}" is starting now!`,
+                            'Reminder: "' + freshQuest.title + '" is starting now!',
                             { reply_to_message_id: freshQuest.id }
                         );
                         console.log(`Direct reminder sent for quest ${freshQuest.id} in chat ${freshQuest.chat}`);
@@ -851,6 +882,9 @@ class Scheduler {
                 await ctx.answerCbQuery('Could not find the task');
                 return;
             }
+            
+            // Get language for the message
+            const language = await this.settings.getLanguage(chatId);
 
             // Store quest ID for later retrieval
             this.calendar.questIds.set(chatId, questId);
@@ -860,11 +894,20 @@ class Scheduler {
             const now = new Date();
             now.setDate(1);
             const calendarMarkup = this.calendar.createNavigationKeyboard(now);
-            console.log('Calendar markup generated - will show calendar');
-
-            // Show calendar
-            await ctx.editMessageReplyMarkup(calendarMarkup);
-            console.log('Calendar displayed - waiting for user to select date/time');
+            console.log('Calendar markup generated');
+            
+            // Get the original message text (without the UTC note)
+            const originalMessage = await this.quests.createMessage(quest, language);
+            
+            // Show calendar - edit text and markup
+            await ctx.editMessageText(
+                originalMessage,
+                { 
+                    parse_mode: 'Markdown', // Assuming createMessage uses Markdown
+                    reply_markup: calendarMarkup 
+                }
+            );
+            console.log('Calendar displayed');
 
             await ctx.answerCbQuery();
         } catch (error) {
@@ -1080,7 +1123,7 @@ class Scheduler {
                                         const timezone =
                                         await this.bot.telegram.sendMessage(
                                             reminder.chatId,
-                                            `🔔 Reminder: "${freshQuest.title}" is starting now!`,
+                                            'Reminder: "' + freshQuest.title + '" is starting now!',
                                             { reply_to_message_id: reminder.questId }
                                         );
                                         console.log(`Direct reminder sent for quest ${reminder.questId} in chat ${reminder.chatId}`);

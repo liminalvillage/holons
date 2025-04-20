@@ -844,7 +844,7 @@ export default class Quests {
                 i18next.t("taskstarting", { 
                     quest: quest, 
                     lng: language, 
-                    defaultValue: `🔔 Reminder: "${quest.title}" is starting now!` 
+                    defaultValue: `Reminder: "${quest.title}" is starting now!` 
                 }), 
                 { reply_to_message_id: replyMessageId }
             );
@@ -861,7 +861,7 @@ export default class Quests {
                                 i18next.t("taskstarting", { 
                                     quest: quest, 
                                     lng: language, 
-                                    defaultValue: `🔔 Reminder: "${quest.title}" is starting now!` 
+                                    defaultValue: `Reminder: "${quest.title}" is starting now!` 
                                 }),
                                 { reply_to_message_id: fed.message_id }
                             );
@@ -1696,32 +1696,46 @@ export default class Quests {
         // Format date in a human-friendly way
         if (quest.when) {
             const date = new Date(quest.when);
-            // Get chat timezone setting, default to Europe/Rome if not set
-            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'Europe/Rome'; // <-- Changed default
+            // Get chat timezone setting
+            let chatTimezone = await this.settings.getTimezone(quest.chat);
+
+            // Validate timezone and set default if invalid or "Not set"
+            const isValidTimezone = chatTimezone && typeof chatTimezone === 'string' && chatTimezone !== 'Not set';
+            if (!isValidTimezone) {
+                console.log(`Invalid or missing timezone for chat ${quest.chat}, defaulting to Europe/Rome.`);
+                chatTimezone = 'Europe/Rome'; // Default timezone
+            }
 
             let dateStr = 'Invalid Date';
             try {
+                // Attempt to format with the validated or default timezone
                 dateStr = date.toLocaleDateString(language, {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
-                    timeZone: chatTimezone, // Use the chat's timezone (or default) for display
-                    timeZoneName: 'short' // Optionally add timezone name (e.g., PST, CET)
+                    timeZone: chatTimezone, // Use validated or default timezone
+                    timeZoneName: 'short' 
                 });
             } catch (e) {
-                console.error(`Error formatting date with timezone ${chatTimezone}:`, e);
-                // Fallback to Europe/Rome display if timezone is invalid
-                dateStr = date.toLocaleDateString(language, { // <-- Changed default in fallback
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    timeZone: 'Europe/Rome', // <-- Changed default in fallback
-                    timeZoneName: 'short'
-                });
+                // This catch block is now a secondary safety net
+                console.error(`Error formatting date even after timezone validation (using ${chatTimezone}):`, e);
+                // Fallback to Europe/Rome display if timezone is *still* invalid for some reason
+                try {
+                    dateStr = date.toLocaleDateString(language, {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        timeZone: 'Europe/Rome', // Hardcoded default in fallback
+                        timeZoneName: 'short'
+                    });
+                } catch (fallbackError) {
+                    console.error('Error during fallback date formatting:', fallbackError);
+                    // If even the fallback fails, keep 'Invalid Date'
+                }
             }
 
             message += `| ${i18next.t('📅', { lng: language })} : ${dateStr} \n`;
@@ -1729,32 +1743,46 @@ export default class Quests {
 
         if (quest.until) {
             const date = new Date(quest.until);
-            // Get chat timezone setting, default to Europe/Rome if not set
-            const chatTimezone = await this.settings.getTimezone(quest.chat) || 'Europe/Rome'; // <-- Changed default
+            // Get chat timezone setting
+            let chatTimezone = await this.settings.getTimezone(quest.chat);
+
+            // Validate timezone and set default if invalid or "Not set"
+            const isValidTimezone = chatTimezone && typeof chatTimezone === 'string' && chatTimezone !== 'Not set';
+             if (!isValidTimezone) {
+                console.log(`Invalid or missing timezone for chat ${quest.chat} (until field), defaulting to Europe/Rome.`);
+                chatTimezone = 'Europe/Rome'; // Default timezone
+            }
 
             let dateStr = 'Invalid Date';
             try {
+                // Attempt to format with the validated or default timezone
                 dateStr = date.toLocaleDateString(language, {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit',
-                    timeZone: chatTimezone, // Use the chat's timezone (or default) for display
+                    timeZone: chatTimezone, // Use validated or default timezone
                     timeZoneName: 'short'
                 });
             } catch (e) {
-                console.error(`Error formatting date with timezone ${chatTimezone}:`, e);
-                // Fallback to Europe/Rome display if timezone is invalid
-                dateStr = date.toLocaleDateString(language, { // <-- Changed default in fallback
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    timeZone: 'Europe/Rome', // <-- Changed default in fallback
-                    timeZoneName: 'short'
-                });
+                 // This catch block is now a secondary safety net
+                console.error(`Error formatting 'until' date even after timezone validation (using ${chatTimezone}):`, e);
+                // Fallback to Europe/Rome display if timezone is *still* invalid for some reason
+                 try {
+                    dateStr = date.toLocaleDateString(language, {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        timeZone: 'Europe/Rome',
+                        timeZoneName: 'short'
+                    });
+                } catch (fallbackError) {
+                    console.error("Error during fallback 'until' date formatting:", fallbackError);
+                    // If even the fallback fails, keep 'Invalid Date'
+                }
             }
             message += `| ${i18next.t('🔚', { lng: language })} : ${dateStr} \n`;
         }
