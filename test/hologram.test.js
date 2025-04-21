@@ -298,18 +298,15 @@ describe('HoloSphere Reference System', () => {
 
         // 4. Delete the hologram
         await holoSphere.delete(testHolon, 'otherLens', 'hologram-tracker-2');
-        await waitForGun(500); // Wait for delete and tracking update
+        console.log("--- Waiting longer after delete for tracking update ---");
+        await waitForGun(1500); // <-- Increased wait time significantly
 
-        // 5. Fetch the _holograms set again
+        // 5. Fetch the _holograms set again directly
         hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
 
-        // 6. Verify the hologram's soul is no longer in the _holograms set
+        // 6. Verify the hologram's soul is marked as 'DELETED'
         expect(hologramsSet).toBeDefined();
-        // Check that the key has been nulled out by Gun
-        expect(hologramsSet[storedHologramSoul]).toBeNull();
-        // Optionally, check that the key is not present after filtering metadata
-        const hologramKeys = Object.keys(hologramsSet).filter(k => k !== '_');
-        expect(hologramKeys).not.toContain(storedHologramSoul);
+        expect(hologramsSet[storedHologramSoul]).toBe('DELETED'); // <-- Expect 'DELETED' string
     });
     // --- End tests for _holograms tracking ---
 

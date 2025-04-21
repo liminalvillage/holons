@@ -53,18 +53,26 @@ export function parseSoulPath(soul) {
 }
 
 /**
- * Checks if an object is a hologram
- * @param {object} data - The data to check
- * @returns {boolean} - True if the object is a hologram
+ * Checks if an object is a hologram.
+ * This function checks for the presence and type of `id` and `soul` properties,
+ * suitable for identifying holograms represented as plain JavaScript objects.
+ * It also performs a basic check that the `soul` contains '/' as expected for a path.
+ * @param {object | null | undefined} data - The data to check.
+ * @returns {boolean} - True if the object is considered a hologram.
  */
 export function isHologram(data) {
     if (!data || typeof data !== 'object') {
         return false;
     }
-
-    // Check for direct soul hologram
-    if (data.soul && typeof data.soul === 'string' && data.id) {
-        return true;
+    
+    // Basic check: Does it have an 'id' and a 'soul' which is a non-empty string?
+    if (data.id && typeof data.soul === 'string' && data.soul.length > 0) {
+         // Optional stricter check: Does the soul look like a valid path?
+         // This prevents objects like { id: 1, soul: "hello" } from being counted.
+         // We can use a simplified check here or rely on parseSoulPath failing later.
+         if (data.soul.includes('/')) { // Simple check for path structure
+            return true;
+         } 
     }
 
     return false;

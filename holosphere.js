@@ -15,7 +15,7 @@ import * as SchemaOps from './schema.js';
 import * as ContentOps from './content.js';
 import * as NodeOps from './node.js';
 import * as GlobalOps from './global.js';
-import * as RefOps from './hologram.js';
+import * as HologramOps from './hologram.js';
 import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
 
@@ -305,7 +305,7 @@ class HoloSphere {
      */
     createHologram(holon, lens, data) {
         // Delegate to the external function
-        return RefOps.createHologram(this, holon, lens, data);
+        return HologramOps.createHologram(this, holon, lens, data);
     }
     
     /**
@@ -315,7 +315,7 @@ class HoloSphere {
      */
     parseSoulPath(soul) {
         // Delegate to the external function (doesn't need instance)
-        return RefOps.parseSoulPath(soul);
+        return HologramOps.parseSoulPath(soul);
     }
     
     /**
@@ -325,7 +325,7 @@ class HoloSphere {
      */
     isHologram(data) {
         // Delegate to the external function (doesn't need instance)
-        return RefOps.isHologram(data);
+        return HologramOps.isHologram(data);
     }
     
     /**
@@ -338,7 +338,7 @@ class HoloSphere {
      */
     async resolveHologram(hologram, options = {}) {
         // Delegate to the external function
-        return RefOps.resolveHologram(this, hologram, options);
+        return HologramOps.resolveHologram(this, hologram, options);
     }
 
     // ================================ COMPUTE FUNCTIONS ================================

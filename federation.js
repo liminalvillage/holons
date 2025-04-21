@@ -386,29 +386,34 @@ export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = n
 }
 
 /**
- * Get and combine data from local and federated sources
+ * Get and combine data from local and federated sources.
+ * If `options.queryIds` is provided, fetches only those specific IDs using `get()`.
+ * Otherwise, falls back to fetching all data using `getAll()` (potentially inefficient).
+ * 
  * @param {HoloSphere} holosphere The HoloSphere instance
- * @param {string} holon The local holon name
+ * @param {string} holon The local holon name (used as the space ID for federation info)
  * @param {string} lens The lens to query
  * @param {Object} options Options for data retrieval and aggregation
- * @param {boolean} options.aggregate Whether to aggregate results by ID (default: false)
- * @param {string} options.idField The field to use as ID (default: '_id')
- * @param {string[]} options.sumFields Fields to sum during aggregation (default: [])
- * @param {string[]} options.concatArrays Array fields to concatenate during aggregation (default: [])
- * @param {boolean} options.removeDuplicates Whether to remove duplicates in concatenated arrays (default: true)
- * @param {Function} options.mergeStrategy Custom merge function for aggregation (default: null)
- * @param {boolean} options.includeLocal Whether to include local data (default: true)
- * @param {boolean} options.includeFederated Whether to include federated data (default: true)
- * @param {boolean} options.resolveReferences Whether to resolve federation references (default: true)
- * @param {number} options.maxFederatedSpaces Maximum number of federated spaces to query (default: -1 for all)
- * @param {number} options.timeout Timeout in milliseconds for federated queries (default: 10000)
+ * @param {string[]} [options.queryIds] Optional array of specific item IDs to fetch.
+ * @param {boolean} [options.aggregate=false] Whether to aggregate results by ID
+ * @param {string} [options.idField='id'] The field to use as ID
+ * @param {string[]} [options.sumFields=[]] Fields to sum during aggregation
+ * @param {string[]} [options.concatArrays=[]] Array fields to concatenate during aggregation
+ * @param {boolean} [options.removeDuplicates=true] Whether to remove duplicates in concatenated arrays
+ * @param {Function} [options.mergeStrategy=null] Custom merge function for aggregation
+ * @param {boolean} [options.includeLocal=true] Whether to include local data
+ * @param {boolean} [options.includeFederated=true] Whether to include federated data
+ * @param {boolean} [options.resolveReferences=true] Whether to resolve federation references
+ * @param {number} [options.maxFederatedSpaces=-1] Maximum number of federated spaces to query (-1 for all)
+ * @param {number} [options.timeout=10000] Timeout in milliseconds for federated queries
  * @returns {Promise<Array>} Combined array of local and federated data
  */
 export async function getFederated(holosphere, holon, lens, options = {}) {
     console.log(`getFederated called with options:`, JSON.stringify(options));
     
-    // Set default options
+    // Set default options and extract queryIds
     const { 
+        queryIds = null, // New option
         aggregate = false,
         idField = 'id',
         sumFields = [],
@@ -417,91 +422,90 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
         mergeStrategy = null,
         includeLocal = true,
         includeFederated = true,
-        resolveReferences = true, // Default to true
+        resolveReferences = true, 
         maxFederatedSpaces = -1,
         timeout = 10000
     } = options;
     
     console.log(`resolveReferences option: ${resolveReferences}`);
-    
+    console.log(`Querying specific IDs:`, queryIds ? queryIds.join(', ') : 'No (fetching all)');
+
     // Validate required parameters
     if (!holosphere || !holon || !lens) {
         throw new Error('Missing required parameters: holosphere, holon, and lens are required');
     }
 
-    // Get federation info for current space
-    // Use holon as the space ID
+    // Get federation info for current space (using holon as spaceId)
     const spaceId = holon;
     const fedInfo = await getFederation(holosphere, spaceId);
-    
     console.log(`Federation info retrieved:`, JSON.stringify(fedInfo));
     
-    // Initialize result array and track processed IDs to avoid duplicates
-    const result = [];
-    const processedIds = new Set();
-    const references = new Map(); // To keep track of references for resolution
-    
-    // Process each federated space first to prioritize federation data
-    if (includeFederated && fedInfo && fedInfo.federation && fedInfo.federation.length > 0) {
-        console.log(`Found ${fedInfo.federation.length} federated spaces`);
-        
-        // Limit number of federated spaces to query
-        const federatedSpaces = maxFederatedSpaces === -1 ? fedInfo.federation : fedInfo.federation.slice(0, maxFederatedSpaces);
-        console.log(`Will process ${federatedSpaces.length} federated spaces: ${JSON.stringify(federatedSpaces)}`);
-        
-        // Process federated spaces
-        for (const federatedSpace of federatedSpaces) {
-            try {
-                console.log(`=== PROCESSING FEDERATED SPACE: ${federatedSpace} ===`);
-                
-                // Get all data for this lens from the federated space
-                const federatedItems = await holosphere.getAll(federatedSpace, lens);
-                console.log(`Got ${federatedItems.length} items from federated space ${federatedSpace}`);
-                console.log(`Federated items:`, JSON.stringify(federatedItems));
-                
-                // Process each item
-                for (const item of federatedItems) {
-                    if (!item) {
-                        console.log('Item is null or undefined, skipping');
-                        continue;
-                    }
-                    
-                    console.log(`Checking item for ID field '${idField}':`, item);
-                    
-                    if (!item[idField]) {
-                        console.log(`Item missing ID field '${idField}', available fields:`, Object.keys(item));
-                        continue;
-                    }
-                    
-                    // For now, just add this item to results, we'll resolve references later
-                    result.push(item);
-                    processedIds.add(item[idField]);
-                }
-            } catch (error) {
-                console.warn(`Error processing federated space ${federatedSpace}: ${error.message}`);
-            }
-        }
-    }
-    
-    // Now get local data if requested
+    // Initialize result array and track processed IDs to avoid duplicates/redundant fetches
+    const fetchedItems = new Map(); // Use Map to store fetched items by ID
+    const processedIds = new Set(); // Track IDs added to the final result
+
+    const fetchPromises = [];
+
+    // Determine list of spaces to query (local + federated)
+    let spacesToQuery = [];
     if (includeLocal) {
-        const localData = await holosphere.getAll(holon, lens);
-        console.log(`Got ${localData.length} local items from holon ${holon}`);
-        
-        // Add each local item to results, but only if not already processed
-        for (const item of localData) {
-            if (item && item[idField] && !processedIds.has(item[idField])) {
-                result.push(item);
-                processedIds.add(item[idField]);
-            } else if (item && item[idField]) {
-                console.log(`Local item ${item[idField]} already in result from federation, skipping`);
+        spacesToQuery.push(holon); // Add local holon first
+    }
+    if (includeFederated && fedInfo && fedInfo.federation && fedInfo.federation.length > 0) {
+        const federatedSpaces = maxFederatedSpaces === -1 ? fedInfo.federation : fedInfo.federation.slice(0, maxFederatedSpaces);
+        spacesToQuery = spacesToQuery.concat(federatedSpaces);
+    }
+    console.log(`Spaces to query: ${spacesToQuery.join(', ')}`);
+
+    // Fetch data from all relevant spaces
+    for (const currentSpace of spacesToQuery) {
+        if (queryIds && Array.isArray(queryIds)) {
+            // --- Fetch specific IDs using holosphere.get --- 
+            console.log(`Fetching specific IDs from ${currentSpace}: ${queryIds.join(', ')}`);
+            for (const itemId of queryIds) {
+                if (fetchedItems.has(itemId)) continue; // Skip if already fetched
+                fetchPromises.push(
+                    holosphere.get(currentSpace, lens, itemId)
+                        .then(item => {
+                            if (item) {
+                                fetchedItems.set(itemId, item);
+                                console.log(`Fetched item ${itemId} from ${currentSpace}`);
+                            }
+                        })
+                        .catch(err => console.warn(`Error fetching item ${itemId} from ${currentSpace}: ${err.message}`))
+                );
             }
+        } else {
+            // --- Fetch all data using holosphere.getAll (Fallback - inefficient) ---
+            if(currentSpace === holon && includeLocal) { // Only warn once for local
+                 console.warn(`getFederated: No queryIds provided. Falling back to fetching ALL items from ${currentSpace} using getAll. This can be inefficient.`);
+            }
+            console.log(`Fetching ALL items from ${currentSpace}`);
+            fetchPromises.push(
+                holosphere.getAll(currentSpace, lens)
+                    .then(items => {
+                        console.log(`Got ${items.length} items from ${currentSpace} via getAll`);
+                        for (const item of items) {
+                            if (item && item[idField] && !fetchedItems.has(item[idField])) {
+                                fetchedItems.set(item[idField], item);
+                            }
+                        }
+                    })
+                    .catch(err => console.warn(`Error fetching all items from ${currentSpace}: ${err.message}`))
+            );
         }
     }
-    
+
+    // Wait for all fetches to complete
+    await Promise.all(fetchPromises);
+    console.log(`Finished fetching. Total unique items fetched: ${fetchedItems.size}`);
+
+    // Convert Map values to array for processing
+    const result = Array.from(fetchedItems.values());
+
     // Now resolve references if needed
-    if (resolveReferences) {
-        console.log(`Resolving references for ${result.length} items`);
+    if (resolveReferences && result.length > 0) {
+        console.log(`Resolving references for ${result.length} fetched items`);
         
         for (let i = 0; i < result.length; i++) {
             const item = result[i];
