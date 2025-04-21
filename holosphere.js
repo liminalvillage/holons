@@ -1,6 +1,6 @@
 /**
  * @module holosphere
- * @version 1.1.10
+ * @version 1.1.11
  * @description Holonic Geospatial Communication Infrastructure
  * @author Roberto Valenti
  * @license GPL-3.0-or-later
@@ -19,7 +19,8 @@ import * as HologramOps from './hologram.js';
 import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
 
-
+// Define the version constant
+const HOLOSPHERE_VERSION = '1.1.11'; 
 
 class HoloSphere {
     /**
@@ -30,7 +31,7 @@ class HoloSphere {
      * @param {Gun|null} gunInstance - The Gun instance to use.
      */
     constructor(appname, strict = false, openaikey = null) {
-        console.log('HoloSphere v1.1.10'); 
+        console.log('HoloSphere v1.1.11'); 
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -624,6 +625,14 @@ class HoloSphere {
     userName(holonId) {
         // Delegate to the external function
         return Utils.userName(this, holonId);
+    }
+
+    /**
+     * Returns the current version of the HoloSphere library.
+     * @returns {string} The library version.
+     */
+    getVersion() {
+        return HOLOSPHERE_VERSION;
     }
 }
 
