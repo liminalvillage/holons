@@ -1702,8 +1702,8 @@ export default class Quests {
             // Validate timezone and set default if invalid or "Not set"
             const isValidTimezone = chatTimezone && typeof chatTimezone === 'string' && chatTimezone !== 'Not set';
             if (!isValidTimezone) {
-                console.log(`Invalid or missing timezone for chat ${quest.chat}, defaulting to Europe/Rome.`);
-                chatTimezone = 'Europe/Rome'; // Default timezone
+                console.log(`Invalid or missing timezone for chat ${quest.chat}, defaulting to UTC.`);
+                chatTimezone = 'UTC'; // Default timezone to UTC
             }
 
             let dateStr = 'Invalid Date';
@@ -1721,7 +1721,7 @@ export default class Quests {
             } catch (e) {
                 // This catch block is now a secondary safety net
                 console.error(`Error formatting date even after timezone validation (using ${chatTimezone}):`, e);
-                // Fallback to Europe/Rome display if timezone is *still* invalid for some reason
+                // Fallback to UTC display if timezone is *still* invalid for some reason
                 try {
                     dateStr = date.toLocaleDateString(language, {
                         weekday: 'long',
@@ -1729,7 +1729,7 @@ export default class Quests {
                         day: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit',
-                        timeZone: 'Europe/Rome', // Hardcoded default in fallback
+                        timeZone: 'UTC', // Hardcoded default fallback to UTC
                         timeZoneName: 'short'
                     });
                 } catch (fallbackError) {
@@ -1749,8 +1749,8 @@ export default class Quests {
             // Validate timezone and set default if invalid or "Not set"
             const isValidTimezone = chatTimezone && typeof chatTimezone === 'string' && chatTimezone !== 'Not set';
              if (!isValidTimezone) {
-                console.log(`Invalid or missing timezone for chat ${quest.chat} (until field), defaulting to Europe/Rome.`);
-                chatTimezone = 'Europe/Rome'; // Default timezone
+                console.log(`Invalid or missing timezone for chat ${quest.chat} (until field), defaulting to UTC.`);
+                chatTimezone = 'UTC'; // Default timezone to UTC
             }
 
             let dateStr = 'Invalid Date';
@@ -1768,7 +1768,7 @@ export default class Quests {
             } catch (e) {
                  // This catch block is now a secondary safety net
                 console.error(`Error formatting 'until' date even after timezone validation (using ${chatTimezone}):`, e);
-                // Fallback to Europe/Rome display if timezone is *still* invalid for some reason
+                // Fallback to UTC display if timezone is *still* invalid for some reason
                  try {
                     dateStr = date.toLocaleDateString(language, {
                         weekday: 'long',
@@ -1776,7 +1776,7 @@ export default class Quests {
                         day: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit',
-                        timeZone: 'Europe/Rome',
+                        timeZone: 'UTC', // Hardcoded default fallback to UTC
                         timeZoneName: 'short'
                     });
                 } catch (fallbackError) {
