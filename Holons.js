@@ -213,7 +213,10 @@ export default class Holons {
                       `${userId.padEnd(8)} | ${ethers.formatEther(balances[index])}`
                     ).join('\n');
         
-        let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+        const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+        let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+        let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
+        // let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
         message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
         message += `Contract Balance: ${ethers.formatEther(contractBalance)}\n`;
         message += `Token Balances:\n\`\`\`\n${table}\n\`\`\``;
@@ -439,7 +442,10 @@ export default class Holons {
       }
       // console.log("listing members from /listmembers command: ", members);
       if (membersLength > 0) {
-        let message = `🔷 HOLON ADDRESS 🔷\n\`${holon.target}\`\n\n`;
+        const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+        let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+        let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
+        // let message = `🔷 HOLON ADDRESS 🔷\n\`${holon.target}\`\n\n`;
         message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
         message += `Members (${membersLength}):\n`;
         for (let i = 0; i < members.length; i++) {
@@ -457,7 +463,10 @@ export default class Holons {
         }
         return ctx.reply(message);
       } else {
-        ctx.reply(`🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`);
+        const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+        let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+        let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
+        ctx.reply(`${message}━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`);
       }
     });
 
@@ -468,11 +477,16 @@ export default class Holons {
   }
 
   setupCallbackHandlers() {
+    
     // Handle holons menu callbacks
     this.bot.action(/holons_(.+)/, async (ctx) => {
       await ctx.answerCbQuery();
       const action = ctx.match[1];
       const chatID = utils.getChatId(ctx);
+
+      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+      let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
       
       switch(action) {
         case 'create':
@@ -485,7 +499,6 @@ export default class Holons {
           await this.syncScore(ctx);
           break;
         case 'listmembers':
-          let address = await this.holonsContract.toAddress(chatID.toString());
           let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
           let membersLength = await holon.getSize();
           let members = [];
@@ -494,7 +507,7 @@ export default class Holons {
             members.push(member);
           }
           if (membersLength > 0) {
-            let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+            let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
             message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
             message += `Members (${membersLength}):\n`;
             members.forEach((member, index) => {
@@ -506,7 +519,7 @@ export default class Holons {
               }
             });
           } else {
-            ctx.editMessageText(`🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`, {
+            ctx.editMessageText(`🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`, {
               reply_markup: {
                 inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
               }
@@ -639,7 +652,9 @@ export default class Holons {
     // Create a more prominent message with the holon address at the top
     let message;
     if (holonExists) {
-      message = `🔷 HOLON ADDRESS 🔷\n\`${holonAddress}\`\n\n`;
+      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+      message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
       message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
       message += `Type: ${holonFlavor}\n`;
       message += `Network: ${this.network}\n`;
@@ -747,7 +762,10 @@ export default class Holons {
     let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
     let balance = await holon.etherBalance(userID.toString());
 
-    let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+
+    let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
     message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
     message += `Eth Balance: ${ethers.formatEther(balance)}`;
     
@@ -766,6 +784,10 @@ export default class Holons {
   async tokenBalance(ctx) {
     const chatID = utils.getChatId(ctx);
     const args = ctx.message.text.split(" ").slice(1);
+
+    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+
     if (args.length < 1) {
       return ctx.reply("Usage: /tokenbalance [token address]");
     }
@@ -813,7 +835,7 @@ export default class Holons {
                   `${userId.padEnd(8)} | ${ethers.formatEther(balances[index])}`
                 ).join('\n');
     
-    let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
+    let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
     message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
     message += `Contract Balance: ${ethers.formatEther(contractBalance)}\n`;
     message += `Token Balances:\n\`\`\`\n${table}\n\`\`\``;
@@ -1061,135 +1083,163 @@ export default class Holons {
       // Log input parameters
       const chatID = ctx.message.chat.id;
       const userID = ctx.message.from.id;
-      // const args = ctx.message.text.split(" ").slice(1); // Not used currently
-
+  
       console.log("Input parameters:");
       console.log("- chatID:", chatID, "(" + typeof chatID + ")");
       console.log("- userID:", userID, "(" + typeof userID + ")");
-
+  
       const holonsAddress = this.holonsContract.target;
       console.log("Holons contract address:", holonsAddress);
-
+  
       const creatorUserId = userID.toString();
       const holonName = `chat_${Math.abs(chatID)}`;
       const parameterValue = 5; 
       
       console.log(`Creating holon bundle with name: ${holonName}`);
-      // REMOVED: await ctx.reply(`Creating holon bundle (Splitter) for ${holonName}... Please wait.`);
-
-      // 1. Create the Holon Bundle (Splitter)
-      const txBundle = await this.holonsContract.newHolonBundle(creatorUserId, holonName, parameterValue, { gasLimit: 10_000_000 });
+  
+      // 1. Create the Holon Bundle (Splitter) - with higher gas limit
+      const txBundle = await this.holonsContract.newHolonBundle(
+        creatorUserId, 
+        holonName, 
+        parameterValue, 
+        { gasLimit: 15_000_000 }
+      );
       console.log("Transaction submitted for newHolonBundle:", txBundle.hash);
-      // REMOVED: await ctx.reply(`Transaction submitted for Holon Bundle: ${txBundle.hash}\nWaiting for confirmation...`);
       
       const receiptBundle = await txBundle.wait();
       console.log("newHolonBundle transaction confirmed:", receiptBundle.status === 1 ? 'Success' : 'Failed');
       if (receiptBundle.status !== 1) {
         throw new Error(`Holon Bundle creation transaction failed (Hash: ${txBundle.hash})`);
       }
-      // REMOVED: await ctx.reply(`✅ Holon Bundle (Splitter, Managed, Zoned) likely created successfully via newHolonBundle!`);
-
-      // 2. Retrieve the Splitter Address
-      console.log(`Retrieving Splitter address mapped in Holons contract for holonName: ${holonName}`);
-      const splitterAddress = await this.holonsContract.toAddress(holonName);
-      console.log(`Retrieved Splitter Address from Holons mapping: ${splitterAddress}`);
-
-      if (!splitterAddress || splitterAddress === '0x0000000000000000000000000000000000000000') {
-         console.warn(`Could not retrieve a Splitter address for ${holonName} from Holons.toAddress mapping. This might be normal if newHolonBundle doesn't map it there.`);
-         // REMOVED: await ctx.reply(`Splitter address not directly mapped in Holons contract (this might be normal).`);
-      } else {
-        console.log(`Splitter address found (from Holons mapping): ${splitterAddress}`);
-        // REMOVED: await ctx.reply(`Splitter address found (from Holons mapping): \`${splitterAddress}\``, { parse_mode: 'Markdown' });
+  
+      // 2. Read the bundle address directly from the transaction receipt events
+      let splitterAddress;
+      for (const log of receiptBundle.logs) {
+        // Look for the relevant event that contains the new address
+        try {
+          // Assuming the event is emitted with the bundle address
+          const parsedLog = this.holonsContract.interface.parseLog(log);
+          if (parsedLog && parsedLog.name === "HolonBundleCreated") {
+            splitterAddress = parsedLog.args.bundleAddress;
+            console.log(`Found Splitter address from event: ${splitterAddress}`);
+            break;
+          }
+        } catch (e) {
+          // Not all logs can be parsed by this interface
+          continue;
+        }
       }
-
+  
+      // Fallback: try to get address from contract mapping if event parsing failed
+      if (!splitterAddress) {
+        console.log(`Retrieving Splitter address mapped in Holons contract for holonName: ${holonName}`);
+        splitterAddress = await this.holonsContract.toAddress(holonName);
+        console.log(`Retrieved Splitter Address from Holons mapping: ${splitterAddress}`);
+      }
+  
       // Check if splitterAddress is valid before proceeding
       if (!splitterAddress || splitterAddress === '0x0000000000000000000000000000000000000000') {
         throw new Error(`Failed to retrieve a valid Splitter address for ${holonName} after bundle creation.`);
       }
-
+  
       // 3. Create Splitter Contract Instance
-      const splitterContract = new ethers.Contract(splitterAddress, splitter.default.abi, this.wallet);
+      // Make sure you're using the correct ABI for the Splitter contract
+      const splitterContract = new ethers.Contract(
+        splitterAddress, 
+        [
+          "function createManagedContract(string memory _creatorUserId, string memory _name, uint256 _parameterValue) external returns (address)",
+          "function createZonedContract(string memory _creatorUserId, string memory _name, uint256 _parameterValue) external returns (address)",
+          "function contractsByType(string memory _type) external view returns (address)"
+        ], 
+        this.wallet
+      );
       console.log("Splitter contract instance created.");
-
-      // 4. Create Managed Contract
+  
+      // 4. Create Managed Contract with higher gas limit
       console.log(`Calling createManagedContract on ${splitterAddress} with user ${creatorUserId}, name ${holonName}, param ${parameterValue}`);
-      // --- Simulate Managed ---
-      try {
-        await splitterContract.createManagedContract.staticCall(creatorUserId, holonName, parameterValue);
-        console.log("Managed contract creation simulation successful.");
-      } catch (simError) {
-        console.error("Managed contract creation simulation FAILED:", simError);
-        throw new Error(`Managed contract creation simulation failed: ${simError.message}`);
-      }
-      // --- End Simulation ---
-      // REMOVED: await ctx.reply(`Creating Managed Contract...`);
-      const txManaged = await splitterContract.createManagedContract(creatorUserId, holonName, parameterValue, { gasLimit: 3_000_000 }); 
+      const txManaged = await splitterContract.createManagedContract(
+        creatorUserId, 
+        holonName, 
+        parameterValue, 
+        { gasLimit: 6_000_000 }
+      ); 
       console.log("Transaction submitted for createManagedContract:", txManaged.hash);
-      // REMOVED: await ctx.reply(`Transaction submitted for Managed Contract: ${txManaged.hash}\nWaiting for confirmation...`);
-
+  
       const receiptManaged = await txManaged.wait();
       console.log("createManagedContract transaction confirmed:", receiptManaged.status === 1 ? 'Success' : 'Failed');
-       if (receiptManaged.status !== 1) {
+      if (receiptManaged.status !== 1) {
         throw new Error(`Managed Contract creation transaction failed (Hash: ${txManaged.hash})`);
       }
-      // REMOVED: await ctx.reply(`✅ Managed Contract created successfully!`);
-
-      // 5. Create Zoned Contract
+  
+      // Get the managed contract address
+      const managedContractKey = `${holonName}_managed`;
+      const managedAddress = await splitterContract.contractsByType(managedContractKey);
+      console.log(`Managed contract address: ${managedAddress}`);
+  
+      // 5. Create Zoned Contract with higher gas limit
       console.log(`Calling createZonedContract on ${splitterAddress} with user ${creatorUserId}, name ${holonName}, param ${parameterValue}`);
-      // --- Simulate Zoned ---
-      try {
-        await splitterContract.createZonedContract.staticCall(creatorUserId, holonName, parameterValue);
-        console.log("Zoned contract creation simulation successful.");
-      } catch (simError) {
-        console.error("Zoned contract creation simulation FAILED:", simError);
-        // REMOVED: await ctx.reply(`⚠️ Zoned contract simulation failed: ${simError.message}. Attempting transaction anyway...`);
-         throw new Error(`Zoned contract creation simulation failed: ${simError.message}`); // Stop if simulation fails
-      }
-      // --- End Simulation ---
-      // REMOVED: await ctx.reply(`Creating Zoned Contract...`);
-      const txZoned = await splitterContract.createZonedContract(creatorUserId, holonName, parameterValue, { gasLimit: 6_000_000 }); 
+      const txZoned = await splitterContract.createZonedContract(
+        creatorUserId, 
+        holonName, 
+        parameterValue, 
+        { gasLimit: 10_000_000 }
+      ); 
       console.log("Transaction submitted for createZonedContract:", txZoned.hash);
-      // REMOVED: await ctx.reply(`Transaction submitted for Zoned Contract: ${txZoned.hash}\nWaiting for confirmation...`);
-
+  
       const receiptZoned = await txZoned.wait();
       console.log("createZonedContract transaction confirmed:", receiptZoned.status === 1 ? 'Success' : 'Failed');
       if (receiptZoned.status !== 1) {
         throw new Error(`Zoned Contract creation transaction failed (Hash: ${txZoned.hash})`);
       }
-      // REMOVED: await ctx.reply(`✅ Zoned Contract created successfully!`);
-
+  
+      // Get the zoned contract address
+      const zonedContractKey = `${holonName}_zoned`;
+      const zonedAddress = await splitterContract.contractsByType(zonedContractKey);
+      console.log(`Zoned contract address: ${zonedAddress}`);
+  
       // Edit the initial message on final success
       await ctx.telegram.editMessageText(
         ctx.chat.id, 
         initialMessage.message_id, 
         null, // inline_message_id
-        `✅✅✅ Holon Bundle initialization completed!\nTransaction Hash: ${txBundle.hash}`, 
+        `✅✅✅ Holon Bundle initialization completed!\n` +
+        `Bundle: ${splitterAddress}\n` +
+        `Managed: ${managedAddress}\n` +
+        `Zoned: ${zonedAddress}`, 
         { parse_mode: 'Markdown' }
       );
-      // Keep the return for potential chaining/logging if needed server-side
-      return true; 
-
+      
+      // Return bundle information for potential chaining/logging
+      return {
+        success: true,
+        bundleAddress: splitterAddress,
+        managedAddress,
+        zonedAddress
+      }; 
+  
     } catch (error) {
       console.error("========== ERROR CREATING HOLON ==========");
       console.error("Error:", error);
       console.error("Error message:", error.message);
-
+  
       // More detailed error logging
       if (error.code) console.error("Error code:", error.code);
       if (error.stack) console.error("Stack trace:", error.stack);
       if (error.transactionHash) console.error("Failed Tx Hash:", error.transactionHash);
       if (error.receipt) console.error("Failed Tx Receipt:", error.receipt);
-
+  
       // Edit the initial message on failure
       await ctx.telegram.editMessageText(
         ctx.chat.id,
         initialMessage.message_id,
         null,
         `❌ Failed during holon creation process: ${error.message}`
-      ).catch(editError => console.error("Error editing message on failure:", editError)); // Catch potential errors editing the message itself
-
-      // Keep the return for potential chaining/logging if needed server-side
-      return false;
+      ).catch(editError => console.error("Error editing message on failure:", editError));
+  
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
@@ -1495,6 +1545,9 @@ export default class Holons {
 
   async showZones(ctx) {
     const chatID = utils.getChatId(ctx);
+
+    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
     
     try {
       // let holonAddress = await this.holonsContract.toAddress(chatID.toString());
@@ -1554,7 +1607,7 @@ export default class Holons {
               });
           }
 
-          let message = `🔷 HOLON ADDRESS 🔷\n\`${holonAddress}\`\n\n`;
+          let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
           message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
           message += "Zone Members:\n";
           zoneMembers.forEach(zone => {
