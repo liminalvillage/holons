@@ -26,12 +26,12 @@ class HoloSphere {
     /**
      * Initializes a new instance of the HoloSphere class.
      * @param {string} appname - The name of the application.
-     * @param {boolean} strict - Whether to enforce strict schema validation.
-     * @param {string|null} openaikey - The OpenAI API key.
-     * @param {Gun|null} gunInstance - The Gun instance to use.
+     * @param {boolean} [strict=false] - Whether to enforce strict schema validation.
+     * @param {string|null} [openaikey=null] - The OpenAI API key.
+     * @param {object} [gunOptions={}] - Optional Gun constructor options (e.g., peers, localStorage, radisk).
      */
-    constructor(appname, strict = false, openaikey = null) {
-        console.log('HoloSphere v1.1.11'); 
+    constructor(appname, strict = false, openaikey = null, gunOptions = {}) {
+        console.log('HoloSphere v' + HOLOSPHERE_VERSION);
         this.appname = appname
         this.strict = strict;
         this.validator = new Ajv2019({
@@ -41,11 +41,19 @@ class HoloSphere {
         });
 
        
-        // Use provided Gun instance or create new one with default options
-        this.gun = Gun({
+        // Define default Gun options
+        const defaultGunOptions = {
             peers: ['https://gun.holons.io/gun'],
             axe: false,
-        });
+            // Add other potential defaults here if needed
+        };
+
+        // Merge provided options with defaults
+        const finalGunOptions = { ...defaultGunOptions, ...gunOptions };
+        console.log("Initializing Gun with options:", finalGunOptions);
+
+        // Use provided Gun instance or create new one with final options
+        this.gun = Gun(finalGunOptions); // Pass the merged options
     
 
         if (openaikey != null) {
