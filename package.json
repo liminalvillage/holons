@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node HolonsBot.js"
+    "start": "node HolonsBot.js",
+    "dev": "nodemon HolonsBot.js"
   },
   "author": "Roberto Valenti",
   "license": "GPL-3.0-only",
@@ -25,7 +26,7 @@
     "ffmpeg-static": "^5.2.0",
     "gun": "^0.2020.1239",
     "h3-js": "^4.1.0",
-    "holosphere": "1.1.10",
+    "holosphere": "file:../holosphere",
     "i18next": "^22.4.9",
     "i18next-http-backend": "^2.1.1",
     "ipfs": "^0.66.0",
@@ -46,5 +47,8 @@
     "sharp": "^0.32.1",
     "telegraf": "^4.16.3",
     "web3": "^4.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
   }
 }

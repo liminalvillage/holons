@@ -414,7 +414,7 @@ export default class Holons {
     this.bot.command("zones", async (ctx) => this.showZones(ctx));
     this.bot.command("setshares", async (ctx) => this.setShares(ctx));
     this.bot.command("setsplit", async (ctx) => this.handleSetSplitCommand(ctx));
-    //this.bot.command("appreciate", async(ctx) => this.handleAppreciateCommand(ctx));
+    this.bot.command("appreciate", async(ctx) => this.handleAppreciateCommand(ctx));
     this.bot.command("addtozone", async (ctx) => this.handleAddToZoneCommand(ctx));
     
     // Add new command for the holons menu
@@ -2064,7 +2064,7 @@ export default class Holons {
       ctx.reply("Appreciation set successfully.");
     } catch (error) {
       console.error("Error handling appreciate command:", error);
-      ctx.reply("Failed to set appreciation. Please check your input format eg: /appreciate @user1 50 @user2 50");
+      ctx.reply("Failed to set appreciation. Please check your input format.");
     }
   }
 
