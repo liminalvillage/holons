@@ -20,7 +20,8 @@ class Server {
 
     const app = express();
     const isDebug = process.env.NODE_ENV === 'development';
-    const port = process.env.PORT || (isDebug ? 80 : 443);
+    // const port = process.env.PORT || (isDebug ? 80 : 443);
+    const port = process.env.PORT || (isDebug ? 3000 : 443);
 
     // Setup static file serving and Gun middleware
     app.use(express.static('public'));

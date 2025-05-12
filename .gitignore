@@ -15,3 +15,4 @@ certs/*
 .netlify/*
 data/%1C
 radata*
+/node_modules
