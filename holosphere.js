@@ -69,6 +69,10 @@ class HoloSphere {
         this.schemaCache = new Map();
     }
 
+    getGun() {
+        return this.gun;
+    }
+
     // ================================ SCHEMA FUNCTIONS ================================
 
     /**

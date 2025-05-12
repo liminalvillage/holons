@@ -195,10 +195,8 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
 
                 try {
                     let parsed = await holoInstance.parse(data);
-                    console.log(`### get/handleData received raw data:`, data, `| Parsed:`, parsed);
 
                     if (!parsed) {
-                        console.log('### get/handleData resolving null because parsed is null/falsy');
                         resolve(null);
                         return;
                     }
@@ -237,7 +235,6 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                         }
                     }
 
-                    console.log(`### get/handleData resolving final value:`, parsed);
                     resolve(parsed);
                 } catch (error) {
                     // Catch specific errors if needed, otherwise log and resolve null

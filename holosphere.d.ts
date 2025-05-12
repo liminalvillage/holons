@@ -117,7 +117,7 @@ declare class HoloSphere {
     private appname;
     private strict;
     private validator;
-    private gun;
+    public gun;
     private sea;
     private openai?;
     private subscriptions;
@@ -130,6 +130,12 @@ declare class HoloSphere {
      * @param {object|null} gunInstance - The Gun instance to use.
      */
     constructor(appname: string, strict?: boolean, openaikey?: string | null, gunInstance?: any);
+
+    /**
+     * Gets the Gun instance.
+     * @returns {any} - The Gun instance.
+     */
+    getGun(): any;
 
     // ================================ SCHEMA FUNCTIONS ================================
 
