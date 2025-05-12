@@ -661,6 +661,7 @@ export default class Holons {
   setupBotCommands() {
     this.bot.command("createholon", async (ctx) => this.createHolon(ctx));
     // this.bot.command("addmembers", async (ctx) => this.addMembers(ctx));
+    this.bot.command("addholons", async (ctx) => this.addHolonsBundle(ctx));
     this.bot.command("addmembers", async (ctx) => this.addMembersBundle(ctx));
     this.bot.command("syncscore", async (ctx) => this.syncScore(ctx));
     this.bot.command("claim", async (ctx) => this.claim(ctx));
@@ -927,7 +928,9 @@ export default class Holons {
       await ctx.editMessageText(
         `Select action for @${memberId} (Zone ${zoneNumber}):`,
         { reply_markup: { inline_keyboard: keyboard } }
-      );
+      ).catch(err => {
+        console.error("Error editing message:", err);
+      });
     });
 
     // Remove from zone handler (moves member to zone 5)
@@ -942,7 +945,7 @@ export default class Holons {
         const solidityZone = this.invertZone(targetZone);
         const tx = await this.executeTransaction(
           zonedContract,
-          'moveToZone',
+          'addToZone',
           [memberId, solidityZone]
         );
         this.waitForTransaction(tx, ctx, `Moved member to zone ${targetZone}`);
@@ -997,7 +1000,7 @@ export default class Holons {
       const [memberId, zoneNumber] = ctx.match.slice(1);
       const chatID = utils.getChatId(ctx);
       const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-
+      const senderUserId = utils.getUserId(ctx).toString();
       try {
         const zonedContract = await this.getZonedContract(chatIdNormalized);
         const solidityZone = this.invertZone(parseInt(zoneNumber));
@@ -1006,8 +1009,8 @@ export default class Holons {
 
         const tx = await this.executeTransaction(
           zonedContract,
-          'moveToZone',
-          [memberId, solidityZone]
+          'addToZone',
+          [senderUserId, memberId, solidityZone]
         );
 
         this.waitForTransaction(
@@ -1068,6 +1071,7 @@ export default class Holons {
       const zoneNumber = parseInt(zoneNumberStr);
       const chatID = utils.getChatId(ctx);
       const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      const senderUserId = utils.getUserId(ctx).toString();
 
       try {
         const zonedContract = await this.getZonedContract(chatIdNormalized);
@@ -1078,7 +1082,7 @@ export default class Holons {
         const tx = await this.executeTransaction(
           zonedContract,
           'addToZone', // Using the renamed contract function
-          [memberId, solidityZone]
+          [senderUserId, memberId, solidityZone]
         );
 
         this.waitForTransaction(
@@ -1099,6 +1103,7 @@ export default class Holons {
 
     // Update Remove from zone handler to use the renamed contract function addToZone (to move to zone 5)
     this.bot.action(/remove_from_zone_(.+)_(\d+)/, async (ctx) => {
+      const senderUserId = utils.getUserId(ctx).toString();
       await ctx.answerCbQuery();
       const [memberId] = ctx.match.slice(1);
       const targetHumanZone = 5; // Moving to the lowest human-readable zone
@@ -1110,7 +1115,7 @@ export default class Holons {
         const tx = await this.executeTransaction(
           zonedContract,
           'addToZone', // Using the renamed contract function
-          [memberId, solidityZone]
+          [senderUserId, memberId, solidityZone]
         );
         this.waitForTransaction(tx, ctx, `Successfully moved @${memberId} to zone ${targetHumanZone}`);
       } catch (error) {
@@ -1898,6 +1903,92 @@ export default class Holons {
 
   }
 
+  async addHolonsBundle(ctx) {
+    let holonAddressZoned;
+    console.log("addHolonBundle function called");
+    const chatID = utils.getChatId(ctx);
+    console.log("chatID from addMembers:", chatID);
+    //TODO: Check if the user is a member of the group and it is authorized to add holons
+
+    const userID = utils.getUserId(ctx); // Get the user ID of the person who initiated the command
+
+    // Logic to understand if it's member trough delegation?
+    // If it is: Write that only internal members can add members to the group. Add members in your root group.
+    // Only the internal members can move external members trough zones!
+
+    // If it isn't continue regularly
+    // let users = await this.db.getAll(chatID.toString() + '/users'); // users variable seems unused in this function
+    let userIdsParams = utils.getParameters(ctx);
+    console.log("userIdsParams from addHolonBundle: ", userIdsParams);
+
+    // if (!users || users.length === 0) { // Check based on userIdsParams instead if that's the input for holon IDs
+    //   return ctx.reply("No users found in the database.");
+    // }
+    if (!userIdsParams) {
+        return ctx.reply("Please provide the Holon IDs to add.");
+    }
+
+    const holonName = `chat_${Math.abs(chatID)}`;
+
+    try {
+      holonAddressZoned = await this.getZonedContract(holonName);
+      if (!holonAddressZoned || holonAddressZoned.target === '0x0000000000000000000000000000000000000000'){
+        await ctx.reply("Zoned Holon not found for this chat.");
+        return;
+      }
+      console.log("holonAddressZoned from addHolonBundle: ", holonAddressZoned.target);
+    } catch (error) {
+      console.error("Cannot find holon, in this case it's Zoned!", error);
+      await ctx.reply("Error finding Zoned Holon for this chat.");
+      return;
+    }
+
+    await ctx.reply(`Adding holon(s) to federation... Please wait.`);
+
+    const holonIdsToAddArray = userIdsParams.split(' ').map(String); // Ensure this is an array of strings
+
+    try {
+      // Get the contract method directly
+      // const addHolonFunction = holonAddressZoned.interface.getFunction('addMembers'); // This was for checking, not direct call
+
+      // Log the expected parameter types for addMembers on Zoned contract
+      const addMembersFuncInfo = holonAddressZoned.interface.getFunction('addMembers');
+      if (addMembersFuncInfo) {
+        console.log("ZonedContract addMembers expected parameters:", 
+        addMembersFuncInfo.inputs.map(i => `${i.name}: ${i.type}`));
+      } else {
+        console.log("WARNING: addMembers function not found in Zoned contract ABI!");
+        // It's possible the function is named addHolons or similar, let's check for that if addMembers isn't found
+        // For now, we assume 'addMembers' based on the user's provided error context for Zoned Holon.
+      }
+
+      // Ensure arguments are correctly structured as an array for encodeFunctionData
+      const args = [userID.toString(), holonIdsToAddArray];
+      console.log("Arguments for encodeFunctionData: senderUserID, holonIDsArray", args);
+
+      const data = holonAddressZoned.interface.encodeFunctionData('addMembers', args);
+
+      console.log("data before sending: ", data);
+      console.log("zoned holon address before sending: ", holonAddressZoned.target);
+
+      const tx = await this.wallet.sendTransaction({
+        to: holonAddressZoned.target,
+        data,
+        gasLimit: 3000000,
+        // maxPriorityFeePerGas: maxPriorityFee,
+        // maxFeePerGas: maxFee,
+        nonce: await this.wallet.getNonce()
+      });
+
+      this.waitForTransaction(tx, ctx, `Successfully initiated adding ${holonIdsToAddArray.length} holon(s)`);
+
+      await ctx.reply(`Transaction submitted. You will be notified when holon(s) are added.`);
+    } catch (error) {
+      console.error("Transaction error in addHolonsBundle:", error);
+      await ctx.reply(`Failed to add holon(s): ${error.message}`);
+    }
+  }
+
 
   async sendCommand(_holonaddress, _command, _args) {
     let holon = await this.getHolonContract(_holonaddress);
@@ -2081,8 +2172,8 @@ export default class Holons {
 
       const tx = await this.executeTransaction(
         holon,
-        'moveToZone',
-        [memberAddress, zoneNumber]
+        'addToZone',
+        [senderUserId, memberAddress, zoneNumber]
       );
 
       // Don't await the transaction completion
