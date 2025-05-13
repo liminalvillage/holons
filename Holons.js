@@ -146,7 +146,6 @@ export default class Holons {
         // Add a back button if this was called from the menu
         if (ctx.callbackQuery) {
           return ctx.editMessageText(message, {
-            parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]]
             }
@@ -419,16 +418,31 @@ export default class Holons {
           catch (error) { /* ... error handling ... */ }
           break;
         case 'manage_zones_view': 
-          try { /* ... existing logic for showZoneManagementView ... */ 
+          console.log("DEBUG: Entered 'manage_zones_view' case in /holons_(.+)/ handler for chat:", chatIdNormalized);
+          try {
             const zonedContract = await this.getZonedContract(chatIdNormalized);
             if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
+              console.log("DEBUG: 'manage_zones_view' - Zoned contract not found or invalid.");
+              // It's important to await ctx.answerCbQuery() before returning or editing, if not done at the top of the main handler
+              // await ctx.answerCbQuery().catch(e => console.log("CBQ Error in no zoned func", e.message));
               return ctx.editMessageText("This holon does not have Zoned functionality.", {
                 reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]] }
               }).catch(e => console.log("Error editing message for no zoned functionality:", e.message));
             }
+            console.log("DEBUG: 'manage_zones_view' - About to call showZoneManagementView for chat:", chatIdNormalized);
             await this.showZoneManagementView(ctx);
-          } 
-          catch (error) { /* ... error handling ... */ }
+            console.log("DEBUG: 'manage_zones_view' - Called showZoneManagementView for chat:", chatIdNormalized);
+          } catch (error) {
+            // Simplified catch block for now to pass linter
+            console.error("DEBUG: Error caught in 'manage_zones_view' case:", error.message);
+            if (error.response && error.response.error_code === 400 && error.response.description.includes('message is not modified')) {
+              console.log('DEBUG: manage_zones_view - Message not modified error specifically.');
+            } else {
+              console.error("DEBUG: An unexpected error occurred in 'manage_zones_view' case.");
+              // Optionally, provide a generic error message to the user if safe to do so
+              // await ctx.reply("An error occurred while trying to manage zones.").catch(e => console.log("Reply error", e.message));
+            }
+          }
           break;
         case 'back':
           try { await this.showHolonsMenu(ctx, true); }
@@ -450,22 +464,32 @@ export default class Holons {
       const chatID = utils.getChatId(ctx);
       const chatIdNormalized = `chat_${Math.abs(chatID)}`;
       let splitterAddress = "N/A";
-      let internalPercent = 50;
-      const internalId = `${chatIdNormalized}_managed`;
+      let internalPercent = 50; // Default
+      let externalPercent = 50; // Default
+
       try {
         const splitterContract = await this.getSplitterContract(chatIdNormalized);
         if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
           splitterAddress = splitterContract.target;
           try {
-            const internalPBigInt = await splitterContract.percentages(internalId);
+            const internalPBigInt = await splitterContract.internalContractSplitPercentage();
+            const externalPBigInt = await splitterContract.externalContractSplitPercentage(); // Fetch external too for consistency
+            
             internalPercent = parseInt(internalPBigInt.toString(), 10);
+            externalPercent = parseInt(externalPBigInt.toString(), 10);
+
             if (isNaN(internalPercent) || internalPercent < 0 || internalPercent > 100) {
-                console.warn(`Fetched initial internalPercent ${internalPercent} is invalid for ${internalId}. Defaulting to 50.`);
+                console.warn(`Fetched initial internalPercent ${internalPercent} is invalid. Defaulting to 50.`);
                 internalPercent = 50;
+                externalPercent = 50; // Recalculate if internal defaulted
             }
+            // Optionally, verify if internalPercent + externalPercent === 100 from contract, or trust internal and derive external
+            // For now, we will display what contract gives for both, but adjustments will modify internal and derive external.
+
           } catch (e) {
-            console.log(`Initial percentage fetch failed for ${internalId}, defaulting to 50:`, e.message);
+            console.log(`Initial percentage fetch using direct contract methods failed, defaulting to 50/50:`, e.message);
             internalPercent = 50;
+            externalPercent = 50;
           }
         } else {
           await ctx.editMessageText("Splitter contract not found for this chat.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("Initial Display Error Edit (no contract): ", e.message));
@@ -476,18 +500,26 @@ export default class Holons {
         await ctx.editMessageText("Error accessing splitter details.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("Initial Display Error Edit (contract access): ", e.message));
         return;
       }
-      console.log(`DEBUG: Initial Display - internalPercent = ${internalPercent} (Scene-less)`);
-      const externalPercent = 100 - internalPercent;
-      let message = `🔷 SPLITTER MANAGEMENT 🔷\nContract: \`${splitterAddress}\`\nAdjust Internal (Managed) / External (Zoned) Split:\n\nCurrent Setting: Managed ${internalPercent}% / Zoned ${externalPercent}%`;
+      console.log(`DEBUG: Initial Display - Contract Fetched: internal=${internalPercent}%, external=${externalPercent}%`);
+
+      // The UI will adjust based on internalPercent, external will be derived for proposals
+      let message = `🔷 SPLITTER MANAGEMENT 🔷\n`;
+      message += `Contract: \`${splitterAddress}\`\n`;
+      message += `Adjust Internal (Managed) / External (Zoned) Split:\n\n`;
+      message += `Current Contract Setting: Managed ${internalPercent}% / Zoned ${externalPercent}%`;
+      // For the interactive part, we start with the fetched internalPercent
+      const currentUiInternalPercent = internalPercent; 
+      const currentUiExternalPercent = 100 - currentUiInternalPercent;
+
       const keyboard = [
         [
-          { text: "<< (-10)", callback_data: `splitter_adj_live_-10_${internalPercent}` },
-          { text: "< (-1)", callback_data: `splitter_adj_live_-1_${internalPercent}` },
-          { text: `${internalPercent}% / ${externalPercent}%`, callback_data: "noop" },
-          { text: "> (+1)", callback_data: `splitter_adj_live_1_${internalPercent}` },
-          { text: ">> (+10)", callback_data: `splitter_adj_live_10_${internalPercent}` }
+          { text: "<< (-10)", callback_data: `splitter_adj_live_-10_${currentUiInternalPercent}` },
+          { text: "< (-1)", callback_data: `splitter_adj_live_-1_${currentUiInternalPercent}` },
+          { text: `${currentUiInternalPercent}% / ${currentUiExternalPercent}%`, callback_data: "noop" }, // This will be the one changing
+          { text: "> (+1)", callback_data: `splitter_adj_live_1_${currentUiInternalPercent}` },
+          { text: ">> (+10)", callback_data: `splitter_adj_live_10_${currentUiInternalPercent}` }
         ],
-        [{ text: "✅ Set This Split", callback_data: `splitter_conf_live_set_${internalPercent}` }],
+        [{ text: "✅ Set This Split", callback_data: `splitter_conf_live_set_${currentUiInternalPercent}` }],
         [{ text: "◀️ Back to Menu", callback_data: "holons_back" }]
       ];
       await ctx.editMessageText(message, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }).catch(e => console.log("E Splitter initial display edit (Scene-less): ", e.message));
@@ -550,44 +582,43 @@ export default class Holons {
       }
     });
 
-    console.log("DEBUG: Registering splitter_conf_live_set_... (Scene-less)");
     this.bot.action(/splitter_conf_live_set_(\d+)/, async (ctx) => {
-      // ... (Full scene-less confirm handler logic with DEBUG logs)
       console.log("DEBUG: /splitter_conf_live_set_/ HANDLER TRIGGERED - Callback Data:", ctx.callbackQuery.data);
       try { await ctx.answerCbQuery().catch(e => console.log("Confirm Split CBQ Error:", e.message)); } catch (e) { console.log("Error in answerCbQuery top for confirm_split", e); }
+      
       const finalInternalPercent = parseInt(ctx.match[1],10);
       if (isNaN(finalInternalPercent) || finalInternalPercent < 0 || finalInternalPercent > 100) {
-          console.error(`DEBUG Confirm Split: Invalid finalInternalPercent received: ${ctx.match[1]}`);
-          await ctx.reply("Error: Invalid percentage for setting split. Please try again.").catch(e => console.log("E:",e.message));
-          return;
+        console.error(`DEBUG Confirm Split: Invalid finalInternalPercent received: ${ctx.match[1]}`);
+        await ctx.editMessageText("Error: Invalid percentage for setting split. Please try again.", {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "direct_manage_splitter"}]]}} ).catch(e => console.log("E:",e.message));
+        return;
       }
       const finalExternalPercent = 100 - finalInternalPercent;
+      
       const chatID = utils.getChatId(ctx);
       const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-      const internalId = `${chatIdNormalized}_managed`;
-      const externalId = `${chatIdNormalized}_zoned`;
+      // const internalId = `${chatIdNormalized}_managed`; // No longer needed for setContractSplit
+      // const externalId = `${chatIdNormalized}_zoned`;   // No longer needed for setContractSplit
 
       await ctx.editMessageText(`Setting split to: Managed ${finalInternalPercent}% / Zoned ${finalExternalPercent}%...`).catch(e => console.log("E:", e.message));
       try {
-          const splitterContract = await this.getSplitterContract(chatIdNormalized);
-          if (!splitterContract || splitterContract.target === '0x0000000000000000000000000000000000000000') {
-              throw new Error("Splitter contract not found during set attempt.");
-          }
-          const userIds = [internalId, externalId];
-          const percentages = [finalInternalPercent, finalExternalPercent];
-          console.log(`DEBUG Confirm Split: Executing setSplit with userIds: ${userIds}, percentages: ${percentages}`);
-          const tx = await this.executeTransaction(splitterContract, 'setSplit', [userIds, percentages]);
-          this.waitForTransaction(tx, ctx, `Split ratio set to Managed ${finalInternalPercent}% / Zoned ${finalExternalPercent}%!`);
-          await ctx.reply("✅ Split ratio transaction submitted!").catch(e => console.log("E:", e.message));
-          await this.showHolonsMenu(ctx, false);
+        const splitterContract = await this.getSplitterContract(chatIdNormalized);
+        if (!splitterContract || splitterContract.target === '0x0000000000000000000000000000000000000000') {
+            throw new Error("Splitter contract not found during set attempt.");
+        }
+        // const userIds = [internalId, externalId]; // Not needed for setContractSplit
+        // const percentages = [finalInternalPercent, finalExternalPercent]; // Argument order for setContractSplit is direct
+        console.log(`DEBUG Confirm Split: Executing setContractSplit with internal: ${finalInternalPercent}%, external: ${finalExternalPercent}%`);
+        const tx = await this.executeTransaction(splitterContract, 'setContractSplit', [finalInternalPercent, finalExternalPercent]);
+        this.waitForTransaction(tx, ctx, `Split ratio set to Managed ${finalInternalPercent}% / Zoned ${finalExternalPercent}%!`);
+        await ctx.reply("✅ Split ratio transaction submitted!").catch(e => console.log("E:", e.message));
+        await this.showHolonsMenu(ctx, false);
       } catch (error) {
-          console.error("Error executing setSplit in confirm handler:", error);
-          await ctx.reply(`❌ Error setting split: ${error.message}. Please try again.`).catch(e => console.log("E:", e.message));
+        console.error("Error executing setContractSplit in confirm handler:", error);
+        await ctx.editMessageText(`❌ Error setting split: ${error.message}. Please try again.`, {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "direct_manage_splitter"}]]}}).catch(e => console.log("E:", e.message));
       }
     });
     // === END OF SPLITTER MANAGEMENT ACTION HANDLERS ===
 
-    console.log("DEBUG: setupCallbackHandlers FINISHED");
   }
 
   async showHolonsMenu(ctx, edit = false) {
@@ -2010,6 +2041,7 @@ export default class Holons {
     // We let handleSetSplitCommand handle the reply.
     console.log(`✅ Split validated successfully for chat ${chatID || 'unknown'}! Internal: ${data.internal}%, External: ${data.external}%`);
     // Optionally return the validated data if needed elsewhere
+   // send the transaction to splitter contract
     return { internal: data.internal, external: data.external };
     // return ctx.reply(`✅ Split set successfully!\nInternal: ${data.internal}%\nExternal: ${data.external}%`);
   }
@@ -2049,7 +2081,15 @@ export default class Holons {
       // No need to await if setSplit is purely synchronous validation now
       // Or keep await if it might do async operations later (like DB save)
       const validatedData = await this.setSplit(userTags, percentages, chatID);
-
+      // send the transaction to splitter contract
+      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      const holon = await this.getHolonContract(holonAddress);
+      const tx = await this.executeTransaction(
+        holon,
+        'setSplit',
+        [validatedData, percentages]
+      );
+      await tx.wait();
       // If setSplit completes without throwing, we can reply with success
       // We can use the validatedData if needed
       ctx.reply(`✅ Split set successfully!\nInternal: ${validatedData.internal}%\nExternal: ${validatedData.external}%`);
@@ -2427,6 +2467,7 @@ export default class Holons {
   }
 
   async showZoneManagementView(ctx, mode = 'view') { // Mode: 'view', 'prepare_move', 'prepare_remove'
+    console.log(`DEBUG: showZoneManagementView called with mode: ${mode}, for chat: ${utils.getChatId(ctx)}`);
     const chatID = utils.getChatId(ctx);
     const chatIdNormalized = `chat_${Math.abs(chatID)}`;
     let message = "🔶 Zone Management\n\n";
