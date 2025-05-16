@@ -1,11 +1,7 @@
 import i18next from "i18next";
-
 import fs from 'fs';
 import * as utils from './utilities.js'
-
 import { Scenes } from 'telegraf';
-
-
 export default class Settings {
     constructor(bot, db) {
         this.db = db
