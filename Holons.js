@@ -393,13 +393,10 @@ export default class Holons {
   }
 
   setupCallbackHandlers() {
-    console.log("DEBUG: setupCallbackHandlers STARTING");
-
     // Specific zone-related action handlers
     this.bot.action('zone_prepare_move', async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("Error answering CB query in zone_prepare_move:", e.message));
       try {
-        console.log("DEBUG: zone_prepare_move HANDLER TRIGGERED");
         await this.showZoneManagementView(ctx, 'prepare_move');
       } catch (error) {
         console.error("Error in zone_prepare_move handler:", error);
@@ -410,7 +407,6 @@ export default class Holons {
     this.bot.action('zone_prepare_remove', async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("Error answering CB query in zone_prepare_remove:", e.message));
       try {
-        console.log("DEBUG: zone_prepare_remove HANDLER TRIGGERED");
         await this.showZoneManagementView(ctx, 'prepare_remove');
       } catch (error) {
         console.error("Error in zone_prepare_remove handler:", error);
@@ -421,7 +417,6 @@ export default class Holons {
     this.bot.action(/zone_select_member_to_move_([^_]+)_(\d+)/, async (ctx) => {
       const memberId = ctx.match[1];
       const originalZoneTelegramIndex = ctx.match[2]; // This is the display index (0-5)
-      console.log(`DEBUG: zone_select_member_to_move HANDLER TRIGGERED for member ${memberId} from zone ${originalZoneTelegramIndex}`);
       await this.promptForTargetZone(ctx, memberId, originalZoneTelegramIndex);
     });
 
@@ -430,14 +425,12 @@ export default class Holons {
       const memberId = ctx.match[1];
       const targetZoneTelegramIndex = ctx.match[2];
       const originalZoneTelegramIndex = ctx.match[3];
-      console.log(`DEBUG: zone_execute_move HANDLER TRIGGERED for member ${memberId} to target zone ${targetZoneTelegramIndex} from original zone ${originalZoneTelegramIndex}`);
       await this.executeZoneMove(ctx, memberId, targetZoneTelegramIndex, originalZoneTelegramIndex);
     });
 
     // Correctly placed handler for adding external Holons (moved earlier)
     this.bot.action('zone_add_external_holons_scene_enter', async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("Error answering CBQ for add_external_holons_scene_enter:", e.message));
-      console.log("DEBUG: zone_add_external_holons_scene_enter HANDLER TRIGGERED");
       ctx.scene.enter('add_external_holon_scene');
     });
 
@@ -470,29 +463,22 @@ export default class Holons {
           catch (error) { /* ... error handling ... */ }
           break;
         case 'manage_zones_view': 
-          console.log("DEBUG: Entered 'manage_zones_view' case in /holons_(.+)/ handler for chat:", chatIdNormalized);
           try {
             const zonedContract = await this.getZonedContract(chatIdNormalized);
             if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
-              console.log("DEBUG: 'manage_zones_view' - Zoned contract not found or invalid.");
               // It's important to await ctx.answerCbQuery() before returning or editing, if not done at the top of the main handler
               // await ctx.answerCbQuery().catch(e => console.log("CBQ Error in no zoned func", e.message));
               return ctx.editMessageText("This holon does not have Zoned functionality.", {
                 reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]] }
               }).catch(e => console.log("Error editing message for no zoned functionality:", e.message));
             }
-            console.log("DEBUG: 'manage_zones_view' - About to call showZoneManagementView for chat:", chatIdNormalized);
             await this.showZoneManagementView(ctx);
-            console.log("DEBUG: 'manage_zones_view' - Called showZoneManagementView for chat:", chatIdNormalized);
           } catch (error) {
             // Simplified catch block for now to pass linter
-            console.error("DEBUG: Error caught in 'manage_zones_view' case:", error.message);
             if (error.response && error.response.error_code === 400 && error.response.description.includes('message is not modified')) {
-              console.log('DEBUG: manage_zones_view - Message not modified error specifically.');
             } else {
-              console.error("DEBUG: An unexpected error occurred in 'manage_zones_view' case.");
               // Optionally, provide a generic error message to the user if safe to do so
-              // await ctx.reply("An error occurred while trying to manage zones.").catch(e => console.log("Reply error", e.message));
+               await ctx.reply("An error occurred while trying to manage zones.").catch(e => console.log("Reply error", e.message));
             }
           }
           break;
@@ -508,9 +494,7 @@ export default class Holons {
 
 
     // === SPLITTER MANAGEMENT ACTION HANDLER===
-    console.log("DEBUG: Registering direct_manage_splitter (Scene-less)");
     this.bot.action('direct_manage_splitter', async (ctx) => {
-      console.log("DEBUG: direct_manage_splitter HANDLER TRIGGERED (Scene-less)");
       await ctx.answerCbQuery().catch(e => console.log("Initial Display CBQ Error:", e.message));
       const chatID = utils.getChatId(ctx);
       const chatIdNormalized = `chat_${Math.abs(chatID)}`;
@@ -551,7 +535,6 @@ export default class Holons {
         await ctx.editMessageText("Error accessing splitter details.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("Initial Display Error Edit (contract access): ", e.message));
         return;
       }
-      console.log(`DEBUG: Initial Display - Contract Fetched: internal=${internalPercent}%, external=${externalPercent}%`);
 
       // The UI will adjust based on internalPercent, external will be derived for proposals
       let message = `🔷 SPLITTER MANAGEMENT 🔷\n`;
@@ -576,21 +559,16 @@ export default class Holons {
       await ctx.editMessageText(message, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }).catch(e => console.log("E Splitter initial display edit (Scene-less): ", e.message));
     });
 
-    console.log("DEBUG: Registering splitter_adj_live_... (Scene-less)");
     this.bot.action(/splitter_adj_live_(-?\d+)_(\d+)/, async (ctx) => {
-      console.log("DEBUG: /splitter_adj_live_/ HANDLER TRIGGERED - Callback Data:", ctx.callbackQuery.data);
       try { await ctx.answerCbQuery().catch(e => console.log("Splitter Adjust CBQ Error:", e.message)); } catch (e) { console.log("Error in answerCbQuery top for splitter_adj_live", e); }
       const adjustment = parseInt(ctx.match[1], 10);
       let previousInternalPercent = parseInt(ctx.match[2], 10);
-      console.log(`DEBUG ADJUST HANDLER ENTRY: adjustment = ${adjustment}, previousInternalPercent_raw = '${ctx.match[2]}', previousInternalPercent_parsed = ${previousInternalPercent}`);
       if (isNaN(previousInternalPercent) || previousInternalPercent < 0 || previousInternalPercent > 100) {
-        console.warn(`DEBUG Splitter Adjust: previousInternalPercent '${ctx.match[2]}' was invalid. Defaulting to 50.`);
         previousInternalPercent = 50;
       }
       let newInternalPercent = previousInternalPercent + adjustment;
       if (newInternalPercent < 0) newInternalPercent = 0;
       if (newInternalPercent > 100) newInternalPercent = 100;
-      console.log(`DEBUG ADJUST HANDLER CALC: newInternalPercent = ${newInternalPercent}`);
       const chatID = utils.getChatId(ctx);
       const chatIdNormalized = `chat_${Math.abs(chatID)}`;
       let splitterAddress = "N/A";
@@ -599,16 +577,14 @@ export default class Holons {
         if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
           splitterAddress = splitterContract.target;
         } else {
-          console.error("DEBUG Splitter Adjust: Splitter contract not found during adjustment.");
           await ctx.editMessageText("Error: Splitter details unavailable.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]] } }).catch(e => console.log("E:", e.message)); return;
         }
       } catch (error) {
-        console.error("DEBUG Splitter Adjust: Error getting contract:", error);
-        await ctx.editMessageText("Error: Could not access splitter info.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]] } }).catch(e => console.log("E:", e.message)); return;
+          await ctx.editMessageText("Error: Could not access splitter info.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]] } }).catch(e => console.log("E:", e.message)); return;
       }
       const newExternalPercent = 100 - newInternalPercent;
       let message = `🔷 SPLITTER MANAGEMENT 🔷\nContract: \`${splitterAddress}\`\nAdjust Internal (Managed) / External (Zoned) Split:\n\nProposed: Managed ${newInternalPercent}% / Zoned ${newExternalPercent}%`;
-      console.log(`DEBUG ADJUST HANDLER PRE-EDIT: Message text contains ${newInternalPercent}% / ${newExternalPercent}%. Callbacks use _${newInternalPercent}.`);
+     
       const keyboard = [
         [
           { text: "<< (-10)", callback_data: `splitter_adj_live_-10_${newInternalPercent}` },
@@ -623,23 +599,18 @@ export default class Holons {
       const newReplyMarkup = { inline_keyboard: keyboard };
       try {
         await ctx.editMessageText(message, { parse_mode: 'Markdown', reply_markup: newReplyMarkup });
-        console.log("DEBUG ADJUST HANDLER: editMessageText was called.");
+        
       } catch (error) {
-        if (error.response && error.response.error_code === 400 && error.response.description.includes('message is not modified')) {
-            console.log("DEBUG ADJUST HANDLER: editMessageText failed - 'message not modified' from Telegram.");
-        } else {
             console.error("Error editing message in splitter_adj_live:", error);
-        }
       }
     });
 
     this.bot.action(/splitter_conf_live_set_(\d+)/, async (ctx) => {
-      console.log("DEBUG: /splitter_conf_live_set_/ HANDLER TRIGGERED - Callback Data:", ctx.callbackQuery.data);
       try { await ctx.answerCbQuery().catch(e => console.log("Confirm Split CBQ Error:", e.message)); } catch (e) { console.log("Error in answerCbQuery top for confirm_split", e); }
       
       const finalInternalPercent = parseInt(ctx.match[1],10);
       if (isNaN(finalInternalPercent) || finalInternalPercent < 0 || finalInternalPercent > 100) {
-          console.error(`DEBUG Confirm Split: Invalid finalInternalPercent received: ${ctx.match[1]}`);
+          
         await ctx.editMessageText("Error: Invalid percentage for setting split. Please try again.", {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "direct_manage_splitter"}]]}} ).catch(e => console.log("E:",e.message));
           return;
       }
@@ -658,7 +629,6 @@ export default class Holons {
           }
         // const userIds = [internalId, externalId]; // Not needed for setContractSplit
         // const percentages = [finalInternalPercent, finalExternalPercent]; // Argument order for setContractSplit is direct
-          console.log(`DEBUG Confirm Split: Executing setContractSplit with internal: ${finalInternalPercent}%, external: ${finalExternalPercent}%`);
           const tx = await this.executeTransaction(splitterContract, 'setContractSplit', [finalInternalPercent, finalExternalPercent]);
           this.waitForTransaction(tx, ctx, `Split ratio set to Managed ${finalInternalPercent}% / Zoned ${finalExternalPercent}%!`);
           await ctx.reply("✅ Split ratio transaction submitted!").catch(e => console.log("E:", e.message));
@@ -1100,28 +1070,6 @@ export default class Holons {
         throw new Error(`Method ${method} not found on contract`);
       }
 
-      // Debugging issues with bundles
-      // Log the contract object
-      // console.log("Contract:", contract);
-
-      // // Log the available methods on the contract (to check if the method exists)
-      // console.log("Contract methods:", Object.keys(contract));
-
-      // // Log the method being called
-      // console.log("Method:", method);
-
-      // // Log whether the method exists and is a function
-      // console.log("Is method valid:", typeof contract[method] === "function");
-
-      // // Log the arguments being passed
-      // console.log("Arguments:", args);
-
-      // // Check if args is an array
-      // console.log("Is args an array:", Array.isArray(args));
-
-      // // Check if args is undefined or null
-      // console.log("Args type:", typeof args, args === null ? "null" : "not null");
-      // Debugging issues with bundles
 
       // Log what the encoded data should look like
       const encodedData = contract.interface.encodeFunctionData(method, 
@@ -1691,7 +1639,6 @@ export default class Holons {
       const holonName = `chat_${Math.abs(chatID)}`;
       let holon = await this.getZonedContract(holonName);
 
-      // Debugging section removed
       
       let holonAddress = holon.target;
       if (holonAddress === '0x0000000000000000000000000000000000000000') {
@@ -2660,7 +2607,6 @@ export default class Holons {
   }
 
   async promptForTargetZone(ctx, memberId, originalZoneTelegramIndex) {
-    console.log(`DEBUG: promptForTargetZone called for member ${memberId} from zone ${originalZoneTelegramIndex}`);
     await ctx.answerCbQuery().catch(e => console.log("Error answering CBQ in promptForTargetZone:", e.message));
 
     const chatID = utils.getChatId(ctx);
