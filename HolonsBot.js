@@ -69,6 +69,51 @@ class HolonsBot {
 
   async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
     try {
+      // Initialize i18next
+      const resources = {};
+      const knownLanguages = ['en', 'it', 'es', 'fr', 'ru', 'de']; // All languages the bot supports
+
+      // Load dedicated language files
+      for (const lang of knownLanguages) {
+        const filePath = `./data/locales/${lang}.json`;
+        if (fs.existsSync(filePath)) {
+          try {
+            resources[lang] = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            console.log(`Loaded dedicated locale file for ${lang}`);
+          } catch (e) {
+            console.error(`Error reading or parsing ${filePath}:`, e);
+            resources[lang] = { translation: {} }; // Fallback to empty translation
+          }
+        } else {
+          // If a language file doesn't exist, initialize with an empty translation
+          console.warn(`Dedicated locale file not found for ${lang} at ${filePath}. Initializing empty translations.`);
+          resources[lang] = { translation: {} };
+        }
+      }
+
+      // Ensure all known languages have at least an empty translation namespace if not loaded
+      // This also handles cases where a file might exist but is empty or malformed, leading to an empty resources[lang]
+      for (const lang of knownLanguages) {
+        if (!resources[lang]) { // Should be redundant due to the else block above, but good for safety
+          resources[lang] = { translation: {} };
+          console.log(`Ensuring basic structure for ${lang} as it was not found in dedicated files.`);
+        } else if (!resources[lang].translation) {
+          // If a dedicated file was loaded but it MISSED a translation key (e.g. en.json = { week: [] })
+          // or if it was initialized as {} in the catch block or missing file block.
+          resources[lang].translation = {};
+           console.log(`Ensuring translation namespace for ${lang}.`);
+        }
+      }
+
+      await i18next.init({
+        resources,
+        fallbackLng: 'en',
+        debug: process.env.MODE === 'development',
+        interpolation: {
+          escapeValue: false, // Important for rendering HTML/Markdown in messages
+        }
+      });
+
       this.telebot = new Telegraf(telegramtoken);
 
       // Initialize stage with ALL scenes at once
@@ -123,13 +168,18 @@ class HolonsBot {
     this.ui = new UI(this.telebot, this.db, this.settings);
     await this.ui.init();
 
+    this.expenses = new Expenses(this.telebot, this.db, this.ui, this.settings);
+    
+    if (this.ui && this.expenses) {
+        this.ui.setExpensesInstance(this.expenses);
+    }
+
     this.lunation = new Lunation(this.telebot);
     this.shopping = new Shopping(this.telebot, this.db, this.settings);
 
     this.bigtalk = new Bigtalk(this.telebot, this.settings);
     this.library = new Library(this.telebot, this.db);
     this.users = new Users(this.telebot, this.db);
-    this.expenses = new Expenses(this.telebot, this.db, this.ui, this.settings);
     this.holons = new Holons(this.telebot, this.db, this.settings);
     this.h3 = new H3(this.telebot, this.db, this.settings);
     this.tags = new Tags(this.telebot, this.db);

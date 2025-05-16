@@ -18,6 +18,7 @@ class UI {
     this.bot = bot;
     this.db = db;
     this.settings = settings
+    this.expensesInstance = null;
     //=========== UI COMMANDS ===============
 
     //Set up a command to display the appreciation score for each user
@@ -54,6 +55,10 @@ class UI {
 
   async init() {
 
+  }
+
+  setExpensesInstance(expensesInstance) {
+    this.expensesInstance = expensesInstance;
   }
 
   async getFederatedUsers(chatID) {
@@ -135,20 +140,37 @@ class UI {
 
   async leaderboard(ctx) {
     let chatID = ctx.message.chat.id
-    const federation = await this.settings.getFederation(chatID)
-    const valueEquation = await this.settings.getValueEquation(chatID)
+    const currentSettings = await this.settings.getSettings(chatID) // Get all settings
+    const valueEquation = currentSettings.valueEquation
+    const currencies = currentSettings.currencies || []
     let users = await this.getFederatedUsers(chatID)
     const language = await this.settings.getLanguage(chatID)
 
+    // Assuming Expenses class instance is available via this.bot.expenses
+    // If not, this needs to be instantiated or passed to UI class constructor
+    const expensesInstance = this.expensesInstance;
+    if (!expensesInstance) {
+        console.error('Expenses instance not available in UI.js for leaderboard calculation.');
+        ctx.reply('Error calculating leaderboard: Expenses module not accessible.');
+        return;
+    }
+
     // Create a table header
-    this.getRankTable(users, valueEquation, chatID).then((path) => {
-      ctx.replyWithPhoto(
-        { source: fs.createReadStream(path) },
-        Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-            `https://dashboard.holons.io/${chatID}/status`)
-        ])
-      )
+    this.getRankTable(users, valueEquation, currencies, chatID, expensesInstance).then((path) => {
+      if (path) {
+        ctx.replyWithPhoto(
+          { source: fs.createReadStream(path) },
+          Markup.inlineKeyboard([
+            Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+              `https://dashboard.holons.io/${chatID}/status`)
+          ])
+        ).catch(err => console.error('Error sending leaderboard photo:', err));
+      } else {
+        ctx.reply(i18next.t('leaderboardgenerror', {lng: language}) || 'Could not generate leaderboard image.');
+      }
+    }).catch(err => {
+        console.error('Error in getRankTable promise chain:', err);
+        ctx.reply(i18next.t('leaderboarderror', {lng: language}) || 'An error occurred while generating the leaderboard.');
     });
     return;
   }
@@ -568,38 +590,57 @@ class UI {
   }
 
 
-  async getRankTable(users, equation, chatID) {
+  async getRankTable(users, equation, currencies, chatID, expensesInstance) {
     const language = await this.settings.getLanguage(chatID)
     const rows = []
-    const sortedUsers = Object.keys(users).sort((a, b) => {
-      return (users[b].initiated.length * equation.initiated + users[b].completed.length * equation.completed + 
-        users[b].sent * equation.sent + users[b].received * equation.received + users[b].hours * equation.hours + 
-        users[b].collaboration * equation.collaboration + users[b].wants.length * equation.wants + 
-        users[b].offers.length * equation.offers ) -
-        (users[a].initiated.length * equation.initiated + users[a].completed.length * equation.completed + 
-        users[a].sent * equation.sent + users[a].received * equation.received + users[a].hours * equation.hours + 
-        users[a].collaboration * equation.collaboration + users[a].wants.length * equation.wants + 
-        users[a].offers.length * equation.offers )
-    });
+
+    // Calculate scores first, then sort
+    const userScores = [];
+    for (const userId in users) {
+        const user = users[userId];
+        if (!user || user.id === undefined) continue; // Skip if user or user.id is undefined
+
+        let score = (user.initiated && user.initiated.length * equation.initiated || 0) +
+            (user.completed && user.completed.length * equation.completed || 0) +
+            (user.sent * equation.sent || 0) +
+            (user.received * equation.received || 0) +
+            (user.hours * equation.hours || 0) +
+            (user.collaboration * equation.collaboration || 0) +
+            (user.wants && user.wants.length * equation.wants || 0) +
+            (user.offers && user.offers.length * equation.offers || 0);
+
+        let currencyScoreContribution = 0;
+        if (currencies && currencies.length > 0 && expensesInstance) {
+            for (const currencyName of currencies) {
+                const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                if (currencyKey && equation[currencyKey] !== undefined) {
+                    try {
+                        const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currencyKey);
+                        const weight = equation[currencyKey] || 0;
+                        currencyScoreContribution += balance * weight;
+                    } catch (e) {
+                        console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
+                    }
+                }
+            }
+        }
+        score += currencyScoreContribution;
+        userScores.push({ ...user, score });
+    }
+
+    const sortedUsers = userScores.sort((a, b) => b.score - a.score);
 
     for (let i = 0; i < sortedUsers.length; i++) {
-      const user = users[sortedUsers[i]]
-      const score = user.initiated.length * equation.initiated +
-        user.completed.length * equation.completed +
-        user.sent * equation.sent +
-        user.received * equation.received +
-        user.hours * equation.hours +
-        user.collaboration * equation.collaboration +
-        user.wants.length * equation.wants +
-        user.offers.length * equation.offers
+      const user = sortedUsers[i]
+      // Score is already calculated and part of the user object in sortedUsers
       const row = `<tr>
         <th scope="row">${i + 1}</th>
         <th>${getDisplayName(user)}</th>
-        <th>${user.initiated.length}</th>
-        <th>${user.completed.length}</th>
-        <th>${user.sent}</th>
-        <th>${user.received}</th>
-        <th>${score}</th>
+        <th>${user.initiated && user.initiated.length || 0}</th>
+        <th>${user.completed && user.completed.length || 0}</th>
+        <th>${user.sent || 0}</th>
+        <th>${user.received || 0}</th>
+        <th>${user.score.toFixed(2)}</th> 
       </tr>`
 
       rows.push(row)

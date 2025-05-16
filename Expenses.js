@@ -98,39 +98,55 @@ export default class Expenses {
         }
 
         const amount = parseFloat(args[0]);
-        let currency = args[1];
-        // valid currency check
-        currency = currency.toLowerCase().replace(/s$/, '');
-        currency = currency.replace(/[^a-z]/g, '');
-        if (!(currency == 'euro' || currency == 'hour' || currency == 'dollar'))
-            return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
-
+        let currencyInput = args[1]; // Renamed to currencyInput
         const description = args.slice(2).join(' ');
-        // TODO WARNING!!: messageID+1 is a dirty hack to get the id of the reply message as id of the expense. This will break if another message is sent at the same time
-        // TODO: BOT ID IS HARDCODED, switch to either chatID or variable bot id 
-        const expense = await this.addExpense(messageID + 1, chatID, amount, currency, description, ctx.from.id, [6152474485]);
-        ctx.reply(await this.createMessage(chatID, expense), Markup.inlineKeyboard(
-            [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-        ));
+
+        // Validate currency against settings
+        const currentSettings = await this.settings.getSettings(chatID);
+        const allowedCurrencies = currentSettings.currencies || [];
+        
+        // Normalize input currency (lowercase, singular - assuming singular is stored)
+        const normalizedCurrency = currencyInput.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, ''); 
+
+        if (allowedCurrencies.length > 0 && !allowedCurrencies.includes(normalizedCurrency)) {
+            return ctx.reply(i18next.t('expensecurrencyinvalid', {
+                lng: language,
+                currency: currencyInput,
+                allowed_currencies: allowedCurrencies.join(', ')
+            }) || `Invalid currency: ${currencyInput}. Allowed currencies are: ${allowedCurrencies.join(', ')}`);
+        } else if (allowedCurrencies.length === 0 && normalizedCurrency.length === 0) {
+            // If no currencies are set in settings, and input is empty after normalization (e.g. "123 !!!")
+             return ctx.reply(i18next.t('expenseusage', { command: command, lng: language }));
+        }
+
+
+        const expense = await this.addExpense(messageID + 1, chatID, amount, normalizedCurrency, description, ctx.from.id, [6152474485]);
+        if (expense) {
+            ctx.reply(await this.createMessage(chatID, expense), Markup.inlineKeyboard(
+                [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
+            ));
+        } else {
+            ctx.reply(i18next.t('expenseaddfail', {lng: language, error: 'Invalid amount or data.'}) || 'Failed to add expense. Ensure amount is valid.');
+        }
     };
 
     async addExpense(messageID, chatID, amount, currency, description, paidBy, splitWith) {
         //do health check on currency: remove uppercase, check if it's a valid currency, remove plural
-        if (isNaN(amount) || amount <= 0 || currency == null || currency.length == 0) {
+        if (isNaN(amount) || amount <= 0 ) { // Currency validation moved to 'spent'
             return false;
         }
 
-        amount = parseFloat(amount);
+        // amount = parseFloat(amount); // Already float from 'spent'
 
-        currency = currency.toLowerCase().replace(/s$/, '');
-        currency = currency.replace(/[^a-z]/g, '');
-        //remove the word "for" or "per" from the description at the beginning
-        description = description.replace(/^for /, ''); //EN
-        description = description.replace(/^per /, '');
-        description = description.replace(/^voor /, '');
-        description = description.replace(/^für /, '');
-        description = description.replace(/^por /, '');
-        description = description.replace(/^pour /, '');
+        // currency is already normalized (lowercase, singular, no special chars) by the caller (`spent` method)
+        // description = description.replace(/^for /, ''); //EN (already done in `spent` if needed, but usually fine here)
+        description = description.replace(/^for /i, ''); // Case-insensitive
+        description = description.replace(/^per /i, '');
+        description = description.replace(/^voor /i, '');
+        description = description.replace(/^für /i, '');
+        description = description.replace(/^por /i, '');
+        description = description.replace(/^pour /i, '');
+
 
         const expense = {
             id: messageID,
@@ -297,20 +313,18 @@ export default class Expenses {
 
     async calculateCredits(chatID, currency) {
         // Validate and normalize currency input
-        if (currency == null || currency.length == 0)
-            return false;
-        if (typeof currency === 'string' || currency instanceof String) {
-            currency = currency.toLowerCase().replace(/s$/, '');
-        } else {
-            console.error('currency is not a string:', currency);
-            // Potentially return an error or use a default value
-            return false; 
+        if (!currency || typeof currency !== 'string' || currency.length === 0) {
+            console.error('Invalid currency provided to calculateCredits:', currency);
+            return { creditMatrix: [], userNames: [] };
         }
-        currency = currency.replace(/[^a-z]/g, '');
+        
+        const requestedCurrencyNormalized = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
 
         // Fetch data from the database
         let expenses = await this.db.getAll(chatID + '/expenses');
         let users = await this.db.getAll(chatID + '/users');
+        const currentSettings = await this.settings.getSettings(chatID); 
+        const allowedCurrenciesSetting = currentSettings.currencies || [];
 
         // Early exit if no users are found
         if (!users || users.length === 0) {
@@ -324,7 +338,15 @@ export default class Expenses {
         // Process each expense to calculate credits
         expenses.forEach(expense => {
             // Ensure the expense currency matches the requested currency (case-insensitive)
-            if (expense.currency && expense.currency.toLowerCase() === currency.toLowerCase()) {
+            const expenseCurrencyNormalized = expense.currency ? expense.currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '') : '';
+            
+            if (expenseCurrencyNormalized === requestedCurrencyNormalized) {
+                // If allowed currencies are defined in settings, ensure this expense's currency is one of them
+                if (allowedCurrenciesSetting.length > 0 && !allowedCurrenciesSetting.includes(expenseCurrencyNormalized)) {
+                    console.warn(`Skipping expense ${expense.id} for credit calculation; its currency '${expense.currency}' (normalized: '${expenseCurrencyNormalized}') is not in the allowed list: [${allowedCurrenciesSetting.join(', ')}]`);
+                    return; 
+                }
+
                 // Ensure splitWith is an array, default to empty if not
                 const splitWithArray = Array.isArray(expense.splitWith) ? expense.splitWith : [];
                 const numberOfSplitters = splitWithArray.length > 0 ? splitWithArray.length : 1;
@@ -398,6 +420,36 @@ export default class Expenses {
             return userId.toString();
         }
         return utils.getDisplayName(userInfo);
+    }
+
+    async getUserCurrencyBalance(chatID, userID, currencyName) {
+        const expenses = await this.db.getAll(chatID + '/expenses');
+        let netBalance = 0;
+        const normalizedTargetCurrency = currencyName.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
+
+        if (!expenses || expenses.length === 0) {
+            return 0;
+        }
+
+        for (const expense of expenses) {
+            const expenseCurrencyNormalized = expense.currency ? expense.currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '') : '';
+
+            if (expenseCurrencyNormalized === normalizedTargetCurrency) {
+                const numSplitters = expense.splitWith && expense.splitWith.length > 0 ? expense.splitWith.length : 1;
+                const share = expense.amount / numSplitters;
+                let userInSplit = expense.splitWith ? expense.splitWith.includes(userID) : false;
+
+                if (expense.paidBy === userID) {
+                    netBalance += expense.amount; // User paid the full amount
+                    if (userInSplit) {
+                        netBalance -= share; // Subtract their own share
+                    }
+                } else if (userInSplit) {
+                    netBalance -= share; // User is in split but didn't pay, so they owe their share
+                }
+            }
+        }
+        return netBalance;
     }
 }
 

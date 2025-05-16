@@ -1,17 +1,15 @@
 import i18next from "i18next";
+
 import fs from 'fs';
-import locales from "./data/locales.json" assert { type: "json" };
 import * as utils from './utilities.js'
-import { Markup } from 'telegraf';
+
 import { Scenes } from 'telegraf';
-import exp from "constants";
+
 
 export default class Settings {
     constructor(bot, db) {
         this.db = db
         this.bot = bot
-
-
         // Create scenes for text input
         this.purposeScene = new Scenes.BaseScene('purpose_scene');
         this.purposeScene.enter(async (ctx) => {
@@ -236,7 +234,7 @@ export default class Settings {
                 settings.roles = [];
             }
 
-            // Append new roles instead of replacing existing ones
+            // Append new roles instead of replacing
             settings.roles.push(...newRoles);
             await this.setSettings(settings);
 
@@ -715,8 +713,11 @@ export default class Settings {
 
         this.bot.command(['valueweights', 'weights', 'weight', 'equation'], async (ctx) => {
             if (utils.isAdmin(ctx)) {
-                let weights = await this.getValueEquation(utils.getChatId(ctx))
-                ctx.reply('Value Equation:', this.equationInlineKeyboard(weights));
+                let chatID = utils.getChatId(ctx)
+                let settings = await this.getSettings(chatID) // Fetch full settings
+                let weights = settings.valueEquation
+                let currencies = settings.currencies || []
+                ctx.reply(i18next.t('settings_value_equation_weights'), this.equationInlineKeyboard(weights, currencies));
             } else {
                 ctx.reply('Only a chat admin can perform this action')
             }
@@ -822,7 +823,7 @@ export default class Settings {
             let settings = await this.getSettings(chatID);
 
             // Handle array settings - always use the new UI
-            if (['values', 'domains', 'roles', 'purpose'].includes(action)) {
+            if (['values', 'domains', 'roles', 'purpose', 'currencies'].includes(action)) {
                 await this.showArraySettingMenu(ctx, action);
                 return;
             }
@@ -874,9 +875,12 @@ export default class Settings {
                     }).catch(e => console.log('Error in timezone menu:', e));
                     break;
                 case 'equation':
-                    let weights = await this.getValueEquation(chatID);
+                    let chatIDForEq = ctx.callbackQuery.message.chat.id;
+                    let settingsForEq = await this.getSettings(chatIDForEq); // Fetch full settings
+                    let weightsForEq = settingsForEq.valueEquation;
+                    let currenciesForEq = settingsForEq.currencies || [];
                     await ctx.editMessageText(i18next.t('settings_equation_title'), {
-                        reply_markup: this.equationInlineKeyboard(weights)
+                        reply_markup: this.equationInlineKeyboard(weightsForEq, currenciesForEq)
                     }).catch((err) => { console.log(err) });
                     break;
                 case 'federation':
@@ -928,7 +932,7 @@ export default class Settings {
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
 
-            if (['en', 'it', 'es', 'fr'].includes(language)) {
+            if (['en', 'it', 'es', 'fr', 'ru', 'de'].includes(language)) {
                 settings.language = language;
                 await this.setSettings(settings);
                 await i18next.changeLanguage(language);
@@ -985,9 +989,11 @@ export default class Settings {
         this.bot.action(/settings_equation_change/, async (ctx) => {
             await ctx.answerCbQuery();
             const chatID = ctx.callbackQuery.message.chat.id;
-            let weights = await this.getValueEquation(chatID);
+            let settings = await this.getSettings(chatID); // Fetch full settings
+            let weights = settings.valueEquation;
+            let currencies = settings.currencies || [];
             await ctx.editMessageText(i18next.t('settings_equation_title'), {
-                reply_markup: this.equationInlineKeyboard(weights)
+                reply_markup: this.equationInlineKeyboard(weights, currencies)
             }).catch((err) => { console.log(err) });
         });
 
@@ -1008,13 +1014,16 @@ export default class Settings {
 
             await this.setValueEquation(chatID, weights);
 
-            await ctx.editMessageText('Value Equation:', {
-                reply_markup: this.equationInlineKeyboard(weights)
+            // Need to pass currencies to equationInlineKeyboard
+            let updatedSettings = await this.getSettings(chatID);
+            let updatedCurrencies = updatedSettings.currencies || [];
+            await ctx.editMessageText(i18next.t('settings_value_equation_weights'), {
+                reply_markup: this.equationInlineKeyboard(weights, updatedCurrencies)
             }).catch((err) => { console.log(err) });
         });
 
         // Add array setting action handlers
-        ['values', 'domains', 'roles'].forEach(type => {
+        ['values', 'domains', 'roles', 'currencies'].forEach(type => {
             // Add change handler for entering add scene
             this.bot.action(`settings_${type}_change`, async (ctx) => {
                 await ctx.answerCbQuery();
@@ -1067,7 +1076,7 @@ export default class Settings {
         });
 
         // Handle array setting actions
-        this.bot.action(/settings_(values|domains|roles|purpose)$/, async (ctx) => {
+        this.bot.action(/settings_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type);
@@ -1084,21 +1093,21 @@ export default class Settings {
         });
 
         // Handle entering remove mode
-        this.bot.action(/enter_remove_mode_(values|domains|roles|purpose)$/, async (ctx) => {
+        this.bot.action(/enter_remove_mode_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type, true);
         });
 
         // Handle exiting remove mode
-        this.bot.action(/exit_remove_mode_(values|domains|roles|purpose)$/, async (ctx) => {
+        this.bot.action(/exit_remove_mode_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type, false);
         });
 
         // Handle removing items
-        this.bot.action(/remove_(values|domains|roles|purpose)_(\d+)$/, async (ctx) => {
+        this.bot.action(/remove_(values|domains|roles|purpose|currencies)_(\d+)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
             const index = parseInt(ctx.match[2]);
@@ -1144,6 +1153,17 @@ export default class Settings {
             } catch (error) {
                 console.error('Error entering roles add scene:', error);
                 return ctx.reply('Error adding roles. Please try again later.');
+            }
+        });
+
+        this.bot.action('settings_currencies_change', async (ctx) => {
+            console.log('CURRENCIES ADD button clicked');
+            await ctx.answerCbQuery();
+            try {
+                return await ctx.scene.enter('add_array_item_scene', { type: 'currencies' });
+            } catch (error) {
+                console.error('Error entering currencies add scene:', error);
+                return ctx.reply('Error adding currencies. Please try again later.');
             }
         });
 
@@ -1265,34 +1285,76 @@ export default class Settings {
         });
 
         this.bot.command('addroles', async (ctx) => {
-            const text = ctx.message.text.replace('/addroles', '').trim();
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length === 0) { 
+                await ctx.reply(i18next.t('settings_usage_array', { 
+                    lng: language, 
+                    command: '/addroles',
+                    example: '/addroles role1, role2, role3'
+                }));
+                return;
+            }
+
+            const newRoles = args.join(' ').split(/[\n,]+/).map(r => r.trim()).filter(r => r);
+            let settings = await this.getSettings(chatID);
+            if (!settings.roles) settings.roles = [];
+            
+            let addedCount = 0;
+            newRoles.forEach(role => {
+                if (!settings.roles.includes(role)) {
+                    settings.roles.push(role);
+                    addedCount++;
+                }
+            });
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_array_updated', { 
+                lng: language, 
+                field: i18next.t('settings_roles', { lng: language }),
+                count: addedCount 
+            }));
+        });
+
+        // Add command for adding currencies
+        this.bot.command('addcurrencies', async (ctx) => {
+            const text = ctx.message.text.replace('/addcurrencies', '').trim();
             if (!text) {
-                await ctx.reply('Please provide roles to add, like: /addroles role1, role2, role3');
+                await ctx.reply('Please provide currencies to add, like: /addcurrencies EUR, USD, JPY. Always use singular form.');
                 return;
             }
 
             const chatID = ctx.chat.id;
-            const newRoles = text.split(/[,\n]/)
-                .map(r => r.trim())
-                .filter(r => r !== '');
+            const newCurrencies = text.split(/[\n,]+/).map(c => c.trim().toLowerCase()).filter(c => c !== '');
 
             let settings = await this.getSettings(chatID);
 
-            // Initialize roles array if it doesn't exist
-            if (!settings.roles) {
-                settings.roles = [];
+            if (!settings.currencies) {
+                settings.currencies = [];
             }
 
-            // Append new roles instead of replacing
-            settings.roles.push(...newRoles);
-
+            newCurrencies.forEach(currency => {
+                if (!settings.currencies.includes(currency)) {
+                    settings.currencies.push(currency);
+                }
+            });
+            
             await this.setSettings(settings);
-            await ctx.reply(`Added ${newRoles.length} roles: ${newRoles.join(', ')}`);
-            await this.showArraySettingMenu(ctx, 'roles', false);
+
+            await ctx.reply(`Added currencies: ${newCurrencies.join(', ')}. Ensure these are in singular form.`);
+            await this.showArraySettingMenu(ctx, 'currencies', false);
         });
 
         // Add help messages for adding items
-        this.bot.action(/help_add_(values|domains|roles|purpose)$/, async (ctx) => {
+        this.bot.action(/help_add_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
             await ctx.answerCbQuery();
             const type = ctx.match[1];
 
@@ -1312,6 +1374,8 @@ export default class Settings {
                             return await ctx.scene.enter('roles_scene');
                         case 'purpose':
                             return await ctx.scene.enter('purpose_scene');
+                        case 'currencies':
+                            return await ctx.scene.enter('add_array_item_scene', { type: 'currencies' });
                     }
                 } catch (error) {
                     console.error(`Error entering ${type} scene:`, error);
@@ -1329,16 +1393,18 @@ export default class Settings {
                 const commandMap = {
                     'values': '/addvalues',
                     'domains': '/adddomains',
-                    'roles': '/addroles'
+                    'roles': '/addroles',
+                    'currencies': '/addcurrencies'
                 };
 
                 const exampleMap = {
                     'values': 'Collaboration, Innovation, Sustainability',
                     'domains': 'Community Management, Content Creation, Development',
-                    'roles': 'Facilitator, Developer, Designer'
+                    'roles': 'Facilitator, Developer, Designer',
+                    'currencies': 'euro, dollar, yen (use singular)'
                 };
 
-                message = `To add ${type}, use the command:\n\n${commandMap[type]} ${exampleMap[type]}\n\nYou can separate multiple items with commas.`;
+                message = `To add ${type}, use the command:\n\n${commandMap[type]} ${exampleMap[type]}\n\nYou can separate multiple items with commas. For currencies, please always use the singular form (e.g., euro not euros).`;
             }
 
             await ctx.reply(message);
@@ -1657,6 +1723,15 @@ export default class Settings {
             });
         });
 
+        this.bot.action('settings_currencies_change', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('array_input_scene', {
+                field: 'currencies',
+                title: i18next.t('settings_currencies', { lng: await this.getLanguage(ctx.chat.id), defaultValue: "Currencies" }),
+                command: '/addcurrencies'
+            });
+        });
+
         this.bot.action('help_add_purpose', async (ctx) => {
             await ctx.answerCbQuery();
             await ctx.scene.enter('text_input_scene', {
@@ -1672,6 +1747,15 @@ export default class Settings {
                 field: 'hex',
                 title: i18next.t('settings_hex', { lng: await this.getLanguage(ctx.chat.id) }),
                 command: '/sethex'
+            });
+        });
+
+        this.bot.action('help_add_currencies', async (ctx) => {
+            await ctx.answerCbQuery();
+            await ctx.scene.enter('array_input_scene', {
+                field: 'currencies',
+                title: i18next.t('settings_currencies', { lng: await this.getLanguage(ctx.chat.id), defaultValue: "Currencies" }),
+                command: '/addcurrencies'
             });
         });
 
@@ -1849,7 +1933,7 @@ export default class Settings {
             }
 
             const args = ctx.message.text.split(' ').slice(1);
-            if (args.length < 2) {
+            if (args.length === 0) { // Corrected to check if any role is provided
                 await ctx.reply(i18next.t('settings_usage_array', { 
                     lng: language, 
                     command: '/addroles',
@@ -1858,16 +1942,63 @@ export default class Settings {
                 return;
             }
 
-            const newRoles = args.slice(1).join(' ').split(/[,\n]/).map(r => r.trim()).filter(r => r);
+            const newRoles = args.join(' ').split(/[\n,]+/).map(r => r.trim()).filter(r => r);
             let settings = await this.getSettings(chatID);
             if (!settings.roles) settings.roles = [];
-            settings.roles.push(...newRoles);
+            
+            let addedCount = 0;
+            newRoles.forEach(role => {
+                if (!settings.roles.includes(role)) {
+                    settings.roles.push(role);
+                    addedCount++;
+                }
+            });
             await this.setSettings(settings);
             
             await ctx.reply(i18next.t('settings_array_updated', { 
                 lng: language, 
                 field: i18next.t('settings_roles', { lng: language }),
-                count: newRoles.length 
+                count: addedCount 
+            }));
+        });
+
+        this.bot.command('addcurrencies', async (ctx) => {
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const isAdmin = await utils.isAdmin(ctx);
+            
+            if (!isAdmin) {
+                await ctx.reply(i18next.t('settings_admin_only', { lng: language }));
+                return;
+            }
+
+            const args = ctx.message.text.split(' ').slice(1);
+            if (args.length === 0) { // Changed to check if any currency is provided
+                await ctx.reply(i18next.t('settings_usage_array', { 
+                    lng: language, 
+                    command: '/addcurrencies',
+                    example: '/addcurrencies euro, dollar (use singular)'
+                }));
+                return;
+            }
+
+            const newCurrencies = args.join(' ').split(/[\n,]+/).map(c => c.trim().toLowerCase()).filter(c => c); // Store in lowercase singular
+            let settings = await this.getSettings(chatID);
+            if (!settings.currencies) settings.currencies = [];
+            
+            let addedCount = 0;
+            newCurrencies.forEach(currency => {
+                if (!settings.currencies.includes(currency)) {
+                    settings.currencies.push(currency);
+                    addedCount++;
+                }
+            });
+            await this.setSettings(settings);
+            
+            await ctx.reply(i18next.t('settings_array_updated', { 
+                lng: language, 
+                field: i18next.t('settings_currencies', { lng: language, defaultValue: "Currencies" }),
+                count: addedCount 
             }));
         });
     }
@@ -1902,49 +2033,57 @@ export default class Settings {
 
 
     // TODO: move to utilities or UI
-    equationInlineKeyboard(weights) {
-        return {
-            inline_keyboard: [
-                [{ text: i18next.t('settings_value_equation_weights'), callback_data: ' ' }],
-                [{ text: '✏️ ' + i18next.t('settings_edit'), callback_data: 'settings_equation_change' }],
-                [
-                    { text: i18next.t('settings_initiated'), callback_data: 'null' },
-                    { text: '<', callback_data: 'decrement_initiated' },
-                    { text: weights.initiated.toString(), callback_data: 'null' },
-                    { text: '>', callback_data: 'increment_initiated' }
-                ],
-                [
-                    { text: i18next.t('settings_completed'), callback_data: 'null' },
-                    { text: '<', callback_data: 'decrement_completed' },
-                    { text: weights.completed.toString(), callback_data: 'null' },
-                    { text: '>', callback_data: 'increment_completed' }
-                ],
-                [
-                    { text: i18next.t('settings_sent'), callback_data: 'null' },
-                    { text: '<', callback_data: 'decrement_sent' },
-                    { text: weights.sent.toString(), callback_data: 'null' },
-                    { text: '>', callback_data: 'increment_sent' }
-                ],
-                [
-                    { text: i18next.t('settings_received'), callback_data: 'null' },
-                    { text: '<', callback_data: 'decrement_received' },
-                    { text: weights.received.toString(), callback_data: 'null' },
-                    { text: '>', callback_data: 'increment_received' }
-                ],
-                [
-                    { text: i18next.t('settings_hours'), callback_data: 'null' },
-                    { text: '<', callback_data: 'decrement_hours' },
-                    { text: weights.hours.toString(), callback_data: 'null' },
-                    { text: '>', callback_data: 'increment_hours' }
-                ],
-                [
-                    { text: i18next.t('settings_money'), callback_data: 'null' },
-                    { text: '<', callback_data: 'decrement_money' },
-                    { text: weights.money.toString(), callback_data: 'null' },
-                    { text: '>', callback_data: 'increment_money' }
-                ],
-                [{ text: i18next.t('settings_back'), callback_data: 'settings_back' }]
+    equationInlineKeyboard(weights, currencies = []) { // Added currencies parameter
+        const language = i18next.language; // Or get from settings if preferred
+        let inlineKeyboard = [
+            [{ text: i18next.t('settings_value_equation_weights', {lng: language} ), callback_data: ' ' }],
+            // Removed edit button as per previous structure, actions directly modify
+            // [{ text: '✏️ ' + i18next.t('settings_edit', {lng: language}), callback_data: 'settings_equation_change' }],
+            [
+                { text: i18next.t('settings_initiated', {lng: language}), callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_initiated' },
+                { text: weights.initiated !== undefined ? weights.initiated.toString() : '0', callback_data: 'null' },
+                { text: '>', callback_data: 'increment_initiated' }
+            ],
+            [
+                { text: i18next.t('settings_completed', {lng: language}), callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_completed' },
+                { text: weights.completed !== undefined ? weights.completed.toString() : '0', callback_data: 'null' },
+                { text: '>', callback_data: 'increment_completed' }
+            ],
+            [
+                { text: i18next.t('settings_sent', {lng: language}), callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_sent' },
+                { text: weights.sent !== undefined ? weights.sent.toString() : '0', callback_data: 'null' },
+                { text: '>', callback_data: 'increment_sent' }
+            ],
+            [
+                { text: i18next.t('settings_received', {lng: language}), callback_data: 'null' },
+                { text: '<', callback_data: 'decrement_received' },
+                { text: weights.received !== undefined ? weights.received.toString() : '0', callback_data: 'null' },
+                { text: '>', callback_data: 'increment_received' }
             ]
+        ];
+
+        // Dynamically add currencies from the settings.currencies array
+        if (currencies && Array.isArray(currencies)) {
+            currencies.forEach(currency => {
+                const currencyKey = currency.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                if (currencyKey) { // Ensure the key is valid
+                    inlineKeyboard.push([
+                        { text: currency.toUpperCase(), callback_data: 'null' }, // Display currency name
+                        { text: '<', callback_data: `decrement_${currencyKey}` },
+                        { text: weights[currencyKey] !== undefined ? weights[currencyKey].toString() : '0', callback_data: 'null' },
+                        { text: '>', callback_data: `increment_${currencyKey}` }
+                    ]);
+                }
+            });
+        }
+
+        inlineKeyboard.push([{ text: i18next.t('settings_back', {lng: language}), callback_data: 'settings_back' }]);
+
+        return {
+            inline_keyboard: inlineKeyboard
         };
     }
 
@@ -1964,32 +2103,50 @@ export default class Settings {
             values: [],
             purpose: '',
             domains: [],
+            currencies: [],
             valueEquation: {
                 initiated: 1,
                 completed: 1,
                 sent: 1,
                 received: 1,
-                hours: 1,
                 collaboration: 1,
                 wants: 1,
-                offers: 1,
-                money: 1
+                offers: 1
             }
         }
     }
-
-    async init() {
-        i18next
-            .init({
-                lng: 'en',
-                resources: locales,
-                fallbackLng: 'en',
-            });
+    async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
+        try {
+          // Initialize i18next
+          // const knownLanguages = ['en', 'it', 'es', 'fr', 'ru', 'de']; // All languages the bot supports
+    
+          // await i18next
+          //   .use(Backend)
+          //   .init({
+          //     fallbackLng: 'en',
+          //     supportedLngs: knownLanguages,
+          //     ns: ['translation'], // Assuming all keys are under 'translation'
+          //     defaultNS: 'translation',
+          //     backend: {
+          //       loadPath: './data/locales/{{lng}}.json', // Points to the language file
+          //                                                     // i18next will look for the 'translation' namespace within this file.
+          //     },
+          //     // Preload all supported languages so that every locale file is loaded at startup
+          //     preload: knownLanguages,
+          //     interpolation: {
+          //       escapeValue: false, // Important for rendering HTML/Markdown in messages
+          //     },
+          //     debug: process.env.MODE === 'development',
+          //   });
+        } catch (error) {
+            console.error('Error initializing i18next:', error);
+        }
     }
 
     // get language from the database
     async getLanguage(chatID) {
         let settings = await this.getSettings(chatID)
+        console.log(`Settings.js: getLanguage(chatID: ${chatID}) returning: ${settings.language}`); // Added for debugging
         return settings.language
     }
 
@@ -2001,14 +2158,15 @@ export default class Settings {
             ctx.reply('Please specify the language. Example: /setLanguage en')
             return
         }
-        if (language !== 'en' && language !== 'it' && language !== 'es' && language !== 'fiobbo') {
-            ctx.reply('Please specify "en", "it", "es", or "fiobbo". Example: /setLanguage en')
+        if (!['en', 'it', 'es', 'fr', 'ru', 'de'].includes(language)) {
+            ctx.reply('Please specify "en", "it", "es", "fr", "ru" or "de". Example: /setLanguage en')
             return
         }
 
         let settings = await this.getSettings(chatID)
         settings.language = language
         this.db.put(chatID + '/settings', settings)
+        await i18next.changeLanguage(language); // Ensure i18next instance is updated
         ctx.reply('Language changed to ' + language)
     }
 
@@ -2210,11 +2368,22 @@ export default class Settings {
                 roles: settings.roles || defaultSettings.roles,
                 values: settings.values || defaultSettings.values,
                 domains: settings.domains || defaultSettings.domains,
+                currencies: settings.currencies || defaultSettings.currencies,
                 // Ensure object properties exist
                 valueEquation: {
                     ...defaultSettings.valueEquation,
                     ...(settings.valueEquation || {})
                 }
+            }
+            // Dynamically add currencies from settings.currencies to valueEquation if not present
+            if (settings.currencies && Array.isArray(settings.currencies)) {
+                settings.currencies.forEach(currency => {
+                    // Ensure currency is a simple string and suitable as a key
+                    const currencyKey = currency.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                    if (currencyKey && typeof settings.valueEquation[currencyKey] === 'undefined') {
+                        settings.valueEquation[currencyKey] = 0; // Default weight for new currency
+                    }
+                });
             }
             // Save the updated settings with any missing fields
             await this.db.put(chatID + '/settings', settings)
@@ -2263,6 +2432,7 @@ export default class Settings {
 
         let settings = await this.getSettings(chatID);
         const language = settings.language;
+        console.log(`Settings.js: showSettingsMenu for chatID: ${chatID}, using language: ${language}`); // Added for debugging
 
         // Create the message with Holon ID shown at the top
         const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}`;
@@ -2290,12 +2460,12 @@ export default class Settings {
                         { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' },
-                        { text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language })}`, callback_data: 'settings_users' }
+                        { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'}, // Added currencies button
+                        { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' },
-                        { text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}`, callback_data: 'settings_federation' }
+                        { text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language })}`, callback_data: 'settings_users' },
+                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' }
                     ],
                     [
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
@@ -2328,12 +2498,16 @@ export default class Settings {
                 [{ text: `${this.getSettingIcon('language')} ${i18next.t('settings_language', { lng: language })}`, callback_data: ' ' }],
                 [{ text: i18next.t('settings_current', { lng: language, value: settings.language }), callback_data: ' ' }],
                 [
-                    { text: '🇬🇧 English', callback_data: 'language_en' },
-                    { text: '🇮🇹 Italian', callback_data: 'language_it' }
+                    { text: `🇬🇧 ${i18next.t('language_native_en', { lng: language, defaultValue: 'English'})}`, callback_data: 'language_en' },
+                    { text: `🇮🇹 ${i18next.t('language_native_it', { lng: language, defaultValue: 'Italian'})}`, callback_data: 'language_it' }
                 ],
                 [
-                    { text: '🇪🇸 Spanish', callback_data: 'language_es' },
-                    { text: '🇫🇷 French', callback_data: 'language_fr' }
+                    { text: `🇪🇸 ${i18next.t('language_native_es', { lng: language, defaultValue: 'Spanish'})}`, callback_data: 'language_es' },
+                    { text: `🇫🇷 ${i18next.t('language_native_fr', { lng: language, defaultValue: 'French'})}`, callback_data: 'language_fr' }
+                ],
+                [
+                    { text: `🇷🇺 ${i18next.t('language_native_ru', { lng: language, defaultValue: 'Russian'})}`, callback_data: 'language_ru' },
+                    { text: `🇩🇪 ${i18next.t('language_native_de', { lng: language, defaultValue: 'German'})}`, callback_data: 'language_de' }
                 ],
                 [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
@@ -2565,6 +2739,7 @@ export default class Settings {
             case 'equation': return '⚖️';
             case 'level': return '📊';
             case 'federation': return '🔄';
+            case 'currencies': return '💰'; // Added icon for currencies
             default: return '⚙️';
         }
     }
