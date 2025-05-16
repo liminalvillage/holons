@@ -1618,7 +1618,6 @@ export default class Settings {
     // get language from the database
     async getLanguage(chatID) {
         let settings = await this.getSettings(chatID)
-        console.log(`Settings.js: getLanguage(chatID: ${chatID}) returning: ${settings.language}`); // Added for debugging
         return settings.language
     }
 
