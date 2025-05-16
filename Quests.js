@@ -44,6 +44,7 @@ export default class Quests {
         this.bot.command(['ideas', 'lessons', 'quotes', 'tips', 'facts', 'jokes', 'stories', 'thoughts', 'questions', 'challenges', 'triggers', 'projections', 'assumptions', 'observations', 'rules', 'suggestions', 'guidelines', 'features', 'perspectives', 'opinions', 'insights', 'inspirations', 'motivations', 'reminders', 'warnings', 'notes', 'comments', 'feedbacks', 'reviews', 'critiques', 'compliments', 'complaints'], async (ctx) => this.listanytype(ctx))
         this.bot.command('listtype', async (ctx) => this.listtype(ctx))
         this.bot.command('refresh', async (ctx) => this.refresh(ctx))
+        this.bot.command('quests', async (ctx) => this.listOpenQuests(ctx)); // Add /quests command
 
         // ITALIAN
         this.bot.command('missione', async (ctx) => this.quest('task', ctx))
@@ -97,6 +98,8 @@ export default class Quests {
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
+
+        this.bot.action(/view_original_quest_(.+)/, async (ctx) => this.viewOriginalQuest(ctx));
     }
 
     // Method to set scheduler reference
@@ -251,7 +254,8 @@ export default class Quests {
             category: category,
             timeTracking: {}, // Add time tracking object to store user contributions
             checklistId: null, // Add checklist ID field
-            reminderId: null // Add reminder ID field
+            reminderId: null, // Add reminder ID field
+            activeTelegramHolograms: [] // Initialize for storing active hologram message details
         }
 
 
@@ -453,40 +457,83 @@ export default class Quests {
     async cancel(ctx) {
         console.log("CANCEL ACTION");
 
-        let chatID = ctx.callbackQuery.data.split('_')[2];
-        let messageID = ctx.callbackQuery.data.split('_')[3];
+        let chatID = ctx.callbackQuery.data.split('_ ')[2];
+        let messageID = ctx.callbackQuery.data.split('_ ')[3];
         const language = await this.settings.getLanguage(chatID);
 
-        let quest;
+        // Fetch the quest first to get its activeTelegramHolograms
+        let questToCancel;
         try {
-            quest = await this.db.get(chatID + '/quests', messageID.toString());
+            questToCancel = await this.db.get(chatID + '/quests', messageID.toString());
         } catch (err) {
-            console.error(`Error fetching quest ${messageID} for cancellation check:`, err);
-            quest = null; // Treat fetch error same as not found for initial check
+            console.error(`Error fetching quest ${messageID} for hologram cleanup during cancellation:`, err);
+            // Proceed with cancellation as quest might not exist or DB error
         }
 
-        // If quest doesn't exist, delete the message regardless of permission
-        if (!quest) {
-            console.log(`QUEST ${messageID} IS NOT FOUND or error fetching. Deleting message.`);
+        if (questToCancel && questToCancel.activeTelegramHolograms && questToCancel.activeTelegramHolograms.length > 0) {
+            console.log(`Found ${questToCancel.activeTelegramHolograms.length} active holograms for quest ${messageID} to delete.`);
+            for (const hologram of questToCancel.activeTelegramHolograms) {
+                try {
+                    await this.bot.telegram.deleteMessage(hologram.chatId, hologram.messageId)
+                        .catch(err => console.warn(`Could not delete hologram message ${hologram.messageId} in chat ${hologram.chatId}: ${err.description || err.message}`));
+                    console.log(`Deleted hologram message ${hologram.messageId} in chat ${hologram.chatId}`);
+                } catch (error) {
+                    console.warn(`Error deleting a specific hologram message:`, error);
+                }
+            }
+        }
+
+        // --- Original cancellation logic below, adapted to use questToCancel if fetched ---
+        // let quest; // Original quest variable - renamed to questToCancel
+        try {
+            // quest = await this.db.get(chatID + '/quests', messageID.toString()); // Already fetched as questToCancel
+            if (!questToCancel && !chatID && !messageID) { // If it wasn't fetched and we don't have IDs, something is very wrong.
+                console.log("Cannot proceed with cancellation, IDs missing and quest not fetched.");
+                ctx.answerCbQuery('Error: Quest details missing for cancellation.').catch(err => console.error('Error answering CBQ:', err));
+                return;
+            }
+        } catch (err) {
+            // This catch is now less relevant if questToCancel fetch fails above, but kept for safety
+            console.error(`Error re-fetching quest ${messageID} for cancellation check (should have been fetched):`, err);
+            // quest = null; // Treat fetch error same as not found for initial check
+        }
+
+        // If quest doesn't exist (based on initial fetch or re-fetch), try to delete the main message
+        if (!questToCancel) {
+            console.log(`QUEST ${messageID} IS NOT FOUND or error fetching. Attempting to delete main message.`);
             try {
-                await ctx.deleteMessage(messageID.toString());
+                // We need ctx.deleteMessage if called from a command context
+                // or ctx.callbackQuery.message.message_id if from a callback
+                const originalMessageIdToDelete = ctx.callbackQuery ? ctx.callbackQuery.message.message_id : messageID; 
+                // The chatID should be from callbackQuery.message.chat.id if available and from callback context
+                const originalChatIdToDelete = ctx.callbackQuery ? ctx.callbackQuery.message.chat.id : chatID;
+
+                if (originalMessageIdToDelete && originalChatIdToDelete){
+                     await ctx.telegram.deleteMessage(originalChatIdToDelete, originalMessageIdToDelete).catch(err => { /* Already logged if hologram deletion fails */ });
+                     // Try to delete the original trigger message if it was a command reply for /delete with an ID
+                    if(ctx.message && ctx.message.reply_to_message && ctx.message.reply_to_message.message_id === originalMessageIdToDelete){
+                         await ctx.deleteMessage().catch(err => {}); // Delete the /delete command itself
+                    }
+                } else {
+                     console.log("Could not determine original message ID/Chat ID to delete for non-existent quest.");
+                }
             } catch (err) {
-                console.error(`Error deleting message ${messageID} (quest not found):`, err);
+                console.error(`Error deleting main message ${messageID} (quest not found):`, err);
             }
             ctx.answerCbQuery('Quest not found or already cancelled.').catch(err => console.error('Error answering callback query:', err));
             return;
         }
 
-        // Quest exists, now check permissions
-        const hasPermission = quest.initiator?.id === ctx.from.id || await isAdmin(ctx.from.id, chatID);
+        // Quest exists (questToCancel is populated), now check permissions
+        const hasPermission = questToCancel.initiator?.id === ctx.from.id || await isAdmin(ctx.from.id, chatID);
 
         if (hasPermission) {
             console.log(`User ${ctx.from.id} has permission to cancel quest ${messageID}. Proceeding with cancellation.`);
             try {
                 // Cancel any scheduled reminder
-                if (quest.reminderId && this.scheduler) {
-                    console.log(`Cancelling reminder ${quest.reminderId} for quest being cancelled`);
-                    await this.scheduler.cancelReminder(quest.reminderId);
+                if (questToCancel.reminderId && this.scheduler) {
+                    console.log(`Cancelling reminder ${questToCancel.reminderId} for quest being cancelled`);
+                    await this.scheduler.cancelReminder(questToCancel.reminderId);
                 }
 
                 // Handle federated messages (unpin/delete)
@@ -623,7 +670,15 @@ export default class Quests {
             // Unpin the message and any federated messages
             ctx.telegram.unpinChatMessage(chatID, messageID).catch((err) => { });
 
-            // Also unpin any federated messages for this quest
+            // --- Hologram Link Cleanup for Completed Quest ---
+            const hologramsToUpdateNow = quest.activeTelegramHolograms ? [...quest.activeTelegramHolograms] : [];
+            quest.activeTelegramHolograms = []; // Clear from the quest object that will be saved
+
+            // Update message (will save quest with empty activeTelegramHolograms) 
+            // and update the now-former holograms one last time.
+            await this.updateMessage(ctx, quest, language, false, hologramsToUpdateNow);
+
+            // Also unpin any federated messages for this quest (non-hologram ones)
             try {
                 const federationKey = `${chatID}_${messageID}_fedmsgs`;
                 const federatedMessages = await this.db.get('federation_messages', federationKey);
@@ -878,7 +933,7 @@ export default class Quests {
     }
 
     // Function to update messages for a quest
-    async updateMessage(ctx, quest, language, useExpandedMarkup = true) { // Default to expanded markup
+    async updateMessage(ctx, quest, language, useExpandedMarkup = true, explicitHologramsToUpdate = null) { // Default to expanded markup, new param
         try {
             if (!quest) {
                 console.log("ERROR: Quest is null in updateMessage");
@@ -904,6 +959,9 @@ export default class Quests {
                 ? { reply_markup: { inline_keyboard: this.getExpandedButtons(quest, language) } }
                 : this.markup(quest, language);
             // console.log(`[updateMessage] Intending to use ${useExpandedMarkup ? 'expanded (getExpandedButtons)' : 'standard (markup)'} buttons.`); // <-- Remove log
+
+            console.log(`[updateMessage] For Original Quest ${quest.id} - Generated message content: ${message.substring(0, 100)}...`);
+            console.log(`[updateMessage] For Original Quest ${quest.id} - Generated markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
 
             // Update the message in original chat
             if (quest.picture) {
@@ -950,14 +1008,76 @@ export default class Quests {
             }
 
     
+            // Log the state of activeTelegramHolograms BEFORE saving the quest object within updateMessage
+            console.log(`[updateMessage] Quest ID ${quest.id} - BEFORE save. Active holograms on quest object:`, JSON.stringify(quest.activeTelegramHolograms || []));
             await this.db.put(quest.chat + '/quests', quest);
+            console.log(`[updateMessage] Quest ID ${quest.id} - AFTER save. Quest object presumably persisted.`);
 
         
-            // Handle federated messages
+            // Handle federated messages (non-hologram ones, e.g. to other groups)
             await this.handleFederatedMessages(ctx, quest, language).catch(err => {
                 console.error("Error handling federated messages:", err);
             });
 
+            // --- Update any tracked hologram messages --- 
+            const hologramsToUpdate = explicitHologramsToUpdate !== null ? explicitHologramsToUpdate : (quest.activeTelegramHolograms || []);
+
+            // Log the list of holograms that will be iterated over
+            console.log(`[updateMessage] Quest ID ${quest.id} - Holograms determined for update iteration:`, JSON.stringify(hologramsToUpdate));
+
+            if (hologramsToUpdate.length > 0) {
+                console.log(`Found ${hologramsToUpdate.length} Telegram hologram messages to update for quest ${quest.id}`);
+                for (const hologram of hologramsToUpdate) {
+                    // Check if the hologram is for Telegram and has the necessary details
+                    if (hologram.platform === 'telegram' && hologram.chatId && hologram.messageId) {
+                        const hologramChatId = hologram.chatId;
+                        const hologramMessageId = hologram.messageId;
+                        console.log(`Attempting to update Telegram hologram message ${hologramMessageId} in chat ${hologramChatId}`);
+                        // Log the exact content being sent to the hologram
+                        console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending message content: ${message.substring(0,100)}...`);
+                        console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
+                        try {
+                            if (quest.picture) {
+                                await this.bot.telegram.editMessageMedia(
+                                    hologramChatId,
+                                    hologramMessageId,
+                                    null,
+                                    {
+                                        type: 'photo',
+                                        media: quest.picture,
+                                        caption: message // use the already generated message text
+                                    },
+                                    markupConfig
+                                ).catch(err => {
+                                    if (err.response && err.response.description === 'Bad Request: message is not modified') {
+                                        console.log("Hologram media message not modified - this is usually ok");
+                                    } else {
+                                        console.error(`Error updating hologram media message in ${hologramChatId}:`, err);
+                                    }
+                                });
+                            } else {
+                                await this.bot.telegram.editMessageText(
+                                    hologramChatId,
+                                    hologramMessageId,
+                                    null,
+                                    message, // use the already generated message text
+                                    markupConfig
+                                ).catch(err => {
+                                    if (err.response && err.response.description === 'Bad Request: message is not modified') {
+                                        console.log("Hologram text message not modified - this is usually ok");
+                                    } else {
+                                        // Corrected the error logging to use hologramChatId defined in the loop
+                                        console.error(`Error updating hologram text message in ${hologramChatId}:`, err);
+                                    }
+                                });
+                            }
+                            console.log(`Successfully updated or attempted update on hologram message ${hologramMessageId}`);
+                        } catch (hologramError) {
+                            console.error('Error during hologram message update:', hologramError);
+                        }
+                    }
+                }
+            }
  
         } catch (error) {
             console.error('Error in updateMessage:', error);
@@ -2549,6 +2669,96 @@ export default class Quests {
         } catch (error) {
             console.error('Error handling stop recurring:', error);
             await ctx.answerCbQuery('Error stopping recurring task');
+        }
+    }
+
+    async listOpenQuests(ctx) {
+        console.log("LIST OPEN QUESTS ACTION");
+        const chatID = getChatId(ctx);
+        const language = await this.settings.getLanguage(chatID);
+
+        try {
+            const allQuests = await this.db.getAll(chatID + '/quests');
+            const openQuests = allQuests.filter(q => q.status === 'ongoing' || q.status === 'scheduled');
+
+            if (openQuests.length === 0) {
+                await ctx.reply(i18next.t('noopenquests', { lng: language, defaultValue: 'There are no open quests.' }));
+                return;
+            }
+
+            const buttons = openQuests.map(quest => {
+                // Ensure quest.title is a string and not excessively long for a button
+                const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
+                return [Markup.button.callback(title, 'view_original_quest_' + quest.id)];
+            });
+
+            await ctx.reply(i18next.t('openquests', { lng: language, defaultValue: 'Open Quests:' }), Markup.inlineKeyboard(buttons));
+
+        } catch (error) {
+            console.error('Error listing open quests:', error);
+            await ctx.reply(i18next.t('errorlistingquests', { lng: language, defaultValue: 'Sorry, there was an error listing open quests.' }));
+        }
+    }
+
+    async viewOriginalQuest(ctx) {
+        console.log("VIEW ORIGINAL QUEST ACTION");
+        const originalQuestId = ctx.match[1];
+        const chatID = ctx.callbackQuery.message.chat.id;
+        const language = await this.settings.getLanguage(chatID);
+
+        try {
+            const questToView = await this.db.get(chatID + '/quests', originalQuestId.toString());
+
+            if (!questToView) {
+                await ctx.answerCbQuery(i18next.t('questnotfound', { lng: language, defaultValue: 'Quest not found.' }));
+                return;
+            }
+
+            const messageText = await this.createMessage(questToView, language);
+            const markup = this.markup(questToView, language);
+
+            // Send the new "hologram" Telegram message
+            const newHologramMsg = await ctx.reply(messageText, markup);
+            
+            // --- Track this new hologram message by adding to the quest object itself ---
+            try {
+                // Ensure activeTelegramHolograms array exists on the quest object from viewOriginalQuest scope
+                if (!questToView.activeTelegramHolograms || !Array.isArray(questToView.activeTelegramHolograms)) {
+                    questToView.activeTelegramHolograms = [];
+                }
+
+                // Avoid duplicates - though unlikely in this specific flow, good practice
+                const existingLink = questToView.activeTelegramHolograms.find(
+                    h => h.chatId === newHologramMsg.chat.id && h.messageId === newHologramMsg.message_id
+                );
+
+                if (!existingLink) {
+                    questToView.activeTelegramHolograms.push({
+                        platform: 'telegram', // Specify the platform
+                        chatId: newHologramMsg.chat.id,
+                        messageId: newHologramMsg.message_id
+                    });
+                    console.log(`[viewOriginalQuest] Added hologram ${newHologramMsg.message_id} to quest ${questToView.id}. Holograms now: ${questToView.activeTelegramHolograms.length}`);
+                } else {
+                    console.log(`[viewOriginalQuest] Hologram ${newHologramMsg.message_id} already tracked for quest ${questToView.id}.`);
+                }
+
+                // NOW, call updateMessage to persist the quest (with the new hologram link)
+                // and to update the main message and potentially this new hologram itself (though it's just been sent).
+                // This centralizes the save logic within updateMessage.
+                await this.updateMessage(ctx, questToView, language, true); // true for useExpandedMarkup, or decide as needed.
+                console.log(`[viewOriginalQuest] Called updateMessage for quest ${questToView.id} after adding hologram.`);
+
+            } catch (error) {
+                console.error('[viewOriginalQuest] Error adding hologram link to quest object or calling updateMessage:', error);
+            }
+            // --- End Tracking ---
+
+            await ctx.answerCbQuery();
+
+        } catch (error) {
+            console.error('Error viewing original quest:', error);
+            await ctx.answerCbQuery(i18next.t('errorviewingquest', { lng: language, defaultValue: 'Error displaying quest details.' }));
         }
     }
 }
