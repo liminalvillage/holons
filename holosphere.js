@@ -497,13 +497,16 @@ class HoloSphere {
      * Creates a federation relationship between two holons
      * @param {string} holonId1 - The first holon ID
      * @param {string} holonId2 - The second holon ID
-     * @param {string} password1 - Password for the first holon
+     * @param {string} [password1] - Optional password for the first holon
      * @param {string} [password2] - Optional password for the second holon
      * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications automatically
+     * @param {object} [lensConfig] - Optional lens-specific configuration
+     * @param {string[]} [lensConfig.federate] - List of lenses to federate (default: all)
+     * @param {string[]} [lensConfig.notify] - List of lenses to notify (default: all)
      * @returns {Promise<boolean>} - True if federation was created successfully
      */
-    async federate(holonId1, holonId2, password1, password2 = null, bidirectional = true) {
-        return Federation.federate(this, holonId1, holonId2, password1, password2, bidirectional);
+    async federate(holonId1, holonId2, password1 = null, password2 = null, bidirectional = true, lensConfig = {}) {
+        return Federation.federate(this, holonId1, holonId2, password1, password2, bidirectional, lensConfig);
     }
 
     /**

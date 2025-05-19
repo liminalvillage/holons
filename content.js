@@ -2,11 +2,14 @@
 
 /**
  * Stores content in the specified holon and lens.
- * If the stored data is a hologram, this function also attempts to update the
- * target data node's `_holograms` set with the soul of the stored hologram.
+ * If the target path already contains a hologram, the put operation will be
+ * redirected to store the new data at the location specified in the existing
+ * hologram's soul.
+ * If the stored data (after potential redirection) is a hologram, this function
+ * also attempts to update the target data node's `_holograms` set.
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
- * @param {string} holon - The holon identifier.
- * @param {string} lens - The lens under which to store the content.
+ * @param {string} holon - The initial holon identifier.
+ * @param {string} lens - The initial lens under which to store the content.
  * @param {object} data - The data to store.
  * @param {string} [password] - Optional password for private holon.
  * @param {object} [options] - Additional options
@@ -16,24 +19,74 @@
  * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
  */
 export async function put(holoInstance, holon, lens, data, password = null, options = {}) {
-    if (!holon || !lens || !data) {
-        throw new Error('put: Missing required parameters:', holon, lens, data);
+    if (!data) { // Check data first as it's used for id generation
+        throw new Error('put: Missing required data parameter');
+    }
+    if (!holon || !lens) {
+        throw new Error('put: Missing required holon or lens parameters:', holon, lens);
     }
 
-    if (!data.id) {
-        data.id = holoInstance.generateId();
+    let targetHolon = holon;
+    let targetLens = lens;
+    let targetKey = data.id; // Use data.id as the key
+
+    if (!targetKey) {
+        targetKey = holoInstance.generateId();
+        data.id = targetKey; // Assign the generated ID back to the data
     }
 
-    // Check if this is a hologram we're storing
-    const isHolo = holoInstance.isHologram(data);
+    // --- Start: Target Path Hologram Redirection Logic ---
+    try {
+        // Get the item at the original target path, WITHOUT resolving holograms
+        const existingItemAtPath = await get(holoInstance, targetHolon, targetLens, targetKey, password, { resolveHolograms: false });
 
-    // Get and validate schema only in strict mode for non-holograms
-    if (holoInstance.strict && !isHolo) {
-        const schema = await holoInstance.getSchema(lens);
+        if (existingItemAtPath && holoInstance.isHologram(existingItemAtPath)) {
+            const soulInfo = holoInstance.parseSoulPath(existingItemAtPath.soul);
+            if (soulInfo) {
+                // Optional: Check if soulInfo.appname matches holoInstance.appname
+                if (soulInfo.appname !== holoInstance.appname) {
+                    console.warn(`Existing hologram at ${targetHolon}/${targetLens}/${targetKey} has appname (${soulInfo.appname}) in its soul ${existingItemAtPath.soul} which does not match current HoloSphere instance appname (${holoInstance.appname}). Redirecting put to soul's holon/lens within this instance.`);
+                }
+                console.log(`Redirecting put for data (ID: ${data.id}). Original target ${targetHolon}/${targetLens}/${targetKey} contained hologram (ID: ${existingItemAtPath.id}, Soul: ${existingItemAtPath.soul}). New target is ${soulInfo.holon}/${soulInfo.lens}/${soulInfo.key}.`);
+                targetHolon = soulInfo.holon; // Redirect holon
+                targetLens = soulInfo.lens;   // Redirect lens
+                targetKey = soulInfo.key;     // Redirect key (important!)
+                                              // data.id should ideally match soulInfo.key if this is consistent.
+                                              // If data.id is different, it means we are writing data with one ID to a path derived from another ID's soul.
+                if (data.id !== targetKey) {
+                    console.warn(`Data ID ('${data.id}') differs from redirected target key ('${targetKey}') derived from existing hologram's soul. Data will be stored under key '${targetKey}'.`);
+                    // It's crucial that the actual GunDB path uses targetKey.
+                    // The 'data' object itself retains its original 'data.id' unless explicitly changed.
+                }
+
+            } else {
+                console.warn(`Existing item at ${targetHolon}/${targetLens}/${targetKey} (ID: ${existingItemAtPath.id}) is a hologram, but its soul ('${existingItemAtPath.soul}') is invalid. Proceeding with original target.`);
+            }
+        }
+    } catch (error) {
+        // If 'get' fails (e.g., item not found, auth error), proceed with original target.
+        // A "not found" error is expected if the path is new.
+        if (error.message && error.message.includes('RESOLVED_NULL')) {
+             // This is fine, means nothing was at the path.
+        } else {
+            console.warn(`Error checking for existing hologram at ${targetHolon}/${targetLens}/${targetKey}: ${error.message}. Proceeding with original target.`);
+        }
+    }
+    // --- End: Target Path Hologram Redirection Logic ---
+
+    // The data being stored is 'data'. Its 'id' property is 'data.id'.
+    // The final storage path key is 'targetKey'.
+
+    // Check if the data *being put* is a hologram (this variable is used later for schema and propagation)
+    const isHologram = holoInstance.isHologram(data);
+
+    // Get and validate schema only in strict mode for non-holograms (data being put)
+    if (holoInstance.strict && !isHologram) {
+        const schema = await holoInstance.getSchema(targetLens); // Use targetLens for schema
         if (!schema) {
             throw new Error('Schema required in strict mode');
         }
-        const dataToValidate = JSON.parse(JSON.stringify(data));
+        const dataToValidate = JSON.parse(JSON.stringify(data)); // Validate the actual data
         const valid = holoInstance.validator.validate(schema, dataToValidate);
 
         if (!valid) {
@@ -47,7 +100,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                user.auth(holoInstance.userName(holon), password, (ack) => {
+                user.auth(holoInstance.userName(targetHolon), password, (ack) => { // Use targetHolon for auth
                     if (ack.err) reject(new Error(ack.err));
                     else resolve();
                 });
@@ -56,64 +109,61 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
         return new Promise((resolve, reject) => {
             try {
-                const payload = JSON.stringify(data);
+                const payload = JSON.stringify(data); // The data being stored
 
                 const putCallback = async (ack) => {
                     if (ack.err) {
                         reject(new Error(ack.err));
                     } else {
-                        // --- Start: Hologram Tracking Logic ---
-                        if (isHolo) {
+                        // --- Start: Hologram Tracking Logic (for data *being put*, if it's a hologram) ---
+                        if (isHologram) {
                             try {
-                                const targetSoulInfo = holoInstance.parseSoulPath(data.soul);
-                                if (targetSoulInfo) {
-                                    const targetNodeRef = holoInstance.getNodeRef(data.soul);
-                                    // Construct the soul of the hologram *being stored*
-                                    const storedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${data.id}`;
+                                const storedDataSoulInfo = holoInstance.parseSoulPath(data.soul);
+                                if (storedDataSoulInfo) {
+                                    const targetNodeRef = holoInstance.getNodeRef(data.soul); // Target of the data *being put*
+                                    // Soul of the hologram that was *actually stored* at targetHolon/targetLens/targetKey
+                                    const storedHologramInstanceSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
                                     
-                                    // Use the stored hologram's soul as the key in the _holograms set
-                                    targetNodeRef.get('_holograms').get(storedHologramSoul).put(true); // Store simple marker
+                                    targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
                                     
-                                    console.log(`Added hologram ${storedHologramSoul} to target ${data.soul}\'s _holograms set.`);
+                                    console.log(`Data (ID: ${data.id}) being put is a hologram. Added its instance soul ${storedHologramInstanceSoul} to its target ${data.soul}'s _holograms set.`);
                                 } else {
-                                    console.warn(`Could not parse target soul ${data.soul} for hologram tracking.`);
+                                    console.warn(`Data (ID: ${data.id}) being put is a hologram, but could not parse its soul ${data.soul} for tracking.`);
                                 }
                             } catch (trackingError) {
-                                console.warn(`Error updating _holograms set for target ${data.soul}:`, trackingError);
+                                console.warn(`Error updating _holograms set for the target of the data being put (data ID: ${data.id}, soul: ${data.soul}):`, trackingError);
                             }
                         }
                         // --- End: Hologram Tracking Logic ---
                         
                         // Only notify subscribers for actual data, not holograms
-                        if (!isHolo) {
+                        if (!isHologram) {
                             holoInstance.notifySubscribers({
-                                holon,
-                                lens,
-                                ...data
+                                holon: targetHolon, // Notify with final target
+                                lens: targetLens,
+                                ...data // The data that was put
                             });
                         }
 
-                        // Auto-propagate to federation by default (if not a hologram)
-                        const shouldPropagate = options.autoPropagate !== false && !isHolo;
+                        // Auto-propagate to federation by default (if data *being put* is not a hologram)
+                        const shouldPropagate = options.autoPropagate !== false && !isHologram;
                         let propagationResult = null;
 
                         if (shouldPropagate) {
                             try {
-                                // Default to using holograms
                                 const propagationOptions = {
                                     useHolograms: true,
                                     ...options.propagationOptions
                                 };
 
                                 propagationResult = await holoInstance.propagate(
-                                    holon,
-                                    lens,
-                                    data,
+                                    targetHolon, // Propagate from final target
+                                    targetLens,
+                                    data, // The data that was put
                                     propagationOptions
                                 );
 
-                                // Still resolve with true even if propagation had errors
-                                if (propagationResult.errors > 0) {
+                                if (propagationResult && propagationResult.errors > 0) {
                                     console.warn('Auto-propagation had errors:', propagationResult);
                                 }
                             } catch (propError) {
@@ -123,15 +173,19 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
                         resolve({
                             success: true,
-                            isHologram: isHolo,
+                            isHologramAtPath: isHologram, // whether the data *put* was a hologram
+                            pathHolon: targetHolon,
+                            pathLens: targetLens,
+                            pathKey: targetKey,
                             propagationResult
                         });
                     }
                 };
 
+                // Use targetHolon, targetLens, and targetKey for the actual storage path
                 const dataPath = password ?
-                    user.get('private').get(lens).get(data.id) :
-                    holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(data.id);
+                    user.get('private').get(targetLens).get(targetKey) :
+                    holoInstance.gun.get(holoInstance.appname).get(targetHolon).get(targetLens).get(targetKey);
 
                 dataPath.put(payload, putCallback);
             } catch (error) {
@@ -188,13 +242,14 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
 
         return new Promise((resolve) => {
             const handleData = async (data) => {
+                let parsed = null; // Declare parsed here to make it available in catch
                 if (!data) {
                     resolve(null);
                     return;
                 }
 
                 try {
-                    let parsed = await holoInstance.parse(data);
+                    parsed = await holoInstance.parse(data); // Assign to the outer scoped parsed
 
                     if (!parsed) {
                         resolve(null);
@@ -203,23 +258,26 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
 
                     // Check if this is a hologram that needs to be resolved
                     if (resolveHolograms && holoInstance.isHologram(parsed)) {
-                        const resolved = await holoInstance.resolveHologram(parsed, {
+                        const resolvedValue = await holoInstance.resolveHologram(parsed, {
                             followHolograms: resolveHolograms,
                             visited: visited
                         });
 
-                        console.log(`### get/handleData received resolved value:`, resolved);
+                        console.log(`### get/handleData received resolved value:`, resolvedValue);
 
-                        if (resolved === null) {
-                            console.warn(`Hologram at ${holon}/${lens}/${key} points to non-existent data. Resolving null.`);
+                        if (resolvedValue === null) {
+                            // This means resolveHologram determined the target doesn't exist or a sub-resolution failed to null.
+                            console.warn(`Hologram at ${holon}/${lens}/${key} could not be fully resolved (target not found or sub-problem). Resolving null.`);
                             resolve(null);
-                            // Throw after resolving to ensure handleData execution stops
-                            throw new Error(`RESOLVED_NULL:${key}`); 
+                            return; // Important to return after resolving
                         }
+                        // If resolveHologram encountered a circular ref, it would throw, not return.
+                        // If it returned the hologram itself (if we ever revert to that), this logic would need adjustment.
+                        // For now, assume resolvedValue is either the resolved data or we've returned null above.
 
-                        if (resolved !== parsed) {
-                            console.log(`### get/handleData using resolved data:`, resolved);
-                            parsed = resolved;
+                        if (resolvedValue !== parsed) { 
+                            console.log(`### get/handleData using resolved data:`, resolvedValue);
+                            parsed = resolvedValue;
                         }
                     }
 
@@ -237,17 +295,12 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
 
                     resolve(parsed);
                 } catch (error) {
-                    // Catch specific errors if needed, otherwise log and resolve null
-                    if (error.message?.startsWith('RESOLVED_NULL')) {
-                        // This is expected when resolving a null, already handled by resolve(null)
-                        console.log(`Caught RESOLVED_NULL for key ${key}, already resolved null.`);
-                    } else if (error.message?.startsWith('CIRCULAR_REFERENCE')) {
+                    if (error.message?.startsWith('CIRCULAR_REFERENCE')) {
                          console.warn(`Caught circular reference during get/handleData for key ${key}. Resolving null.`);
-                         // Resolve null to indicate failure due to loop
-                         resolve(null);
+                         resolve(null); 
                     } else {
                         console.error('Error processing data in get/handleData:', error);
-                        resolve(null);
+                        resolve(null); // For other errors, resolve null
                     }
                 }
             };

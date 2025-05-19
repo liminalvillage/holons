@@ -417,9 +417,12 @@ declare class HoloSphere {
      * @param {string} [password1] - Optional password for the first holon
      * @param {string} [password2] - Optional password for the second holon
      * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications automatically
+     * @param {object} [lensConfig] - Optional lens-specific configuration
+     * @param {string[]} [lensConfig.federate] - List of lenses to federate (default: all)
+     * @param {string[]} [lensConfig.notify] - List of lenses to notify (default: all)
      * @returns {Promise<boolean>} - True if federation was created successfully
      */
-    federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean): Promise<boolean>;
+    federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { federate?: string[], notify?: string[] }): Promise<boolean>;
 
     /**
      * Subscribes to federation notifications for a holon
