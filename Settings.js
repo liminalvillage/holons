@@ -4,6 +4,8 @@ import * as utils from './utilities.js'
 import { Scenes } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
 
+const ALL_AVAILABLE_LENSES = ['Quests', 'Offers', 'Tags', 'Expenses', 'Announcements', 'Users', 'Shopping', 'Recurring'];
+
 export default class Settings {
     constructor(bot, db) {
         this.db = db;
@@ -668,11 +670,20 @@ export default class Settings {
                 const language = await this.getLanguage(chatID);
 
                 try {
+                    // const fedInfoBefore = await this.db.holosphere.getFederation(chatID.toString());
+                    // console.log(`[Settings.js /unfederate_] ChatID: ${chatID}, federationID to remove: ${federationID}`);
+                    // console.log('[Settings.js /unfederate_] FedInfo BEFORE unfederate:', JSON.stringify(fedInfoBefore, null, 2));
+                    
                     await this.db.holosphere.unfederate(chatID.toString(), federationID);
-                    await ctx.reply(i18next.t('settings_federation_removed', { lng: language, federationID: federationID }));
+                    
+                    // const fedInfoAfter = await this.db.holosphere.getFederation(chatID.toString());
+                    // console.log('[Settings.js /unfederate_] FedInfo AFTER unfederate:', JSON.stringify(fedInfoAfter, null, 2));
+
+                    const federationName = await utils.getHolonNameWithFallback(this.db, federationID, ctx);
+                    await ctx.reply(i18next.t('settings_federation_removed', { lng: language, federationID: federationName }));
                     await this.showFederationMenu(ctx, true);
                 } catch (error) {
-                    console.error('Unfederation error:', error);
+                    console.error('Unfederation error in Settings.js:', error);
                     await ctx.reply(i18next.t('settings_unfederation_error', { lng: language, error: error.message }));
                 }
             } else {
@@ -689,12 +700,25 @@ export default class Settings {
                 const language = await this.getLanguage(chatID);
 
                 try {
-                    // Use the direct holosphere method to remove notification instead of modifying and setting the full federation
-                    await this.db.holosphere.removeNotify(chatID.toString(), notifyID);
-                    await ctx.reply(i18next.t('settings_notify_removed', { lng: language, id: notifyID }));
+                    // const fedInfoBefore = await this.db.holosphere.getFederation(chatID.toString());
+                    // console.log(`[Settings.js /unnotify_] ChatID: ${chatID}, notifyID to remove: ${notifyID}`);
+                    // console.log('[Settings.js /unnotify_] FedInfo BEFORE removeNotify:', JSON.stringify(fedInfoBefore, null, 2));
+                    
+                    const removeResult = await this.db.holosphere.removeNotify(chatID.toString(), notifyID);
+                    // console.log('[Settings.js /unnotify_] Result from removeNotify:', removeResult);
+
+                    // const fedInfoAfter = await this.db.holosphere.getFederation(chatID.toString());
+                    // console.log('[Settings.js /unnotify_] FedInfo AFTER removeNotify:', JSON.stringify(fedInfoAfter, null, 2));
+
+                    // if (removeResult === false) {
+                    //     console.warn(`[Settings.js /unnotify_] removeNotify reported that ID ${notifyID} was not found in the list for ${chatID}.`);
+                    // }
+
+                    const notifyName = await utils.getHolonNameWithFallback(this.db, notifyID, ctx);
+                    await ctx.reply(i18next.t('settings_notify_removed', { lng: language, id: notifyName }));
                     await this.showFederationMenu(ctx, true);
                 } catch (error) {
-                    console.error('Unnotify error:', error);
+                    console.error('Unnotify error in Settings.js:', error);
                     await ctx.reply(i18next.t('settings_unnotify_error', { lng: language, error: error.message }));
                 }
             } else {
@@ -1473,6 +1497,87 @@ export default class Settings {
                 count: addedCount 
             }));
         });
+
+        // Action handlers for viewing shared lenses in federation
+        this.bot.action(/federation_lenses_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const targetChatID = ctx.match[1];
+            await this.showSharedLensesMenu(ctx, targetChatID, 'federated', true);
+        });
+
+        this.bot.action(/notify_lenses_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const targetChatID = ctx.match[1];
+            await this.showSharedLensesMenu(ctx, targetChatID, 'notifies', true);
+        });
+
+        // Action handler for toggling a shared lens
+        this.bot.action(/toggle_lens_(.+?)_(federated|notifies)_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const targetChatID = ctx.match[1];
+            const relationshipType = ctx.match[2];
+            const lensNameToToggle = ctx.match[3];
+            const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+
+            try {
+                let fedInfo = await this.db.holosphere.getFederation(chatID);
+
+                if (!fedInfo) {
+                    // This case should ideally not be hit if UI flows from showFederationMenu
+                    console.warn(`No federation info found for ${chatID} when trying to toggle lens for ${targetChatID}. Creating new structure.`);
+                    fedInfo = {
+                        id: chatID,
+                        name: chatID, // Or fetch actual name if possible
+                        federation: relationshipType === 'federated' ? [targetChatID] : [],
+                        notify: relationshipType === 'notifies' ? [targetChatID] : [],
+                        lensConfig: {},
+                        timestamp: Date.now()
+                    };
+                }
+
+                if (!fedInfo.lensConfig) {
+                    fedInfo.lensConfig = {};
+                }
+
+                let linkSpecificConfig = fedInfo.lensConfig[targetChatID];
+                if (!linkSpecificConfig) {
+                    linkSpecificConfig = { federate: [], notify: [], timestamp: Date.now() };
+                }
+
+                let targetArray;
+                if (relationshipType === 'federated') {
+                    if (!linkSpecificConfig.federate) linkSpecificConfig.federate = [];
+                    targetArray = linkSpecificConfig.federate;
+                } else { // relationshipType === 'notifies'
+                    if (!linkSpecificConfig.notify) linkSpecificConfig.notify = [];
+                    targetArray = linkSpecificConfig.notify;
+                }
+
+                const lensIndex = targetArray.indexOf(lensNameToToggle);
+                if (lensIndex > -1) {
+                    targetArray.splice(lensIndex, 1); // Disable: remove from array
+                } else {
+                    targetArray.push(lensNameToToggle); // Enable: add to array
+                }
+
+                linkSpecificConfig.timestamp = Date.now();
+                fedInfo.lensConfig[targetChatID] = linkSpecificConfig;
+                fedInfo.timestamp = Date.now();
+
+                await this.db.holosphere.putGlobal('federation', fedInfo); // Save the entire modified fedInfo
+
+                // Fetch the updated config for UI refresh
+                const updatedLensesForUI = await this.getLensesConfigForUI(chatID, targetChatID, relationshipType);
+                await this.showSharedLensesMenu(ctx, targetChatID, relationshipType, true, updatedLensesForUI);
+
+            } catch (error) {
+                console.error(`Error toggling lens ${lensNameToToggle} for ${targetChatID} (relationship: ${relationshipType}):`, error);
+                await ctx.reply('An error occurred while updating lens settings. Please try again.').catch(()=>{});
+                 // Optionally, re-show menu with potentially stale data or an error message state
+                const potentiallyStaleConfig = await this.getLensesConfigForUI(chatID, targetChatID, relationshipType).catch(() => ALL_AVAILABLE_LENSES.map(name => ({ name, enabled: false })));
+                await this.showSharedLensesMenu(ctx, targetChatID, relationshipType, true, potentiallyStaleConfig ).catch(()=>{});
+            }
+        });
     }
 
     async getHex(ctx) {
@@ -1720,7 +1825,8 @@ export default class Settings {
             // Use holosphere federate method
             console.log('FEDERATING', chatID, federationID)
             await this.db.holosphere.federate(chatID, federationID);
-            ctx.reply('This chat has been federated with ' + federationID);
+            const federationName = await utils.getHolonNameWithFallback(this.db, federationID, ctx);
+            ctx.reply('This chat has been federated with ' + federationName);
         } catch (error) {
             console.error('Federation error:', error);
             ctx.reply('Error creating federation: ' + error.message);
@@ -1739,7 +1845,8 @@ export default class Settings {
         try {
             // Use holosphere unfederate method
             await this.db.holosphere.unfederate(chatID, federationID);
-            ctx.reply('Federation with ' + federationID + ' has been revoked');
+            const federationName = await utils.getHolonNameWithFallback(this.db, federationID, ctx);
+            ctx.reply('Federation with ' + federationName + ' has been revoked');
         } catch (error) {
             console.error('Unfederation error:', error);
             ctx.reply('Error removing federation: ' + error.message);
@@ -1904,6 +2011,10 @@ export default class Settings {
         let settings = await this.getSettings(chatID);
         const language = settings.language;
         
+        // Fetch federation info for the button
+        const fedInfo = await this.db.holosphere.getFederation(chatID);
+        const federationCount = fedInfo && fedInfo.federation && Array.isArray(fedInfo.federation) ? fedInfo.federation.length : 0;
+        
         // Create the message with Holon ID shown at the top
         const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}`;
 
@@ -1932,6 +2043,10 @@ export default class Settings {
                     [
                         { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'}, // Added currencies button
                         { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' }
+                    ],
+                    [ // New row for Federation and Level
+                        { text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}: ${federationCount}`, callback_data: 'settings_federation' },
+                        { text: `${this.getSettingIcon('level')} ${i18next.t('settings_level', { lng: language })}: ${settings.level}`, callback_data: 'settings_level' }
                     ],
                     [
                         { text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language })}`, callback_data: 'settings_users' },
@@ -2373,8 +2488,8 @@ export default class Settings {
 
             for (const space of federatedWith) {
                 keyboard.inline_keyboard.push([{
-                    text: `${space}`,
-                    callback_data: ' '
+                    text: `${await utils.getHolonNameWithFallback(this.db, space, ctx)}`,
+                    callback_data: `federation_lenses_${space}` // Changed from ' '
                 }, {
                     text: '❌',
                     callback_data: `unfederate_${space}`
@@ -2396,8 +2511,8 @@ export default class Settings {
 
             for (const space of notifies) {
                 keyboard.inline_keyboard.push([{
-                    text: `${space}`,
-                    callback_data: ' '
+                    text: `${await utils.getHolonNameWithFallback(this.db, space, ctx)}`,
+                    callback_data: `notify_lenses_${space}` // Changed from ' '
                 }, {
                     text: '❌',
                     callback_data: `unnotify_${space}`
@@ -2964,5 +3079,120 @@ export default class Settings {
         } catch (e) {
             console.log('Error showing hex menu:', e);
         }
+    }
+
+    // Add method to show shared lenses menu
+    async showSharedLensesMenu(ctx, targetChatID, relationshipType, edit = false, currentLensesConfig = null) {
+        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!chatID) {
+            console.error('Could not determine chat ID for shared lenses menu');
+            return;
+        }
+
+        const language = await this.getLanguage(chatID);
+        let title = '';
+        const targetHolonName = await utils.getHolonNameWithFallback(this.db, targetChatID, ctx);
+
+        if (relationshipType === 'federated') {
+            title = i18next.t('settings_lenses_federated_with', { lng: language, targetChatID: targetHolonName, defaultValue: `Lenses Federated with ${targetHolonName}` });
+        } else if (relationshipType === 'notifies') {
+            title = i18next.t('settings_lenses_notified_to', { lng: language, targetChatID: targetHolonName, defaultValue: `Lenses Notified to ${targetHolonName}` });
+        }
+
+        let lensesConfig = currentLensesConfig;
+        if (!lensesConfig) {
+            // --- Placeholder for Lenses Data Fetching & Initialization ---
+            // TODO: Replace this with actual logic to fetch shared lenses configuration (name, enabled state)
+            // for the targetChatID from db.holosphere or a similar source.
+            // If no configuration exists, initialize it (e.g., all enabled by default) and persist it.
+            // const EXAMPLE_LENS_NAMES = ['Quests', 'Offers', 'Tags', 'Expenses', 'Announcements', 'Users', 'Shopping', 'Recurring'];
+            // lensesConfig = EXAMPLE_LENS_NAMES.map(name => ({ name: name, enabled: true }));
+            lensesConfig = await this.getLensesConfigForUI(chatID, targetChatID, relationshipType);
+            // Example: 
+            // lensesConfig = await this.db.holosphere.getSharedLensesConfig(chatID, targetChatID, relationshipType);
+            // if (!lensesConfig || lensesConfig.length === 0) { 
+            //     lensesConfig = EXAMPLE_LENS_NAMES.map(name => ({ name: name, enabled: true }));
+            //     // await this.db.holosphere.setSharedLensesConfig(chatID, targetChatID, relationshipType, lensesConfig); // Persist initial
+            // }
+            // --- End Placeholder ---
+        }
+
+        const keyboard = await this.getSharedLensesKeyboard(chatID, targetChatID, relationshipType, lensesConfig);
+
+        try {
+            if (edit && ctx.callbackQuery) {
+                await ctx.editMessageText(title, {
+                    reply_markup: keyboard
+                });
+            } else {
+                await ctx.reply(title, {
+                    reply_markup: keyboard
+                });
+            }
+        } catch (e) {
+            console.log('Error showing shared lenses menu:', e);
+            // Fallback reply if edit fails
+            await ctx.reply(title, {
+                reply_markup: keyboard
+            }).catch(err => console.log('Fallback reply error in showSharedLensesMenu:', err));
+        }
+    }
+
+    async getSharedLensesKeyboard(chatID, targetChatID, relationshipType, lensesConfig) {
+        const language = await this.getLanguage(chatID);
+        const keyboard = {
+            inline_keyboard: []
+        };
+
+        // Add lenses in 2 columns
+        for (let i = 0; i < lensesConfig.length; i += 2) {
+            const row = [];
+            const lens1 = lensesConfig[i];
+            row.push({
+                text: `${lens1.enabled ? '✅' : '🔘'} ${lens1.name}`,
+                callback_data: `toggle_lens_${targetChatID}_${relationshipType}_${lens1.name}`
+            });
+            if (i + 1 < lensesConfig.length) {
+                const lens2 = lensesConfig[i+1];
+                row.push({
+                    text: `${lens2.enabled ? '✅' : '🔘'} ${lens2.name}`,
+                    callback_data: `toggle_lens_${targetChatID}_${relationshipType}_${lens2.name}`
+                });
+            }
+            keyboard.inline_keyboard.push(row);
+        }
+        
+        if (lensesConfig.length === 0) {
+             keyboard.inline_keyboard.push([{
+                text: i18next.t('settings_no_lenses_shared', { lng: language, defaultValue: 'No specific lenses configured for this link.'}),
+                callback_data: ' '
+            }]);
+        }
+
+        // Add back button to federation menu
+        keyboard.inline_keyboard.push([{
+            text: i18next.t('settings_back_to_federation', { lng: language, defaultValue: '⬅️ Back to Federation Menu' }),
+            callback_data: 'settings_federation' // This should take back to showFederationMenu
+        }]);
+
+        return keyboard;
+    }
+
+    async getLensesConfigForUI(chatID, targetChatID, relationshipType) {
+        const persistedLinkConfig = await this.db.holosphere.getFederatedConfig(chatID, targetChatID);
+        let activeLensesForType = [];
+
+        if (persistedLinkConfig) {
+            if (relationshipType === 'federated' && persistedLinkConfig.federate) {
+                activeLensesForType = persistedLinkConfig.federate;
+            } else if (relationshipType === 'notifies' && persistedLinkConfig.notify) {
+                activeLensesForType = persistedLinkConfig.notify;
+            }
+        }
+        
+        return ALL_AVAILABLE_LENSES.map(name => ({
+            name: name,
+            enabled: activeLensesForType.includes(name)
+        }));
     }
 }

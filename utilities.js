@@ -127,3 +127,45 @@ export const getDisplayName = (user) => {
   
   return firstName + (lastName ? ` ${lastName.charAt(0)}.` : "");
 };
+
+/**
+ * Retrieves the name of a Holon given its ID.
+ * It first tries to fetch the name from the Holon's own settings.
+ * If that fails and a context `ctx` is provided, it attempts to get the name via `getChatName`.
+ * As a last resort, it returns the Holon ID itself.
+ * @param {object} db - The database instance (e.g., HoloSphere) with a `get` method.
+ * @param {string} holonId - The ID of the Holon.
+ * @param {object} [ctx=null] - Optional Telegraf context, used for `getChatName` fallback.
+ * @returns {Promise<string>} - The Holon's name or its ID as a fallback.
+ */
+export const getHolonNameWithFallback = async (db, holonId, ctx = null) => {
+  if (!holonId) return 'Unknown Holon';
+
+  try {
+    // Attempt to get settings for this holonId
+    // Assuming settings are stored at holon: holonId, lens: 'settings', key: holonId
+    const settings = await db.get(holonId.toString(), 'settings', holonId.toString());
+    if (settings && settings.name) {
+      return settings.name;
+    }
+  } catch (error) {
+    // Log benignly, as this is an attempt to get a prettier name
+    console.warn(`Could not fetch settings name for holon ${holonId}: ${error.message}`);
+  }
+
+  // Fallback 1: Try Telegram chat name if ctx is provided and getChatName is available
+  if (ctx && typeof getChatName === 'function') {
+    try {
+      const chatName = await getChatName(ctx, holonId.toString());
+      // Ensure getChatName doesn't return an empty or default 'unknown' string if we prefer the ID
+      if (chatName && chatName !== 'unknown' && chatName.trim() !== '') {
+        return chatName;
+      }
+    } catch (error) {
+      console.warn(`Could not fetch Telegram chat name for ${holonId}: ${error.message}`);
+    }
+  }
+
+  // Final fallback: return the ID itself, converted to string
+  return holonId.toString();
+};
