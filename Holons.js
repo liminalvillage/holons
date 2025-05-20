@@ -539,8 +539,7 @@ export default class Holons {
       // The UI will adjust based on internalPercent, external will be derived for proposals
       let message = `🔷 SPLITTER MANAGEMENT 🔷\n`;
       message += `Contract: \`${splitterAddress}\`\n`;
-      message += `Adjust Internal (Managed) / External (Zoned) Split:\n\n`;
-      message += `Current Contract Setting: Managed ${internalPercent}% / Zoned ${externalPercent}%`;
+      message += `Current reward split: Internal ${internalPercent}% / Ecosystem ${externalPercent}%`;
       // For the interactive part, we start with the fetched internalPercent
       const currentUiInternalPercent = internalPercent; 
       const currentUiExternalPercent = 100 - currentUiInternalPercent;
@@ -672,7 +671,7 @@ export default class Holons {
         [{ text: "🪙 Token Balance", callback_data: "holons_tokenbalance" }],
         [{ text: "💱 Split Rewards", callback_data: "direct_manage_splitter" }],
         [{ text: "👥 Internal Rewards", callback_data: "holons_manage_members_view" }],
-        [{ text: "🔶 Ecosystem Management", callback_data: "holons_manage_zones_view" }]
+        [{ text: "🔶 Ecosystem Rewards", callback_data: "holons_manage_zones_view" }]
       );
    
     } else {
