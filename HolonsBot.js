@@ -181,6 +181,15 @@ class HolonsBot {
     this.library = new Library(this.telebot, this.db);
     this.users = new Users(this.telebot, this.db);
     this.holons = new Holons(this.telebot, this.db, this.settings);
+    
+    // Ensure Holons instance is passed to Settings instance
+    if (this.settings && typeof this.settings.setHolonsInstance === 'function' && this.holons) {
+      this.settings.setHolonsInstance(this.holons);
+      console.log("Holons instance successfully passed to Settings instance.");
+    } else {
+      console.error("Failed to pass Holons instance to Settings. Check if instances and method exist.");
+    }
+
     this.h3 = new H3(this.telebot, this.db, this.settings);
     this.tags = new Tags(this.telebot, this.db);
     this.participation = new Participation(this.telebot, this.db);

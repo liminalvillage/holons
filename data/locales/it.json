@@ -238,6 +238,11 @@
         "selectdatetime": "Si prega di selezionare una data e un'ora:",
         "navigafion": "Calendario di navigazione",
         "dialog": "Calendario di dialogo",
-        "back": "Indietro"
+        "back": "Indietro",
+        "settings_max_tasks": "📋 Max Compiti",
+        "settings_max_tasks_title": "Imposta il massimo compiti aperti (per holon)",
+        "settings_max_tasks_choose": "Scegli il numero massimo di compiti aperti per questo holon:",
+        "settings_max_tasks_updated": "Numero massimo di compiti aperti per questo holon impostato a: {{value}}",
+        "settings_max_tasks_unlimited": "Illimitato"
     }
 }

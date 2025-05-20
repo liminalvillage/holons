@@ -10,6 +10,7 @@ export default class Settings {
     constructor(bot, db) {
         this.db = db;
         this.bot = bot;
+        this.holons = null; // Re-add Holons instance placeholder
         
         // Create settings scenes handler
         this.scenes = new SettingsScenes(bot, db);
@@ -356,6 +357,9 @@ export default class Settings {
                         reply_markup: this.equationInlineKeyboard(weightsForEq, currenciesForEq)
                     }).catch((err) => { console.log(err) });
                     break;
+                case 'holacracy':  
+                    await this.showHolacracyMenu(ctx, true);
+                    break;
                 case 'federation':
                     if (utils.isAdmin(ctx)) {
                         await this.showFederationMenu(ctx, true);
@@ -394,6 +398,18 @@ export default class Settings {
                         "5. Configure roles as needed\n\n" +
                         "Need help? Click the Support & Feedback button to contact us!"
                     ).catch(e => console.log('Error sending help message:', e));
+                    break;
+                case 'manage_rewards': // Re-add this case
+                    if (this.holons && typeof this.holons.showHolonsMenu === 'function') {
+                        await this.holons.showHolonsMenu(ctx, true); // Assuming true for edit
+                    } else {
+                        console.error('Holons instance or showHolonsMenu method is not available in Settings.');
+                        const lang = await this.getLanguage(chatID);
+                        await ctx.reply(i18next.t('error_rewards_unavailable', { lng: lang, defaultValue: 'Error: Reward management is currently unavailable.'})).catch(()=>{});
+                    }
+                    break;
+                case 'max_tasks':
+                    await this.showMaxTasksMenu(ctx, true);
                     break;
             }
         });
@@ -1255,6 +1271,12 @@ export default class Settings {
             });
         });
 
+        this.bot.action('settings_holacracy', async (ctx) => {
+            // console.log("!!!!!!!!!!!! ACTION: settings_holacracy TRIGGERED !!!!!!!!!!!!"); // New Log
+            await ctx.answerCbQuery();
+            await this.showHolacracyMenu(ctx, true);
+        });
+
         // Command handlers for non-admin scenarios
         this.bot.command('setname', async (ctx) => {
             const chatID = ctx.chat.id;
@@ -1578,6 +1600,25 @@ export default class Settings {
                 await this.showSharedLensesMenu(ctx, targetChatID, relationshipType, true, potentiallyStaleConfig ).catch(()=>{});
             }
         });
+
+        this.bot.action(/set_max_tasks_(\d+)/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const value = parseInt(ctx.match[1]);
+            const chatID = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(chatID);
+            settings.maxTasks = value;
+            await this.setSettings(settings);
+            const language = await this.getLanguage(chatID);
+            await ctx.reply(
+                i18next.t('settings_max_tasks_updated', { lng: language, value: value === 0 ? i18next.t('settings_max_tasks_unlimited', { lng: language }) : value })
+            );
+            await this.showMaxTasksMenu(ctx, true);
+        });
+    }
+
+    // Re-add this method to allow injection of Holons instance
+    setHolonsInstance(holonsInstance) {
+        this.holons = holonsInstance;
     }
 
     async getHex(ctx) {
@@ -1689,7 +1730,8 @@ export default class Settings {
                 collaboration: 1,
                 wants: 1,
                 offers: 1
-            }
+            },
+            maxTasks: 13, // Default to 13 (Fibonacci)
         }
     }
     async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
@@ -1951,7 +1993,8 @@ export default class Settings {
                 valueEquation: {
                     ...defaultSettings.valueEquation,
                     ...(settings.valueEquation || {})
-                }
+                },
+                maxTasks: typeof settings.maxTasks !== 'undefined' ? settings.maxTasks : defaultSettings.maxTasks,
             }
             // Dynamically add currencies from settings.currencies to valueEquation if not present
             if (settings.currencies && Array.isArray(settings.currencies)) {
@@ -2030,35 +2073,36 @@ export default class Settings {
                     ],
                     [
                         { text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_timezone' },
-                        { text: `${this.getSettingIcon('purpose')} ${i18next.t('settings_purpose', { lng: language })}: ${settings.purpose ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_purpose' }
+                        { text: `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', {lng: language, defaultValue: 'Holacracy'})}`, callback_data: 'settings_holacracy'}
                     ],
                     [
-                        { text: `${this.getSettingIcon('roles')} ${i18next.t('settings_roles', { lng: language })}: ${settings.roles?.length || 0}`, callback_data: 'settings_roles' },
-                        { text: `${this.getSettingIcon('values')} ${i18next.t('settings_values', { lng: language })}: ${settings.values?.length || 0}`, callback_data: 'settings_values' }
+                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' },
+                        { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'}
+                    ],
+                    [ 
+                        { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' },
+                        { text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}: ${federationCount}`, callback_data: 'settings_federation' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('domains')} ${i18next.t('settings_domains', { lng: language })}: ${settings.domains?.length || 0}`, callback_data: 'settings_domains' },
-                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' }
+                        { text: `${this.getSettingIcon('level')} ${i18next.t('settings_level', { lng: language })}: ${settings.level}`, callback_data: 'settings_level' },
+                        { text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language })}`, callback_data: 'settings_users' }
                     ],
                     [
-                        { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'}, // Added currencies button
-                        { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' }
-                    ],
-                    [ // New row for Federation and Level
-                        { text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}: ${federationCount}`, callback_data: 'settings_federation' },
-                        { text: `${this.getSettingIcon('level')} ${i18next.t('settings_level', { lng: language })}: ${settings.level}`, callback_data: 'settings_level' }
+                        { text: `${this.getSettingIcon('manage_rewards')} ${i18next.t('settings_manage_rewards', { lng: language, defaultValue: 'Manage Rewards' })}`, callback_data: 'settings_manage_rewards' } // Changed callback_data back
                     ],
                     [
-                        { text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language })}`, callback_data: 'settings_users' },
-                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' }
+                         { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' },
+                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' }
                     ],
                     [
-                        { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
                     ],
                     // Add a full-width dashboard button at the bottom
                     [
                         { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `https://dashboard.holons.io/${chatID}/dashboard` }
+                    ],
+                    [
+                        { text: `${this.getSettingIcon('maxTasks')} ${i18next.t('settings_max_tasks', { lng: language, defaultValue: 'Max Tasks' })}: ${settings.maxTasks === 0 ? i18next.t('settings_max_tasks_unlimited', { lng: language, defaultValue: 'Unlimited' }) : settings.maxTasks}`, callback_data: 'settings_max_tasks' }
                     ]
                 ]
             }
@@ -2309,10 +2353,9 @@ export default class Settings {
 
     // Helper method to get setting icon
     getSettingIcon(type) {
-        return '';
         switch (type) {
             case 'values': return '💫';
-            case 'domains': return '🔍';
+            case 'domains': return '🗺️'; // Changed icon for domains to avoid conflict
             case 'roles': return '👥';
             case 'purpose': return '🎯';
             case 'language': return '🌐';
@@ -2324,7 +2367,10 @@ export default class Settings {
             case 'equation': return '⚖️';
             case 'level': return '📊';
             case 'federation': return '🔄';
-            case 'currencies': return '💰'; // Added icon for currencies
+            case 'currencies': return '💰'; 
+            case 'holacracy': return '🏛️'; // Added icon for holacracy
+            case 'manage_rewards': return '🏆'; // Icon for Manage Rewards
+            case 'maxTasks': return '📋';
             default: return '⚙️';
         }
     }
@@ -3194,5 +3240,98 @@ export default class Settings {
             name: name,
             enabled: activeLensesForType.includes(name)
         }));
+    }
+
+    async showHolacracyMenu(ctx, edit = false) {
+        const chatID = utils.getChatID(ctx);
+        if (!chatID) {
+            console.error('Could not determine chat ID for Holacracy menu');
+            return;
+        }
+
+        let settings = await this.getSettings(chatID);
+        const language = settings.language;
+
+        const menuText = `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', {lng: language, defaultValue: 'Holacracy Settings'})}`;
+
+        const menuMarkup = {
+            reply_markup: {
+                inline_keyboard: [
+                    [
+                        { 
+                            text: `${this.getSettingIcon('purpose')} ${i18next.t('settings_purpose', { lng: language })}: ${settings.purpose ? '✓' : i18next.t('settings_not_set', { lng: language })}`,
+                            callback_data: 'settings_purpose' 
+                        }
+                    ],
+                    [
+                        { 
+                            text: `${this.getSettingIcon('roles')} ${i18next.t('settings_roles', { lng: language })}: ${settings.roles?.length || 0}`,
+                            callback_data: 'settings_roles' 
+                        }
+                    ],
+                    [
+                        { 
+                            text: `${this.getSettingIcon('domains')} ${i18next.t('settings_domains', { lng: language })}: ${settings.domains?.length || 0}`,
+                            callback_data: 'settings_domains' 
+                        }
+                    ],
+                    [
+                        { 
+                            text: `${this.getSettingIcon('values')} ${i18next.t('settings_values', { lng: language })}: ${settings.values?.length || 0}`,
+                            callback_data: 'settings_values' 
+                        }
+                    ],
+                    [
+                        { text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }
+                    ]
+                ]
+            }
+        };
+
+        try {
+            if (edit) {
+                await ctx.editMessageText(menuText, menuMarkup);
+            } else {
+                await ctx.reply(menuText, menuMarkup);
+            }
+        } catch (e) {
+            console.log(`Error showing Holacracy menu (edit: ${edit}):`, e.message);
+            if (edit && !e.message.includes("message is not modified")) {
+                // If edit was true and it failed for a reason other than "not modified",
+                // try sending as a new message as a last resort.
+                console.log('Falling back to sending new message for Holacracy menu after edit error.');
+                await ctx.reply(menuText, menuMarkup).catch(err => console.log('Fallback reply error in showHolacracyMenu:', err.message));
+            } else if (!edit) {
+                // If it wasn't an edit initially and reply failed, log it (though less common)
+                 console.log('Error sending initial Holacracy menu as new message:', e.message);
+            }
+            // If it was an edit and the message was "not modified", we don't need to do anything further.
+        }
+    }
+
+    async showMaxTasksMenu(ctx, edit = false) {
+        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        let settings = await this.getSettings(chatID);
+        const language = settings.language;
+        const fibs = [2,3,5,8,13,21,34,55,0]; // 0 = Unlimited
+        const keyboard = { inline_keyboard: [] };
+        for (let i = 0; i < fibs.length; i += 3) {
+            const row = [];
+            for (let j = 0; j < 3 && i + j < fibs.length; j++) {
+                const n = fibs[i + j];
+                row.push({
+                    text: (settings.maxTasks === n ? '✅ ' : '') + (n === 0 ? i18next.t('settings_max_tasks_unlimited', { lng: language, defaultValue: 'Unlimited' }) : n.toString()),
+                    callback_data: `set_max_tasks_${n}`
+                });
+            }
+            keyboard.inline_keyboard.push(row);
+        }
+        keyboard.inline_keyboard.push([{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]);
+        const menuText = i18next.t('settings_max_tasks_title', { lng: language, defaultValue: 'Set Max Tasks per User' }) + '\n' + i18next.t('settings_max_tasks_choose', { lng: language, defaultValue: 'Choose the maximum number of open tasks per user:' });
+        if (edit && ctx.callbackQuery) {
+            await ctx.editMessageText(menuText, { reply_markup: keyboard });
+        } else {
+            await ctx.reply(menuText, { reply_markup: keyboard });
+        }
     }
 }

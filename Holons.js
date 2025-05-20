@@ -1098,8 +1098,8 @@ export default class Holons {
     
     try {
       // Log input parameters
-      const chatID = ctx.message.chat.id;
-      const userID = ctx.message.from.id;
+      const chatID = utils.getChatId(ctx);
+      const userID = utils.getUserId(ctx);
   
       console.log("Input parameters:");
       console.log("- chatID:", chatID, "(" + typeof chatID + ")");

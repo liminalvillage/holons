@@ -257,6 +257,11 @@
         "selectdatetime": "Please select a date and time:",
         "navigafion": "Navigation Calendar",
         "dialog": "Dialog Calendar",
-        "back": "Back"
+        "back": "Back",
+        "settings_max_tasks": "📋 Max Tasks",
+        "settings_max_tasks_title": "Set Max Open Tasks (Holon-wide)",
+        "settings_max_tasks_choose": "Choose the maximum number of open tasks for this holon:",
+        "settings_max_tasks_updated": "Max open tasks for this holon set to: {{value}}",
+        "settings_max_tasks_unlimited": "Unlimited"
     }
 }

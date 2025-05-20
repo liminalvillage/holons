@@ -237,6 +237,11 @@
         "selectdatetime": "Veuillez sélectionner une date et une heure:",
         "navigafion": "Calendrier de navigation",
         "dialog": "Calendrier de dialogue",
-        "back": "Dos"
+        "back": "Dos",
+        "settings_max_tasks": "📋 Tâches Max",
+        "settings_max_tasks_title": "Définir le nombre max de tâches ouvertes (par holon)",
+        "settings_max_tasks_choose": "Choisissez le nombre maximum de tâches ouvertes pour ce holon :",
+        "settings_max_tasks_updated": "Nombre max de tâches ouvertes pour ce holon défini sur : {{value}}",
+        "settings_max_tasks_unlimited": "Illimité"
     }
 }
