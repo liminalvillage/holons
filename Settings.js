@@ -2059,50 +2059,68 @@ export default class Settings {
         const federationCount = fedInfo && fedInfo.federation && Array.isArray(fedInfo.federation) ? fedInfo.federation.length : 0;
         
         // Create the message with Holon ID shown at the top
-        const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}`;
+        let holonAddressLine = '';
+        let holonNetworkLine = '';
+        if (this.holons && typeof this.holons.getSplitterContract === 'function') {
+            try {
+                const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+                const splitterContract = await this.holons.getSplitterContract(chatIdNormalized);
+                if (splitterContract && splitterContract.target && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
+                    holonAddressLine = `\n🔷 Holon Address: \`${splitterContract.target}\``;
+                    if (this.holons.network) {
+                        holonNetworkLine = `\n🌐 Network: ${this.holons.network}`;
+                    }
+                }
+            } catch (e) {
+                // Ignore errors, just don't show address/network
+            }
+        }
+        const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}${holonAddressLine}${holonNetworkLine}`;
 
         const menuMarkup = {
             reply_markup: {
                 inline_keyboard: [
+                    // 1. Name (full width)
                     [
                         { text: `✏️ ${i18next.t('settings_name', { lng: language, defaultValue: 'Name' })}: ${settings.name || i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_name' }
                     ],
+                    // 2. Language | Timezone
                     [
                         { text: `${this.getSettingIcon('language')} ${i18next.t('settings_language', { lng: language })}: ${settings.language}`, callback_data: 'settings_language' },
-                        { text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme', { lng: language })}: ${settings.theme}`, callback_data: 'settings_theme' }
+                        { text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_timezone' }
                     ],
+                    // 3. Max Tasks | Users
                     [
-                        { text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}: ${settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_timezone' },
-                        { text: `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', {lng: language, defaultValue: 'Holacracy'})}`, callback_data: 'settings_holacracy'}
+                        { text: `${this.getSettingIcon('maxTasks')} ${i18next.t('settings_max_tasks', { lng: language, defaultValue: 'Max Tasks' })}: ${settings.maxTasks === 0 ? i18next.t('settings_max_tasks_unlimited', { lng: language, defaultValue: 'Unlimited' }) : settings.maxTasks}`, callback_data: 'settings_max_tasks' },
+                        { text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language })}`, callback_data: 'settings_users' }
                     ],
+                    // 4. Admin | Federation
                     [
-                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' },
-                        { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'}
-                    ],
-                    [ 
                         { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' },
                         { text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}: ${federationCount}`, callback_data: 'settings_federation' }
                     ],
+                    // 5. Holacracy | Equation
                     [
-                        { text: `${this.getSettingIcon('level')} ${i18next.t('settings_level', { lng: language })}: ${settings.level}`, callback_data: 'settings_level' },
-                        { text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language })}`, callback_data: 'settings_users' }
+                        { text: `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', {lng: language, defaultValue: 'Holacracy'})}`, callback_data: 'settings_holacracy'},
+                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' }
                     ],
+                    // 6. Currencies | Manage Rewards
                     [
-                        { text: `${this.getSettingIcon('manage_rewards')} ${i18next.t('settings_manage_rewards', { lng: language, defaultValue: 'Manage Rewards' })}`, callback_data: 'settings_manage_rewards' } // Changed callback_data back
+                        { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'},
+                        { text: `${this.getSettingIcon('manage_rewards')} ${i18next.t('settings_manage_rewards', { lng: language, defaultValue: 'Manage Rewards' })}`, callback_data: 'settings_manage_rewards' }
                     ],
+                    // 7. Hex | Help
                     [
-                         { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' },
-                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' }
+                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' },
+                        { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' }
                     ],
+                    // 8. Support (full width)
                     [
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
                     ],
-                    // Add a full-width dashboard button at the bottom
+                    // 9. Dashboard (full width)
                     [
                         { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `https://dashboard.holons.io/${chatID}/dashboard` }
-                    ],
-                    [
-                        { text: `${this.getSettingIcon('maxTasks')} ${i18next.t('settings_max_tasks', { lng: language, defaultValue: 'Max Tasks' })}: ${settings.maxTasks === 0 ? i18next.t('settings_max_tasks_unlimited', { lng: language, defaultValue: 'Unlimited' }) : settings.maxTasks}`, callback_data: 'settings_max_tasks' }
                     ]
                 ]
             }
@@ -2363,13 +2381,13 @@ export default class Settings {
             case 'timezone': return '🕒';
             case 'admin': return '👑';
             case 'users': return '👪';
-            case 'hex': return '🔗';
+            case 'hex': return '✡️';
             case 'equation': return '⚖️';
             case 'level': return '📊';
-            case 'federation': return '🔄';
-            case 'currencies': return '💰'; 
+            case 'federation': return '🔗';
+            case 'currencies': return '💱'; 
             case 'holacracy': return '🏛️'; // Added icon for holacracy
-            case 'manage_rewards': return '🏆'; // Icon for Manage Rewards
+            case 'manage_rewards': return '💰'; // Icon for Manage Rewards
             case 'maxTasks': return '📋';
             default: return '⚙️';
         }

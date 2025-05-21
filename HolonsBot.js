@@ -233,7 +233,7 @@ class HolonsBot {
         
           if (userExists) {
             await ctx.reply(
-              i18next.t('personalWelcomeBack', { lng: language }),
+              i18next.t('personalWelcome', { lng: language }),
               {
                 reply_markup: {
                   inline_keyboard: [
