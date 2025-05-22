@@ -75,11 +75,13 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
         }
 
         // Store lens configuration for space2
-        fedInfo1.lensConfig[spaceId2] = {
-            federate: [...federateLenses], // Create a copy of the array
-            notify: [...notifyLenses], // Create a copy of the array
+        const newLensConfigsForSpace1 = { ...(fedInfo1.lensConfig || {}) }; // Shallow copy existing lensConfigs for space1
+        newLensConfigsForSpace1[spaceId2] = { // Add/update config for the target spaceId2
+            federate: [...federateLenses], // federateLenses & notifyLenses are from the main lensConfig parameter
+            notify: [...notifyLenses], 
             timestamp: Date.now()
         };
+        fedInfo1.lensConfig = newLensConfigsForSpace1; // Assign the new/modified object back to fedInfo1.lensConfig
 
         // Update timestamp
         fedInfo1.timestamp = Date.now();
@@ -275,6 +277,35 @@ export async function getFederation(holosphere, spaceId, password = null) {
 }
 
 /**
+ * Retrieves the lens-specific configuration for a federation link between two spaces.
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} spaceId - The ID of the source space.
+ * @param {string} targetSpaceId - The ID of the target space in the federation link.
+ * @param {string} [password] - Optional password for the source space.
+ * @returns {Promise<object|null>} - An object with 'federate' and 'notify' arrays, or null if not found.
+ */
+export async function getFederatedConfig(holosphere, spaceId, targetSpaceId, password = null) {
+    if (!holosphere || !spaceId || !targetSpaceId) {
+        throw new Error('getFederatedConfig: Missing required parameters');
+    }
+
+    try {
+        const fedInfo = await getFederation(holosphere, spaceId, password);
+
+        if (fedInfo && fedInfo.lensConfig && fedInfo.lensConfig[targetSpaceId]) {
+            return {
+                federate: fedInfo.lensConfig[targetSpaceId].federate || [],
+                notify: fedInfo.lensConfig[targetSpaceId].notify || []
+            };
+        }
+        return null; // Or return an empty config: { federate: [], notify: [] }
+    } catch (error) {
+        console.error(`Error getting federated config for ${spaceId} -> ${targetSpaceId}: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
  * Removes a federation relationship between spaces
  * @param {object} holosphere - The HoloSphere instance
  * @param {string} spaceId1 - The first space ID
@@ -294,10 +325,14 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         try {
             fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1);
         } catch (error) {
+            console.error(`Error getting fedInfo1 for ${spaceId1} during unfederate: ${error.message}`);
+            // If we can't get fedInfo1, we can't modify it. Decide if this is a critical failure.
+            // For now, we'll let it proceed to attempt metadata cleanup, but a throw here might be valid.
         }
         
         if (!fedInfo1 || !fedInfo1.federation) {
-            // Continue anyway to clean up any potential metadata
+            // If fedInfo1 or its federation array doesn't exist, log and proceed to metadata cleanup.
+            console.warn(`No federation array found for ${spaceId1} or fedInfo1 is null. Skipping its update.`);
         } else {
             // Update first space federation info
             fedInfo1.federation = fedInfo1.federation.filter(id => id !== spaceId2);
@@ -306,24 +341,33 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
             try {
                 await holosphere.putGlobal('federation', fedInfo1, password1);
             } catch (error) {
+                console.error(`Failed to update fedInfo1 for ${spaceId1} during unfederate: ${error.message}`);
+                throw error; // RE-THROW to signal failure
             }
         }
 
-        // Update second space federation info if password provided
-        if (password2) {
+        // Update second space federation info (remove spaceId1 from spaceId2's notify list)
+        // This part is usually for full bidirectional unfederation cleanup.
+        // The original code only did this if password2 was provided.
+        if (password2) { // Retaining original condition for this block
             let fedInfo2 = null;
             try {
                 fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
             } catch (error) {
+                console.error(`Error getting fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
             }
             
-            if (fedInfo2 && fedInfo2.notify) {
+            if (!fedInfo2 || !fedInfo2.notify) {
+                console.warn(`No notify array found for ${spaceId2} or fedInfo2 is null. Skipping its update.`);
+            } else {
                 fedInfo2.notify = fedInfo2.notify.filter(id => id !== spaceId1);
                 fedInfo2.timestamp = Date.now();
                 
                 try {
                     await holosphere.putGlobal('federation', fedInfo2, password2);
                 } catch (error) {
+                    console.error(`Failed to update fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
+                    throw error; // RE-THROW to signal failure
                 }
             }
         }
@@ -339,14 +383,17 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
             if (meta) {
                 meta.status = 'inactive';
                 meta.endedAt = Date.now();
-                await holosphere.putGlobal('federationMeta', meta);
+                await holosphere.putGlobal('federationMeta', meta); // Not re-throwing here as it's metadata cleanup
             }
         } catch (error) {
+            console.warn(`Failed to update federationMeta during unfederate: ${error.message}`);
         }
 
         return true;
     } catch (error) {
-        throw error;
+        // This will catch errors re-thrown from putGlobal or from getGlobal if they occur before specific catches.
+        console.error(`Critical error during unfederate operation for ${spaceId1}-${spaceId2}: ${error.message}`);
+        throw error; // Ensure the main operation failure is propagated
     }
 }
 

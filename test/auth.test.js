@@ -10,6 +10,8 @@ describe('HoloSphere Authentication and Authorization', () => {
     const testPassword = 'TestPass123!';
     const testHolon = 'test-holon';
     const testLens = 'test-lens';
+    const PUBLIC_GLOBAL_TABLE = 'publicTestTable'; // For public global data
+    const PRIVATE_GLOBAL_TABLE = 'veryPrivateGlobalTable'; // For all private global data tests
 
     beforeAll(async () => {
         holoSphere = new HoloSphere('test-app', false, null);
@@ -21,6 +23,8 @@ describe('HoloSphere Authentication and Authorization', () => {
     beforeEach(async () => {
         // Clean state before each test
         await holoSphere.deleteAll(testHolon, testLens);
+        await holoSphere.deleteAllGlobal(PUBLIC_GLOBAL_TABLE);
+        await holoSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
         await new Promise(resolve => setTimeout(resolve, 100));
     });
 
@@ -43,12 +47,13 @@ describe('HoloSphere Authentication and Authorization', () => {
         try {
             if (holoSphere) {
                 await holoSphere.deleteAll(testHolon, testLens);
-                await holoSphere.deleteAllGlobal('testTable');
+                await holoSphere.deleteAllGlobal(PUBLIC_GLOBAL_TABLE);
+                await holoSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
             }
-            // Assuming strict instance uses the same testHolon/testLens/testTable
             if (strictHoloSphere) {
                  await strictHoloSphere.deleteAll(testHolon, testLens);
-                 await strictHoloSphere.deleteAllGlobal('testTable');
+                await strictHoloSphere.deleteAllGlobal(PUBLIC_GLOBAL_TABLE);
+                await strictHoloSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
             }
         } catch (error) {
             console.error('Error during afterAll data cleanup:', error);
@@ -223,41 +228,35 @@ describe('HoloSphere Authentication and Authorization', () => {
 
     describe('Global Data Operations', () => {
         it('should handle private global data', async () => {
-            const testData = { id: 'global', value: 111 };
-            
-            await holoSphere.putGlobal('testTable', testData, testPassword);
-            
-            const result = await holoSphere.getGlobal('testTable', testData.id, testPassword);
+            const testData = { id: 'globalPrivateItem', value: 111 };
+            await holoSphere.putGlobal(PRIVATE_GLOBAL_TABLE, testData, testPassword);
+            const result = await holoSphere.getGlobal(PRIVATE_GLOBAL_TABLE, testData.id, testPassword);
             expect(result).toEqual(testData);
         });
 
         it('should handle public global data', async () => {
-            const testData = { id: 'public_global', value: 222 };
-            
-            await holoSphere.putGlobal('testTable', testData);
-            
-            const result = await holoSphere.getGlobal('testTable', testData.id);
+            const testData = { id: 'publicGlobalItem', value: 222 };
+            await holoSphere.putGlobal(PUBLIC_GLOBAL_TABLE, testData);
+            const result = await holoSphere.getGlobal(PUBLIC_GLOBAL_TABLE, testData.id);
             expect(result).toEqual(testData);
         });
 
         it('should handle getAllGlobal with private data', async () => {
             const testData = [
-                { id: 'global1', value: 1 },
-                { id: 'global2', value: 2 }
+                { id: 'globalPrivate1', value: 1 },
+                { id: 'globalPrivate2', value: 2 }
             ];
             
-            // Clean up any existing data first
-            await holoSphere.deleteAllGlobal('testTable', testPassword);
+            // Clean up before this specific test (already done in beforeEach, but good for clarity)
+            // await holoSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword); // This might be re-enabled later if tests pass without it
             
-            // Store each item
             for (const data of testData) {
-                await holoSphere.putGlobal('testTable', data, testPassword);
+                await holoSphere.putGlobal(PRIVATE_GLOBAL_TABLE, data, testPassword);
             }
             
-            // Wait a bit for data to settle
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Settle time
             
-            const results = await holoSphere.getAllGlobal('testTable', testPassword);
+            const results = await holoSphere.getAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
             expect(results.length).toBe(testData.length);
             for (const data of testData) {
                 expect(results).toContainEqual(expect.objectContaining(data));
@@ -265,13 +264,10 @@ describe('HoloSphere Authentication and Authorization', () => {
         }, 10000);
 
         it('should handle deleteGlobal with private data', async () => {
-            const testData = { id: 'delete_global', value: 333 };
-            
-            await holoSphere.putGlobal('testTable', testData, testPassword);
-            
-            await holoSphere.deleteGlobal('testTable', testData.id, testPassword);
-            
-            const result = await holoSphere.getGlobal('testTable', testData.id, testPassword);
+            const testData = { id: 'deleteGlobalPrivate', value: 333 };
+            await holoSphere.putGlobal(PRIVATE_GLOBAL_TABLE, testData, testPassword);
+            await holoSphere.deleteGlobal(PRIVATE_GLOBAL_TABLE, testData.id, testPassword);
+            const result = await holoSphere.getGlobal(PRIVATE_GLOBAL_TABLE, testData.id, testPassword);
             expect(result).toBeNull();
         });
     });

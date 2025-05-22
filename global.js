@@ -18,9 +18,45 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                user.auth(holoInstance.userName(tableName), password, (ack) => { // Use instance's userName
-                    if (ack.err) reject(new Error(ack.err));
-                    else resolve();
+                const userNameString = holoInstance.userName(tableName);
+                user.auth(userNameString, password, (authAck) => {
+                    if (authAck.err) {
+                        // If auth fails, try to create the user
+                        console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
+                        user.create(userNameString, password, (createAck) => {
+                            if (createAck.err) {
+                                // Check if error is "User already created"
+                                if (createAck.err.includes("already created")) {
+                                    // This means user exists but password might be wrong, or some other issue
+                                    // Proceed with auth again, it might have been a temporary glitch or race.
+                                    // Or, it could be that the password is indeed wrong.
+                                    console.log(`User ${userNameString} already existed, re-attempting auth with fresh user object.`);
+                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    freshUser.auth(userNameString, password, (secondAuthAck) => {
+                                        if (secondAuthAck.err) {
+                                            reject(new Error(`Failed to auth with fresh user object after create attempt (user existed): ${secondAuthAck.err}`));
+                                        } else {
+                                            resolve();
+                                        }
+                                    });
+                                } else {
+                                    reject(new Error(`Failed to create user ${userNameString}: ${createAck.err}`));
+                                }
+                            } else {
+                                // After successful creation, authenticate again
+                                console.log(`User ${userNameString} created successfully, attempting auth...`);
+                                user.auth(userNameString, password, (secondAuthAck) => {
+                                    if (secondAuthAck.err) {
+                                        reject(new Error(`Failed to auth after create for ${userNameString}: ${secondAuthAck.err}`));
+                                    } else {
+                                        resolve();
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        resolve(); // Auth successful
+                    }
                 });
             });
         }
@@ -75,9 +111,42 @@ export async function getGlobal(holoInstance, tableName, key, password = null) {
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                user.auth(holoInstance.userName(tableName), password, (ack) => { // Use instance's userName
-                    if (ack.err) reject(new Error(ack.err));
-                    else resolve();
+                const userNameString = holoInstance.userName(tableName);
+                user.auth(userNameString, password, (authAck) => {
+                    if (authAck.err) {
+                        // If auth fails, try to create the user
+                        console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
+                        user.create(userNameString, password, (createAck) => {
+                            if (createAck.err) {
+                                 // Check if error is "User already created"
+                                if (createAck.err.includes("already created")) {
+                                    console.log(`User ${userNameString} already existed, re-attempting auth with fresh user object.`);
+                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    freshUser.auth(userNameString, password, (secondAuthAck) => {
+                                        if (secondAuthAck.err) {
+                                            reject(new Error(`Failed to auth with fresh user object after create attempt (user existed): ${secondAuthAck.err}`));
+                                        } else {
+                                            resolve();
+                                        }
+                                    });
+                                } else {
+                                    reject(new Error(`Failed to create user ${userNameString}: ${createAck.err}`));
+                                }
+                            } else {
+                                // After successful creation, authenticate again
+                                console.log(`User ${userNameString} created successfully, attempting auth...`);
+                                user.auth(userNameString, password, (secondAuthAck) => {
+                                    if (secondAuthAck.err) {
+                                        reject(new Error(`Failed to auth after create for ${userNameString}: ${secondAuthAck.err}`));
+                                    } else {
+                                        resolve();
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        resolve(); // Auth successful
+                    }
                 });
             });
         }
@@ -159,9 +228,42 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                user.auth(holoInstance.userName(tableName), password, (ack) => { // Use instance's userName
-                    if (ack.err) reject(new Error(ack.err));
-                    else resolve();
+                const userNameString = holoInstance.userName(tableName);
+                user.auth(userNameString, password, (authAck) => {
+                    if (authAck.err) {
+                        // If auth fails, try to create the user
+                        console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
+                        user.create(userNameString, password, (createAck) => {
+                            if (createAck.err) {
+                                 // Check if error is "User already created"
+                                if (createAck.err.includes("already created")) {
+                                    console.log(`User ${userNameString} already existed, re-attempting auth with fresh user object.`);
+                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    freshUser.auth(userNameString, password, (secondAuthAck) => {
+                                        if (secondAuthAck.err) {
+                                            reject(new Error(`Failed to auth with fresh user object after create attempt (user existed): ${secondAuthAck.err}`));
+                                        } else {
+                                            resolve();
+                                        }
+                                    });
+                                } else {
+                                    reject(new Error(`Failed to create user ${userNameString}: ${createAck.err}`));
+                                }
+                            } else {
+                                // After successful creation, authenticate again
+                                console.log(`User ${userNameString} created successfully, attempting auth...`);
+                                user.auth(userNameString, password, (secondAuthAck) => {
+                                    if (secondAuthAck.err) {
+                                        reject(new Error(`Failed to auth after create for ${userNameString}: ${secondAuthAck.err}`));
+                                    } else {
+                                        resolve();
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        resolve(); // Auth successful
+                    }
                 });
             });
         }
@@ -275,9 +377,42 @@ export async function deleteGlobal(holoInstance, tableName, key, password = null
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                user.auth(holoInstance.userName(tableName), password, (ack) => { // Use instance's userName
-                    if (ack.err) reject(new Error(ack.err));
-                    else resolve();
+                const userNameString = holoInstance.userName(tableName);
+                user.auth(userNameString, password, (authAck) => {
+                    if (authAck.err) {
+                        // If auth fails, try to create the user
+                        console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
+                        user.create(userNameString, password, (createAck) => {
+                            if (createAck.err) {
+                                 // Check if error is "User already created"
+                                if (createAck.err.includes("already created")) {
+                                    console.log(`User ${userNameString} already existed, re-attempting auth with fresh user object.`);
+                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    freshUser.auth(userNameString, password, (secondAuthAck) => {
+                                        if (secondAuthAck.err) {
+                                            reject(new Error(`Failed to auth with fresh user object after create attempt (user existed): ${secondAuthAck.err}`));
+                                        } else {
+                                            resolve();
+                                        }
+                                    });
+                                } else {
+                                    reject(new Error(`Failed to create user ${userNameString}: ${createAck.err}`));
+                                }
+                            } else {
+                                // After successful creation, authenticate again
+                                console.log(`User ${userNameString} created successfully, attempting auth...`);
+                                user.auth(userNameString, password, (secondAuthAck) => {
+                                    if (secondAuthAck.err) {
+                                        reject(new Error(`Failed to auth after create for ${userNameString}: ${secondAuthAck.err}`));
+                                    } else {
+                                        resolve();
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        resolve(); // Auth successful
+                    }
                 });
             });
         }
@@ -322,9 +457,42 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
         if (password) {
             user = holoInstance.gun.user();
             await new Promise((resolve, reject) => {
-                user.auth(holoInstance.userName(tableName), password, (ack) => { // Use instance's userName
-                    if (ack.err) reject(new Error(ack.err));
-                    else resolve();
+                const userNameString = holoInstance.userName(tableName);
+                user.auth(userNameString, password, (authAck) => {
+                    if (authAck.err) {
+                        // If auth fails, try to create the user
+                        console.log(`Initial auth failed for ${userNameString}, attempting to create...`);
+                        user.create(userNameString, password, (createAck) => {
+                            if (createAck.err) {
+                                 // Check if error is "User already created"
+                                if (createAck.err.includes("already created")) {
+                                    console.log(`User ${userNameString} already existed, re-attempting auth with fresh user object.`);
+                                    const freshUser = holoInstance.gun.user(); // Get a new user object
+                                    freshUser.auth(userNameString, password, (secondAuthAck) => {
+                                        if (secondAuthAck.err) {
+                                            reject(new Error(`Failed to auth with fresh user object after create attempt (user existed): ${secondAuthAck.err}`));
+                                        } else {
+                                            resolve();
+                                        }
+                                    });
+                                } else {
+                                    reject(new Error(`Failed to create user ${userNameString}: ${createAck.err}`));
+                                }
+                            } else {
+                                // After successful creation, authenticate again
+                                console.log(`User ${userNameString} created successfully, attempting auth...`);
+                                user.auth(userNameString, password, (secondAuthAck) => {
+                                    if (secondAuthAck.err) {
+                                        reject(new Error(`Failed to auth after create for ${userNameString}: ${secondAuthAck.err}`));
+                                    } else {
+                                        resolve();
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        resolve(); // Auth successful
+                    }
                 });
             });
         }

@@ -296,4 +296,54 @@ describe('Federation Tests', () => {
       expect(result.message).toBeDefined();
     });
   });
+
+  describe('getFederatedConfig', () => {
+    test('should retrieve the correct lens configuration for a specific federation link', async () => {
+      const space1 = `${testPrefix}lens_config_space1`;
+      const space2 = `${testPrefix}lens_config_space2`;
+      const space3 = `${testPrefix}lens_config_space3`; // Another space for testing
+
+      const specificLensConfig = {
+        federate: ['books', 'movies'],
+        notify: ['books']
+      };
+
+      // Federate space1 with space2 with specific lens config
+      await holosphere.federate(space1, space2, null, null, true, specificLensConfig);
+      // Federate space1 with space3 with default (empty or wildcard) lens config
+      await holosphere.federate(space1, space3, null, null, true, {}); 
+
+      // Test 1: Get specific lens config for space1 -> space2
+      const retrievedConfig1to2 = await holosphere.getFederatedConfig(space1, space2);
+      expect(retrievedConfig1to2).toEqual(specificLensConfig);
+
+      // Test 2: Get lens config for space1 -> space3 (should be default/empty or null)
+      // Depending on implementation, it might return null or { federate: [], notify: [] }
+      // For now, let's check if it's not the specific one and is an object (or null)
+      const retrievedConfig1to3 = await holosphere.getFederatedConfig(space1, space3);
+      expect(retrievedConfig1to3).not.toEqual(specificLensConfig);
+      if (retrievedConfig1to3 !== null) {
+        expect(typeof retrievedConfig1to3).toBe('object');
+        expect(Array.isArray(retrievedConfig1to3.federate)).toBe(true);
+        expect(Array.isArray(retrievedConfig1to3.notify)).toBe(true);
+        // Check if it defaulted to empty arrays as per current federate logic for empty lensConfig input
+        expect(retrievedConfig1to3.federate).toEqual([]);
+        expect(retrievedConfig1to3.notify).toEqual([]);
+      } else {
+        expect(retrievedConfig1to3).toBeNull();
+      }
+
+      // Test 3: Try to get config for a non-federated link
+      const space4 = `${testPrefix}lens_config_space4`;
+      const retrievedConfig1to4 = await holosphere.getFederatedConfig(space1, space4);
+      expect(retrievedConfig1to4).toBeNull();
+    });
+
+    test('should return null if no federation info exists for the source space', async () => {
+      const nonExistentSpace = `${testPrefix}non_existent_space`;
+      const targetSpace = `${testPrefix}any_target_space`;
+      const config = await holosphere.getFederatedConfig(nonExistentSpace, targetSpace);
+      expect(config).toBeNull();
+    });
+  });
 });

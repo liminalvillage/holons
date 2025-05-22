@@ -532,6 +532,17 @@ class HoloSphere {
     async getFederation(holonId, password = null) {
         return Federation.getFederation(this, holonId, password);
     }
+  
+    /**
+     * Retrieves the lens-specific configuration for a federation link between two holons.
+     * @param {string} holonId - The ID of the source holon.
+     * @param {string} targetHolonId - The ID of the target holon in the federation link.
+     * @param {string} [password] - Optional password for the source holon.
+     * @returns {Promise<object|null>} - An object with 'federate' and 'notify' arrays, or null if not found.
+     */
+    async getFederatedConfig(holonId, targetHolonId, password = null) {
+        return Federation.getFederatedConfig(this, holonId, targetHolonId, password);
+    }
 
     /**
      * Removes a federation relationship between holons

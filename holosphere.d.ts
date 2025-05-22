@@ -443,6 +443,15 @@ declare class HoloSphere {
     getFederation(holonId: string, password?: string | null): Promise<FederationInfo | null>;
 
     /**
+     * Retrieves the lens-specific configuration for a federation link between two holons.
+     * @param {string} holonId - The ID of the source holon.
+     * @param {string} targetHolonId - The ID of the target holon in the federation link.
+     * @param {string} [password] - Optional password for the source holon.
+     * @returns {Promise<{ federate: string[], notify: string[] } | null>} - An object with 'federate' and 'notify' arrays, or null if not found.
+     */
+    getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ federate: string[], notify: string[] } | null>;
+
+    /**
      * Removes a federation relationship between holons
      * @param {string} holonId1 - The first holon ID
      * @param {string} holonId2 - The second holon ID
