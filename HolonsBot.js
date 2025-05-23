@@ -160,10 +160,9 @@ class HolonsBot {
   }
 
   async initializeModules() {
-    this.server = new Server(this.telebot);
+    this.server = new Server(this.telebot, this.db.holosphere.gun);
 
     this.settings = new Settings(this.telebot, this.db);
-    await this.settings.init();
 
     this.ui = new UI(this.telebot, this.db, this.settings);
     await this.ui.init();

@@ -15,4 +15,5 @@ certs/*
 .netlify/*
 data/%1C
 radata*
+holosphere.db/*
 /node_modules

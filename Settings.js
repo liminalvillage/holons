@@ -105,6 +105,8 @@ export default class Settings {
                 this.db.drop(chatID + '/expenses')
                 this.db.drop(chatID + '/announcements')
                 this.db.drop(chatID + '/recurring')
+                this.db.drop(chatID + '/checklists')
+                this.db.drop(chatID + '/roles')
 
                 this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
                 //clear federation
@@ -1708,7 +1710,7 @@ export default class Settings {
     getDefaultSettings(chatID, chatName) {
         return {
             id: chatID,
-            hex: chatID,
+            hex: '',
             version: 0.1,
             name: chatName || 'unknown',
             timezone: '',
@@ -1732,33 +1734,6 @@ export default class Settings {
                 offers: 1
             },
             maxTasks: 13, // Default to 13 (Fibonacci)
-        }
-    }
-    async init(appname = 'Holons', telegramtoken = null, discordtoken = null) {
-        try {
-          // Initialize i18next
-          // const knownLanguages = ['en', 'it', 'es', 'fr', 'ru', 'de']; // All languages the bot supports
-    
-          // await i18next
-          //   .use(Backend)
-          //   .init({
-          //     fallbackLng: 'en',
-          //     supportedLngs: knownLanguages,
-          //     ns: ['translation'], // Assuming all keys are under 'translation'
-          //     defaultNS: 'translation',
-          //     backend: {
-          //       loadPath: './data/locales/{{lng}}.json', // Points to the language file
-          //                                                     // i18next will look for the 'translation' namespace within this file.
-          //     },
-          //     // Preload all supported languages so that every locale file is loaded at startup
-          //     preload: knownLanguages,
-          //     interpolation: {
-          //       escapeValue: false, // Important for rendering HTML/Markdown in messages
-          //     },
-          //     debug: process.env.MODE === 'development',
-          //   });
-        } catch (error) {
-            console.error('Error initializing i18next:', error);
         }
     }
 
