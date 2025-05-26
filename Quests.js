@@ -285,7 +285,7 @@ export default class Quests {
                             // Re-save the original quest with the new activeHologram entry
                             await this.db.put(chatID + '/quests', quest);
                         } catch (error) {
-                            console.error(`Error sending Telegram hologram to initiator ${quest.initiator.id}:`, error);
+                            //PROBABLY USER DID NOT START THE PRIVATE CHAT
                         }
                         // --- End sending personal hologram message ---
                     } else {

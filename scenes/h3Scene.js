@@ -2,7 +2,7 @@ import {
   Scenes,
   Markup
 } from 'telegraf';
-import categoryTypes from "../data/guilds.json" assert { type: "json" };
+import categoryTypes from "../data/guilds.json" with { type: "json" };
 import  {getChatId } from '../utilities.js';
 
 import fs from 'fs';

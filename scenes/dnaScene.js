@@ -3,7 +3,7 @@ import {
   Markup
 } from 'telegraf';
 
-import dnaData from "../data/dna.json" assert { type: "json" };
+import dnaData from "../data/dna.json" with { type: "json" };
 
 // Create a scene
 export const dnaScene = new Scenes.BaseScene('dna');

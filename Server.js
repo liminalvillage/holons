@@ -2,13 +2,14 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-import Gun from 'gun';
 import https from 'https';
+import Gun from 'gun';
 
 class Server {
-  constructor(bot) {
+  constructor(bot, gunInstance) {
     this.bot = bot;
     this.serverInstance = null;
+    this.gunInstance = gunInstance;
     this.setupServer();
   }
 
@@ -20,7 +21,8 @@ class Server {
 
     const app = express();
     const isDebug = process.env.NODE_ENV === 'development';
-    const port = process.env.PORT || (isDebug ? 80 : 443);
+    // const port = process.env.PORT || (isDebug ? 80 : 443);
+    const port = process.env.PORT || (isDebug ? 3000 : 443);
 
     // Setup static file serving and Gun middleware
     app.use(express.static('public'));
@@ -52,15 +54,17 @@ class Server {
       this.serverInstance = null;
     });
 
-    // Initialize Gun with server
-    this.gun = Gun({
-      axe: false,
-      web: this.serverInstance,
-      file: 'data',
-      multicast: false,
-      peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : []
-    });
-
+    // Initialize Gun
+      this.gun = this.gunInstance;
+      // Check if it's a valid-looking Gun instance and configure it with our server
+      if (this.gun.opt && typeof this.gun.opt === 'function') {
+        this.gun.opt({ web: this.serverInstance });
+        console.log("Configured pre-existing Gun instance with this server's WebSocket handler.");
+      } else {
+        // gunInstance was truthy but not a valid Gun object.
+        console.warn("A 'gunInstance' was provided but it does not appear to be a valid Gun instance (missing .opt method). It will be used as is, without explicit web server configuration by this Server class.");
+      }
+    
     console.log(`Gun server initialized with ${isDebug ? 'HTTP' : 'HTTPS'}`);
   }
 

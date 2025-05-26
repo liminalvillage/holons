@@ -3,14 +3,14 @@ import * as fs from 'fs';
 import { Scenes } from 'telegraf';
 import * as utils from './utilities.js';
 
-import * as appreciative from './contracts/Appreciative.json' assert { type: "json" };
-import * as appreciativefactory from './contracts/AppreciativeFactory.json' assert { type: "json" };
-import * as factory from './contracts/IHolonFactory.json' assert { type: "json" };
+import * as appreciative from './contracts/Appreciative.json' with { type: "json" };
+import * as appreciativefactory from './contracts/AppreciativeFactory.json' with { type: "json" };
+import * as factory from './contracts/IHolonFactory.json' with { type: "json" };
 
-import * as managed from './contracts/Managed.json' assert { type: "json" };
-import * as zoned from './contracts/Zoned.json' assert { type: "json" };
-import * as splitter from './contracts/Splitter.json' assert { type: "json" };
-import * as holons from './contracts/Holons.json' assert { type: "json" };
+import * as managed from './contracts/Managed.json' with { type: "json" };
+import * as zoned from './contracts/Zoned.json' with { type: "json" };
+import * as splitter from './contracts/Splitter.json' with { type: "json" };
+import * as holons from './contracts/Holons.json' with { type: "json" };
 
 // "SplitterFactory": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
 // "AppreciativeFactory": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",

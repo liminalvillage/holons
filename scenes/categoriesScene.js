@@ -2,7 +2,7 @@ import {
   Scenes,
   Markup
 } from 'telegraf';
-import categoryTypes from "../data/roles.json" assert { type: "json" };
+import categoryTypes from "../data/roles.json" with { type: "json" };
 
 import fs from 'fs';
 
