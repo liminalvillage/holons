@@ -798,30 +798,37 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         spaces = spaces.filter(targetSpace => {
             const spaceConfig = fedInfo.lensConfig?.[targetSpace];
             if (!spaceConfig) {
+                result.messages.push(`No lens configuration for target space ${targetSpace}. Skipping propagation of lens '${lens}'.`);
+                result.skipped++;
                 return false;
             }
 
-            // Check if this lens should be federated
-            const shouldFederate = spaceConfig.federate.includes('*') || 
-                                 spaceConfig.federate.includes(lens);
-            
-            // Check if this lens should be notified
-            const shouldNotify = spaceConfig.notify.includes('*') || 
-                               spaceConfig.notify.includes(lens);
+            // Ensure .federate is an array before calling .includes
+            const federateLenses = Array.isArray(spaceConfig.federate) ? spaceConfig.federate : [];
 
-            // Both conditions must be true for propagation
-            const shouldPropagate = shouldFederate && shouldNotify;
+            const shouldFederate = federateLenses.includes('*') || federateLenses.includes(lens);
+            
+            // Propagation now only depends on the 'federate' list configuration for the lens
+            const shouldPropagate = shouldFederate;
             
             if (!shouldPropagate) {
+                result.messages.push(`Propagation of lens '${lens}' to target space ${targetSpace} skipped: lens not in 'federate' configuration.`);
+                result.skipped++;
             }
             
             return shouldPropagate;
         });
 
         if (spaces.length === 0) {
+            // If no specific skip messages were added and spaces is empty, add a general one.
+            if (result.skipped === 0 && fedInfo.notify && fedInfo.notify.length > 0) { 
+                result.messages.push('No target spaces were configured for federation of this specific lens, out of available notification partners.');
+            } else if (fedInfo.notify && fedInfo.notify.length === 0) {
+                result.messages.push('No notification partners available to filter for lens propagation.');
+            }
             return {
                 ...result,
-                message: 'No valid target spaces found after lens filtering'
+                message: result.messages.join('; ') || 'No valid target spaces for propagation after lens filtering.'
             };
         }
         

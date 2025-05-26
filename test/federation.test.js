@@ -132,7 +132,7 @@ describe('Federation Tests', () => {
       const shoppingData = { id: 'test-shopping', item: 'Test Item' };
       const shoppingResult = await holosphere.propagate(space1, 'shopping', shoppingData);
       expect(shoppingResult.success).toBe(0); // Should not propagate
-      expect(shoppingResult.message).toContain('No valid target spaces found after lens filtering');
+      expect(shoppingResult.message).toContain("Propagation of lens 'shopping' to target space " + space2 + " skipped: lens not in 'federate' configuration.");
     });
 
     test('should handle wildcard lens configuration', async () => {
@@ -158,9 +158,9 @@ describe('Federation Tests', () => {
       const announcementResult = await holosphere.propagate(space1, 'announcements', testData);
       expect(announcementResult.success).toBe(1);
       
-      // Should not propagate for other lenses (not in notify list)
+      // Should now propagate for other lenses because federate is ['*'] and space2 is in space1's notify list.
       const otherResult = await holosphere.propagate(space1, 'shopping', testData);
-      expect(otherResult.success).toBe(0);
+      expect(otherResult.success).toBe(1);
     });
 
     test('should handle bidirectional lens configuration correctly', async () => {

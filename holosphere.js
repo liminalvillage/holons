@@ -43,8 +43,8 @@ class HoloSphere {
        
         // Define default Gun options
         const defaultGunOptions = {
-            peers: ['https://gun.holons.io/gun'],
-            axe: false,
+            peers: ['https://gun.holons.io/gun','https://59.src.eco/gun'],
+            axe: false
             // Add other potential defaults here if needed
         };
 
