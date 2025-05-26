@@ -266,33 +266,8 @@ export async function get(holoInstance, holon, lens, key, password = null, optio
                 const userNameString = holoInstance.userName(holon); // Use holon for get
                 user.auth(userNameString, password, (authAck) => {
                     if (authAck.err) {
-                        console.log(`Initial auth failed for ${userNameString} during get, attempting to create...`);
-                        user.create(userNameString, password, (createAck) => {
-                            if (createAck.err) {
-                                if (createAck.err.includes("already created")) {
-                                    console.log(`User ${userNameString} already existed during get, re-attempting auth with fresh user object.`);
-                                    const freshUser = holoInstance.gun.user(); // Get a new user object
-                                    freshUser.auth(userNameString, password, (secondAuthAck) => {
-                                        if (secondAuthAck.err) {
-                                            reject(new Error(`Failed to auth with fresh user object after create attempt (user existed) for ${userNameString} during get: ${secondAuthAck.err}`));
-                                        } else {
-                                            resolve();
-                                        }
-                                    });
-                                } else {
-                                    reject(new Error(`Failed to create user ${userNameString} during get: ${createAck.err}`));
-                                }
-                            } else {
-                                console.log(`User ${userNameString} created successfully during get, attempting auth...`);
-                                user.auth(userNameString, password, (secondAuthAck) => {
-                                    if (secondAuthAck.err) {
-                                        reject(new Error(`Failed to auth after create for ${userNameString} during get: ${secondAuthAck.err}`));
-                                    } else {
-                                        resolve();
-                                    }
-                                });
-                            }
-                        });
+                        // If auth fails, reject immediately. Do not attempt to create user.
+                        reject(new Error(`Authentication failed for ${userNameString} during get: ${authAck.err}`));
                     } else {
                         resolve(); // Auth successful
                     }

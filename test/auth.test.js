@@ -107,6 +107,7 @@ describe('HoloSphere Authentication and Authorization', () => {
             const testData = { id: 'test2', value: 'private-data' };
             
             // Store data with correct password
+            await new Promise(resolve => setTimeout(resolve, 100)); // Added delay
             await holoSphere.put(testHolon, testLens, testData, testPassword);
             
             // Try to retrieve with wrong password
