@@ -130,19 +130,16 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
 
                 if (originalData) {
                     console.log(`### Returning RESOLVED data for soul: ${hologram.soul}`);
-                    // Combine original data with new meta, avoiding deep nesting
-                    const newMeta = {
-                         isHologram: true,
-                         resolved: true,
-                         soul: hologram.soul,
-                    };
+                    // New structure for the returned object
                     return {
                         ...originalData,
-                        _meta: { ...(originalData._meta || {}), ...newMeta }
+                        isHologram: true, // Top-level field for frontend
+                        _meta: {
+                            ...(originalData._meta || {}), // Preserve original _meta
+                            resolvedFromHologram: true,    // Clarified meta field
+                            hologramSoul: hologram.soul     // Clarified meta field
+                        }
                     };
-                    // === TEMPORARY DEBUG: Return only original data ===
-                    // return originalData;
-                    // ==================================================
                 } else {
                     console.warn(`!!! Original data NOT FOUND for soul: ${hologram.soul}. Returning null.`);
                     return null;
