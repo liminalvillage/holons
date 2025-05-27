@@ -14,10 +14,10 @@ export async function putNode(holoInstance, holon, lens, data) {
 
     return new Promise((resolve, reject) => {
         try {
-            // Remove isHologram field before storing
-            if (data && data.isHologram !== undefined) {
-                delete data.isHologram;
-            }
+            // Remove isHologram field before storing - NO LONGER NEEDED
+            // if (data && data.isHologram !== undefined) {
+            // delete data.isHologram;
+            // }
             holoInstance.gun.get(holoInstance.appname)
                 .get(holon)
                 .get(lens)

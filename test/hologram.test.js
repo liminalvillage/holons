@@ -63,11 +63,11 @@ describe('HoloSphere Reference System', () => {
         expect(resolved).toBeDefined();
         expect(resolved.id).toBe('ref2');
         expect(resolved.value).toBe('Data to Resolve');
-        // Check for new top-level field and updated metadata
-        expect(resolved.isHologram).toBe(true);
+        // Check for updated metadata
         expect(resolved._meta).toBeDefined();
         expect(resolved._meta.resolvedFromHologram).toBe(true);
         expect(resolved._meta.hologramSoul).toBe(hologram.soul);
+        expect(resolved.isHologram).toBeUndefined(); // Ensure top-level isHologram is not present
         // Ensure no old fields in _meta unless they were on originalData
         expect(resolved._meta.isHologram).toBeUndefined(); 
         expect(resolved._meta.resolved).toBeUndefined();
@@ -139,7 +139,7 @@ describe('HoloSphere Reference System', () => {
         expect(resolvedShallow.soul).toBe(hologram2Storage.soul); // Expect soul of hologram2Storage
         expect(resolvedShallow.value).toBeUndefined(); // hologram2Storage has no 'value' field
         
-        expect(resolvedShallow.isHologram).toBe(true); // Augmented by resolveHologram
+        expect(resolvedShallow.isHologram).toBeUndefined(); // Ensure top-level isHologram is not present
         expect(resolvedShallow._meta).toBeDefined();
         expect(resolvedShallow._meta.resolvedFromHologram).toBe(true);
         // The hologramSoul in meta is from the input to resolveHologram, which was fetchedHologram2
@@ -247,8 +247,8 @@ describe('HoloSphere Reference System', () => {
         
         expect(resolved2).toBeDefined();
         expect(resolved2.id).toBe('update-ref');
-        expect(resolved2.value).toBe('Version 2'); // Should reflect the update
-        expect(resolved2.isHologram).toBe(true);
+        expect(resolved2.value).toBe('Version 2'); 
+        expect(resolved2.isHologram).toBeUndefined(); // Ensure top-level isHologram is not present
         expect(resolved2._meta).toBeDefined();
         expect(resolved2._meta.resolvedFromHologram).toBe(true);
         expect(resolved2._meta.hologramSoul).toBe(hologram.soul);
@@ -312,6 +312,62 @@ describe('HoloSphere Reference System', () => {
         // 6. Verify the hologram's soul is marked as 'DELETED'
         expect(hologramsSet).toBeDefined();
         expect(hologramsSet[storedHologramSoul]).toBe('DELETED'); // <-- Expect 'DELETED' string
+    });
+
+    test('_meta.resolvedFromHologram is correctly set and persisted if part of stored data', async () => {
+        const originalData = { id: 'original-meta-test', value: 'Original for _meta test' };
+        await holoSphere.put(testHolon, testLens, originalData);
+        await waitForGun();
+
+        const hologramObject = holoSphere.createHologram(testHolon, testLens, originalData);
+        const hologramStorage = { id: 'hologram-for-meta', soul: hologramObject.soul }; 
+        await holoSphere.put(testHolon, testLens, hologramStorage);
+        await waitForGun();
+
+        // 1. Resolve the hologram and check for _meta.resolvedFromHologram
+        const resolvedHologram = await holoSphere.get(testHolon, testLens, 'hologram-for-meta');
+        expect(resolvedHologram).toBeDefined();
+        expect(resolvedHologram.id).toBe(originalData.id);
+        expect(resolvedHologram.value).toBe(originalData.value);
+        expect(resolvedHologram.isHologram).toBeUndefined(); // Top-level isHologram is gone
+        expect(resolvedHologram._meta).toBeDefined();
+        expect(resolvedHologram._meta.resolvedFromHologram).toBe(true);
+        expect(resolvedHologram._meta.hologramSoul).toBe(hologramStorage.soul);
+
+        // 2. Store this resolved data (which includes its _meta) under a new ID
+        const resolvedDataStorageId = 'stored-resolved-hologram-meta';
+        const dataToStore = { 
+            ...resolvedHologram, 
+            id: resolvedDataStorageId 
+        };
+        // The _meta field (containing resolvedFromHologram) IS part of dataToStore.
+        // Since `put` no longer strips `isHologram` (as it's not there), this just stores dataToStore as is.
+        await holoSphere.put(testHolon, 'anotherLens', dataToStore);
+        await waitForGun();
+
+        // 3. Retrieve the raw stored data and verify _meta was persisted
+        const rereadDataRaw = await holoSphere.get(testHolon, 'anotherLens', resolvedDataStorageId, null, { resolveHolograms: false });
+        expect(rereadDataRaw).toBeDefined();
+        expect(rereadDataRaw.id).toBe(resolvedDataStorageId);
+        expect(rereadDataRaw.value).toBe(originalData.value);
+        expect(rereadDataRaw.isHologram).toBeUndefined(); 
+        expect(rereadDataRaw._meta).toBeDefined(); 
+        expect(rereadDataRaw._meta.resolvedFromHologram).toBe(true); // This was persisted
+        expect(rereadDataRaw._meta.hologramSoul).toBe(hologramStorage.soul); // This was persisted
+        expect(rereadDataRaw.soul).toBeUndefined(); 
+
+        // 4. Retrieve the same data with hologram resolution enabled.
+        // The stored item rereadDataRaw was not itself a hologram (no .soul field for isHologram() to check).
+        // So, resolveHologram (if called by get) would return it as is.
+        // The _meta field will not be changed or re-evaluated by this get call.
+        const rereadDataResolved = await holoSphere.get(testHolon, 'anotherLens', resolvedDataStorageId, null, { resolveHolograms: true });
+        expect(rereadDataResolved).toBeDefined();
+        expect(rereadDataResolved.id).toBe(resolvedDataStorageId);
+        expect(rereadDataResolved.value).toBe(originalData.value);
+        expect(rereadDataResolved.isHologram).toBeUndefined(); 
+        expect(rereadDataResolved._meta).toEqual(rereadDataRaw._meta); 
+        expect(rereadDataResolved.soul).toBeUndefined();
+
     });
     // --- End tests for _holograms tracking ---
 

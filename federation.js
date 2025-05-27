@@ -846,28 +846,38 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         // For each target space, propagate the data
         const propagatePromises = spaces.map(async (targetSpace) => {
             try {
-                // If using holograms and data isn't already a hologram, create a hologram
-                if (useHolograms && !isAlreadyHologram) {
-                    // Create a hologram object using the dedicated utility
-                    const hologram = holosphere.createHologram(holon, lens, data);
-                    
-                    // Add federation metadata
-                    hologram._federation = {
-                        origin: holon,
-                        lens: lens,
-                        timestamp: Date.now()
-                    };
-                    
-                    // Store the hologram in the target space without further propagation
-                    await holosphere.put(targetSpace, lens, hologram, null, { autoPropagate: false });
-                    
-                    result.success++;
-                    return true;
-                } 
+                let payloadToPut;
+                const federationMeta = {
+                    origin: holon,       // The space from which this data is being propagated
+                    sourceLens: lens,    // The lens from which this data is being propagated
+                    propagatedAt: Date.now(),
+                    originalId: data.id
+                };
 
-                // Otherwise, store the original data (either full data or an existing hologram)
-                // Prevent further auto-propagation from the target
-                await holosphere.put(targetSpace, lens, data, null, { autoPropagate: false });
+                if (useHolograms && !isAlreadyHologram) {
+                    // Create a new hologram referencing the original data
+                    const newHologram = holosphere.createHologram(holon, lens, data);
+                    payloadToPut = {
+                        ...newHologram, // This will be { id: data.id, soul: 'path/to/original' }
+                        _federation: federationMeta
+                    };
+                } else {
+                    // Propagate existing data (could be a full object or an existing hologram)
+                    // Make a shallow copy and update/add _federation metadata
+                    payloadToPut = {
+                        ...data, 
+                        _federation: {
+                            ...(data._federation || {}), // Preserve existing _federation fields if any
+                            ...federationMeta // Add/overwrite with current propagation info
+                        }
+                    };
+                }
+                
+                // Store in the target space with redirection disabled and no further auto-propagation
+                await holosphere.put(targetSpace, lens, payloadToPut, null, { 
+                    disableHologramRedirection: true, 
+                    autoPropagate: false 
+                });
 
                 result.success++;
                 return true;

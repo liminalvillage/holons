@@ -16,6 +16,7 @@
  * @param {boolean} [options.autoPropagate=true] - Whether to automatically propagate to federated holons (default: true)
  * @param {object} [options.propagationOptions] - Options to pass to propagate
  * @param {boolean} [options.propagationOptions.useHolograms=true] - Whether to use holograms instead of duplicating data
+ * @param {boolean} [options.disableHologramRedirection=false] - Whether to disable hologram redirection
  * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
  */
 export async function put(holoInstance, holon, lens, data, password = null, options = {}) {
@@ -25,6 +26,8 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
     if (!holon || !lens) {
         throw new Error('put: Missing required holon or lens parameters:', holon, lens);
     }
+
+    const { disableHologramRedirection = false } = options; // Extract new option
 
     let targetHolon = holon;
     let targetLens = lens;
@@ -40,7 +43,7 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
         // Get the item at the original target path, WITHOUT resolving holograms
         const existingItemAtPath = await get(holoInstance, targetHolon, targetLens, targetKey, password, { resolveHolograms: false });
 
-        if (existingItemAtPath && holoInstance.isHologram(existingItemAtPath)) {
+        if (!disableHologramRedirection && existingItemAtPath && holoInstance.isHologram(existingItemAtPath)) {
             const soulInfo = holoInstance.parseSoulPath(existingItemAtPath.soul);
             if (soulInfo) {
                 // Optional: Check if soulInfo.appname matches holoInstance.appname
@@ -139,10 +142,10 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
         return new Promise((resolve, reject) => {
             try {
-                // Remove isHologram field before storing
-                if (data && data.isHologram !== undefined) {
-                    delete data.isHologram;
-                }
+                // Remove isHologram field before storing - NO LONGER NEEDED
+                // if (data && data.isHologram !== undefined) {
+                // delete data.isHologram;
+                // }
                 const payload = JSON.stringify(data); // The data being stored
 
                 const putCallback = async (ack) => {

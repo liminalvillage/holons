@@ -130,13 +130,12 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
 
                 if (originalData) {
                     console.log(`### Returning RESOLVED data for soul: ${hologram.soul}`);
-                    // New structure for the returned object
+                    // Structure for the returned object - isHologram (top-level) is removed
                     return {
                         ...originalData,
-                        isHologram: true, // Top-level field for frontend
                         _meta: {
                             ...(originalData._meta || {}), // Preserve original _meta
-                            resolvedFromHologram: true,    // Clarified meta field
+                            resolvedFromHologram: true,    // This is now the primary indicator
                             hologramSoul: hologram.soul     // Clarified meta field
                         }
                     };

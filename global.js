@@ -63,10 +63,10 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
 
         return new Promise((resolve, reject) => {
             try {
-                // Remove isHologram field before storing
-                if (data && data.isHologram !== undefined) {
-                    delete data.isHologram;
-                }
+                // Remove isHologram field before storing - NO LONGER NEEDED
+                // if (data && data.isHologram !== undefined) {
+                // delete data.isHologram;
+                // }
                 const payload = JSON.stringify(data);
 
                 const dataPath = password ?
