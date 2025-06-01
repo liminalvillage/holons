@@ -138,7 +138,7 @@ export const getDisplayName = (user) => {
  * @param {object} [ctx=null] - Optional Telegraf context, used for `getChatName` fallback.
  * @returns {Promise<string>} - The Holon's name or its ID as a fallback.
  */
-export const getHolonNameWithFallback = async (db, holonId, ctx = null) => {
+export const getHolonName = async (db, holonId, ctx = null) => {
   if (!holonId) return 'Unknown Holon';
 
   try {

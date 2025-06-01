@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName, isBotAdmin } from './utilities.js';
+import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName, isBotAdmin, getHolonName } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import Users from './Users.js';
 import { Scenes } from 'telegraf';
@@ -271,7 +271,9 @@ export default class Quests {
                         // --- Send a Telegram hologram message to the initiator's personal chat ---
                         try {
                             const personalLanguage = await this.settings.getLanguage(quest.initiator.id.toString());
-                            const personalHologramMessageText = await this.createMessage(quest, personalLanguage);
+                            let basePersonalHologramMessageText = await this.createMessage(quest, personalLanguage);
+                            const originalHolonNameInitiator = await getHolonName(this.db, chatID, ctx);
+                            const personalHologramMessageText = basePersonalHologramMessageText + `| ${i18next.t('linked_view', { lng: personalLanguage, holonName: originalHolonNameInitiator, defaultValue: `🔗 Linked from ${originalHolonNameInitiator}` })}\n`;
                             const personalHologramMarkup = this.markup(quest, personalLanguage);
                             const personalTelegramHologramMsg = await this.bot.telegram.sendMessage(quest.initiator.id.toString(), personalHologramMessageText, personalHologramMarkup);
                             
@@ -338,7 +340,9 @@ export default class Quests {
                 // --- Send a Telegram hologram message to the initiator's personal chat ---
                 try {
                     const personalLanguage = await this.settings.getLanguage(quest.initiator.id.toString());
-                    const personalHologramMessageText = await this.createMessage(quest, personalLanguage);
+                    let basePersonalHologramMessageText = await this.createMessage(quest, personalLanguage);
+                    const originalHolonNameInitiatorCtx = await getHolonName(this.db, chatID, ctx);
+                    const personalHologramMessageText = basePersonalHologramMessageText + `\n| ${i18next.t('linked_view', { lng: personalLanguage, holonName: originalHolonNameInitiatorCtx, defaultValue: `🔗 Linked from ${originalHolonNameInitiatorCtx}` })}\n`;
                     const personalHologramMarkup = this.markup(quest, personalLanguage);
                     const personalTelegramHologramMsg = await this.bot.telegram.sendMessage(quest.initiator.id.toString(), personalHologramMessageText, personalHologramMarkup);
                     
@@ -1022,7 +1026,7 @@ export default class Quests {
             }
 
 
-            const message = await this.createMessage(quest, language);
+            const baseMessage = await this.createMessage(quest, language);
             // const markup = this.markup(quest, language); // Original line
             // Choose markup based on the flag
             // console.log(`[updateMessage] Called for quest ${quest.id}. useExpandedMarkup = ${useExpandedMarkup}`); // <-- Remove log
@@ -1031,7 +1035,7 @@ export default class Quests {
                 : this.markup(quest, language);
             // console.log(`[updateMessage] Intending to use ${useExpandedMarkup ? 'expanded (getExpandedButtons)' : 'standard (markup)'} buttons.`); // <-- Remove log
 
-            console.log(`[updateMessage] For Original Quest ${quest.id} - Generated message content: ${message.substring(0, 100)}...`);
+            console.log(`[updateMessage] For Original Quest ${quest.id} - Generated message content: ${baseMessage.substring(0, 100)}...`);
             console.log(`[updateMessage] For Original Quest ${quest.id} - Generated markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
 
             // Update the message in original chat
@@ -1043,7 +1047,7 @@ export default class Quests {
                     {
                         type: 'photo',
                         media: quest.picture,
-                        caption: message
+                        caption: baseMessage
                     },
                     // markup // Original line
                     markupConfig
@@ -1054,7 +1058,7 @@ export default class Quests {
                         quest.chat,
                         quest.id,
                         null,
-                        message,
+                        baseMessage,
                         // markup // Original line
                         markupConfig
                     ).catch(innerErr => console.error('Alternative update also failed:', innerErr));
@@ -1065,7 +1069,7 @@ export default class Quests {
                     quest.chat,
                     quest.id,
                     null,
-                    message,
+                    baseMessage,
                     // markup // Original line
                     markupConfig
                 ).catch((err) => { 
@@ -1098,6 +1102,17 @@ export default class Quests {
             console.log(`[updateMessage] Quest ID ${quest.id} - Holograms determined for update iteration:`, JSON.stringify(hologramsToUpdate));
 
             if (hologramsToUpdate.length > 0) {
+                // let originalHolonNameUpdate = quest.chat; // Fallback to ID
+                // try {
+                //     const chatInfo = await this.bot.telegram.getChat(quest.chat);
+                //     if (chatInfo && chatInfo.title) {
+                //         originalHolonNameUpdate = chatInfo.title;
+                //     }
+                // } catch (e) {
+                //     console.warn(`Could not fetch chat title for ${quest.chat} in updateMessage: ${e.message}`);
+                // }
+                const originalHolonNameUpdate = await getHolonName(this.db, quest.chat, ctx);
+                const hologramSpecificMessageText = baseMessage + `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonNameUpdate, defaultValue: `🔗 Linked from ${originalHolonNameUpdate}` })}\n`;
                 console.log(`Found ${hologramsToUpdate.length} Telegram hologram messages to update for quest ${quest.id}`);
                 for (const hologram of hologramsToUpdate) {
                     // Check if the hologram is for Telegram and has the necessary details
@@ -1106,7 +1121,7 @@ export default class Quests {
                         const hologramMessageId = hologram.messageId;
                         console.log(`Attempting to update Telegram hologram message ${hologramMessageId} in chat ${hologramChatId}`);
                         // Log the exact content being sent to the hologram
-                        console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending message content: ${message.substring(0,100)}...`);
+                        console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending message content: ${baseMessage.substring(0,100)}...`);
                         console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
                         try {
                             if (quest.picture) {
@@ -1117,7 +1132,7 @@ export default class Quests {
                                     {
                                         type: 'photo',
                                         media: quest.picture,
-                                        caption: message // use the already generated message text
+                                        caption: hologramSpecificMessageText // use the already generated message text
                                     },
                                     markupConfig
                                 ).catch(err => {
@@ -1132,7 +1147,7 @@ export default class Quests {
                                     hologramChatId,
                                     hologramMessageId,
                                     null,
-                                    message, // use the already generated message text
+                                    hologramSpecificMessageText, // use the already generated message text
                                     markupConfig
                                 ).catch(err => {
                                     if (err.response && err.response.description === 'Bad Request: message is not modified') {
@@ -2866,7 +2881,9 @@ export default class Quests {
             }
 
             // Send the new "Telegram view hologram" message into the chat where /quests list was displayed and button clicked
-            const messageText = await this.createMessage(questToView, language); // Use language of the chat where button was clicked
+            const baseMessageText = await this.createMessage(questToView, language); // Use language of the chat where button was clicked
+            const originalHolonNameView = await getHolonName(this.db, originalQuestChatId, ctx);
+            const messageText = baseMessageText + `\n| ${i18next.t('linked_view', { lng: language, holonName: originalHolonNameView, defaultValue: `🔗 Linked from ${originalHolonNameView}` })}\n`;
             const markup = this.markup(questToView, language);
             const newHologramMsg = await ctx.reply(messageText, markup); // Replies in currentChatIdWhereButtonWasClicked
             

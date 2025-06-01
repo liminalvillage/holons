@@ -697,7 +697,7 @@ export default class Settings {
                     // const fedInfoAfter = await this.db.holosphere.getFederation(chatID.toString());
                     // console.log('[Settings.js /unfederate_] FedInfo AFTER unfederate:', JSON.stringify(fedInfoAfter, null, 2));
 
-                    const federationName = await utils.getHolonNameWithFallback(this.db, federationID, ctx);
+                    const federationName = await utils.getHolonName(this.db, federationID, ctx);
                     await ctx.reply(i18next.t('settings_federation_removed', { lng: language, federationID: federationName }));
                     await this.showFederationMenu(ctx, true);
                 } catch (error) {
@@ -732,7 +732,7 @@ export default class Settings {
                     //     console.warn(`[Settings.js /unnotify_] removeNotify reported that ID ${notifyID} was not found in the list for ${chatID}.`);
                     // }
 
-                    const notifyName = await utils.getHolonNameWithFallback(this.db, notifyID, ctx);
+                    const notifyName = await utils.getHolonName(this.db, notifyID, ctx);
                     await ctx.reply(i18next.t('settings_notify_removed', { lng: language, id: notifyName }));
                     await this.showFederationMenu(ctx, true);
                 } catch (error) {
@@ -1842,7 +1842,7 @@ export default class Settings {
             // Use holosphere federate method
             console.log('FEDERATING', chatID, federationID)
             await this.db.holosphere.federate(chatID, federationID);
-            const federationName = await utils.getHolonNameWithFallback(this.db, federationID, ctx);
+            const federationName = await utils.getHolonName(this.db, federationID, ctx);
             ctx.reply('This chat has been federated with ' + federationName);
         } catch (error) {
             console.error('Federation error:', error);
@@ -1862,7 +1862,7 @@ export default class Settings {
         try {
             // Use holosphere unfederate method
             await this.db.holosphere.unfederate(chatID, federationID);
-            const federationName = await utils.getHolonNameWithFallback(this.db, federationID, ctx);
+            const federationName = await utils.getHolonName(this.db, federationID, ctx);
             ctx.reply('Federation with ' + federationName + ' has been revoked');
         } catch (error) {
             console.error('Unfederation error:', error);
@@ -2527,7 +2527,7 @@ export default class Settings {
 
             for (const space of federatedWith) {
                 keyboard.inline_keyboard.push([{
-                    text: `${await utils.getHolonNameWithFallback(this.db, space, ctx)}`,
+                    text: `${await utils.getHolonName(this.db, space, ctx)}`,
                     callback_data: `federation_lenses_${space}` // Changed from ' '
                 }, {
                     text: '❌',
@@ -2550,7 +2550,7 @@ export default class Settings {
 
             for (const space of notifies) {
                 keyboard.inline_keyboard.push([{
-                    text: `${await utils.getHolonNameWithFallback(this.db, space, ctx)}`,
+                    text: `${await utils.getHolonName(this.db, space, ctx)}`,
                     callback_data: `notify_lenses_${space}` // Changed from ' '
                 }, {
                     text: '❌',
@@ -3130,7 +3130,7 @@ export default class Settings {
 
         const language = await this.getLanguage(chatID);
         let title = '';
-        const targetHolonName = await utils.getHolonNameWithFallback(this.db, targetChatID, ctx);
+        const targetHolonName = await utils.getHolonName(this.db, targetChatID, ctx);
 
         if (relationshipType === 'federated') {
             title = i18next.t('settings_lenses_federated_with', { lng: language, targetChatID: targetHolonName, defaultValue: `Lenses Federated with ${targetHolonName}` });
@@ -3236,7 +3236,7 @@ export default class Settings {
     }
 
     async showHolacracyMenu(ctx, edit = false) {
-        const chatID = utils.getChatID(ctx);
+        const chatID = utils.getChatId(ctx);
         if (!chatID) {
             console.error('Could not determine chat ID for Holacracy menu');
             return;

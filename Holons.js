@@ -482,6 +482,9 @@ export default class Holons {
             }
           }
           break;
+        case 'manage_splitter_view':
+          await this.displaySplitterManagementView(ctx);
+          break;
         case 'back':
           try { await this.showHolonsMenu(ctx, true); }
           catch (error) { /* ... error handling ... */ }
@@ -494,69 +497,7 @@ export default class Holons {
 
 
     // === SPLITTER MANAGEMENT ACTION HANDLER===
-    this.bot.action('direct_manage_splitter', async (ctx) => {
-      await ctx.answerCbQuery().catch(e => console.log("Initial Display CBQ Error:", e.message));
-      const chatID = utils.getChatId(ctx);
-      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-      let splitterAddress = "N/A";
-      let internalPercent = 50; // Default
-      let externalPercent = 50; // Default
-
-      try {
-        const splitterContract = await this.getSplitterContract(chatIdNormalized);
-        if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
-          splitterAddress = splitterContract.target;
-          try {
-            const internalPBigInt = await splitterContract.internalContractSplitPercentage();
-            const externalPBigInt = await splitterContract.externalContractSplitPercentage(); // Fetch external too for consistency
-            
-            internalPercent = parseInt(internalPBigInt.toString(), 10);
-            externalPercent = parseInt(externalPBigInt.toString(), 10);
-
-            if (isNaN(internalPercent) || internalPercent < 0 || internalPercent > 100) {
-                console.warn(`Fetched initial internalPercent ${internalPercent} is invalid. Defaulting to 50.`);
-                internalPercent = 50;
-                externalPercent = 50; // Recalculate if internal defaulted
-            }
-            // Optionally, verify if internalPercent + externalPercent === 100 from contract, or trust internal and derive external
-            // For now, we will display what contract gives for both, but adjustments will modify internal and derive external.
-
-          } catch (e) {
-            console.log(`Initial percentage fetch using direct contract methods failed, defaulting to 50/50:`, e.message);
-            internalPercent = 50;
-            externalPercent = 50;
-          }
-        } else {
-          await ctx.editMessageText("Splitter contract not found for this chat.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("Initial Display Error Edit (no contract): ", e.message));
-          return;
-        }
-      } catch (error) {
-        console.error("Error getting splitter contract for initial display:", error);
-        await ctx.editMessageText("Error accessing splitter details.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("Initial Display Error Edit (contract access): ", e.message));
-        return;
-      }
-
-      // The UI will adjust based on internalPercent, external will be derived for proposals
-      let message = `🔷 SPLITTER MANAGEMENT 🔷\n`;
-      message += `Contract: \`${splitterAddress}\`\n`;
-      message += `Current reward split: Internal ${internalPercent}% / Ecosystem ${externalPercent}%`;
-      // For the interactive part, we start with the fetched internalPercent
-      const currentUiInternalPercent = internalPercent; 
-      const currentUiExternalPercent = 100 - currentUiInternalPercent;
-
-      const keyboard = [
-        [
-          { text: "<< (-10)", callback_data: `splitter_adj_live_-10_${currentUiInternalPercent}` },
-          { text: "< (-1)", callback_data: `splitter_adj_live_-1_${currentUiInternalPercent}` },
-          { text: `${currentUiInternalPercent}% / ${currentUiExternalPercent}%`, callback_data: "noop" }, // This will be the one changing
-          { text: "> (+1)", callback_data: `splitter_adj_live_1_${currentUiInternalPercent}` },
-          { text: ">> (+10)", callback_data: `splitter_adj_live_10_${currentUiInternalPercent}` }
-        ],
-        [{ text: "✅ Set This Split", callback_data: `splitter_conf_live_set_${currentUiInternalPercent}` }],
-        [{ text: "◀️ Back to Menu", callback_data: "holons_back" }]
-      ];
-      await ctx.editMessageText(message, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }).catch(e => console.log("E Splitter initial display edit (Scene-less): ", e.message));
-    });
+  
 
     this.bot.action(/splitter_adj_live_(-?\d+)_(\d+)/, async (ctx) => {
       try { await ctx.answerCbQuery().catch(e => console.log("Splitter Adjust CBQ Error:", e.message)); } catch (e) { console.log("Error in answerCbQuery top for splitter_adj_live", e); }
@@ -581,27 +522,9 @@ export default class Holons {
       } catch (error) {
           await ctx.editMessageText("Error: Could not access splitter info.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]] } }).catch(e => console.log("E:", e.message)); return;
       }
-      const newExternalPercent = 100 - newInternalPercent;
-      let message = `🔷 SPLITTER MANAGEMENT 🔷\nContract: \`${splitterAddress}\`\nAdjust Internal (Managed) / External (Zoned) Split:\n\nProposed: Managed ${newInternalPercent}% / Zoned ${newExternalPercent}%`;
-     
-      const keyboard = [
-        [
-          { text: "<< (-10)", callback_data: `splitter_adj_live_-10_${newInternalPercent}` },
-          { text: "< (-1)", callback_data: `splitter_adj_live_-1_${newInternalPercent}` },
-          { text: `${newInternalPercent}% / ${newExternalPercent}%`, callback_data: "noop" },
-          { text: "> (+1)", callback_data: `splitter_adj_live_1_${newInternalPercent}` },
-          { text: ">> (+10)", callback_data: `splitter_adj_live_10_${newInternalPercent}` }
-        ],
-        [{ text: "✅ Set This Split", callback_data: `splitter_conf_live_set_${newInternalPercent}` }],
-        [{ text: "◀️ Back to Menu", callback_data: "holons_back" }]
-      ];
-      const newReplyMarkup = { inline_keyboard: keyboard };
-      try {
-        await ctx.editMessageText(message, { parse_mode: 'Markdown', reply_markup: newReplyMarkup });
-        
-      } catch (error) {
-            console.error("Error editing message in splitter_adj_live:", error);
-      }
+      
+      // Call the new helper function to update the view
+      await this._updateSplitterManagementView(ctx, newInternalPercent, splitterAddress);
     });
 
     this.bot.action(/splitter_conf_live_set_(\d+)/, async (ctx) => {
@@ -610,7 +533,7 @@ export default class Holons {
       const finalInternalPercent = parseInt(ctx.match[1],10);
       if (isNaN(finalInternalPercent) || finalInternalPercent < 0 || finalInternalPercent > 100) {
           
-        await ctx.editMessageText("Error: Invalid percentage for setting split. Please try again.", {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "direct_manage_splitter"}]]}} ).catch(e => console.log("E:",e.message));
+        await ctx.editMessageText("Error: Invalid percentage for setting split. Please try again.", {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "holons_manage_splitter_view"}]]}} ).catch(e => console.log("E:",e.message));
           return;
       }
       const finalExternalPercent = 100 - finalInternalPercent;
@@ -634,10 +557,44 @@ export default class Holons {
           await this.showHolonsMenu(ctx, false);
       } catch (error) {
           console.error("Error executing setContractSplit in confirm handler:", error);
-          await ctx.editMessageText(`❌ Error setting split: ${error.message}. Please try again.`, {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "direct_manage_splitter"}]]}}).catch(e => console.log("E:", e.message));
+          await ctx.editMessageText(`❌ Error setting split: ${error.message}. Please try again.`, {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "holons_manage_splitter_view"}]]}}).catch(e => console.log("E:", e.message));
       }
     });
     // === END OF SPLITTER MANAGEMENT ACTION HANDLERS ===
+  }
+
+  async _updateSplitterManagementView(ctx, internalPercent, splitterAddress) {
+    // Calculate externalPercent based on the provided internalPercent
+    const externalPercent = 100 - internalPercent;
+
+    let message = `🔷 SPLITTER MANAGEMENT 🔷\n`;
+    message += `Contract: \`${splitterAddress}\`\n`;
+    message += `Current reward split: Internal ${internalPercent}% / Ecosystem ${externalPercent}%`;
+
+    const keyboard = [
+      [
+        { text: "<<", callback_data: `splitter_adj_live_-10_${internalPercent}` },
+        { text: "<", callback_data: `splitter_adj_live_-1_${internalPercent}` },
+        { text: `${internalPercent}% / ${externalPercent}%`, callback_data: "noop" },
+        { text: ">", callback_data: `splitter_adj_live_1_${internalPercent}` },
+        { text: ">>", callback_data: `splitter_adj_live_10_${internalPercent}` }
+      ],
+      [{ text: "✅ Set This Split", callback_data: `splitter_conf_live_set_${internalPercent}` }],
+      [{ text: "◀️ Back to Menu", callback_data: "holons_back" }]
+    ];
+
+    try {
+      await ctx.editMessageText(message, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } });
+    } catch (error) {
+      // Log specific error if message is not modified, otherwise log the full error
+      if (error.response && error.response.error_code === 400 && error.response.description && error.response.description.includes('message is not modified')) {
+        console.log("Splitter management view not modified.");
+        // It's good practice to still answer the callback query to prevent the "loading" state on the button.
+        if (ctx.callbackQuery) await ctx.answerCbQuery().catch(e => console.log("Error answering CBQ for unmodified message:", e.message));
+      } else {
+        console.error("Error editing message in _updateSplitterManagementView:", error);
+      }
+    }
   }
 
   async showHolonsMenu(ctx, edit = false) {
@@ -669,7 +626,7 @@ export default class Holons {
         [{ text: "🔄 Sync Scores", callback_data: "holons_smart_sync" }, { text: "💰 Claim Tokens", callback_data: "holons_claim" }],
         [{ text: "🎁 Reward Members", callback_data: "holons_reward" }, { text: "⚖️ ETH Balance", callback_data: "holons_ethbalance" }],
         [{ text: "🪙 Token Balance", callback_data: "holons_tokenbalance" }],
-        [{ text: "💱 Split Rewards", callback_data: "direct_manage_splitter" }],
+        [{ text: "💱 Split Rewards", callback_data: "holons_manage_splitter_view" }],
         [{ text: "👥 Internal Rewards", callback_data: "holons_manage_members_view" }],
         [{ text: "🔶 Ecosystem Rewards", callback_data: "holons_manage_zones_view" }]
       );
@@ -2433,7 +2390,7 @@ export default class Holons {
             let score = 0; // Default score
             try {
               // Assuming 'appreciations' is the public mapping or getter for scores
-              const memberScore = await managedContract.appreciations(memberId.toString());
+              const memberScore = await managedContract.appreciation(memberId.toString());
               score = memberScore.toString(); // Convert BigNumber to string
             } catch (e) {
               console.warn(`Could not fetch score for member ${memberId}: ${e.message}`);
@@ -2748,5 +2705,43 @@ Select the TARGET zone:`;
       ).catch(e => console.log("Error editing message for move failure:", e.message));
       // No automatic refresh on error, user can go back.
     }
+  }
+
+  async displaySplitterManagementView(ctx) {
+    const chatID = utils.getChatId(ctx);
+    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    let splitterAddress = "N/A";
+    let internalPercent = 50; // Default
+
+    try {
+      const splitterContract = await this.getSplitterContract(chatIdNormalized);
+      if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
+        splitterAddress = splitterContract.target;
+        try {
+          const internalPBigInt = await splitterContract.internalContractSplitPercentage();
+          // const externalPBigInt = await splitterContract.externalContractSplitPercentage(); // Not strictly needed if deriving
+          
+          internalPercent = parseInt(internalPBigInt.toString(), 10);
+
+          if (isNaN(internalPercent) || internalPercent < 0 || internalPercent > 100) {
+              console.warn(`Fetched initial internalPercent ${internalPercent} is invalid. Defaulting to 50.`);
+              internalPercent = 50;
+          }
+        } catch (e) {
+          console.log(`Initial percentage fetch using direct contract methods failed, defaulting to 50:`, e.message);
+          internalPercent = 50;
+        }
+      } else {
+        await ctx.editMessageText("Splitter contract not found for this chat.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("DisplaySplitterView Error Edit (no contract): ", e.message));
+        return;
+      }
+    } catch (error) {
+      console.error("Error getting splitter contract for displaySplitterView:", error);
+      await ctx.editMessageText("Error accessing splitter details.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("DisplaySplitterView Error Edit (contract access): ", e.message));
+      return;
+    }
+
+    // Call the helper function to display the view
+    await this._updateSplitterManagementView(ctx, internalPercent, splitterAddress);
   }
 }
