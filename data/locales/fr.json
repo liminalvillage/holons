@@ -239,9 +239,21 @@
         "dialog": "Calendrier de dialogue",
         "back": "Dos",
         "settings_max_tasks": "📋 Tâches Max",
-        "settings_max_tasks_title": "Définir le nombre max de tâches ouvertes (par holon)",
-        "settings_max_tasks_choose": "Choisissez le nombre maximum de tâches ouvertes pour ce holon :",
+        "settings_max_tasks_title": "Définir le nombre maximum de tâches par utilisateur",
+        "settings_max_tasks_choose": "Choisissez le nombre maximum de tâches ouvertes par utilisateur :",
         "settings_max_tasks_updated": "Nombre max de tâches ouvertes pour ce holon défini sur : {{value}}",
-        "settings_max_tasks_unlimited": "Illimité"
+        "settings_max_tasks_unlimited": "Illimitées",
+        "task_limit_reached": "Vous avez atteint la limite maximale de {{maxTasks}} tâches actives. Veuillez compléter ou annuler certaines tâches existantes avant d'en créer de nouvelles. Vous pouvez voir vos tâches actuelles en tapant /tasks dans le chat principal.",
+        "dashboard": "Tableau de Bord Holonique",
+        "provenance": "Provenance",
+        "local_provenance": "Locale",
+        "holon_prefix": "Holon",
+        "questboardgenerror": "Impossible de générer l'image du tableau des quêtes.",
+        "leaderboardgenerror": "Impossible de générer l'image du classement.",
+        "leaderboarderror": "Une erreur s'est produite lors de la génération du classement.",
+        "quest_image_quest_header": "Quête :",
+        "quest_image_initiator_header": "Initiateur :",
+        "quest_image_joined_by_header": "Rejoint par :",
+        "quest_image_appreciated_by_header": "Apprécié par :"
     }
 }

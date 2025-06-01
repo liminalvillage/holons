@@ -214,9 +214,21 @@
         "dialog": "Dialogkalender",
         "back": "Zurück",
         "settings_max_tasks": "📋 Max Aufgaben",
-        "settings_max_tasks_title": "Maximale offene Aufgaben (pro Holon) festlegen",
-        "settings_max_tasks_choose": "Wählen Sie die maximale Anzahl offener Aufgaben für dieses Holon:",
+        "settings_max_tasks_title": "Maximale Anzahl von Aufgaben pro Benutzer festlegen",
+        "settings_max_tasks_choose": "Wählen Sie die maximale Anzahl offener Aufgaben pro Benutzer:",
         "settings_max_tasks_updated": "Maximal offene Aufgaben für dieses Holon festgelegt auf: {{value}}",
-        "settings_max_tasks_unlimited": "Unbegrenzt"
+        "settings_max_tasks_unlimited": "Unbegrenzt",
+        "task_limit_reached": "Sie haben das maximale Limit von {{maxTasks}} aktiven Aufgaben erreicht. Bitte schließen Sie einige bestehende Aufgaben ab oder brechen Sie sie ab, bevor Sie neue erstellen. Sie können Ihre aktuellen Aufgaben einsehen, indem Sie /tasks im Hauptchat eingeben.",
+        "dashboard": "Holonisches Dashboard",
+        "provenance": "Herkunft",
+        "local_provenance": "Lokal",
+        "holon_prefix": "Holon",
+        "questboardgenerror": "Bild des Questboards konnte nicht generiert werden.",
+        "leaderboardgenerror": "Bestenlistenbild konnte nicht generiert werden.",
+        "leaderboarderror": "Beim Erstellen der Bestenliste ist ein Fehler aufgetreten.",
+        "quest_image_quest_header": "Quest:",
+        "quest_image_initiator_header": "Initiator:",
+        "quest_image_joined_by_header": "Beigetreten von:",
+        "quest_image_appreciated_by_header": "Geschätzt von:"
     }
 }

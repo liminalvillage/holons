@@ -258,9 +258,21 @@
         "navigafion": "Navigation Calendar",
         "dialog": "Dialog Calendar",
         "back": "Back",
-        "settings_max_tasks_title": "Set Max Open Tasks (Holon-wide)",
-        "settings_max_tasks_choose": "Choose the maximum number of open tasks for this holon:",
+        "settings_max_tasks_title": "Set Max Tasks per User",
+        "settings_max_tasks_choose": "Choose the maximum number of open tasks per user:",
         "settings_max_tasks_updated": "Max open tasks for this holon set to: {{value}}",
-        "settings_max_tasks_unlimited": "Unlimited"
+        "settings_max_tasks_unlimited": "Unlimited",
+        "task_limit_reached": "You have reached the maximum limit of {{maxTasks}} active tasks. Please complete or cancel some existing tasks before creating new ones. You can see your current tasks by typing /tasks in the main chat.",
+        "dashboard": "Holonic Dashboard",
+        "provenance": "Provenance",
+        "local_provenance": "Local",
+        "holon_prefix": "Holon",
+        "questboardgenerror": "Could not generate quest board image.",
+        "leaderboardgenerror": "Could not generate leaderboard image.",
+        "leaderboarderror": "An error occurred while generating the leaderboard.",
+        "quest_image_quest_header": "Quest:",
+        "quest_image_initiator_header": "Initiator:",
+        "quest_image_joined_by_header": "Joined by:",
+        "quest_image_appreciated_by_header": "Appreciated by:"
     }
 }

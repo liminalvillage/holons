@@ -313,7 +313,7 @@ class UI {
     }
 
     // Create a table header
-    this.getQuestsTable(quests, chatID).then((path) => {
+    this.getQuestsTable(quests, chatID, ctx).then((path) => {
       //send the image
       const inline_keyboard_buttons = quests.map(quest => {
         const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
@@ -385,14 +385,14 @@ class UI {
     const language = await this.settings.getLanguage(chatID)
     const element = `
     <table>
-      <tr><th>${i18next.t('Quest', { lng: language })}:</th><td>${quest.title}</td></tr>
-      <tr><th>${i18next.t('Initiator', { lng: language })}:</th><td>${getDisplayName(quest.initiator)}</td></tr>
-      <tr><th>${i18next.t('Joined by', { lng: language })}:</th><td>${[...quest.participants].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
-      <tr><th>${i18next.t('Appreciated by', { lng: language })}:</th><td>${[...quest.appreciation].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
+      <tr><th>${i18next.t('quest_image_quest_header', { lng: language, defaultValue: 'Quest:' })}:</th><td>${quest.title}</td></tr>
+      <tr><th>${i18next.t('quest_image_initiator_header', { lng: language, defaultValue: 'Initiator:' })}:</th><td>${getDisplayName(quest.initiator)}</td></tr>
+      <tr><th>${i18next.t('quest_image_joined_by_header', { lng: language, defaultValue: 'Joined by:' })}:</th><td>${[...quest.participants].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
+      <tr><th>${i18next.t('quest_image_appreciated_by_header', { lng: language, defaultValue: 'Appreciated by:' })}:</th><td>${[...quest.appreciation].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
     <table>`
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
     const path = './images/quest' + quest.id + '.png'
-    await screenshotHtml(html, path, 'table')
+    await this.screenshotHtml(html, path, 'table')
     return path
   }
 
@@ -463,19 +463,38 @@ class UI {
     return path;
   }
 
-  async getQuestsTable(quests, chatID) {
-    const language = await this.settings.getLanguage(chatID)
-    const rows = []
-    for (let i = 0; i < quests.length; i++) {
-      const quest = quests[i]
+  async getQuestsTable(quests, chatID, ctx) {
+    const language = await this.settings.getLanguage(chatID);
+    const rows = [];
+    for (const quest of quests) {
+      let provenanceText = '';
+      if (quest._meta && quest._meta.origin_chat_name) {
+        provenanceText = quest._meta.origin_chat_name;
+      } else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
+        try {
+          const nameFromUtil = await utils.getHolonName(this.db, quest.chat, ctx);
+          if (nameFromUtil && nameFromUtil.trim() !== '') { // Use if non-empty
+            provenanceText = nameFromUtil;
+          } else { // Fallback if util function gives empty/null/undefined
+            provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`;
+          }
+        } catch (e) {
+          console.warn(`Could not get holon name for chat ${quest.chat}:`, e);
+          provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`; // Fallback on error
+        }
+      } else {
+        provenanceText = i18next.t('local_provenance', { lng: language, defaultValue: 'Local' });
+      }
+
       const row = `<tr>
           <th scope="row">${quest.id}</th>
           <th>${quest.title}</th>
           <th>${getDisplayName(quest.initiator)}</th>
-          <th>${quest.participants ? quest.participants.length : quest.users.length}</th>
+          <th>${provenanceText}</th>
+          <th>${quest.participants ? quest.participants.length : 0}</th>
           <th>${quest.appreciation.length}</th>
-        </tr>`
-      rows.push(row)
+        </tr>`;
+      rows.push(row);
     }
 
     const element = `<table>
@@ -485,6 +504,7 @@ class UI {
             <th scope="col">${i18next.t('ID', { lng: language })}</th>
             <th scope="col">${i18next.t('Quest', { lng: language })}</th>
             <th scope="col">${i18next.t('Initiator', { lng: language })}</th>
+            <th scope="col">${i18next.t('provenance', { lng: language })}</th>
             <th scope="col">${i18next.t('People', { lng: language })}</th>
             <th scope="col">${i18next.t('Appreciators', { lng: language })}</th>
         </tr>
@@ -492,12 +512,12 @@ class UI {
     <tbody>
         ${rows.join('\n')}
     </tbody>
-  </table>`
+  </table>`;
 
-    const path = './images/quests' + chatID + '.png'
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, 'table')
-    return path
+    const path = './images/quests' + chatID + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    await this.screenshotHtml(html, path, 'table');
+    return path;
   }
 
   async getRolesTable(roles, chatID) {
@@ -600,131 +620,6 @@ class UI {
     return path
   }
 
-
-  async getRankTable(users, equation, currencies, chatID, expensesInstance) {
-    const language = await this.settings.getLanguage(chatID)
-    const rows = []
-
-    // Calculate scores first, then sort
-    const userScores = [];
-    for (const userId in users) {
-        const user = users[userId];
-        if (!user || user.id === undefined) continue; // Skip if user or user.id is undefined
-
-        let score = (user.initiated && user.initiated.length * equation.initiated || 0) +
-            (user.completed && user.completed.length * equation.completed || 0) +
-            (user.sent * equation.sent || 0) +
-            (user.received * equation.received || 0) +
-            (user.hours * equation.hours || 0) +
-            (user.collaboration * equation.collaboration || 0) +
-            (user.wants && user.wants.length * equation.wants || 0) +
-            (user.offers && user.offers.length * equation.offers || 0);
-
-        let currencyScoreContribution = 0;
-        if (currencies && currencies.length > 0 && expensesInstance) {
-            for (const currencyName of currencies) {
-                const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                if (currencyKey && equation[currencyKey] !== undefined) {
-                    try {
-                        const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currencyKey);
-                        const weight = equation[currencyKey] || 0;
-                        currencyScoreContribution += balance * weight;
-                    } catch (e) {
-                        console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
-                    }
-                }
-            }
-        }
-        score += currencyScoreContribution;
-        userScores.push({ ...user, score });
-    }
-
-    const sortedUsers = userScores.sort((a, b) => b.score - a.score);
-
-    for (let i = 0; i < sortedUsers.length; i++) {
-      const user = sortedUsers[i]
-      // Score is already calculated and part of the user object in sortedUsers
-      const row = `<tr>
-        <th scope="row">${i + 1}</th>
-        <th>${getDisplayName(user)}</th>
-        <th>${user.initiated && user.initiated.length || 0}</th>
-        <th>${user.completed && user.completed.length || 0}</th>
-        <th>${user.sent || 0}</th>
-        <th>${user.received || 0}</th>
-        <th>${user.score.toFixed(2)}</th> 
-      </tr>`
-
-      rows.push(row)
-    }
-
-    const element = `<table>
-    <caption>${i18next.t('Rank', { lng: language })}</caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('rank', { lng: language })}</th>
-            <th scope="col">${i18next.t('name', { lng: language })}</th>
-            <th scope="col">${i18next.t('tasksinitiated', { lng: language })}</th>
-            <th scope="col">${i18next.t('taskscompleted', { lng: language })}</th>
-            <th scope="col">${i18next.t('sent', { lng: language })}</th>
-            <th scope="col">${i18next.t('received', { lng: language })}</th>
-            <th scope="col">${i18next.t('score', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`
-
-    const path = './images/rank' + chatID + '.png'
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, 'table')
-    return path
-  }
-
-
-
-  async getAppreciationTable(appreciation, chatID) {
-    
-    const rows = []
-    const sortedUsers = Object.keys(appreciation).sort((a, b) => {
-      return appreciation[b].received - appreciation[b].sent - (appreciation[a].received - appreciation[a].sent);
-      return
-    });
-
-    for (let i = 0; i < sortedUsers.length; i++) {
-      const score = appreciation[sortedUsers[i]]
-      const row = `<tr>
-        <th scope="row">${i + 1}</th>
-        <th>${getDisplayName(score)}</th>
-        <th>${score.sent}</th>
-        <th>${score.received}</th>
-      </tr>`
-
-      rows.push(row)
-    }
-    let language = await this.settings.getLanguage(chatID);
-    let element = `<table>
-    <caption> ${i18next.t('Appreciation', { lng: language })} </caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('rank', { lng: language })}</th>
-            <th scope="col">${i18next.t('name', { lng: language })}</th>
-            <th scope="col">${i18next.t('sent', { lng: language })}</th>
-            <th scope="col">${i18next.t('received', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`
-
-    const path = './images/appreciation' + chatID + '.png'
-    const theme = await this.settings.getTheme(chatID)
-    const html = await this.generateHtml(element, theme)
-    await this.screenshotHtml(html, path, 'table')
-    return path
-  }
-
   async generateHtml(element, theme) {
     return `<!DOCTYPE html>
       <html>
@@ -746,7 +641,6 @@ class UI {
     await element.screenshot({ path: pathToSave })
     page.close()
   }
-
 }
 
 export default UI;

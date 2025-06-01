@@ -212,6 +212,30 @@ export default class Quests {
             return;
         }
 
+        // Task limit check for 'task' type
+        if (type === 'task') {
+            const chatSettings = await this.settings.getSettings(chatID);
+            const maxTasks = chatSettings.maxTasks;
+
+            if (maxTasks > 0) { // 0 means unlimited
+                const allUserQuests = await this.db.getAll(chatID + '/quests');
+                const userActiveTasks = allUserQuests.filter(q =>
+                    q.initiator.id === sender.id &&
+                    q.type === 'task' &&
+                    (q.status === 'ongoing' || q.status === 'scheduled')
+                );
+
+                if (userActiveTasks.length >= maxTasks) {
+                    await ctx.reply(i18next.t('task_limit_reached', {
+                        lng: language,
+                        maxTasks: maxTasks,
+                        defaultValue: `You have reached the maximum limit of ${maxTasks} active tasks. Please complete or cancel some existing tasks before creating new ones. You can see your current tasks by typing /tasks in the main chat.`
+                    }));
+                    return; // Abort task creation
+                }
+            }
+        }
+
         // Get message_thread_id if the message is in a topic thread
         const messageThreadId = (ctx.message?.is_topic_message && ctx.message.message_thread_id) 
                                 ? ctx.message.message_thread_id 
@@ -470,8 +494,8 @@ export default class Quests {
     async cancel(ctx) {
         console.log("CANCEL ACTION");
 
-        let chatID = ctx.callbackQuery.data.split('_ ')[2];
-        let messageID = ctx.callbackQuery.data.split('_ ')[3];
+        let chatID = ctx.callbackQuery.data.split('_')[2];
+        let messageID = ctx.callbackQuery.data.split('_')[3];
         const language = await this.settings.getLanguage(chatID);
 
         // Fetch the quest first to get its activeHolograms

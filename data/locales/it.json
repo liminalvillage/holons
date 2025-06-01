@@ -240,9 +240,21 @@
         "dialog": "Calendario di dialogo",
         "back": "Indietro",
         "settings_max_tasks": "📋 Max Compiti",
-        "settings_max_tasks_title": "Imposta il massimo compiti aperti (per holon)",
-        "settings_max_tasks_choose": "Scegli il numero massimo di compiti aperti per questo holon:",
+        "settings_max_tasks_title": "Imposta numero massimo di attività per utente",
+        "settings_max_tasks_choose": "Scegli il numero massimo di attività aperte per utente:",
         "settings_max_tasks_updated": "Numero massimo di compiti aperti per questo holon impostato a: {{value}}",
-        "settings_max_tasks_unlimited": "Illimitato"
+        "settings_max_tasks_unlimited": "Illimitate",
+        "task_limit_reached": "Hai raggiunto il limite massimo di {{maxTasks}} attività attive. Completa o annulla alcune attività esistenti prima di crearne di nuove. Puoi vedere le tue attività correnti digitando /tasks nella chat principale.",
+        "dashboard": "Dashboard Olonica",
+        "provenance": "Provenienza",
+        "local_provenance": "Locale",
+        "holon_prefix": "Olone",
+        "questboardgenerror": "Impossibile generare l'immagine della bacheca delle missioni.",
+        "leaderboardgenerror": "Impossibile generare l'immagine della classifica.",
+        "leaderboarderror": "Si è verificato un errore durante la generazione della classifica.",
+        "quest_image_quest_header": "Missione:",
+        "quest_image_initiator_header": "Iniziatore:",
+        "quest_image_joined_by_header": "Partecipanti:",
+        "quest_image_appreciated_by_header": "Apprezzato da:"
     }
 }
