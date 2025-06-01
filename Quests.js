@@ -264,35 +264,8 @@ export default class Quests {
                     console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
                     await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
-                    // --- Personal Holon Logic for Initiator ---
-                    if (chatID.toString() !== quest.initiator.id.toString()) {
-                        await this.personalHologram(quest.initiator.id, quest); // Create data hologram in initiator's personal holon
-
-                        // --- Send a Telegram hologram message to the initiator's personal chat ---
-                        try {
-                            const personalLanguage = await this.settings.getLanguage(quest.initiator.id.toString());
-                            let basePersonalHologramMessageText = await this.createMessage(quest, personalLanguage);
-                            const originalHolonNameInitiator = await getHolonName(this.db, chatID, ctx);
-                            const personalHologramMessageText = basePersonalHologramMessageText + `| ${i18next.t('linked_view', { lng: personalLanguage, holonName: originalHolonNameInitiator, defaultValue: `🔗 Linked from ${originalHolonNameInitiator}` })}\n`;
-                            const personalHologramMarkup = this.markup(quest, personalLanguage);
-                            const personalTelegramHologramMsg = await this.bot.telegram.sendMessage(quest.initiator.id.toString(), personalHologramMessageText, personalHologramMarkup);
-                            
-                            if (!quest.activeHolograms) quest.activeHolograms = [];
-                            quest.activeHolograms.push({
-                                platform: 'telegram',
-                                chatId: personalTelegramHologramMsg.chat.id,
-                                messageId: personalTelegramHologramMsg.message_id
-                            });
-                            console.log(`Sent Telegram hologram to initiator ${quest.initiator.id} for quest ${quest.id}. Msg ID: ${personalTelegramHologramMsg.message_id}`);
-                            // Re-save the original quest with the new activeHologram entry
-                            await this.db.put(chatID + '/quests', quest);
-                        } catch (error) {
-                            //PROBABLY USER DID NOT START THE PRIVATE CHAT
-                        }
-                        // --- End sending personal hologram message ---
-                    } else {
-                        console.log(`Quest created in initiator's personal holon (${chatID}). Skipping personal data hologram and personal Telegram message.`);
-                    }
+                    // --- Personal Holon Logic for Initiator (handled on interaction) ---
+                    console.log(`[Quests.quest] Initiator (${quest.initiator.id}) creating quest ${quest.id} in chat ${chatID}. Personal hologram and message will be created/sent upon interaction if needed.`);
                     // --- End Personal Holon Logic ---
 
                     //Pin the message in the original chat
@@ -333,35 +306,8 @@ export default class Quests {
             console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
-            // --- Personal Holon Logic for Initiator ---
-            if (chatID.toString() !== quest.initiator.id.toString()) {
-                await this.personalHologram(quest.initiator.id, quest); // Create data hologram in initiator's personal holon
-
-                // --- Send a Telegram hologram message to the initiator's personal chat ---
-                try {
-                    const personalLanguage = await this.settings.getLanguage(quest.initiator.id.toString());
-                    let basePersonalHologramMessageText = await this.createMessage(quest, personalLanguage);
-                    const originalHolonNameInitiatorCtx = await getHolonName(this.db, chatID, ctx);
-                    const personalHologramMessageText = basePersonalHologramMessageText + `\n| ${i18next.t('linked_view', { lng: personalLanguage, holonName: originalHolonNameInitiatorCtx, defaultValue: `🔗 Linked from ${originalHolonNameInitiatorCtx}` })}\n`;
-                    const personalHologramMarkup = this.markup(quest, personalLanguage);
-                    const personalTelegramHologramMsg = await this.bot.telegram.sendMessage(quest.initiator.id.toString(), personalHologramMessageText, personalHologramMarkup);
-                    
-                    if (!quest.activeHolograms) quest.activeHolograms = [];
-                    quest.activeHolograms.push({
-                        platform: 'telegram',
-                        chatId: personalTelegramHologramMsg.chat.id,
-                        messageId: personalTelegramHologramMsg.message_id
-                    });
-                    console.log(`Sent Telegram hologram to initiator ${quest.initiator.id} for quest ${quest.id}. Msg ID: ${personalTelegramHologramMsg.message_id}`);
-                    // Re-save the original quest with the new activeHologram entry before calling updateMessage
-                    await this.db.put(chatID + '/quests', quest);
-                } catch (error) {
-                    console.error(`Error sending Telegram hologram to initiator ${quest.initiator.id}:`, error);
-                }
-                // --- End sending personal hologram message ---
-            } else {
-                 console.log(`Quest created in initiator's personal holon (${chatID}). Skipping personal data hologram and personal Telegram message.`);
-            }
+            // --- Personal Holon Logic for Initiator (handled on interaction) ---
+            console.log(`[Quests.quest] Initiator (${quest.initiator.id}) creating quest ${quest.id} in chat ${chatID}. Personal hologram and message will be created/sent upon interaction if needed.`);
             // --- End Personal Holon Logic ---
             
             await this.updateMessage(ctx, quest, language, false) // This will update main message and also the new personal hologram message if created
