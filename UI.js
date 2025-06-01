@@ -315,13 +315,24 @@ class UI {
     // Create a table header
     this.getQuestsTable(quests, chatID).then((path) => {
       //send the image
+      const inline_keyboard_buttons = quests.map(quest => {
+        const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
+        // Assuming quest.chat and quest.id are available and correct for the callback
+        return [Markup.button.callback(title, 'view_original_quest_' + quest.chat + '_' + quest.id)];
+      });
+
+      inline_keyboard_buttons.push([
+        Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+          `https://dashboard.holons.io/${chatID}/tasks`)
+      ]);
+
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
-        Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-            `https://dashboard.holons.io/${chatID}/tasks`)
-        ])
-      )
+        Markup.inlineKeyboard(inline_keyboard_buttons)
+      ).catch(err => console.error('Error sending questboard photo with buttons:', err));
+    }).catch(err => {
+      console.error('Error in getQuestsTable promise chain for questboard:', err);
+      ctx.reply(i18next.t('questboardgenerror', {lng: language}) || 'Could not generate quest board image.');
     });
   }
 

@@ -2850,7 +2850,7 @@ export default class Quests {
             // Send the new "Telegram view hologram" message into the chat where /quests list was displayed and button clicked
             const baseMessageText = await this.createMessage(questToView, language); // Use language of the chat where button was clicked
             const originalHolonNameView = await getHolonName(this.db, originalQuestChatId, ctx);
-            const messageText = baseMessageText + `\n| ${i18next.t('linked_view', { lng: language, holonName: originalHolonNameView, defaultValue: `🔗 Linked from ${originalHolonNameView}` })}\n`;
+            const messageText = baseMessageText + `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonNameView, defaultValue: `🔗 Linked from ${originalHolonNameView}` })}\n`;
             const markup = this.markup(questToView, language);
             const newHologramMsg = await ctx.reply(messageText, markup); // Replies in currentChatIdWhereButtonWasClicked
             
