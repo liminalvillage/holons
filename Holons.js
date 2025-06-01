@@ -628,7 +628,8 @@ export default class Holons {
         [{ text: "🪙 Token Balance", callback_data: "holons_tokenbalance" }],
         [{ text: "💱 Split Rewards", callback_data: "holons_manage_splitter_view" }],
         [{ text: "👥 Internal Rewards", callback_data: "holons_manage_members_view" }],
-        [{ text: "🔶 Ecosystem Rewards", callback_data: "holons_manage_zones_view" }]
+        [{ text: "🔶 Ecosystem Rewards", callback_data: "holons_manage_zones_view" }],
+        [{ text: "◀️ Back", callback_data: "settings_back" }] // Changed text to ◀️ Back
       );
    
     } else {
@@ -636,6 +637,8 @@ export default class Holons {
       menuKeyboard.push(
         [{ text: "🆕 Create Holon", callback_data: "holons_create" }]
       );
+      // Add the "Back to Settings" button here as well, with updated text
+      menuKeyboard.push([{ text: "◀️ Back", callback_data: "settings_back" }]); // Changed text to ◀️ Back
     }
 
     let message;
