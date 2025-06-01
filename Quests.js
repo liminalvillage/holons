@@ -216,7 +216,28 @@ export default class Quests {
         const messageThreadId = (ctx.message?.is_topic_message && ctx.message.message_thread_id) 
                                 ? ctx.message.message_thread_id 
                                 : null;
-        const category = ''; // Category name retrieval removed for simplification
+        let category = ''; // Category name retrieval removed for simplification
+        
+        if (ctx.message.chat.type === 'supergroup' || ctx.message.chat.type === 'channel') {
+            try {
+                if (ctx.message.message_thread_id) {
+                    // Get forum topic info using correct method name
+                    const forumTopicInfo = await ctx.telegram.getForumTopicByID(
+                        chatID,
+                        ctx.message.message_thread_id
+                    );
+                    if (forumTopicInfo?.name) {
+                        category = forumTopicInfo.name;
+                    }
+                }
+            } catch (err) {
+                console.log('Error getting forum topic:', err);
+                // Fallback: try to get the thread name directly from the message if available
+                if (ctx.message.reply_to_message?.forum_topic_created?.name) {
+                    category = ctx.message.reply_to_message.forum_topic_created.name;
+                }
+            }
+        }
 
         // Create a quest object
         let quest = {
