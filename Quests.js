@@ -220,7 +220,7 @@ export default class Quests {
             if (maxTasks > 0) { // 0 means unlimited
                 const allUserQuests = await this.db.getAll(chatID + '/quests');
                 const userActiveTasks = allUserQuests.filter(q =>
-                    q.initiator.id === sender.id &&
+                    q.initiator && q.initiator.id === sender.id &&
                     q.type === 'task' &&
                     (q.status === 'ongoing' || q.status === 'scheduled')
                 );
