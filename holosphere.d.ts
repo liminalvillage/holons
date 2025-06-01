@@ -18,6 +18,8 @@ interface PutOptions {
   autoPropagate?: boolean;
   /** Additional options to pass to propagate */
   propagationOptions?: PropagationOptions;
+  /** Whether to disable hologram redirection logic when putting data (default: false) */
+  disableHologramRedirection?: boolean;
 }
 
 /**
@@ -113,6 +115,26 @@ interface PropagationResult {
   message?: string;
 }
 
+/**
+ * Result from a put operation
+ */
+interface PutResult {
+  /** Indicates if the put operation was successful */
+  success: boolean;
+  /** Indicates if the data ultimately put at the path was a hologram */
+  isHologramAtPath?: boolean;
+  /** The final holon where data was put (after potential redirection) */
+  pathHolon: string;
+  /** The final lens where data was put (after potential redirection) */
+  pathLens: string;
+  /** The final key under which data was put (after potential redirection) */
+  pathKey: string;
+  /** Result of any automatic propagation, if it occurred */
+  propagationResult?: PropagationResult | null;
+  /** Error message if the put operation failed at some point */
+  error?: string;
+}
+
 declare class HoloSphere {
     private appname;
     private strict;
@@ -165,7 +187,7 @@ declare class HoloSphere {
      * @param {PutOptions} [options] - Additional options
      * @returns {Promise<any>} - Returns result object if successful
      */
-    put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<any>;
+    put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
 
     /**
      * Retrieves content from the specified holon and lens.
