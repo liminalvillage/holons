@@ -242,7 +242,7 @@ export default class Quests {
                                 : null;
         let category = ''; // Category name retrieval removed for simplification
         
-        if (ctx.message.chat.type === 'supergroup' || ctx.message.chat.type === 'channel') {
+        if (ctx.message.chat && (ctx.message.chat.type === 'supergroup' || ctx.message.chat.type === 'channel')) {
             try {
                 if (ctx.message.message_thread_id) {
                     // Get forum topic info using correct method name
@@ -309,8 +309,14 @@ export default class Quests {
                     console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
                     await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
-                    // --- Personal Holon Logic for Initiator (handled on interaction) ---
-                    console.log(`[Quests.quest] Initiator (${quest.initiator.id}) creating quest ${quest.id} in chat ${chatID}. Personal hologram and message will be created/sent upon interaction if needed.`);
+                    // --- Personal Holon Logic for Initiator ---
+                    if (quest.chat.toString() !== quest.initiator.id.toString()) {
+                        console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). Ensuring personal hologram and message.`);
+                        await this.personalHologram(quest.initiator.id, quest);
+                        await this.ensureTelegramHologramMessage(ctx, quest, quest.initiator.id, language);
+                    } else {
+                        console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in their own personal chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). No separate personal hologram message needed immediately.`);
+                    }
                     // --- End Personal Holon Logic ---
 
                     //Pin the message in the original chat
@@ -351,8 +357,14 @@ export default class Quests {
             console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
-            // --- Personal Holon Logic for Initiator (handled on interaction) ---
-            console.log(`[Quests.quest] Initiator (${quest.initiator.id}) creating quest ${quest.id} in chat ${chatID}. Personal hologram and message will be created/sent upon interaction if needed.`);
+            // --- Personal Holon Logic for Initiator ---
+            if (quest.chat.toString() !== quest.initiator.id.toString()) {
+                console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). Ensuring personal hologram and message.`);
+                await this.personalHologram(quest.initiator.id, quest);
+                await this.ensureTelegramHologramMessage(ctx, quest, quest.initiator.id, language);
+            } else {
+                console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in their own personal chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). No separate personal hologram message needed immediately.`);
+            }
             // --- End Personal Holon Logic ---
             
             await this.updateMessage(ctx, quest, language, false) // This will update main message and also the new personal hologram message if created

@@ -167,10 +167,15 @@ class Scheduler {
                 
                 // Create mock context for quest creation with correct chat ID
                 const mockCtx = {
-                    chat: {
-                        id: originalTask.chatID
+                    chat: { // For utilities like getChatId that might look here first
+                        id: originalTask.chatID,
+                        type: null // Type is unknown/not applicable for scheduler context at this level
                     },
                     message: {
+                        chat: { // To make ctx.message.chat.type checks safer and ctx.message.chat.id available
+                            id: originalTask.chatID,
+                            type: null // For scheduled tasks, 'type' is not a supergroup/channel in the context of message origin.
+                        },
                         from: originalTask.initiator,
                         message_id: Date.now(), // Generate a new message ID
                         text: `/recurring ${originalTask.title}`
@@ -253,7 +258,7 @@ class Scheduler {
                 console.log('Saving quest with chat ID:', quest.chat);
                 await this.db.put(quest.chat + '/quests', quest);
                 const language = await this.settings.getLanguage(chatID);
-                await this.quests.updateMessage(ctx, quest, language);
+                await this.quests.updateMessage(ctx, quest, language, false);
                 
                 // Add the quest id to the lookup table
                 await this.db.holosphere.putGlobal('recurringlookup', {

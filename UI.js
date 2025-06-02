@@ -175,6 +175,85 @@ class UI {
     return;
   }
 
+  async getRankTable(users, equation, currencies, chatID, expensesInstance) {
+    const language = await this.settings.getLanguage(chatID)
+    const rows = []
+
+    // Calculate scores first, then sort
+    const userScores = [];
+    for (const userId in users) {
+        const user = users[userId];
+        if (!user || user.id === undefined) continue; // Skip if user or user.id is undefined
+
+        let score = (user.initiated && user.initiated.length * equation.initiated || 0) +
+            (user.completed && user.completed.length * equation.completed || 0) +
+            (user.sent * equation.sent || 0) +
+            (user.received * equation.received || 0) +
+            (user.hours * equation.hours || 0) +
+            (user.collaboration * equation.collaboration || 0) +
+            (user.wants && user.wants.length * equation.wants || 0) +
+            (user.offers && user.offers.length * equation.offers || 0);
+
+        let currencyScoreContribution = 0;
+        if (currencies && currencies.length > 0 && expensesInstance) {
+            for (const currencyName of currencies) {
+                const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                if (currencyKey && equation[currencyKey] !== undefined) {
+                    try {
+                        const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currencyKey);
+                        const weight = equation[currencyKey] || 0;
+                        currencyScoreContribution += balance * weight;
+                    } catch (e) {
+                        console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
+                    }
+                }
+            }
+        }
+        score += currencyScoreContribution;
+        userScores.push({ ...user, score });
+    }
+
+    const sortedUsers = userScores.sort((a, b) => b.score - a.score);
+
+    for (let i = 0; i < sortedUsers.length; i++) {
+      const user = sortedUsers[i]
+      // Score is already calculated and part of the user object in sortedUsers
+      const row = `<tr>
+        <th scope="row">${i + 1}</th>
+        <th>${getDisplayName(user)}</th>
+        <th>${user.initiated && user.initiated.length || 0}</th>
+        <th>${user.completed && user.completed.length || 0}</th>
+        <th>${user.sent || 0}</th>
+        <th>${user.received || 0}</th>
+        <th>${user.score.toFixed(2)}</th> 
+      </tr>`
+
+      rows.push(row)
+    }
+
+    const element = `<table>
+    <caption>${i18next.t('Rank', { lng: language })}</caption>
+    <thead>
+        <tr>
+            <th scope="col">${i18next.t('rank', { lng: language })}</th>
+            <th scope="col">${i18next.t('name', { lng: language })}</th>
+            <th scope="col">${i18next.t('tasksinitiated', { lng: language })}</th>
+            <th scope="col">${i18next.t('taskscompleted', { lng: language })}</th>
+            <th scope="col">${i18next.t('sent', { lng: language })}</th>
+            <th scope="col">${i18next.t('received', { lng: language })}</th>
+            <th scope="col">${i18next.t('score', { lng: language })}</th>
+        </tr>
+    </thead>
+    <tbody>
+        ${rows.join('\n')}
+    </tbody>
+  </table>`
+
+    const path = './images/rank' + chatID + '.png'
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
+    await this.screenshotHtml(html, path, 'table')
+    return path
+  }
   async bulletinboard(ctx) {
     if (!this.db) return
     let chatID = ctx.message.chat.id
