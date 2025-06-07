@@ -393,11 +393,7 @@ export default class Quests {
 
             let quest = await this.db.get(chatID + '/quests', messageID.toString())
     
-            if (!quest) {
-                console.log('QUEST IS NOT FOUND');
-                ctx.answerCbQuery('Quest not found').catch(err => console.error('Error answering callback query:', err));
-                return;
-            }
+            if (!await this.questExists(quest, ctx, messageID)) { return; }
 
             if (quest.status == 'completed') {
                 console.log("Quest already completed");
@@ -464,7 +460,7 @@ export default class Quests {
 
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
 
         // Get the user who reacted
         const sender = ctx.callbackQuery.from; // This is the interacting user
@@ -645,7 +641,7 @@ export default class Quests {
 
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
 
         // Get the user who reacted
         const sender = ctx.callbackQuery.from; // This is the interacting user
@@ -685,7 +681,7 @@ export default class Quests {
 
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
         if (!quest.status == 'stopped') {
             ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }), { reply_to_message_id: messageID })
             return
@@ -831,11 +827,7 @@ export default class Quests {
         try {
             // Verify quest exists
             const quest = await this.db.get(`${chatID}/quests`, questID);
-            if (!quest) {
-                console.log(`Quest ${questID} not found`);
-                await ctx.answerCbQuery('Could not find the task');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, questID)) { return; }
 
             // Cancel any existing reminder
             if (quest.reminderId && this.scheduler) {
@@ -1198,10 +1190,7 @@ export default class Quests {
             // Get the quest from database
             const quest = await this.db.get(`${ctx.chat.id}/quests`, questId);
 
-            if (!quest) {
-                console.log('Quest not found');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, questId)) { return; }
 
             // Add the note to the quest
             if (!quest.notes) quest.notes = [];
@@ -1233,11 +1222,7 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatID);
         let quest = await this.db.get(chatID + '/quests', messageID.toString());
 
-        if (!quest || quest == '') { 
-            console.log('QUEST IS NOT FOUND');
-            ctx.answerCbQuery('Quest not found');
-            return;
-        }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
         // Create expanded markup with all buttons
         let expandedButtons = this.getExpandedButtons(quest, language);
           
@@ -1284,11 +1269,7 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatID);
         let quest = await this.db.get(chatID + '/quests', messageID.toString());
 
-        if (!quest || quest == '') { 
-            console.log('QUEST IS NOT FOUND');
-            ctx.answerCbQuery('Quest not found');
-            return;
-        }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
         // Update message with original markup - use the complete text + markup approach
         try {
             const message = await this.createMessage(quest, language);
@@ -1483,11 +1464,7 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatID)
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') {
-            console.log('QUEST IS NOT FOUND');
-            ctx.answerCbQuery('Quest not found')
-            return
-        }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
 
         // Get the user who initiated the publish
         const sender = ctx.callbackQuery.from;
@@ -1553,11 +1530,7 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatID)
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
-        if (!quest || quest == '') {
-            console.log('QUEST IS NOT FOUND');
-            ctx.answerCbQuery('Quest not found')
-            return
-        }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
 
         // Get the user who initiated the broadcast
         const sender = ctx.callbackQuery.from;
@@ -1614,11 +1587,11 @@ export default class Quests {
     async addTime(ctx, amount) {
         console.log("ADD TIME ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[3]; // Corrected index for chatID - this is original quest's chat
-        let messageID = ctx.callbackQuery.data.split('_')[4]; // Corrected index for messageID
+        let messageID = ctx.callbackQuery.data.split('_')[4];
         const language = await this.settings.getLanguage(chatID)
 
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
 
         // Get the user who logged time
         const sender = ctx.callbackQuery.from; // This is the interacting user
@@ -1652,11 +1625,11 @@ export default class Quests {
     async subtractTime(ctx, amount) {
         console.log("SUBTRACT TIME ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[3]; // Corrected index - original quest's chat
-        let messageID = ctx.callbackQuery.data.split('_')[4]; // Corrected index
+        let messageID = ctx.callbackQuery.data.split('_')[4];
         const language = await this.settings.getLanguage(chatID)
 
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
-        if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
+        if (!await this.questExists(quest, ctx, messageID)) { return; }
 
         // Get the user who logged time
         const sender = ctx.callbackQuery.from; // This is the interacting user
@@ -1704,11 +1677,7 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatId)
         let quest = await this.db.get(chatId + '/quests', messageId.toString())
 
-        if (!quest || quest == '') {
-            console.log('QUEST IS NOT FOUND');
-            ctx.answerCbQuery('Quest not found')
-            return
-        }
+        if (!await this.questExists(quest, ctx, messageId)) { return; }
 
         if (!this.checklists) {
             console.error('Checklists instance not set');
@@ -1759,10 +1728,7 @@ export default class Quests {
 
         try {
             const quest = await this.db.get(chatId + '/quests', questId);
-            if (!quest) {
-                await ctx.answerCbQuery('Quest not found');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, questId)) { return; }
 
             // Update message to show quest again
             await ctx.editMessageText(
@@ -2152,7 +2118,7 @@ export default class Quests {
         this.descriptionScene.on('text', async (ctx) => {
             try {
                 const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
-                if (!quest) {
+                if (!await this.questExists(quest, ctx, ctx.scene.state.questId)) { 
                     return ctx.scene.leave();
                 }
 
@@ -2206,10 +2172,7 @@ export default class Quests {
 
         try {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
-            if (!quest) {
-                await ctx.answerCbQuery('Quest not found');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, messageId)) { return; }
 
             // Enter scene for adding description
             await ctx.scene.enter('description_scene', {
@@ -2337,10 +2300,7 @@ export default class Quests {
 
         try {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
-            if (!quest) {
-                await ctx.answerCbQuery('Quest not found');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, messageId)) { return; }
 
             // Get all ongoing quests in this chat
             const allQuests = await this.db.getAll(chatId + '/quests');
@@ -2471,10 +2431,7 @@ export default class Quests {
 
         try {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
-            if (!quest) {
-                await ctx.answerCbQuery('Quest not found');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, messageId)) { return; }
 
             // Return to the quest view with expanded buttons
             await ctx.editMessageText(
@@ -2538,11 +2495,7 @@ export default class Quests {
 
         try {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
-            if (!quest) {
-                console.log(`Quest not found for ID: ${messageId}`);
-                await ctx.answerCbQuery('Quest not found');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, messageId)) { return; }
             
             console.log(`Handling recurring for quest ID: ${quest.id}, current frequency: ${quest.frequency}, has recurringTaskId: ${!!quest.recurringTaskId}, has originalTaskId: ${!!quest.originalTaskId}`);
 
@@ -2756,10 +2709,7 @@ export default class Quests {
 
         try {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
-            if (!quest) {
-                await ctx.answerCbQuery('Quest not found');
-                return;
-            }
+            if (!await this.questExists(quest, ctx, messageId)) { return; }
 
             console.log(`Handling stop recurring for quest ID: ${quest.id}, has recurringTaskId: ${!!quest.recurringTaskId}, has originalTaskId: ${!!quest.originalTaskId}`);
 
@@ -2881,10 +2831,7 @@ export default class Quests {
 
             const questToView = await this.db.get(originalQuestChatId + '/quests', actualOriginalQuestId.toString());
 
-            if (!questToView) {
-                await ctx.answerCbQuery(i18next.t('questnotfound', { lng: language, defaultValue: 'Quest not found.' }));
-                return;
-            }
+            if (!await this.questExists(questToView, ctx, actualOriginalQuestId)) { return; }
 
             // Ensure the quest object has its chat and id correctly for personalHologram if fetched from different context
             questToView.chat = originalQuestChatId; 
@@ -3008,5 +2955,29 @@ export default class Quests {
             console.error(`[ensureTelegramHologramMessage] Error for quest ${quest.id}, user ${interactingUserId}:`, error);
             // Do not let this error block the main interaction flow
         }
+    }
+
+    async questExists(quest, ctx, questId = 'N/A') {
+        if (!quest || quest === '') {
+            console.log(`Quest not found (ID: ${questId}).`);
+            const chatId = getChatId(ctx);
+            if (!chatId) {
+                console.error("Could not determine chat ID in questExists.");
+                return false;
+            }
+            const language = await this.settings.getLanguage(chatId);
+            const message = i18next.t('questnotfound', {lng: language, defaultValue: 'Quest not found.'});
+
+            if (ctx.callbackQuery) {
+                await ctx.answerCbQuery(message).catch(err => console.error('Error answering CBQ for quest not found:', err));
+                // Try to delete the message with the button
+                await ctx.deleteMessage().catch(err => console.error('Could not delete message for quest not found:', err));
+            } else if (ctx.reply) {
+                await ctx.reply(message).catch(err => console.error('Could not reply for quest not found:', err));
+            }
+
+            return false;
+        }
+        return true;
     }
 }

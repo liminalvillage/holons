@@ -58,7 +58,7 @@ class Server {
       web: this.serverInstance,
       file: 'data',
       multicast: false,
-      peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : []
+      peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
     });
 
     console.log(`Gun server initialized with ${isDebug ? 'HTTP' : 'HTTPS'}`);
