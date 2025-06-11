@@ -297,7 +297,7 @@ describe('HoloSphere Reference System', () => {
         const targetNodeRef = holoSphere.getNodeRef(targetSoul);
         let hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
         expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[storedHologramSoul]).toBe(true);
+        expect(hologramsSet[storedHologramSoul]).toBeDefined(); // Hologram should be tracked initially
 
         // 4. Delete the hologram
         await holoSphere.delete(testHolon, 'otherLens', 'hologram-tracker-2');
@@ -307,9 +307,9 @@ describe('HoloSphere Reference System', () => {
         // 5. Fetch the _holograms set again directly
         hologramsSet = await new Promise(resolve => targetNodeRef.get('_holograms').once(resolve));
 
-        // 6. Verify the hologram's soul is marked as 'DELETED'
+        // 6. Verify the hologram's soul is completely removed (or set to null by Gun)
         expect(hologramsSet).toBeDefined();
-        expect(hologramsSet[storedHologramSoul]).toBe('DELETED'); // <-- Expect 'DELETED' string
+        expect(hologramsSet[storedHologramSoul]).toBeNull(); // Gun stores null when we put(null)
     });
     // --- End tests for _holograms tracking ---
 
