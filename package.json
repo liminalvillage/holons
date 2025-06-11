@@ -1,6 +1,6 @@
 {
   "name": "holosphere",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "Holonic Geospatial Communication Infrastructure",
   "main": "holosphere.js",
   "types": "holosphere.d.ts",

@@ -330,13 +330,23 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
             // For now, we'll let it proceed to attempt metadata cleanup, but a throw here might be valid.
         }
         
-        if (!fedInfo1 || !fedInfo1.federation) {
-            // If fedInfo1 or its federation array doesn't exist, log and proceed to metadata cleanup.
-            console.warn(`No federation array found for ${spaceId1} or fedInfo1 is null. Skipping its update.`);
+        if (!fedInfo1) {
+            // If fedInfo1 doesn't exist, log and proceed to metadata cleanup.
+            console.warn(`No federation info found for ${spaceId1}. Skipping its update.`);
         } else {
-            // Update first space federation info
+            // Ensure arrays exist
+            if (!fedInfo1.federation) fedInfo1.federation = [];
+            if (!fedInfo1.notify) fedInfo1.notify = [];
+            
+            // Update first space federation info - remove from both federation and notify arrays
+            const originalFederationLength = fedInfo1.federation.length;
+            const originalNotifyLength = fedInfo1.notify.length;
+            
             fedInfo1.federation = fedInfo1.federation.filter(id => id !== spaceId2);
+            fedInfo1.notify = fedInfo1.notify.filter(id => id !== spaceId2);
             fedInfo1.timestamp = Date.now();
+            
+            console.log(`Unfederate: Removed ${spaceId2} from ${spaceId1}: federation ${originalFederationLength} -> ${fedInfo1.federation.length}, notify ${originalNotifyLength} -> ${fedInfo1.notify.length}`);
             
             try {
                 await holosphere.putGlobal('federation', fedInfo1, password1);

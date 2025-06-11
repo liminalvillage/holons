@@ -142,11 +142,12 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
         return new Promise((resolve, reject) => {
             try {
-                // Remove isHologram field before storing - NO LONGER NEEDED
-                // if (data && data.isHologram !== undefined) {
-                // delete data.isHologram;
-                // }
-                const payload = JSON.stringify(data); // The data being stored
+                // Create a copy of data without the _meta field if it exists
+                let dataToStore = { ...data };
+                if (dataToStore._meta !== undefined) {
+                    delete dataToStore._meta;
+                }
+                const payload = JSON.stringify(dataToStore); // The data being stored
 
                 const putCallback = async (ack) => {
                     if (ack.err) {
