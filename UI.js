@@ -128,15 +128,28 @@ class UI {
   }
 
   async getFederatedQuests(chatID) {
-    // Fetches only local quests for now to ensure message_thread_id is present for filtering.
-    // Federation logic was removed for simplification during topic filter debugging.
     try {
+      // Get local quests
       const localQuests = await this.db.getAll(chatID + '/quests') || [];
-      // console.log(`[UI.js] Fetched ${localQuests.length} local quests directly.`); // Keep log commented unless debugging
-      return localQuests;
+
+      // Get federated quests (if available)
+      let federatedQuests = [];
+      if (this.db.holosphere && typeof this.db.holosphere.getFederated === 'function') {
+        federatedQuests = await this.db.holosphere.getFederated(chatID, 'quests', {
+          includeFederated: true,
+          includeLocal: false
+        }) || [];
+      }
+
+      // Merge and deduplicate by quest id (if needed)
+      const allQuests = [...localQuests, ...federatedQuests];
+      // Optionally deduplicate by id if federated and local overlap
+      // const uniqueQuests = Array.from(new Map(allQuests.map(q => [q.id, q])).values());
+
+      return allQuests;
     } catch (error) {
-      console.error('Error getting local quests in getFederatedQuests:', error);
-      return []; // Return empty array on error
+      console.error('Error getting federated quests:', error);
+      return [];
     }
   }
 

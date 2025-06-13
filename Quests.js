@@ -130,6 +130,17 @@ export default class Quests {
         this.scheduler = scheduler;
     }
 
+    // Helper method to check if a user is admin in a specific chat
+    async checkUserAdmin(userId, chatId) {
+        try {
+            const chatMember = await this.bot.telegram.getChatMember(chatId, userId);
+            return ['administrator', 'creator'].includes(chatMember.status) || (chatId > 0); // chatId > 0 means private chat
+        } catch (error) {
+            console.error('Error checking admin status:', error);
+            return false;
+        }
+    }
+
     async delete(ctx) {
         console.log("DELETE ACTION");
         let chatID = ctx.message.chat.id;
@@ -319,14 +330,8 @@ export default class Quests {
                 });
         } else {
 
-            if (type == 'offer') {
-                quest.participants.push(sender);
-                await this.users.saveUserAction(sender, "offers", quest.title, 0, chatID)
-            }
-            if (type == 'request') {
-                quest.appreciation.push(sender);
-                await this.users.saveUserAction(sender, "wants", quest.title, 0, chatID)
-            }
+            // Removed: if (type == 'offer') { ... }
+            // Removed: if (type == 'request') { ... }
 
             // Send message in the original chat and get the message ID
             const nctx = await ctx.reply(await this.createMessage(quest, language), this.markup(quest, language));
@@ -556,7 +561,7 @@ export default class Quests {
         }
 
         // Quest exists (questToCancel is populated), now check permissions
-        const hasPermission = questToCancel.initiator?.id === ctx.from.id || await isAdmin(ctx.from.id, chatID);
+        const hasPermission = questToCancel.initiator?.id === ctx.from.id || await this.checkUserAdmin(ctx.from.id, chatID);
 
         if (hasPermission) {
             console.log(`User ${ctx.from.id} has permission to cancel quest ${messageID}. Proceeding with cancellation.`);
@@ -672,7 +677,7 @@ export default class Quests {
         }
         // Handle the reaction to the quest (only initiator or participants can complete the quest)
         const completerId = ctx.from.id; // User who completed the quest
-        if (quest.initiator.id === completerId || quest.participants.findIndex(user => user.id === completerId) > -1 || await isAdmin(completerId, chatID)) {
+        if (quest.initiator.id === completerId || quest.participants.findIndex(user => user.id === completerId) > -1 || await this.checkUserAdmin(completerId, chatID)) {
             quest.status = "completed";
 
             // Cancel any scheduled reminder
@@ -1456,7 +1461,7 @@ export default class Quests {
         const sender = ctx.callbackQuery.from;
 
         // Check if user has permission to publish
-        if (quest.initiator.id !== sender.id && !await isAdmin(sender.id, chatID)) {
+        if (quest.initiator.id !== sender.id && !await this.checkUserAdmin(sender.id, chatID)) {
             ctx.answerCbQuery(i18next.t('onlyinitiatorpublish', { lng: language }))
             return;
         }
@@ -1522,7 +1527,7 @@ export default class Quests {
         const sender = ctx.callbackQuery.from;
 
         // Check if user has permission to broadcast
-        if (quest.initiator.id !== sender.id && !await isAdmin(sender.id, chatID)) {
+        if (quest.initiator.id !== sender.id && !await this.checkUserAdmin(sender.id, chatID)) {
             ctx.answerCbQuery(i18next.t('onlyinitiatorbroadcast', { lng: language }))
             return;
         }

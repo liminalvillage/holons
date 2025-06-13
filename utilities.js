@@ -73,16 +73,31 @@ export const capitalize = (string) => {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
-export const isAdmin = async (ctx) => {
-  if (ctx.telegram) { // TODO: HANDLE DISCORD CASE
-    const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
-    if (['administrator', 'creator'].includes(chatMember.status) || (ctx.chat.type === 'private'))
-      return true;
-    else
-      return false;
+export const isAdmin = async (ctxOrUserId, chatID) => {
+  // Handle case where first parameter is userId and second is chatID
+  if (typeof ctxOrUserId === 'number' && chatID) {
+    // This is the case where it's called as isAdmin(userId, chatID)
+    // We need to construct a mock ctx object or handle this differently
+    // For now, we'll need to pass the telegram instance somehow
+    console.warn('isAdmin called with userId and chatID - this needs telegram instance');
+    return false; // Default to false for this case until we can properly handle it
   }
-  return false
-
+  
+  // Handle case where first parameter is ctx
+  const ctx = ctxOrUserId;
+  if (ctx.telegram) { // TODO: HANDLE DISCORD CASE
+    try {
+      const chatMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.from.id);
+      if (['administrator', 'creator'].includes(chatMember.status) || (ctx.chat.type === 'private'))
+        return true;
+      else
+        return false;
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
+    }
+  }
+  return false;
 }
 
 /**
