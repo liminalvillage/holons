@@ -127,10 +127,10 @@ class HolonsBot {
       
       // Add  middleware to log all interaction queries to add the users to the database
       this.telebot.use((ctx, next) => {
-        if (ctx.callbackQuery) {
+        if (ctx.callbackQuery && this.users) {
           this.users.getUserInfo(ctx.callbackQuery.from, ctx.callbackQuery.message?.chat?.id);
         }
-        if (ctx.message) {
+        if (ctx.message && this.users) {
           this.users.getUserInfo(ctx.message.from, ctx.message.chat.id);
         }
         return next();
@@ -418,6 +418,7 @@ class HolonsBot {
   }
 
   async handlePhoto(ctx) {
+    // First handle caption commands if present
     if (ctx.message.caption) {
       const command = ctx.message.caption.split(' ')[0];
       if (['/task', '/quest', '/todo', '/offer', '/request'].includes(command)) {
@@ -437,19 +438,84 @@ class HolonsBot {
       const jimpImage = await Jimp.read(rawImageBuffer);
       const qr = new qrReader();
 
-      qr.callback = (err, value) => {
+      qr.callback = async (err, value) => {
         if (err) {
+          console.error('QR code read error:', err);
           return;
         }
 
-        if (value) {
-          ctx.reply(`${value.result.split('/').slice(value.result.split('/').length - 1)}`, Markup.inlineKeyboard([Markup.button.webApp('Open', `${value.result}`)]));
+        if (value && value.result) {
+          const qrText = value.result;
+          
+          // Check if the QR code content starts with a command
+          if (qrText.startsWith('/')) {
+            const [command, ...args] = qrText.split(' ');
+            // Create a new message context with the QR code content
+            const newCtx = {
+              ...ctx,
+              chat: ctx.chat || ctx.message.chat,
+              from: ctx.from || ctx.message.from,
+              message: {
+                ...ctx.message,
+                text: qrText,
+                caption: undefined,
+                photo: undefined,
+                from: ctx.message.from,
+                chat: ctx.message.chat,
+                date: ctx.message.date || Math.floor(Date.now() / 1000),
+                message_id: ctx.message.message_id
+              },
+              replyWithPhoto: ctx.replyWithPhoto.bind(ctx),
+              replyWithHTML: ctx.replyWithHTML.bind(ctx),
+              replyWithMarkdown: ctx.replyWithMarkdown.bind(ctx),
+              reply: ctx.reply.bind(ctx),
+              telegram: ctx.telegram,
+              deleteMessage: ctx.deleteMessage.bind(ctx),
+              editMessageText: ctx.editMessageText.bind(ctx),
+              editMessageReplyMarkup: ctx.editMessageReplyMarkup.bind(ctx)
+            };
+            
+            // Handle specific commands
+            if (['/task', '/quest', '/todo', '/offer', '/request'].includes(command)) {
+              await this.quests.quest(command.slice(1), newCtx);
+            } else if (['/spent', '/expense', '/speso'].includes(command)) {
+              await this.expenses.spent(newCtx);
+            } else {
+              // For any other commands, just display the QR content
+              await ctx.reply(`QR Code content: ${qrText}`);
+            }
+          } else {
+            // Check if the content is a valid URL
+            let isValidUrl = false;
+            try {
+              new URL(qrText);
+              isValidUrl = true;
+            } catch (e) {
+              isValidUrl = false;
+            }
+
+            if (isValidUrl) {
+              // If it's a URL, show the web app button
+              await ctx.reply(`${qrText.split('/').slice(qrText.split('/').length - 1)}`, 
+                Markup.inlineKeyboard([
+                  Markup.button.webApp('Open', qrText)
+                ])
+              );
+            } else {
+              // If not a URL, just show the content
+              await ctx.reply(`QR Code content: ${qrText}`);
+            }
+          }
         }
       };
 
       qr.decode(jimpImage.bitmap);
     } catch (error) {
       console.error('Error processing QR code:', error);
+      // Don't send error to user unless it's a development environment
+      if (process.env.NODE_ENV === 'development') {
+        await ctx.reply('Error processing QR code. Please try again.');
+      }
     }
   }
 

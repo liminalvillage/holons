@@ -2074,23 +2074,19 @@ export default class Settings {
                         { text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}: ${settings.admin ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_admin' },
                         { text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}: ${federationCount}`, callback_data: 'settings_federation' }
                     ],
-                    // 5. Holacracy | Equation
+                    // 5. Holacracy | Hex
                     [
                         { text: `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', {lng: language, defaultValue: 'Holacracy'})}`, callback_data: 'settings_holacracy'},
-                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' }
+                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' }
                     ],
                     // 6. Currencies | Flow Management
                     [
                         { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'},
-                        { text: `${this.getSettingIcon('flow_management')} ${i18next.t('settings_flow_management', { lng: language, defaultValue: '🌊 Flow Management' })}`, callback_data: 'holons_flow_management' }
+                        { text: `${this.getSettingIcon('flow_management')} ${i18next.t('settings_flow_management', { lng: language, defaultValue: 'Flow Management' })}`, callback_data: 'holons_flow_management' }
                     ],
-                    // 7. Hex | Help
+                    // 7. Help | Support
                     [
-                        { text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}: ${settings.hex ? '✓' : i18next.t('settings_not_set', { lng: language })}`, callback_data: 'settings_hex' },
-                        { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' }
-                    ],
-                    // 8. Support (full width)
-                    [
+                        { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
                     ],
                     // 9. Dashboard (full width)

@@ -2563,8 +2563,10 @@ export default class Holons {
         ]);
         keyboard.push([{ text: "🔗 Add External Holon(s)", callback_data: "zone_add_external_holons_scene_enter"}]);
         keyboard.push([
-            { text: "🎯 Reward Preview", callback_data: "reward_function_preview" },
-            { text: "⚙️ Set Reward Function", callback_data: "reward_function_set" }
+            { text: "🎯 Reward Function", callback_data: "reward_function_set" }
+        ]);
+        keyboard.push([
+            { text: "📊 Preview Distribution", callback_data: "reward_function_preview" }
         ]);
       }
       keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
@@ -2751,8 +2753,10 @@ export default class Holons {
             { text: "🔄 Sync Scores to Contract", callback_data: "member_sync_scores" }
         ]);
         keyboard.push([
-            { text: "🎁 Reward Members", callback_data: "holons_reward" },
-            { text: "⚖️ Value Equation", callback_data: "settings_equation" }
+            { text: "🎁 Reward Members", callback_data: "holons_reward" }
+        ]);
+        keyboard.push([
+            { text: "⚖️ Value Equation", callback_data: "holons_flow_management" }
         ]);
       }
       keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
