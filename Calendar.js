@@ -39,7 +39,7 @@ export class Calendar {
                         reply_markup: timeMarkup
                     });
                 }
-                await ctx.answerCbQuery();
+                await ctx.answerCbQuery().catch()
             });
         }
     }

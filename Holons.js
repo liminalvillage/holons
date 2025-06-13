@@ -27,6 +27,7 @@ export default class Holons {
     this.bot = bot;
     this.db = db;
     this.settings = settings;
+    this.ui = null; // Will be set by main app
     this.privateKey = process.env.WEB3KEY;
     this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
     this.wallet = new ethers.Wallet(this.privateKey, this.provider);
@@ -54,7 +55,7 @@ export default class Holons {
       }
     });
     this.createHolonScene.action(/create_holon_(.+)/, async (ctx) => {
-      await ctx.answerCbQuery();
+      await ctx.answerCbQuery().catch()
       const flavor = ctx.match[1];
       await ctx.editMessageText(`You selected ${flavor}. Do you want to proceed with creation?`, {
         reply_markup: {
@@ -64,7 +65,7 @@ export default class Holons {
       }).catch(error => console.error("Error editing message:", error));
     });
     this.createHolonScene.action(/confirm_holon_creation_(.+)/, async (ctx) => {
-      await ctx.answerCbQuery();
+      await ctx.answerCbQuery().catch()
       const flavor = ctx.match[1];
       const chatID = utils.getChatId(ctx);
       const userID = utils.getUserId(ctx);
@@ -88,7 +89,7 @@ export default class Holons {
       await ctx.scene.leave();
     });
     this.createHolonScene.action('cancel_create_holon', async (ctx) => {
-      await ctx.answerCbQuery();
+      await ctx.answerCbQuery().catch()
       await ctx.editMessageText("Holon creation cancelled.", { reply_markup: { inline_keyboard: [[{ text: "◀️ Back to Menu", callback_data: "holons_back" }]] } });
       await ctx.scene.leave();
     });
@@ -332,8 +333,10 @@ export default class Holons {
     this.bot.command("zones", async (ctx) => this.showZones(ctx));
     this.bot.command("setshares", async (ctx) => this.setShares(ctx));
     this.bot.command("setsplit", async (ctx) => this.handleSetSplitCommand(ctx));
-    this.bot.command("appreciate", async (ctx) => this.handleAppreciateCommand(ctx));
+   // this.bot.command("appreciate", async (ctx) => this.handleAppreciateCommand(ctx));
     this.bot.command("addtozone", async (ctx) => this.handleAddToZoneCommand(ctx));
+    this.bot.command("setrewardfunction", async (ctx) => this.handleSetRewardFunction(ctx));
+    this.bot.command("rewardpreview", async (ctx) => this.handleRewardPreview(ctx));
     
     this.bot.command("holons", async (ctx) => this.showHolonsMenu(ctx));
 
@@ -464,26 +467,39 @@ export default class Holons {
           break;
         case 'manage_zones_view': 
           try {
+            console.log(`Zone management view requested for chatID: ${chatID}`);
             const zonedContract = await this.getZonedContract(chatIdNormalized);
             if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
-              // It's important to await ctx.answerCbQuery() before returning or editing, if not done at the top of the main handler
-              // await ctx.answerCbQuery().catch(e => console.log("CBQ Error in no zoned func", e.message));
+              console.log(`No zoned contract found for ${chatIdNormalized}`);
               return ctx.editMessageText("This holon does not have Zoned functionality.", {
                 reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]] }
               }).catch(e => console.log("Error editing message for no zoned functionality:", e.message));
             }
+            console.log(`Zoned contract found: ${zonedContract.target}, showing zone management view`);
             await this.showZoneManagementView(ctx);
           } catch (error) {
-            // Simplified catch block for now to pass linter
+            console.error("Error in manage_zones_view:", error);
             if (error.response && error.response.error_code === 400 && error.response.description.includes('message is not modified')) {
+              console.log("Zone management view: message not modified, answering callback");
+              // Message not modified, just answer the callback query if possible
+              if (ctx.callbackQuery) {
+                await ctx.answerCbQuery().catch(e => console.log("CBQ Error for not modified:", e.message));
+              }
             } else {
-              // Optionally, provide a generic error message to the user if safe to do so
-               await ctx.reply("An error occurred while trying to manage zones.").catch(e => console.log("Reply error", e.message));
+              // Real error occurred, try to provide feedback
+              console.log("Zone management view: real error occurred, editing message");
+              await ctx.editMessageText("Error loading zone management view.", {
+                reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]] }
+              }).catch(e => console.log("Edit error:", e.message));
             }
           }
           break;
         case 'manage_splitter_view':
           await this.displaySplitterManagementView(ctx);
+          break;
+        case 'flow_management':
+          try { await this.showFlowManagementMenu(ctx, true); }
+          catch (error) { console.error("Error in flow_management handler:", error); }
           break;
         case 'back':
           try { await this.showHolonsMenu(ctx, true); }
@@ -561,6 +577,168 @@ export default class Holons {
       }
     });
     // === END OF SPLITTER MANAGEMENT ACTION HANDLERS ===
+
+    // Zone move execution handler
+    this.bot.action(/zone_move_(\w+)_(\d+)_(\d+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in zone move:", e.message));
+      
+      const [memberId, targetZoneIndex, originalZoneIndex] = ctx.match.slice(1);
+      await this.executeZoneMove(ctx, memberId, targetZoneIndex, originalZoneIndex);
+    });
+
+    // Reward function management handlers
+    this.bot.action(/reward_function_(.+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in reward function:", e.message));
+      
+      const action = ctx.match[1];
+      
+      switch(action) {
+        case 'preview':
+          await this.handleRewardPreview(ctx);
+          break;
+        case 'set':
+          await this.showPolynomialParameterUI(ctx);
+          break;
+        default:
+          await ctx.editMessageText("Unknown reward function action.").catch(e => console.log("Edit error:", e.message));
+      }
+    });
+
+    // Polynomial parameter adjustment handlers
+    this.bot.action(/poly_param_(.+)_(-?\d+)_(-?\d+)_(-?\d+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in poly param:", e.message));
+      
+      const param = ctx.match[1]; // 'a', 'b', or 'c'
+      let a = parseInt(ctx.match[2]);
+      let b = parseInt(ctx.match[3]);
+      let c = parseInt(ctx.match[4]);
+      
+      // Adjust the selected parameter
+      switch(param) {
+        case 'a_inc': a = Math.min(20, a + 1); break;
+        case 'a_dec': a = Math.max(-20, a - 1); break;
+        case 'a_inc5': a = Math.min(20, a + 5); break;
+        case 'a_dec5': a = Math.max(-20, a - 5); break;
+        case 'b_inc': b = Math.min(50, b + 1); break;
+        case 'b_dec': b = Math.max(-50, b - 1); break;
+        case 'b_inc5': b = Math.min(50, b + 5); break;
+        case 'b_dec5': b = Math.max(-50, b - 5); break;
+        case 'c_inc': c = Math.min(100, c + 1); break;
+        case 'c_dec': c = Math.max(0, c - 1); break;
+        case 'c_inc5': c = Math.min(100, c + 5); break;
+        case 'c_dec5': c = Math.max(0, c - 5); break;
+      }
+      
+      await this.updatePolynomialParameterUI(ctx, a, b, c);
+    });
+
+    // Save polynomial parameters handler
+    this.bot.action(/poly_save_(-?\d+)_(-?\d+)_(-?\d+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in poly save:", e.message));
+      
+      const a = parseInt(ctx.match[1]);
+      const b = parseInt(ctx.match[2]);
+      const c = parseInt(ctx.match[3]);
+      
+      await this.savePolynomialParameters(ctx, a, b, c);
+    });
+
+    // Handler for polynomial info/noop buttons
+    this.bot.action(/poly_(noop|info_.+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in poly noop:", e.message));
+      // These buttons don't perform any action, just acknowledge the callback
+    });
+
+    // === MEMBER MANAGEMENT ACTION HANDLERS ===
+    this.bot.action('member_sync_scores', async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member_sync_scores:", e.message));
+      await ctx.editMessageText("🔄 Syncing scores to contract... Please wait.").catch(e => console.log("Edit error:", e.message));
+      
+      try {
+        await this.syncScore(ctx);
+        // Show updated member management view after sync
+        setTimeout(async () => {
+          await this.showMemberManagementView(ctx, true);
+        }, 2000);
+      } catch (error) {
+        console.error("Error syncing scores:", error);
+        await ctx.editMessageText(`❌ Error syncing scores: ${error.message}`, {
+          reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_manage_members_view" }]] }
+        }).catch(e => console.log("Error edit:", e.message));
+      }
+    });
+
+    this.bot.action('member_enter_add_scene', async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member_enter_add_scene:", e.message));
+      await ctx.scene.enter('add_member_scene');
+    });
+
+    this.bot.action('member_prepare_remove', async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member_prepare_remove:", e.message));
+      try {
+        await this.showMemberManagementView(ctx, true, 'prepare_remove');
+      } catch (error) {
+        console.error("Error in member_prepare_remove:", error);
+        await ctx.reply("Error loading remove mode.").catch(e => console.log("Reply error:", e.message));
+      }
+    });
+
+    this.bot.action(/member_confirm_remove_(.+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member_confirm_remove:", e.message));
+      const memberId = ctx.match[1];
+      await ctx.editMessageText(`➖ Removing member ${memberId}...`).catch(e => console.log("Edit error:", e.message));
+      
+      try {
+        const success = await this.removeMemberFromManagedHolon(ctx, memberId);
+        if (success) {
+          // Show updated member management view after removal
+          setTimeout(async () => {
+            await this.showMemberManagementView(ctx, true);
+          }, 2000);
+        }
+      } catch (error) {
+        console.error("Error removing member:", error);
+        await ctx.editMessageText(`❌ Error removing member: ${error.message}`, {
+          reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_manage_members_view" }]] }
+        }).catch(e => console.log("Error edit:", e.message));
+      }
+    });
+
+    // Handle increment/decrement actions for member scores
+    this.bot.action(/^member_(increment|decrement|increment10|decrement10)_(.+)$/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member score adjustment:", e.message));
+      const chatID = utils.getChatId(ctx);
+      const action = ctx.match[1];
+      const memberId = ctx.match[2];
+
+      try {
+        let settings = await this.getSettings(chatID);
+        if (!settings.memberAdjustments) {
+          settings.memberAdjustments = {};
+        }
+
+        const currentAdjustment = settings.memberAdjustments[memberId] || 0;
+        
+        if (action === 'increment') {
+          settings.memberAdjustments[memberId] = currentAdjustment + 1;
+        } else if (action === 'increment10') {
+          settings.memberAdjustments[memberId] = currentAdjustment + 10;
+        } else if (action === 'decrement') {
+          settings.memberAdjustments[memberId] = currentAdjustment - 1;
+        } else if (action === 'decrement10') {
+          settings.memberAdjustments[memberId] = currentAdjustment - 10;
+        }
+
+        await this.setSettings(settings);
+
+        // Refresh the member management view
+        await this.showMemberManagementView(ctx, true);
+      } catch (error) {
+        console.error("Error adjusting member score:", error);
+        await ctx.reply("Error adjusting member score: " + error.message).catch(e => console.log("Reply error:", e.message));
+      }
+    });
+    // === END OF MEMBER MANAGEMENT ACTION HANDLERS ===
   }
 
   async _updateSplitterManagementView(ctx, internalPercent, splitterAddress) {
@@ -580,7 +758,7 @@ export default class Holons {
         { text: ">>", callback_data: `splitter_adj_live_10_${internalPercent}` }
       ],
       [{ text: "✅ Set This Split", callback_data: `splitter_conf_live_set_${internalPercent}` }],
-      [{ text: "◀️ Back to Menu", callback_data: "holons_back" }]
+      [{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]
     ];
 
     try {
@@ -594,6 +772,72 @@ export default class Holons {
       } else {
         console.error("Error editing message in _updateSplitterManagementView:", error);
       }
+    }
+  }
+
+  async showFlowManagementMenu(ctx, edit = false) {
+    const chatID = utils.getChatId(ctx);
+    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    
+    let splitterContract = null;
+    let isZonedHolon = false;
+    
+    try {
+      splitterContract = await this.getSplitterContract(chatIdNormalized);
+      if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
+        const zonedContract = await this.getZonedContract(chatIdNormalized);
+        if (zonedContract && zonedContract.target !== '0x0000000000000000000000000000000000000000') {
+          isZonedHolon = true;
+        }
+      }
+    } catch (error) {
+      console.error("Error checking holon bundle for flow management menu:", error);
+    }
+    
+    const holonExists = splitterContract !== null && splitterContract.target !== '0x0000000000000000000000000000000000000000';
+    
+    if (!holonExists) {
+      const message = "No Holon detected for this chat. Please create one first.";
+      const keyboard = [[{ text: "◀️ Back to Settings", callback_data: "settings_back" }]];
+      
+      if (edit || ctx.callbackQuery) {
+        return ctx.editMessageText(message, { reply_markup: { inline_keyboard: keyboard } }).catch(e => console.log("Error:", e.message));
+      } else {
+        return ctx.reply(message, { reply_markup: { inline_keyboard: keyboard } }).catch(e => console.log("Error:", e.message));
+      }
+    }
+
+    let message = `🌊 FLOW MANAGEMENT 🌊\n`;
+    message += `\nContract: \`${splitterContract.target}\`\n\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `Manage how value flows through your Holon:`;
+
+    const keyboard = [
+      [{ text: "💱 Split Flows", callback_data: "holons_manage_splitter_view" }],
+      [{ text: "👥 Internal Flows", callback_data: "holons_manage_members_view" }],
+      [{ text: "🔶 External Flows", callback_data: "holons_manage_zones_view" }],
+      [{ text: "◀️ Back to Settings", callback_data: "settings_back" }]
+    ];
+
+    const menuMarkup = { reply_markup: { inline_keyboard: keyboard } };
+    
+    if (edit || ctx.callbackQuery) {
+      try {
+        return await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          ...menuMarkup
+        });
+      } catch (error) {
+        if (error.response && error.response.error_code === 400 && error.response.description.includes('message is not modified')) {
+          console.log('Flow management menu not modified, already displayed.');
+          if (ctx.callbackQuery) await ctx.answerCbQuery().catch(e => console.log("E ans CBQ:", e.message));
+          return;
+        }
+        console.log('Error editing flow management menu:', error);
+        return ctx.reply(message, { parse_mode: 'Markdown', ...menuMarkup }).catch(e => console.log('Error replying to flow management menu fallback:', e.message));
+      }
+    } else {
+      return ctx.reply(message, { parse_mode: 'Markdown', ...menuMarkup }).catch(e => console.log('Error showing flow management menu:', e.message));
     }
   }
 
@@ -624,11 +868,7 @@ export default class Holons {
       // Buttons for an existing Holon
       menuKeyboard.push(
         [{ text: "🔄 Sync Scores", callback_data: "holons_smart_sync" }, { text: "💰 Claim Tokens", callback_data: "holons_claim" }],
-        [{ text: "🎁 Reward Members", callback_data: "holons_reward" }, { text: "⚖️ ETH Balance", callback_data: "holons_ethbalance" }],
-        [{ text: "🪙 Token Balance", callback_data: "holons_tokenbalance" }],
-        [{ text: "💱 Split Rewards", callback_data: "holons_manage_splitter_view" }],
-        [{ text: "👥 Internal Rewards", callback_data: "holons_manage_members_view" }],
-        [{ text: "🔶 Ecosystem Rewards", callback_data: "holons_manage_zones_view" }],
+        [{ text: "⚖️ ETH Balance", callback_data: "holons_ethbalance" }, { text: "🪙 Token Balance", callback_data: "holons_tokenbalance" }],
         [{ text: "◀️ Back", callback_data: "settings_back" }] // Changed text to ◀️ Back
       );
    
@@ -738,10 +978,10 @@ export default class Holons {
       );
       
       // Provide immediate feedback
-      await ctx.reply(`Transaction submitted. You will be notified when the reward of ${ethers.formatUnits(amount, 18)} tokens is distributed.`);
+      await ctx.reply(`Transaction submitted. You will be notified when the flow of ${ethers.formatUnits(amount, 18)} tokens is distributed.`);
     } catch (error) {
       console.error("Error in reward function:", error);
-      ctx.reply("An error occurred while processing the reward: " + error.message);
+              ctx.reply("An error occurred while processing the flow: " + error.message);
       await ctx.scene.leave();
     }
   }
@@ -856,21 +1096,30 @@ export default class Holons {
     let users = await this.db.getAll(chatID.toString() + '/users')
     if (!users) return ctx.reply("No users found");
     const equation = await this.settings.getValueEquation(chatID)
+    
+    // Get manual score adjustments
+    const settings = await this.getSettings(chatID);
+    const memberAdjustments = settings.memberAdjustments || {};
 
     let userids = users.map((user) => user.id.toString());
     // Format scores to ensure they're BigInts for the contract call
     let contractScores = users.map((user) => {
-      const scoreValue = Math.floor(
-        user.initiated.length * equation.initiated +
-        user.completed.length * equation.completed +
-        user.sent * equation.sent +
-        user.received * equation.received +
-        user.hours * equation.hours +
-        user.collaboration * equation.collaboration +
-        user.wants.length * equation.wants +
-        user.offers.length * equation.offers
+      const calculatedScore = Math.floor(
+        (user.initiated?.length || 0) * (equation.initiated || 0) +
+        (user.completed?.length || 0) * (equation.completed || 0) +
+        (user.sent || 0) * (equation.sent || 0) +
+        (user.received || 0) * (equation.received || 0) +
+        (user.hours || 0) * (equation.hours || 0) +
+        (user.collaboration || 0) * (equation.collaboration || 0) +
+        (user.wants?.length || 0) * (equation.wants || 0) +
+        (user.offers?.length || 0) * (equation.offers || 0)
       );
-      return ethers.toBigInt(scoreValue);
+      
+      // Apply manual adjustment
+      const adjustment = memberAdjustments[user.id.toString()] || 0;
+      const finalScore = Math.max(0, calculatedScore + adjustment); // Ensure non-negative
+      
+      return ethers.toBigInt(finalScore);
     });
 
     // let address = await this.holonsContract.toAddress(chatID.toString());
@@ -1252,7 +1501,7 @@ export default class Holons {
       console.error("Cannot find holon, in this case it's Managed!");
     }
     // console.log("Adding members to a managed holon address: ", holonAddressManaged); // it works, it's just managedHolon, it's not holonAddressManaged
-    await ctx.reply(`Adding ${users.length} members... Please wait.`);
+    await ctx.reply(`Adding ${users.length} members to internal... Please wait.`);
 
     let results = [];
     try {
@@ -1353,7 +1602,7 @@ export default class Holons {
       return;
     }
 
-    await ctx.reply(`Adding holon(s) to federation... Please wait.`);
+          await ctx.reply(`Adding holon(s) to external... Please wait.`);
 
     const holonIdsToAddArray = userIdsParams.split(' ').map(String); // Ensure this is an array of strings
 
@@ -1383,12 +1632,12 @@ export default class Holons {
         nonce: await this.wallet.getNonce()
       });
 
-      this.waitForTransaction(tx, ctx, `Successfully initiated adding ${holonIdsToAddArray.length} holon(s)`);
+              this.waitForTransaction(tx, ctx, `Successfully initiated adding ${holonIdsToAddArray.length} holon(s) to external`);
 
-      await ctx.reply(`Transaction submitted. You will be notified when holon(s) are added.`);
+        await ctx.reply(`Transaction submitted. You will be notified when holon(s) are added to external.`);
     } catch (error) {
       console.error("Transaction error in addHolonsBundle:", error);
-      await ctx.reply(`Failed to add holon(s): ${error.message}`);
+              await ctx.reply(`Failed to add holon(s) to external: ${error.message}`);
     }
   }
 
@@ -1551,7 +1800,7 @@ export default class Holons {
       // Check if this is actually a Zoned holon by checking the flavor
       const flavor = await holon.flavor();
       if (flavor !== "Zoned") {
-        return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`);
+        return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only external holons have zone functionality.`);
       }
       
       await ctx.reply(`Moving member to zone ${zoneNumber}... Please wait.`);
@@ -1575,7 +1824,7 @@ export default class Holons {
     } catch (error) {
       console.error("Error moving to zone:", error);
       if (error.message.includes("not a zoned")) {
-        ctx.reply("This command only works with Zoned holons");
+        ctx.reply("This command only works with external holons");
       } else {
         ctx.reply(`Failed to move member: ${error.message}`);
       }
@@ -2110,7 +2359,7 @@ export default class Holons {
         // Check if this is actually a Zoned holon by checking the flavor
         const flavor = await holon.flavor();
         if (flavor !== "Zoned") {
-            return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`);
+            return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only external holons have zone functionality.`);
         }
         
         const users = await this.db.getAll(chatID.toString() + '/users');
@@ -2246,7 +2495,7 @@ export default class Holons {
   async showZoneManagementView(ctx, mode = 'view') { // Mode: 'view', 'prepare_move', 'prepare_remove'
     const chatID = utils.getChatId(ctx);
     const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-    let message = "🔶 Zone Management\n\n";
+    let message = "🔶 External Management\n\n";
     const keyboard = [];
 
     if (mode === 'prepare_move') {
@@ -2260,8 +2509,8 @@ export default class Holons {
     try {
       const zonedContract = await this.getZonedContract(chatIdNormalized);
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
-        message += "This Holon does not have Zoned functionality.";
-        keyboard.push([{ text: "◀️ Back", callback_data: "holons_back" }]);
+        message += "This Holon does not have external functionality.";
+        keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
         if (ctx.callbackQuery) {
             return ctx.editMessageText(message, { reply_markup: { inline_keyboard: keyboard } }).catch(e => console.log("Error: ", e.message));
         } else {
@@ -2312,10 +2561,13 @@ export default class Holons {
             { text: "➡️ Prepare Move", callback_data: "zone_prepare_move" },
             { text: "➖ Prepare Remove", callback_data: "zone_prepare_remove" }
         ]);
-        // Restore original callback_data
-        keyboard.push([{ text: "🔗 Add External Holon(s)", callback_data: "zone_add_external_holons_scene_enter"}]); 
+        keyboard.push([{ text: "🔗 Add External Holon(s)", callback_data: "zone_add_external_holons_scene_enter"}]);
+        keyboard.push([
+            { text: "🎯 Reward Preview", callback_data: "reward_function_preview" },
+            { text: "⚙️ Set Reward Function", callback_data: "reward_function_set" }
+        ]);
       }
-      keyboard.push([{ text: "◀️ Back", callback_data: "holons_back" }]);
+      keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
       
     // ... (rest of the edit/reply logic remains the same) ...
       if (ctx.callbackQuery) {
@@ -2354,20 +2606,20 @@ export default class Holons {
   async showMemberManagementView(ctx, edit = false, mode = 'view') { // Mode: 'view', 'prepare_remove'
     const chatID = utils.getChatId(ctx);
     const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-    let message = "👥 Member Management\n\n";
+    let message = "👥 Internal Management\n\n";
     const keyboard = [];
 
     if (mode === 'prepare_remove') {
       message += "Select a member to remove ➖\n\n";
     } else { // view mode
-      message += "Manage your Holon members.\n\n";
+              message += "Manage your internal members.\n\n";
     }
 
     try {
       const managedContract = await this.getManagedContract(chatIdNormalized);
       if (!managedContract || managedContract.target === '0x0000000000000000000000000000000000000000') {
-        message += "Error: Could not find Managed Holon contract for this chat.";
-        keyboard.push([{ text: "◀️ Back", callback_data: "holons_back" }]);
+        message += "Error: Could not find internal contract for this chat.";
+        keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
       } else {
         let membersLength = Number(await managedContract.getSize());
         let members = [];
@@ -2385,27 +2637,105 @@ export default class Holons {
         }, {});
 
         if (members.length === 0) {
-          message += "No members in this Holon yet.";
+          message += "No members in internal yet.";
         } else {
-          if (mode !== 'prepare_remove') message += "Current members & scores:\n";
-          // Change to one member button per row
+          // Get value equation for score calculation
+          const equation = await this.settings.getValueEquation(chatID);
+          
+          // Calculate total score for percentage calculations
+          let totalCalculatedScore = 0;
+          let totalContractScore = 0;
+          const memberData = [];
+          
           for (const memberId of members) {
-            let score = 0; // Default score
+            let calculatedScore = 0;
+            let contractScore = 0;
+            
+            // Always calculate fresh score from database using current value equation
             try {
-              // Assuming 'appreciations' is the public mapping or getter for scores
-              const memberScore = await managedContract.appreciation(memberId.toString());
-              score = memberScore.toString(); // Convert BigNumber to string
+              const user = usersFromDB.find(u => u.id.toString() === memberId.toString());
+              
+              if (user) {
+                // Calculate base score from current user data and equation
+                calculatedScore = Math.floor(
+                  (user.initiated?.length || 0) * (equation.initiated || 0) +
+                  (user.completed?.length || 0) * (equation.completed || 0) +
+                  (user.sent || 0) * (equation.sent || 0) +
+                  (user.received || 0) * (equation.received || 0) +
+                  (user.hours || 0) * (equation.hours || 0) +
+                  (user.collaboration || 0) * (equation.collaboration || 0) +
+                  (user.wants?.length || 0) * (equation.wants || 0) +
+                  (user.offers?.length || 0) * (equation.offers || 0)
+                );
+              }
             } catch (e) {
-              console.warn(`Could not fetch score for member ${memberId}: ${e.message}`);
+              // Silently continue if score calculation fails
             }
+            
+            // Try to fetch from smart contract
+            try {
+              const memberScore = await managedContract.appreciation(memberId.toString());
+              contractScore = Number(memberScore.toString());
+            } catch (contractError) {
+              // Silently continue if contract fetch fails
+            }
+            
+            // Store the base calculated score (from value equation) and contract score
+            memberData.push({ 
+              id: memberId, 
+              calculatedScore,  // This is the fresh score from value equation
+              contractScore 
+            });
+            totalCalculatedScore += calculatedScore;
+            totalContractScore += contractScore;
+          }
 
-            let buttonText = `@${userMap[memberId] || memberId} (Score: ${score})`;
-            let callbackData = `member_action_${memberId}`;
+          if (mode !== 'prepare_remove') {
+            message += "Current members, scores & flow percentages:\n";
+            message += `📊 Calculated Total: ${totalCalculatedScore} | Contract Total: ${totalContractScore}\n\n`;
+          }
+          
+          // Get manual score adjustments
+          const settings = await this.getSettings(chatID);
+          const memberAdjustments = settings.memberAdjustments || {};
+
+          // Display members with scores and percentages
+          for (const member of memberData) {
+            // Apply manual adjustments to the current calculated score (from value equation)
+            const adjustment = memberAdjustments[member.id] || 0;
+            const adjustedScore = member.calculatedScore + adjustment;
+            
             if (mode === 'prepare_remove') {
-              buttonText += " ➖";
-              callbackData = `member_confirm_remove_${memberId}`;
+              // Simple display for remove mode
+              let buttonText = `@${userMap[member.id] || member.id} ➖`;
+              let callbackData = `member_confirm_remove_${member.id}`;
+              keyboard.push([{ text: buttonText, callback_data: callbackData }]);
+            } else {
+              // Interactive score adjustment mode
+              const percentage = totalCalculatedScore > 0 ? Math.round((adjustedScore / (totalCalculatedScore + Object.values(memberAdjustments).reduce((a, b) => a + b, 0))) * 100) : 0;
+              const contractPercentage = totalContractScore > 0 ? Math.round((member.contractScore / totalContractScore) * 100) : 0;
+              
+              // Member name with both percentages
+              keyboard.push([{
+                text: `@${userMap[member.id] || member.id} (local ${percentage}%, contract ${contractPercentage}%)`,
+                callback_data: 'noop'
+              }]);
+              
+              // Score adjustment row: <<, <, score (%), >, >>
+              keyboard.push([
+                { text: '<<', callback_data: `member_decrement10_${member.id}` },
+                { text: '<', callback_data: `member_decrement_${member.id}` },
+                { text: `${adjustedScore} (${percentage}%)`, callback_data: 'noop' },
+                { text: '>', callback_data: `member_increment_${member.id}` },
+                { text: '>>', callback_data: `member_increment10_${member.id}` }
+              ]);
+              
+              // Separator
+              keyboard.push([{
+                text: '━━━━━━━━━━━━━━━',
+                callback_data: 'noop'
+              }]);
             }
-            keyboard.push([{ text: buttonText, callback_data: callbackData }]);
           }
         }
       }
@@ -2417,8 +2747,15 @@ export default class Holons {
             { text: "➕ Add Member(s)", callback_data: "member_enter_add_scene" },
             { text: "➖ Prepare Remove", callback_data: "member_prepare_remove" }
         ]);
+        keyboard.push([
+            { text: "🔄 Sync Scores to Contract", callback_data: "member_sync_scores" }
+        ]);
+        keyboard.push([
+            { text: "🎁 Reward Members", callback_data: "holons_reward" },
+            { text: "⚖️ Value Equation", callback_data: "settings_equation" }
+        ]);
       }
-      keyboard.push([{ text: "◀️ Back", callback_data: "holons_back" }]);
+      keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
 
       const replyMarkup = { inline_keyboard: keyboard };
       if (edit || ctx.callbackQuery) { // Prefer edit if it's a callback query context
@@ -2466,7 +2803,7 @@ export default class Holons {
       const dbMemberCount = dbUsers ? dbUsers.length : 0;
 
       if (dbMemberCount !== contractMemberCount) {
-        await ctx.reply(`ℹ️ Member count mismatch (DB: ${dbMemberCount}, Contract: ${contractMemberCount}). Adding/updating members...`).catch(e => console.log("Error replying member mismatch:", e.message));
+        await ctx.reply(`ℹ️ Member count mismatch (DB: ${dbMemberCount}, Contract: ${contractMemberCount}). Adding/updating internal members...`).catch(e => console.log("Error replying member mismatch:", e.message));
         // addMembersBundle sends its own replies regarding transaction submission
         await this.addMembersBundle(ctx); 
         // We might want a small delay or a more robust way to wait for addMembersBundle completion if syncScore depends on immediate update
@@ -2494,7 +2831,7 @@ export default class Holons {
     this.addMemberScene = new Scenes.BaseScene('add_member_scene');
     this.addMemberScene.enter(async (ctx) => {
       await ctx.reply(
-        "Enter User ID(s) of the member(s) to add to the Managed Holon, space-separated:\n" +
+        "Enter User ID(s) of the member(s) to add to internal, space-separated:\n" +
         "(These are usually numeric Telegram User IDs)"
       );
     });
@@ -2507,7 +2844,7 @@ export default class Holons {
       
       const tempCtx = { ...ctx, message: { ...ctx.message, text: `/addmembers ${userIdsString}` } }; // Mock context for getParameters
       
-      await ctx.reply(`➕ Adding provided User ID(s) to Managed Holon...`).catch(e => console.log("E:", e.message));
+      await ctx.reply(`➕ Adding provided User ID(s) to internal...`).catch(e => console.log("E:", e.message));
       await this.addMembersBundle(tempCtx); 
       await ctx.scene.leave();
       await this.showHolonsMenu(ctx, false); // Go back to main menu after adding
@@ -2523,40 +2860,21 @@ export default class Holons {
   async removeMemberFromManagedHolon(ctx, memberIdToRemove) {
     const chatID = utils.getChatId(ctx);
     const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-    // Send initial feedback immediately, don't edit over it with further status updates from this func
-    // await ctx.reply(`➖ Attempting to remove member ${memberIdToRemove} from Managed Holon...`).catch(e => console.log("E:",e.message));
 
     try {
       const managedContract = await this.getManagedContract(chatIdNormalized);
       if (!managedContract || managedContract.target === '0x0000000000000000000000000000000000000000') {
-        throw new Error("Managed Holon contract not found for this chat.");
+        throw new Error("Internal contract not found for this chat.");
       }
 
-      const memberAddress = await managedContract.userIdToAddress(memberIdToRemove.toString());
-      if (!memberAddress || memberAddress === '0x0000000000000000000000000000000000000000') {
-         // Try to find address from DB as a fallback if not directly on contract (e.g. if user never interacted with contract but is in DB)
-        const dbUsers = await this.db.getAll(chatID.toString() + '/users');
-        const userFromDb = dbUsers.find(u => u.id.toString() === memberIdToRemove.toString());
-        if(userFromDb && userFromDb.address) {
-            // This assumes your DB stores an eth_address for the user if they registered one
-            // This part is speculative based on typical bot structures; adjust if your DB schema is different.
-            // For now, if not found via userIdToAddress, we assume it's an issue.
-             console.warn(`Could not find Ethereum address for member ID ${memberIdToRemove} via contract. DB lookup not implemented here.`);
-        }
-        throw new Error(`Could not find Ethereum address for member ID ${memberIdToRemove} via contract's userIdToAddress. Has this member been added with an address before?`);
-      }
-
-      console.log(`Attempting to remove member Address: ${memberAddress} (from ID: ${memberIdToRemove}) from Managed Holon: ${managedContract.target}`);
-
+      // Try to remove member directly by their ID (same format as when adding)
       const tx = await this.executeTransaction(
         managedContract,
         'removeMember',
-        [memberAddress]
+        [memberIdToRemove.toString()]
       );
 
-      this.waitForTransaction(tx, ctx, `Successfully submitted removal of member ${memberIdToRemove} (Address: ${memberAddress.substring(0,6)}...)`);
-      // The waitForTransaction will send the success message to ctx upon completion.
-      // No need for an additional ctx.reply here for the transaction itself.
+      this.waitForTransaction(tx, ctx, `Successfully submitted removal of member ${memberIdToRemove}`);
       return true; // Indicate submission success
     } catch (error) {
       console.error(`Error in removeMemberFromManagedHolon for ${memberIdToRemove}:`, error);
@@ -2603,8 +2921,7 @@ Select the TARGET zone:`;
   async setupExternalHolonAddScene() {
     this.addExternalHolonScene.enter(async (ctx) => {
       await ctx.reply(
-        "Enter space-separated Holon ID(s) to add as members to this Zoned Holon:\n" +
-        "(e.g., chat_12345 another_holon_address)"
+        "Enter space-separated Holon ID(s) to add as members to this holon ecosystem:\n" 
       ).catch(e => console.log("Error replying in addExternalHolonScene enter:", e.message));
     });
 
@@ -2624,7 +2941,7 @@ Select the TARGET zone:`;
       try {
         const zonedContract = await this.getZonedContract(chatIdNormalized);
         if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
-          await ctx.reply("Error: Zoned Holon contract not found for this chat.").catch(e => console.log("E:", e.message));
+          await ctx.reply("Error: External contract not found for this chat.").catch(e => console.log("E:", e.message));
           await ctx.scene.leave();
           return this.showZoneManagementView(ctx); 
         }
@@ -2674,7 +2991,7 @@ Select the TARGET zone:`;
     try {
       const zonedContract = await this.getZonedContract(chatIdNormalized);
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
-        throw new Error("Zoned Holon contract not found for this chat.");
+        throw new Error("External contract not found for this chat.");
       }
 
       const solidityTargetZone = this.invertZone(parseInt(targetZoneTelegramIndex, 10));
@@ -2735,16 +3052,372 @@ Select the TARGET zone:`;
           internalPercent = 50;
         }
       } else {
-        await ctx.editMessageText("Splitter contract not found for this chat.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("DisplaySplitterView Error Edit (no contract): ", e.message));
+        await ctx.editMessageText("Splitter contract not found for this chat.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back to Flow Management", callback_data: "holons_flow_management"}]]}}).catch(e => console.log("DisplaySplitterView Error Edit (no contract): ", e.message));
         return;
       }
     } catch (error) {
       console.error("Error getting splitter contract for displaySplitterView:", error);
-      await ctx.editMessageText("Error accessing splitter details.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]]}}).catch(e => console.log("DisplaySplitterView Error Edit (contract access): ", e.message));
+      await ctx.editMessageText("Error accessing splitter details.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back to Flow Management", callback_data: "holons_flow_management"}]]}}).catch(e => console.log("DisplaySplitterView Error Edit (contract access): ", e.message));
       return;
     }
 
     // Call the helper function to display the view
     await this._updateSplitterManagementView(ctx, internalPercent, splitterAddress);
+  }
+
+  // Polynomial Reward Function Management Methods
+
+  async handleSetRewardFunction(ctx) {
+    const args = ctx.message.text.split(" ").slice(1);
+    if (args.length < 3) {
+      return ctx.reply(
+        "Usage: /setrewardfunction [a] [b] [c]\n" +
+        "Sets the polynomial coefficients for reward distribution across zones.\n" +
+        "The formula is: reward_percentage = (a * zone^2 + b * zone + c)\n" +
+        "Where zone ranges from 0 (highest) to n-1 (lowest)\n" +
+        "Example: /setrewardfunction 5 -10 50"
+      );
+    }
+
+    const [aStr, bStr, cStr] = args;
+    const a = parseInt(aStr);
+    const b = parseInt(bStr);
+    const c = parseInt(cStr);
+
+    if (isNaN(a) || isNaN(b) || isNaN(c)) {
+      return ctx.reply("All parameters must be valid integers");
+    }
+
+    const chatID = utils.getChatId(ctx);
+    const senderUserId = utils.getUserId(ctx).toString();
+
+    try {
+      const holonName = `chat_${Math.abs(chatID)}`;
+      const zonedContract = await this.getZonedContract(holonName);
+      
+      if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
+        return ctx.reply("This chat does not have a Zoned Holon. Only Zoned Holons support polynomial reward functions.");
+      }
+
+      await ctx.reply(`Setting polynomial reward function parameters...\nFormula: ${a} * zone² + ${b} * zone + ${c}\nPlease wait.`);
+
+      const tx = await this.executeTransaction(
+        zonedContract,
+        'setRewardFunction',
+        [senderUserId, a, b, c]
+      );
+
+      this.waitForTransaction(
+        tx,
+        ctx,
+        `Polynomial reward function updated! Parameters: a=${a}, b=${b}, c=${c}`
+      );
+
+      // Provide immediate feedback
+      await ctx.reply(`Transaction submitted. You will be notified when the polynomial reward function is updated.`);
+
+      // Show the preview of new reward distribution
+      setTimeout(async () => {
+        await this.showRewardPreview(ctx, a, b, c);
+      }, 2000);
+
+    } catch (error) {
+      console.error("Error setting reward function:", error);
+      await ctx.reply("Failed to set reward function: " + error.message);
+    }
+  }
+
+  async handleRewardPreview(ctx) {
+    const chatID = utils.getChatId(ctx);
+
+    try {
+      const holonName = `chat_${Math.abs(chatID)}`;
+      const zonedContract = await this.getZonedContract(holonName);
+      
+      if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
+        return ctx.reply("This chat does not have a Zoned Holon. Only Zoned Holons support polynomial reward functions.");
+      }
+
+      // Get current polynomial parameters
+      const [a, b, c] = await Promise.all([
+        zonedContract.a(),
+        zonedContract.b(),
+        zonedContract.c()
+      ]);
+
+      const nzones = await zonedContract.nzones();
+      
+      await this.showRewardPreview(ctx, Number(a), Number(b), Number(c), Number(nzones));
+
+    } catch (error) {
+      console.error("Error getting reward preview:", error);
+      await ctx.reply("Failed to get reward preview: " + error.message);
+    }
+  }
+
+  async showRewardPreview(ctx, a, b, c, nzones = null) {
+    try {
+      const chatID = utils.getChatId(ctx);
+      
+      if (nzones === null) {
+        const holonName = `chat_${Math.abs(chatID)}`;
+        const zonedContract = await this.getZonedContract(holonName);
+        nzones = Number(await zonedContract.nzones());
+      }
+
+      let previewText = `🎯 **Polynomial Reward Function Preview**\n\n`;
+      previewText += `📐 **Formula:** ${a} × zone² + ${b} × zone + ${c}\n\n`;
+      previewText += `🏆 **Zone Reward Distribution:**\n`;
+      
+      let totalWeight = 0;
+      const zoneWeights = [];
+
+      // Calculate weights for each zone
+      for (let zone = 0; zone < nzones; zone++) {
+        const weight = Math.max(0, a * zone * zone + b * zone + c);
+        zoneWeights.push(weight);
+        totalWeight += weight;
+      }
+
+      // Show percentage distribution
+      if (totalWeight > 0) {
+        for (let zone = 0; zone < nzones; zone++) {
+          const percentage = ((zoneWeights[zone] / totalWeight) * 100).toFixed(2);
+          const telegramZone = this.invertZone(zone, nzones);
+          previewText += `Zone ${telegramZone}: ${percentage}% (weight: ${zoneWeights[zone]})\n`;
+        }
+      } else {
+        previewText += `⚠️ Warning: All zones have zero or negative weights!\n`;
+        for (let zone = 0; zone < nzones; zone++) {
+          const weight = a * zone * zone + b * zone + c;
+          const telegramZone = this.invertZone(zone, nzones);
+          previewText += `Zone ${telegramZone}: weight = ${weight}\n`;
+        }
+      }
+
+      previewText += `\n📊 **Total Weight:** ${totalWeight}`;
+      previewText += `\n🔢 **Total Zones:** ${nzones}`;
+      
+      await ctx.reply(previewText, { parse_mode: 'Markdown' });
+
+    } catch (error) {
+      console.error("Error showing reward preview:", error);
+      await ctx.reply("Failed to show reward preview: " + error.message);
+    }
+  }
+
+  // Helper method to convert between Solidity zone index and Telegram display zone
+  invertZone(zone, nzones = 6) {
+    // Solidity uses 0 as highest zone, Telegram displays 0 as highest
+    // So zone 0 in Solidity = Zone 0 in Telegram (highest)
+    // zone 5 in Solidity = Zone 5 in Telegram (lowest)
+    return zone;
+  }
+
+  // Interactive Polynomial Parameter UI Methods
+
+  async showPolynomialParameterUI(ctx) {
+    const chatID = utils.getChatId(ctx);
+
+    try {
+      const holonName = `chat_${Math.abs(chatID)}`;
+      const zonedContract = await this.getZonedContract(holonName);
+      
+      if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
+        return ctx.reply("This chat does not have a Zoned Holon. Only Zoned Holons support polynomial reward functions.");
+      }
+
+      // Get current polynomial parameters
+      let a, b, c;
+      try {
+        [a, b, c] = await Promise.all([
+          zonedContract.a(),
+          zonedContract.b(),
+          zonedContract.c()
+        ]);
+        a = Number(a);
+        b = Number(b);
+        c = Number(c);
+      } catch (error) {
+        // Default values if contract doesn't have them set
+        a = 0;
+        b = 0;
+        c = 50;
+      }
+
+      await this.updatePolynomialParameterUI(ctx, a, b, c, true);
+
+    } catch (error) {
+      console.error("Error showing polynomial parameter UI:", error);
+    }
+  }
+
+  async updatePolynomialParameterUI(ctx, a, b, c, isNew = false) {
+    const chatID = utils.getChatId(ctx);
+
+    try {
+      // Generate the zone distribution chart
+      const chartPath = await this.generateZoneDistributionChart(a, b, c, chatID);
+      
+      // Create the parameter control keyboard
+      const keyboard = this.createPolynomialParameterKeyboard(a, b, c);
+
+      const message =
+                     `📐 **Formula:** ${a} × zone² + ${b} × zone + ${c}\n\n` +
+                     `Use the controls below to adjust parameters and see the live preview:`;
+
+      if (isNew) {
+        await ctx.replyWithPhoto(
+          { source: fs.createReadStream(chartPath) },
+          {
+            caption: message,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard }
+          }
+        );
+      } else {
+        await ctx.editMessageMedia(
+          {
+            type: 'photo',
+            media: { source: fs.createReadStream(chartPath) },
+            caption: message,
+            parse_mode: 'Markdown'
+          },
+          { reply_markup: { inline_keyboard: keyboard } }
+        );
+      }
+
+    } catch (error) {
+      console.error("Error updating polynomial parameter UI:", error);
+    }
+  }
+
+  createPolynomialParameterKeyboard(a, b, c) {
+    const keyboard = [];
+
+    // Parameter A controls
+    keyboard.push([
+      { text: `A: ${a}`, callback_data: `poly_info_a` }
+    ]);
+    keyboard.push([
+      { text: "--", callback_data: `poly_param_a_dec5_${a}_${b}_${c}` },
+      { text: "-", callback_data: `poly_param_a_dec_${a}_${b}_${c}` },
+      { text: `${a}`, callback_data: `poly_noop` },
+      { text: "+", callback_data: `poly_param_a_inc_${a}_${b}_${c}` },
+      { text: "++", callback_data: `poly_param_a_inc5_${a}_${b}_${c}` }
+    ]);
+
+    // Parameter B controls
+    keyboard.push([
+      { text: `B: ${b}`, callback_data: `poly_info_b` }
+    ]);
+    keyboard.push([
+      { text: "--", callback_data: `poly_param_b_dec5_${a}_${b}_${c}` },
+      { text: "-", callback_data: `poly_param_b_dec_${a}_${b}_${c}` },
+      { text: `${b}`, callback_data: `poly_noop` },
+      { text: "+", callback_data: `poly_param_b_inc_${a}_${b}_${c}` },
+      { text: "++", callback_data: `poly_param_b_inc5_${a}_${b}_${c}` }
+    ]);
+
+    // Parameter C controls
+    keyboard.push([
+      { text: `C: ${c}`, callback_data: `poly_info_c` }
+    ]);
+    keyboard.push([
+      { text: "--", callback_data: `poly_param_c_dec5_${a}_${b}_${c}` },
+      { text: "-", callback_data: `poly_param_c_dec_${a}_${b}_${c}` },
+      { text: `${c}`, callback_data: `poly_noop` },
+      { text: "+", callback_data: `poly_param_c_inc_${a}_${b}_${c}` },
+      { text: "++", callback_data: `poly_param_c_inc5_${a}_${b}_${c}` }
+    ]);
+
+    // Action buttons
+    keyboard.push([
+      { text: "💾 Save Parameters", callback_data: `poly_save_${a}_${b}_${c}` }
+    ]);
+    keyboard.push([
+      { text: "◀️ Back to Zone Management", callback_data: "holons_manage_zones_view" }
+    ]);
+
+    return keyboard;
+  }
+
+  async savePolynomialParameters(ctx, a, b, c) {
+    const chatID = utils.getChatId(ctx);
+    const senderUserId = utils.getUserId(ctx).toString();
+
+    try {
+      const holonName = `chat_${Math.abs(chatID)}`;
+      const zonedContract = await this.getZonedContract(holonName);
+      
+      if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
+        return ctx.editMessageText("This chat does not have a Zoned Holon. Only Zoned Holons support polynomial reward functions.");
+      }
+
+      await ctx.editMessageText(`💾 Saving polynomial parameters...\nFormula: ${a} × zone² + ${b} × zone + ${c}\nPlease wait.`);
+
+      const tx = await this.executeTransaction(
+        zonedContract,
+        'setRewardFunction',
+        [senderUserId, a, b, c]
+      );
+
+      this.waitForTransaction(
+        tx,
+        ctx,
+        `✅ Polynomial reward function updated!\nParameters: a=${a}, b=${b}, c=${c}`
+      );
+
+      // Provide immediate feedback
+      await ctx.reply(`Transaction submitted. You will be notified when the polynomial reward function is updated.`);
+
+      // Return to zone management after a brief delay
+      setTimeout(async () => {
+        await this.showZoneManagementView(ctx);
+      }, 3000);
+
+    } catch (error) {
+      console.error("Error saving polynomial parameters:", error);
+      await ctx.editMessageText("Failed to save polynomial parameters: " + error.message);
+    }
+  }
+
+  // UI Integration Methods
+  setUIInstance(uiInstance) {
+    this.ui = uiInstance;
+  }
+
+  async generateZoneDistributionChart(a, b, c, chatID) {
+    if (!this.ui) {
+      throw new Error('UI instance not available for chart generation');
+    }
+
+    try {
+      const holonName = `chat_${Math.abs(chatID)}`;
+      const zonedContract = await this.getZonedContract(holonName);
+      
+      let nzones = 6; // Default
+      if (zonedContract && zonedContract.target !== '0x0000000000000000000000000000000000000000') {
+        try {
+          nzones = Number(await zonedContract.nzones());
+        } catch (error) {
+          console.log('Could not get nzones from contract, using default:', error.message);
+        }
+      }
+
+      return await this.ui.getZoneDistributionChart(a, b, c, nzones, chatID);
+    } catch (error) {
+      console.error('Error generating zone distribution chart:', error);
+      throw error;
+    }
+  }
+
+  // Helper methods for settings management
+  async getSettings(chatID) {
+    return await this.settings.getSettings(chatID);
+  }
+
+  async setSettings(settings) {
+    return await this.settings.setSettings(settings);
   }
 }

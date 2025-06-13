@@ -4,7 +4,7 @@ import * as utils from './utilities.js'
 import { Scenes } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
 
-const ALL_AVAILABLE_LENSES = ['Quests', 'Offers', 'Tags', 'Expenses', 'Announcements', 'Users', 'Shopping', 'Recurring'];
+const ALL_AVAILABLE_LENSES = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
 
 export default class Settings {
     constructor(bot, db) {
@@ -32,7 +32,7 @@ export default class Settings {
         
         // Register admin selection callback at bot level instead of scene level
         this.bot.action(/admin_select_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             const language = await this.getLanguage(chatID);
@@ -64,7 +64,7 @@ export default class Settings {
 
         // Register back button callback at bot level
         this.bot.action('settings_back', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
     
             await this.showSettingsMenu(ctx, true);
         });
@@ -259,7 +259,7 @@ export default class Settings {
 
         // Handle timezone region selection
         this.bot.action(/timezone_region_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const region = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             await ctx.editMessageText('Select timezone:', {
@@ -269,7 +269,7 @@ export default class Settings {
 
         // Handle timezone selection
         this.bot.action(/timezone_set_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const timezone = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -293,7 +293,7 @@ export default class Settings {
 
         // Handle settings menu callbacks
         this.bot.action(/settings_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const action = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -418,7 +418,7 @@ export default class Settings {
 
         // Add language selection handlers
         this.bot.action(/language_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const language = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -434,7 +434,7 @@ export default class Settings {
 
         // Add theme selection handlers
         this.bot.action(/theme_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const theme = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -449,7 +449,7 @@ export default class Settings {
 
         // Add level selection handlers
         this.bot.action(/level_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const level = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -464,7 +464,7 @@ export default class Settings {
 
         // Handle timezone settings selection
         this.bot.action(/timezone_set_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const timezone = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -478,7 +478,7 @@ export default class Settings {
         });
 
         this.bot.action(/settings_equation_change/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID); // Fetch full settings
             let weights = settings.valueEquation;
@@ -490,7 +490,7 @@ export default class Settings {
 
         // Handle increment/decrement actions for value equation weights
         this.bot.action(/^(increment|decrement)_(\w+)$/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const chatID = ctx.callbackQuery.message.chat.id;
             const action = ctx.match[1];
             const field = ctx.match[2];
@@ -517,22 +517,22 @@ export default class Settings {
         ['values', 'domains', 'roles', 'currencies'].forEach(type => {
             // Add change handler for entering add scene
             this.bot.action(`settings_${type}_change`, async (ctx) => {
-                await ctx.answerCbQuery();
+                await ctx.answerCbQuery().catch()
                 await ctx.scene.enter('add_array_item_scene', { type });
             });
 
             this.bot.action(`enter_remove_mode_${type}`, async (ctx) => {
-                await ctx.answerCbQuery();
+                await ctx.answerCbQuery().catch()
                 await this.showArraySettingMenu(ctx, type, true);
             });
 
             this.bot.action(`exit_remove_mode_${type}`, async (ctx) => {
-                await ctx.answerCbQuery();
+                await ctx.answerCbQuery().catch()
                 await this.showArraySettingMenu(ctx, type, false);
             });
 
             this.bot.action(new RegExp(`remove_${type}_(\\d+)`), async (ctx) => {
-                await ctx.answerCbQuery();
+                await ctx.answerCbQuery().catch()
                 const index = parseInt(ctx.match[1]);
                 const chatID = ctx.chat.id;
                 let settings = await this.getSettings(chatID);
@@ -556,7 +556,7 @@ export default class Settings {
         
         // Unified back button handler for all settings menus
         this.bot.action('settings_back', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             console.log('Going back to settings menu');
             // Leave any active scene
             if (ctx.scene && ctx.scene.current) {
@@ -568,14 +568,14 @@ export default class Settings {
 
         // Handle array setting actions
         this.bot.action(/settings_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type);
         });
 
         // Add handler for users settings
         this.bot.action('settings_users', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             // Store the original message ID in scene state
             ctx.scene.state = { 
                 originalMessageId: ctx.callbackQuery.message.message_id 
@@ -585,21 +585,21 @@ export default class Settings {
 
         // Handle entering remove mode
         this.bot.action(/enter_remove_mode_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type, true);
         });
 
         // Handle exiting remove mode
         this.bot.action(/exit_remove_mode_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const type = ctx.match[1];
             return this.showArraySettingMenu(ctx, type, false);
         });
 
         // Handle removing items
         this.bot.action(/remove_(values|domains|roles|purpose|currencies)_(\d+)$/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const type = ctx.match[1];
             const index = parseInt(ctx.match[2]);
             const chatID = ctx.callbackQuery.message.chat.id;
@@ -616,7 +616,7 @@ export default class Settings {
         // Handle adding items with explicit handlers for each type
         this.bot.action('settings_values_change', async (ctx) => {
             console.log('VALUES ADD button clicked');
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             try {
                 return await ctx.scene.enter('add_array_item_scene', { type: 'values' });
             } catch (error) {
@@ -627,7 +627,7 @@ export default class Settings {
 
         this.bot.action('settings_domains_change', async (ctx) => {
             console.log('DOMAINS ADD button clicked');
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             try {
                 return await ctx.scene.enter('add_array_item_scene', { type: 'domains' });
             } catch (error) {
@@ -638,7 +638,7 @@ export default class Settings {
 
         this.bot.action('settings_roles_change', async (ctx) => {
             console.log('ROLES ADD button clicked');
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             try {
                 return await ctx.scene.enter('add_array_item_scene', { type: 'roles' });
             } catch (error) {
@@ -649,7 +649,7 @@ export default class Settings {
 
         this.bot.action('settings_currencies_change', async (ctx) => {
             console.log('CURRENCIES ADD button clicked');
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             try {
                 return await ctx.scene.enter('add_array_item_scene', { type: 'currencies' });
             } catch (error) {
@@ -660,7 +660,7 @@ export default class Settings {
 
         this.bot.action('settings_purpose_change', async (ctx) => {
             console.log('PURPOSE ADD button clicked');
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             try {
                 return await ctx.scene.enter('add_array_item_scene', { type: 'purpose' });
             } catch (error) {
@@ -671,7 +671,7 @@ export default class Settings {
 
         // Handle federation actions
         this.bot.action('add_federation', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             if (utils.isAdmin(ctx)) {
                 await ctx.scene.enter('federation_scene');
             } else {
@@ -681,7 +681,7 @@ export default class Settings {
         });
 
         this.bot.action(/unfederate_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             if (utils.isAdmin(ctx)) {
                 const chatID = ctx.callbackQuery.message.chat.id;
                 const federationID = ctx.match[1];
@@ -711,7 +711,7 @@ export default class Settings {
         });
 
         this.bot.action(/unnotify_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             if (utils.isAdmin(ctx)) {
                 const chatID = ctx.callbackQuery.message.chat.id;
                 const notifyID = ctx.match[1];
@@ -868,7 +868,7 @@ export default class Settings {
 
         // Add help messages for adding items
         this.bot.action(/help_add_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const type = ctx.match[1];
 
             // Check if bot has admin rights using the utility function
@@ -925,7 +925,7 @@ export default class Settings {
 
         // Action handler for adding federation (from federation keyboard)
         this.bot.action('add_federation', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             // Store the original message ID in scene state
             ctx.scene.state = { 
                 originalMessageId: ctx.callbackQuery.message.message_id 
@@ -1024,12 +1024,12 @@ export default class Settings {
 
         // Simple action handler for viewing hex (just acknowledges the click)
         this.bot.action('hex_view', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         });
         
         // Action handler for editing hex (from hex menu)
         this.bot.action('help_add_hex', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             // Store the original message ID in scene state
             ctx.scene.state = { 
                 originalMessageId: ctx.callbackQuery.message.message_id 
@@ -1202,7 +1202,7 @@ export default class Settings {
 
         // Update action handlers to use new scenes
         this.bot.action('settings_name', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('text_input_scene', {
                 field: 'name',
                 title: i18next.t('settings_name', { lng: await this.getLanguage(ctx.chat.id) }),
@@ -1211,7 +1211,7 @@ export default class Settings {
         });
 
         this.bot.action('settings_values_change', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('array_input_scene', {
                 field: 'values',
                 title: i18next.t('settings_values', { lng: await this.getLanguage(ctx.chat.id) }),
@@ -1220,7 +1220,7 @@ export default class Settings {
         });
 
         this.bot.action('settings_domains_change', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('array_input_scene', {
                 field: 'domains',
                 title: i18next.t('settings_domains', { lng: await this.getLanguage(ctx.chat.id) }),
@@ -1229,7 +1229,7 @@ export default class Settings {
         });
 
         this.bot.action('settings_roles_change', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('array_input_scene', {
                 field: 'roles',
                 title: i18next.t('settings_roles', { lng: await this.getLanguage(ctx.chat.id) }),
@@ -1238,7 +1238,7 @@ export default class Settings {
         });
 
         this.bot.action('settings_currencies_change', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('array_input_scene', {
                 field: 'currencies',
                 title: i18next.t('settings_currencies', { lng: await this.getLanguage(ctx.chat.id), defaultValue: "Currencies" }),
@@ -1247,7 +1247,7 @@ export default class Settings {
         });
 
         this.bot.action('help_add_purpose', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('text_input_scene', {
                 field: 'purpose',
                 title: i18next.t('settings_purpose', { lng: await this.getLanguage(ctx.chat.id) }),
@@ -1256,7 +1256,7 @@ export default class Settings {
         });
 
         this.bot.action('help_add_hex', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('text_input_scene', {
                 field: 'hex',
                 title: i18next.t('settings_hex', { lng: await this.getLanguage(ctx.chat.id) }),
@@ -1265,7 +1265,7 @@ export default class Settings {
         });
 
         this.bot.action('help_add_currencies', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('array_input_scene', {
                 field: 'currencies',
                 title: i18next.t('settings_currencies', { lng: await this.getLanguage(ctx.chat.id), defaultValue: "Currencies" }),
@@ -1275,7 +1275,7 @@ export default class Settings {
 
         this.bot.action('settings_holacracy', async (ctx) => {
             // console.log("!!!!!!!!!!!! ACTION: settings_holacracy TRIGGERED !!!!!!!!!!!!"); // New Log
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await this.showHolacracyMenu(ctx, true);
         });
 
@@ -1524,20 +1524,20 @@ export default class Settings {
 
         // Action handlers for viewing shared lenses in federation
         this.bot.action(/federation_lenses_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const targetChatID = ctx.match[1];
             await this.showSharedLensesMenu(ctx, targetChatID, 'federated', true);
         });
 
         this.bot.action(/notify_lenses_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const targetChatID = ctx.match[1];
             await this.showSharedLensesMenu(ctx, targetChatID, 'notifies', true);
         });
 
         // Action handler for toggling a shared lens
         this.bot.action(/toggle_lens_(.+?)_(federated|notifies)_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const targetChatID = ctx.match[1];
             const relationshipType = ctx.match[2];
             const lensNameToToggle = ctx.match[3];
@@ -1604,7 +1604,7 @@ export default class Settings {
         });
 
         this.bot.action(/set_max_tasks_(\d+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const value = parseInt(ctx.match[1]);
             const chatID = ctx.callbackQuery.message.chat.id;
             let settings = await this.getSettings(chatID);
@@ -2079,10 +2079,10 @@ export default class Settings {
                         { text: `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', {lng: language, defaultValue: 'Holacracy'})}`, callback_data: 'settings_holacracy'},
                         { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' }
                     ],
-                    // 6. Currencies | Manage Rewards
+                    // 6. Currencies | Flow Management
                     [
                         { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'},
-                        { text: `${this.getSettingIcon('manage_rewards')} ${i18next.t('settings_manage_rewards', { lng: language, defaultValue: 'Manage Rewards' })}`, callback_data: 'settings_manage_rewards' }
+                        { text: `${this.getSettingIcon('flow_management')} ${i18next.t('settings_flow_management', { lng: language, defaultValue: '🌊 Flow Management' })}`, callback_data: 'holons_flow_management' }
                     ],
                     // 7. Hex | Help
                     [
@@ -2363,6 +2363,7 @@ export default class Settings {
             case 'currencies': return '💱'; 
             case 'holacracy': return '🏛️'; // Added icon for holacracy
             case 'manage_rewards': return '💰'; // Icon for Manage Rewards
+            case 'flow_management': return '🌊'; // Icon for Flow Management
             case 'maxTasks': return '📋';
             default: return '⚙️';
         }

@@ -309,16 +309,6 @@ export default class Quests {
                     console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
                     await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
-                    // --- Personal Holon Logic for Initiator ---
-                    if (quest.chat.toString() !== quest.initiator.id.toString()) {
-                        console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). Ensuring personal hologram and message.`);
-                        await this.personalHologram(quest.initiator.id, quest);
-                        await this.ensureTelegramHologramMessage(ctx, quest, quest.initiator.id, language);
-                    } else {
-                        console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in their own personal chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). No separate personal hologram message needed immediately.`);
-                    }
-                    // --- End Personal Holon Logic ---
-
                     //Pin the message in the original chat
                     ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
                     
@@ -356,16 +346,6 @@ export default class Quests {
 
             console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest) // Save the main quest first
-
-            // --- Personal Holon Logic for Initiator ---
-            if (quest.chat.toString() !== quest.initiator.id.toString()) {
-                console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). Ensuring personal hologram and message.`);
-                await this.personalHologram(quest.initiator.id, quest);
-                await this.ensureTelegramHologramMessage(ctx, quest, quest.initiator.id, language);
-            } else {
-                console.log(`[Quests.quest] Initiator (${getDisplayName(quest.initiator)}) creating quest '${quest.title}' (${quest.id}) in their own personal chat ${getHolonName(this.db, quest.chat, ctx)} (${quest.chat}). No separate personal hologram message needed immediately.`);
-            }
-            // --- End Personal Holon Logic ---
             
             await this.updateMessage(ctx, quest, language, false) // This will update main message and also the new personal hologram message if created
             
@@ -389,9 +369,13 @@ export default class Quests {
             let chatID = ctx.callbackQuery.data.split('_')[2]; // chatID of the original quest message
             let messageID = ctx.callbackQuery.data.split('_')[3];
     
+            console.log(`JOIN DEBUG: Parsed chatID=${chatID}, messageID=${messageID}`);
+            console.log(`JOIN DEBUG: Database lookup key: "${chatID}/quests", value: "${messageID}"`);
+    
             const language = await this.settings.getLanguage(chatID)
 
             let quest = await this.db.get(chatID + '/quests', messageID.toString())
+            console.log(`JOIN DEBUG: Retrieved quest:`, quest ? `Found quest "${quest.title}"` : 'Quest is null/undefined');
     
             if (!await this.questExists(quest, ctx, messageID)) { return; }
 
@@ -840,7 +824,7 @@ export default class Quests {
 
             // Pass the ctx object to showCalendar
             await this.scheduler.showCalendar(ctx, questID);
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
 
         } catch (error) {
             console.error('Error in schedule:', error);
@@ -1092,9 +1076,11 @@ export default class Quests {
 
         
             // Handle federated messages (non-hologram ones, e.g. to other groups)
+            console.log(`[updateMessage] Calling handleFederatedMessages for quest ${quest.id}`);
             await this.handleFederatedMessages(ctx, quest, language).catch(err => {
                 console.error("Error handling federated messages:", err);
             });
+            console.log(`[updateMessage] Completed handleFederatedMessages for quest ${quest.id}`);
 
             // --- Update any tracked hologram messages --- 
             const hologramsToUpdate = explicitHologramsToUpdate !== null ? explicitHologramsToUpdate : (quest.activeHolograms || []);
@@ -1736,7 +1722,7 @@ export default class Quests {
                 this.markup(quest, language)
             );
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error handling back to quest:', error);
             await ctx.answerCbQuery('Error returning to quest');
@@ -1796,7 +1782,7 @@ export default class Quests {
                 Markup.inlineKeyboard(keyboard)
             );
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error handling check item:', error);
             await ctx.answerCbQuery('Error updating checklist item');
@@ -1827,7 +1813,7 @@ export default class Quests {
                 canReadMessages: canReadMessages  // Pass the message reading permission status to the scene
             });
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error handling add item:', error);
             await ctx.answerCbQuery('Error adding checklist item');
@@ -2180,7 +2166,7 @@ export default class Quests {
                 chatId: chatId
             });
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error handling description:', error);
             await ctx.answerCbQuery('Error accessing description');
@@ -2190,11 +2176,18 @@ export default class Quests {
     // Add this new helper method to handle federated messages
     async handleFederatedMessages(ctx, quest, language) {
         try {
+            console.log(`[handleFederatedMessages] Starting for quest ${quest.id} in chat ${quest.chat}`);
+            
             // Get federation info to find out which spaces to notify
             const fedInfo = await this.db.holosphere.getFederation(quest.chat);
+            console.log(`[handleFederatedMessages] Federation info for chat ${quest.chat}:`, fedInfo);
+            
             if (!fedInfo?.notify?.length) {
+                console.log(`[handleFederatedMessages] No federated chats to notify for quest ${quest.id}`);
                 return;
             }
+            
+            console.log(`[handleFederatedMessages] Found ${fedInfo.notify.length} federated chats to notify:`, fedInfo.notify);
 
             // Get existing federation tracking info
             const federationKey = `${quest.chat}_${quest.id}_fedmsgs`;
@@ -2207,7 +2200,32 @@ export default class Quests {
 
             for (const federatedChatId of fedInfo.notify) {
                 // Skip if it's the same chat as the original
-                if (federatedChatId === quest.chat) continue;
+                if (federatedChatId === quest.chat) {
+                    console.log(`[handleFederatedMessages] Skipping same chat ${federatedChatId}`);
+                    continue;
+                }
+
+                console.log(`[handleFederatedMessages] Processing federated chat ${federatedChatId}`);
+
+                // Check if the target holon has allowed the 'quests' lens in their federation array
+                try {
+                    const targetFedInfo = await this.db.holosphere.getFederation(federatedChatId);
+                    console.log(`[handleFederatedMessages] Target federation info for ${federatedChatId}:`, targetFedInfo);
+                    
+                    // Check if the target chat has lensConfig and if it allows 'quests' lens for this specific connection
+                    const sourceChatId = quest.chat.toString();
+                    const targetLensConfig = targetFedInfo?.lensConfig?.[sourceChatId];
+                    
+                    if (!targetLensConfig?.notify?.includes('quests')) {
+                        console.log(`[handleFederatedMessages] Skipping federated message to ${federatedChatId} - 'quests' lens not allowed in their notify array for chat ${sourceChatId}`);
+                        continue;
+                    }
+                    
+                    console.log(`[handleFederatedMessages] Target chat ${federatedChatId} allows 'quests' lens for chat ${sourceChatId}, proceeding with message`);
+                } catch (error) {
+                    console.error(`[handleFederatedMessages] Error checking federation settings for chat ${federatedChatId}:`, error);
+                    continue; // Skip this chat if we can't verify federation settings
+                }
 
                 // Find existing message for this federated chat
                 const existingMsgIndex = federatedMessages.messages.findIndex(m => m.chatId === federatedChatId);
@@ -2215,7 +2233,12 @@ export default class Quests {
 
                 try {
                     if (existingMsg) {
+                        console.log(`[handleFederatedMessages] Updating existing message ${existingMsg.messageId} in chat ${federatedChatId}`);
                         // Update existing message
+                        const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
+                        const hologramMessageText = await this.createMessage(quest, language) + 
+                                                  `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonName, defaultValue: `🔗 Linked from ${originalHolonName}` })}\n`;
+                        
                         if (quest.picture) {
                             await ctx.telegram.editMessageMedia(
                                 federatedChatId,
@@ -2224,7 +2247,7 @@ export default class Quests {
                                 {
                                     type: 'photo',
                                     media: quest.picture,
-                                    caption: await this.createMessage(quest, language)
+                                    caption: hologramMessageText
                                 },
                                 this.markup(quest, language)
                             ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
@@ -2233,29 +2256,36 @@ export default class Quests {
                                 federatedChatId,
                                 existingMsg.messageId,
                                 null,
-                                await this.createMessage(quest, language),
+                                hologramMessageText,
                                 this.markup(quest, language)
                             ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
                         }
                     } else {
-                        // Create new message
+                        console.log(`[handleFederatedMessages] Creating new hologram message in chat ${federatedChatId}`);
+                        // Create new hologram-style message
+                        const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
+                        const hologramMessageText = await this.createMessage(quest, language) + 
+                                                  `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonName, defaultValue: `🔗 Linked from ${originalHolonName}` })}\n`;
+                        
                         let newMessage;
                         if (quest.picture) {
                             newMessage = await ctx.telegram.sendPhoto(
                                 federatedChatId,
                                 quest.picture,
                                 {
-                                    caption: await this.createMessage(quest, language),
+                                    caption: hologramMessageText,
                                     ...this.markup(quest, language)
                                 }
                             );
                         } else {
                             newMessage = await ctx.telegram.sendMessage(
                                 federatedChatId,
-                                await this.createMessage(quest, language),
+                                hologramMessageText,
                                 this.markup(quest, language)
                             );
                         }
+
+                        console.log(`[handleFederatedMessages] Created new hologram message ${newMessage.message_id} in chat ${federatedChatId}`);
 
                         // Pin the message if quest is not completed
                         if (quest.status !== 'completed') {
@@ -2263,7 +2293,9 @@ export default class Quests {
                                 federatedChatId,
                                 newMessage.message_id,
                                 { disable_notification: true }
-                            ).catch(err => { });
+                            ).catch(err => { 
+                                console.log(`[handleFederatedMessages] Could not pin message in ${federatedChatId}:`, err);
+                            });
                         }
 
                         // Store the new message information
@@ -2274,7 +2306,7 @@ export default class Quests {
                         });
                     }
                 } catch (error) {
-                    console.error(`Failed to handle message in federated chat ${federatedChatId}:`, error);
+                    console.error(`[handleFederatedMessages] Failed to handle message in federated chat ${federatedChatId}:`, error);
                     // If we've failed to update an existing message, remove it from tracking
                     if (existingMsgIndex > -1) {
                         federatedMessages.messages.splice(existingMsgIndex, 1);
@@ -2285,10 +2317,11 @@ export default class Quests {
             // Save the updated federation message tracking information
             if (federatedMessages.messages.length > 0) {
                 await this.db.put('federation_messages', federatedMessages);
+                console.log(`[handleFederatedMessages] Saved federation tracking for ${federatedMessages.messages.length} messages`);
             }
 
         } catch (error) {
-            console.error('Error handling federated messages:', error);
+            console.error('[handleFederatedMessages] Error handling federated messages:', error);
         }
     }
 
@@ -2365,7 +2398,7 @@ export default class Quests {
                 ...Markup.inlineKeyboard(buttons)
             });
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error handling dependencies:', error);
             await ctx.answerCbQuery('Error managing dependencies');
@@ -2442,7 +2475,7 @@ export default class Quests {
                 }
             );
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error returning from dependencies:', error);
             await ctx.answerCbQuery('Error returning to quest');
@@ -2886,7 +2919,7 @@ export default class Quests {
             }
             // --- End Tracking ---
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
 
         } catch (error) {
             console.error('Error viewing original quest:', error);
@@ -2959,8 +2992,16 @@ export default class Quests {
 
     async questExists(quest, ctx, questId = 'N/A') {
         if (!quest || quest === '') {
-            console.log(`Quest not found (ID: ${questId}).`);
+            // Enhanced debugging
+            const callbackData = ctx.callbackQuery?.data || 'N/A';
             const chatId = getChatId(ctx);
+            console.log(`Quest not found - Debug info:`);
+            console.log(`  Quest ID: ${questId}`);
+            console.log(`  Callback Data: ${callbackData}`);
+            console.log(`  Chat ID: ${chatId}`);
+            console.log(`  Quest object: ${quest}`);
+            console.log(`  Context type: ${ctx.callbackQuery ? 'callbackQuery' : ctx.message ? 'message' : 'other'}`);
+            
             if (!chatId) {
                 console.error("Could not determine chat ID in questExists.");
                 return false;
@@ -2968,12 +3009,16 @@ export default class Quests {
             const language = await this.settings.getLanguage(chatId);
             const message = i18next.t('questnotfound', {lng: language, defaultValue: 'Quest not found.'});
 
+            // Only send error message for callback queries (button interactions)
+            // For other contexts (like scene text events), just log and return false
             if (ctx.callbackQuery) {
                 await ctx.answerCbQuery(message).catch(err => console.error('Error answering CBQ for quest not found:', err));
                 // Try to delete the message with the button
                 await ctx.deleteMessage().catch(err => console.error('Could not delete message for quest not found:', err));
-            } else if (ctx.reply) {
-                await ctx.reply(message).catch(err => console.error('Could not reply for quest not found:', err));
+            } else {
+                // For non-callback contexts (like scene text events), just log the error
+                // Don't send a reply message to avoid spam
+                console.log(`Quest not found in non-callback context. Quest ID: ${questId}, Chat ID: ${chatId}`);
             }
 
             return false;

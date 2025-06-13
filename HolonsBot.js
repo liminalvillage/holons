@@ -124,6 +124,7 @@ class HolonsBot {
       this.telebot.use(session());
       this.telebot.use(this.telebot.stage.middleware());
 
+      
       // Add  middleware to log all interaction queries to add the users to the database
       this.telebot.use((ctx, next) => {
         if (ctx.callbackQuery) {
@@ -180,6 +181,14 @@ class HolonsBot {
     this.library = new Library(this.telebot, this.db);
     this.users = new Users(this.telebot, this.db);
     this.holons = new Holons(this.telebot, this.db, this.settings);
+    
+    // Connect UI instance to Holons for polynomial parameter charts
+    if (this.ui && this.holons && typeof this.holons.setUIInstance === 'function') {
+      this.holons.setUIInstance(this.ui);
+      console.log("UI instance successfully passed to Holons instance for chart generation.");
+    } else {
+      console.error("Failed to pass UI instance to Holons. Check if instances and method exist.");
+    }
     
     // Ensure Holons instance is passed to Settings instance
     if (this.settings && typeof this.settings.setHolonsInstance === 'function' && this.holons) {
@@ -632,19 +641,26 @@ class HolonsBot {
   // }
 
   handleProcessEvents() {
-    process.on('SIGINT', async () => {
+    const gracefulShutdown = async () => {
       console.log('Gracefully shutting down...');
+      
+      // Close browser if it exists
+      if (this.ui) {
+        try {
+          await this.ui.closeBrowser();
+        } catch (error) {
+          console.error('Error closing browser:', error);
+        }
+      }
+      
       if (this.db.type === 'orbitdb') {
         await ipfs.stop();
       }
       process.exit(0);
-    });
+    };
 
-    process.on('SIGTERM', async () => {
-      console.log('Gracefully shutting down...');
-      await ipfs.stop();
-      process.exit(0);
-    });
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
 
     // Add this new event handler for uncaught exceptions
     process.on('uncaughtException', (error) => {

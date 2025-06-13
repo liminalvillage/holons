@@ -532,7 +532,7 @@ export default class SettingsScenes {
         });
 
         this.usersScene.action(/user_info_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
 
@@ -542,22 +542,22 @@ export default class SettingsScenes {
 
         // Add handlers for user management
         this.usersScene.action('add_user', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await ctx.scene.enter('add_user_scene');
         });
 
         this.usersScene.action('enter_remove_mode', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await this.showUsersManagementMenu(ctx, true, true); // Show in remove mode
         });
 
         this.usersScene.action('exit_remove_mode', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             await this.showUsersManagementMenu(ctx, true, false); // Show in normal mode
         });
 
         this.usersScene.action(/remove_user_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
             const userId = ctx.match[1];
             const chatID = ctx.callbackQuery.message.chat.id;
 
@@ -687,7 +687,7 @@ export default class SettingsScenes {
         });
 
         this.addUserScene.action('cancel_add_user', async (ctx) => {
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
 
             // Clean up prompts before leaving
             await this.cleanupSceneMessages(ctx);

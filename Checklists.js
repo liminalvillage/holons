@@ -221,7 +221,7 @@ class Checklists {
     }
 
     async handleNewChecklistButton(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         // Enter the scene, passing necessary info
         await ctx.scene.enter('new_checklist_scene', { 
             originalMessageId: ctx.callbackQuery.message.message_id,
@@ -560,7 +560,7 @@ class Checklists {
                 this.getChecklistKeyboard(checklist)
             ).catch((err) => { console.log(err) });
             
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error showing checklist:', error);
             await ctx.answerCbQuery('Error displaying checklist');
@@ -590,7 +590,7 @@ class Checklists {
     }
 
     async handleChecklistButton(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         const listName = ctx.match[1];
         let chatID = ctx.chat.id;
         let checklist = await this.db.get(chatID + '/checklists', listName);
@@ -738,7 +738,7 @@ class Checklists {
     }
 
     async handleAddItemButton(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         const checklistId = ctx.match[1];
         await ctx.scene.enter('add_item_scene', { 
             checklistId: checklistId,
@@ -748,12 +748,12 @@ class Checklists {
     }
 
     async handleDummyAction(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         await ctx.reply('This action is not available.');
     }
 
     async enterRemoveMode(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         const listName = ctx.match[1];
         let chatID = ctx.chat.id;
         let checklist = await this.db.get(chatID + '/checklists', listName);
@@ -780,14 +780,14 @@ class Checklists {
     }
 
     async exitRemoveMode(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         const listName = ctx.match[1];
         // Use the logic within showChecklistKeyboard for editing back to normal view
         await this.handleChecklistButton(ctx); // Re-show the checklist in normal mode
     }
 
     async removeItem(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         const [listName, itemIndex] = ctx.match[1].split('_');
         let chatID = ctx.chat.id;
         let checklist = await this.db.get(chatID + '/checklists', listName);
@@ -904,7 +904,7 @@ class Checklists {
 
             // Use the quest instance's updateMessage method to rerender the quest
             await this.questInstance.updateMessage(ctx, quest);
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
 
         } catch (error) {
             console.error('Error handling back to quest:', error);
@@ -980,13 +980,13 @@ class Checklists {
     }
 
     async enterDeleteChecklistsMode(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         // Pass deleteMode option
         await this.showAllChecklists(ctx, { deleteMode: true });
     }
 
     async exitDeleteChecklistsMode(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         // Pass deleteMode option
         await this.showAllChecklists(ctx, { deleteMode: false });
     }
@@ -1010,7 +1010,7 @@ class Checklists {
 
     // Method to handle going back to the list of all checklists
     async handleBackToChecklists(ctx) {
-        await ctx.answerCbQuery();
+        await ctx.answerCbQuery().catch()
         // Call showAllChecklists using options, it will edit the message 
         await this.showAllChecklists(ctx, {});
     }

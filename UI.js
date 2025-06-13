@@ -5,13 +5,7 @@ import fs from 'fs';
 import { Markup } from 'telegraf'; 
 import { getDisplayName } from './utilities.js';
 
-
-const browser = await puppetteer.launch(
-  { 
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  }
-)
+let browser = null;
 
 class UI {
   constructor(bot, db, settings) {
@@ -54,11 +48,42 @@ class UI {
   }
 
   async init() {
-
+    // Initialize browser on startup
+    try {
+      if (!browser || !browser.connected) {
+        console.log('Initializing Puppeteer browser...');
+        browser = await puppetteer.launch({
+          headless: true,
+          args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run'
+          ]
+        });
+        console.log('Browser initialized successfully');
+      }
+    } catch (error) {
+      console.error('Failed to initialize browser:', error);
+    }
   }
 
   setExpensesInstance(expensesInstance) {
     this.expensesInstance = expensesInstance;
+  }
+
+  async closeBrowser() {
+    if (browser) {
+      try {
+        console.log('Closing Puppeteer browser...');
+        await browser.close();
+        browser = null;
+        console.log('Browser closed successfully');
+      } catch (error) {
+        console.error('Error closing browser:', error);
+      }
+    }
   }
 
   async getFederatedUsers(chatID) {
@@ -714,11 +739,320 @@ class UI {
   }
 
   async screenshotHtml(html, pathToSave, onElement) {
-    const page = await browser.newPage()
-    await page.setContent(html)
-    const element = await page.$(onElement)
-    await element.screenshot({ path: pathToSave })
-    page.close()
+    let page = null;
+    try {
+      // Ensure browser is available
+      if (!browser || !browser.connected) {
+        console.log('Launching new browser instance...');
+        browser = await puppetteer.launch({
+          headless: true,
+          args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run'
+          ]
+        });
+      }
+
+      page = await browser.newPage();
+      
+      // Set reasonable timeouts and viewport
+      await page.setDefaultTimeout(30000);
+      await page.setViewport({ width: 1400, height: 1000 });
+      
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      
+      const element = await page.$(onElement);
+      if (!element) {
+        throw new Error(`Element "${onElement}" not found in HTML`);
+      }
+      
+      await element.screenshot({ 
+        path: pathToSave, 
+        type: 'png'
+      });
+      
+    } catch (error) {
+      console.error('Screenshot error:', error);
+      
+      // Try to reconnect browser on connection errors
+      if (error.message.includes('Protocol error') || error.message.includes('Connection closed')) {
+        console.log('Browser connection lost, attempting to restart...');
+        try {
+          if (browser) {
+            await browser.close().catch(() => {});
+          }
+          browser = null;
+        } catch (closeError) {
+          console.error('Error closing browser:', closeError);
+        }
+      }
+      
+      throw error;
+    } finally {
+      // Always close the page if it was created
+      if (page) {
+        try {
+          await page.close();
+        } catch (closeError) {
+          console.error('Error closing page:', closeError);
+        }
+      }
+    }
+  }
+
+  async getZoneDistributionChart(a, b, c, nzones = 6, chatID) {
+    const language = await this.settings.getLanguage(chatID);
+    
+    // Calculate zone weights and percentages
+    let totalWeight = 0;
+    const zoneData = [];
+    let maxWeight = 0;
+    
+    for (let zone = 0; zone < nzones; zone++) {
+      const weight = Math.max(0, a * zone * zone + b * zone + c);
+      totalWeight += weight;
+      maxWeight = Math.max(maxWeight, weight);
+      zoneData.push({ zone, weight });
+    }
+    
+    // Generate SVG chart
+    const chartWidth = 1200;
+    const chartHeight = 500;
+    const padding = 80;
+    const barWidth = (chartWidth - 2 * padding) / nzones * 0.8;
+    const maxBarHeight = chartHeight - 2 * padding;
+    
+    // Generate bars and function curve
+    const bars = [];
+    const curvePoints = [];
+    const labels = [];
+    
+    for (let i = 0; i < zoneData.length; i++) {
+      const zoneInfo = zoneData[i];
+      const percentage = totalWeight > 0 ? ((zoneInfo.weight / totalWeight) * 100).toFixed(1) : '0.0';
+      const barHeight = maxWeight > 0 ? (zoneInfo.weight / maxWeight) * maxBarHeight : 0;
+      const x = padding + i * (chartWidth - 2 * padding) / nzones + (chartWidth - 2 * padding) / nzones / 2;
+      const y = chartHeight - padding - barHeight;
+      
+      // Generate gradient colors
+      const hue = 240 + (i / nzones) * 120; // Blue to cyan spectrum
+      const saturation = 70 + (zoneInfo.weight / maxWeight) * 30;
+      const lightness = 50 + (zoneInfo.weight / maxWeight) * 20;
+      
+      bars.push(`
+        <rect x="${x - barWidth/2}" y="${y}" width="${barWidth}" height="${barHeight}" 
+              fill="hsl(${hue}, ${saturation}%, ${lightness}%)" 
+              stroke="rgba(255,255,255,0.3)" stroke-width="1"
+              rx="4" ry="4" class="bar-rect"/>
+      `);
+      
+      // Function curve points
+      const curveY = maxWeight > 0 ? chartHeight - padding - (zoneInfo.weight / maxWeight) * maxBarHeight : chartHeight - padding;
+      curvePoints.push(`${x},${curveY}`);
+      
+      // Labels
+      labels.push(`
+        <text x="${x}" y="${chartHeight - padding + 25}" text-anchor="middle" 
+              fill="#e0e0e0" font-size="14" font-weight="bold">Zone ${zoneInfo.zone}</text>
+        <text x="${x}" y="${chartHeight - padding + 45}" text-anchor="middle" 
+              fill="#a0a0a0" font-size="12">${percentage}%</text>
+      `);
+    }
+    
+    // Generate smooth curve path
+    const curvePath = `M ${curvePoints.join(' L ')}`;
+    
+    // Generate grid lines
+    const gridLines = [];
+    for (let i = 0; i <= 5; i++) {
+      const y = padding + (maxBarHeight / 5) * i;
+      const percentage = ((5 - i) / 5 * 100).toFixed(0);
+      gridLines.push(`
+        <line x1="${padding}" y1="${y}" x2="${chartWidth - padding}" y2="${y}" 
+              stroke="rgba(255,255,255,0.1)" stroke-width="1" stroke-dasharray="5,5"/>
+        <text x="${padding - 10}" y="${y + 4}" text-anchor="end" fill="#808080" font-size="12">${percentage}%</text>
+      `);
+    }
+    
+    const formulaDisplay = `f(x) = ${a}x² + ${b}x + ${c}`;
+    
+    const element = `
+      <div class="chart-container">
+        <div class="header">
+          <div class="formula">📐 ${formulaDisplay}</div>
+        </div>
+        
+        <svg width="${chartWidth}" height="${chartHeight}" class="main-chart">
+          <defs>
+            <linearGradient id="curveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style="stop-color:#ff6b6b;stop-opacity:0.8" />
+              <stop offset="50%" style="stop-color:#4ecdc4;stop-opacity:0.8" />
+              <stop offset="100%" style="stop-color:#45b7d1;stop-opacity:0.8" />
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+              <feMerge> 
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          
+          <!-- Grid -->
+          ${gridLines.join('')}
+          
+          <!-- Bars -->
+          ${bars.join('')}
+          
+          <!-- Function curve -->
+          <path d="${curvePath}" fill="none" stroke="url(#curveGradient)" 
+                stroke-width="4" filter="url(#glow)"/>
+          
+          <!-- Curve points -->
+          ${curvePoints.map((point, i) => {
+            const [x, y] = point.split(',');
+            return `<circle cx="${x}" cy="${y}" r="6" fill="#ffffff" stroke="url(#curveGradient)" 
+                           stroke-width="3"/>`;
+          }).join('')}
+          
+          <!-- Labels -->
+          ${labels.join('')}
+          
+          <!-- Axis labels -->
+          <text x="${chartWidth/2}" y="${chartHeight - 15}" text-anchor="middle" 
+                fill="#ffffff" font-size="16" font-weight="bold">Zone Index</text>
+          <text x="25" y="${chartHeight/2}" text-anchor="middle" 
+                fill="#ffffff" font-size="16" font-weight="bold" transform="rotate(-90, 25, ${chartHeight/2})">Reward Weight</text>
+        </svg>
+        
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">${totalWeight}</div>
+            <div class="stat-label">Total Weight</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${nzones}</div>
+            <div class="stat-label">Zone Count</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${maxWeight}</div>
+            <div class="stat-label">Max Weight</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${totalWeight > 0 ? (maxWeight / totalWeight * 100).toFixed(1) : 0}%</div>
+            <div class="stat-label">Peak Share</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const chartTheme = `
+      body {
+        margin: 0;
+        padding: 20px;
+        background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 50%, #2d2d2d 100%);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+      }
+      
+      .chart-container {
+        max-width: 1300px;
+        margin: 0 auto;
+        padding: 30px;
+        background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
+        border-radius: 20px;
+        color: white;
+        box-shadow: 
+          0 20px 40px rgba(0,0,0,0.4),
+          inset 0 1px 0 rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.1);
+      }
+      
+      .header {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      
+      .formula {
+        font-size: 20px;
+        font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+        padding: 15px 25px;
+        background: linear-gradient(135deg, rgba(255,107,107,0.1), rgba(78,205,196,0.1));
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 12px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        display: inline-block;
+      }
+      
+      .main-chart {
+        display: block;
+        margin: 20px auto;
+        background: rgba(0,0,0,0.3);
+        border-radius: 15px;
+        padding: 10px;
+        border: 1px solid rgba(255,255,255,0.1);
+      }
+      
+             .stats-grid {
+         display: grid;
+         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+         gap: 20px;
+         margin-top: 30px;
+       }
+       
+       .stat-card {
+         background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+         border: 1px solid rgba(255,255,255,0.2);
+         border-radius: 15px;
+         padding: 20px;
+         text-align: center;
+         backdrop-filter: blur(10px);
+       }
+      
+      .stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: #4ecdc4;
+        margin-bottom: 8px;
+      }
+      
+      .stat-label {
+        font-size: 14px;
+        color: #a0a0a0;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      
+      
+    `;
+
+    const path = `./images/zone_distribution_${chatID}.png`;
+    const html = await this.generateHtml(element, chartTheme);
+    
+    // Retry logic for screenshot generation
+    const maxRetries = 3;
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.screenshotHtml(html, path, '.chart-container');
+        return path;
+      } catch (error) {
+        lastError = error;
+        console.error(`Screenshot attempt ${attempt}/${maxRetries} failed:`, error.message);
+        
+        if (attempt < maxRetries) {
+          console.log(`Retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+    
+    throw new Error(`Failed to generate chart after ${maxRetries} attempts: ${lastError.message}`);
   }
 }
 

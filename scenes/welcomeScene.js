@@ -40,14 +40,14 @@ welcomeScene.enter(async (ctx) => {
 
 // Action handlers
 welcomeScene.action('DNA', async (ctx) => {
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch()
   ctx.session.db.gun.get(ctx.from.id.toString()).once((data) => {
     ctx.reply('Your current DNA:\n\n' + JSON.stringify(data, null, 2));
   });
 });
 
 welcomeScene.action('change', async (ctx) => {
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch()
   await ctx.reply('What would you like to change?', Markup.inlineKeyboard([
     [Markup.button.callback('Name', 'name'), Markup.button.callback('Location', 'location')],
     [Markup.button.callback('Values', 'values'), Markup.button.callback('Category', 'category')],
@@ -56,17 +56,17 @@ welcomeScene.action('change', async (ctx) => {
 });
 
 welcomeScene.action('wizard', async (ctx) => {
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch()
   return wizard(ctx);
 });
 
 welcomeScene.action('dnawizard', async (ctx) => {
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch()
   return dnawizard(ctx);
 });
 
 welcomeScene.action('delete', async (ctx) => {
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch()
   await ctx.session.db.gun.get(ctx.from.id.toString()).put(null);
   await ctx.reply('Your DNA has been deleted, type /start to create a new DNA');
 });
@@ -84,7 +84,7 @@ const sceneMap = {
 
 Object.entries(sceneMap).forEach(([action, targetScene]) => {
   welcomeScene.action(action, async (ctx) => {
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery().catch()
     ctx.session.wizard = false;
     ctx.session.sceneStack.push(targetScene);
     return ctx.scene.enter(targetScene);

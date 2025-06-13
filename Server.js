@@ -56,7 +56,7 @@ class Server {
     this.gun = Gun({
       axe: false,
       web: this.serverInstance,
-      file: 'data',
+      file: 'holosphere.db',
       multicast: false,
       peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
     });

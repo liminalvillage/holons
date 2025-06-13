@@ -268,7 +268,7 @@ class Scheduler {
                 console.log('Recurring Lookup TASK', chatID + '_' + quest.id, task.id);
                 
             } catch (error) {
-                console.error('Error in scheduled task execution:', error);
+                console.error('Error in scheduled task execution');
             }
         }, null, true, timezone);
 
@@ -518,7 +518,7 @@ class Scheduler {
         try {
             // Let the Calendar class handle the navigation
             const result = await this.calendar.clickButtonCalendar(ctx);
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error handling calendar navigation:', error);
             await ctx.answerCbQuery('Error navigating calendar');
@@ -838,7 +838,7 @@ class Scheduler {
         try {
             // Let the Calendar class handle the navigation
             const result = await this.calendar.clickButtonCalendar(ctx);
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error handling time navigation:', error);
             await ctx.answerCbQuery('Error navigating time');
@@ -859,7 +859,7 @@ class Scheduler {
 
             // Show calendar again
             await this.showCalendar(ctx, questId);
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error going back to calendar:', error);
             await ctx.answerCbQuery('Error showing calendar');
@@ -914,7 +914,7 @@ class Scheduler {
             );
             console.log('Calendar displayed');
 
-            await ctx.answerCbQuery();
+            await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error in schedule:', error);
             console.error('Error stack:', error.stack);
