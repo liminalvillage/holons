@@ -17,7 +17,7 @@
  * @param {object} [options.propagationOptions] - Options to pass to propagate
  * @param {boolean} [options.propagationOptions.useHolograms=true] - Whether to use holograms instead of duplicating data
  * @param {boolean} [options.disableHologramRedirection=false] - Whether to disable hologram redirection
- * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
+ * @returns {Promise<object>} - Returns an object with success status, path info, propagation result, and list of updated holograms
  */
 export async function put(holoInstance, holon, lens, data, password = null, options = {}) {
     if (!data) { // Check data first as it's used for id generation
@@ -175,65 +175,79 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                         // --- End: Hologram Tracking Logic ---
                         
                         // --- Start: Active Hologram Update Logic (for actual data being stored) ---
+                        let updatedHolograms = [];
                         if (!isHologram && !options.isHologramUpdate) {
                             try {
                                 const currentDataSoul = `${holoInstance.appname}/${targetHolon}/${targetLens}/${targetKey}`;
                                 const currentNodeRef = holoInstance.getNodeRef(currentDataSoul);
                                 
                                 // Get the _holograms set for this data
-                                currentNodeRef.get('_holograms').once(async (hologramsSet) => {
-                                    if (hologramsSet) {
-                                        const hologramSouls = Object.keys(hologramsSet).filter(k => 
-                                            k !== '_' && hologramsSet[k] === true // Only active holograms (deleted ones are null/removed)
-                                        );
-                                        
-                                        if (hologramSouls.length > 0) {
-                                            console.log(`Updating ${hologramSouls.length} active holograms for data ${data.id}`);
+                                await new Promise((resolveHologramUpdate) => {
+                                    currentNodeRef.get('_holograms').once(async (hologramsSet) => {
+                                        if (hologramsSet) {
+                                            const hologramSouls = Object.keys(hologramsSet).filter(k => 
+                                                k !== '_' && hologramsSet[k] === true // Only active holograms (deleted ones are null/removed)
+                                            );
                                             
-                                            // Update each active hologram with an 'updated' timestamp
-                                            const updatePromises = hologramSouls.map(async (hologramSoul) => {
-                                                try {
-                                                    const hologramSoulInfo = holoInstance.parseSoulPath(hologramSoul);
-                                                    if (hologramSoulInfo) {
-                                                        // Get the current hologram data
-                                                        const currentHologram = await holoInstance.get(
-                                                            hologramSoulInfo.holon,
-                                                            hologramSoulInfo.lens,
-                                                            hologramSoulInfo.key,
-                                                            null,
-                                                            { resolveHolograms: false }
-                                                        );
-                                                        
-                                                        if (currentHologram) {
-                                                            // Update the hologram with an 'updated' timestamp
-                                                            const updatedHologram = {
-                                                                ...currentHologram,
-                                                                updated: Date.now()
-                                                            };
-                                                            
-                                                            await holoInstance.put(
+                                            if (hologramSouls.length > 0) {
+                                                console.log(`Updating ${hologramSouls.length} active holograms for data ${data.id}`);
+                                                
+                                                // Update each active hologram with an 'updated' timestamp
+                                                const updatePromises = hologramSouls.map(async (hologramSoul) => {
+                                                    try {
+                                                        const hologramSoulInfo = holoInstance.parseSoulPath(hologramSoul);
+                                                        if (hologramSoulInfo) {
+                                                            // Get the current hologram data
+                                                            const currentHologram = await holoInstance.get(
                                                                 hologramSoulInfo.holon,
                                                                 hologramSoulInfo.lens,
-                                                                updatedHologram,
+                                                                hologramSoulInfo.key,
                                                                 null,
-                                                                { 
-                                                                    autoPropagate: false, // Don't auto-propagate hologram updates
-                                                                    disableHologramRedirection: true, // Prevent redirection when updating holograms
-                                                                    isHologramUpdate: true // Prevent recursive hologram updates
-                                                                }
+                                                                { resolveHolograms: false }
                                                             );
                                                             
-                                                            console.log(`Updated hologram at ${hologramSoul} with timestamp`);
+                                                            if (currentHologram) {
+                                                                // Update the hologram with an 'updated' timestamp
+                                                                const updatedHologram = {
+                                                                    ...currentHologram,
+                                                                    updated: Date.now()
+                                                                };
+                                                                
+                                                                await holoInstance.put(
+                                                                    hologramSoulInfo.holon,
+                                                                    hologramSoulInfo.lens,
+                                                                    updatedHologram,
+                                                                    null,
+                                                                    { 
+                                                                        autoPropagate: false, // Don't auto-propagate hologram updates
+                                                                        disableHologramRedirection: true, // Prevent redirection when updating holograms
+                                                                        isHologramUpdate: true // Prevent recursive hologram updates
+                                                                    }
+                                                                );
+                                                                
+                                                                console.log(`Updated hologram at ${hologramSoul} with timestamp`);
+                                                                
+                                                                // Add to the list of updated holograms
+                                                                updatedHolograms.push({
+                                                                    soul: hologramSoul,
+                                                                    holon: hologramSoulInfo.holon,
+                                                                    lens: hologramSoulInfo.lens,
+                                                                    key: hologramSoulInfo.key,
+                                                                    id: hologramSoulInfo.key,
+                                                                    timestamp: updatedHologram.updated
+                                                                });
+                                                            }
                                                         }
+                                                    } catch (hologramUpdateError) {
+                                                        console.warn(`Error updating hologram ${hologramSoul}:`, hologramUpdateError);
                                                     }
-                                                } catch (hologramUpdateError) {
-                                                    console.warn(`Error updating hologram ${hologramSoul}:`, hologramUpdateError);
-                                                }
-                                            });
-                                            
-                                            await Promise.all(updatePromises);
+                                                });
+                                                
+                                                await Promise.all(updatePromises);
+                                            }
                                         }
-                                    }
+                                        resolveHologramUpdate(); // Resolve the promise to continue with the main put logic
+                                    });
                                 });
                             } catch (hologramUpdateError) {
                                 console.warn(`Error checking for active holograms to update:`, hologramUpdateError);
@@ -282,7 +296,8 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
                             pathHolon: targetHolon,
                             pathLens: targetLens,
                             pathKey: targetKey,
-                            propagationResult
+                            propagationResult,
+                            updatedHolograms: updatedHolograms // List of holograms that were updated
                         });
                     }
                 };
@@ -821,7 +836,7 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                 holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
 
             // First get all the data to find keys to delete
-            dataPath.once((data) => {
+            dataPath.once(async (data) => {
                 if (!data) {
                     resolve(true); // Nothing to delete
                     return;
@@ -830,20 +845,87 @@ export async function deleteAll(holoInstance, holon, lens, password = null) {
                 // Get all keys except Gun's metadata key '_'
                 const keys = Object.keys(data).filter(key => key !== '_');
 
-                // Create deletion promises for each key
-                keys.forEach(key => {
-                    deletionPromises.push(
-                        new Promise((resolveDelete) => {
-                            const deletePath = password ?
-                                user.get('private').get(lens).get(key) :
-                                holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+                // Process each key to handle holograms properly
+                for (const key of keys) {
+                    try {
+                        // Get the data to check if it's a hologram
+                        const itemPath = password ?
+                            user.get('private').get(lens).get(key) :
+                            holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
 
-                            deletePath.put(null, ack => {
-                                resolveDelete(!!ack.ok); // Convert to boolean
-                            });
-                        })
-                    );
-                });
+                        const rawDataToDelete = await new Promise((resolveItem) => itemPath.once(resolveItem));
+                        let dataToDelete = null;
+                        
+                        try {
+                            if (typeof rawDataToDelete === 'string') {
+                                dataToDelete = JSON.parse(rawDataToDelete);
+                            } else {
+                                dataToDelete = rawDataToDelete;
+                            }
+                        } catch(e) {
+                            console.warn("[deleteAll] Could not JSON parse data for deletion check:", rawDataToDelete, e);
+                            dataToDelete = null;
+                        }
+
+                        // Check if it's a hologram and handle accordingly
+                        const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
+                        
+                        if (isDataHologram) {
+                            // Handle hologram deletion - remove from target's _holograms list
+                            try {
+                                const targetSoul = dataToDelete.soul;
+                                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+                                
+                                if (targetSoulInfo) {
+                                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                                    const deletedHologramSoul = `${holoInstance.appname}/${holon}/${lens}/${key}`;
+
+                                    // Remove the hologram from target's _holograms list
+                                    await new Promise((resolveTrack) => {
+                                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
+                                            if (ack.err) {
+                                                console.warn(`[deleteAll] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
+                                            }
+                                            console.log(`Removed hologram ${deletedHologramSoul} from target ${targetSoul}'s _holograms list`);
+                                            resolveTrack();
+                                        });
+                                    });
+                                } else {
+                                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteAll.`);
+                                }
+                            } catch (trackingError) {
+                                console.warn(`Error removing hologram reference from target ${dataToDelete.soul} during deleteAll:`, trackingError);
+                            }
+                        }
+
+                        // Create deletion promise for this key (whether it's a hologram or not)
+                        deletionPromises.push(
+                            new Promise((resolveDelete) => {
+                                const deletePath = password ?
+                                    user.get('private').get(lens).get(key) :
+                                    holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+
+                                deletePath.put(null, ack => {
+                                    resolveDelete(!!ack.ok); // Convert to boolean
+                                });
+                            })
+                        );
+                    } catch (error) {
+                        console.warn(`Error processing key ${key} during deleteAll:`, error);
+                        // Still try to delete the item even if hologram processing failed
+                        deletionPromises.push(
+                            new Promise((resolveDelete) => {
+                                const deletePath = password ?
+                                    user.get('private').get(lens).get(key) :
+                                    holoInstance.gun.get(holoInstance.appname).get(holon).get(lens).get(key);
+
+                                deletePath.put(null, ack => {
+                                    resolveDelete(!!ack.ok);
+                                });
+                            })
+                        );
+                    }
+                }
 
                 // Wait for all deletions to complete
                 Promise.all(deletionPromises)

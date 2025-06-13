@@ -70,6 +70,9 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
                 }
                 const payload = JSON.stringify(dataToStore);
 
+                // Check if the data being stored is a hologram
+                const isHologram = holoInstance.isHologram(dataToStore);
+
                 const dataPath = password ?
                     user.get('private').get(tableName) :
                     holoInstance.gun.get(holoInstance.appname).get(tableName);
@@ -80,6 +83,27 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
+                            // --- Start: Hologram Tracking Logic (for data *being put*, if it's a hologram) ---
+                            if (isHologram) {
+                                try {
+                                    const storedDataSoulInfo = holoInstance.parseSoulPath(dataToStore.soul);
+                                    if (storedDataSoulInfo) {
+                                        const targetNodeRef = holoInstance.getNodeRef(dataToStore.soul); // Target of the data *being put*
+                                        // Soul of the hologram that was *actually stored* at tableName/data.id
+                                        const storedHologramInstanceSoul = `${holoInstance.appname}/${tableName}/${data.id}`;
+                                        
+                                        targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
+                                        
+                                        console.log(`Data (ID: ${data.id}) being put is a hologram. Added its instance soul ${storedHologramInstanceSoul} to its target ${dataToStore.soul}'s _holograms set.`);
+                                    } else {
+                                        console.warn(`Data (ID: ${data.id}) being put is a hologram, but could not parse its soul ${dataToStore.soul} for tracking.`);
+                                    }
+                                } catch (trackingError) {
+                                    console.warn(`Error updating _holograms set for the target of the data being put (data ID: ${data.id}, soul: ${dataToStore.soul}):`, trackingError);
+                                }
+                            }
+                            // --- End: Hologram Tracking Logic ---
+                            
                             resolve();
                         }
                     });
@@ -88,6 +112,27 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
                         if (ack.err) {
                             reject(new Error(ack.err));
                         } else {
+                            // --- Start: Hologram Tracking Logic (for data *being put*, if it's a hologram) ---
+                            if (isHologram) {
+                                try {
+                                    const storedDataSoulInfo = holoInstance.parseSoulPath(dataToStore.soul);
+                                    if (storedDataSoulInfo) {
+                                        const targetNodeRef = holoInstance.getNodeRef(dataToStore.soul); // Target of the data *being put*
+                                        // Soul of the hologram that was *actually stored* at tableName (without specific key)
+                                        const storedHologramInstanceSoul = `${holoInstance.appname}/${tableName}`;
+                                        
+                                        targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
+                                        
+                                        console.log(`Data being put is a hologram. Added its instance soul ${storedHologramInstanceSoul} to its target ${dataToStore.soul}'s _holograms set.`);
+                                    } else {
+                                        console.warn(`Data being put is a hologram, but could not parse its soul ${dataToStore.soul} for tracking.`);
+                                    }
+                                } catch (trackingError) {
+                                    console.warn(`Error updating _holograms set for the target of the data being put (soul: ${dataToStore.soul}):`, trackingError);
+                                }
+                            }
+                            // --- End: Hologram Tracking Logic ---
+                            
                             resolve();
                         }
                     });
@@ -422,11 +467,66 @@ export async function deleteGlobal(holoInstance, tableName, key, password = null
             });
         }
 
-        return new Promise((resolve, reject) => {
-            const dataPath = password ?
-                user.get('private').get(tableName).get(key) :
-                holoInstance.gun.get(holoInstance.appname).get(tableName).get(key);
+        const dataPath = password ?
+            user.get('private').get(tableName).get(key) :
+            holoInstance.gun.get(holoInstance.appname).get(tableName).get(key);
 
+        // --- Start: Hologram Tracking Removal ---
+        let trackingRemovalPromise = Promise.resolve(); // Default to resolved promise
+        
+        // 1. Get the data first to check if it's a hologram
+        const rawDataToDelete = await new Promise((resolve) => dataPath.once(resolve));
+        let dataToDelete = null;
+        try {
+            if (typeof rawDataToDelete === 'string') {
+                dataToDelete = JSON.parse(rawDataToDelete);
+            } else {
+                // Handle cases where it might already be an object (though likely string)
+                dataToDelete = rawDataToDelete; 
+            }
+        } catch(e) {
+            console.warn("[deleteGlobal] Could not JSON parse data for deletion check:", rawDataToDelete, e);
+            dataToDelete = null; // Ensure it's null if parsing fails
+        }
+
+        // 2. If it is a hologram, try to remove its reference from the target
+        const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
+        
+        if (isDataHologram) {
+            try {
+                const targetSoul = dataToDelete.soul;
+                const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+                
+                if (targetSoulInfo) {
+                    const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                    const deletedHologramSoul = `${holoInstance.appname}/${tableName}/${key}`;
+
+                    // Create a promise that resolves when the hologram is removed from the list
+                    trackingRemovalPromise = new Promise((resolveTrack) => { // No reject needed, just warn on error
+                        targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => { // Remove the hologram entry completely
+                            if (ack.err) {
+                                console.warn(`[deleteGlobal] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
+                            }
+                            console.log(`Removed hologram ${deletedHologramSoul} from target ${targetSoul}'s _holograms list`);
+                            resolveTrack(); // Resolve regardless of ack error to not block main delete
+                        });
+                    });
+                } else {
+                    console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteGlobal.`);
+                }
+            } catch (trackingError) {
+                console.warn(`Error initiating hologram reference removal from target ${dataToDelete.soul} during deleteGlobal:`, trackingError);
+                // Ensure trackingRemovalPromise remains resolved if setup fails
+                trackingRemovalPromise = Promise.resolve(); 
+            }
+        }
+        // --- End: Hologram Tracking Removal ---
+
+        // 3. Wait for the tracking removal attempt to be acknowledged
+        await trackingRemovalPromise;
+
+        // 4. Proceed with the actual deletion of the hologram node itself
+        return new Promise((resolve, reject) => {
             // Request deletion
             dataPath.put(null, ack => {
                 // console.log('deleteGlobal - Deletion acknowledgment:', ack); // Optional logging
@@ -523,6 +623,70 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
                     }
 
                     const keys = Object.keys(data).filter(key => key !== '_');
+                    
+                    // Process each key to handle holograms properly
+                    for (const key of keys) {
+                        try {
+                            // Get the data to check if it's a hologram
+                            const itemPath = password ?
+                                user.get('private').get(tableName).get(key) :
+                                holoInstance.gun.get(holoInstance.appname).get(tableName).get(key);
+
+                            const rawDataToDelete = await new Promise((resolveItem) => itemPath.once(resolveItem));
+                            let dataToDelete = null;
+                            
+                            try {
+                                if (typeof rawDataToDelete === 'string') {
+                                    dataToDelete = JSON.parse(rawDataToDelete);
+                                } else {
+                                    dataToDelete = rawDataToDelete;
+                                }
+                            } catch(e) {
+                                console.warn("[deleteAllGlobal] Could not JSON parse data for deletion check:", rawDataToDelete, e);
+                                dataToDelete = null;
+                            }
+
+                            // Check if it's a hologram and handle accordingly
+                            const isDataHologram = dataToDelete && holoInstance.isHologram(dataToDelete);
+                            
+                            if (isDataHologram) {
+                                // Handle hologram deletion - remove from target's _holograms list
+                                try {
+                                    const targetSoul = dataToDelete.soul;
+                                    const targetSoulInfo = holoInstance.parseSoulPath(targetSoul);
+                                    
+                                    if (targetSoulInfo) {
+                                        const targetNodeRef = holoInstance.getNodeRef(targetSoul);
+                                        const deletedHologramSoul = `${holoInstance.appname}/${tableName}/${key}`;
+
+                                        // Remove the hologram from target's _holograms list
+                                        await new Promise((resolveTrack) => {
+                                            targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => {
+                                                if (ack.err) {
+                                                    console.warn(`[deleteAllGlobal] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
+                                                }
+                                                console.log(`Removed hologram ${deletedHologramSoul} from target ${targetSoul}'s _holograms list`);
+                                                resolveTrack();
+                                            });
+                                        });
+                                    } else {
+                                        console.warn(`Could not parse target soul ${targetSoul} for hologram tracking removal during deleteAllGlobal.`);
+                                    }
+                                } catch (trackingError) {
+                                    console.warn(`Error removing hologram reference from target ${dataToDelete.soul} during deleteAllGlobal:`, trackingError);
+                                }
+                            }
+
+                            // Add to deletions set for tracking
+                            deletions.add(key);
+                        } catch (error) {
+                            console.warn(`Error processing key ${key} during deleteAllGlobal:`, error);
+                            // Still add to deletions set even if hologram processing failed
+                            deletions.add(key);
+                        }
+                    }
+
+                    // Now delete all the items
                     const promises = keys.map(key =>
                         new Promise((resolveDelete, rejectDelete) => {
                             const deletePath = password ?
