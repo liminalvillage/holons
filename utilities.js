@@ -22,8 +22,14 @@ export const getChatName = async (ctx, chatID) => {
       return chatInfo.title || 'unknown';
     }
   } catch (err) {
+    // Handle specific "chat not found" error more gracefully
+    if (err.response && err.response.error_code === 400 && err.response.description && err.response.description.includes('chat not found')) {
+      console.warn(`Chat not found for ID ${chatID}: ${err.response.description}`);
+      return null; // Return null to indicate chat not accessible
+    } else {
     console.error('Error getting chat name:', err);
     return 'unknown';
+    }
   }
 }
 
@@ -172,8 +178,8 @@ export const getHolonName = async (db, holonId, ctx = null) => {
   if (ctx && typeof getChatName === 'function') {
     try {
       const chatName = await getChatName(ctx, holonId.toString());
-      // Ensure getChatName doesn't return an empty or default 'unknown' string if we prefer the ID
-      if (chatName && chatName !== 'unknown' && chatName.trim() !== '') {
+      // Ensure getChatName doesn't return an empty, null, or default 'unknown' string
+      if (chatName && chatName !== 'unknown' && chatName !== null && chatName.trim() !== '') {
         return chatName;
       }
     } catch (error) {
@@ -181,6 +187,6 @@ export const getHolonName = async (db, holonId, ctx = null) => {
     }
   }
 
-  // Final fallback: return the ID itself, converted to string
-  return holonId.toString();
+  // Final fallback: return a generic name instead of the ID
+  return `External Holon`;
 };

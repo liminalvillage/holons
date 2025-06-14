@@ -482,10 +482,11 @@ export default class Quests {
         }
 
         await this.db.put(chatID + '/quests', quest);
-        if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
-            await this.personalHologram(sender.id, quest);
-            await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
-        }
+        // Removed personalHologram call - only create holograms on participation, not appreciation
+        // if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
+        //     await this.personalHologram(sender.id, quest);
+        //     await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
+        // }
   
         await this.updateMessage(ctx, quest, language, false); // Request standard markup
     }
@@ -651,10 +652,11 @@ export default class Quests {
             quest.status = 'ongoing'
 
         await this.db.put(chatID + '/quests', quest);
-        if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
-            await this.personalHologram(sender.id, quest);
-            await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
-        }
+        // Removed personalHologram call - only create holograms on participation, not when stopping
+        // if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
+        //     await this.personalHologram(sender.id, quest);
+        //     await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
+        // }
         // Update the message 
         await this.updateMessage(ctx, quest, language);
     }
@@ -716,27 +718,28 @@ export default class Quests {
             // Save the main quest state before updating holograms for users
             await this.db.put(chatID + '/quests', quest);
 
+            // Removed personalHologram calls - only create holograms on participation, not completion
             // Update/create holograms for initiator, participants, and the completer
-            if (chatID.toString() !== completerId.toString()) {
-                await this.personalHologram(completerId, quest); // User who completed
-                await this.ensureTelegramHologramMessage(ctx, quest, completerId, language);
-            }
-            if (quest.initiator && quest.initiator.id !== completerId) { // Initiator if not the completer
-                if (chatID.toString() !== quest.initiator.id.toString()) {
-                    await this.personalHologram(quest.initiator.id, quest);
-                    await this.ensureTelegramHologramMessage(ctx, quest, quest.initiator.id, language);
-                }
-            }
-            if (quest.participants) { // All other participants
-                for (const participant of quest.participants) {
-                    if (participant.id !== completerId && (!quest.initiator || participant.id !== quest.initiator.id)) {
-                        if (chatID.toString() !== participant.id.toString()) {
-                            await this.personalHologram(participant.id, quest);
-                            await this.ensureTelegramHologramMessage(ctx, quest, participant.id, language);
-                        }
-                    }
-                }
-            }
+            // if (chatID.toString() !== completerId.toString()) {
+            //     await this.personalHologram(completerId, quest); // User who completed
+            //     await this.ensureTelegramHologramMessage(ctx, quest, completerId, language);
+            // }
+            // if (quest.initiator && quest.initiator.id !== completerId) { // Initiator if not the completer
+            //     if (chatID.toString() !== quest.initiator.id.toString()) {
+            //         await this.personalHologram(quest.initiator.id, quest);
+            //         await this.ensureTelegramHologramMessage(ctx, quest, quest.initiator.id, language);
+            //     }
+            // }
+            // if (quest.participants) { // All other participants
+            //     for (const participant of quest.participants) {
+            //         if (participant.id !== completerId && (!quest.initiator || participant.id !== quest.initiator.id)) {
+            //             if (chatID.toString() !== participant.id.toString()) {
+            //                 await this.personalHologram(participant.id, quest);
+            //                 await this.ensureTelegramHologramMessage(ctx, quest, participant.id, language);
+            //             }
+            //         }
+            //     }
+            // }
             
             // Now call updateMessage which also saves the quest (redundantly but includes Telegram hologram updates)
             await this.updateMessage(ctx, quest, language, false, hologramsToUpdateNow);
@@ -1446,7 +1449,59 @@ export default class Quests {
         return i18next.t('recurring', { lng: language, defaultValue: 'Recurring' }) + ': ' + frequencyText;
     }
 
-    // Add publish method
+    // Helper function to setup federation with hex target
+    async setupHexFederation(chatID, hex, lensTypes = ['quests', 'events', 'proposals']) {
+        try {
+            // Get existing federation info or create new one
+            let fedInfo = null;
+            try {
+                fedInfo = await this.db.holosphere.getGlobal('federation', chatID);
+            } catch (error) {
+                // Federation info doesn't exist, create new one
+            }
+
+            if (!fedInfo) {
+                fedInfo = {
+                    id: chatID,
+                    name: chatID,
+                    federation: [],
+                    notify: [],
+                    lensConfig: {},
+                    timestamp: Date.now()
+                };
+            }
+
+            // Ensure arrays exist
+            if (!fedInfo.federation) fedInfo.federation = [];
+            if (!fedInfo.notify) fedInfo.notify = [];
+            if (!fedInfo.lensConfig) fedInfo.lensConfig = {};
+
+            // Add hex to federation if not already present
+            if (!fedInfo.federation.includes(hex)) {
+                fedInfo.federation.push(hex);
+            }
+            if (!fedInfo.notify.includes(hex)) {
+                fedInfo.notify.push(hex);
+            }
+
+            // Configure lens settings for the hex
+            fedInfo.lensConfig[hex] = {
+                federate: lensTypes,
+                notify: lensTypes,
+                timestamp: Date.now()
+            };
+
+            // Save the federation configuration
+            await this.db.holosphere.putGlobal('federation', fedInfo);
+            
+            return true;
+        } catch (error) {
+            console.error('Error setting up hex federation:', error);
+            return false;
+        }
+    }
+
+    // Add publish method - Refactored to use propagation system
     async publish(ctx) {
         console.log("PUBLISH ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[2];
@@ -1476,35 +1531,31 @@ export default class Quests {
                 return;
             }
 
-            // Get the node from holosphere
-            let node = await this.db.holosphere.getNode(chatID, 'quests', messageID)
-
-            if (!node) {
-                // Create node if it doesn't exist
-                node = {
-                    id: messageID,
-                    type: quest.type,
-                    title: quest.title,
-                    initiator: quest.initiator,
-                    participants: quest.participants,
-                    status: quest.status,
-                    when: quest.when,
-                    where: quest.where,
-                    category: quest.category
-                }
+            // Setup federation with the hex target if not already configured
+            const federationSetup = await this.setupHexFederation(chatID, hex);
+            if (!federationSetup) {
+                ctx.answerCbQuery('Failed to setup federation with hex')
+                return;
             }
 
-            // Publish to holosphere using createHologram from the HoloSphere instance
-            const questReference = { id: messageID };
-            const hologramToPublish = this.db.holosphere.createHologram(chatID, 'quests', questReference);
-            await this.db.holosphere.put(hex, "quests", hologramToPublish);
+            // Use the propagation system to publish the quest
+            const propagationResult = await this.db.holosphere.propagate(chatID, 'quests', quest, {
+                useHolograms: true,
+                targetSpaces: [hex] // Specifically target the hex
+            });
 
-            ctx.answerCbQuery('Quest published to hex ' + hex)
-
-            // Update the message to show it's been published
-            quest.published = true
-            // await this.updateMessage(ctx, quest, language) // Original line - Keep default (expanded)
-            await this.updateMessage(ctx, quest, language); // Use default (expanded)
+            if (propagationResult.success > 0) {
+                ctx.answerCbQuery(`Quest published to hex ${hex} via propagation system`)
+                
+                // Update the message to show it's been published
+                quest.published = true
+                await this.updateMessage(ctx, quest, language);
+            } else {
+                // Handle propagation errors
+                const errorMessage = propagationResult.message || 'Unknown propagation error';
+                console.error('Propagation failed:', propagationResult);
+                ctx.answerCbQuery(`Failed to publish: ${errorMessage}`)
+            }
 
         } catch (error) {
             console.error('Error publishing quest:', error)
@@ -1512,7 +1563,7 @@ export default class Quests {
         }
     }
 
-    // Add broadcast method
+    // Add broadcast method - Updated to use propagation system
     async broadcast(ctx) {
         console.log("BROADCAST ACTION");
         let chatID = ctx.callbackQuery.data.split('_')[2];
@@ -1542,32 +1593,55 @@ export default class Quests {
                 return;
             }
 
-            // Get the node
-            let node = await this.db.holosphere.getNode(chatID, 'quests', messageID)
+            // Get all containing holonagons (scalespace) for the hex
+            const scalespace = this.db.holosphere.getScalespace(hex);
+            
+            if (!scalespace || scalespace.length === 0) {
+                ctx.answerCbQuery('Could not determine geographic hierarchy for hex')
+                return;
+            }
 
-            if (!node) {
-                // Create node if it doesn't exist
-                node = {
-                    id: messageID,
-                    type: quest.type,
-                    title: quest.title,
-                    initiator: quest.initiator,
-                    participants: quest.participants,
-                    status: quest.status,
-                    when: quest.when,
-                    where: quest.where,
-                    category: quest.category
+            // Setup federation with all scalespace holonagons
+            let totalSuccess = 0;
+            let totalErrors = 0;
+
+            for (const targetHex of scalespace) {
+                try {
+                    // Setup federation with each target hex
+                    const federationSetup = await this.setupHexFederation(chatID, targetHex);
+                    if (federationSetup) {
+                        // Use propagation system to broadcast to each level
+                        const propagationResult = await this.db.holosphere.propagate(chatID, 'quests', quest, {
+                            useHolograms: true,
+                            targetSpaces: [targetHex]
+                        });
+
+                        if (propagationResult.success > 0) {
+                            totalSuccess++;
+                            console.log(`Successfully broadcast to hex ${targetHex}`);
+                        } else {
+                            totalErrors++;
+                            console.log(`Failed to broadcast to hex ${targetHex}: ${propagationResult.message}`);
+                        }
+                    } else {
+                        totalErrors++;
+                        console.log(`Failed to setup federation with hex ${targetHex}`);
+                    }
+                } catch (error) {
+                    totalErrors++;
+                    console.error(`Error broadcasting to hex ${targetHex}:`, error);
                 }
             }
 
-            // Upcast to holosphere
-            await this.db.holosphere.upcast(hex, 'quests', { id: messageID, soul: this.db.holosphere.appname + '/' + chatID + '/quests/' + messageID })
-
-            ctx.answerCbQuery('Quest broadcast to hex ' + hex)
-
-            // Update the message to show it's been broadcast
-            quest.broadcasted = true
-            await this.updateMessage(ctx, quest, language)
+            if (totalSuccess > 0) {
+                ctx.answerCbQuery(`Quest broadcast to ${totalSuccess} geographic levels via propagation system`)
+                
+                // Update the message to show it's been broadcast
+                quest.broadcasted = true
+                await this.updateMessage(ctx, quest, language)
+            } else {
+                ctx.answerCbQuery(`Failed to broadcast quest to any geographic levels (${totalErrors} errors)`)
+            }
 
         } catch (error) {
             console.error('Error broadcasting quest:', error)
@@ -1697,10 +1771,11 @@ export default class Quests {
                 // Update quest with checklist ID
                 quest.checklistId = messageId.toString();
                 await this.db.put(chatId + '/quests', quest);
+                // Removed personalHologram call - only create holograms on participation, not checklist interactions
                 // Update user's hologram as checklistId has changed on the quest
-                if (chatId.toString() !== interactingUserId.toString()) {
-                    await this.personalHologram(interactingUserId, quest); 
-                }
+                // if (chatId.toString() !== interactingUserId.toString()) {
+                //     await this.personalHologram(interactingUserId, quest); 
+                // }
             }
 
             // Let the Checklists class handle displaying the checklist
@@ -1757,9 +1832,10 @@ export default class Quests {
             // We also need to update the user's hologram of the main quest.
             const mainQuest = await this.db.get(chatId + '/quests', checklist.questId);
             if (mainQuest) {
-                if (chatId.toString() !== interactingUserId.toString()) {
-                    await this.personalHologram(interactingUserId, mainQuest);
-                }
+                // Removed personalHologram call - only create holograms on participation, not checklist interactions
+                // if (chatId.toString() !== interactingUserId.toString()) {
+                //     await this.personalHologram(interactingUserId, mainQuest);
+                // }
                 await this.updateMessage(ctx, mainQuest, await this.settings.getLanguage(chatId));
             }
 
@@ -2119,12 +2195,13 @@ export default class Quests {
                 // Update the description
                 quest.description = ctx.message.text;
                 await this.db.put(ctx.scene.state.chatId + '/quests', quest);
+                // Removed personalHologram call - only create holograms on participation, not description changes
                 // await this.personalHologram(ctx.from.id, quest); // Update user hologram after description change - Conditional update below
-                if (ctx.scene.state.chatId.toString() !== ctx.from.id.toString()) { // Only if quest is not in user's own holon
-                    await this.personalHologram(ctx.from.id, quest);
-                    const language = await this.settings.getLanguage(ctx.scene.state.chatId); // Get language for ensureTelegramHologramMessage
-                    await this.ensureTelegramHologramMessage(ctx, quest, ctx.from.id, language);
-                }
+                // if (ctx.scene.state.chatId.toString() !== ctx.from.id.toString()) { // Only if quest is not in user's own holon
+                //     await this.personalHologram(ctx.from.id, quest);
+                //     const language = await this.settings.getLanguage(ctx.scene.state.chatId); // Get language for ensureTelegramHologramMessage
+                //     await this.ensureTelegramHologramMessage(ctx, quest, ctx.from.id, language);
+                // }
 
                 // Check if bot has permission to delete messages
                 const botHasAdminRights = await isBotAdmin(ctx);
@@ -2443,9 +2520,10 @@ export default class Quests {
 
             // Save the updated quest
             await this.db.put(chatId + '/quests', quest);
-            if (chatId.toString() !== interactingUserId.toString()) {
-                await this.personalHologram(interactingUserId, quest);
-            }
+            // Removed personalHologram call - only create holograms on participation, not dependency changes
+            // if (chatId.toString() !== interactingUserId.toString()) {
+            //     await this.personalHologram(interactingUserId, quest);
+            // }
 
             // Update the original quest message in the chat
             await this.updateMessage(ctx, quest, language);
@@ -2507,9 +2585,10 @@ export default class Quests {
 
             // Save the updated quest
             await this.db.put(chatId + '/quests', quest);
-            if (chatId.toString() !== interactingUserId.toString()) {
-                await this.personalHologram(interactingUserId, quest);
-            }
+            // Removed personalHologram call - only create holograms on participation, not dependency changes
+            // if (chatId.toString() !== interactingUserId.toString()) {
+            //     await this.personalHologram(interactingUserId, quest);
+            // }
 
             // Update the quest message
             await this.updateMessage(ctx, quest, language);
@@ -2637,9 +2716,10 @@ export default class Quests {
                         
                         // Save the updated original task
                         await this.db.put(chatId + '/quests', originalTask);
-                        if (chatId.toString() !== interactingUserId.toString()) {
-                            await this.personalHologram(interactingUserId, originalTask); // Update user hologram for original task
-                        }
+                        // Removed personalHologram call - only create holograms on participation, not recurring changes
+                        // if (chatId.toString() !== interactingUserId.toString()) {
+                        //     await this.personalHologram(interactingUserId, originalTask); // Update user hologram for original task
+                        // }
                         console.log(`Original task ${originalTask.id} updated`);
                         
                         // Immediately update the original task's message
@@ -2652,9 +2732,10 @@ export default class Quests {
 
             // Save the updated quest
             await this.db.put(chatId + '/quests', quest);
-            if (chatId.toString() !== interactingUserId.toString()) {
-                await this.personalHologram(interactingUserId, quest); // Update user hologram for current quest instance
-            }
+            // Removed personalHologram call - only create holograms on participation, not recurring changes
+            // if (chatId.toString() !== interactingUserId.toString()) {
+            //     await this.personalHologram(interactingUserId, quest); // Update user hologram for current quest instance
+            // }
 
             // Update the message
             await this.updateMessage(ctx, quest, language);
@@ -2787,9 +2868,10 @@ export default class Quests {
                         
                         // Save the updated original task
                         await this.db.put(chatId + '/quests', originalTask);
-                        if (originalTask.chat.toString() !== interactingUserId.toString()) { // originalTask.chat should be same as chatId
-                            await this.personalHologram(interactingUserId, originalTask);
-                        }
+                        // Removed personalHologram call - only create holograms on participation, not recurring changes
+                        // if (originalTask.chat.toString() !== interactingUserId.toString()) { // originalTask.chat should be same as chatId
+                        //     await this.personalHologram(interactingUserId, originalTask);
+                        // }
                         console.log(`Original task ${originalTask.id} updated to non-recurring`);
                         
                         // Update the original task's message
@@ -2804,9 +2886,10 @@ export default class Quests {
 
             // Update the quest
             await this.db.put(chatId + '/quests', quest);
-            if (chatId.toString() !== interactingUserId.toString()) {
-                await this.personalHologram(interactingUserId, quest);
-            }
+            // Removed personalHologram call - only create holograms on participation, not recurring changes
+            // if (chatId.toString() !== interactingUserId.toString()) {
+            //     await this.personalHologram(interactingUserId, quest);
+            // }
             console.log(`Quest ${quest.id} updated to non-recurring`);
 
             // Update the message
@@ -2875,11 +2958,12 @@ export default class Quests {
             questToView.chat = originalQuestChatId; 
             questToView.id = actualOriginalQuestId;
 
+            // Removed personalHologram call - only create holograms on participation, not quest viewing
             // Create data hologram in the *interacting user's* personal holon for the *original quest*,
             // only if the original quest is not already in their personal holon.
-            if (originalQuestChatId.toString() !== interactingUserId.toString()) {
-                await this.personalHologram(interactingUserId, questToView);
-            }
+            // if (originalQuestChatId.toString() !== interactingUserId.toString()) {
+            //     await this.personalHologram(interactingUserId, questToView);
+            // }
 
             // Send the new "Telegram view hologram" message into the chat where /quests list was displayed and button clicked
             const baseMessageText = await this.createMessage(questToView, language); // Use language of the chat where button was clicked

@@ -195,12 +195,20 @@
         const initDataUnsafe = Telegram.WebApp.initDataUnsafe || {};
 
         Telegram.WebApp.MainButton
-            .setText('CLOSE WEBVIEW')
+            .setText('❌ Cancel')
             .show()
-            .onClick(function () { webviewClose(); });
+            .onClick(function () { 
+                Telegram.WebApp.close(); 
+            });
 
         function sendHex(hex) {
             Telegram.WebApp.sendData(hex);
+            // Close the webapp after sending data
+            Telegram.WebApp.close();
+        }
+
+        function webviewClose() {
+            Telegram.WebApp.close();
         }
 
     </script>
@@ -301,18 +309,29 @@
 
         map.on('click', (e) => {
             const clickedHex = h3.latLngToCell(e.lngLat.lat, e.lngLat.lng, getResolution(map.getZoom()));
-            new mapboxgl.Popup()
+            
+            // Create popup with hex and confirmation button
+            const popup = new mapboxgl.Popup()
                 .setLngLat(e.lngLat)
-                .setHTML(clickedHex)
+                .setHTML(`
+                    <div style="text-align: center; padding: 10px;">
+                        <h4>Selected Hex:</h4>
+                        <code style="background: #f0f0f0; padding: 5px; border-radius: 3px;">${clickedHex}</code>
+                        <br><br>
+                        <button onclick="confirmHex('${clickedHex}')" style="background: #0088cc; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                            ✅ Confirm Selection
+                        </button>
+                    </div>
+                `)
                 .addTo(map);
 
             highlightHexagon(map, clickedHex);
-            sendHex(clickedHex)
-            //highlightNearbyHexagons(map, clickedHex);
-
         });
 
-
+        // Function to confirm hex selection and close webapp
+        function confirmHex(hex) {
+            sendHex(hex);
+        }
 
         // Assuming you have an array of hexagon IDs
         function highlightNearbyHexagons(map, hex) {

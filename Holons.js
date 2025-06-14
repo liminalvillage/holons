@@ -423,6 +423,14 @@ export default class Holons {
       await this.promptForTargetZone(ctx, memberId, originalZoneTelegramIndex);
     });
 
+    // Handler for moving federated holons to zones
+    this.bot.action(/zone_select_federated_to_move_([^_]+)/, async (ctx) => {
+      const federatedHolonId = ctx.match[1];
+      // For federated holons, we don't have an original zone since they're not in zones yet
+      // We'll use -1 to indicate they're coming from "not in zones"
+      await this.promptForTargetZone(ctx, federatedHolonId, -1);
+    });
+
     // Handler for executing the zone move
     this.bot.action(/zone_execute_move_([^_]+)_(\d+)_(\d+)/, async (ctx) => {
       const memberId = ctx.match[1];
@@ -2533,8 +2541,20 @@ export default class Holons {
         keyboard.push([{ text: `Zone ${i} (${membersToDisplay.length})`, callback_data: `zone_header_${i}` }]); 
         
         if (membersToDisplay.length > 0) {
-            const memberButtonObjects = membersToDisplay.map(memberId => {
-                let buttonText = `@${userMap[memberId] || memberId}`;
+            const memberButtonObjects = await Promise.all(membersToDisplay.map(async (memberId) => {
+                // Use utils.getHolonName to get the holon name, with ID in brackets as fallback
+                let holonName;
+                try {
+                    holonName = await utils.getHolonName(this.db, memberId, ctx);
+                } catch (error) {
+                    console.warn(`Could not get holon name for ${memberId}:`, error.message);
+                    holonName = `Holon ${memberId}`; // Fallback name
+                }
+                
+                // Only show ID in brackets if the name is different from the ID
+                const displayName = holonName === memberId.toString() ? holonName : `${holonName} (${memberId})`;
+                
+                let buttonText = displayName;
                 let callbackData = `zone_member_${memberId}_${i}`;
                 if (mode === 'prepare_move') {
                     buttonText += " ➡️";
@@ -2544,12 +2564,53 @@ export default class Holons {
                     callbackData = `zone_confirm_remove_${memberId}_${i}`;
                 }
                 return { text: buttonText, callback_data: callbackData };
-            });
+            }));
             // Change to one member button per row within zones
             for (const btn of memberButtonObjects) {
                 keyboard.push([btn]);
             }
         }
+      }
+
+      // Add federated holons section
+      try {
+        const fedInfo = await this.db.holosphere.getFederation(chatID);
+        const federatedWith = fedInfo && fedInfo.federation ? fedInfo.federation : [];
+        
+        if (federatedWith.length > 0) {
+          keyboard.push([{ text: `🔗 Federated Holons (${federatedWith.length})`, callback_data: ' ' }]);
+          
+          for (const federatedHolonId of federatedWith) {
+            // Try to get holon name, always show ID
+            let holonName;
+            try {
+              holonName = await utils.getHolonName(this.db, federatedHolonId, ctx);
+            } catch (error) {
+              console.warn(`Could not get holon name for ${federatedHolonId}:`, error.message);
+              holonName = null; // No name found
+            }
+            
+            // Always show ID - either with name or just ID
+            const displayName = holonName ? `${holonName} (${federatedHolonId})` : federatedHolonId.toString();
+            
+            let buttonText = displayName;
+            let callbackData = `federated_holon_${federatedHolonId}`;
+            
+            
+            if (mode === 'prepare_move') {
+              buttonText += " ➡️";
+              callbackData = `zone_select_federated_to_move_${federatedHolonId}`;
+            } else if (mode === 'prepare_remove') {
+              // Federated holons can't be removed from zones since they're not in zones yet
+              buttonText += " (not in zones)";
+              callbackData = ' ';
+            }
+            
+            keyboard.push([{ text: buttonText, callback_data: callbackData }]);
+          }
+        }
+      } catch (error) {
+        console.warn('Error getting federated holons:', error);
       }
 
       if (mode === 'prepare_move') {
@@ -2564,9 +2625,6 @@ export default class Holons {
         keyboard.push([{ text: "🔗 Add External Holon(s)", callback_data: "zone_add_external_holons_scene_enter"}]);
         keyboard.push([
             { text: "🎯 Reward Function", callback_data: "reward_function_set" }
-        ]);
-        keyboard.push([
-            { text: "📊 Preview Distribution", callback_data: "reward_function_preview" }
         ]);
       }
       keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
@@ -2756,7 +2814,7 @@ export default class Holons {
             { text: "🎁 Reward Members", callback_data: "holons_reward" }
         ]);
         keyboard.push([
-            { text: "⚖️ Value Equation", callback_data: "holons_flow_management" }
+            { text: "⚖️ Value Equation", callback_data: "settings_equation" }
         ]);
       }
       keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
@@ -2891,15 +2949,39 @@ export default class Holons {
     await ctx.answerCbQuery().catch(e => console.log("Error answering CBQ in promptForTargetZone:", e.message));
 
     const chatID = utils.getChatId(ctx);
+    
+    // Determine if this is a federated holon or local member
+    const isFederatedHolon = originalZoneTelegramIndex === -1;
+    
+    let memberDisplay;
+    if (isFederatedHolon) {
+      // For federated holons, use getHolonName to get the display name
+      try {
+        const holonName = await utils.getHolonName(this.db, memberId, ctx);
+        memberDisplay = holonName || memberId.toString();
+      } catch (error) {
+        console.warn(`Could not get holon name for ${memberId}:`, error.message);
+        memberDisplay = memberId.toString();
+      }
+    } else {
+      // For local members, use the existing user lookup logic
     const users = await this.db.getAll(chatID.toString() + '/users');
     const userMap = users.reduce((map, user) => {
       map[user.id.toString()] = user.username || user.id.toString();
       return map;
     }, {});
-    const memberDisplay = `@${userMap[memberId] || memberId}`;
+      memberDisplay = `@${userMap[memberId] || memberId}`;
+    }
 
-    let message = `Moving member ${memberDisplay} (currently in Zone ${originalZoneTelegramIndex}).
+    let message;
+    if (isFederatedHolon) {
+      message = `Moving federated holon ${memberDisplay} to a zone.
 Select the TARGET zone:`;
+    } else {
+      message = `Moving member ${memberDisplay} (currently in Zone ${originalZoneTelegramIndex}).
+Select the TARGET zone:`;
+    }
+    
     const keyboard = [];
 
     for (let i = 0; i <= 5; i++) {
@@ -2980,15 +3062,38 @@ Select the TARGET zone:`;
     const senderUserId = utils.getUserId(ctx).toString(); // User initiating the move
     const chatIdNormalized = `chat_${Math.abs(chatID)}`;
 
+    // Determine if this is a federated holon or local member
+    const isFederatedHolon = originalZoneTelegramIndex === -1;
+    
+    let memberDisplay;
+    if (isFederatedHolon) {
+      // For federated holons, use getHolonName to get the display name
+      try {
+        const holonName = await utils.getHolonName(this.db, memberId, ctx);
+        memberDisplay = holonName || memberId.toString();
+      } catch (error) {
+        console.warn(`Could not get holon name for ${memberId}:`, error.message);
+        memberDisplay = memberId.toString();
+      }
+    } else {
+      // For local members, use the existing user lookup logic
     const users = await this.db.getAll(chatID.toString() + '/users');
     const userMap = users.reduce((map, user) => {
       map[user.id.toString()] = user.username || user.id.toString();
       return map;
     }, {});
-    const memberDisplay = `@${userMap[memberId] || memberId}`;
+      memberDisplay = `@${userMap[memberId] || memberId}`;
+    }
+
+    let moveMessage;
+    if (isFederatedHolon) {
+      moveMessage = `➡️ Moving federated holon ${memberDisplay} to Zone ${targetZoneTelegramIndex}... Please wait.`;
+    } else {
+      moveMessage = `➡️ Moving ${memberDisplay} from Zone ${originalZoneTelegramIndex} to Zone ${targetZoneTelegramIndex}... Please wait.`;
+    }
 
     await ctx.editMessageText(
-      `➡️ Moving ${memberDisplay} from Zone ${originalZoneTelegramIndex} to Zone ${targetZoneTelegramIndex}... Please wait.`,
+      moveMessage,
       { reply_markup: { inline_keyboard: [[{ text: "Processing...", callback_data: "noop" }]] } }
     ).catch(e => console.log("Error editing message for move start:", e.message));
 
@@ -3340,7 +3445,7 @@ Select the TARGET zone:`;
       { text: "💾 Save Parameters", callback_data: `poly_save_${a}_${b}_${c}` }
     ]);
     keyboard.push([
-      { text: "◀️ Back to Zone Management", callback_data: "holons_manage_zones_view" }
+      { text: "◀️ Back to External Flows", callback_data: "holons_manage_zones_view" }
     ]);
 
     return keyboard;

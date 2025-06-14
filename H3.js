@@ -104,7 +104,7 @@ class H3 {
 
         this.bot.command('publish', async (ctx) => {
             if (!ctx.message.reply_to_message) {
-                return ctx.reply('Please reply to a message you want to tag.');
+                return ctx.reply('Please reply to a message you want to publish.');
             }
             const tags = ctx.message.text.split(' ').slice(1);
             if (tags.length === 0) {
@@ -114,22 +114,84 @@ class H3 {
             const messageID = ctx.message.reply_to_message.message_id;
             const chatID = ctx.message.chat.id;
 
-            let node = this.holosphere.getNode(chatID, 'quests', messageID) //TODO: change to any lens type
-            let soul = this.findSoul(node)
-            //console.log('node soul: ', soul)
-
             let settings = await this.settings.getSettings(chatID)
             let hex = settings.hex
 
-            await this.holosphere.put(hex, "quests",  {'id': messageID, 'soul': soul })
+            if (!hex) {
+                return ctx.reply('Hex not set. Please set hex using /setHex');
+            }
 
-            // for (let tag of tags) {
-            //     await this.holosphere.putNode(hex, tag, messageID, node )
-            // }
-            let refetched = await this.holosphere.get(hex, 'quests', messageID)
-            console.log(refetched)
+            try {
+                // Get the node from holosphere
+                let node = await this.holosphere.getNode(chatID, 'quests', messageID)
+                
+                if (!node) {
+                    return ctx.reply('No quest found for this message.');
+                }
 
-            ctx.reply('Tag published to hex ' + hex);
+                // Setup federation with the hex target
+                let fedInfo = null;
+                try {
+                    fedInfo = await this.holosphere.getGlobal('federation', chatID);
+                } catch (error) {
+                    // Federation info doesn't exist, create new one
+                }
+
+                if (!fedInfo) {
+                    fedInfo = {
+                        id: chatID,
+                        name: chatID,
+                        federation: [],
+                        notify: [],
+                        lensConfig: {},
+                        timestamp: Date.now()
+                    };
+                }
+
+                // Ensure arrays exist
+                if (!fedInfo.federation) fedInfo.federation = [];
+                if (!fedInfo.notify) fedInfo.notify = [];
+                if (!fedInfo.lensConfig) fedInfo.lensConfig = {};
+
+                // Add hex to federation if not already present
+                if (!fedInfo.federation.includes(hex)) {
+                    fedInfo.federation.push(hex);
+                }
+                if (!fedInfo.notify.includes(hex)) {
+                    fedInfo.notify.push(hex);
+                }
+
+                // Configure lens settings for the hex
+                fedInfo.lensConfig[hex] = {
+                    federate: ['quests', 'events', 'proposals'],
+                    notify: ['quests', 'events', 'proposals'],
+                    timestamp: Date.now()
+                };
+
+                // Save the federation configuration
+                await this.holosphere.putGlobal('federation', fedInfo);
+
+                // Create hologram for the quest
+                const questReference = { id: messageID };
+                const hologram = this.holosphere.createHologram(chatID, 'quests', questReference);
+
+                // Use federation propagation to publish to the hex
+                const propagationResult = await this.holosphere.propagate(chatID, 'quests', hologram, {
+                    useHolograms: true,
+                    targetSpaces: [hex]
+                });
+
+                if (propagationResult.success > 0) {
+                    ctx.reply(`Quest published to hex ${hex} via federation`);
+                } else {
+                    const errorMessage = propagationResult.message || 'Unknown propagation error';
+                    ctx.reply(`Failed to publish: ${errorMessage}`);
+                }
+
+            } catch (error) {
+                console.error('Error publishing quest:', error);
+                ctx.reply('Error publishing quest');
+            }
         });
 
     }

@@ -334,6 +334,40 @@ class HolonsBot {
   setupTelegramHandlers() {
     console.log("=== Setting up Telegram handlers ===");
     
+    // Handler for webapp data (hex selection from hexamap)
+    this.telebot.on('web_app_data', async (ctx) => {
+      try {
+        const hex = ctx.message.web_app_data.data;
+        const chatID = ctx.message.chat.id;
+        
+        console.log(`Received hex from webapp: ${hex} for chat: ${chatID}`);
+        
+        // Validate hex format (basic H3 validation)
+        if (!hex || typeof hex !== 'string' || hex.length < 10) {
+          await ctx.reply('❌ Invalid hex format received from map.');
+          return;
+        }
+        
+        // Save the hex to chat settings
+        await this.settings.setHex(chatID, hex);
+        
+        // Get language for response
+        const language = await this.settings.getLanguage(chatID) || 'en';
+        
+        // Send confirmation message
+        await ctx.reply(
+          `✅ ${i18next.t('hex_updated', { lng: language, defaultValue: 'Hex updated successfully' })}: \`${hex}\``,
+          { parse_mode: 'Markdown' }
+        );
+        
+        console.log(`Hex ${hex} saved for chat ${chatID}`);
+        
+      } catch (error) {
+        console.error('Error handling webapp data:', error);
+        await ctx.reply('❌ Error saving hex. Please try again.');
+      }
+    });
+    
     this.telebot.on('photo', async (ctx) => {
       await this.handlePhoto(ctx);
     });

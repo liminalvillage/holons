@@ -125,6 +125,8 @@
         "settings_values": "Werte",
         "settings_currencies": "Währungen",
         "settings_hex": "Hex",
+        "settings_view_map": "Auf Karte anzeigen",
+        "hex_updated": "Hex erfolgreich aktualisiert",
         "settings_equation": "Wertgleichung",
         "settings_help": "Hilfe & Anleitung",
         "settings_support": "Unterstützung & Feedback",

@@ -125,6 +125,8 @@
         "settings_values": "Ценности",
         "settings_currencies": "Валюты",
         "settings_hex": "Hex",
+        "settings_view_map": "Посмотреть на карте",
+        "hex_updated": "Hex успешно обновлен",
         "settings_equation": "Уравнение ценности",
         "settings_help": "Помощь и руководство",
         "settings_support": "Поддержка и обратная связь",

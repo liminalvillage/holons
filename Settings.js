@@ -1027,6 +1027,17 @@ export default class Settings {
             await ctx.answerCbQuery().catch()
         });
         
+        // Action handler for viewing hex map (temporary replacement for web app button)
+        this.bot.action('hex_view_map', async (ctx) => {
+            await ctx.answerCbQuery().catch()
+            const chatID = ctx.callbackQuery.message.chat.id;
+            const language = await this.getLanguage(chatID);
+            await ctx.reply(i18next.t('settings_map_redirect', { 
+                lng: language, 
+                defaultValue: 'View the hex map at: https://hexamap.holons.io/index.html?id=' + chatID 
+            }));
+        });
+
         // Action handler for editing hex (from hex menu)
         this.bot.action('help_add_hex', async (ctx) => {
             await ctx.answerCbQuery().catch()
@@ -2084,7 +2095,11 @@ export default class Settings {
                         { text: `${this.getSettingIcon('currencies')} ${i18next.t('settings_currencies', { lng: language, defaultValue: 'Currencies' })}: ${settings.currencies?.length || 0}`, callback_data: 'settings_currencies'},
                         { text: `${this.getSettingIcon('flow_management')} ${i18next.t('settings_flow_management', { lng: language, defaultValue: 'Flow Management' })}`, callback_data: 'holons_flow_management' }
                     ],
-                    // 7. Help | Support
+                    // 7. Value Equation (full width)
+                    [
+                        { text: `${this.getSettingIcon('equation')} ${i18next.t('settings_equation', { lng: language })}`, callback_data: 'settings_equation' }
+                    ],
+                    // 8. Help | Support
                     [
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
@@ -3094,6 +3109,12 @@ export default class Settings {
         keyboard.inline_keyboard.push([{
             text: `✏️ ${i18next.t('settings_edit', { lng: language })}`,
             callback_data: 'help_add_hex'
+        }]);
+
+        // Add map hexamap webapp button (separate row to avoid mixing button types)
+        keyboard.inline_keyboard.push([{
+            text: `🗺️ ${i18next.t('settings_view_map', { lng: language, defaultValue: 'View on Map' })}`,
+            callback_data: 'hex_view_map'
         }]);
 
         // Back button
