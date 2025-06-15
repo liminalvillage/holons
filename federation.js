@@ -3,6 +3,7 @@
  * Provides methods for creating, managing, and using federated spaces
  */
 
+import * as h3 from 'h3-js';
 
 /**
  * Creates a federation relationship between two spaces
@@ -753,6 +754,8 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
  * @param {boolean} [options.useHolograms=true] - Use holograms for propagation (default: true)
  * @param {string[]} [options.targetSpaces] - Specific target spaces to propagate to (defaults to all federated spaces)
  * @param {string} [options.password] - Password for accessing the source holon (if needed)
+ * @param {boolean} [options.propagateToParents=true] - Whether to automatically propagate to parent hexagons (default: true)
+ * @param {number} [options.maxParentLevels=15] - Maximum number of parent levels to propagate to (default: 15)
  * @returns {Promise<object>} - Result with success count and errors
  */
 export async function propagate(holosphere, holon, lens, data, options = {}) {
@@ -760,147 +763,252 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         throw new Error('propagate: Missing required parameters');
     }
     // Default propagation options
-    const { useHolograms = true, targetSpaces = null, password = null } = options;
+    const { 
+        useHolograms = true, 
+        targetSpaces = null, 
+        password = null,
+        propagateToParents = true,
+        maxParentLevels = 15
+    } = options;
 
     const result = {
         success: 0,
         errors: 0,
         skipped: 0,
-        messages: []
+        messages: [],
+        parentPropagation: {
+            success: 0,
+            errors: 0,
+            skipped: 0,
+            messages: []
+        }
     };
 
     try {
+        // ================================ FEDERATION PROPAGATION ================================
+        
         // Get federation info for this holon using getFederation
         const fedInfo = await getFederation(holosphere, holon, password);
         
-        // If no federation info or no federation list, return with message
-        if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
-            return {
-                ...result,
-                message: `No federation found for ${holon}`
-            };
-        }
-        
-        // If no notification list or it's empty, return with message
-        if (!fedInfo.notify || fedInfo.notify.length === 0) {
-            return {
-                ...result,
-                message: `No notification targets found for ${holon}`
-            };
-        }
-        
-        // Filter federation spaces to those in notify list
-        let spaces = fedInfo.notify;
-        
-        // Further filter by targetSpaces if provided
-        if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
-            spaces = spaces.filter(space => targetSpaces.includes(space));
-        }
-        
-        if (spaces.length === 0) {
-            return {
-                ...result,
-                message: 'No valid target spaces found after filtering'
-            };
-        }
-
-        // Filter spaces based on lens configuration
-        spaces = spaces.filter(targetSpace => {
-            const spaceConfig = fedInfo.lensConfig?.[targetSpace];
-            if (!spaceConfig) {
-                result.messages.push(`No lens configuration for target space ${targetSpace}. Skipping propagation of lens '${lens}'.`);
-                result.skipped++;
-                return false;
-            }
-
-            // Ensure .federate is an array before calling .includes
-            const federateLenses = Array.isArray(spaceConfig.federate) ? spaceConfig.federate : [];
-
-            const shouldFederate = federateLenses.includes('*') || federateLenses.includes(lens);
+        // Only perform federation propagation if there's valid federation info
+        if (fedInfo && fedInfo.federation && fedInfo.federation.length > 0 && fedInfo.notify && fedInfo.notify.length > 0) {
+            // Filter federation spaces to those in notify list
+            let spaces = fedInfo.notify;
             
-            // Propagation now only depends on the 'federate' list configuration for the lens
-            const shouldPropagate = shouldFederate;
-            
-            if (!shouldPropagate) {
-                result.messages.push(`Propagation of lens '${lens}' to target space ${targetSpace} skipped: lens not in 'federate' configuration.`);
-                result.skipped++;
+            // Further filter by targetSpaces if provided
+            if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
+                spaces = spaces.filter(space => targetSpaces.includes(space));
             }
             
-            return shouldPropagate;
-        });
+            if (spaces.length > 0) {
+                // Filter spaces based on lens configuration
+                spaces = spaces.filter(targetSpace => {
+                    const spaceConfig = fedInfo.lensConfig?.[targetSpace];
+                    if (!spaceConfig) {
+                        result.messages.push(`No lens configuration for target space ${targetSpace}. Skipping propagation of lens '${lens}'.`);
+                        result.skipped++;
+                        return false;
+                    }
 
-        if (spaces.length === 0) {
-            // If no specific skip messages were added and spaces is empty, add a general one.
-            if (result.skipped === 0 && fedInfo.notify && fedInfo.notify.length > 0) { 
-                result.messages.push('No target spaces were configured for federation of this specific lens, out of available notification partners.');
-            } else if (fedInfo.notify && fedInfo.notify.length === 0) {
-                result.messages.push('No notification partners available to filter for lens propagation.');
-            }
-            return {
-                ...result,
-                message: result.messages.join('; ') || 'No valid target spaces for propagation after lens filtering.'
-            };
-        }
-        
-        // Check if data is already a hologram
-        const isAlreadyHologram = holosphere.isHologram(data);
+                    // Ensure .federate is an array before calling .includes
+                    const federateLenses = Array.isArray(spaceConfig.federate) ? spaceConfig.federate : [];
 
-        // If data is already a hologram, don't re-wrap it
-        if (isAlreadyHologram && useHolograms) {
-        }
-
-        // If propagating a non-hologram and useHolograms is false, add warning
-        if (!isAlreadyHologram && !useHolograms) {
-        }
-        
-        // For each target space, propagate the data
-        const propagatePromises = spaces.map(async (targetSpace) => {
-            try {
-                let payloadToPut;
-                const federationMeta = {
-                    origin: holon,       // The space from which this data is being propagated
-                    sourceLens: lens,    // The lens from which this data is being propagated
-                    propagatedAt: Date.now(),
-                    originalId: data.id
-                };
-
-                if (useHolograms && !isAlreadyHologram) {
-                    // Create a new hologram referencing the original data
-                    const newHologram = holosphere.createHologram(holon, lens, data);
-                    payloadToPut = {
-                        ...newHologram, // This will be { id: data.id, soul: 'path/to/original' }
-                        _federation: federationMeta
-                    };
-                } else {
-                    // Propagate existing data (could be a full object or an existing hologram)
-                    // Make a shallow copy and update/add _federation metadata
-                    payloadToPut = {
-                        ...data, 
-                        _federation: {
-                            ...(data._federation || {}), // Preserve existing _federation fields if any
-                            ...federationMeta // Add/overwrite with current propagation info
-                        }
-                    };
-                }
-                
-                // Store in the target space with redirection disabled and no further auto-propagation
-                await holosphere.put(targetSpace, lens, payloadToPut, null, { 
-                    disableHologramRedirection: true, 
-                    autoPropagate: false 
+                    const shouldFederate = federateLenses.includes('*') || federateLenses.includes(lens);
+                    
+                    // Propagation now only depends on the 'federate' list configuration for the lens
+                    const shouldPropagate = shouldFederate;
+                    
+                    if (!shouldPropagate) {
+                        result.messages.push(`Propagation of lens '${lens}' to target space ${targetSpace} skipped: lens not in 'federate' configuration.`);
+                        result.skipped++;
+                    }
+                    
+                    return shouldPropagate;
                 });
 
-                result.success++;
-                return true;
-            } catch (error) {
-                result.errors++;
-                result.messages.push(`Error propagating ${data.id} to ${targetSpace}: ${error.message}`);
-                return false;
+                if (spaces.length > 0) {
+                    // Check if data is already a hologram
+                    const isAlreadyHologram = holosphere.isHologram(data);
+
+                    // For each target space, propagate the data
+                    const propagatePromises = spaces.map(async (targetSpace) => {
+                        try {
+                            let payloadToPut;
+                            const federationMeta = {
+                                origin: holon,       // The space from which this data is being propagated
+                                sourceLens: lens,    // The lens from which this data is being propagated
+                                propagatedAt: Date.now(),
+                                originalId: data.id
+                            };
+
+                            if (useHolograms && !isAlreadyHologram) {
+                                // Create a new hologram referencing the original data
+                                const newHologram = holosphere.createHologram(holon, lens, data);
+                                payloadToPut = {
+                                    ...newHologram, // This will be { id: data.id, soul: 'path/to/original' }
+                                    _federation: federationMeta
+                                };
+                            } else {
+                                // Propagate existing data (could be a full object or an existing hologram)
+                                // Make a shallow copy and update/add _federation metadata
+                                payloadToPut = {
+                                    ...data, 
+                                    _federation: {
+                                        ...(data._federation || {}), // Preserve existing _federation fields if any
+                                        ...federationMeta // Add/overwrite with current propagation info
+                                    }
+                                };
+                            }
+                            
+                            // Store in the target space with redirection disabled and no further auto-propagation
+                            await holosphere.put(targetSpace, lens, payloadToPut, null, { 
+                                disableHologramRedirection: true, 
+                                autoPropagate: false 
+                            });
+
+                            result.success++;
+                            return true;
+                        } catch (error) {
+                            result.errors++;
+                            result.messages.push(`Error propagating ${data.id} to ${targetSpace}: ${error.message}`);
+                            return false;
+                        }
+                    });
+                    
+                    await Promise.all(propagatePromises);
+                } else {
+                    result.messages.push('No valid target spaces for federation propagation after lens filtering.');
+                }
+            } else {
+                result.messages.push('No valid target spaces found for federation propagation.');
             }
-        });
+        } else {
+            result.messages.push(`No federation found for ${holon} or no notification targets available.`);
+        }
         
-        await Promise.all(propagatePromises);
+        // ================================ PARENT PROPAGATION ================================
         
-        result.propagated = result.success > 0;
+        // Check if we should propagate to parent hexagons
+        if (propagateToParents) {
+            console.log(`[Federation] Starting parent propagation for holon: ${holon}`);
+            try {
+                // Check if the holon is a valid H3 hexagon
+                let holonResolution;
+                try {
+                    holonResolution = h3.getResolution(holon);
+                    console.log(`[Federation] Holon ${holon} is valid H3 hexagon with resolution: ${holonResolution}`);
+                } catch (error) {
+                    // Not a valid H3 hexagon, skip parent propagation
+                    console.log(`[Federation] Holon ${holon} is not a valid H3 hexagon: ${error.message}`);
+                    result.parentPropagation.messages.push(`Holon ${holon} is not a valid H3 hexagon. Skipping parent propagation.`);
+                    result.parentPropagation.skipped++;
+                }
+                
+                if (holonResolution !== undefined) {
+                    // Get all parent hexagons up to the specified max levels
+                    const parentHexagons = [];
+                    let currentHolon = holon;
+                    let currentRes = holonResolution;
+                    let levelsProcessed = 0;
+                    
+                    console.log(`[Federation] Getting parent hexagons for ${holon} (resolution ${holonResolution}) up to ${maxParentLevels} levels`);
+                    
+                    while (currentRes > 0 && levelsProcessed < maxParentLevels) {
+                        try {
+                            const parent = h3.cellToParent(currentHolon, currentRes - 1);
+                            parentHexagons.push(parent);
+                            console.log(`[Federation] Found parent hexagon: ${parent} (resolution ${currentRes - 1})`);
+                            currentHolon = parent;
+                            currentRes--;
+                            levelsProcessed++;
+                        } catch (error) {
+                            console.error(`[Federation] Error getting parent for ${currentHolon}: ${error.message}`);
+                            result.parentPropagation.messages.push(`Error getting parent for ${currentHolon}: ${error.message}`);
+                            result.parentPropagation.errors++;
+                            break;
+                        }
+                    }
+                    
+                    if (parentHexagons.length > 0) {
+                        console.log(`[Federation] Found ${parentHexagons.length} parent hexagons to propagate to: ${parentHexagons.join(', ')}`);
+                        result.parentPropagation.messages.push(`Found ${parentHexagons.length} parent hexagons to propagate to: ${parentHexagons.join(', ')}`);
+                        
+                        // Check if data is already a hologram (reuse from federation section)
+                        const isAlreadyHologram = holosphere.isHologram(data);
+                        console.log(`[Federation] Data is already hologram: ${isAlreadyHologram}`);
+                        
+                        // Propagate to each parent hexagon
+                        const parentPropagatePromises = parentHexagons.map(async (parentHexagon) => {
+                            try {
+                                console.log(`[Federation] Propagating to parent hexagon: ${parentHexagon}`);
+                                let payloadToPut;
+                                const parentFederationMeta = {
+                                    origin: holon,           // The original holon from which this data is being propagated
+                                    sourceLens: lens,        // The lens from which this data is being propagated
+                                    propagatedAt: Date.now(),
+                                    originalId: data.id,
+                                    propagationType: 'parent', // Indicate this is parent propagation
+                                    parentLevel: holonResolution - h3.getResolution(parentHexagon) // How many levels up
+                                };
+
+                                if (useHolograms && !isAlreadyHologram) {
+                                    // Create a new hologram referencing the original data
+                                    const newHologram = holosphere.createHologram(holon, lens, data);
+                                    console.log(`[Federation] Created hologram for parent propagation:`, newHologram);
+                                    payloadToPut = {
+                                        ...newHologram, // This will be { id: data.id, soul: 'path/to/original' }
+                                        _federation: parentFederationMeta
+                                    };
+                                } else {
+                                    // Propagate existing data (could be a full object or an existing hologram)
+                                    // Make a shallow copy and update/add _federation metadata
+                                    payloadToPut = {
+                                        ...data, 
+                                        _federation: {
+                                            ...(data._federation || {}), // Preserve existing _federation fields if any
+                                            ...parentFederationMeta // Add/overwrite with current propagation info
+                                        }
+                                    };
+                                }
+                                
+                                console.log(`[Federation] Storing in parent hexagon ${parentHexagon} with payload:`, payloadToPut);
+                                
+                                // Store in the parent hexagon with redirection disabled and no further auto-propagation
+                                await holosphere.put(parentHexagon, lens, payloadToPut, null, { 
+                                    disableHologramRedirection: true, 
+                                    autoPropagate: false 
+                                });
+
+                                console.log(`[Federation] Successfully propagated to parent hexagon: ${parentHexagon}`);
+                                result.parentPropagation.success++;
+                                return true;
+                            } catch (error) {
+                                console.error(`[Federation] Error propagating ${data.id} to parent hexagon ${parentHexagon}: ${error.message}`);
+                                result.parentPropagation.errors++;
+                                result.parentPropagation.messages.push(`Error propagating ${data.id} to parent hexagon ${parentHexagon}: ${error.message}`);
+                                return false;
+                            }
+                        });
+                        
+                        await Promise.all(parentPropagatePromises);
+                    } else {
+                        console.log(`[Federation] No parent hexagons found for ${holon} (already at resolution 0 or max levels reached)`);
+                        result.parentPropagation.messages.push(`No parent hexagons found for ${holon} (already at resolution 0 or max levels reached)`);
+                        result.parentPropagation.skipped++;
+                    }
+                }
+            } catch (error) {
+                console.error(`[Federation] Error during parent propagation: ${error.message}`);
+                result.parentPropagation.errors++;
+                result.parentPropagation.messages.push(`Error during parent propagation: ${error.message}`);
+            }
+        } else {
+            console.log(`[Federation] Parent propagation disabled for holon: ${holon}`);
+        }
+        
+        // ================================ END PARENT PROPAGATION ================================
+        
+        result.propagated = result.success > 0 || result.parentPropagation.success > 0;
         return result;
     } catch (error) {
         return {

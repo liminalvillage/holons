@@ -8,6 +8,10 @@ interface PropagationOptions {
   targetSpaces?: string[];
   /** Password for accessing the source holon (if needed) */
   password?: string | null;
+  /** Whether to automatically propagate to parent hexagons (default: true) */
+  propagateToParents?: boolean;
+  /** Maximum number of parent levels to propagate to (default: 15) */
+  maxParentLevels?: number;
 }
 
 /**
@@ -113,6 +117,17 @@ interface PropagationResult {
   error?: string;
   /** Information message if applicable */
   message?: string;
+  /** Parent propagation results */
+  parentPropagation?: {
+    /** Number of successfully propagated items to parents */
+    success: number;
+    /** Number of errors encountered during parent propagation */
+    errors: number;
+    /** Number of parent propagations skipped */
+    skipped: number;
+    /** Messages from parent propagation */
+    messages: string[];
+  };
 }
 
 /**
