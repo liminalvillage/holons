@@ -352,7 +352,7 @@ export default class Quests {
             console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest) // Save the main quest first
             
-            await this.updateMessage(ctx, quest, language, false) // This will update main message and also the new personal hologram message if created
+            await this.updateMessage(ctx, quest, language) // This will update main message and also the new personal hologram message if created
             
             //Pin the message in the original chat
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -431,7 +431,7 @@ export default class Quests {
 
             // Update message and propagate to federated spaces
             // Request standard markup after join
-            await this.updateMessage(ctx, quest, language, false);
+            await this.updateMessage(ctx, quest, language);
 
         } catch (error) {
             console.error('Error in join function:', error);
@@ -488,7 +488,7 @@ export default class Quests {
         //     await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
         // }
   
-        await this.updateMessage(ctx, quest, language, false); // Request standard markup
+        await this.updateMessage(ctx, quest, language); // Request standard markup
     }
 
     async cancel(ctx) {
@@ -742,7 +742,7 @@ export default class Quests {
             // }
             
             // Now call updateMessage which also saves the quest (redundantly but includes Telegram hologram updates)
-            await this.updateMessage(ctx, quest, language, false, hologramsToUpdateNow);
+            await this.updateMessage(ctx, quest, language, false, hologramsToUpdateNow); // Keep false for this special case with hologram cleanup
 
 
             // Unpin the message and any federated messages
@@ -1001,7 +1001,7 @@ export default class Quests {
     }
 
     // Function to update messages for a quest 
-    async updateMessage(ctx, quest, language, useExpandedMarkup = true, explicitHologramsToUpdate = null) { // Default to expanded markup, new param
+    async updateMessage(ctx, quest, language, useExpandedMarkup = false, explicitHologramsToUpdate = null) { // Default to compact markup
         try {
             if (!quest) {
                 console.log("ERROR: Quest is null in updateMessage");
