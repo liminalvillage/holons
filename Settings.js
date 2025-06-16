@@ -697,8 +697,8 @@ export default class Settings {
                     // const fedInfoAfter = await this.db.holosphere.getFederation(chatID.toString());
                     // console.log('[Settings.js /unfederate_] FedInfo AFTER unfederate:', JSON.stringify(fedInfoAfter, null, 2));
 
-                    const federationName = await utils.getHolonName(this.db, federationID, ctx);
-                    await ctx.reply(i18next.t('settings_federation_removed', { lng: language, federationID: federationName }));
+                                const federationName = await this.getHolonDisplayName(federationID, ctx);
+            await ctx.reply(i18next.t('settings_federation_removed', { lng: language, federationID: federationName }));
                     await this.showFederationMenu(ctx, true);
                 } catch (error) {
                     console.error('Unfederation error in Settings.js:', error);
@@ -732,7 +732,7 @@ export default class Settings {
                     //     console.warn(`[Settings.js /unnotify_] removeNotify reported that ID ${notifyID} was not found in the list for ${chatID}.`);
                     // }
 
-                    const notifyName = await utils.getHolonName(this.db, notifyID, ctx);
+                    const notifyName = await this.getHolonDisplayName(notifyID, ctx);
                     await ctx.reply(i18next.t('settings_notify_removed', { lng: language, id: notifyName }));
                     await this.showFederationMenu(ctx, true);
                 } catch (error) {
@@ -1845,7 +1845,16 @@ export default class Settings {
         const federationID = ctx.message.text.split(' ')[1];
 
         if (federationID === undefined || federationID === null) {
-            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456. This chat ID is ' + chatID);
+            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456 or /federate 0x1234abcd. This chat ID is ' + chatID);
+            return;
+        }
+
+        // Validate federation ID format - accept completely numeric or hex holon IDs
+        const isNumeric = /^-?\d+$/.test(federationID);
+        const isHex = /^(0x)?[0-9a-fA-F]+$/.test(federationID);
+        
+        if (!isNumeric && !isHex) {
+            ctx.reply('Invalid holon ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).');
             return;
         }
 
@@ -1853,7 +1862,7 @@ export default class Settings {
             // Use holosphere federate method
             console.log('FEDERATING', chatID, federationID)
             await this.db.holosphere.federate(chatID, federationID);
-            const federationName = await utils.getHolonName(this.db, federationID, ctx);
+            const federationName = await this.getHolonDisplayName(federationID, ctx);
             ctx.reply('This chat has been federated with ' + federationName);
         } catch (error) {
             console.error('Federation error:', error);
@@ -1866,14 +1875,23 @@ export default class Settings {
         const federationID = ctx.message.text.split(' ')[1];
 
         if (federationID === undefined || federationID === null) {
-            ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456.');
+            ctx.reply('Please specify who you would like to revoke the federation with. Example: /separate 123456 or /separate 0x1234abcd.');
+            return;
+        }
+
+        // Validate federation ID format - accept completely numeric or hex holon IDs
+        const isNumeric = /^-?\d+$/.test(federationID);
+        const isHex = /^(0x)?[0-9a-fA-F]+$/.test(federationID);
+        
+        if (!isNumeric && !isHex) {
+            ctx.reply('Invalid holon ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).');
             return;
         }
 
         try {
             // Use holosphere unfederate method
             await this.db.holosphere.unfederate(chatID, federationID);
-            const federationName = await utils.getHolonName(this.db, federationID, ctx);
+            const federationName = await this.getHolonDisplayName(federationID, ctx);
             ctx.reply('Federation with ' + federationName + ' has been revoked');
         } catch (error) {
             console.error('Unfederation error:', error);
@@ -2538,8 +2556,9 @@ export default class Settings {
             }]);
 
             for (const space of federatedWith) {
+                const holonName = await this.getHolonDisplayName(space, ctx);
                 keyboard.inline_keyboard.push([{
-                    text: `${await utils.getHolonName(this.db, space, ctx)}`,
+                    text: holonName,
                     callback_data: `federation_lenses_${space}` // Changed from ' '
                 }, {
                     text: '❌',
@@ -2561,8 +2580,9 @@ export default class Settings {
             }]);
 
             for (const space of notifies) {
+                const holonName = await this.getHolonDisplayName(space, ctx);
                 keyboard.inline_keyboard.push([{
-                    text: `${await utils.getHolonName(this.db, space, ctx)}`,
+                    text: holonName,
                     callback_data: `notify_lenses_${space}` // Changed from ' '
                 }, {
                     text: '❌',
@@ -3148,7 +3168,7 @@ export default class Settings {
 
         const language = await this.getLanguage(chatID);
         let title = '';
-        const targetHolonName = await utils.getHolonName(this.db, targetChatID, ctx);
+        const targetHolonName = await this.getHolonDisplayName(targetChatID, ctx);
 
         if (relationshipType === 'federated') {
             title = i18next.t('settings_lenses_federated_with', { lng: language, targetChatID: targetHolonName, defaultValue: `Lenses Federated with ${targetHolonName}` });
@@ -3344,5 +3364,40 @@ export default class Settings {
         } else {
             await ctx.reply(menuText, { reply_markup: keyboard });
         }
+    }
+
+    /**
+     * Get display name for a holon in federation menu - shows ID when name is not known
+     * @param {string} holonId - The holon ID
+     * @param {object} ctx - Telegram context
+     * @returns {Promise<string>} - Display name or ID if name is unknown
+     */
+    async getHolonDisplayName(holonId, ctx) {
+        if (!holonId) return 'Unknown Holon';
+
+        try {
+            // Try to get the holon's settings to find its name
+            const settings = await this.db.get(holonId.toString() + '/settings', holonId.toString());
+            if (settings && settings.name && settings.name !== 'unknown') {
+                return settings.name;
+            }
+        } catch (error) {
+            // Settings not found, continue to fallback
+        }
+
+        // Try to get Telegram chat name if ctx is provided
+        if (ctx) {
+            try {
+                const chatName = await utils.getChatName(ctx, holonId.toString());
+                if (chatName && chatName !== 'unknown' && chatName !== null && chatName.trim() !== '') {
+                    return chatName;
+                }
+            } catch (error) {
+                // Chat name not available, continue to fallback
+            }
+        }
+
+        // Final fallback: show the ID itself
+        return holonId.toString();
     }
 }

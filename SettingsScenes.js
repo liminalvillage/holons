@@ -484,9 +484,23 @@ export default class SettingsScenes {
             const language = await this.getLanguage(chatID);
 
             try {
-                // Validate input
-                if (!federationID || isNaN(federationID)) {
+                // Validate input - accept completely numeric or hex holon IDs
+                if (!federationID) {
                     await ctx.reply(i18next.t('settings_invalid_federation_id', { lng: language }));
+                    return;
+                }
+
+                // Check if it's completely numeric (traditional Telegram chat ID)
+                const isNumeric = /^-?\d+$/.test(federationID);
+                
+                // Check if it's a valid hex string (with or without 0x prefix)
+                const isHex = /^(0x)?[0-9a-fA-F]+$/.test(federationID);
+                
+                if (!isNumeric && !isHex) {
+                    await ctx.reply(i18next.t('settings_invalid_federation_id_format', { 
+                        lng: language, 
+                        defaultValue: 'Invalid holon ID format. Please enter a numeric ID (e.g., -1001234567890) or a hex address (e.g., 0x1234abcd).' 
+                    }));
                     return;
                 }
 
