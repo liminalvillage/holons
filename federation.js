@@ -892,19 +892,36 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         if (propagateToParents) {
             console.log(`[Federation] Starting parent propagation for holon: ${holon}`);
             try {
-                // Check if the holon is a valid H3 hexagon
+                // Validate if the holon is a proper H3 hexagon
+                // H3 hexagons should start with '8' and have a valid format
                 let holonResolution;
-                try {
-                    holonResolution = h3.getResolution(holon);
-                    console.log(`[Federation] Holon ${holon} is valid H3 hexagon with resolution: ${holonResolution}`);
-                } catch (error) {
-                    // Not a valid H3 hexagon, skip parent propagation
-                    console.log(`[Federation] Holon ${holon} is not a valid H3 hexagon: ${error.message}`);
+                let isValidH3 = false;
+                
+                // First check: H3 hexagons should start with '8' and be at least 15 characters long
+                if (typeof holon === 'string' && holon.startsWith('8') && holon.length >= 15) {
+                    try {
+                        holonResolution = h3.getResolution(holon);
+                        // Additional validation: resolution should be >= 0 and <= 15
+                        if (holonResolution >= 0 && holonResolution <= 15) {
+                            isValidH3 = true;
+                            console.log(`[Federation] Holon ${holon} is valid H3 hexagon with resolution: ${holonResolution}`);
+                        } else {
+                            console.log(`[Federation] Holon ${holon} has invalid resolution: ${holonResolution}`);
+                        }
+                    } catch (error) {
+                        console.log(`[Federation] Holon ${holon} failed H3 validation: ${error.message}`);
+                    }
+                } else {
+                    console.log(`[Federation] Holon ${holon} is not a valid H3 hexagon: does not start with '8' or too short`);
+                }
+                
+                if (!isValidH3) {
+                    console.log(`[Federation] Skipping parent propagation for non-H3 holon: ${holon}`);
                     result.parentPropagation.messages.push(`Holon ${holon} is not a valid H3 hexagon. Skipping parent propagation.`);
                     result.parentPropagation.skipped++;
                 }
                 
-                if (holonResolution !== undefined) {
+                if (isValidH3 && holonResolution !== undefined) {
                     // Get all parent hexagons up to the specified max levels
                     const parentHexagons = [];
                     let currentHolon = holon;
