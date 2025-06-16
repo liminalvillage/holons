@@ -1,6 +1,7 @@
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import Users from './Users.js';
+import i18next from 'i18next';
 
 
 class Announcements {
@@ -23,13 +24,152 @@ class Announcements {
             return;
         }
 
-        let announcement = { id: messageID, user: ctx.from , date: new Date(), content: message }
+        let announcement = { 
+            id: messageID, 
+            user: ctx.from, 
+            date: new Date(), 
+            content: message,
+            chat: chatID
+        }
        
-        await this.db.put(chatID + '/announcements', announcement );
-        ctx.reply(utils.i18next.t('announced', { message: message ,lng: language }));
+        await this.db.put(chatID + '/announcements', announcement);
+        
+        // Send formatted announcement in local chat
+        const formattedMessage = this.createAnnouncementMessage(announcement, language);
+        ctx.reply(formattedMessage, { parse_mode: 'Markdown' });
+        
+        // Check federation lens and replicate to other chats
+        await this.handleFederatedAnnouncements(ctx, announcement, language);
     }
 
-    
+    async handleFederatedAnnouncements(ctx, announcement, language) {
+        try {
+            console.log(`[handleFederatedAnnouncements] Starting for announcement ${announcement.id} in chat ${announcement.chat}`);
+            
+            // Get federation info to find out which spaces to notify
+            const fedInfo = await this.db.holosphere.getFederation(announcement.chat);
+            console.log(`[handleFederatedAnnouncements] Federation info for chat ${announcement.chat}:`, fedInfo);
+            
+            if (!fedInfo?.notify?.length) {
+                console.log(`[handleFederatedAnnouncements] No federated chats to notify for announcement ${announcement.id}`);
+                return;
+            }
+            
+            console.log(`[handleFederatedAnnouncements] Found ${fedInfo.notify.length} federated chats to notify:`, fedInfo.notify);
+
+            // Get existing federation tracking info
+            const federationKey = `${announcement.chat}_${announcement.id}_fedannouncements`;
+            let federatedMessages = await this.db.get('federation_messages', federationKey) || {
+                id: federationKey,
+                chatId: announcement.chat,
+                announcementId: announcement.id,
+                messages: []
+            };
+
+            for (const federatedChatId of fedInfo.notify) {
+                // Skip if it's the same chat as the original
+                if (federatedChatId === announcement.chat) {
+                    console.log(`[handleFederatedAnnouncements] Skipping same chat ${federatedChatId}`);
+                    continue;
+                }
+
+                console.log(`[handleFederatedAnnouncements] Processing federated chat ${federatedChatId}`);
+
+                // Check if the target holon has allowed the 'announcements' lens in their federation array
+                try {
+                    const targetFedInfo = await this.db.holosphere.getFederation(federatedChatId);
+                    console.log(`[handleFederatedAnnouncements] Target federation info for ${federatedChatId}:`, targetFedInfo);
+                    
+                    // Check if the target chat has lensConfig and if it allows 'announcements' lens for this specific connection
+                    const sourceChatId = announcement.chat.toString();
+                    const targetLensConfig = targetFedInfo?.lensConfig?.[sourceChatId];
+                    
+                    if (!targetLensConfig?.notify?.includes('announcements')) {
+                        console.log(`[handleFederatedAnnouncements] Skipping federated announcement to ${federatedChatId} - 'announcements' lens not allowed in their notify array for chat ${sourceChatId}`);
+                        continue;
+                    }
+                    
+                    console.log(`[handleFederatedAnnouncements] Target chat ${federatedChatId} allows 'announcements' lens for chat ${sourceChatId}, proceeding with message`);
+                } catch (error) {
+                    console.error(`[handleFederatedAnnouncements] Error checking federation settings for chat ${federatedChatId}:`, error);
+                    continue; // Skip this chat if we can't verify federation settings
+                }
+
+                // Find existing message for this federated chat
+                const existingMsgIndex = federatedMessages.messages.findIndex(m => m.chatId === federatedChatId);
+                const existingMsg = existingMsgIndex > -1 ? federatedMessages.messages[existingMsgIndex] : null;
+
+                try {
+                    if (existingMsg) {
+                        console.log(`[handleFederatedAnnouncements] Updating existing announcement ${existingMsg.messageId} in chat ${federatedChatId}`);
+                        // Update existing message
+                        const originalHolonName = await utils.getHolonName(this.db, announcement.chat, ctx);
+                        const hologramMessageText = this.createAnnouncementMessage(announcement, language, originalHolonName);
+                        
+                        await ctx.telegram.editMessageText(
+                            federatedChatId,
+                            existingMsg.messageId,
+                            null,
+                            hologramMessageText,
+                            { parse_mode: 'Markdown' }
+                        ).catch(err => console.error(`Error updating federated announcement in ${federatedChatId}:`, err));
+                    } else {
+                        console.log(`[handleFederatedAnnouncements] Creating new federated announcement in chat ${federatedChatId}`);
+                        // Create new announcement message
+                        const originalHolonName = await utils.getHolonName(this.db, announcement.chat, ctx);
+                        const hologramMessageText = this.createAnnouncementMessage(announcement, language, originalHolonName);
+                        
+                        const newMessage = await ctx.telegram.sendMessage(
+                            federatedChatId,
+                            hologramMessageText,
+                            { parse_mode: 'Markdown' }
+                        );
+
+                        console.log(`[handleFederatedAnnouncements] Created new federated announcement ${newMessage.message_id} in chat ${federatedChatId}`);
+
+                        // Store the new message information
+                        federatedMessages.messages.push({
+                            chatId: federatedChatId,
+                            messageId: newMessage.message_id,
+                            timestamp: Date.now()
+                        });
+                    }
+                } catch (error) {
+                    console.error(`[handleFederatedAnnouncements] Failed to handle announcement in federated chat ${federatedChatId}:`, error);
+                    // If we've failed to update an existing message, remove it from tracking
+                    if (existingMsgIndex > -1) {
+                        federatedMessages.messages.splice(existingMsgIndex, 1);
+                    }
+                }
+            }
+
+            // Save the updated federation message tracking information
+            if (federatedMessages.messages.length > 0) {
+                await this.db.put('federation_messages', federatedMessages);
+                console.log(`[handleFederatedAnnouncements] Saved federation tracking for ${federatedMessages.messages.length} messages`);
+            }
+
+        } catch (error) {
+            console.error('[handleFederatedAnnouncements] Error handling federated announcements:', error);
+        }
+    }
+
+    createAnnouncementMessage(announcement, language, originalHolonName = null) {
+        const userDisplayName = announcement.user.first_name || announcement.user.username || 'Unknown';
+        const dateStr = new Date(announcement.date).toLocaleString();
+        
+        let message = `📢 *${utils.i18next.t('announcement', { lng: language, defaultValue: 'Announcement' })}*\n\n`;
+        message += `${announcement.content}\n\n`;
+        message += `👤 ${userDisplayName}\n`;
+        message += `📅 ${dateStr}\n`;
+        
+        // Only show "Linked from" for federated messages
+        if (originalHolonName) {
+            message += `🔗 ${utils.i18next.t('linked_view', { lng: language, holonName: originalHolonName, defaultValue: `Linked from ${originalHolonName}` })}\n`;
+        }
+        
+        return message;
+    }
 }
 
 export default Announcements;

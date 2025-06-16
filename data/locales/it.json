@@ -82,6 +82,8 @@
         "appreciationsuccess": "{{sender}} ha apprezzato a {{receivers}} utenti per {{action}}",
         "announcementusage": "Usage: /annuncio [messaggio] (es. /annuncio incontro alle 15)",
         "announced": "Annuncio inviato: {{message}}",
+        "announcement": "Annuncio",
+        "linked_view": "Collegato da {{holonName}}",
         "Open Dashboard": "Apri Dashboard",
         "Open in Holons": "Apri in Holons",
         "more_actions": "Altre Azioni",

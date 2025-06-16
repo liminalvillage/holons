@@ -91,6 +91,8 @@
         "appreciationsuccess": "{{sender}} has sent appreciation to {{receivers}} users for {{action}}",
         "announcementusage": "Usage: /announcement [message] (es. /announcement Meeting at 3pm)",
         "announced": "Announcement sent: {{message}}",
+        "announcement": "Announcement",
+        "linked_view": "Linked from {{holonName}}",
         "Open Dashboard": "Open Dashboard",
         "Open in Holons": "Open in Holons",
         "more_actions": "More Actions",

@@ -91,6 +91,8 @@
         "appreciationsuccess": "{{sender}} a envoyé une appréciation à {{receivers}} utilisateurs pour {{action}}",
         "announcementusage": "Utilisation : /anonce [message] (ex. /anonce Réunion à 15h)",
         "announced": "Annonce envoyée : {{message}}",
+        "announcement": "Anuncio",
+        "linked_view": "Enlazado desde {{holonName}}",
         "Open Dashboard": "Abrir Panel",
         "Open in Holons": "Ouvrir dans Holons",
         "more_actions": "Más Acciones",

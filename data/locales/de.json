@@ -91,6 +91,8 @@
         "appreciationsuccess": "{{sender}} hat Wertschätzung an {{receivers}} Benutzer für {{action}} gesendet",
         "announcementusage": "Verwendung: /announcement [Nachricht] (z.B. /announcement Treffen um 15 Uhr)",
         "announced": "Ankündigung gesendet: {{message}}",
+        "announcement": "Ankündigung",
+        "linked_view": "Verlinkt von {{holonName}}",
         "Open Dashboard": "Dashboard öffnen",
         "Open in Holons": "In Holons öffnen",
         "more_actions": "Mehr Aktionen",

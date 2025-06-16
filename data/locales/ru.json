@@ -91,6 +91,8 @@
         "appreciationsuccess": "{{sender}} отправил оценку пользователю(ям) {{receivers}} за {{action}}",
         "announcementusage": "Использование: /announcement [сообщение] (например, /announcement Встреча в 15:00)",
         "announced": "Объявление отправлено: {{message}}",
+        "announcement": "Объявление",
+        "linked_view": "Связано с {{holonName}}",
         "Open Dashboard": "Открыть панель управления",
         "Open in Holons": "Открыть в Holons",
         "more_actions": "Больше действий",
