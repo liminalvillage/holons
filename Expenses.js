@@ -24,7 +24,9 @@ export default class Expenses {
             const language = await this.settings.getLanguage(chatID)
             const result = await this.joinSplit(chatID, userID, expenseID);
             if (result) {
-                ctx.telegram.editMessageText(chatID, messageID, null, await this.createMessage(chatID,result), Markup.inlineKeyboard([{ text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, { text: 'Split All', callback_data: `splitall:${result.id}` }])).catch(err => console.log(err));
+                ctx.telegram.editMessageText(chatID, messageID, null, await this.createMessage(chatID,result), Markup.inlineKeyboard([
+                    [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${result.id}` }]
+                ])).catch(err => console.log(err));
             } else {
                 ctx.reply(i18next.t('expensejoinfail', { lng: language }));
             }
@@ -39,12 +41,52 @@ export default class Expenses {
             if (result) {
                 let message = await this.createMessage(chatID,result);
                 ctx.telegram.editMessageText(chatID, messageID, null, message, Markup.inlineKeyboard([
-                    { text: i18next.t('Split', { lng: language }), callback_data: `split:${result.id}` }, 
-                    { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${result.id}` }
+                    [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${result.id}` }]
                 ])).catch(err => console.log(err));
             } else {
                 ctx.reply(i18next.t('expensejoinfail', { lng: language }));
             }
+        });
+
+        // New action for showing participant selection interface
+        bot.action(/select_participants:(.+)/, async (ctx) => {
+            const chatID = utils.getChatId(ctx);
+            const messageID = utils.getMessageId(ctx);
+            const expenseID = ctx.match[1];
+            await this.showParticipantSelection(ctx, chatID, messageID, expenseID);
+        });
+
+        // New action for toggling individual participants
+        bot.action(/toggle_participant:(.+)_(.+)/, async (ctx) => {
+            const chatID = utils.getChatId(ctx);
+            const messageID = utils.getMessageId(ctx);
+            const expenseID = ctx.match[1];
+            const userID = parseInt(ctx.match[2]);
+            await this.toggleParticipant(ctx, chatID, messageID, expenseID, userID);
+        });
+
+        // New action for going back to expense view from participant selection
+        bot.action(/back_to_expense:(.+)/, async (ctx) => {
+            const chatID = utils.getChatId(ctx);
+            const messageID = utils.getMessageId(ctx);
+            const expenseID = ctx.match[1];
+            await this.showExpenseView(ctx, chatID, messageID, expenseID);
+        });
+
+        // New action for selecting all participants
+        bot.action(/select_all_participants:(.+)/, async (ctx) => {
+            const chatID = utils.getChatId(ctx);
+            const messageID = utils.getMessageId(ctx);
+            const expenseID = ctx.match[1];
+            await this.selectAllParticipants(ctx, chatID, messageID, expenseID);
+        });
+
+        // New action for toggling "This Holon" (group) participation
+        bot.action(/toggle_holon:(.+)/, async (ctx) => {
+            const chatID = utils.getChatId(ctx);
+            const messageID = utils.getMessageId(ctx);
+            const expenseID = ctx.match[1];
+            await this.toggleHolonParticipation(ctx, chatID, messageID, expenseID);
         });
 
         bot.command(['clear', 'balance', 'credit', 'bilancio'], async (ctx) => {
@@ -120,11 +162,11 @@ export default class Expenses {
         }
 
 
-        const expense = await this.addExpense(messageID + 1, chatID, amount, normalizedCurrency, description, ctx.from.id, [6152474485]);
+        const expense = await this.addExpense(messageID + 1, chatID, amount, normalizedCurrency, description, ctx.from.id, [chatID]);
         if (expense) {
-            ctx.reply(await this.createMessage(chatID, expense), Markup.inlineKeyboard(
-                [{ text: i18next.t('Split', { lng: language }), callback_data: `split:${expense.id}` }, { text: i18next.t('Split All', { lng: language }), callback_data: `splitall:${expense.id}` }]
-            ));
+            ctx.reply(await this.createMessage(chatID, expense), Markup.inlineKeyboard([
+                [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${expense.id}` }]
+            ]));
         } else {
             ctx.reply(i18next.t('expenseaddfail', {lng: language, error: 'Invalid amount or data.'}) || 'Failed to add expense. Ensure amount is valid.');
         }
@@ -169,13 +211,13 @@ export default class Expenses {
         if (expense) {
             if (!expense.splitWith.includes(userID)) { //add user to split
                 expense.splitWith.push(userID);
-                // Remove holonsID if it exists in the array 
-                expense.splitWith = expense.splitWith.filter(id => id !== 6152474485);
+                // Remove chatID ("This Holon") if it exists in the array 
+                expense.splitWith = expense.splitWith.filter(id => id !== chatID);
             }
             else {//remove user from split
                 expense.splitWith = expense.splitWith.filter(function (value, index, arr) { return value != userID; });
                 if (expense.splitWith.length == 0) {
-                    expense.splitWith.push(6152474485);
+                    expense.splitWith.push(chatID);
                 }
             }
         
@@ -450,6 +492,187 @@ export default class Expenses {
             }
         }
         return netBalance;
+    }
+
+    // Show participant selection interface with checklist-style user selection
+    async showParticipantSelection(ctx, chatID, messageID, expenseID) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            
+            const expense = await this.db.get(chatID + '/expenses', expenseID);
+            if (!expense) {
+                await ctx.answerCbQuery('Expense not found');
+                return;
+            }
+
+            const users = await this.db.getAll(chatID + '/users');
+            const language = await this.settings.getLanguage(chatID);
+            
+            // Create buttons for each user
+            const userButtons = [];
+            
+            // Add "This Holon" (group) button first
+            const isHolonSelected = expense.splitWith.includes(chatID);
+            const holonStatus = isHolonSelected ? '✅' : '⬜️';
+            userButtons.push([{
+                text: `${holonStatus} 🏛️ This Holon`,
+                callback_data: `toggle_holon:${expenseID}`
+            }]);
+            
+            // Add individual user buttons
+            for (const user of users) {
+                const isSelected = expense.splitWith.includes(user.id);
+                const status = isSelected ? '✅' : '⬜️';
+                const displayName = utils.getDisplayName(user);
+                
+                userButtons.push([{
+                    text: `${status} ${displayName}`,
+                    callback_data: `toggle_participant:${expenseID}_${user.id}`
+                }]);
+            }
+
+            // Add control buttons
+            userButtons.push([
+                {
+                    text: i18next.t('Select All', { lng: language }) || '☑️ Select All',
+                    callback_data: `select_all_participants:${expenseID}`
+                },
+                {
+                    text: i18next.t('Back', { lng: language }) || '🔙 Back',
+                    callback_data: `back_to_expense:${expenseID}`
+                }
+            ]);
+
+            const keyboard = Markup.inlineKeyboard(userButtons);
+            const message = i18next.t('Select participants for split:', { lng: language }) || 'Select participants for split:';
+
+            await ctx.telegram.editMessageText(chatID, messageID, null, message, keyboard);
+
+        } catch (error) {
+            console.error('Error showing participant selection:', error);
+            await ctx.answerCbQuery('Error showing participant selection');
+        }
+    }
+
+    // Toggle individual participant in expense split
+    async toggleParticipant(ctx, chatID, messageID, expenseID, userID) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            
+            let expense = await this.db.get(chatID + '/expenses', expenseID);
+            if (!expense) {
+                await ctx.answerCbQuery('Expense not found');
+                return;
+            }
+
+            // Toggle participant
+            if (expense.splitWith.includes(userID)) {
+                // Remove user from split
+                expense.splitWith = expense.splitWith.filter(id => id !== userID);
+                // Add chatID ("This Holon") if split becomes empty
+                if (expense.splitWith.length === 0) {
+                    expense.splitWith.push(chatID);
+                }
+            } else {
+                // Add user to split
+                expense.splitWith.push(userID);
+                // Remove chatID ("This Holon") if it exists in the array
+                expense.splitWith = expense.splitWith.filter(id => id !== chatID);
+            }
+
+            await this.db.put(chatID + '/expenses', expense);
+            
+            // Refresh the participant selection view
+            await this.showParticipantSelection(ctx, chatID, messageID, expenseID);
+
+        } catch (error) {
+            console.error('Error toggling participant:', error);
+            await ctx.answerCbQuery('Error updating participant');
+        }
+    }
+
+    // Show expense view with updated participant list
+    async showExpenseView(ctx, chatID, messageID, expenseID) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            
+            const expense = await this.db.get(chatID + '/expenses', expenseID);
+            if (!expense) {
+                await ctx.answerCbQuery('Expense not found');
+                return;
+            }
+
+            const language = await this.settings.getLanguage(chatID);
+            const message = await this.createMessage(chatID, expense);
+            
+            const keyboard = Markup.inlineKeyboard([
+                [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${expense.id}` }]
+            ]);
+
+            await ctx.telegram.editMessageText(chatID, messageID, null, message, keyboard);
+
+        } catch (error) {
+            console.error('Error showing expense view:', error);
+            await ctx.answerCbQuery('Error showing expense');
+        }
+    }
+
+    // Select all participants for expense split
+    async selectAllParticipants(ctx, chatID, messageID, expenseID) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            
+            let expense = await this.db.get(chatID + '/expenses', expenseID);
+            if (!expense) {
+                await ctx.answerCbQuery('Expense not found');
+                return;
+            }
+
+            const users = await this.db.getAll(chatID + '/users');
+            
+            // Add all users to the split (excluding chat ID to avoid duplication)
+            expense.splitWith = users.map(user => user.id);
+            
+            await this.db.put(chatID + '/expenses', expense);
+            
+            // Refresh the participant selection view to show all users selected
+            await this.showParticipantSelection(ctx, chatID, messageID, expenseID);
+
+        } catch (error) {
+            console.error('Error selecting all participants:', error);
+            await ctx.answerCbQuery('Error selecting all participants');
+        }
+    }
+
+    // Toggle "This Holon" (group) participation
+    async toggleHolonParticipation(ctx, chatID, messageID, expenseID) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            
+            let expense = await this.db.get(chatID + '/expenses', expenseID);
+            if (!expense) {
+                await ctx.answerCbQuery('Expense not found');
+                return;
+            }
+
+            if (expense.splitWith.includes(chatID)) {
+                // "This Holon" is currently selected, deselect it and select all individual users
+                const users = await this.db.getAll(chatID + '/users');
+                expense.splitWith = users.map(user => user.id);
+            } else {
+                // "This Holon" is not selected, select it and deselect everyone else
+                expense.splitWith = [chatID];
+            }
+
+            await this.db.put(chatID + '/expenses', expense);
+            
+            // Refresh the participant selection view
+            await this.showParticipantSelection(ctx, chatID, messageID, expenseID);
+
+        } catch (error) {
+            console.error('Error toggling holon participation:', error);
+            await ctx.answerCbQuery('Error updating holon participation');
+        }
     }
 }
 
