@@ -66,7 +66,7 @@ describe('Parent Propagation Tests', () => {
       expect(result.parentPropagation).toBeDefined();
       expect(result.parentPropagation.skipped).toBe(1);
       expect(result.parentPropagation.messages).toEqual(
-        expect.arrayContaining([expect.stringContaining('No parent hexagons found')])
+        expect.arrayContaining([expect.stringContaining('not a valid H3 hexagon')])
       );
     });
 

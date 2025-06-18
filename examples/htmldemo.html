@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HoloSphere API Demo - Geospatial Communication Infrastructure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .status.loading {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status.ready {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .demo-section {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .demo-section h2 {
+            color: #4f46e5;
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .demo-section h2::before {
+            content: "🔮";
+            font-size: 1.5rem;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        label {
+            font-weight: 600;
+            color: #4b5563;
+            font-size: 0.9rem;
+        }
+
+        input, select, textarea, button {
+            padding: 10px 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        button {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            min-width: 120px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(79, 70, 229, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .output {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.85rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .output pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .success {
+            color: #059669;
+            background: #ecfdf5;
+            border-color: #10b981;
+        }
+
+        .error {
+            color: #dc2626;
+            background: #fef2f2;
+            border-color: #f87171;
+        }
+
+        .info {
+            color: #2563eb;
+            background: #eff6ff;
+            border-color: #60a5fa;
+        }
+
+        .subscription-log {
+            background: #f0f9ff;
+            border: 1px solid #0ea5e9;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .subscription-log .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #e0f2fe;
+            font-size: 0.8rem;
+        }
+
+        .subscription-log .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .geospatial h2::before { content: "🌍"; }
+        .data-storage h2::before { content: "💾"; }
+        .holograms h2::before { content: "👻"; }
+        .federation h2::before { content: "🔗"; }
+        .subscriptions h2::before { content: "📡"; }
+        .compute h2::before { content: "⚡"; }
+
+        .coords-input {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+
+        .federation-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .coords-input,
+            .federation-controls {
+                grid-template-columns: 1fr;
+            }
+            
+            .control-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>HoloSphere API Demo</h1>
+            <p>Holonic Geospatial Communication Infrastructure</p>
+            <div class="status loading" id="status">🔄 Loading HoloSphere...</div>
+        </div>
+
+        <div class="grid">
+            <!-- Geospatial Operations -->
+            <div class="demo-section geospatial">
+                <h2>Geospatial Operations</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Coordinates & Resolution</label>
+                        <div class="coords-input">
+                            <input type="number" id="lat" placeholder="Latitude" value="37.7749" step="any">
+                            <input type="number" id="lng" placeholder="Longitude" value="-122.4194" step="any">
+                            <input type="number" id="resolution" placeholder="Resolution" value="9" min="0" max="15">
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <button onclick="getHolon()">Get Holon</button>
+                        <button onclick="getScalespace()">Get Scalespace</button>
+                    </div>
+                </div>
+                <div class="output" id="geospatial-output"></div>
+            </div>
+
+            <!-- Data Storage -->
+            <div class="demo-section data-storage">
+                <h2>Data Storage & Retrieval</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Storage Details</label>
+                        <input type="text" id="storage-holon" placeholder="Holon ID" value="test-holon">
+                        <input type="text" id="storage-lens" placeholder="Lens" value="messages">
+                        <textarea id="storage-data" placeholder='{"message": "Hello World", "timestamp": "2024-01-01"}' rows="3">{"message": "Hello HoloSphere!", "timestamp": "2024-01-01", "author": "Demo User"}</textarea>
+                    </div>
+                    <div class="control-row">
+                        <button onclick="storeData()">Store Data</button>
+                        <button onclick="retrieveData()">Retrieve All</button>
+                        <button onclick="clearData()">Clear All</button>
+                    </div>
+                </div>
+                <div class="output" id="storage-output"></div>
+            </div>
+
+            <!-- Holograms (References) -->
+            <div class="demo-section holograms">
+                <h2>Holograms & References</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Source Data Location</label>
+                        <div class="control-row">
+                            <input type="text" id="hologram-source-holon" placeholder="Source Holon" value="data-source">
+                            <input type="text" id="hologram-source-lens" placeholder="Source Lens" value="content">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Target Location</label>
+                        <div class="control-row">
+                            <input type="text" id="hologram-target-holon" placeholder="Target Holon" value="data-target">
+                            <input type="text" id="hologram-target-lens" placeholder="Target Lens" value="content">
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <button onclick="createHologramDemo()">Create Hologram</button>
+                        <button onclick="resolveHologramDemo()">Resolve Reference</button>
+                    </div>
+                </div>
+                <div class="output" id="hologram-output"></div>
+            </div>
+
+            <!-- Federation -->
+            <div class="demo-section federation">
+                <h2>Federation & Propagation</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Federation Setup</label>
+                        <div class="federation-controls">
+                            <input type="text" id="fed-space1" placeholder="Space 1 ID" value="space-alpha">
+                            <input type="text" id="fed-space2" placeholder="Space 2 ID" value="space-beta">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Propagation Test</label>
+                        <div class="control-row">
+                            <input type="text" id="prop-holon" placeholder="Holon" value="space-alpha">
+                            <input type="text" id="prop-lens" placeholder="Lens" value="shared-data">
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <button onclick="createFederation()">Create Federation</button>
+                        <button onclick="testPropagation()">Test Propagation</button>
+                        <button onclick="getFederation()">Get Federation Info</button>
+                    </div>
+                </div>
+                <div class="output" id="federation-output"></div>
+            </div>
+
+            <!-- Real-time Subscriptions -->
+            <div class="demo-section subscriptions">
+                <h2>Real-time Subscriptions</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Subscription Target</label>
+                        <div class="control-row">
+                            <input type="text" id="sub-holon" placeholder="Holon to Watch" value="test-holon">
+                            <input type="text" id="sub-lens" placeholder="Lens to Watch" value="messages">
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <button onclick="startSubscription()" id="sub-btn">Start Subscription</button>
+                        <button onclick="triggerUpdate()">Trigger Update</button>
+                        <button onclick="clearSubscriptionLog()">Clear Log</button>
+                    </div>
+                </div>
+                <div class="subscription-log" id="subscription-log">
+                    <div class="log-entry">Subscription log will appear here...</div>
+                </div>
+            </div>
+
+            <!-- Compute Operations -->
+            <div class="demo-section compute">
+                <h2>Compute & Analysis</h2>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Hierarchy Analysis</label>
+                        <div class="control-row">
+                            <input type="text" id="compute-holon" placeholder="Starting Holon" value="">
+                            <select id="compute-operation">
+                                <option value="summarize">Summarize</option>
+                                <option value="aggregate">Aggregate</option>
+                                <option value="concatenate">Concatenate</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="control-row">
+                        <button onclick="runCompute()">Run Compute</button>
+                        <button onclick="generateDemoHolon()">Generate Demo Holon</button>
+                    </div>
+                </div>
+                <div class="output" id="compute-output"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load HoloSphere Bundle -->
+    <script src="https://unpkg.com/holosphere@1.1.14/holosphere-bundle.js"></script>
+    
+    <script>
+        let hs;
+        let currentSubscription = null;
+        let subscriptionActive = false;
+
+        // Initialize HoloSphere
+        async function initHoloSphere() {
+            try {
+                hs = new HoloSphere('holosphere-demo');
+                updateStatus('ready', '✅ HoloSphere Ready');
+                log('geospatial-output', 'HoloSphere initialized successfully!', 'success');
+            } catch (error) {
+                updateStatus('error', '❌ HoloSphere Failed');
+                log('geospatial-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        function updateStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = `status ${type}`;
+            status.textContent = message;
+        }
+
+        function log(outputId, message, type = 'info') {
+            const output = document.getElementById(outputId);
+            output.className = `output ${type}`;
+            if (typeof message === 'object') {
+                output.innerHTML = `<pre>${JSON.stringify(message, null, 2)}</pre>`;
+            } else {
+                output.textContent = message;
+            }
+        }
+
+        // Geospatial Operations
+        async function getHolon() {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lng = parseFloat(document.getElementById('lng').value);
+            const resolution = parseInt(document.getElementById('resolution').value);
+
+            try {
+                const holon = await hs.getHolon(lat, lng, resolution);
+                log('geospatial-output', `Holon ID: ${holon}`, 'success');
+            } catch (error) {
+                log('geospatial-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function getScalespace() {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lng = parseFloat(document.getElementById('lng').value);
+
+            try {
+                const scalespace = hs.getScalespace(lat, lng);
+                log('geospatial-output', {
+                    coordinates: { lat, lng },
+                    scalespace: scalespace
+                }, 'success');
+            } catch (error) {
+                log('geospatial-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Data Storage Operations
+        async function storeData() {
+            const holon = document.getElementById('storage-holon').value;
+            const lens = document.getElementById('storage-lens').value;
+            const dataText = document.getElementById('storage-data').value;
+
+            try {
+                const data = JSON.parse(dataText);
+                data.id = data.id || hs.generateId();
+                data.timestamp = new Date().toISOString();
+                
+                const result = await hs.put(holon, lens, data);
+                log('storage-output', {
+                    message: 'Data stored successfully!',
+                    id: data.id,
+                    result: result
+                }, 'success');
+            } catch (error) {
+                log('storage-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function retrieveData() {
+            const holon = document.getElementById('storage-holon').value;
+            const lens = document.getElementById('storage-lens').value;
+
+            try {
+                const data = await hs.getAll(holon, lens);
+                log('storage-output', {
+                    message: `Retrieved ${data.length} items`,
+                    data: data
+                }, 'success');
+            } catch (error) {
+                log('storage-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function clearData() {
+            const holon = document.getElementById('storage-holon').value;
+            const lens = document.getElementById('storage-lens').value;
+
+            try {
+                const result = await hs.deleteAll(holon, lens);
+                log('storage-output', `All data cleared: ${result}`, 'success');
+            } catch (error) {
+                log('storage-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Hologram Operations
+        async function createHologramDemo() {
+            const sourceHolon = document.getElementById('hologram-source-holon').value;
+            const sourceLens = document.getElementById('hologram-source-lens').value;
+            const targetHolon = document.getElementById('hologram-target-holon').value;
+            const targetLens = document.getElementById('hologram-target-lens').value;
+
+            try {
+                // First create some source data
+                const sourceData = {
+                    id: hs.generateId(),
+                    title: 'Original Data',
+                    content: 'This is the original data that will be referenced',
+                    timestamp: new Date().toISOString()
+                };
+
+                await hs.put(sourceHolon, sourceLens, sourceData);
+
+                // Create a hologram reference
+                const hologram = hs.createHologram(sourceHolon, sourceLens, sourceData);
+                await hs.put(targetHolon, targetLens, hologram);
+
+                log('hologram-output', {
+                    message: 'Hologram created successfully!',
+                    sourceData: sourceData,
+                    hologram: hologram,
+                    location: `${targetHolon}/${targetLens}/${hologram.id}`
+                }, 'success');
+            } catch (error) {
+                log('hologram-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function resolveHologramDemo() {
+            const targetHolon = document.getElementById('hologram-target-holon').value;
+            const targetLens = document.getElementById('hologram-target-lens').value;
+
+            try {
+                const allData = await hs.getAll(targetHolon, targetLens);
+                
+                if (allData.length === 0) {
+                    log('hologram-output', 'No data found. Create a hologram first.', 'info');
+                    return;
+                }
+
+                const results = [];
+                for (const item of allData) {
+                    if (hs.isHologram(item)) {
+                        const resolved = await hs.resolveHologram(item);
+                        results.push({
+                            original: item,
+                            resolved: resolved,
+                            isHologram: true
+                        });
+                    } else {
+                        results.push({
+                            data: item,
+                            isHologram: false
+                        });
+                    }
+                }
+
+                log('hologram-output', {
+                    message: 'Hologram resolution complete',
+                    results: results
+                }, 'success');
+            } catch (error) {
+                log('hologram-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Federation Operations
+        async function createFederation() {
+            const space1 = document.getElementById('fed-space1').value;
+            const space2 = document.getElementById('fed-space2').value;
+
+            try {
+                const result = await hs.federate(space1, space2, null, null, true, {
+                    federate: ['shared-data', 'announcements'],
+                    notify: ['shared-data', 'announcements']
+                });
+
+                log('federation-output', {
+                    message: 'Federation created successfully!',
+                    spaces: [space1, space2],
+                    result: result
+                }, 'success');
+            } catch (error) {
+                log('federation-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testPropagation() {
+            const holon = document.getElementById('prop-holon').value;
+            const lens = document.getElementById('prop-lens').value;
+
+            try {
+                const testData = {
+                    id: hs.generateId(),
+                    message: 'Test propagation data',
+                    timestamp: new Date().toISOString(),
+                    propagationTest: true
+                };
+
+                const result = await hs.put(holon, lens, testData);
+                
+                log('federation-output', {
+                    message: 'Data stored with propagation',
+                    data: testData,
+                    propagationResult: result.propagationResult
+                }, 'success');
+            } catch (error) {
+                log('federation-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function getFederation() {
+            const space1 = document.getElementById('fed-space1').value;
+
+            try {
+                const fedInfo = await hs.getFederation(space1);
+                log('federation-output', {
+                    message: 'Federation info retrieved',
+                    space: space1,
+                    federationInfo: fedInfo
+                }, 'success');
+            } catch (error) {
+                log('federation-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Subscription Operations
+        async function startSubscription() {
+            const holon = document.getElementById('sub-holon').value;
+            const lens = document.getElementById('sub-lens').value;
+            const btn = document.getElementById('sub-btn');
+
+            if (subscriptionActive) {
+                // Stop subscription
+                if (currentSubscription) {
+                    currentSubscription.unsubscribe();
+                    currentSubscription = null;
+                }
+                subscriptionActive = false;
+                btn.textContent = 'Start Subscription';
+                addLogEntry('Subscription stopped');
+                return;
+            }
+
+            try {
+                currentSubscription = await hs.subscribe(holon, lens, (data) => {
+                    addLogEntry(`Data received: ${JSON.stringify(data)}`);
+                });
+
+                subscriptionActive = true;
+                btn.textContent = 'Stop Subscription';
+                addLogEntry(`Subscription started for ${holon}/${lens}`);
+            } catch (error) {
+                addLogEntry(`Subscription error: ${error.message}`);
+            }
+        }
+
+        async function triggerUpdate() {
+            const holon = document.getElementById('sub-holon').value;
+            const lens = document.getElementById('sub-lens').value;
+
+            try {
+                const updateData = {
+                    id: hs.generateId(),
+                    message: 'Subscription test update',
+                    timestamp: new Date().toISOString(),
+                    random: Math.random()
+                };
+
+                await hs.put(holon, lens, updateData);
+                addLogEntry('Update triggered - data stored');
+            } catch (error) {
+                addLogEntry(`Update error: ${error.message}`);
+            }
+        }
+
+        function addLogEntry(message) {
+            const log = document.getElementById('subscription-log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearSubscriptionLog() {
+            const log = document.getElementById('subscription-log');
+            log.innerHTML = '<div class="log-entry">Subscription log cleared...</div>';
+        }
+
+        // Compute Operations
+        async function generateDemoHolon() {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lng = parseFloat(document.getElementById('lng').value);
+            const resolution = parseInt(document.getElementById('resolution').value);
+
+            try {
+                const holon = await hs.getHolon(lat, lng, resolution);
+                document.getElementById('compute-holon').value = holon;
+                
+                // Store some demo data in this holon
+                const demoData = [
+                    { id: hs.generateId(), value: 10, category: 'A', description: 'First item' },
+                    { id: hs.generateId(), value: 25, category: 'B', description: 'Second item' },
+                    { id: hs.generateId(), value: 15, category: 'A', description: 'Third item' }
+                ];
+
+                for (const data of demoData) {
+                    await hs.put(holon, 'analytics', data);
+                }
+
+                log('compute-output', {
+                    message: 'Demo holon generated with sample data',
+                    holon: holon,
+                    sampleData: demoData
+                }, 'success');
+            } catch (error) {
+                log('compute-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function runCompute() {
+            const holon = document.getElementById('compute-holon').value;
+            const operation = document.getElementById('compute-operation').value;
+
+            if (!holon) {
+                log('compute-output', 'Please generate a demo holon first', 'info');
+                return;
+            }
+
+            try {
+                const options = {
+                    operation: operation,
+                    fields: ['value'],
+                    targetField: 'computed_result'
+                };
+
+                const result = await hs.compute(holon, 'analytics', options);
+                
+                log('compute-output', {
+                    message: 'Compute operation completed',
+                    holon: holon,
+                    operation: operation,
+                    result: result
+                }, 'success');
+            } catch (error) {
+                log('compute-output', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', initHoloSphere);
+    </script>
+</body>
+</html>
