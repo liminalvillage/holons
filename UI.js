@@ -143,10 +143,10 @@ class UI {
 
       // Merge and deduplicate by quest id (if needed)
       const allQuests = [...localQuests, ...federatedQuests];
-      // Optionally deduplicate by id if federated and local overlap
-      // const uniqueQuests = Array.from(new Map(allQuests.map(q => [q.id, q])).values());
+      // Deduplicate by id if federated and local overlap
+      const uniqueQuests = Array.from(new Map(allQuests.map(q => [q.id, q])).values());
 
-      return allQuests;
+      return uniqueQuests;
     } catch (error) {
       console.error('Error getting federated quests:', error);
       return [];
@@ -255,41 +255,84 @@ class UI {
 
     for (let i = 0; i < sortedUsers.length; i++) {
       const user = sortedUsers[i]
+      const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
+      const scoreClass = i < 3 ? 'top-performer' : '';
+      
       // Score is already calculated and part of the user object in sortedUsers
-      const row = `<tr>
-        <th scope="row">${i + 1}</th>
-        <th>${getDisplayName(user)}</th>
-        <th>${user.initiated && user.initiated.length || 0}</th>
-        <th>${user.completed && user.completed.length || 0}</th>
-        <th>${user.sent || 0}</th>
-        <th>${user.received || 0}</th>
-        <th>${user.score.toFixed(2)}</th> 
+      const row = `<tr class="${scoreClass}">
+        <td class="rank-cell">
+          <div class="rank-container">
+            <span class="rank-icon">${rankIcon}</span>
+          </div>
+        </td>
+        <td class="name-cell">
+          <div class="user-info">
+            <span class="user-name">${getDisplayName(user)}</span>
+          </div>
+        </td>
+        <td class="stat-cell">
+          <div class="stat-container">
+            <span class="stat-number">${user.initiated && user.initiated.length || 0}</span>
+            <span class="stat-label">tasks</span>
+          </div>
+        </td>
+        <td class="stat-cell">
+          <div class="stat-container">
+            <span class="stat-number">${user.completed && user.completed.length || 0}</span>
+            <span class="stat-label">done</span>
+          </div>
+        </td>
+        <td class="stat-cell">
+          <div class="stat-container">
+            <span class="stat-number">${user.sent || 0}</span>
+            <span class="stat-label">sent</span>
+          </div>
+        </td>
+        <td class="stat-cell">
+          <div class="stat-container">
+            <span class="stat-number">${user.received || 0}</span>
+            <span class="stat-label">received</span>
+          </div>
+        </td>
+        <td class="score-cell">
+          <div class="score-container">
+            <span class="score-number">${user.score.toFixed(2)}</span>
+            <span class="score-label">pts</span>
+          </div>
+        </td>
       </tr>`
 
       rows.push(row)
     }
 
-    const element = `<table>
-    <caption>${i18next.t('Rank', { lng: language })}</caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('rank', { lng: language })}</th>
-            <th scope="col">${i18next.t('name', { lng: language })}</th>
-            <th scope="col">${i18next.t('tasksinitiated', { lng: language })}</th>
-            <th scope="col">${i18next.t('taskscompleted', { lng: language })}</th>
-            <th scope="col">${i18next.t('sent', { lng: language })}</th>
-            <th scope="col">${i18next.t('received', { lng: language })}</th>
-            <th scope="col">${i18next.t('score', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`
+    const element = `<div class="modern-table-container">
+      <div class="table-header">
+        <h2 class="table-title">🏆 ${i18next.t('Rank', { lng: language })}</h2>
+        <div class="table-subtitle">${sortedUsers.length} ${i18next.t('participants', { lng: language, defaultValue: 'participants' })}</div>
+      </div>
+      <div class="table-wrapper">
+        <table class="modern-table">
+          <thead>
+            <tr>
+              <th class="rank-header">${i18next.t('rank', { lng: language })}</th>
+              <th class="name-header">${i18next.t('name', { lng: language })}</th>
+              <th class="stat-header">📝 ${i18next.t('tasksinitiated', { lng: language })}</th>
+              <th class="stat-header">✅ ${i18next.t('taskscompleted', { lng: language })}</th>
+              <th class="stat-header">📤 ${i18next.t('sent', { lng: language })}</th>
+              <th class="stat-header">📥 ${i18next.t('received', { lng: language })}</th>
+              <th class="score-header">⭐ ${i18next.t('score', { lng: language })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.join('\n')}
+          </tbody>
+        </table>
+      </div>
+    </div>`
 
     const path = './images/rank' + chatID + '.png'
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, 'table')
+    await this.screenshotHtml(html, path, '.modern-table-container')
     return path
   }
   async bulletinboard(ctx) {
@@ -585,55 +628,101 @@ class UI {
     const rows = [];
     for (const quest of quests) {
       let provenanceText = '';
+      let provenanceIcon = '🏠';
+      
       if (quest._meta && quest._meta.origin_chat_name) {
         provenanceText = quest._meta.origin_chat_name;
+        provenanceIcon = '🌐';
       } else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
         try {
           const nameFromUtil = await utils.getHolonName(this.db, quest.chat, ctx);
           if (nameFromUtil && nameFromUtil.trim() !== '') { // Use if non-empty
             provenanceText = nameFromUtil;
+            provenanceIcon = '🔗';
           } else { // Fallback if util function gives empty/null/undefined
             provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`;
+            provenanceIcon = '🔗';
           }
         } catch (e) {
           console.warn(`Could not get holon name for chat ${quest.chat}:`, e);
           provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`; // Fallback on error
+          provenanceIcon = '🔗';
         }
       } else {
         provenanceText = i18next.t('local_provenance', { lng: language, defaultValue: 'Local' });
+        provenanceIcon = '🏠';
       }
 
-      const row = `<tr>
-          <th scope="row">${quest.id}</th>
-          <th>${quest.title}</th>
-          <th>${getDisplayName(quest.initiator)}</th>
-          <th>${provenanceText}</th>
-          <th>${quest.participants ? quest.participants.length : 0}</th>
-          <th>${quest.appreciation.length}</th>
+      const statusIcon = quest.status === 'completed' ? '✅' : quest.status === 'ongoing' ? '🔄' : '📅';
+      const participantCount = quest.participants ? quest.participants.length : 0;
+      const appreciationCount = quest.appreciation ? quest.appreciation.length : 0;
+
+      const row = `<tr class="quest-row">
+          <td class="quest-id-cell">
+            <div class="quest-id-container">
+              <span class="status-icon">${statusIcon}</span>
+              <span class="quest-id">#${quest.id}</span>
+            </div>
+          </td>
+          <td class="quest-title-cell">
+            <div class="quest-title-container">
+              <span class="quest-title">${quest.title}</span>
+            </div>
+          </td>
+          <td class="initiator-cell">
+            <div class="initiator-info">
+              <span class="initiator-name">${getDisplayName(quest.initiator)}</span>
+            </div>
+          </td>
+          <td class="provenance-cell">
+            <div class="provenance-info">
+              <span class="provenance-icon">${provenanceIcon}</span>
+              <span class="provenance-text">${provenanceText}</span>
+            </div>
+          </td>
+          <td class="stat-cell">
+            <div class="participant-info">
+              <span class="participant-icon">👥</span>
+              <span class="participant-count">${participantCount}</span>
+            </div>
+          </td>
+          <td class="stat-cell">
+            <div class="appreciation-info">
+              <span class="appreciation-icon">👏</span>
+              <span class="appreciation-count">${appreciationCount}</span>
+            </div>
+          </td>
         </tr>`;
       rows.push(row);
     }
 
-    const element = `<table>
-    <caption>${i18next.t('Active Quests', { lng: language })}</caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('ID', { lng: language })}</th>
-            <th scope="col">${i18next.t('Quest', { lng: language })}</th>
-            <th scope="col">${i18next.t('Initiator', { lng: language })}</th>
-            <th scope="col">${i18next.t('provenance', { lng: language })}</th>
-            <th scope="col">${i18next.t('People', { lng: language })}</th>
-            <th scope="col">${i18next.t('Appreciators', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`;
+    const element = `<div class="modern-table-container">
+      <div class="table-header">
+        <h2 class="table-title">🎯 ${i18next.t('Active Quests', { lng: language })}</h2>
+        <div class="table-subtitle">${quests.length} ${i18next.t('active_quests', { lng: language, defaultValue: 'active quests' })}</div>
+      </div>
+      <div class="table-wrapper">
+        <table class="modern-table quests-table">
+          <thead>
+            <tr>
+              <th class="id-header">${i18next.t('ID', { lng: language })}</th>
+              <th class="quest-header">${i18next.t('Quest', { lng: language })}</th>
+              <th class="initiator-header">👤 ${i18next.t('Initiator', { lng: language })}</th>
+              <th class="provenance-header">🌍 ${i18next.t('provenance', { lng: language })}</th>
+              <th class="people-header">👥 ${i18next.t('People', { lng: language })}</th>
+              <th class="appreciation-header">👏 ${i18next.t('Appreciators', { lng: language })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.join('\n')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
 
     const path = './images/quests' + chatID + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
-    await this.screenshotHtml(html, path, 'table');
+    await this.screenshotHtml(html, path, '.modern-table-container');
     return path;
   }
 
@@ -676,30 +765,46 @@ class UI {
     const rows = []
     for (let i = 0; i < needs.length; i++) {
       const request = needs[i]
-      const row = `<tr>
-          <th>${getDisplayName(request.initiator)}</th>
-          <th>${request.title}</th>
+      const row = `<tr class="request-row">
+          <td class="person-cell">
+            <div class="person-info">
+              <span class="person-icon">🙋‍♂️</span>
+              <span class="person-name">${getDisplayName(request.initiator)}</span>
+            </div>
+          </td>
+          <td class="request-cell">
+            <div class="request-info">
+              <span class="request-title">${request.title}</span>
+            </div>
+          </td>
         </tr>`
 
       rows.push(row)
     }
 
-    const element = `<table>
-    <caption>${i18next.t('Active Requests', { lng: language })}</caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('Person', { lng: language })}</th>
-            <th scope="col">${i18next.t('Request', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`
+    const element = `<div class="modern-table-container">
+      <div class="table-header">
+        <h2 class="table-title">🙏 ${i18next.t('Active Requests', { lng: language })}</h2>
+        <div class="table-subtitle">${needs.length} ${i18next.t('open_requests', { lng: language, defaultValue: 'open requests' })}</div>
+      </div>
+      <div class="table-wrapper">
+        <table class="modern-table requests-table">
+          <thead>
+            <tr>
+              <th class="person-header">👤 ${i18next.t('Person', { lng: language })}</th>
+              <th class="request-header">📝 ${i18next.t('Request', { lng: language })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.join('\n')}
+          </tbody>
+        </table>
+      </div>
+    </div>`
 
     const path = './images/requests' + chatID + '.png'
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, 'table')
+    await this.screenshotHtml(html, path, '.modern-table-container')
     return path
   }
 
@@ -710,30 +815,46 @@ class UI {
     const rows = []
     for (let i = 0; i < offers.length; i++) {
       const offer = offers[i]
-      const row = `<tr>
-          <th>${getDisplayName(offer.initiator)}</th>
-          <th>${offer.title}</th>
+      const row = `<tr class="offer-row">
+          <td class="person-cell">
+            <div class="person-info">
+              <span class="person-icon">🤝</span>
+              <span class="person-name">${getDisplayName(offer.initiator)}</span>
+            </div>
+          </td>
+          <td class="offer-cell">
+            <div class="offer-info">
+              <span class="offer-title">${offer.title}</span>
+            </div>
+          </td>
         </tr>`
 
       rows.push(row)
     }
 
-    const element = `<table>
-    <caption>${i18next.t('Active Offers', { lng: language })}</caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('Person', { lng: language })}</th>
-            <th scope="col">${i18next.t('Offer', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`
+    const element = `<div class="modern-table-container">
+      <div class="table-header">
+        <h2 class="table-title">🎁 ${i18next.t('Active Offers', { lng: language })}</h2>
+        <div class="table-subtitle">${offers.length} ${i18next.t('available_offers', { lng: language, defaultValue: 'available offers' })}</div>
+      </div>
+      <div class="table-wrapper">
+        <table class="modern-table offers-table">
+          <thead>
+            <tr>
+              <th class="person-header">👤 ${i18next.t('Person', { lng: language })}</th>
+              <th class="offer-header">🎁 ${i18next.t('Offer', { lng: language })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.join('\n')}
+          </tbody>
+        </table>
+      </div>
+    </div>`
 
     const path = './images/offers' + chatID + '.png'
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, 'table')
+    await this.screenshotHtml(html, path, '.modern-table-container')
     return path
   }
 

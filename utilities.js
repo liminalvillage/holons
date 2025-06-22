@@ -24,7 +24,7 @@ export const getChatName = async (ctx, chatID) => {
   } catch (err) {
     // Handle specific "chat not found" error more gracefully
     if (err.response && err.response.error_code === 400 && err.response.description && err.response.description.includes('chat not found')) {
-      console.warn(`Chat not found for ID ${chatID}: ${err.response.description}`);
+      // console.warn(`Chat not found for ID ${chatID}: ${err.response.description}`);
       return null; // Return null to indicate chat not accessible
     } else {
     console.error('Error getting chat name:', err);
@@ -164,8 +164,8 @@ export const getHolonName = async (db, holonId, ctx = null) => {
 
   try {
     // Attempt to get settings for this holonId
-    // Assuming settings are stored at holon: holonId, lens: 'settings', key: holonId
-    const settings = await db.get(holonId.toString(), 'settings', holonId.toString());
+    // Settings are stored at chatID + '/settings'
+    const settings = await db.get(holonId.toString() + '/settings', holonId.toString());
     if (settings && settings.name) {
       return settings.name;
     }
