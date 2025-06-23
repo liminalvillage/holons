@@ -61,7 +61,10 @@ class UI {
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--no-first-run',
-            '--disable-images' // Skip loading images for faster performance
+            '--disable-images', // Skip loading images for faster performance
+            '--font-render-hinting=none',
+            '--disable-font-subpixel-positioning',
+            '--disable-features=VizDisplayCompositor'
           ]
         });
         console.log('Browser initialized successfully');
@@ -996,7 +999,10 @@ class UI {
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--no-first-run',
-            '--disable-images' // Skip loading images for faster performance
+            '--disable-images', // Skip loading images for faster performance
+            '--font-render-hinting=none',
+            '--disable-font-subpixel-positioning',
+            '--disable-features=VizDisplayCompositor'
           ]
         });
       }
