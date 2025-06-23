@@ -210,6 +210,15 @@ class HolonsBot {
     this.quests = new Quests(this.telebot, this.db, this.users, this.settings);
     this.quests.setChecklists(this.checklists);
     this.checklists.setQuestInstance(this.quests);
+    
+    // Connect UI instance to Quests for image generation
+    if (this.ui && this.quests && typeof this.quests.setUIInstance === 'function') {
+      this.quests.setUIInstance(this.ui);
+      console.log("UI instance successfully passed to Quests instance for image generation.");
+    } else {
+      console.error("Failed to pass UI instance to Quests. Check if instances and method exist.");
+    }
+    
     this.capitalGame = new CapitalGame(this.telebot, this.settings);
 
     this.scheduler = new Scheduler(this.telebot, this.db, this.quests, this.settings);

@@ -50,14 +50,14 @@ class UI {
   // Get optimized Puppeteer launch options for emoji support
   getPuppeteerLaunchOptions() {
     return {
-      headless: true,
-      protocolTimeout: 10000, // Fast timeout - 10 seconds
-      args: [
-        '--no-sandbox', 
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
+          headless: true,
+          protocolTimeout: 10000, // Fast timeout - 10 seconds
+          args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
         '--disable-images', // Skip loading images for faster performance
         // Emoji and font rendering support
         '--font-render-hinting=none',
@@ -348,13 +348,13 @@ class UI {
     if (!this.db) return
     
     try {
-      let chatID = ctx.message.chat.id
-      let language = await this.settings.getLanguage(chatID)
-      
+    let chatID = ctx.message.chat.id
+    let language = await this.settings.getLanguage(chatID)
+    
       // Wait for users and quests to be retrieved using getAll
-      let users = await this.getFederatedUsers(chatID)
-      let quests = await this.getFederatedQuests(chatID)
-      
+    let users = await this.getFederatedUsers(chatID)
+    let quests = await this.getFederatedQuests(chatID)
+    
       // Wait for the table image to be generated
       const path = await this.getBulletinTable(users, quests, chatID);
       
@@ -482,15 +482,15 @@ class UI {
     if (!this.db) return
     
     try {
-      // Get a list of incomplete quests
-      let chatID = ctx.message.chat.id
-      const language = await this.settings.getLanguage(chatID)
-      const isTopic = ctx.message.is_topic_message;
-      const threadId = isTopic ? ctx.message.message_thread_id : null;
+    // Get a list of incomplete quests
+    let chatID = ctx.message.chat.id
+    const language = await this.settings.getLanguage(chatID)
+    const isTopic = ctx.message.is_topic_message;
+    const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Wait for all quests to be retrieved using getAll (via getFederatedQuests)
-      let quests = await this.getFederatedQuests(chatID)
-      
+    let quests = await this.getFederatedQuests(chatID)
+    
       // Ensure we have a valid array before filtering
       if (!Array.isArray(quests)) {
         quests = [];
@@ -502,10 +502,10 @@ class UI {
         (quest.status === 'ongoing' || quest.status === 'scheduled')
       )
 
-      // If in a topic, filter further by message_thread_id
-      if (isTopic && threadId) {
-        quests = quests.filter(quest => quest.message_thread_id === threadId);
-      }
+    // If in a topic, filter further by message_thread_id
+    if (isTopic && threadId) {
+      quests = quests.filter(quest => quest.message_thread_id === threadId);
+    }
 
       // Wait for the table image to be generated
       const path = await this.getQuestsTable(quests, chatID, ctx);
@@ -544,13 +544,13 @@ class UI {
     if (!this.db) return
     
     try {
-      // Get a list of requests
-      let chatID = ctx.message.chat.id
-      const language = await this.settings.getLanguage(chatID)
+    // Get a list of requests
+    let chatID = ctx.message.chat.id
+    const language = await this.settings.getLanguage(chatID)
 
       // Get requests from quests collection using getAll and wait for results
-      let allQuests = await this.db.getAll(chatID + '/quests') || []
-      let requests = allQuests.filter(quest => quest.type === 'request')
+    let allQuests = await this.db.getAll(chatID + '/quests') || []
+    let requests = allQuests.filter(quest => quest.type === 'request')
 
       // Wait for the table image to be generated
       const path = await this.getRequestsTable(requests, chatID);
@@ -580,13 +580,13 @@ class UI {
     if (!this.db) return
     
     try {
-      // Get a list of offers
-      let chatID = ctx.message.chat.id
-      const language = await this.settings.getLanguage(chatID)
+    // Get a list of offers
+    let chatID = ctx.message.chat.id
+    const language = await this.settings.getLanguage(chatID)
 
       // Get offers from quests collection using getAll and wait for results
-      let allQuests = await this.db.getAll(chatID + '/quests') || []
-      let offers = allQuests.filter(quest => quest.type === 'offer')
+    let allQuests = await this.db.getAll(chatID + '/quests') || []
+    let offers = allQuests.filter(quest => quest.type === 'offer')
 
       // Wait for the table image to be generated
       const path = await this.getOffersTable(offers, chatID);
@@ -612,19 +612,310 @@ class UI {
     }
   }
 
-  async getQuestImage(quest, chatID) {
-    const language = await this.settings.getLanguage(chatID)
+  async getQuestImage(quest, chatID, isHologram = false) {
+    const language = await this.settings.getLanguage(chatID);
+    
+    // Check if this is a hologram by examining the quest's origin
+    if (!isHologram && quest.chat && quest.chat.toString() !== chatID.toString()) {
+      isHologram = true;
+    }
+    // Also check for meta information indicating it's from another chat
+    if (!isHologram && quest._meta && quest._meta.origin_chat_name) {
+      isHologram = true;
+    }
+    
+    // Helper function to format date
+    const formatDate = async (timestamp) => {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      let chatTimezone = 'UTC'; // Default fallback
+      
+      try {
+        // Get timezone setting if available
+        if (this.settings && this.settings.getTimezone) {
+          chatTimezone = await this.settings.getTimezone(chatID) || 'UTC';
+          if (chatTimezone === 'Not set') chatTimezone = 'UTC';
+        }
+        
+        return date.toLocaleDateString(language, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: chatTimezone,
+          timeZoneName: 'short'
+        });
+      } catch (e) {
+        // Fallback to simple format if timezone handling fails
+        return date.toLocaleDateString(language);
+      }
+    };
+
+    // Status icon mapping
+    const statusIcons = {
+      'ongoing': '🔄',
+      'completed': '✅',
+      'scheduled': '📅',
+      'stopped': '🛑'
+    };
+
+    // Type icon mapping
+    const typeIcons = {
+      'task': '📋',
+      'quest': '⚔️',
+      'event': '📅',
+      'proposal': '💭',
+      'offer': '🎁',
+      'request': '🙏',
+      'todo': '✔️',
+      'mission': '🎯',
+      'hologram': '👻',
+      'recurring': '🔄'
+    };
+
+    const statusIcon = statusIcons[quest.status] || '❓';
+    const typeIcon = typeIcons[quest.type] || '📝';
+
+    // Build the HTML structure
+    let infoRows = '';
+
+    // Header with type, status badges, and initiator
+    infoRows += `
+      <div class="quest-header">
+        <span class="quest-type">${typeIcon} ${quest.type.charAt(0).toUpperCase() + quest.type.slice(1)}</span>
+        <span class="quest-initiator-name">by ${getDisplayName(quest.initiator)}</span>
+        <span class="quest-status">${statusIcon} ${quest.status}</span>
+      </div>
+    `;
+
+    // Prominent title section
+    infoRows += `
+      <div class="quest-title">${quest.title}</div>
+    `;
+
+    // Description if available
+    if (quest.description) {
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">📝</div>
+          <div class="section-content">${quest.description}</div>
+        </div>
+      `;
+    }
+
+    // Recurring info
+    if (quest.frequency !== null && quest.frequency !== undefined) {
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">🔄</div>
+          <div class="section-content">${i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency })}</div>
+        </div>
+      `;
+    }
+
+    // Category if available
+    if (quest.category) {
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">📑</div>
+          <div class="section-content">${quest.category}</div>
+        </div>
+      `;
+    }
+
+    // Dependencies if available
+    if (quest.dependencies && quest.dependencies.length > 0) {
+      let depTitles = [];
+      for (const depId of quest.dependencies) {
+        try {
+          const depQuest = await this.db.get(quest.chat + '/quests', depId.toString());
+          if (depQuest) {
+            depTitles.push(depQuest.title);
+          }
+        } catch (error) {
+          console.error(`Error getting dependency ${depId}:`, error);
+        }
+      }
+      if (depTitles.length > 0) {
+        infoRows += `
+          <div class="quest-section">
+            <div class="section-label">🔗</div>
+            <div class="section-content">${depTitles.join(', ')}</div>
+          </div>
+        `;
+      }
+    }
+
+    // Checklist progress if available
+    if (quest.checklistId && this.checklistsInstance) {
+      try {
+        const checklist = await this.db.get(quest.chat + '/checklists', quest.checklistId);
+        if (checklist && checklist.items.length > 0) {
+          const completed = checklist.items.filter(item => item.checked).length;
+          infoRows += `
+            <div class="quest-section">
+              <div class="section-label">📋</div>
+              <div class="section-content">${completed}/${checklist.items.length} completed</div>
+            </div>
+          `;
+        }
+      } catch (error) {
+        console.error('Error getting checklist:', error);
+      }
+    }
+
+    // Participants
+    if (quest.participants && quest.participants.length > 0) {
+      const participantBadges = quest.participants.map(u => 
+        `<span class="participant-name">${getDisplayName(u)}</span>`
+      ).join(' ');
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">👥</div>
+          <div class="section-content participants">${participantBadges}</div>
+        </div>
+      `;
+    }
+
+    // Time tracking if available
+    if (quest.timeTracking && Object.keys(quest.timeTracking).length > 0) {
+      let timeEntries = [];
+      for (const [userId, hours] of Object.entries(quest.timeTracking)) {
+        if (hours > 0) {
+          const user = quest.participants.find(p => p.id === parseInt(userId)) || quest.initiator;
+          timeEntries.push(`${getDisplayName(user)}: ${hours.toFixed(2)}h`);
+        }
+      }
+      if (timeEntries.length > 0) {
+        infoRows += `
+          <div class="quest-section">
+            <div class="section-label">⏰</div>
+            <div class="section-content">${timeEntries.join('<br/>')}</div>
+          </div>
+        `;
+      }
+    }
+
+    // Appreciation
+    if (quest.appreciation && quest.appreciation.length > 0) {
+      const appreciationBadges = quest.appreciation.map(u => 
+        `<span class="participant-name">${getDisplayName(u)}</span>`
+      ).join(' ');
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">👍</div>
+          <div class="section-content">${appreciationBadges}</div>
+        </div>
+      `;
+    }
+
+    // Timing information
+    if (quest.when) {
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">📅</div>
+          <div class="section-content">${await formatDate(quest.when)}</div>
+        </div>
+      `;
+    }
+
+    if (quest.until) {
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">🔚</div>
+          <div class="section-content">${await formatDate(quest.until)}</div>
+        </div>
+      `;
+    }
+
+    // Location if available
+    if (quest.where && quest.where.lat) {
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">📍</div>
+          <div class="section-content">${quest.where.lat}, ${quest.where.lon}</div>
+        </div>
+      `;
+    }
+
+    // Stoppers if quest is stopped
+    if (quest.status === "stopped" && quest.stoppers && quest.stoppers.length > 0) {
+      const stopperNames = quest.stoppers.map(u => getDisplayName(u)).join(', ');
+      infoRows += `
+        <div class="quest-section alert">
+          <div class="section-label">🛑</div>
+          <div class="section-content">${stopperNames}</div>
+        </div>
+      `;
+    }
+
+    // Publication status
+    if (quest.published || quest.broadcasted) {
+      let pubStatus = [];
+      if (quest.published) pubStatus.push(`📢 ${i18next.t('published', { lng: language, defaultValue: 'Published' })}`);
+      if (quest.broadcasted) pubStatus.push(`🎭 ${i18next.t('broadcasted', { lng: language, defaultValue: 'Broadcasted' })}`);
+      
+      infoRows += `
+        <div class="quest-section">
+          <div class="section-label">📡</div>
+          <div class="section-content">${pubStatus.join(', ')}</div>
+        </div>
+      `;
+    }
+
+    // Determine CSS classes based on quest status and participation
+    let containerClasses = 'quest-card-container';
+    
+    // Add status class
+    containerClasses += ` ${quest.status}`;
+    
+    // Add participants class if quest has participants
+    if (quest.participants && quest.participants.length > 0) {
+      containerClasses += ' has-participants';
+    }
+    
+    // Add hologram class if this is a hologram quest or explicitly marked as hologram
+    if (quest.type === 'hologram' || isHologram) {
+      containerClasses += ' hologram';
+    }
+
+    // Get hologram source name if it's a hologram
+    let hologramBadge = '';
+    if (isHologram) {
+      let hologramSource = '';
+      if (quest._meta && quest._meta.origin_chat_name) {
+        hologramSource = quest._meta.origin_chat_name;
+      } else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
+        try {
+          const nameFromUtil = await utils.getHolonName(this.db, quest.chat, null);
+          hologramSource = nameFromUtil && nameFromUtil.trim() !== '' ? nameFromUtil : `Holon ${quest.chat}`;
+        } catch (e) {
+          hologramSource = `Holon ${quest.chat}`;
+        }
+      }
+      if (hologramSource) {
+        hologramBadge = `<div class="hologram-badge">📡 ${hologramSource}</div>`;
+      }
+    }
+
     const element = `
-    <table>
-      <tr><th>${i18next.t('quest_image_quest_header', { lng: language, defaultValue: 'Quest:' })}:</th><td>${quest.title}</td></tr>
-      <tr><th>${i18next.t('quest_image_initiator_header', { lng: language, defaultValue: 'Initiator:' })}:</th><td>${getDisplayName(quest.initiator)}</td></tr>
-      <tr><th>${i18next.t('quest_image_joined_by_header', { lng: language, defaultValue: 'Joined by:' })}:</th><td>${[...quest.participants].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
-      <tr><th>${i18next.t('quest_image_appreciated_by_header', { lng: language, defaultValue: 'Appreciated by:' })}:</th><td>${[...quest.appreciation].slice(1).map(u => getDisplayName(u)).join(', ')}</td></tr>
-    <table>`
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    const path = './images/quest' + quest.id + '.png'
-    await this.screenshotHtml(html, path, 'table')
-    return path
+      <div class="${containerClasses}">
+        <div class="quest-card">
+          ${hologramBadge}
+          ${infoRows}
+          <div class="quest-footer">
+            <div class="quest-id">ID: #${quest.id}</div>
+            <div class="quest-date">Created: ${await formatDate(quest.date)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const path = './images/quest' + quest.id + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    await this.screenshotHtml(html, path, '.quest-card-container');
+    return path;
   }
 
   async getBulletinTable(users, quests, chatID) {
@@ -803,85 +1094,73 @@ class UI {
     for (const quest of quests) {
       let provenanceText = '';
       let provenanceIcon = '🏠';
+      let isHologram = false;
       
       if (quest._meta && quest._meta.origin_chat_name) {
         provenanceText = quest._meta.origin_chat_name;
         provenanceIcon = '🌐';
+        isHologram = true;
       } else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
         try {
           const nameFromUtil = await utils.getHolonName(this.db, quest.chat, ctx);
           if (nameFromUtil && nameFromUtil.trim() !== '') { // Use if non-empty
             provenanceText = nameFromUtil;
             provenanceIcon = '🔗';
+            isHologram = true;
           } else { // Fallback if util function gives empty/null/undefined
             provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`;
             provenanceIcon = '🔗';
+            isHologram = true;
           }
         } catch (e) {
           console.warn(`Could not get holon name for chat ${quest.chat}:`, e);
           provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`; // Fallback on error
           provenanceIcon = '🔗';
+          isHologram = true;
         }
       } else {
         provenanceText = i18next.t('local_provenance', { lng: language, defaultValue: 'Local' });
         provenanceIcon = '🏠';
+        isHologram = false;
       }
 
       const statusIcon = quest.status === 'completed' ? '✅' : quest.status === 'ongoing' ? '🔄' : '📅';
       const participantCount = quest.participants ? quest.participants.length : 0;
       const appreciationCount = quest.appreciation ? quest.appreciation.length : 0;
+      
+      // Add hologram class if this is a hologram
+      const hologramClass = isHologram ? ' hologram' : '';
+      const hologramBadge = isHologram ? `<div class="hologram-badge">📡 ${provenanceText}</div>` : '';
 
       const row = `<tr class="quest-row">
-          <td class="quest-id-cell">
-            <div class="quest-id-container">
-              <span class="quest-id">${statusIcon} #${quest.id}</span>
+          <td class="quest-card-row" colspan="4">
+            <div class="quest-card-item${hologramClass}">
+              ${hologramBadge}
+              <div class="quest-header-row">
+                <div class="quest-status-badge ${quest.status}">${statusIcon}</div>
+                <div class="quest-title-main">${quest.title}</div>
+                <div class="quest-stats-mini">
+                  <span class="stat-item">${participantCount}</span>
+                  <span class="stat-item">${appreciationCount}</span>
             </div>
-          </td>
-          <td class="quest-title-cell">
-            <div class="quest-title-container">
-              <span class="quest-title">${quest.title}</span>
             </div>
-          </td>
-          <td class="initiator-cell">
-            <div class="user-info">
-              <div class="user-details">
-                <span class="user-name">${getDisplayName(quest.initiator)}</span>
-                ${quest.initiator && quest.initiator.username ? `<span class="user-handle">@${quest.initiator.username}</span>` : ''}
+              <div class="quest-meta-row">
+                <span class="quest-initiator">by ${getDisplayName(quest.initiator)}</span>
+                <span class="quest-id-small">#${quest.id}</span>
               </div>
-            </div>
-          </td>
-          <td class="provenance-cell">
-            <div class="provenance-info">
-              <span class="provenance-text">${provenanceIcon} ${provenanceText}</span>
-            </div>
-          </td>
-          <td class="stat-cell">
-            <div class="participant-info">
-              <span class="participant-count">👥 ${participantCount}</span>
-            </div>
-          </td>
-          <td class="stat-cell">
-            <div class="appreciation-info">
-              <span class="appreciation-count">👏 ${appreciationCount}</span>
             </div>
           </td>
         </tr>`;
       rows.push(row);
     }
 
-    const element = `<div class="status-table-container">
-      <div class="table-wrapper">
-        <table class="status-table">
-          <thead>
-            <tr>
-              <th class="id-header">${i18next.t('ID', { lng: language })}</th>
-              <th class="quest-header">${i18next.t('Quest', { lng: language })}</th>
-              <th class="initiator-header">${i18next.t('Initiator', { lng: language })}</th>
-              <th class="provenance-header">${i18next.t('provenance', { lng: language })}</th>
-              <th class="people-header">${i18next.t('People', { lng: language })}</th>
-              <th class="appreciation-header">${i18next.t('Appreciators', { lng: language })}</th>
-            </tr>
-          </thead>
+    const element = `<div class="quest-list-container">
+      <div class="quest-list-header">
+        <div class="header-title">${i18next.t('Quests', { lng: language })}</div>
+        <div class="header-stats">👥 ${i18next.t('People', { lng: language })} | 👏 ${i18next.t('Appreciation', { lng: language })}</div>
+      </div>
+      <div class="quest-list-wrapper">
+        <table class="quest-list-table">
           <tbody>
             ${rows.join('\n')}
           </tbody>
@@ -891,7 +1170,7 @@ class UI {
 
     const path = './images/quests' + chatID + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
-    await this.screenshotHtml(html, path, '.status-table-container');
+    await this.screenshotHtml(html, path, '.quest-list-container');
     return path;
   }
 

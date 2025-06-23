@@ -5,6 +5,20 @@ import { Calendar } from './Calendar.js';
 import Users from './Users.js';
 import { Scenes } from 'telegraf';
 
+/**
+ * Quest Management System
+ * 
+ * Environment Variables:
+ * - SHOW_QUESTS_AS_IMAGES: Set to 'true' to display quests as generated images, 'false' or unset for text-only display
+ * 
+ * Usage Examples:
+ * - To enable image display: export SHOW_QUESTS_AS_IMAGES=true
+ * - To disable image display: export SHOW_QUESTS_AS_IMAGES=false (or unset the variable)
+ * 
+ * Note: When set to 'true', requires UI instance to be available for image generation.
+ * When set to 'false' or unset, all quests will be displayed as text only.
+ */
+
 export default class Quests {
 
     constructor(bot, db, users, settings) {
@@ -21,6 +35,7 @@ export default class Quests {
         this.users = users
         this.expenses = null // Will be set from outside after construction
         this.checklists = null // Will be set from outside after construction
+        this.ui = null // Will be set from outside after construction for image generation
 
         // Initialize scenes
         this.descriptionScene = new Scenes.BaseScene('description_scene');
@@ -128,6 +143,11 @@ export default class Quests {
     // Method to set scheduler reference
     setScheduler(scheduler) {
         this.scheduler = scheduler;
+    }
+
+    // Method to set UI instance reference
+    setUIInstance(ui) {
+        this.ui = ui;
     }
 
     // Helper method to check if a user is admin in a specific chat
@@ -306,35 +326,99 @@ export default class Quests {
 
 
         if (picture) {
-            ctx.replyWithPhoto(picture,
-                {
-                    caption: await this.createMessage(quest, language),
-                    parse_mode: 'Markdown',
-                    ...this.markup(quest, language)
-                }).catch((err) => { console.log(err) }).then(async (nctx) => {
-                    // Add the message id to the quest
-                    quest.id = nctx.message_id;
-                    if (!quest.chat && nctx.chat.id) {
-                        quest.chat = nctx.chat.id;
+            // Check environment setting for quest image display
+            const showQuestsAsImages = this.shouldShowQuestsAsImages();
+            
+            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                // Generate quest image directly with a callback to get the real ID
+                const generateQuestImageWithRealId = async (realQuest) => {
+                    try {
+                        console.log(`Generating quest image with real ID: ${realQuest.id}`);
+                        const questImagePath = await this.ui.getQuestImage(realQuest, chatID);
+                        
+                        // Replace the original picture with the generated quest image
+                        await ctx.telegram.editMessageMedia(
+                            realQuest.chat,
+                            realQuest.id,
+                            null,
+                            {
+                                type: 'photo',
+                                media: { source: questImagePath }
+                                // No caption when showing quests as images only
+                            },
+                            this.markup(realQuest, language)
+                        );
+                        console.log(`Successfully replaced original picture with quest image`);
+                    } catch (error) {
+                        console.error('Error generating/replacing quest image:', error);
+                        // Original picture remains if quest image generation fails
                     }
-                    console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
-                    await this.db.put(chatID + '/quests', quest) // Save the main quest first
+                };
 
-                    //Pin the message in the original chat
-                    ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
-                    
-                    await this.updateMessage(ctx, quest, language) // This will update main message and also the new personal hologram message if created
-                    //delete the original trigger message
-                    ctx.deleteMessage(messageID.toString()).catch((err) => { });
+                ctx.replyWithPhoto(picture,
+                    {
+                        // No caption when showing quests as images only
+                        ...this.markup(quest, language)
+                    }).catch((err) => { console.log(err) }).then(async (nctx) => {
+                        // Add the message id to the quest
+                        quest.id = nctx.message_id;
+                        if (!quest.chat && nctx.chat.id) {
+                            quest.chat = nctx.chat.id;
+                        }
+                        console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
+                        await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
-                });
+                        //Pin the message in the original chat
+                        ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
+                        
+                        // Generate quest image with real ID (fast, targeted operation)
+                        await generateQuestImageWithRealId(quest);
+                        
+                        //delete the original trigger message
+                        ctx.deleteMessage(messageID.toString()).catch((err) => { });
+                    });
+                console.log(`Sent quest with original picture, will replace with quest image`);
+            } else {
+                // Use original picture with caption if quest images are disabled
+                ctx.replyWithPhoto(picture,
+                    {
+                        caption: await this.createMessage(quest, language),
+                        parse_mode: 'Markdown',
+                        ...this.markup(quest, language)
+                    }).catch((err) => { console.log(err) }).then(async (nctx) => {
+                        // Add the message id to the quest
+                        quest.id = nctx.message_id;
+                        if (!quest.chat && nctx.chat.id) {
+                            quest.chat = nctx.chat.id;
+                        }
+                        console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
+                        await this.db.put(chatID + '/quests', quest) // Save the main quest first
+
+                        //Pin the message in the original chat
+                        ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
+                        
+                        //delete the original trigger message
+                        ctx.deleteMessage(messageID.toString()).catch((err) => { });
+                    });
+            }
         } else {
 
             // Removed: if (type == 'offer') { ... }
             // Removed: if (type == 'request') { ... }
 
-            // Send message in the original chat and get the message ID
-            const nctx = await ctx.reply(await this.createMessage(quest, language), this.markup(quest, language));
+            let nctx;
+            
+            // Check environment setting for quest image display
+            const showQuestsAsImages = this.shouldShowQuestsAsImages();
+            
+            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                // When quest images are enabled, start with placeholder and replace with quest image
+                nctx = await ctx.reply("📝 Creating quest...", this.markup(quest, language));
+                console.log(`Sent placeholder message, will replace with quest image`);
+            } else {
+                // Send text message if quest images are disabled
+                nctx = await ctx.reply(await this.createMessage(quest, language), this.markup(quest, language));
+            }
 
             if (ctx.platform !== 'discord') {
                 quest.id = nctx.message_id;
@@ -352,7 +436,30 @@ export default class Quests {
             console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest) // Save the main quest first
             
-            await this.updateMessage(ctx, quest, language) // This will update main message and also the new personal hologram message if created
+            // Generate quest image if enabled (fast, targeted operation)
+            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                try {
+                    console.log(`Generating quest image with real ID: ${quest.id}`);
+                    const questImagePath = await this.ui.getQuestImage(quest, chatID);
+                    
+                    // Replace the placeholder text with the generated quest image
+                    await ctx.telegram.editMessageMedia(
+                        quest.chat,
+                        quest.id,
+                        null,
+                        {
+                            type: 'photo',
+                            media: { source: questImagePath }
+                            // No caption when showing quests as images only
+                        },
+                        this.markup(quest, language)
+                    );
+                    console.log(`Successfully replaced placeholder with quest image`);
+                } catch (error) {
+                    console.error('Error generating/replacing quest image:', error);
+                    // Placeholder text remains if quest image generation fails
+                }
+            }
             
             //Pin the message in the original chat
             this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -1031,50 +1138,24 @@ export default class Quests {
             console.log(`[updateMessage] For Original Quest ${quest.id} - Generated message content: ${baseMessage.substring(0, 100)}...`);
             console.log(`[updateMessage] For Original Quest ${quest.id} - Generated markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
 
-            // Update the message in original chat
-            if (quest.picture) {
-                await ctx.telegram.editMessageMedia(
-                    quest.chat,
-                    quest.id,
-                    null,
-                    {
-                        type: 'photo',
-                        media: quest.picture,
-                        caption: baseMessage
-                    },
-                    // markup // Original line
-                    markupConfig
-                ).catch((err) => {
-                    console.error('Error updating media message:', err);
-                    // Try alternative approach if this fails
-                    return ctx.telegram.editMessageText(
-                        quest.chat,
-                        quest.id,
-                        null,
-                        baseMessage,
-                        // markup // Original line
-                        markupConfig
-                    ).catch(innerErr => console.error('Alternative update also failed:', innerErr));
-                });
+            // Check environment setting for quest image display
+            const showQuestsAsImages = this.shouldShowQuestsAsImages();
+            
+            // Check if UI instance is available and regenerate quest image for updates
+            let questImagePath = null;
+            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                try {
+                    console.log(`[updateMessage] Regenerating quest image for quest ${quest.id}`);
+                    questImagePath = await this.ui.getQuestImage(quest, quest.chat);
+                    console.log(`[updateMessage] Successfully generated updated quest image: ${questImagePath}`);
+                } catch (error) {
+                    console.error(`[updateMessage] Error regenerating quest image for quest ${quest.id}:`, error);
+                    // Continue with existing image if available, but don't fallback to text when images are enabled
+                }
             }
-            else {
-                await ctx.telegram.editMessageText(
-                    quest.chat,
-                    quest.id,
-                    null,
-                    baseMessage,
-                    // markup // Original line
-                    markupConfig
-                ).catch((err) => { 
-                    console.error('Error updating text message:', err);
-                    if (err.response && err.response.description === 'Bad Request: message is not modified') {
-                        console.log("Message not modified - this is usually ok");
-                    } else {
-                        // Corrected the error logging to use hologramChatId defined in the loop
-                        console.error("Serious error updating message:", err);
-                    }
-                });
-            }
+
+            // Update the message in original chat using centralized helper
+            await this.updateQuestMessage(ctx, quest, quest.chat, quest.id, language, markupConfig);
 
     
             // Log the state of activeHolograms BEFORE saving the quest object within updateMessage
@@ -1119,7 +1200,27 @@ export default class Quests {
                         console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending message content: ${baseMessage.substring(0,100)}...`);
                         console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
                         try {
-                            if (quest.picture) {
+                            if (showQuestsAsImages && questImagePath) {
+                                // Use the newly generated image for holograms too
+                                await this.bot.telegram.editMessageMedia(
+                                    hologramChatId,
+                                    hologramMessageId,
+                                    null,
+                                    {
+                                        type: 'photo',
+                                        media: { source: questImagePath },
+                                        caption: hologramSpecificMessageText
+                                    },
+                                    markupConfig
+                                ).catch(err => {
+                                    if (err.response && err.response.description === 'Bad Request: message is not modified') {
+                                        console.log("Hologram media message not modified - this is usually ok");
+                                    } else {
+                                        console.error(`Error updating hologram with new image in ${hologramChatId}:`, err);
+                                    }
+                                });
+                            } else if (showQuestsAsImages && quest.picture) {
+                                // Use existing picture if quest images are enabled and no new image was generated
                                 await this.bot.telegram.editMessageMedia(
                                     hologramChatId,
                                     hologramMessageId,
@@ -1127,7 +1228,7 @@ export default class Quests {
                                     {
                                         type: 'photo',
                                         media: quest.picture,
-                                        caption: hologramSpecificMessageText // use the already generated message text
+                                        caption: hologramSpecificMessageText
                                     },
                                     markupConfig
                                 ).catch(err => {
@@ -1138,17 +1239,17 @@ export default class Quests {
                                     }
                                 });
                             } else {
+                                // Use text if quest images are disabled or no image available
                                 await this.bot.telegram.editMessageText(
                                     hologramChatId,
                                     hologramMessageId,
                                     null,
-                                    hologramSpecificMessageText, // use the already generated message text
+                                    hologramSpecificMessageText,
                                     markupConfig
                                 ).catch(err => {
                                     if (err.response && err.response.description === 'Bad Request: message is not modified') {
                                         console.log("Hologram text message not modified - this is usually ok");
                                     } else {
-                                        // Corrected the error logging to use hologramChatId defined in the loop
                                         console.error(`Error updating hologram text message in ${hologramChatId}:`, err);
                                     }
                                 });
@@ -1226,31 +1327,14 @@ export default class Quests {
             return;
         }
 
-        // Update message with expanded buttons - use the complete text + markup approach
-        try {
-            const message = await this.createMessage(quest, language);
-            
-            await ctx.editMessageText(
-                message,
-                {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: expandedButtons
-                    }
-                }
-            );
-        } catch (err) {
-            
-            // Fallback to just updating the markup if text update fails
-            try {
-                await ctx.editMessageReplyMarkup({
-                    inline_keyboard: expandedButtons
-                });
-            } catch (innerErr) { 
-                console.error('Fallback markup update also failed:', innerErr);
-                ctx.answerCbQuery('Error updating buttons.');
+        // Update message with expanded buttons using centralized helper
+        const expandedMarkupConfig = {
+            reply_markup: {
+                inline_keyboard: expandedButtons
             }
-        }
+        };
+        
+        await this.updateQuestMessage(ctx, quest, chatID, messageID, language, expandedMarkupConfig);
 
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
@@ -1264,27 +1348,9 @@ export default class Quests {
         let quest = await this.db.get(chatID + '/quests', messageID.toString());
 
         if (!await this.questExists(quest, ctx, messageID)) { return; }
-        // Update message with original markup - use the complete text + markup approach
-        try {
-            const message = await this.createMessage(quest, language);
-            const markup = this.markup(quest, language);
-            
-            await ctx.editMessageText(
-                message,
-                {
-                    parse_mode: 'Markdown',
-                    ...markup
-                }
-            );
-        } catch (err) {
-            
-            // Fallback to just updating the markup if text update fails
-            await ctx.editMessageReplyMarkup(
-                this.markup(quest, language).reply_markup
-            ).catch((innerErr) => { 
-                console.error('Fallback markup update also failed:', innerErr);
-            });
-        }
+        // Update message with original markup using centralized helper
+        const markup = this.markup(quest, language);
+        await this.updateQuestMessage(ctx, quest, chatID, messageID, language, markup);
 
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
@@ -1796,11 +1862,9 @@ export default class Quests {
             const quest = await this.db.get(chatId + '/quests', questId);
             if (!await this.questExists(quest, ctx, questId)) { return; }
 
-            // Update message to show quest again
-            await ctx.editMessageText(
-                await this.createMessage(quest, language),
-                this.markup(quest, language)
-            );
+            // Update message to show quest again using centralized helper
+            const markup = this.markup(quest, language);
+            await this.updateQuestMessage(ctx, quest, chatId, quest.id, language, markup);
 
             await ctx.answerCbQuery().catch()
         } catch (error) {
@@ -2321,7 +2385,9 @@ export default class Quests {
                         const hologramMessageText = await this.createMessage(quest, language) + 
                                                   `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonName, defaultValue: `🔗 Linked from ${originalHolonName}` })}\n`;
                         
-                        if (quest.picture) {
+                        const showQuestsAsImages = this.shouldShowQuestsAsImages();
+                        
+                        if (showQuestsAsImages && quest.picture) {
                             await ctx.telegram.editMessageMedia(
                                 federatedChatId,
                                 existingMsg.messageId,
@@ -2349,8 +2415,10 @@ export default class Quests {
                         const hologramMessageText = await this.createMessage(quest, language) + 
                                                   `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonName, defaultValue: `🔗 Linked from ${originalHolonName}` })}\n`;
                         
+                        const showQuestsAsImages = this.shouldShowQuestsAsImages();
+                        
                         let newMessage;
-                        if (quest.picture) {
+                        if (showQuestsAsImages && quest.picture) {
                             newMessage = await ctx.telegram.sendPhoto(
                                 federatedChatId,
                                 quest.picture,
@@ -2549,14 +2617,13 @@ export default class Quests {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
             if (!await this.questExists(quest, ctx, messageId)) { return; }
 
-            // Return to the quest view with expanded buttons
-            await ctx.editMessageText(
-                await this.createMessage(quest, language),
-                {
-                    parse_mode: 'Markdown',
-                    ...Markup.inlineKeyboard(this.getExpandedButtons(quest, language))
+            // Return to the quest view with expanded buttons using centralized helper
+            const expandedMarkupConfig = {
+                reply_markup: {
+                    inline_keyboard: this.getExpandedButtons(quest, language)
                 }
-            );
+            };
+            await this.updateQuestMessage(ctx, quest, chatId, messageId, language, expandedMarkupConfig);
 
             await ctx.answerCbQuery().catch()
         } catch (error) {
@@ -2970,7 +3037,33 @@ export default class Quests {
             const originalHolonNameView = await getHolonName(this.db, originalQuestChatId, ctx);
             const messageText = baseMessageText + `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonNameView, defaultValue: `🔗 Linked from ${originalHolonNameView}` })}\n`;
             const markup = this.markup(questToView, language);
-            const newHologramMsg = await ctx.reply(messageText, markup); // Replies in currentChatIdWhereButtonWasClicked
+            
+            // Try to generate quest image for the hologram message
+            let questImagePath = null;
+            const showQuestsAsImages = this.shouldShowQuestsAsImages();
+            
+            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                try {
+                    console.log(`[viewOriginalQuest] Generating quest image for hologram view`);
+                    questImagePath = await this.ui.getQuestImage(questToView, originalQuestChatId, true);
+                    console.log(`[viewOriginalQuest] Successfully generated quest image for hologram view: ${questImagePath}`);
+                } catch (error) {
+                    console.error(`[viewOriginalQuest] Error generating quest image for hologram view:`, error);
+                }
+            }
+            
+            let newHologramMsg;
+            if (showQuestsAsImages && questImagePath) {
+                // Send with quest image
+                newHologramMsg = await ctx.replyWithPhoto({ source: questImagePath }, {
+                    caption: messageText,
+                    parse_mode: 'Markdown',
+                    ...markup
+                });
+            } else {
+                // Send as text if quest images are disabled or no image is available
+                newHologramMsg = await ctx.reply(messageText, markup);
+            }
             
             // --- Track this new TELEGRAM hologram message by adding to the quest object itself ---
             // This Telegram hologram (the message just sent) needs to be updated if the original questToView changes.
@@ -3041,14 +3134,37 @@ export default class Quests {
                               `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonName, defaultValue: `🔗 Linked from ${originalHolonName}` })}\n`;
             const markup = this.markup(quest, language);
             
+            // Try to generate quest image for the hologram message
+            let questImagePath = null;
+            const showQuestsAsImages = this.shouldShowQuestsAsImages();
+            
+            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                try {
+                    console.log(`[ensureTelegramHologramMessage] Generating quest image for hologram message`);
+                    questImagePath = await this.ui.getQuestImage(quest, quest.chat, true);
+                    console.log(`[ensureTelegramHologramMessage] Successfully generated quest image for hologram: ${questImagePath}`);
+                } catch (error) {
+                    console.error(`[ensureTelegramHologramMessage] Error generating quest image for hologram:`, error);
+                }
+            }
+            
             let sentMessage;
-            if (quest.picture) {
+            if (showQuestsAsImages && questImagePath) {
+                // Use the newly generated quest image
+                sentMessage = await this.bot.telegram.sendPhoto(userPersonalChatId, { source: questImagePath }, {
+                    caption: messageText,
+                    parse_mode: 'Markdown',
+                    ...markup
+                });
+            } else if (showQuestsAsImages && quest.picture) {
+                // Use existing picture if quest images are enabled and no quest image was generated
                 sentMessage = await this.bot.telegram.sendPhoto(userPersonalChatId, quest.picture, {
                     caption: messageText,
                     parse_mode: 'Markdown',
                     ...markup
                 });
             } else {
+                // Send as text if quest images are disabled or no image is available
                 sentMessage = await this.bot.telegram.sendMessage(userPersonalChatId, messageText, {
                     parse_mode: 'Markdown',
                     ...markup
@@ -3114,4 +3230,107 @@ export default class Quests {
         }
         return true;
     }
+
+    // Helper method to check quest image display setting
+    shouldShowQuestsAsImages() {
+        const setting = process.env.SHOW_QUESTS_AS_IMAGES === 'true';
+        console.log(`[Quests] SHOW_QUESTS_AS_IMAGES environment setting: ${process.env.SHOW_QUESTS_AS_IMAGES} (resolved to: ${setting})`);
+        return setting;
+    }
+
+    // Centralized helper method for updating quest messages consistently
+    async updateQuestMessage(ctx, quest, chatId, messageId, language, markupConfig) {
+        const showQuestsAsImages = this.shouldShowQuestsAsImages();
+        
+        if (showQuestsAsImages) {
+            // When quest images are enabled, always try to maintain image format
+            let questImagePath = null;
+            
+            // Try to generate new quest image if UI is available
+            if (this.ui && this.ui.getQuestImage) {
+                try {
+                    console.log(`[updateQuestMessage] Generating quest image for quest ${quest.id}`);
+                    questImagePath = await this.ui.getQuestImage(quest, quest.chat);
+                    console.log(`[updateQuestMessage] Successfully generated quest image: ${questImagePath}`);
+                } catch (error) {
+                    console.error(`[updateQuestMessage] Error generating quest image for quest ${quest.id}:`, error);
+                }
+            }
+            
+            if (questImagePath) {
+                // Use the newly generated image without caption
+                await ctx.telegram.editMessageMedia(
+                    chatId,
+                    messageId,
+                    null,
+                    {
+                        type: 'photo',
+                        media: { source: questImagePath }
+                        // No caption when showing quests as images only
+                    },
+                    markupConfig
+                ).catch((err) => {
+                    console.error('Error updating with new quest image:', err);
+                    // Don't fallback to text when images are enabled - just update buttons
+                    return ctx.telegram.editMessageReplyMarkup(
+                        chatId,
+                        messageId,
+                        null,
+                        markupConfig.reply_markup
+                    ).catch(innerErr => console.error('Fallback markup update failed:', innerErr));
+                });
+            } else if (quest.picture) {
+                // Use existing picture if available
+                await ctx.telegram.editMessageMedia(
+                    chatId,
+                    messageId,
+                    null,
+                    {
+                        type: 'photo',
+                        media: quest.picture
+                        // No caption when showing quests as images only
+                    },
+                    markupConfig
+                ).catch((err) => {
+                    console.error('Error updating with existing image:', err);
+                    // Don't fallback to text when images are enabled - just update buttons
+                    return ctx.telegram.editMessageReplyMarkup(
+                        chatId,
+                        messageId,
+                        null,
+                        markupConfig.reply_markup
+                    ).catch(innerErr => console.error('Fallback markup update failed:', innerErr));
+                });
+            } else {
+                // If quest images are enabled but no image is available, just update the buttons
+                console.log(`[updateQuestMessage] Quest images enabled but no image available for quest ${quest.id}, updating buttons only`);
+                await ctx.telegram.editMessageReplyMarkup(
+                    chatId,
+                    messageId,
+                    null,
+                    markupConfig.reply_markup
+                ).catch((err) => { 
+                    console.error('Error updating markup when no image available:', err);
+                });
+            }
+        } else {
+            // Use text if quest images are disabled
+            const baseMessage = await this.createMessage(quest, language);
+            await ctx.telegram.editMessageText(
+                chatId,
+                messageId,
+                null,
+                baseMessage,
+                markupConfig
+            ).catch((err) => { 
+                console.error('Error updating text message:', err);
+                if (err.response && err.response.description === 'Bad Request: message is not modified') {
+                    console.log("Message not modified - this is usually ok");
+                } else {
+                    console.error("Serious error updating message:", err);
+                }
+            });
+        }
+    }
+
 }

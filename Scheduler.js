@@ -586,17 +586,9 @@ class Scheduler {
             // Get language
             const language = await this.settings.getLanguage(chatId);
             
-            // Update calendar message with quest info (createMessage handles display timezone)
-            const messageText = await this.quests.createMessage(quest, language);
+            // Update calendar message with quest info using centralized helper
             const markup = this.quests.markup(quest, language);
-            
-            await ctx.telegram.editMessageText(
-                chatId,
-                calendarMsgId,
-                null,
-                messageText,
-                markup
-            );
+            await this.quests.updateQuestMessage(ctx, quest, chatId, calendarMsgId, language, markup);
               
           // Clear stored quest ID
             this.calendar.questIds.delete(chatId);
