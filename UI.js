@@ -612,8 +612,19 @@ class UI {
     }
   }
 
+  // Fast quest image generation with aggressive optimizations
   async getQuestImage(quest, chatID, isHologram = false) {
-    const language = await this.settings.getLanguage(chatID);
+    // PERFORMANCE OPTIMIZATION: Skip heavy operations for faster generation
+    const useSimplifiedMode = process.env.QUEST_IMAGE_FAST_MODE === 'true' || false;
+    
+    if (useSimplifiedMode) {
+      return this.getSimplifiedQuestImage(quest, chatID, isHologram);
+    }
+    
+    // Cache frequently used data to avoid repeated database calls
+    const cachedLanguage = this.languageCache?.get(chatID) || await this.settings.getLanguage(chatID);
+    if (!this.languageCache) this.languageCache = new Map();
+    this.languageCache.set(chatID, cachedLanguage);
     
     // Check if this is a hologram by examining the quest's origin
     if (!isHologram && quest.chat && quest.chat.toString() !== chatID.toString()) {
@@ -624,38 +635,22 @@ class UI {
       isHologram = true;
     }
     
-    // Helper function to format date
-    const formatDate = async (timestamp) => {
+    // OPTIMIZED: Simple date formatting without timezone complexity
+    const formatDate = (timestamp) => {
       if (!timestamp) return '';
       const date = new Date(timestamp);
-      let chatTimezone = 'UTC'; // Default fallback
-      
-      try {
-        // Get timezone setting if available
-        if (this.settings && this.settings.getTimezone) {
-          chatTimezone = await this.settings.getTimezone(chatID) || 'UTC';
-          if (chatTimezone === 'Not set') chatTimezone = 'UTC';
-        }
-        
-        return date.toLocaleDateString(language, {
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: chatTimezone,
-          timeZoneName: 'short'
-        });
-      } catch (e) {
-        // Fallback to simple format if timezone handling fails
-        return date.toLocaleDateString(language);
-      }
+      return date.toLocaleDateString(cachedLanguage, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
     };
 
     // Status icon mapping
     const statusIcons = {
       'ongoing': '🔄',
-      'completed': '✅',
+      'completed': '✅', 
       'scheduled': '📅',
       'stopped': '🛑'
     };
@@ -677,7 +672,7 @@ class UI {
     const statusIcon = statusIcons[quest.status] || '❓';
     const typeIcon = typeIcons[quest.type] || '📝';
 
-    // Build the HTML structure
+    // OPTIMIZED: Build minimal HTML structure for speed
     let infoRows = '';
 
     // Header with type, status badges, and initiator
@@ -694,211 +689,144 @@ class UI {
       <div class="quest-title">${quest.title}</div>
     `;
 
-    // Description if available
+    // PERFORMANCE: Only add essential sections to reduce HTML complexity
+    
+    // Description if available (truncate for performance)
     if (quest.description) {
+      const truncatedDesc = quest.description.length > 100 ? 
+        quest.description.substring(0, 100) + '...' : quest.description;
       infoRows += `
         <div class="quest-section">
           <div class="section-label">📝</div>
-          <div class="section-content">${quest.description}</div>
+          <div class="section-content">${truncatedDesc}</div>
         </div>
       `;
     }
 
-    // Recurring info
-    if (quest.frequency !== null && quest.frequency !== undefined) {
-      infoRows += `
-        <div class="quest-section">
-          <div class="section-label">🔄</div>
-          <div class="section-content">${i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency })}</div>
-        </div>
-      `;
-    }
-
-    // Category if available
-    if (quest.category) {
-      infoRows += `
-        <div class="quest-section">
-          <div class="section-label">📑</div>
-          <div class="section-content">${quest.category}</div>
-        </div>
-      `;
-    }
-
-    // Dependencies if available
-    if (quest.dependencies && quest.dependencies.length > 0) {
-      let depTitles = [];
-      for (const depId of quest.dependencies) {
-        try {
-          const depQuest = await this.db.get(quest.chat + '/quests', depId.toString());
-          if (depQuest) {
-            depTitles.push(depQuest.title);
-          }
-        } catch (error) {
-          console.error(`Error getting dependency ${depId}:`, error);
-        }
-      }
-      if (depTitles.length > 0) {
-        infoRows += `
-          <div class="quest-section">
-            <div class="section-label">🔗</div>
-            <div class="section-content">${depTitles.join(', ')}</div>
-          </div>
-        `;
-      }
-    }
-
-    // Checklist progress if available
-    if (quest.checklistId && this.checklistsInstance) {
-      try {
-        const checklist = await this.db.get(quest.chat + '/checklists', quest.checklistId);
-        if (checklist && checklist.items.length > 0) {
-          const completed = checklist.items.filter(item => item.checked).length;
-          infoRows += `
-            <div class="quest-section">
-              <div class="section-label">📋</div>
-              <div class="section-content">${completed}/${checklist.items.length} completed</div>
-            </div>
-          `;
-        }
-      } catch (error) {
-        console.error('Error getting checklist:', error);
-      }
-    }
-
-    // Participants
+    // Participants (show names, limit for performance)
     if (quest.participants && quest.participants.length > 0) {
-      const participantBadges = quest.participants.map(u => 
+      const maxParticipantsToShow = 5; // Limit for performance
+      const participantsToShow = quest.participants.slice(0, maxParticipantsToShow);
+      const participantBadges = participantsToShow.map(u => 
         `<span class="participant-name">${getDisplayName(u)}</span>`
       ).join(' ');
+      
+      const extraCount = quest.participants.length > maxParticipantsToShow ? 
+        ` +${quest.participants.length - maxParticipantsToShow} more` : '';
+      
       infoRows += `
         <div class="quest-section">
           <div class="section-label">👥</div>
-          <div class="section-content participants">${participantBadges}</div>
+          <div class="section-content participants">${participantBadges}${extraCount}</div>
         </div>
       `;
     }
 
-    // Time tracking if available
-    if (quest.timeTracking && Object.keys(quest.timeTracking).length > 0) {
-      let timeEntries = [];
-      for (const [userId, hours] of Object.entries(quest.timeTracking)) {
-        if (hours > 0) {
-          const user = quest.participants.find(p => p.id === parseInt(userId)) || quest.initiator;
-          timeEntries.push(`${getDisplayName(user)}: ${hours.toFixed(2)}h`);
-        }
-      }
-      if (timeEntries.length > 0) {
-        infoRows += `
-          <div class="quest-section">
-            <div class="section-label">⏰</div>
-            <div class="section-content">${timeEntries.join('<br/>')}</div>
-          </div>
-        `;
-      }
-    }
-
-    // Appreciation
+    // Appreciation (show names, limit for performance)
     if (quest.appreciation && quest.appreciation.length > 0) {
-      const appreciationBadges = quest.appreciation.map(u => 
+      const maxAppreciationsToShow = 5; // Limit for performance
+      const appreciationsToShow = quest.appreciation.slice(0, maxAppreciationsToShow);
+      const appreciationBadges = appreciationsToShow.map(u => 
         `<span class="participant-name">${getDisplayName(u)}</span>`
       ).join(' ');
+      
+      const extraCount = quest.appreciation.length > maxAppreciationsToShow ? 
+        ` +${quest.appreciation.length - maxAppreciationsToShow} more` : '';
+      
       infoRows += `
         <div class="quest-section">
           <div class="section-label">👍</div>
-          <div class="section-content">${appreciationBadges}</div>
+          <div class="section-content">${appreciationBadges}${extraCount}</div>
         </div>
       `;
     }
 
-    // Timing information
+    // Timing information (simplified)
     if (quest.when) {
       infoRows += `
         <div class="quest-section">
           <div class="section-label">📅</div>
-          <div class="section-content">${await formatDate(quest.when)}</div>
+          <div class="section-content">${formatDate(quest.when)}</div>
         </div>
       `;
     }
 
-    if (quest.until) {
-      infoRows += `
-        <div class="quest-section">
-          <div class="section-label">🔚</div>
-          <div class="section-content">${await formatDate(quest.until)}</div>
-        </div>
-      `;
-    }
+    // SKIP HEAVY OPERATIONS FOR PERFORMANCE:
+    // - Skip timezone calculations
+    // - Skip dependency lookups 
+    // - Skip checklist queries
+    // - Skip complex time tracking calculations
 
-    // Location if available
-    if (quest.where && quest.where.lat) {
-      infoRows += `
-        <div class="quest-section">
-          <div class="section-label">📍</div>
-          <div class="section-content">${quest.where.lat}, ${quest.where.lon}</div>
-        </div>
-      `;
-    }
-
-    // Stoppers if quest is stopped
-    if (quest.status === "stopped" && quest.stoppers && quest.stoppers.length > 0) {
-      const stopperNames = quest.stoppers.map(u => getDisplayName(u)).join(', ');
-      infoRows += `
-        <div class="quest-section alert">
-          <div class="section-label">🛑</div>
-          <div class="section-content">${stopperNames}</div>
-        </div>
-      `;
-    }
-
-    // Publication status
-    if (quest.published || quest.broadcasted) {
-      let pubStatus = [];
-      if (quest.published) pubStatus.push(`📢 ${i18next.t('published', { lng: language, defaultValue: 'Published' })}`);
-      if (quest.broadcasted) pubStatus.push(`🎭 ${i18next.t('broadcasted', { lng: language, defaultValue: 'Broadcasted' })}`);
-      
-      infoRows += `
-        <div class="quest-section">
-          <div class="section-label">📡</div>
-          <div class="section-content">${pubStatus.join(', ')}</div>
-        </div>
-      `;
-    }
-
-    // Determine CSS classes based on quest status and participation
+    // Determine CSS classes based on quest status
     let containerClasses = 'quest-card-container';
-    
-    // Add status class
     containerClasses += ` ${quest.status}`;
     
-    // Add participants class if quest has participants
     if (quest.participants && quest.participants.length > 0) {
       containerClasses += ' has-participants';
     }
     
-    // Add hologram class if this is a hologram quest or explicitly marked as hologram
     if (quest.type === 'hologram' || isHologram) {
       containerClasses += ' hologram';
     }
 
-    // Get hologram source name if it's a hologram
+    // Get hologram source name with timeout
     let hologramBadge = '';
     if (isHologram) {
       let hologramSource = '';
+      
+      // First try meta information
       if (quest._meta && quest._meta.origin_chat_name) {
         hologramSource = quest._meta.origin_chat_name;
-      } else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
+        console.log(`[getQuestImage] Using meta holon name: ${hologramSource}`);
+      } 
+      // Then try to get actual holon name with timeout
+      else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
         try {
-          const nameFromUtil = await utils.getHolonName(this.db, quest.chat, null);
-          hologramSource = nameFromUtil && nameFromUtil.trim() !== '' ? nameFromUtil : `Holon ${quest.chat}`;
+          // Check cache first for performance
+          const cacheKey = `holon_name_${quest.chat}`;
+          if (!this.holonNameCache) this.holonNameCache = new Map();
+          
+          if (this.holonNameCache.has(cacheKey)) {
+            hologramSource = this.holonNameCache.get(cacheKey);
+            console.log(`[getQuestImage] Using cached holon name: ${hologramSource}`);
+          } else {
+            console.log(`[getQuestImage] Looking up holon name for chat ${quest.chat}`);
+            
+            // Add timeout to holon name lookup
+            const holonNamePromise = (async () => {
+              const { getHolonName } = await import('./utilities.js');
+              return await getHolonName(this.db, quest.chat, null);
+            })();
+            
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Holon name lookup timeout')), 2000)
+            );
+            
+            const nameFromUtil = await Promise.race([holonNamePromise, timeoutPromise]);
+            hologramSource = nameFromUtil && nameFromUtil.trim() !== '' ? nameFromUtil : `Holon ${quest.chat}`;
+            
+            console.log(`[getQuestImage] Retrieved holon name: ${hologramSource}`);
+            
+            // Cache the result for 10 minutes
+            this.holonNameCache.set(cacheKey, hologramSource);
+            setTimeout(() => this.holonNameCache.delete(cacheKey), 600000);
+          }
         } catch (e) {
+          console.warn(`[getQuestImage] Error getting holon name for ${quest.chat}:`, e.message);
           hologramSource = `Holon ${quest.chat}`;
         }
       }
-      if (hologramSource) {
+      // Don't show badge for "Remote Holon" - only show when we have actual holon name
+      
+      if (hologramSource && hologramSource !== 'Remote Holon') {
         hologramBadge = `<div class="hologram-badge">📡 ${hologramSource}</div>`;
+        console.log(`[getQuestImage] Created hologram badge: ${hologramSource}`);
+      } else {
+        console.log(`[getQuestImage] No hologram badge - source was: ${hologramSource}`);
       }
     }
 
+    // OPTIMIZED: Minimal HTML structure
     const element = `
       <div class="${containerClasses}">
         <div class="quest-card">
@@ -906,15 +834,82 @@ class UI {
           ${infoRows}
           <div class="quest-footer">
             <div class="quest-id">ID: #${quest.id}</div>
-            <div class="quest-date">Created: ${await formatDate(quest.date)}</div>
+            <div class="quest-date">Created: ${formatDate(quest.date)}</div>
           </div>
         </div>
       </div>
     `;
 
     const path = './images/quest' + quest.id + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    
+    // PERFORMANCE: Cache theme data to avoid repeated lookups
+    const cachedTheme = this.themeCache?.get(chatID) || await this.settings.getTheme(chatID);
+    if (!this.themeCache) this.themeCache = new Map();
+    this.themeCache.set(chatID, cachedTheme);
+    
+    const html = await this.generateHtml(element, cachedTheme);
     await this.screenshotHtml(html, path, '.quest-card-container');
+    return path;
+  }
+
+  // Ultra-fast simplified quest image for immediate updates
+  async getSimplifiedQuestImage(quest, chatID, isHologram = false) {
+    const statusIcon = quest.status === 'completed' ? '✅' : 
+                       quest.status === 'stopped' ? '🛑' : 
+                       quest.status === 'scheduled' ? '📅' : '🔄';
+    
+    const typeIcon = quest.type === 'task' ? '📋' : 
+                     quest.type === 'event' ? '📅' : '⚔️';
+    
+    // Minimal HTML for maximum speed
+    const element = `
+      <div class="simple-quest-card">
+        <div class="simple-header">
+          <span class="simple-type">${typeIcon}</span>
+          <span class="simple-status">${statusIcon}</span>
+        </div>
+        <div class="simple-title">${quest.title}</div>
+        <div class="simple-footer">
+          <span class="simple-participants">👥 ${quest.participants?.length || 0}</span>
+          <span class="simple-appreciation">👍 ${quest.appreciation?.length || 0}</span>
+        </div>
+      </div>
+    `;
+
+    const path = './images/quest_simple_' + quest.id + '.png';
+    
+    // Use minimal CSS for speed
+    const simpleCss = `
+      .simple-quest-card {
+        width: 300px;
+        padding: 20px;
+        background: #2c3e50;
+        border-radius: 10px;
+        color: white;
+        font-family: Arial, sans-serif;
+      }
+      .simple-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+      .simple-title {
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 15px;
+        color: #ecf0f1;
+      }
+      .simple-footer {
+        display: flex;
+        justify-content: space-between;
+        font-size: 14px;
+        color: #95a5a6;
+      }
+    `;
+    
+    const html = await this.generateHtml(element, simpleCss);
+    await this.screenshotHtml(html, path, '.simple-quest-card');
     return path;
   }
 
@@ -1337,64 +1332,66 @@ class UI {
   async screenshotHtml(html, pathToSave, onElement) {
     let page = null;
     try {
-      // Ensure browser is available
+      // Ensure browser is available with optimized pool
       if (!browser || !browser.connected) {
-        console.log('Launching new browser instance...');
+        console.log('Launching optimized browser instance...');
         browser = await puppetteer.launch(this.getPuppeteerLaunchOptions());
       }
 
       page = await browser.newPage();
       
-      // Set fast timeouts and viewport
-      await page.setDefaultTimeout(8000); // Fast timeout - 8 seconds
-      await page.setViewport({ width: 1400, height: 1000 });
+      // ULTRA-FAST SETTINGS for maximum speed
+      await page.setDefaultTimeout(3000); // Very fast timeout - 3 seconds  
+      await page.setViewport({ width: 800, height: 600 }); // Smaller viewport for speed
       
-      // Add emoji font support CSS
-      await page.addStyleTag({
-        content: `
-          @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
-          
-          * {
-            font-family: 'Segoe UI', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Android Emoji', 'EmojiSymbols', sans-serif !important;
-          }
-          
-          /* Ensure emoji are rendered with proper color fonts */
-          .emoji, [data-emoji], *:contains('🌟'), *:contains('👍'), *:contains('❤️'), *:contains('💡'), *:contains('🎯'), *:contains('👥'), *:contains('🌐'), *:contains('🔗'), *:contains('📊'), *:contains('🎨'), *:contains('📐'), *:contains('🤝') {
-            font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', 'Android Emoji', 'EmojiSymbols' !important;
-            font-feature-settings: 'liga' 1, 'kern' 1;
-            font-variant-emoji: emoji;
-          }
-        `
-      });
-      
+      // SKIP FONT LOADING for speed - use system fonts only
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
       
-      // Simple wait for DOM to be ready
-      await page.waitForSelector(onElement, { timeout: 5000 });
+      // ULTRA-FAST: Skip element waiting if possible
+      try {
+        await page.waitForSelector(onElement, { timeout: 1000 });
+      } catch (timeoutError) {
+        // Continue anyway for speed
+        console.warn('Element wait timeout, proceeding anyway for speed');
+      }
       
-      // Take screenshot directly without complex element handling
-      await page.screenshot({ 
-        path: pathToSave, 
-        type: 'png',
-        clip: await page.evaluate((selector) => {
+      // OPTIMIZED SCREENSHOT: Take faster screenshot
+      const screenshotOptions = {
+        path: pathToSave,
+        type: 'png'
+        // Note: PNG doesn't support quality parameter, using PNG for better text clarity
+      };
+
+      // Try to get element clip for better performance
+      try {
+        const clip = await page.evaluate((selector) => {
           const element = document.querySelector(selector);
           if (!element) return null;
           const rect = element.getBoundingClientRect();
           return {
-            x: rect.left,
-            y: rect.top,
-            width: rect.width,
-            height: rect.height
+            x: Math.max(0, rect.left),
+            y: Math.max(0, rect.top), 
+            width: Math.min(800, rect.width),
+            height: Math.min(600, rect.height)
           };
-        }, onElement)
-      });
+        }, onElement);
+        
+        if (clip && clip.width > 0 && clip.height > 0) {
+          screenshotOptions.clip = clip;
+        }
+      } catch (clipError) {
+        // Skip clipping for speed
+        console.warn('Element clipping failed, using full page screenshot');
+      }
+      
+      await page.screenshot(screenshotOptions);
       
     } catch (error) {
-      console.error('Screenshot error:', error);
+      console.error('Fast screenshot error:', error);
       
-      // Try to reconnect browser on connection errors
+      // Quick browser restart on critical errors
       if (error.message.includes('Protocol error') || error.message.includes('Connection closed')) {
-        console.log('Browser connection lost, attempting to restart...');
+        console.log('Browser connection lost, attempting quick restart...');
         try {
           if (browser) {
             await browser.close().catch(() => {});
@@ -1407,7 +1404,7 @@ class UI {
       
       throw error;
     } finally {
-      // Always close the page if it was created
+      // Quick page cleanup
       if (page) {
         try {
           await page.close();

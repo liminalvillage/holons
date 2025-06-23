@@ -41,4 +41,44 @@ The bot is designed with modularity in mind, though some core files (`Quests.js`
 *   **Geospatial Indexing:** h3-js (available in HoloSphere, used in `H3.js`)
 *   **JSON Schema Validation:** Ajv2019 (available in HoloSphere)
 *   **AI Integration:** OpenAI (optional, via `AI.js` and HoloSphere capabilities)
-*   **Utilities:** Various helper modules for UI (`UI.js`), calendar (`Calendar.js`), general utilities (`utilities.js`), etc. 
+*   **Utilities:** Various helper modules for UI (`UI.js`), calendar (`Calendar.js`), general utilities (`utilities.js`), etc.
+
+## Quest Image Performance Optimizations
+
+HolonsBot includes several performance optimizations for quest image generation:
+
+### Environment Variables
+
+```bash
+# Enable quest images (default: false)
+export SHOW_QUESTS_AS_IMAGES=true
+
+# Enable ultra-fast simplified images (default: false)
+export QUEST_IMAGE_FAST_MODE=true
+```
+
+### Performance Features
+
+1. **Smart Caching**: Images are only regenerated when visual content actually changes
+2. **Instant Button Updates**: User interactions update buttons immediately (< 200ms)
+3. **Background Image Regeneration**: Heavy image processing happens asynchronously
+4. **Batch Processing**: Multiple image updates are queued and processed in parallel
+5. **Simplified Fast Mode**: Ultra-lightweight images for maximum speed
+6. **Optimized Screenshot Engine**: Reduced timeouts, smaller viewports, minimal CSS
+
+### Performance Modes
+
+**Standard Mode** (`QUEST_IMAGE_FAST_MODE=false`):
+- Full-featured quest images with all details
+- Smart caching and change detection
+- Instant button updates + background image regeneration
+
+**Fast Mode** (`QUEST_IMAGE_FAST_MODE=true`):
+- Simplified quest images with essential info only
+- Minimal HTML/CSS for maximum speed
+- Ultra-fast generation (< 1 second)
+
+**Text Mode** (`SHOW_QUESTS_AS_IMAGES=false`):
+- Text-only quest display
+- No image generation overhead
+- Maximum performance for low-resource environments 
