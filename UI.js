@@ -47,23 +47,41 @@ class UI {
     })
   }
 
+  // Get optimized Puppeteer launch options for emoji support
+  getPuppeteerLaunchOptions() {
+    return {
+      headless: true,
+      protocolTimeout: 10000, // Fast timeout - 10 seconds
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-images', // Skip loading images for faster performance
+        // Emoji and font rendering support
+        '--font-render-hinting=none',
+        '--disable-font-subpixel-positioning',
+        '--disable-features=VizDisplayCompositor',
+        // Enable emoji fonts
+        '--enable-features=FontAccess',
+        '--disable-web-security', // Allow access to system fonts
+        '--allow-running-insecure-content',
+        // Force enable color emoji
+        '--force-color-profile=srgb',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
+      ]
+    };
+  }
+
   async init() {
     // Initialize browser on startup
     try {
       if (!browser || !browser.connected) {
         console.log('Initializing Puppeteer browser...');
-        browser = await puppetteer.launch({
-          headless: true,
-          protocolTimeout: 10000, // Fast timeout - 10 seconds
-          args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--disable-images' // Skip loading images for faster performance
-          ]
-        });
+        browser = await puppetteer.launch(this.getPuppeteerLaunchOptions());
         console.log('Browser initialized successfully');
       }
     } catch (error) {
@@ -131,10 +149,10 @@ class UI {
 
   async getFederatedQuests(chatID) {
     try {
-      // Get local quests
+      // Get local quests using getAll and wait for results
       const localQuests = await this.db.getAll(chatID + '/quests') || [];
 
-      // Get federated quests (if available)
+      // Get federated quests (if available) and wait for results
       let federatedQuests = [];
       if (this.db.holosphere && typeof this.db.holosphere.getFederated === 'function') {
         federatedQuests = await this.db.holosphere.getFederated(chatID, 'quests', {
@@ -143,8 +161,13 @@ class UI {
         }) || [];
       }
 
+      // Ensure both arrays are valid before merging
+      const validLocalQuests = Array.isArray(localQuests) ? localQuests : [];
+      const validFederatedQuests = Array.isArray(federatedQuests) ? federatedQuests : [];
+
       // Merge and deduplicate by quest id (if needed)
-      const allQuests = [...localQuests, ...federatedQuests];
+      const allQuests = [...validLocalQuests, ...validFederatedQuests];
+      
       // Deduplicate by id if federated and local overlap
       const uniqueQuests = Array.from(new Map(allQuests.map(q => [q.id, q])).values());
 
@@ -323,25 +346,37 @@ class UI {
   }
   async bulletinboard(ctx) {
     if (!this.db) return
-    let chatID = ctx.message.chat.id
-    let language = await this.settings.getLanguage(chatID)
     
-    // Get users and quests
-    let users = await this.getFederatedUsers(chatID)
-    let quests = await this.getFederatedQuests(chatID)
-    
-    // Create a table header
-    this.getBulletinTable(users, quests, chatID).then((path) => {
-      //send the image
-      ctx.replyWithPhoto(
+    try {
+      let chatID = ctx.message.chat.id
+      let language = await this.settings.getLanguage(chatID)
+      
+      // Wait for users and quests to be retrieved using getAll
+      let users = await this.getFederatedUsers(chatID)
+      let quests = await this.getFederatedQuests(chatID)
+      
+      // Wait for the table image to be generated
+      const path = await this.getBulletinTable(users, quests, chatID);
+      
+      if (!path) {
+        ctx.reply(i18next.t('bulletinboardgenerror', {lng: language}) || 'Could not generate bulletin board image.');
+        return;
+      }
+      
+      // Send the image
+      await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
           Markup.button.url(i18next.t('Open in Holons', { lng: language }), 
             `https://dashboard.holons.io/${chatID}/offers`)
         ])
-      )
-    });
-    return;
+      );
+      
+    } catch (err) {
+      console.error('Error in bulletinboard:', err);
+      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
+      ctx.reply(i18next.t('bulletinboardgenerror', {lng: language}) || 'Could not generate bulletin board image.');
+    }
   }
 
   async valuescloud(ctx) {
@@ -445,25 +480,42 @@ class UI {
   // Set up a command to display the quests
   async questboard(ctx) {
     if (!this.db) return
-    // Get a list of incomplete quests
-    let chatID = ctx.message.chat.id
-    const language = await this.settings.getLanguage(chatID)
-    const isTopic = ctx.message.is_topic_message;
-    const threadId = isTopic ? ctx.message.message_thread_id : null;
-
-    let quests = await this.getFederatedQuests(chatID)
     
-    // Initial filter for type and status
-    quests = quests.filter(quest => quest.type === 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled'))
+    try {
+      // Get a list of incomplete quests
+      let chatID = ctx.message.chat.id
+      const language = await this.settings.getLanguage(chatID)
+      const isTopic = ctx.message.is_topic_message;
+      const threadId = isTopic ? ctx.message.message_thread_id : null;
 
-    // If in a topic, filter further by message_thread_id
-    if (isTopic && threadId) {
-      quests = quests.filter(quest => quest.message_thread_id === threadId);
-    }
+      // Wait for all quests to be retrieved using getAll (via getFederatedQuests)
+      let quests = await this.getFederatedQuests(chatID)
+      
+      // Ensure we have a valid array before filtering
+      if (!Array.isArray(quests)) {
+        quests = [];
+      }
+      
+      // Initial filter for type and status - include tasks, holograms, and recurring tasks
+      quests = quests.filter(quest => 
+        (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') && 
+        (quest.status === 'ongoing' || quest.status === 'scheduled')
+      )
 
-    // Create a table header
-    this.getQuestsTable(quests, chatID, ctx).then((path) => {
-      //send the image
+      // If in a topic, filter further by message_thread_id
+      if (isTopic && threadId) {
+        quests = quests.filter(quest => quest.message_thread_id === threadId);
+      }
+
+      // Wait for the table image to be generated
+      const path = await this.getQuestsTable(quests, chatID, ctx);
+      
+      if (!path) {
+        ctx.reply(i18next.t('questboardgenerror', {lng: language}) || 'Could not generate quest board image.');
+        return;
+      }
+
+      // Create inline keyboard buttons
       const inline_keyboard_buttons = quests.map(quest => {
         const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
         // Assuming quest.chat and quest.id are available and correct for the callback
@@ -475,63 +527,89 @@ class UI {
           `https://dashboard.holons.io/${chatID}/tasks`)
       ]);
 
-      ctx.replyWithPhoto(
+      // Send the photo with buttons
+      await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard(inline_keyboard_buttons)
-      ).catch(err => console.error('Error sending questboard photo with buttons:', err));
-    }).catch(err => {
-      console.error('Error in getQuestsTable promise chain for questboard:', err);
+      );
+      
+    } catch (err) {
+      console.error('Error in questboard:', err);
+      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
       ctx.reply(i18next.t('questboardgenerror', {lng: language}) || 'Could not generate quest board image.');
-    });
+    }
   }
 
   async requestsboard(ctx) {
     if (!this.db) return
-    // Get a list of requests
-    let chatID = ctx.message.chat.id
-    const language = await this.settings.getLanguage(chatID)
+    
+    try {
+      // Get a list of requests
+      let chatID = ctx.message.chat.id
+      const language = await this.settings.getLanguage(chatID)
 
-    // Get requests from quests collection instead of offers collection
-    let allQuests = await this.db.getAll(chatID + '/quests') || []
-    let requests = allQuests.filter(quest => quest.type === 'request')
+      // Get requests from quests collection using getAll and wait for results
+      let allQuests = await this.db.getAll(chatID + '/quests') || []
+      let requests = allQuests.filter(quest => quest.type === 'request')
 
-    // Create a table header
-    this.getRequestsTable(requests, chatID).then((path) => {
-      //send the image
-      ctx.replyWithPhoto(
+      // Wait for the table image to be generated
+      const path = await this.getRequestsTable(requests, chatID);
+      
+      if (!path) {
+        ctx.reply(i18next.t('requestsboardgenerror', {lng: language}) || 'Could not generate requests board image.');
+        return;
+      }
+      
+      // Send the image
+      await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
           Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
             `https://dashboard.holons.io/${chatID}/offers`)
         ])
-      )
-    });
-    return;
+      );
+      
+    } catch (err) {
+      console.error('Error in requestsboard:', err);
+      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
+      ctx.reply(i18next.t('requestsboardgenerror', {lng: language}) || 'Could not generate requests board image.');
+    }
   }
 
   async offersboard(ctx) {
     if (!this.db) return
-    // Get a list of offers
-    let chatID = ctx.message.chat.id
-    const language = await this.settings.getLanguage(chatID)
+    
+    try {
+      // Get a list of offers
+      let chatID = ctx.message.chat.id
+      const language = await this.settings.getLanguage(chatID)
 
-    // Get offers from quests collection instead of offers collection
-    let allQuests = await this.db.getAll(chatID + '/quests') || []
-    let offers = allQuests.filter(quest => quest.type === 'offer')
+      // Get offers from quests collection using getAll and wait for results
+      let allQuests = await this.db.getAll(chatID + '/quests') || []
+      let offers = allQuests.filter(quest => quest.type === 'offer')
 
-    // Create a table header
-    this.getOffersTable(offers, chatID).then((path) => {
-      //send the image
-      ctx.replyWithPhoto(
+      // Wait for the table image to be generated
+      const path = await this.getOffersTable(offers, chatID);
+      
+      if (!path) {
+        ctx.reply(i18next.t('offersboardgenerror', {lng: language}) || 'Could not generate offers board image.');
+        return;
+      }
+      
+      // Send the image
+      await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
         Markup.inlineKeyboard([
           Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
             `https://dashboard.holons.io/${chatID}/offers/`)
         ])
-      )
-    });
-    return;
-
+      );
+      
+    } catch (err) {
+      console.error('Error in offersboard:', err);
+      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
+      ctx.reply(i18next.t('offersboardgenerror', {lng: language}) || 'Could not generate offers board image.');
+    }
   }
 
   async getQuestImage(quest, chatID) {
@@ -987,18 +1065,7 @@ class UI {
       // Ensure browser is available
       if (!browser || !browser.connected) {
         console.log('Launching new browser instance...');
-        browser = await puppetteer.launch({
-          headless: true,
-          protocolTimeout: 10000, // Fast timeout - 10 seconds
-          args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--disable-images' // Skip loading images for faster performance
-          ]
-        });
+        browser = await puppetteer.launch(this.getPuppeteerLaunchOptions());
       }
 
       page = await browser.newPage();
@@ -1006,6 +1073,24 @@ class UI {
       // Set fast timeouts and viewport
       await page.setDefaultTimeout(8000); // Fast timeout - 8 seconds
       await page.setViewport({ width: 1400, height: 1000 });
+      
+      // Add emoji font support CSS
+      await page.addStyleTag({
+        content: `
+          @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+          
+          * {
+            font-family: 'Segoe UI', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Android Emoji', 'EmojiSymbols', sans-serif !important;
+          }
+          
+          /* Ensure emoji are rendered with proper color fonts */
+          .emoji, [data-emoji], *:contains('🌟'), *:contains('👍'), *:contains('❤️'), *:contains('💡'), *:contains('🎯'), *:contains('👥'), *:contains('🌐'), *:contains('🔗'), *:contains('📊'), *:contains('🎨'), *:contains('📐'), *:contains('🤝') {
+            font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', 'Android Emoji', 'EmojiSymbols' !important;
+            font-feature-settings: 'liga' 1, 'kern' 1;
+            font-variant-emoji: emoji;
+          }
+        `
+      });
       
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
       
