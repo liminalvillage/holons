@@ -3,7 +3,7 @@ import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
 import { Markup } from 'telegraf'; 
-import { getDisplayName } from './utilities.js';
+import { getDisplayName, getAvatarUrl } from './utilities.js';
 
 let browser = null;
 
@@ -54,12 +54,14 @@ class UI {
         console.log('Initializing Puppeteer browser...');
         browser = await puppetteer.launch({
           headless: true,
+          protocolTimeout: 10000, // Fast timeout - 10 seconds
           args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
-            '--no-first-run'
+            '--no-first-run',
+            '--disable-images' // Skip loading images for faster performance
           ]
         });
         console.log('Browser initialized successfully');
@@ -265,62 +267,46 @@ class UI {
             <span class="rank-icon">${rankIcon}</span>
           </div>
         </td>
-        <td class="name-cell">
-          <div class="user-info">
-            <span class="user-name">${getDisplayName(user)}</span>
-          </div>
+                  <td class="name-cell">
+            <div class="user-info">
+              <div class="user-details">
+                <span class="user-name">${getDisplayName(user)}</span>
+                ${user.username ? `<span class="user-handle">@${user.username}</span>` : ''}
+              </div>
+            </div>
+          </td>
+        <td class="stat-cell">
+          <span class="stat-value">${user.initiated && user.initiated.length || 0}</span>
         </td>
         <td class="stat-cell">
-          <div class="stat-container">
-            <span class="stat-number">${user.initiated && user.initiated.length || 0}</span>
-            <span class="stat-label">tasks</span>
-          </div>
+          <span class="stat-value">${user.completed && user.completed.length || 0}</span>
         </td>
         <td class="stat-cell">
-          <div class="stat-container">
-            <span class="stat-number">${user.completed && user.completed.length || 0}</span>
-            <span class="stat-label">done</span>
-          </div>
+          <span class="stat-value">${user.sent || 0}</span>
         </td>
         <td class="stat-cell">
-          <div class="stat-container">
-            <span class="stat-number">${user.sent || 0}</span>
-            <span class="stat-label">sent</span>
-          </div>
-        </td>
-        <td class="stat-cell">
-          <div class="stat-container">
-            <span class="stat-number">${user.received || 0}</span>
-            <span class="stat-label">received</span>
-          </div>
+          <span class="stat-value">${user.received || 0}</span>
         </td>
         <td class="score-cell">
-          <div class="score-container">
-            <span class="score-number">${user.score.toFixed(2)}</span>
-            <span class="score-label">pts</span>
-          </div>
+          <span class="score-value">${user.score.toFixed(1)}</span>
         </td>
       </tr>`
 
       rows.push(row)
     }
 
-    const element = `<div class="modern-table-container">
-      <div class="table-header">
-        <h2 class="table-title">🏆 ${i18next.t('Rank', { lng: language })}</h2>
-        <div class="table-subtitle">${sortedUsers.length} ${i18next.t('participants', { lng: language, defaultValue: 'participants' })}</div>
-      </div>
+    const element = `<div class="status-table-container">
       <div class="table-wrapper">
-        <table class="modern-table">
+        <table class="status-table">
           <thead>
             <tr>
               <th class="rank-header">${i18next.t('rank', { lng: language })}</th>
               <th class="name-header">${i18next.t('name', { lng: language })}</th>
-              <th class="stat-header">📝 ${i18next.t('tasksinitiated', { lng: language })}</th>
-              <th class="stat-header">✅ ${i18next.t('taskscompleted', { lng: language })}</th>
-              <th class="stat-header">📤 ${i18next.t('sent', { lng: language })}</th>
-              <th class="stat-header">📥 ${i18next.t('received', { lng: language })}</th>
-              <th class="score-header">⭐ ${i18next.t('score', { lng: language })}</th>
+              <th class="stat-header">${i18next.t('tasksinitiated', { lng: language })}</th>
+              <th class="stat-header">${i18next.t('taskscompleted', { lng: language })}</th>
+              <th class="stat-header">${i18next.t('sent', { lng: language })}</th>
+              <th class="stat-header">${i18next.t('received', { lng: language })}</th>
+              <th class="score-header">${i18next.t('score', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>
@@ -332,18 +318,20 @@ class UI {
 
     const path = './images/rank' + chatID + '.png'
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, '.modern-table-container')
+    await this.screenshotHtml(html, path, '.status-table-container')
     return path
   }
   async bulletinboard(ctx) {
     if (!this.db) return
     let chatID = ctx.message.chat.id
     let language = await this.settings.getLanguage(chatID)
-    // loop through the userlist and get the quests
+    
+    // Get users and quests
     let users = await this.getFederatedUsers(chatID)
+    let quests = await this.getFederatedQuests(chatID)
+    
     // Create a table header
-    this.getBulletinTable(users, chatID).then((path) => {
-      //this.getAppreciationTable(users, chatID).then((path) => {
+    this.getBulletinTable(users, quests, chatID).then((path) => {
       //send the image
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
@@ -464,8 +452,9 @@ class UI {
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
     let quests = await this.getFederatedQuests(chatID)
+    
     // Initial filter for type and status
-    quests = quests.filter(quest => quest.type == 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled'))
+    quests = quests.filter(quest => quest.type === 'task' && (quest.status === 'ongoing' || quest.status === 'scheduled'))
 
     // If in a topic, filter further by message_thread_id
     if (isTopic && threadId) {
@@ -498,11 +487,13 @@ class UI {
 
   async requestsboard(ctx) {
     if (!this.db) return
-    // Get a list of incomplete quests
+    // Get a list of requests
     let chatID = ctx.message.chat.id
     const language = await this.settings.getLanguage(chatID)
 
-    let requests = await this.db.getAll(chatID + '/offers')
+    // Get requests from quests collection instead of offers collection
+    let allQuests = await this.db.getAll(chatID + '/quests') || []
+    let requests = allQuests.filter(quest => quest.type === 'request')
 
     // Create a table header
     this.getRequestsTable(requests, chatID).then((path) => {
@@ -520,14 +511,16 @@ class UI {
 
   async offersboard(ctx) {
     if (!this.db) return
-    // Get a list of incomplete quests
+    // Get a list of offers
     let chatID = ctx.message.chat.id
     const language = await this.settings.getLanguage(chatID)
 
-    let requests = await this.db.getAll(chatID + '/offers')
+    // Get offers from quests collection instead of offers collection
+    let allQuests = await this.db.getAll(chatID + '/quests') || []
+    let offers = allQuests.filter(quest => quest.type === 'offer')
 
     // Create a table header
-    this.getOffersTable(requests, chatID).then((path) => {
+    this.getOffersTable(offers, chatID).then((path) => {
       //send the image
       ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
@@ -556,35 +549,138 @@ class UI {
     return path
   }
 
-  async getBulletinTable(users, chatID) {
-    const language = await this.settings.getLanguage(chatID)
-    let table = `<table><tr>
-      <th>${i18next.t('Username', { lng: language })}</th>
-      <th>${i18next.t('Wants', { lng: language })}</th>
-      <th>${i18next.t('Offers', { lng: language })}</th>
-    </tr>`;
+  async getBulletinTable(users, quests, chatID) {
+    const language = await this.settings.getLanguage(chatID);
+    const rows = [];
 
+    // Get quest-based offers and requests
+    const questOffers = quests.filter(quest => quest.type === 'offer' && quest.status !== 'completed');
+    const questRequests = quests.filter(quest => quest.type === 'request' && quest.status !== 'completed');
+
+    // Create a map to combine user profile data with quest data
+    const userMap = new Map();
+
+    // First, add users from user profiles
     for (let user of users) {
-      table += '<tr><td>' + getDisplayName(user) + '</td>';
-
-      table += '<td><ul>';
-      for (let want of user.wants) {
-        table += '<li>' + want + '</li>';
-      }
-      table += '</ul></td>';
-
-      table += '<td><ul>';
-      for (let offer of user.offers) {
-        table += '<li>' + offer + '</li>';
-      }
-      table += '</ul></td></tr>';
+      const userId = user.id;
+      userMap.set(userId, {
+        user: user,
+        profileWants: user.wants || [],
+        profileOffers: user.offers || [],
+        questRequests: [],
+        questOffers: []
+      });
     }
 
-    table += '</table>';
-    const path = './images/offersneeds' + chatID + '.png'
-    const html = await this.generateHtml(table, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, 'table')
-    return path
+    // Then, add quest-based offers and requests
+    for (let quest of questOffers) {
+      if (quest.initiator && quest.initiator.id) {
+        const userId = quest.initiator.id;
+        if (!userMap.has(userId)) {
+          userMap.set(userId, {
+            user: quest.initiator,
+            profileWants: [],
+            profileOffers: [],
+            questRequests: [],
+            questOffers: []
+          });
+        }
+        userMap.get(userId).questOffers.push(quest.title);
+      }
+    }
+
+    for (let quest of questRequests) {
+      if (quest.initiator && quest.initiator.id) {
+        const userId = quest.initiator.id;
+        if (!userMap.has(userId)) {
+          userMap.set(userId, {
+            user: quest.initiator,
+            profileWants: [],
+            profileOffers: [],
+            questRequests: [],
+            questOffers: []
+          });
+        }
+        userMap.get(userId).questRequests.push(quest.title);
+      }
+    }
+
+    // Generate rows for users who have any wants or offers
+    for (let [userId, userData] of userMap) {
+      const totalWants = userData.profileWants.length + userData.questRequests.length;
+      const totalOffers = userData.profileOffers.length + userData.questOffers.length;
+
+      if (totalWants > 0 || totalOffers > 0) {
+        // Combine profile wants and quest requests
+        const allWants = [...userData.profileWants, ...userData.questRequests];
+        const wantsList = allWants.length > 0 ? 
+          allWants.map(want => `<span class="item-text">${want}</span>`).join('<br/>') : 
+          '<span class="no-items">-</span>';
+        
+        // Combine profile offers and quest offers
+        const allOffers = [...userData.profileOffers, ...userData.questOffers];
+        const offersList = allOffers.length > 0 ? 
+          allOffers.map(offer => `<span class="item-text">${offer}</span>`).join('<br/>') : 
+          '<span class="no-items">-</span>';
+
+        const row = `<tr class="bulletin-row">
+          <td class="name-cell-compact">
+            <div class="user-info-compact">
+              <div class="user-name-compact">${getDisplayName(userData.user)}</div>
+              ${userData.user.username ? `<div class="user-handle-compact">@${userData.user.username}</div>` : ''}
+            </div>
+          </td>
+          <td class="wants-cell-expanded">
+            <div class="items-container-expanded">
+              ${wantsList}
+            </div>
+          </td>
+          <td class="offers-cell-expanded">
+            <div class="items-container-expanded">
+              ${offersList}
+            </div>
+          </td>
+        </tr>`;
+        
+        rows.push(row);
+      }
+    }
+
+    // Handle empty case
+    if (rows.length === 0) {
+      rows.push(`<tr class="empty-row">
+        <td colspan="3" class="empty-cell">
+          <div class="empty-message">No offers or requests found. Create some with /offer [description] or /request [description]</div>
+        </td>
+      </tr>`);
+    }
+
+    const element = `<div class="status-table-container">
+      <div class="table-wrapper">
+        <table class="status-table bulletin-table">
+          <colgroup>
+            <col style="width: 15%;">
+            <col style="width: 42.5%;">
+            <col style="width: 42.5%;">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="name-header-compact">${i18next.t('name', { lng: language })}</th>
+              <th class="wants-header-expanded">${i18next.t('Wants', { lng: language })}</th>
+              <th class="offers-header-expanded">${i18next.t('Offers', { lng: language })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.join('\n')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+    const path = './images/offersneeds' + chatID + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    await this.screenshotHtml(html, path, '.status-table-container');
+    return path;
   }
 
   async getCreditTable(creditMatrix, userArray, chatID) {
@@ -670,8 +766,11 @@ class UI {
             </div>
           </td>
           <td class="initiator-cell">
-            <div class="initiator-info">
-              <span class="initiator-name">${getDisplayName(quest.initiator)}</span>
+            <div class="user-info">
+              <div class="user-details">
+                <span class="user-name">${getDisplayName(quest.initiator)}</span>
+                ${quest.initiator && quest.initiator.username ? `<span class="user-handle">@${quest.initiator.username}</span>` : ''}
+              </div>
             </div>
           </td>
           <td class="provenance-cell">
@@ -696,21 +795,17 @@ class UI {
       rows.push(row);
     }
 
-    const element = `<div class="modern-table-container">
-      <div class="table-header">
-        <h2 class="table-title">🎯 ${i18next.t('Active Quests', { lng: language })}</h2>
-        <div class="table-subtitle">${quests.length} ${i18next.t('active_quests', { lng: language, defaultValue: 'active quests' })}</div>
-      </div>
+    const element = `<div class="status-table-container">
       <div class="table-wrapper">
-        <table class="modern-table quests-table">
+        <table class="status-table">
           <thead>
             <tr>
               <th class="id-header">${i18next.t('ID', { lng: language })}</th>
               <th class="quest-header">${i18next.t('Quest', { lng: language })}</th>
-              <th class="initiator-header">👤 ${i18next.t('Initiator', { lng: language })}</th>
-              <th class="provenance-header">🌍 ${i18next.t('provenance', { lng: language })}</th>
-              <th class="people-header">👥 ${i18next.t('People', { lng: language })}</th>
-              <th class="appreciation-header">👏 ${i18next.t('Appreciators', { lng: language })}</th>
+              <th class="initiator-header">${i18next.t('Initiator', { lng: language })}</th>
+              <th class="provenance-header">${i18next.t('provenance', { lng: language })}</th>
+              <th class="people-header">${i18next.t('People', { lng: language })}</th>
+              <th class="appreciation-header">${i18next.t('Appreciators', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>
@@ -722,7 +817,7 @@ class UI {
 
     const path = './images/quests' + chatID + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
-    await this.screenshotHtml(html, path, '.modern-table-container');
+    await this.screenshotHtml(html, path, '.status-table-container');
     return path;
   }
 
@@ -759,40 +854,47 @@ class UI {
 
 
   async getRequestsTable(requests, chatID) {
-    const language = await this.settings.getLanguage(chatID)
-    const needs = requests.filter(request => request.type == 'request')
+    const language = await this.settings.getLanguage(chatID);
 
-    const rows = []
-    for (let i = 0; i < needs.length; i++) {
-      const request = needs[i]
-      const row = `<tr class="request-row">
-          <td class="person-cell">
-            <div class="person-info">
-              <span class="person-icon">🙋‍♂️</span>
-              <span class="person-name">${getDisplayName(request.initiator)}</span>
-            </div>
-          </td>
-          <td class="request-cell">
-            <div class="request-info">
-              <span class="request-title">${request.title}</span>
-            </div>
-          </td>
-        </tr>`
+    const rows = [];
+    
+    if (requests.length === 0) {
+      // Handle empty case
+      rows.push(`<tr class="empty-row">
+        <td colspan="2" class="empty-cell">
+          <div class="empty-message">No requests found. Create one with /request [description]</div>
+        </td>
+      </tr>`);
+    } else {
+      for (let i = 0; i < requests.length; i++) {
+        const request = requests[i];
+        const row = `<tr class="request-row">
+            <td class="name-cell">
+              <div class="user-info">
+                <div class="user-details">
+                  <span class="user-name">${getDisplayName(request.initiator)}</span>
+                  ${request.initiator && request.initiator.username ? `<span class="user-handle">@${request.initiator.username}</span>` : ''}
+                </div>
+              </div>
+            </td>
+            <td class="request-cell">
+              <div class="request-info">
+                <span class="request-title">${request.title}</span>
+              </div>
+            </td>
+          </tr>`;
 
-      rows.push(row)
+        rows.push(row);
+      }
     }
 
-    const element = `<div class="modern-table-container">
-      <div class="table-header">
-        <h2 class="table-title">🙏 ${i18next.t('Active Requests', { lng: language })}</h2>
-        <div class="table-subtitle">${needs.length} ${i18next.t('open_requests', { lng: language, defaultValue: 'open requests' })}</div>
-      </div>
+    const element = `<div class="status-table-container">
       <div class="table-wrapper">
-        <table class="modern-table requests-table">
+        <table class="status-table">
           <thead>
             <tr>
-              <th class="person-header">👤 ${i18next.t('Person', { lng: language })}</th>
-              <th class="request-header">📝 ${i18next.t('Request', { lng: language })}</th>
+              <th class="name-header">${i18next.t('Person', { lng: language })}</th>
+              <th class="request-header">${i18next.t('Request', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>
@@ -800,49 +902,56 @@ class UI {
           </tbody>
         </table>
       </div>
-    </div>`
+    </div>`;
 
-    const path = './images/requests' + chatID + '.png'
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, '.modern-table-container')
-    return path
+    const path = './images/requests' + chatID + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    await this.screenshotHtml(html, path, '.status-table-container');
+    return path;
   }
 
-  async getOffersTable(requests, chatID) {
-    const language = await this.settings.getLanguage(chatID)
-    const offers = requests.filter(request => request.type == 'offer')
+  async getOffersTable(offers, chatID) {
+    const language = await this.settings.getLanguage(chatID);
 
-    const rows = []
-    for (let i = 0; i < offers.length; i++) {
-      const offer = offers[i]
-      const row = `<tr class="offer-row">
-          <td class="person-cell">
-            <div class="person-info">
-              <span class="person-icon">🤝</span>
-              <span class="person-name">${getDisplayName(offer.initiator)}</span>
-            </div>
-          </td>
-          <td class="offer-cell">
-            <div class="offer-info">
-              <span class="offer-title">${offer.title}</span>
-            </div>
-          </td>
-        </tr>`
+    const rows = [];
+    
+    if (offers.length === 0) {
+      // Handle empty case
+      rows.push(`<tr class="empty-row">
+        <td colspan="2" class="empty-cell">
+          <div class="empty-message">No offers found. Create one with /offer [description]</div>
+        </td>
+      </tr>`);
+    } else {
+      for (let i = 0; i < offers.length; i++) {
+        const offer = offers[i];
+        const row = `<tr class="offer-row">
+            <td class="name-cell">
+              <div class="user-info">
+                <div class="user-details">
+                  <span class="user-name">${getDisplayName(offer.initiator)}</span>
+                  ${offer.initiator && offer.initiator.username ? `<span class="user-handle">@${offer.initiator.username}</span>` : ''}
+                </div>
+              </div>
+            </td>
+            <td class="offer-cell">
+              <div class="offer-info">
+                <span class="offer-title">${offer.title}</span>
+              </div>
+            </td>
+          </tr>`;
 
-      rows.push(row)
+        rows.push(row);
+      }
     }
 
-    const element = `<div class="modern-table-container">
-      <div class="table-header">
-        <h2 class="table-title">🎁 ${i18next.t('Active Offers', { lng: language })}</h2>
-        <div class="table-subtitle">${offers.length} ${i18next.t('available_offers', { lng: language, defaultValue: 'available offers' })}</div>
-      </div>
+    const element = `<div class="status-table-container">
       <div class="table-wrapper">
-        <table class="modern-table offers-table">
+        <table class="status-table">
           <thead>
             <tr>
-              <th class="person-header">👤 ${i18next.t('Person', { lng: language })}</th>
-              <th class="offer-header">🎁 ${i18next.t('Offer', { lng: language })}</th>
+              <th class="name-header">${i18next.t('Person', { lng: language })}</th>
+              <th class="offer-header">${i18next.t('Offer', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>
@@ -850,12 +959,12 @@ class UI {
           </tbody>
         </table>
       </div>
-    </div>`
+    </div>`;
 
-    const path = './images/offers' + chatID + '.png'
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, '.modern-table-container')
-    return path
+    const path = './images/offers' + chatID + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    await this.screenshotHtml(html, path, '.status-table-container');
+    return path;
   }
 
   async generateHtml(element, theme) {
@@ -880,32 +989,44 @@ class UI {
         console.log('Launching new browser instance...');
         browser = await puppetteer.launch({
           headless: true,
+          protocolTimeout: 10000, // Fast timeout - 10 seconds
           args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
-            '--no-first-run'
+            '--no-first-run',
+            '--disable-images' // Skip loading images for faster performance
           ]
         });
       }
 
       page = await browser.newPage();
       
-      // Set reasonable timeouts and viewport
-      await page.setDefaultTimeout(30000);
+      // Set fast timeouts and viewport
+      await page.setDefaultTimeout(8000); // Fast timeout - 8 seconds
       await page.setViewport({ width: 1400, height: 1000 });
       
-      await page.setContent(html, { waitUntil: 'networkidle0' });
+      await page.setContent(html, { waitUntil: 'domcontentloaded' });
       
-      const element = await page.$(onElement);
-      if (!element) {
-        throw new Error(`Element "${onElement}" not found in HTML`);
-      }
+      // Simple wait for DOM to be ready
+      await page.waitForSelector(onElement, { timeout: 5000 });
       
-      await element.screenshot({ 
+      // Take screenshot directly without complex element handling
+      await page.screenshot({ 
         path: pathToSave, 
-        type: 'png'
+        type: 'png',
+        clip: await page.evaluate((selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          return {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height
+          };
+        }, onElement)
       });
       
     } catch (error) {

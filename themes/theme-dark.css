@@ -6,6 +6,113 @@ body {
     padding: 20px;
 }
 
+/* Status Table Specific Styling */
+.status-table-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    background: #364156;
+    border-radius: 20px;
+    padding: 0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    overflow: hidden;
+}
+
+.status-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #364156;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.status-table thead {
+    background: #2d3748;
+}
+
+.status-table th {
+    padding: 15px 20px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 14px;
+    color: #ffffff;
+    border: none;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-table th:first-child {
+    border-top-left-radius: 20px;
+}
+
+.status-table th:last-child {
+    border-top-right-radius: 20px;
+}
+
+.status-table tbody tr:last-child td:first-child {
+    border-bottom-left-radius: 20px;
+}
+
+.status-table tbody tr:last-child td:last-child {
+    border-bottom-right-radius: 20px;
+}
+
+.status-table tbody tr {
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    background: #364156;
+}
+
+.status-table tbody tr:hover {
+    background: #3a4a61;
+}
+
+.status-table td {
+    padding: 15px 20px;
+    border: none;
+    color: #ffffff;
+    font-size: 16px;
+    vertical-align: middle;
+}
+
+.status-table .rank-cell,
+.status-table .stat-cell,
+.status-table .score-cell {
+    text-align: center;
+    width: 80px;
+}
+
+.status-table .name-cell {
+    min-width: 250px;
+}
+
+/* Status Table User Info */
+.status-table .user-avatar {
+    border: 2px solid #ffffff;
+    background: #ffffff;
+}
+
+.status-table .user-name {
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 16px;
+}
+
+.status-table .user-handle {
+    color: #a0aec0;
+    font-size: 13px;
+}
+
+.status-table .stat-value {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 18px;
+}
+
+.status-table .score-value {
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 20px;
+}
+
 /* Modern Table Container */
 .modern-table-container {
     max-width: 1200px;
@@ -42,7 +149,7 @@ body {
 
 .table-wrapper {
     overflow-x: auto;
-    border-radius: 15px;
+    border-radius: 20px;
     box-shadow: inset 0 2px 10px rgba(0,0,0,0.2);
 }
 
@@ -51,7 +158,7 @@ body {
     border-collapse: collapse;
     background: rgba(0,0,0,0.2);
     backdrop-filter: blur(10px);
-    border-radius: 15px;
+    border-radius: 20px;
     overflow: hidden;
 }
 
@@ -92,11 +199,22 @@ body {
 }
 
 .modern-table td {
-    padding: 18px 15px;
+    padding: 12px 15px;
     border: none;
     color: #ffffff;
     font-size: 14px;
     vertical-align: middle;
+}
+
+.modern-table .rank-cell,
+.modern-table .stat-cell,
+.modern-table .score-cell {
+    text-align: center;
+    width: 80px;
+}
+
+.modern-table .name-cell {
+    min-width: 200px;
 }
 
 /* Rank Cell Styling */
@@ -115,12 +233,46 @@ body {
 .name-cell .user-info {
     display: flex;
     align-items: center;
+    gap: 15px;
+}
+
+.user-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid #4ecdc4;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #4ecdc4, #44a08d);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 .user-name {
     font-weight: 600;
-    font-size: 15px;
+    font-size: 16px;
+    color: #ffffff;
+    line-height: 1.2;
+}
+
+.user-handle {
+    font-size: 12px;
     color: #4ecdc4;
+    font-weight: 400;
 }
 
 /* Stat Cell Styling */
@@ -131,6 +283,12 @@ body {
     flex-direction: column;
     align-items: center;
     text-align: center;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
 }
 
 .stat-number,
@@ -164,6 +322,12 @@ body {
     background: linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,140,0,0.2));
     border-radius: 10px;
     padding: 10px;
+}
+
+.score-value {
+    font-size: 20px;
+    font-weight: 800;
+    color: #ffd700;
 }
 
 .score-number {
@@ -286,6 +450,8 @@ table {
     letter-spacing: 1px;
     font-family: sans-serif;
     font-size: .8rem;
+    border-radius: 20px;
+    overflow: hidden;
 }
 
 td,
@@ -341,12 +507,13 @@ ul {
   .datatable-container {
     font-family: sans-serif;
     background-color: var(--dt-background-color-container);
-    border-radius: var(--dt-border-radius);
+    border-radius: 20px;
     color: var(--dt-text-color);
     max-width: 1140px;
     min-width: 950px;
     margin: 0 auto;
     font-size: 12px;
+    overflow: hidden;
   }
   
   .datatable-container .header-tools {
@@ -451,6 +618,8 @@ ul {
   .datatable-container .datatable {
     border-collapse: collapse;
     width: 100%;
+    border-radius: 20px;
+    overflow: hidden;
   }
   
   .datatable-container .datatable,
@@ -522,4 +691,42 @@ ul {
   .datatable-container .datatable tbody tr .offline::before {
     background-color: var(--dt-status-offline-color);
   }
+
+/* Bulletin Board Items */
+.items-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-width: 300px;
+}
+
+.item-tag {
+    background: rgba(78,205,196,0.2);
+    color: #4ecdc4;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid rgba(78,205,196,0.3);
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.wants-container .item-tag {
+    background: rgba(255,193,7,0.2);
+    color: #ffc107;
+    border-color: rgba(255,193,7,0.3);
+}
+
+.offers-container .item-tag {
+    background: rgba(40,167,69,0.2);
+    color: #28a745;
+    border-color: rgba(40,167,69,0.3);
+}
+
+.no-items {
+    color: #6c757d;
+    font-style: italic;
+    font-size: 14px;
+}
   

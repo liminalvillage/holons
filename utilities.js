@@ -1,4 +1,6 @@
 import i18next from "i18next";
+import fs from 'fs';
+import path from 'path';
 
 export { i18next };
 
@@ -189,4 +191,23 @@ export const getHolonName = async (db, holonId, ctx = null) => {
 
   // Final fallback: return a generic name instead of the ID
   return `External Holon`;
+};
+
+/**
+ * Generates the avatar URL for a user, optimized for fast rendering.
+ * @param {Object} user - The user object containing id or other identifying information
+ * @returns {string} - The avatar URL or fallback to default avatar
+ */
+export const getAvatarUrl = (user) => {
+  // For screenshot performance, just use default avatar for now
+  // This avoids file system checks and loading delays
+  return `file://${process.cwd()}/public/default-avatar.png`;
+  
+  // TODO: Implement base64 encoding or caching for better performance
+  // if (user && user.id) {
+  //   const avatarPath = path.join(process.cwd(), 'public', 'avatars', `${user.id}.jpg`);
+  //   if (fs.existsSync(avatarPath)) {
+  //     return `file://${avatarPath}`;
+  //   }
+  // }
 };
