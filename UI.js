@@ -47,6 +47,37 @@ class UI {
     })
   }
 
+  // Emoji to text fallback mapping for Linux systems without emoji fonts
+  getEmojiTextFallback(text) {
+    const emojiMap = {
+      '🥇': '[1st]',
+      '🥈': '[2nd]', 
+      '🥉': '[3rd]',
+      '🌟': '[Star]',
+      '👍': '[Like]',
+      '❤️': '[Heart]',
+      '💡': '[Idea]',
+      '🎯': '[Target]',
+      '👥': '[People]',
+      '🌐': '[Global]',
+      '🔗': '[Link]',
+      '📊': '[Chart]',
+      '🎨': '[Art]',
+      '📐': '[Math]',
+      '🤝': '[Shake]',
+      '🏠': '[Home]',
+      '✅': '[Done]',
+      '🔄': '[Progress]',
+      '📅': '[Calendar]'
+    };
+    
+    let result = text;
+    for (const [emoji, fallback] of Object.entries(emojiMap)) {
+      result = result.replace(new RegExp(emoji, 'g'), fallback);
+    }
+    return result;
+  }
+
   // Get optimized Puppeteer launch options for emoji support
   getPuppeteerLaunchOptions() {
     return {
@@ -59,19 +90,22 @@ class UI {
         '--disable-gpu',
         '--no-first-run',
         '--disable-images', // Skip loading images for faster performance
-        // Emoji and font rendering support
+        // Enhanced emoji and font rendering support for Linux
         '--font-render-hinting=none',
         '--disable-font-subpixel-positioning',
-        '--disable-features=VizDisplayCompositor',
-        // Enable emoji fonts
         '--enable-features=FontAccess',
         '--disable-web-security', // Allow access to system fonts
         '--allow-running-insecure-content',
-        // Force enable color emoji
+        // Force color emoji support
         '--force-color-profile=srgb',
+        '--enable-font-antialiasing',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
+        '--disable-renderer-backgrounding',
+        // Additional Linux emoji support
+        '--enable-features=VaapiVideoDecoder',
+        '--use-gl=egl',
+        '--ignore-gpu-blacklist'
       ]
     };
   }
@@ -1046,15 +1080,20 @@ class UI {
   }
 
   async generateHtml(element, theme) {
+    // Check if we should use emoji fallbacks (can be configured via environment variable)
+    const useEmojiFallbacks = process.env.HOLONS_USE_EMOJI_FALLBACKS === 'true';
+    const processedElement = useEmojiFallbacks ? this.getEmojiTextFallback(element.toString()) : element.toString();
+    
     return `<!DOCTYPE html>
       <html>
       <head>
+      <meta charset="UTF-8">
       <style>`
       + theme +
       `</style>
       </head>
       <body>`
-      + element.toString() +
+      + processedElement +
       `</body>
       </html>`
   }
@@ -1074,20 +1113,37 @@ class UI {
       await page.setDefaultTimeout(8000); // Fast timeout - 8 seconds
       await page.setViewport({ width: 1400, height: 1000 });
       
-      // Add emoji font support CSS
+      // Add enhanced emoji font support CSS for Linux
       await page.addStyleTag({
         content: `
           @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+          @import url('https://cdn.jsdelivr.net/npm/twemoji@latest/assets/svg/');
           
           * {
-            font-family: 'Segoe UI', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Android Emoji', 'EmojiSymbols', sans-serif !important;
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Twemoji Mozilla', 'Symbola', 'DejaVu Sans', monospace !important;
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
           }
           
-          /* Ensure emoji are rendered with proper color fonts */
-          .emoji, [data-emoji], *:contains('🌟'), *:contains('👍'), *:contains('❤️'), *:contains('💡'), *:contains('🎯'), *:contains('👥'), *:contains('🌐'), *:contains('🔗'), *:contains('📊'), *:contains('🎨'), *:contains('📐'), *:contains('🤝') {
-            font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', 'Android Emoji', 'EmojiSymbols' !important;
-            font-feature-settings: 'liga' 1, 'kern' 1;
+          /* Force emoji rendering with Linux-friendly fonts */
+          .emoji, [data-emoji] {
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Twemoji Mozilla', 'Symbola', monospace !important;
             font-variant-emoji: emoji;
+            font-feature-settings: 'liga' 1, 'kern' 1, 'clig' 1;
+            display: inline-block;
+            vertical-align: middle;
+          }
+          
+          /* Specific emoji fallbacks */
+          .rank-icon, .participant-icon, .formula {
+            font-family: 'Noto Color Emoji', 'Symbola', monospace !important;
+            font-size: 1.2em;
+          }
+          
+          /* Ensure common emoji are visible */
+          td, th, span, div {
+            font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'DejaVu Sans', monospace !important;
           }
         `
       });
