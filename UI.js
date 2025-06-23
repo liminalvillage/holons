@@ -802,32 +802,39 @@ class UI {
     const rows = [];
     for (const quest of quests) {
       let provenanceText = '';
+      let provenanceIcon = '🏠';
       
       if (quest._meta && quest._meta.origin_chat_name) {
         provenanceText = quest._meta.origin_chat_name;
+        provenanceIcon = '🌐';
       } else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
         try {
           const nameFromUtil = await utils.getHolonName(this.db, quest.chat, ctx);
           if (nameFromUtil && nameFromUtil.trim() !== '') { // Use if non-empty
             provenanceText = nameFromUtil;
+            provenanceIcon = '🔗';
           } else { // Fallback if util function gives empty/null/undefined
             provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`;
+            provenanceIcon = '🔗';
           }
         } catch (e) {
           console.warn(`Could not get holon name for chat ${quest.chat}:`, e);
           provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`; // Fallback on error
+          provenanceIcon = '🔗';
         }
       } else {
         provenanceText = i18next.t('local_provenance', { lng: language, defaultValue: 'Local' });
+        provenanceIcon = '🏠';
       }
 
+      const statusIcon = quest.status === 'completed' ? '✅' : quest.status === 'ongoing' ? '🔄' : '📅';
       const participantCount = quest.participants ? quest.participants.length : 0;
       const appreciationCount = quest.appreciation ? quest.appreciation.length : 0;
 
       const row = `<tr class="quest-row">
           <td class="quest-id-cell">
             <div class="quest-id-container">
-              <span class="quest-id">#${quest.id}</span>
+              <span class="quest-id">${statusIcon} #${quest.id}</span>
             </div>
           </td>
           <td class="quest-title-cell">
@@ -845,17 +852,17 @@ class UI {
           </td>
           <td class="provenance-cell">
             <div class="provenance-info">
-              <span class="provenance-text">${provenanceText}</span>
+              <span class="provenance-text">${provenanceIcon} ${provenanceText}</span>
             </div>
           </td>
           <td class="stat-cell">
             <div class="participant-info">
-              <span class="participant-count">${participantCount}</span>
+              <span class="participant-count">👥 ${participantCount}</span>
             </div>
           </td>
           <td class="stat-cell">
             <div class="appreciation-info">
-              <span class="appreciation-count">${appreciationCount}</span>
+              <span class="appreciation-count">👏 ${appreciationCount}</span>
             </div>
           </td>
         </tr>`;
