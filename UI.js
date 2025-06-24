@@ -3,7 +3,7 @@ import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
 import { Markup } from 'telegraf'; 
-import { getDisplayName, getAvatarUrl } from './utilities.js';
+import { getDisplayName, getAvatarUrl, getHolonName } from './utilities.js';
 
 let browser = null;
 
@@ -781,10 +781,9 @@ class UI {
       // First try meta information
       if (quest._meta && quest._meta.origin_chat_name) {
         hologramSource = quest._meta.origin_chat_name;
-        console.log(`[getQuestImage] Using meta holon name: ${hologramSource}`);
       } 
-      // Then try to get actual holon name with timeout
-      else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
+      // Then try to get actual holon name with timeout using utility function
+      else if (quest.chat) {
         try {
           // Check cache first for performance
           const cacheKey = `holon_name_${quest.chat}`;
@@ -792,41 +791,34 @@ class UI {
           
           if (this.holonNameCache.has(cacheKey)) {
             hologramSource = this.holonNameCache.get(cacheKey);
-            console.log(`[getQuestImage] Using cached holon name: ${hologramSource}`);
           } else {
-            console.log(`[getQuestImage] Looking up holon name for chat ${quest.chat}`);
-            
-            // Add timeout to holon name lookup
-            const holonNamePromise = (async () => {
-              const { getHolonName } = await import('./utilities.js');
-              return await getHolonName(this.db, quest.chat, null);
-            })();
+            // Add timeout to holon name lookup using the utility function
+            const holonNamePromise = getHolonName(this.db, quest.chat, null);
             
             const timeoutPromise = new Promise((_, reject) => 
               setTimeout(() => reject(new Error('Holon name lookup timeout')), 2000)
             );
             
+            // Use the utility function result directly, it has its own fallback logic
             const nameFromUtil = await Promise.race([holonNamePromise, timeoutPromise]);
-            hologramSource = nameFromUtil && nameFromUtil.trim() !== '' ? nameFromUtil : `Holon ${quest.chat}`;
-            
-            console.log(`[getQuestImage] Retrieved holon name: ${hologramSource}`);
+            hologramSource = nameFromUtil || 'Unknown Holon';
             
             // Cache the result for 10 minutes
             this.holonNameCache.set(cacheKey, hologramSource);
             setTimeout(() => this.holonNameCache.delete(cacheKey), 600000);
           }
         } catch (e) {
-          console.warn(`[getQuestImage] Error getting holon name for ${quest.chat}:`, e.message);
-          hologramSource = `Holon ${quest.chat}`;
+          hologramSource = 'External Holon';
         }
       }
-      // Don't show badge for "Remote Holon" - only show when we have actual holon name
       
-      if (hologramSource && hologramSource !== 'Remote Holon') {
+      // Show badge for meaningful holon names (not generic fallbacks or chat IDs)
+      if (hologramSource && 
+          hologramSource.trim() !== '' && 
+          !hologramSource.startsWith('Holon ') &&
+          hologramSource !== 'Unknown Holon' &&
+          hologramSource !== 'External Holon') {
         hologramBadge = `<div class="hologram-badge">📡 ${hologramSource}</div>`;
-        console.log(`[getQuestImage] Created hologram badge: ${hologramSource}`);
-      } else {
-        console.log(`[getQuestImage] No hologram badge - source was: ${hologramSource}`);
       }
     }
 
@@ -834,17 +826,20 @@ class UI {
     const element = `
       <div class="${containerClasses}">
         <div class="quest-card">
-          ${hologramBadge}
           ${infoRows}
           <div class="quest-footer">
             <div class="quest-id">ID: #${quest.id}</div>
             <div class="quest-date">Created: ${formatDate(quest.date)}</div>
           </div>
+          ${hologramBadge}
         </div>
       </div>
     `;
 
-    const path = './images/quest' + quest.id + '.png';
+    // Include source chat/holon ID and hologram status in filename for unique identification
+    const sourceIdentifier = chatID ? chatID.toString() : 'unknown';
+    const hologramSuffix = isHologram ? '_hologram' : '';
+    const path = `./images/quest${quest.id}_from_${sourceIdentifier}${hologramSuffix}.png`;
     
     // PERFORMANCE: Cache theme data to avoid repeated lookups
     const cachedTheme = this.themeCache?.get(chatID) || await this.settings.getTheme(chatID);
@@ -880,7 +875,10 @@ class UI {
       </div>
     `;
 
-    const path = './images/quest_simple_' + quest.id + '.png';
+    // Include source chat/holon ID and hologram status in filename for unique identification
+    const sourceIdentifier = chatID ? chatID.toString() : 'unknown';
+    const hologramSuffix = isHologram ? '_hologram' : '';
+    const path = `./images/quest_simple_${quest.id}_from_${sourceIdentifier}${hologramSuffix}.png`;
     
     // Use minimal CSS for speed
     const simpleCss = `

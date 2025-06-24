@@ -1136,14 +1136,11 @@ export default class Quests {
             const baseMessage = await this.createMessage(quest, language);
             // const markup = this.markup(quest, language); // Original line
             // Choose markup based on the flag
-            // console.log(`[updateMessage] Called for quest ${quest.id}. useExpandedMarkup = ${useExpandedMarkup}`); // <-- Remove log
             const markupConfig = useExpandedMarkup
                 ? { reply_markup: { inline_keyboard: this.getExpandedButtons(quest, language) } }
                 : this.markup(quest, language);
-            // console.log(`[updateMessage] Intending to use ${useExpandedMarkup ? 'expanded (getExpandedButtons)' : 'standard (markup)'} buttons.`); // <-- Remove log
 
-            console.log(`[updateMessage] For Original Quest ${quest.id} - Generated message content: ${baseMessage.substring(0, 100)}...`);
-            console.log(`[updateMessage] For Original Quest ${quest.id} - Generated markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
+            
 
             // Check environment setting for quest image display
             const showQuestsAsImages = this.shouldShowQuestsAsImages();
@@ -1152,60 +1149,67 @@ export default class Quests {
             let questImagePath = null;
             if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
                 try {
-                    console.log(`[updateMessage] Regenerating quest image for quest ${quest.id}`);
                     questImagePath = await this.ui.getQuestImage(quest, quest.chat);
-                    console.log(`[updateMessage] Successfully generated updated quest image: ${questImagePath}`);
                 } catch (error) {
-                    console.error(`[updateMessage] Error regenerating quest image for quest ${quest.id}:`, error);
+                    console.error(`Error regenerating quest image for quest ${quest.id}:`, error);
                     // Continue with existing image if available, but don't fallback to text when images are enabled
                 }
             }
 
-            // Update the message in original chat using centralized helper
-            await this.updateQuestMessage(ctx, quest, quest.chat, quest.id, language, markupConfig);
+            // Only update the message in original chat if we have access to it
+            // Skip updating original message if the bot doesn't have access to that chat anymore
+            try {
+                // Quick access check - try to get chat info
+                await ctx.telegram.getChat(quest.chat);
+                // If successful, update the message in original chat using centralized helper
+                await this.updateQuestMessage(ctx, quest, quest.chat, quest.id, language, markupConfig);
+            } catch (accessError) {
+                if (accessError.response && accessError.response.description) {
+                    if (accessError.response.description.includes('chat not found') ||
+                        accessError.response.description.includes('blocked by user') ||
+                        accessError.response.description.includes('kicked') ||
+                        accessError.response.description.includes('left')) {
+                        console.log(`Bot no longer has access to original quest chat ${quest.chat}, skipping original message update`);
+                    } else {
+                        console.error(`Error checking access to original quest chat ${quest.chat}:`, accessError);
+                    }
+                } else {
+                    console.error(`Error checking access to original quest chat ${quest.chat}:`, accessError);
+                }
+                // Continue with hologram updates even if original chat is inaccessible
+            }
 
-    
-            // Log the state of activeHolograms BEFORE saving the quest object within updateMessage
-            console.log(`[updateMessage] Quest ID ${quest.id} - BEFORE save. Active holograms on quest object:`, JSON.stringify(quest.activeHolograms || []));
-            await this.db.put(quest.chat + '/quests', quest);
-            console.log(`[updateMessage] Quest ID ${quest.id} - AFTER save. Quest object presumably persisted.`);
+            // Only save to original quest chat database if we still have some form of access
+            // (The access was already checked above, but DB operations might still fail)
+            try {
+                await this.db.put(quest.chat + '/quests', quest);
+            } catch (dbError) {
+                console.error(`Error saving quest ${quest.id} to original chat ${quest.chat}:`, dbError);
+                // Continue with hologram updates even if we can't save to original location
+                // The hologram cleanup will still happen below
+            }
 
         
             // Handle federated messages (non-hologram ones, e.g. to other groups)
-            console.log(`[updateMessage] Calling handleFederatedMessages for quest ${quest.id}`);
             await this.handleFederatedMessages(ctx, quest, language).catch(err => {
                 console.error("Error handling federated messages:", err);
             });
-            console.log(`[updateMessage] Completed handleFederatedMessages for quest ${quest.id}`);
 
             // --- Update any tracked hologram messages --- 
             const hologramsToUpdate = explicitHologramsToUpdate !== null ? explicitHologramsToUpdate : (quest.activeHolograms || []);
 
-            // Log the list of holograms that will be iterated over
-            console.log(`[updateMessage] Quest ID ${quest.id} - Holograms determined for update iteration:`, JSON.stringify(hologramsToUpdate));
-
             if (hologramsToUpdate.length > 0) {
-                // let originalHolonNameUpdate = quest.chat; // Fallback to ID
-                // try {
-                //     const chatInfo = await this.bot.telegram.getChat(quest.chat);
-                //     if (chatInfo && chatInfo.title) {
-                //         originalHolonNameUpdate = chatInfo.title;
-                //     }
-                // } catch (e) {
-                //     console.warn(`Could not fetch chat title for ${quest.chat} in updateMessage: ${e.message}`);
-                // }
                 const originalHolonNameUpdate = await getHolonName(this.db, quest.chat, ctx);
                 const hologramSpecificMessageText = baseMessage + `| ${i18next.t('linked_view', { lng: language, holonName: originalHolonNameUpdate, defaultValue: `🔗 Linked from ${originalHolonNameUpdate}` })}\n`;
-                console.log(`Found ${hologramsToUpdate.length} Telegram hologram messages to update for quest ${quest.id}`);
+                
+                // Track which holograms to remove due to errors
+                const hologramsToRemove = [];
+                
                 for (const hologram of hologramsToUpdate) {
                     // Check if the hologram is for Telegram and has the necessary details
                     if (hologram.platform === 'telegram' && hologram.chatId && hologram.messageId) {
                         const hologramChatId = hologram.chatId;
                         const hologramMessageId = hologram.messageId;
-                        console.log(`Attempting to update Telegram hologram message ${hologramMessageId} in chat ${hologramChatId}`);
-                        // Log the exact content being sent to the hologram
-                        console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending message content: ${baseMessage.substring(0,100)}...`);
-                        console.log(`[updateMessage] For Hologram ${hologramMessageId} - Sending markupConfig:`, JSON.stringify(markupConfig).substring(0,100) + "...");
                         try {
                             if (showQuestsAsImages) {
                                 // FAST PATH: Update hologram buttons immediately
@@ -1215,15 +1219,26 @@ export default class Quests {
                                     null,
                                     markupConfig.reply_markup
                                 ).catch(err => {
-                                    if (err.response && err.response.description === 'Bad Request: message is not modified') {
-                                        console.log("Hologram buttons not modified - this is usually ok");
+                                    if (err.response && err.response.description) {
+                                        if (err.response.description.includes('message is not modified')) {
+                                            // Normal condition - buttons unchanged
+                                        } else if (err.response.description.includes('message to edit not found') ||
+                                                 err.response.description.includes('chat not found') ||
+                                                 err.response.description.includes('blocked by user')) {
+                                            // Mark for removal - message/chat no longer accessible
+                                            hologramsToRemove.push(hologram);
+                                        } else {
+                                            console.error(`Error updating hologram buttons in ${hologramChatId}:`, err);
+                                        }
                                     } else {
                                         console.error(`Error updating hologram buttons in ${hologramChatId}:`, err);
                                     }
                                 });
                                 
-                                // BACKGROUND PATH: Generate image for hologram asynchronously
-                                this.regenerateHologramImageBackground(hologramChatId, hologramMessageId, quest, markupConfig);
+                                // BACKGROUND PATH: Generate image for hologram asynchronously (only if not marked for removal)
+                                if (!hologramsToRemove.includes(hologram)) {
+                                    this.regenerateHologramImageBackground(hologramChatId, hologramMessageId, quest, markupConfig);
+                                }
                             } else {
                                 // Use text if quest images are disabled or no image available
                                 await this.bot.telegram.editMessageText(
@@ -1233,17 +1248,46 @@ export default class Quests {
                                     hologramSpecificMessageText,
                                     markupConfig
                                 ).catch(err => {
-                                    if (err.response && err.response.description === 'Bad Request: message is not modified') {
-                                        console.log("Hologram text message not modified - this is usually ok");
+                                    if (err.response && err.response.description) {
+                                        if (err.response.description.includes('message is not modified')) {
+                                            // Normal condition - text unchanged
+                                        } else if (err.response.description.includes('message to edit not found') ||
+                                                 err.response.description.includes('chat not found') ||
+                                                 err.response.description.includes('blocked by user')) {
+                                            // Mark for removal - message/chat no longer accessible
+                                            hologramsToRemove.push(hologram);
+                                        } else {
+                                            console.error(`Error updating hologram text message in ${hologramChatId}:`, err);
+                                        }
                                     } else {
                                         console.error(`Error updating hologram text message in ${hologramChatId}:`, err);
                                     }
                                 });
                             }
-                            console.log(`Successfully updated or attempted update on hologram message ${hologramMessageId}`);
                         } catch (hologramError) {
+                            // Handle unexpected errors by marking for removal
+                            if (hologramError.response && hologramError.response.description) {
+                                if (hologramError.response.description.includes('message to edit not found') ||
+                                    hologramError.response.description.includes('chat not found') ||
+                                    hologramError.response.description.includes('blocked by user')) {
+                                    hologramsToRemove.push(hologram);
+                                }
+                            }
                             console.error('Error during hologram message update:', hologramError);
                         }
+                    }
+                }
+                
+                // Clean up inaccessible holograms from the quest object
+                if (hologramsToRemove.length > 0) {
+                    console.log(`Removing ${hologramsToRemove.length} inaccessible holograms from quest ${quest.id}`);
+                    quest.activeHolograms = quest.activeHolograms.filter(h => !hologramsToRemove.includes(h));
+                    // Save the updated quest to persist the cleanup
+                    try {
+                        await this.db.put(quest.chat + '/quests', quest);
+                    } catch (dbError) {
+                        console.error(`Error saving quest ${quest.id} during hologram cleanup to original chat ${quest.chat}:`, dbError);
+                        // Continue even if we can't save - hologram cleanup still happened in memory
                     }
                 }
             }
@@ -2327,18 +2371,12 @@ export default class Quests {
     // Add this new helper method to handle federated messages
     async handleFederatedMessages(ctx, quest, language) {
         try {
-            console.log(`[handleFederatedMessages] Starting for quest ${quest.id} in chat ${quest.chat}`);
-            
             // Get federation info to find out which spaces to notify
             const fedInfo = await this.db.holosphere.getFederation(quest.chat);
-            console.log(`[handleFederatedMessages] Federation info for chat ${quest.chat}:`, fedInfo);
             
             if (!fedInfo?.notify?.length) {
-                console.log(`[handleFederatedMessages] No federated chats to notify for quest ${quest.id}`);
                 return;
             }
-            
-            console.log(`[handleFederatedMessages] Found ${fedInfo.notify.length} federated chats to notify:`, fedInfo.notify);
 
             // Get existing federation tracking info
             const federationKey = `${quest.chat}_${quest.id}_fedmsgs`;
@@ -2352,29 +2390,22 @@ export default class Quests {
             for (const federatedChatId of fedInfo.notify) {
                 // Skip if it's the same chat as the original
                 if (federatedChatId === quest.chat) {
-                    console.log(`[handleFederatedMessages] Skipping same chat ${federatedChatId}`);
                     continue;
                 }
-
-                console.log(`[handleFederatedMessages] Processing federated chat ${federatedChatId}`);
 
                 // Check if the target holon has allowed the 'quests' lens in their federation array
                 try {
                     const targetFedInfo = await this.db.holosphere.getFederation(federatedChatId);
-                    console.log(`[handleFederatedMessages] Target federation info for ${federatedChatId}:`, targetFedInfo);
                     
                     // Check if the target chat has lensConfig and if it allows 'quests' lens for this specific connection
                     const sourceChatId = quest.chat.toString();
                     const targetLensConfig = targetFedInfo?.lensConfig?.[sourceChatId];
                     
                     if (!targetLensConfig?.notify?.includes('quests')) {
-                        console.log(`[handleFederatedMessages] Skipping federated message to ${federatedChatId} - 'quests' lens not allowed in their notify array for chat ${sourceChatId}`);
                         continue;
                     }
-                    
-                    console.log(`[handleFederatedMessages] Target chat ${federatedChatId} allows 'quests' lens for chat ${sourceChatId}, proceeding with message`);
                 } catch (error) {
-                    console.error(`[handleFederatedMessages] Error checking federation settings for chat ${federatedChatId}:`, error);
+                    console.error(`Error checking federation settings for chat ${federatedChatId}:`, error);
                     continue; // Skip this chat if we can't verify federation settings
                 }
 
@@ -2384,7 +2415,6 @@ export default class Quests {
 
                 try {
                     if (existingMsg) {
-                        console.log(`[handleFederatedMessages] Updating existing message ${existingMsg.messageId} in chat ${federatedChatId}`);
                         // Update existing message
                         const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
                         const hologramMessageText = await this.createMessage(quest, language) + 
@@ -2414,7 +2444,6 @@ export default class Quests {
                             ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
                         }
                     } else {
-                        console.log(`[handleFederatedMessages] Creating new hologram message in chat ${federatedChatId}`);
                         // Create new hologram-style message
                         const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
                         const hologramMessageText = await this.createMessage(quest, language) + 
@@ -2440,8 +2469,6 @@ export default class Quests {
                             );
                         }
 
-                        console.log(`[handleFederatedMessages] Created new hologram message ${newMessage.message_id} in chat ${federatedChatId}`);
-
                         // Pin the message if quest is not completed
                         if (quest.status !== 'completed') {
                             await ctx.telegram.pinChatMessage(
@@ -2449,7 +2476,7 @@ export default class Quests {
                                 newMessage.message_id,
                                 { disable_notification: true }
                             ).catch(err => { 
-                                console.log(`[handleFederatedMessages] Could not pin message in ${federatedChatId}:`, err);
+                                console.log(`Could not pin message in ${federatedChatId}:`, err);
                             });
                         }
 
@@ -2461,7 +2488,7 @@ export default class Quests {
                         });
                     }
                 } catch (error) {
-                    console.error(`[handleFederatedMessages] Failed to handle message in federated chat ${federatedChatId}:`, error);
+                    console.error(`Failed to handle message in federated chat ${federatedChatId}:`, error);
                     // If we've failed to update an existing message, remove it from tracking
                     if (existingMsgIndex > -1) {
                         federatedMessages.messages.splice(existingMsgIndex, 1);
@@ -2472,11 +2499,10 @@ export default class Quests {
             // Save the updated federation message tracking information
             if (federatedMessages.messages.length > 0) {
                 await this.db.put('federation_messages', federatedMessages);
-                console.log(`[handleFederatedMessages] Saved federation tracking for ${federatedMessages.messages.length} messages`);
             }
 
         } catch (error) {
-            console.error('[handleFederatedMessages] Error handling federated messages:', error);
+            console.error('Error handling federated messages:', error);
         }
     }
 
@@ -2980,20 +3006,80 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatID);
 
         try {
+            // Get quests from current holon
             const allQuests = await this.db.getAll(chatID + '/quests');
-            const openQuests = allQuests.filter(q => q.status === 'ongoing' || q.status === 'scheduled');
+            let openQuests = allQuests.filter(q => 
+                (q.status === 'ongoing' || q.status === 'scheduled') &&
+                q.chat && q.id && // Ensure basic required fields exist
+                q.chat !== 'undefined' && q.chat !== 'null' // Exclude corrupted data
+            );
+            
+            // If this is a personal chat, also include user's holograms
+            if (chatID > 0) { // Personal chat (positive ID)
+                try {
+                    const userHolograms = await this.db.holosphere.getAll(chatID.toString(), 'quests');
+                    if (userHolograms && userHolograms.length > 0) {
+                        console.log(`[listOpenQuests] Found ${userHolograms.length} holograms for user ${chatID}`);
+                        
+                        // Convert holograms to quest-like objects for display
+                        const hologramQuests = userHolograms
+                            .filter(h => h.status === 'ongoing' || h.status === 'scheduled')
+                            .map(hologram => {
+                                // Extract original chat ID from soul path
+                                const [appname, originalChat, lens, questId] = hologram.soul ? hologram.soul.split('/') : ['', chatID, 'quests', hologram.id];
+                                return {
+                                    id: hologram.id,
+                                    chat: originalChat, // This is the original holon where the quest came from
+                                    title: hologram.title || 'Remote Quest',
+                                    status: hologram.status,
+                                    type: 'hologram', // Mark as hologram for special handling
+                                    isHologram: true
+                                };
+                            });
+                        
+                        openQuests = [...openQuests, ...hologramQuests];
+                        console.log(`[listOpenQuests] Total quests after adding holograms: ${openQuests.length}`);
+                    }
+                } catch (hologramError) {
+                    console.error(`[listOpenQuests] Error fetching holograms:`, hologramError);
+                    // Continue with just local quests
+                }
+            }
 
             if (openQuests.length === 0) {
                 await ctx.reply(i18next.t('noopenquests', { lng: language, defaultValue: 'There are no open quests.' }));
                 return;
             }
+            
+            console.log(`[listOpenQuests] Found ${openQuests.length} valid open quests out of ${allQuests.length} total quests`);
 
             const buttons = openQuests.map(quest => {
                 // Ensure quest.title is a string and not excessively long for a button
-                const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
-                return [Markup.button.callback(title, 'view_original_quest_' + quest.chat + '_' + quest.id)];
-            });
+                let title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
+                
+                // Add emoji indicator for holograms
+                if (quest.isHologram) {
+                    title = `🔗 ${title}`;
+                }
+                
+                // Validate quest data before creating callback
+                const questChatId = quest.chat || chatID; // Fallback to current chat if quest.chat is missing
+                const questId = quest.id;
+                
+                if (!questChatId || !questId) {
+                    console.warn(`Invalid quest data for button generation - chat: ${questChatId}, id: ${questId}, title: ${title}`);
+                    return null; // Skip invalid quests
+                }
+                
+                return [Markup.button.callback(title, 'view_original_quest_' + questChatId + '_' + questId)];
+            }).filter(button => button !== null); // Remove null entries
 
+            if (buttons.length === 0) {
+                await ctx.reply(i18next.t('noopenquests', { lng: language, defaultValue: 'There are no valid open quests.' }));
+                return;
+            }
+
+            console.log(`[listOpenQuests] Generated ${buttons.length} valid buttons`);
             await ctx.reply(i18next.t('openquests', { lng: language, defaultValue: 'Open Quests:' }), Markup.inlineKeyboard(buttons));
 
         } catch (error) {
@@ -3016,15 +3102,74 @@ export default class Quests {
             if (parts.length >= 2) { 
                 actualOriginalQuestId = parts.pop();
                 originalQuestChatId = parts.pop(); 
+                
+                // Additional validation
+                if (!originalQuestChatId || originalQuestChatId === 'undefined' || originalQuestChatId === 'null') {
+                    console.error(`[viewOriginalQuest] Invalid chat ID detected: ${originalQuestChatId}`);
+                    await ctx.answerCbQuery(i18next.t('errorviewingquest.invalidchat', { lng: language, defaultValue: 'Error: Invalid quest source.' }));
+                    return;
+                }
+                
+                if (!actualOriginalQuestId || actualOriginalQuestId === 'undefined' || actualOriginalQuestId === 'null') {
+                    console.error(`[viewOriginalQuest] Invalid quest ID detected: ${actualOriginalQuestId}`);
+                    await ctx.answerCbQuery(i18next.t('errorviewingquest.invalidid', { lng: language, defaultValue: 'Error: Invalid quest identifier.' }));
+                    return;
+                }
+                
+                console.log(`[viewOriginalQuest] Looking for quest ${actualOriginalQuestId} in chat ${originalQuestChatId}`);
             } else {
                 console.warn("[viewOriginalQuest] originalQuestIdParts format might be incorrect. Expected originalChatId_originalQuestMessageId. Got:", originalQuestIdParts);
                 await ctx.answerCbQuery(i18next.t('errorviewingquest.format', { lng: language, defaultValue: 'Error: Invalid quest identifier format.' }));
                 return;
             }
 
-            const questToView = await this.db.get(originalQuestChatId + '/quests', actualOriginalQuestId.toString());
+            let questToView;
+            try {
+                // First try to get the quest from the original holon
+                questToView = await this.db.get(originalQuestChatId + '/quests', actualOriginalQuestId.toString());
+                console.log(`[viewOriginalQuest] Database query result: ${questToView ? 'found' : 'not found'}`);
+            } catch (dbError) {
+                console.error(`[viewOriginalQuest] Database error retrieving quest ${actualOriginalQuestId} from ${originalQuestChatId}:`, dbError);
+                
+                // If we can't access the original holon, try to find a local hologram copy
+                console.log(`[viewOriginalQuest] Attempting to find local hologram copy for quest ${actualOriginalQuestId}`);
+                try {
+                    const userHologramData = await this.db.holosphere.get(interactingUserId.toString(), 'quests', actualOriginalQuestId.toString());
+                    if (userHologramData && userHologramData.soul) {
+                        // Extract the original quest data from the hologram soul path
+                        const [appname, originalChatFromSoul, lens, questId] = userHologramData.soul.split('/');
+                        console.log(`[viewOriginalQuest] Found hologram data - reconstructing quest from soul: ${userHologramData.soul}`);
+                        
+                        // Create a minimal quest object from available hologram data
+                        questToView = {
+                            id: actualOriginalQuestId,
+                            chat: originalQuestChatId,
+                            title: userHologramData.title || 'Quest from Remote Holon',
+                            status: userHologramData.status || 'ongoing',
+                            type: 'task', // Default type
+                            initiator: { first_name: 'Remote User' }, // Placeholder
+                            participants: [],
+                            appreciation: [],
+                            timeTracking: {},
+                            date: userHologramData.lastInteracted || Date.now(),
+                            description: `This quest originates from a holon that is no longer accessible. Limited information is available.`
+                        };
+                        console.log(`[viewOriginalQuest] Reconstructed quest from hologram data`);
+                    } else {
+                        throw new Error('No hologram data found either');
+                    }
+                } catch (hologramError) {
+                    console.error(`[viewOriginalQuest] Could not find hologram data either:`, hologramError);
+                    await ctx.answerCbQuery(i18next.t('errorviewingquest.inaccessible', { lng: language, defaultValue: 'Error: This quest is from an inaccessible holon.' }));
+                    return;
+                }
+            }
 
-            if (!await this.questExists(questToView, ctx, actualOriginalQuestId)) { return; }
+            if (!questToView) {
+                console.error(`[viewOriginalQuest] No quest data available for ${actualOriginalQuestId}`);
+                await ctx.answerCbQuery(i18next.t('errorviewingquest.notfound', { lng: language, defaultValue: 'Quest not found.' }));
+                return;
+            }
 
             // Ensure the quest object has its chat and id correctly for personalHologram if fetched from different context
             questToView.chat = originalQuestChatId; 
@@ -3236,7 +3381,6 @@ export default class Quests {
     // Helper method to check quest image display setting
     shouldShowQuestsAsImages() {
         const setting = process.env.SHOW_QUESTS_AS_IMAGES === 'true';
-        console.log(`[Quests] SHOW_QUESTS_AS_IMAGES environment setting: ${process.env.SHOW_QUESTS_AS_IMAGES} (resolved to: ${setting})`);
         return setting;
     }
 
@@ -3246,7 +3390,7 @@ export default class Quests {
     imageUpdateTimer = null; // Batch processing timer
     
     // Calculate a hash of quest visual properties to detect changes
-    getQuestVisualHash(quest) {
+    getQuestVisualHash(quest, isHologram = false) {
         const visualProps = {
             title: quest.title,
             status: quest.status,
@@ -3256,7 +3400,8 @@ export default class Quests {
             timeTracking: Object.keys(quest.timeTracking || {}).length,
             completed: quest.completed,
             when: quest.when,
-            until: quest.until
+            until: quest.until,
+            isHologram: isHologram // Include hologram status in hash
         };
         return JSON.stringify(visualProps).split('').reduce((a, b) => {
             a = ((a << 5) - a) + b.charCodeAt(0);
@@ -3265,13 +3410,17 @@ export default class Quests {
     }
 
     // Check if quest image needs regeneration
-    needsImageRegeneration(quest) {
-        const cacheKey = `${quest.chat}_${quest.id}`;
+    needsImageRegeneration(quest, cacheKey = null, isHologram = false) {
+        // If no cache key provided, generate it for backward compatibility
+        if (!cacheKey) {
+            cacheKey = `${quest.chat}_${quest.id}`;
+        }
+        
         const cached = this.questImageCache.get(cacheKey);
         
         if (!cached) return true; // No cache entry
         
-        const currentHash = this.getQuestVisualHash(quest);
+        const currentHash = this.getQuestVisualHash(quest, isHologram);
         if (cached.hash !== currentHash) return true; // Content changed
         
         // Check if cached image file still exists
@@ -3291,22 +3440,23 @@ export default class Quests {
 
     // Get cached image path or trigger regeneration
     async getOrUpdateQuestImage(quest, chatID, isHologram = false) {
-        const cacheKey = `${quest.chat}_${quest.id}`;
+        // Include hologram status and source chat in cache key for unique identification
+        const sourceIdentifier = chatID ? chatID.toString() : 'unknown';
+        const hologramSuffix = isHologram ? '_hologram' : '';
+        const cacheKey = `${quest.chat}_${quest.id}_from_${sourceIdentifier}${hologramSuffix}`;
         
         // Check if regeneration is needed
-        if (!this.needsImageRegeneration(quest)) {
+        if (!this.needsImageRegeneration(quest, cacheKey)) {
             const cached = this.questImageCache.get(cacheKey);
-            console.log(`[ImageCache] Using cached image for quest ${quest.id}: ${cached.imagePath}`);
             return cached.imagePath;
         }
         
         // Generate new image
-        console.log(`[ImageCache] Regenerating image for quest ${quest.id}`);
         const imagePath = await this.ui.getQuestImage(quest, chatID, isHologram);
         
         // Update cache
         this.questImageCache.set(cacheKey, {
-            hash: this.getQuestVisualHash(quest),
+            hash: this.getQuestVisualHash(quest, isHologram),
             imagePath: imagePath,
             timestamp: Date.now()
         });
@@ -3327,14 +3477,26 @@ export default class Quests {
                     null,
                     markupConfig.reply_markup
                 );
-                console.log(`[updateQuestMessage] Ultra-fast button update completed for quest ${quest.id}`);
             } catch (err) {
-                console.error('Error in ultra-fast button update:', err);
+                // Handle various error conditions gracefully
+                if (err.response && err.response.description) {
+                    if (err.response.description.includes('message is not modified')) {
+                        // Normal condition - buttons unchanged
+                    } else if (err.response.description.includes('message to edit not found') ||
+                              err.response.description.includes('chat not found') ||
+                              err.response.description.includes('blocked by user')) {
+                        console.log(`Quest message ${messageId} in chat ${chatId} no longer accessible for button update`);
+                        return; // Skip image update too
+                    } else {
+                        console.error('Error in ultra-fast button update:', err);
+                    }
+                } else {
+                    console.error('Error in ultra-fast button update:', err);
+                }
             }
 
             // SMART BACKGROUND PATH: Queue for batch processing
             if (this.ui && this.ui.getQuestImage) {
-                console.log(`[updateQuestMessage] Queueing image update for quest ${quest.id}`);
                 this.queueImageUpdate(ctx, quest, chatId, messageId, markupConfig);
             }
         } else {
@@ -3347,11 +3509,18 @@ export default class Quests {
                 baseMessage,
                 markupConfig
             ).catch((err) => { 
-                console.error('Error updating text message:', err);
-                if (err.response && err.response.description === 'Bad Request: message is not modified') {
-                    console.log("Message not modified - this is usually ok");
+                if (err.response && err.response.description) {
+                    if (err.response.description.includes('message is not modified')) {
+                        // Normal condition - message unchanged
+                    } else if (err.response.description.includes('message to edit not found') ||
+                              err.response.description.includes('chat not found') ||
+                              err.response.description.includes('blocked by user')) {
+                        console.log(`Quest message ${messageId} in chat ${chatId} no longer accessible for text update`);
+                    } else {
+                        console.error('Error updating text message:', err);
+                    }
                 } else {
-                    console.error("Serious error updating message:", err);
+                    console.error('Error updating text message:', err);
                 }
             });
         }
@@ -3381,19 +3550,23 @@ export default class Quests {
     async processBatchedImageUpdates() {
         if (this.imageUpdateQueue.size === 0) return;
         
-        console.log(`[processBatchedImageUpdates] Processing ${this.imageUpdateQueue.size} queued image updates`);
+
         
         // Create array of update promises for parallel processing
         const updatePromises = [];
         
         for (const [queueKey, { ctx, quest, chatId, messageId, markupConfig }] of this.imageUpdateQueue) {
+            // Generate cache key for this specific image
+            const sourceIdentifier = chatId ? chatId.toString() : 'unknown';
+            const isHologram = chatId.toString() !== quest.chat.toString();
+            const hologramSuffix = isHologram ? '_hologram' : '';
+            const cacheKey = `${quest.chat}_${quest.id}_from_${sourceIdentifier}${hologramSuffix}`;
+            
             // Only process if image regeneration is actually needed
-            if (this.needsImageRegeneration(quest)) {
+            if (this.needsImageRegeneration(quest, cacheKey, isHologram)) {
                 updatePromises.push(
                     this.regenerateQuestImageBackground(ctx, quest, chatId, messageId, markupConfig)
                 );
-            } else {
-                console.log(`[processBatchedImageUpdates] Skipping ${queueKey} - no visual changes`);
             }
         }
         
@@ -3404,9 +3577,8 @@ export default class Quests {
         if (updatePromises.length > 0) {
             try {
                 await Promise.allSettled(updatePromises);
-                console.log(`[processBatchedImageUpdates] Completed ${updatePromises.length} parallel image updates`);
             } catch (error) {
-                console.error(`[processBatchedImageUpdates] Error in batch processing:`, error);
+                console.error(`Error in batch processing:`, error);
             }
         }
     }
@@ -3414,9 +3586,9 @@ export default class Quests {
     // Background image regeneration - runs asynchronously without blocking user interactions
     async regenerateQuestImageBackground(ctx, quest, chatId, messageId, markupConfig) {
         try {
-            console.log(`[regenerateQuestImageBackground] Starting smart background image generation for quest ${quest.id}`);
-            const questImagePath = await this.getOrUpdateQuestImage(quest, quest.chat);
-            console.log(`[regenerateQuestImageBackground] Smart background image generation completed for quest ${quest.id}`);
+            // Determine if this is a hologram based on whether the message is in a different chat than the quest's origin
+            const isHologram = chatId.toString() !== quest.chat.toString();
+            const questImagePath = await this.getOrUpdateQuestImage(quest, chatId, isHologram);
             
             // Update with the newly generated image
             await ctx.telegram.editMessageMedia(
@@ -3430,9 +3602,21 @@ export default class Quests {
                 },
                 markupConfig
             );
-            console.log(`[regenerateQuestImageBackground] Successfully updated quest ${quest.id} with new image`);
         } catch (error) {
-            console.error(`[regenerateQuestImageBackground] Error in background image regeneration for quest ${quest.id}:`, error);
+            // Handle various error conditions gracefully
+            if (error.response && error.response.description) {
+                if (error.response.description.includes('message is not modified')) {
+                    return; // Not an error, just no changes needed
+                } else if (error.response.description.includes('message to edit not found') ||
+                          error.response.description.includes('chat not found') ||
+                          error.response.description.includes('blocked by user')) {
+                    // Message/chat no longer accessible
+                    console.log(`Quest message ${messageId} in chat ${chatId} no longer accessible`);
+                    return;
+                }
+            }
+            
+            console.error(`Error in background image regeneration for quest ${quest.id}:`, error);
             // If image generation fails, try to maintain existing image or fallback to button-only update
             try {
                 if (quest.picture) {
@@ -3446,10 +3630,20 @@ export default class Quests {
                         },
                         markupConfig
                     );
-                    console.log(`[regenerateQuestImageBackground] Fallback to existing picture for quest ${quest.id}`);
                 }
             } catch (fallbackError) {
-                console.error(`[regenerateQuestImageBackground] Fallback also failed for quest ${quest.id}:`, fallbackError);
+                // Handle "message not modified" error in fallback too
+                if (fallbackError.response && fallbackError.response.description) {
+                    if (fallbackError.response.description.includes('message is not modified')) {
+                        return;
+                    } else if (fallbackError.response.description.includes('message to edit not found') ||
+                              fallbackError.response.description.includes('chat not found') ||
+                              fallbackError.response.description.includes('blocked by user')) {
+                        console.log(`Quest message ${messageId} in chat ${chatId} no longer accessible during fallback`);
+                        return;
+                    }
+                }
+                console.error(`Fallback also failed for quest ${quest.id}:`, fallbackError);
                 // Buttons were already updated in the fast path, so we're good
             }
         }
@@ -3458,11 +3652,8 @@ export default class Quests {
     // Background hologram image regeneration - runs asynchronously without blocking user interactions
     async regenerateHologramImageBackground(hologramChatId, hologramMessageId, quest, markupConfig) {
         try {
-            console.log(`[regenerateHologramImageBackground] Starting smart background hologram image generation for quest ${quest.id} in chat ${hologramChatId}`);
-            
-            // Use smart caching for holograms too
-            const questImagePath = await this.getOrUpdateQuestImage(quest, quest.chat, true);
-            console.log(`[regenerateHologramImageBackground] Smart background hologram image generation completed for quest ${quest.id}`);
+            // Use smart caching for holograms - always pass true for isHologram and use hologramChatId as source
+            const questImagePath = await this.getOrUpdateQuestImage(quest, hologramChatId, true);
             
             // Update hologram with the newly generated image
             await this.bot.telegram.editMessageMedia(
@@ -3476,9 +3667,21 @@ export default class Quests {
                 },
                 markupConfig
             );
-            console.log(`[regenerateHologramImageBackground] Successfully updated hologram ${hologramMessageId} with new image`);
         } catch (error) {
-            console.error(`[regenerateHologramImageBackground] Error in background hologram image regeneration for quest ${quest.id}:`, error);
+            // Handle various error conditions gracefully
+            if (error.response && error.response.description) {
+                if (error.response.description.includes('message is not modified')) {
+                    return; // Not an error, just no changes needed
+                } else if (error.response.description.includes('message to edit not found') ||
+                          error.response.description.includes('chat not found') ||
+                          error.response.description.includes('blocked by user')) {
+                    // Message/chat no longer accessible - hologram should be cleaned up
+                    console.log(`Hologram ${hologramMessageId} in chat ${hologramChatId} no longer accessible, will be cleaned up`);
+                    return;
+                }
+            }
+            
+            console.error(`Error in background hologram image regeneration for quest ${quest.id}:`, error);
             // If image generation fails, try to maintain existing image or fallback to button-only update
             try {
                 if (quest.picture) {
@@ -3492,10 +3695,20 @@ export default class Quests {
                         },
                         markupConfig
                     );
-                    console.log(`[regenerateHologramImageBackground] Fallback to existing picture for hologram ${hologramMessageId}`);
                 }
             } catch (fallbackError) {
-                console.error(`[regenerateHologramImageBackground] Fallback also failed for hologram ${hologramMessageId}:`, fallbackError);
+                // Handle "message not modified" error in fallback too
+                if (fallbackError.response && fallbackError.response.description) {
+                    if (fallbackError.response.description.includes('message is not modified')) {
+                        return;
+                    } else if (fallbackError.response.description.includes('message to edit not found') ||
+                              fallbackError.response.description.includes('chat not found') ||
+                              fallbackError.response.description.includes('blocked by user')) {
+                        console.log(`Hologram ${hologramMessageId} in chat ${hologramChatId} no longer accessible during fallback`);
+                        return;
+                    }
+                }
+                console.error(`Fallback also failed for hologram ${hologramMessageId}:`, fallbackError);
                 // Buttons were already updated in the fast path, so we're good
             }
         }
