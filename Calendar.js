@@ -34,7 +34,7 @@ export class Calendar {
                 const result = await this.clickButtonCalendar(ctx);
                 if (result !== -1) {
                     // If a date was selected, show time selector
-                    const timeMarkup = this.createTimeSelector(result, true);
+                    const timeMarkup = this.createTimeSelector(result, true, ctx.callbackQuery.message.chat.id);
                     await ctx.editMessageReplyMarkup({
                         reply_markup: timeMarkup
                     });
@@ -45,10 +45,10 @@ export class Calendar {
     }
     NodeTelegramBotApi = {
         editMessageReplyMarkupCalendar(date, query) {
-            this.bot.editMessageReplyMarkup(this.createNavigationKeyboard(date),{message_id: query.message.message_id, chat_id: query.message.chat.id})
+            this.bot.editMessageReplyMarkup(this.createNavigationKeyboard(date, query.message.chat.id),{message_id: query.message.message_id, chat_id: query.message.chat.id})
         },
         editMessageReplyMarkupTime(date, query, from_calendar) {
-            this.bot.editMessageReplyMarkup(this.createTimeSelector(date, from_calendar),{message_id: query.message.message_id, chat_id: query.message.chat.id})
+            this.bot.editMessageReplyMarkup(this.createTimeSelector(date, from_calendar, query.message.chat.id),{message_id: query.message.message_id, chat_id: query.message.chat.id})
         },
         sendMessageCalendar(menu, msg) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];
@@ -157,16 +157,16 @@ export class Calendar {
         //     now.setSeconds(0);
         //     this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), msg);
         // },
-        startTimeSelector(msg) {
-            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector()), msg);
+        startTimeSelector(msg, chatId = null) {
+            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector(undefined, false, chatId)), msg);
         }
     };
     Telegraf = {
         editMessageReplyMarkupCalendar(date, ctx) {
-            ctx.editMessageReplyMarkup(this.createNavigationKeyboard(date))
+            ctx.editMessageReplyMarkup(this.createNavigationKeyboard(date, ctx.callbackQuery.message.chat.id))
         },
         editMessageReplyMarkupTime(date, ctx, from_calendar) {
-            ctx.editMessageReplyMarkup(this.createTimeSelector(date, from_calendar))
+            ctx.editMessageReplyMarkup(this.createTimeSelector(date, from_calendar, ctx.callbackQuery.message.chat.id))
         },
         sendMessageCalendar(menu, ctx, language) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[language] : lang.select[language];
@@ -275,18 +275,18 @@ export class Calendar {
             now.setHours(0);
             now.setMinutes(0);
             now.setSeconds(0);
-            this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), ctx, language);
+            this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now, ctx.chat ? ctx.chat.id : ctx.callbackQuery.message.chat.id)), ctx, language);
         },
-        startTimeSelector(ctx) {
-            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector()), ctx);
+        startTimeSelector(ctx, chatId = null) {
+            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector(undefined, false, chatId || ctx.chat.id)), ctx);
         }
     };
     Telebot = {
         editMessageReplyMarkupCalendar(date, query) {
-            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createNavigationKeyboard(date)));
+            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createNavigationKeyboard(date, query.message.chat.id)));
         },
         editMessageReplyMarkupTime(date, query, from_calendar) {
-            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createTimeSelector(date, from_calendar)));
+            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createTimeSelector(date, from_calendar, query.message.chat.id)));
         },
         sendMessageCalendar(menu, msg) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];
@@ -306,10 +306,10 @@ export class Calendar {
     };
     Grammy = {
         editMessageReplyMarkupCalendar(date, ctx) {
-            ctx.editMessageReplyMarkup(this.replyMarkupObject(this.createNavigationKeyboard(date)));
+            ctx.editMessageReplyMarkup(this.replyMarkupObject(this.createNavigationKeyboard(date, ctx.callbackQuery.message.chat.id)));
         },
         editMessageReplyMarkupTime(date, ctx, from_calendar) {
-            ctx.editMessageReplyMarkup(this.replyMarkupObject(this.createTimeSelector(date, from_calendar)));
+            ctx.editMessageReplyMarkup(this.replyMarkupObject(this.createTimeSelector(date, from_calendar, ctx.callbackQuery.message.chat.id)));
         },
         sendMessageCalendar(menu, ctx) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];
@@ -397,7 +397,7 @@ export class Calendar {
         var date2 = new Date(year, month, 1);
         return Math.round((date2 - date1) / 1000 / 3600 / 24); 
     }
-    createTimeSelector(date = 'undefined', from_calendar = false) {
+    createTimeSelector(date = 'undefined', from_calendar = false, chatId = null) {
         var i, j;
         var start, stop;
         var time_range = this.options.time_range.split('-');
@@ -444,11 +444,19 @@ export class Calendar {
         d = i;
         cnk.inline_keyboard.push([{},{},{}]);
         cnk.inline_keyboard[d][0] = (flag_start === 1) ? {text: ' ', callback_data: ' '} : {text: '<', callback_data: 't_' + dayjs(start).format("YYYY-MM-DD HH:mm") + '_' + fc + '-'};
-        cnk.inline_keyboard[d][1] = {text: ' ', callback_data: ' '};
+        
+        // Add back button in the middle if we have a quest to go back to
+        var hasQuestToReturn = chatId && this.questIds && this.questIds.has(chatId);
+        if (hasQuestToReturn) {
+            cnk.inline_keyboard[d][1] = {text: lang.back[this.options.language], callback_data: 'calendar_back_to_quest'};
+        } else {
+            cnk.inline_keyboard[d][1] = {text: ' ', callback_data: ' '};
+        }
+        
         cnk.inline_keyboard[d][2] = (flag_stop === 1) ? {text: ' ', callback_data: ' '} :{text: '>', callback_data: 't_' + dayjs(datetime).format("YYYY-MM-DD HH:mm") + '_' + fc + '+'};
         return cnk;
     }
-    createNavigationKeyboard(date) {
+    createNavigationKeyboard(date, chatId = null) {
         var i, j;
         var cnk = {};
         var cd = this.howMuchDays(date.getFullYear(), date.getMonth() + 1);
@@ -501,7 +509,15 @@ export class Calendar {
         } else {
             cnk.inline_keyboard[cr - 1][0] = {text: ' ', callback_data: ' '};
         }
-        cnk.inline_keyboard[cr - 1][1] = {text: ' ', callback_data: ' '};
+        
+        // Add back button in the middle if we have a quest to go back to
+        var hasQuestToReturn = chatId && this.questIds && this.questIds.has(chatId);
+        if (hasQuestToReturn) {
+            cnk.inline_keyboard[cr - 1][1] = {text: lang.back[this.options.language], callback_data: 'calendar_back_to_quest'};
+        } else {
+            cnk.inline_keyboard[cr - 1][1] = {text: ' ', callback_data: ' '};
+        }
+        
         if (!this.options.stop_date || (this.options.stop_date && Math.round(dayjs(this.options.stop_date).date(1).diff(dayjs(date).date(1), 'month', true)) > 0)) {
             cnk.inline_keyboard[cr - 1][2] = {text: '>', callback_data: 'n_' + dayjs(date).format("YYYY-MM") + '_+'};
         } else {

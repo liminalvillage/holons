@@ -703,20 +703,24 @@ class UI {
       `;
     }
 
-    // Participants (show names, limit for performance)
+    // Participants (show names with time tracking, limit for performance)
     if (quest.participants && quest.participants.length > 0) {
       const maxParticipantsToShow = 5; // Limit for performance
       const participantsToShow = quest.participants.slice(0, maxParticipantsToShow);
-      const participantBadges = participantsToShow.map(u => 
-        `<span class="participant-name">${getDisplayName(u)}</span>`
-      ).join(' ');
+      const participantBadges = participantsToShow.map(u => {
+        const hours = quest.timeTracking && quest.timeTracking[u.id];
+        if (hours && hours > 0) {
+          return `<span class="participant-name">${getDisplayName(u)} (${hours.toFixed(2)}h)</span>`;
+        }
+        return `<span class="participant-name">${getDisplayName(u)}</span>`;
+      }).join(' ');
       
       const extraCount = quest.participants.length > maxParticipantsToShow ? 
         ` +${quest.participants.length - maxParticipantsToShow} more` : '';
       
       infoRows += `
         <div class="quest-section">
-          <div class="section-label">👥</div>
+          <div class="section-label">🙋‍♂</div>
           <div class="section-content participants">${participantBadges}${extraCount}</div>
         </div>
       `;
@@ -870,7 +874,7 @@ class UI {
         </div>
         <div class="simple-title">${quest.title}</div>
         <div class="simple-footer">
-          <span class="simple-participants">👥 ${quest.participants?.length || 0}</span>
+          <span class="simple-participants">🙋‍♂ ${quest.participants?.length || 0}</span>
           <span class="simple-appreciation">👍 ${quest.appreciation?.length || 0}</span>
         </div>
       </div>
@@ -1152,7 +1156,7 @@ class UI {
     const element = `<div class="quest-list-container">
       <div class="quest-list-header">
         <div class="header-title">${i18next.t('Quests', { lng: language })}</div>
-        <div class="header-stats">👥 ${i18next.t('People', { lng: language })} | 👏 ${i18next.t('Appreciation', { lng: language })}</div>
+                        <div class="header-stats">🙋‍♂ ${i18next.t('People', { lng: language })} | 👏 ${i18next.t('Appreciation', { lng: language })}</div>
       </div>
       <div class="quest-list-wrapper">
         <table class="quest-list-table">

@@ -61,6 +61,11 @@ class Scheduler {
         this.bot.action(/t_(.+)_(0|1)[\+\-]/, async (ctx) => {
             return await this.handleTimeNavigation(ctx);
         });
+
+        // Calendar back to quest handler
+        this.bot.action(/calendar_back_to_quest/, async (ctx) => {
+            return await this.handleBackToQuest(ctx);
+        });
     }
 
     async deleteTasks() {
@@ -497,7 +502,7 @@ class Scheduler {
             // Generate calendar markup using Calendar class's createNavigationKeyboard
             const now = new Date();
             now.setDate(1);
-            const calendarMarkup = this.calendar.createNavigationKeyboard(now);
+            const calendarMarkup = this.calendar.createNavigationKeyboard(now, chatId);
             
             // Update only the markup, keeping the original message
             await this.bot.telegram.editMessageReplyMarkup(
@@ -837,6 +842,43 @@ class Scheduler {
         }
     }
 
+    async handleBackToQuest(ctx) {
+        try {
+            const chatId = ctx.callbackQuery.message.chat.id;
+            const messageId = ctx.callbackQuery.message.message_id;
+            
+            // Get quest ID from calendar
+            const questId = this.calendar.questIds.get(chatId);
+            
+            if (!questId) {
+                await ctx.answerCbQuery('Could not find associated task');
+                return;
+            }
+            
+            // Get quest
+            const quest = await this.db.get(`${chatId}/quests`, questId);
+            if (!quest) {
+                await ctx.answerCbQuery('Task not found');
+                return;
+            }
+            
+            // Get language
+            const language = await this.settings.getLanguage(chatId);
+            
+            // Use the quest's updateMessage method to properly restore the quest
+            // This will handle both text and image quests correctly
+            await this.quests.updateMessage(ctx, quest, language);
+            
+            // Clear stored quest ID
+            this.calendar.questIds.delete(chatId);
+            
+            await ctx.answerCbQuery('Returned to task');
+        } catch (error) {
+            console.error('Error returning to quest:', error);
+            await ctx.answerCbQuery('Error returning to task');
+        }
+    }
+
     async handleBackToCalendar(ctx) {
         try {
             // Get the quest ID and show calendar again
@@ -890,7 +932,7 @@ class Scheduler {
             // Generate calendar markup
             const now = new Date();
             now.setDate(1);
-            const calendarMarkup = this.calendar.createNavigationKeyboard(now);
+            const calendarMarkup = this.calendar.createNavigationKeyboard(now, chatId);
             console.log('Calendar markup generated');
             
             // Get the original message text (without the UTC note)

@@ -8,10 +8,10 @@ body {
 
 /* Status Table Specific Styling */
 .status-table-container {
-    max-width: 400px;
+    max-width: 800px;
     margin: 0 auto;
     background: #364156;
-    border-radius: 20px;
+    border-radius: 16px;
     padding: 0;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     overflow: hidden;
@@ -21,8 +21,9 @@ body {
     width: 100%;
     border-collapse: collapse;
     background: #364156;
-    border-radius: 20px;
+    border-radius: 16px;
     overflow: hidden;
+    table-layout: fixed;
 }
 
 .status-table thead {
@@ -30,30 +31,33 @@ body {
 }
 
 .status-table th {
-    padding: 15px 20px;
+    padding: 10px 8px;
     text-align: left;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 11px;
     color: #ffffff;
     border: none;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .status-table th:first-child {
-    border-top-left-radius: 20px;
+    border-top-left-radius: 16px;
 }
 
 .status-table th:last-child {
-    border-top-right-radius: 20px;
+    border-top-right-radius: 16px;
 }
 
 .status-table tbody tr:last-child td:first-child {
-    border-bottom-left-radius: 20px;
+    border-bottom-left-radius: 16px;
 }
 
 .status-table tbody tr:last-child td:last-child {
-    border-bottom-right-radius: 20px;
+    border-bottom-right-radius: 16px;
 }
 
 .status-table tbody tr {
@@ -66,22 +70,34 @@ body {
 }
 
 .status-table td {
-    padding: 15px 20px;
+    padding: 8px 6px;
     border: none;
     color: #ffffff;
-    font-size: 16px;
+    font-size: 13px;
     vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.status-table .rank-cell,
-.status-table .stat-cell,
-.status-table .score-cell {
+.status-table .rank-cell {
     text-align: center;
-    width: 80px;
+    width: 8%;
 }
 
 .status-table .name-cell {
-    min-width: 250px;
+    width: 30%;
+    text-align: left;
+}
+
+.status-table .stat-cell {
+    text-align: center;
+    width: 10%;
+}
+
+.status-table .score-cell {
+    text-align: center;
+    width: 12%;
 }
 
 /* Status Table User Info */
@@ -92,26 +108,30 @@ body {
 
 .status-table .user-name {
     color: #ffffff;
-    font-weight: 800;
-    font-size: 24px;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    font-weight: 700;
+    font-size: 14px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.6);
+    display: block;
+    line-height: 1.2;
 }
 
 .status-table .user-handle {
     color: #a0aec0;
-    font-size: 13px;
+    font-size: 10px;
+    display: block;
+    margin-top: 2px;
 }
 
 .status-table .stat-value {
     color: #ffffff;
-    font-weight: 700;
-    font-size: 18px;
+    font-weight: 600;
+    font-size: 13px;
 }
 
 .status-table .score-value {
     color: #ffffff;
-    font-weight: 800;
-    font-size: 20px;
+    font-weight: 700;
+    font-size: 14px;
 }
 
 /* Modern Table Container */
@@ -1018,14 +1038,14 @@ ul {
 }
 
 /* Enhanced participant styling */
-.quest-section .section-label:has-text("👥"),
-.quest-section .section-label:contains("👥") {
+.quest-section .section-label:has-text("🙋‍♂"),
+.quest-section .section-label:contains("🙋‍♂") {
     color: #28a745;
     font-weight: 700;
     font-size: 20px;
 }
 
-.quest-section:has(.section-label:contains("👥")) .section-content,
+.quest-section:has(.section-label:contains("🙋‍♂")) .section-content,
 .quest-section .section-content.participants {
     background: rgba(40,167,69,0.15);
     padding: 16px 20px;

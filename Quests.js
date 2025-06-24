@@ -365,7 +365,6 @@ export default class Quests {
                         if (!quest.chat && nctx.chat.id) {
                             quest.chat = nctx.chat.id;
                         }
-                        console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
                         await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
                         //Pin the message in the original chat
@@ -374,10 +373,22 @@ export default class Quests {
                         // Generate quest image with real ID (fast, targeted operation)
                         await generateQuestImageWithRealId(quest);
                         
+                        // Update buttons with real quest ID now that quest has proper ID
+                        try {
+                            await ctx.telegram.editMessageReplyMarkup(
+                                quest.chat,
+                                quest.id,
+                                null,
+                                this.markup(quest, language).reply_markup
+                            );
+                        } catch (err) {
+                            // Silently handle button update errors
+                        }
+                        
                         //delete the original trigger message
                         ctx.deleteMessage(messageID.toString()).catch((err) => { });
                     });
-                console.log(`Sent quest with original picture, will replace with quest image`);
+                // Quest creation message
             } else {
                 // Use original picture with caption if quest images are disabled
                 ctx.replyWithPhoto(picture,
@@ -391,11 +402,22 @@ export default class Quests {
                         if (!quest.chat && nctx.chat.id) {
                             quest.chat = nctx.chat.id;
                         }
-                        console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
                         await this.db.put(chatID + '/quests', quest) // Save the main quest first
 
                         //Pin the message in the original chat
                         ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
+                        
+                        // Update buttons with real quest ID now that quest has proper ID
+                        try {
+                            await ctx.telegram.editMessageReplyMarkup(
+                                quest.chat,
+                                quest.id,
+                                null,
+                                this.markup(quest, language).reply_markup
+                            );
+                        } catch (err) {
+                            // Silently handle button update errors
+                        }
                         
                         //delete the original trigger message
                         ctx.deleteMessage(messageID.toString()).catch((err) => { });
@@ -414,7 +436,7 @@ export default class Quests {
             if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
                 // When quest images are enabled, start with placeholder and replace with quest image
                 nctx = await ctx.reply("📝 Creating quest...", this.markup(quest, language));
-                console.log(`Sent placeholder message, will replace with quest image`);
+                // Quest creation message
             } else {
                 // Send text message if quest images are disabled
                 nctx = await ctx.reply(await this.createMessage(quest, language), this.markup(quest, language));
@@ -433,8 +455,19 @@ export default class Quests {
                 }
             }
 
-            console.log('Saving original quest with ID:', quest.id, 'and chat ID:', quest.chat);
             await this.db.put(chatID + '/quests', quest) // Save the main quest first
+            
+            // Update buttons with real quest ID now that quest has proper ID
+            try {
+                await this.bot.telegram.editMessageReplyMarkup(
+                    quest.chat,
+                    quest.id,
+                    null,
+                    this.markup(quest, language).reply_markup
+                );
+            } catch (err) {
+                // Silently handle button update errors
+            }
             
             // Generate quest image if enabled (background operation)
             if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
@@ -456,24 +489,18 @@ export default class Quests {
     // ========================== ACTIONS ==========================
 
     async join(ctx) {
-        console.log("JOIN ACTION - START");
-        console.log("Callback data:", ctx.callbackQuery.data);
         try {
             let chatID = ctx.callbackQuery.data.split('_')[2]; // chatID of the original quest message
             let messageID = ctx.callbackQuery.data.split('_')[3];
     
-            console.log(`JOIN DEBUG: Parsed chatID=${chatID}, messageID=${messageID}`);
-            console.log(`JOIN DEBUG: Database lookup key: "${chatID}/quests", value: "${messageID}"`);
     
             const language = await this.settings.getLanguage(chatID)
 
             let quest = await this.db.get(chatID + '/quests', messageID.toString())
-            console.log(`JOIN DEBUG: Retrieved quest:`, quest ? `Found quest "${quest.title}"` : 'Quest is null/undefined');
     
             if (!await this.questExists(quest, ctx, messageID)) { return; }
 
             if (quest.status == 'completed') {
-                console.log("Quest already completed");
                 ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID })
                     .catch(err => console.error('Error answering callback query:', err));
                 return;
@@ -528,7 +555,6 @@ export default class Quests {
     }
 
     async appreciate(ctx) {
-        console.log("APPRECIATE ACTION");
         // Get the quest  from the callback data
         let chatID = ctx.callbackQuery.data.split('_')[2]; // chatID of the original quest message
         let messageID = ctx.callbackQuery.data.split('_')[3];
@@ -1270,14 +1296,18 @@ export default class Quests {
 
     // Add this new method to handle showing more actions
     async showMoreActions(ctx) {
-        console.log("MORE ACTIONS");
         let chatID = ctx.callbackQuery.data.split('_')[2];
-        let messageID = ctx.callbackQuery.data.split('_')[3];
+        let questID = ctx.callbackQuery.data.split('_')[3];
+
+        if (!questID || questID === '') {
+            await ctx.answerCbQuery('Error: Missing quest ID');
+            return;
+        }
 
         const language = await this.settings.getLanguage(chatID);
-        let quest = await this.db.get(chatID + '/quests', messageID.toString());
+        let quest = await this.db.get(chatID + '/quests', questID.toString());
 
-        if (!await this.questExists(quest, ctx, messageID)) { return; }
+        if (!await this.questExists(quest, ctx, questID)) { return; }
         // Create expanded markup with all buttons
         let expandedButtons = this.getExpandedButtons(quest, language);
           
@@ -1294,7 +1324,7 @@ export default class Quests {
             }
         };
         
-        await this.updateQuestMessage(ctx, quest, chatID, messageID, language, expandedMarkupConfig);
+        await this.updateQuestMessage(ctx, quest, chatID, ctx.callbackQuery.message.message_id, language, expandedMarkupConfig);
 
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
@@ -1302,15 +1332,20 @@ export default class Quests {
     // Add this method to handle hiding more actions
     async hideMoreActions(ctx) {
         let chatID = ctx.callbackQuery.data.split('_')[2];
-        let messageID = ctx.callbackQuery.data.split('_')[3];
+        let questID = ctx.callbackQuery.data.split('_')[3];
+
+        if (!questID || questID === '') {
+            await ctx.answerCbQuery('Error: Missing quest ID');
+            return;
+        }
 
         const language = await this.settings.getLanguage(chatID);
-        let quest = await this.db.get(chatID + '/quests', messageID.toString());
+        let quest = await this.db.get(chatID + '/quests', questID.toString());
 
-        if (!await this.questExists(quest, ctx, messageID)) { return; }
+        if (!await this.questExists(quest, ctx, questID)) { return; }
         // Update message with original markup using centralized helper
         const markup = this.markup(quest, language);
-        await this.updateQuestMessage(ctx, quest, chatID, messageID, language, markup);
+        await this.updateQuestMessage(ctx, quest, chatID, ctx.callbackQuery.message.message_id, language, markup);
 
         await ctx.answerCbQuery().catch((err) => { console.log(err) });
     }
@@ -1984,18 +2019,15 @@ export default class Quests {
             }
         }
 
-        if (quest.participants.length > 0)
-            message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${[...quest.participants].map(u => getDisplayName(u)).join(', ')} \n`;
-
-        // Add time tracking info if any time is logged
-        if (quest.timeTracking && Object.keys(quest.timeTracking).length > 0) {
-            message += `| ⏰ Time logged:\n`;
-            for (const [userId, hours] of Object.entries(quest.timeTracking)) {
-                if (hours > 0) {
-                    const user = quest.participants.find(p => p.id === parseInt(userId)) || quest.initiator;
-                    message += `|   ${getDisplayName(user)}: ${hours.toFixed(2)}h\n`;
+        if (quest.participants.length > 0) {
+            const participantNames = [...quest.participants].map(u => {
+                const hours = quest.timeTracking && quest.timeTracking[u.id];
+                if (hours && hours > 0) {
+                    return `${getDisplayName(u)} (${hours.toFixed(2)}h)`;
                 }
-            }
+                return getDisplayName(u);
+            });
+            message += `| ${i18next.t('🙋‍♂', { lng: language })} : ${participantNames.join(', ')} \n`;
         }
 
         if (quest.appreciation.length > 0)
@@ -2112,6 +2144,19 @@ export default class Quests {
     }
 
     markup(quest, language) {
+        // Validate quest has required properties
+        if (!quest || !quest.chat) {
+            return Markup.inlineKeyboard([]);
+        }
+
+        // During quest creation, quest.id might be empty string - that's ok
+        // We'll generate buttons without callbacks for now, they'll be updated after quest creation
+        if (!quest.id || quest.id === '') {
+            return Markup.inlineKeyboard([
+                [Markup.button.callback('Creating quest...', 'placeholder')]
+            ]);
+        }
+
         let mu
         if (quest.type == 'event'|| quest.type == 'task' || quest.type == 'quest' || quest.type == 'todo' || quest.type == 'mission' || quest.type == 'compito' || quest.type == 'recurring') {
             mu = Markup.inlineKeyboard([
