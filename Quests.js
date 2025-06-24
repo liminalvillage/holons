@@ -1742,8 +1742,8 @@ export default class Quests {
             await this.personalHologram(sender.id, quest);
             await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
         }
-        // Update the message and propagate to federated spaces
-        await this.updateMessage(ctx, quest, language);
+        // Update the message and propagate to federated spaces - keep expanded view
+        await this.updateMessage(ctx, quest, language, true);
 
         ctx.answerCbQuery(`Added ${amount} hours to ${getDisplayName(sender)}'s time on "${quest.title}"`);
     }
@@ -1784,8 +1784,8 @@ export default class Quests {
                 await this.personalHologram(sender.id, quest);
                 await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
             }
-            // Update the message and propagate to federated spaces
-            await this.updateMessage(ctx, quest, language);
+            // Update the message and propagate to federated spaces - keep expanded view
+            await this.updateMessage(ctx, quest, language, true);
 
             ctx.answerCbQuery(`Removed ${amount } hours from ${getDisplayName(sender)}'s time on "${quest.title}"`);
         } else {
@@ -2794,8 +2794,8 @@ export default class Quests {
                         // }
                         console.log(`Original task ${originalTask.id} updated`);
                         
-                        // Immediately update the original task's message
-                        await this.updateMessage(ctx, originalTask, language);
+                        // Immediately update the original task's message - keep expanded view if it was expanded
+                        await this.updateMessage(ctx, originalTask, language, true);
                     }
                 } catch (error) {
                     console.error('Error updating original task:', error);
@@ -2809,8 +2809,8 @@ export default class Quests {
             //     await this.personalHologram(interactingUserId, quest); // Update user hologram for current quest instance
             // }
 
-            // Update the message
-            await this.updateMessage(ctx, quest, language);
+            // Update the message - keep expanded view
+            await this.updateMessage(ctx, quest, language, true);
             
             await ctx.answerCbQuery(`Set to repeat: ${frequencyName}`);
         } catch (error) {
@@ -2946,8 +2946,8 @@ export default class Quests {
                         // }
                         console.log(`Original task ${originalTask.id} updated to non-recurring`);
                         
-                        // Update the original task's message
-                        await this.updateMessage(ctx, originalTask, language);
+                        // Update the original task's message - keep expanded view if it was expanded
+                        await this.updateMessage(ctx, originalTask, language, true);
                     } else {
                         console.log(`Original task ${quest.originalTaskId} not found`);
                     }
@@ -2964,8 +2964,8 @@ export default class Quests {
             // }
             console.log(`Quest ${quest.id} updated to non-recurring`);
 
-            // Update the message
-            await this.updateMessage(ctx, quest, language);
+            // Update the message - keep expanded view
+            await this.updateMessage(ctx, quest, language, true);
 
             await ctx.answerCbQuery('Recurring task stopped');
         } catch (error) {
