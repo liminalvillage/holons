@@ -1342,54 +1342,109 @@ class UI {
 
       page = await browser.newPage();
       
-      // ULTRA-FAST SETTINGS for maximum speed
-      await page.setDefaultTimeout(3000); // Very fast timeout - 3 seconds  
-      await page.setViewport({ width: 800, height: 600 }); // Smaller viewport for speed
+      // DYNAMIC VIEWPORT: Start with larger default but adjust based on content
+      let initialViewport = { width: 1200, height: 800 };
+      
+      // For table containers and quest lists, use even larger viewport to prevent clipping
+      if (onElement.includes('table-container') || 
+          onElement.includes('quest-list') || 
+          onElement.includes('status-table') ||
+          onElement === 'table' ||
+          onElement.includes('modern-table')) {
+        initialViewport = { width: 1400, height: 1200 };
+      }
+      
+      await page.setDefaultTimeout(5000); // Increased timeout for larger content
+      await page.setViewport(initialViewport);
       
       // SKIP FONT LOADING for speed - use system fonts only
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
       
-      // ULTRA-FAST: Skip element waiting if possible
+      // Wait for element and get its actual dimensions
       try {
-        await page.waitForSelector(onElement, { timeout: 1000 });
+        await page.waitForSelector(onElement, { timeout: 2000 });
       } catch (timeoutError) {
-        // Continue anyway for speed
-        console.warn('Element wait timeout, proceeding anyway for speed');
+        console.warn('Element wait timeout, proceeding anyway');
       }
       
-      // OPTIMIZED SCREENSHOT: Take faster screenshot
+      // OPTIMIZED SCREENSHOT: Take screenshot without artificial size constraints
       const screenshotOptions = {
         path: pathToSave,
         type: 'png'
-        // Note: PNG doesn't support quality parameter, using PNG for better text clarity
       };
 
-      // Try to get element clip for better performance
+      // Try to get element dimensions and adjust viewport if needed
       try {
-        const clip = await page.evaluate((selector) => {
+        const elementInfo = await page.evaluate((selector) => {
           const element = document.querySelector(selector);
           if (!element) return null;
           const rect = element.getBoundingClientRect();
           return {
             x: Math.max(0, rect.left),
             y: Math.max(0, rect.top), 
-            width: Math.min(800, rect.width),
-            height: Math.min(600, rect.height)
+            width: rect.width,
+            height: rect.height,
+            scrollWidth: element.scrollWidth || rect.width,
+            scrollHeight: element.scrollHeight || rect.height
           };
         }, onElement);
         
-        if (clip && clip.width > 0 && clip.height > 0) {
-          screenshotOptions.clip = clip;
+        if (elementInfo && elementInfo.width > 0 && elementInfo.height > 0) {
+          // For tables and lists, ensure we capture the full content without artificial constraints
+          const shouldResize = elementInfo.scrollHeight > initialViewport.height || 
+                              elementInfo.scrollWidth > initialViewport.width;
+          
+          if (shouldResize) {
+            const newViewport = {
+              width: Math.max(initialViewport.width, Math.ceil(elementInfo.scrollWidth + 100)),
+              height: Math.max(initialViewport.height, Math.ceil(elementInfo.scrollHeight + 100))
+            };
+            console.log(`Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height}`);
+            await page.setViewport(newViewport);
+            
+            // Wait a moment for reflow
+            await page.waitForTimeout(500);
+            
+            // Re-evaluate element position after resize
+            const updatedElementInfo = await page.evaluate((selector) => {
+              const element = document.querySelector(selector);
+              if (!element) return null;
+              const rect = element.getBoundingClientRect();
+              return {
+                x: Math.max(0, rect.left),
+                y: Math.max(0, rect.top), 
+                width: rect.width,
+                height: rect.height
+              };
+            }, onElement);
+            
+            if (updatedElementInfo) {
+              screenshotOptions.clip = {
+                x: updatedElementInfo.x,
+                y: updatedElementInfo.y,
+                width: updatedElementInfo.width,
+                height: updatedElementInfo.height
+              };
+            }
+          } else {
+            // Use element clipping for smaller content
+            screenshotOptions.clip = {
+              x: elementInfo.x,
+              y: elementInfo.y,
+              width: elementInfo.width,
+              height: elementInfo.height
+            };
+          }
         }
       } catch (clipError) {
-        // Skip clipping for speed
-        console.warn('Element clipping failed, using full page screenshot');
+        // Skip clipping and take full page screenshot as fallback
+        console.warn('Element clipping failed, using full page screenshot:', clipError.message);
       }
       
       await page.screenshot(screenshotOptions);
       
     } catch (error) {
-      console.error('Fast screenshot error:', error);
+      console.error('Screenshot error:', error);
       
       // Quick browser restart on critical errors
       if (error.message.includes('Protocol error') || error.message.includes('Connection closed')) {

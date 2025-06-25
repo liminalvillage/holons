@@ -14,7 +14,7 @@ body {
     border-radius: 16px;
     padding: 0;
     box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid rgba(0,0,0,0.1);
 }
 
@@ -23,7 +23,7 @@ body {
     border-collapse: collapse;
     background: #ffffff;
     border-radius: 16px;
-    overflow: hidden;
+    overflow: visible;
     table-layout: fixed;
 }
 
@@ -181,7 +181,7 @@ body {
     background: rgba(255,255,255,0.8);
     backdrop-filter: blur(10px);
     border-radius: 20px;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .modern-table thead {
@@ -759,7 +759,7 @@ ul {
     margin: 0 auto;
     background: #f8f9fa;
     border-radius: 12px;
-    overflow: hidden;
+    overflow: visible;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
