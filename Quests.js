@@ -271,26 +271,30 @@ export default class Quests {
         const messageThreadId = (ctx.message?.is_topic_message && ctx.message.message_thread_id) 
                                 ? ctx.message.message_thread_id 
                                 : null;
-        let category = ''; // Category name retrieval removed for simplification
+        let category = ''; 
         
         if (ctx.message.chat && (ctx.message.chat.type === 'supergroup' || ctx.message.chat.type === 'channel')) {
             try {
                 if (ctx.message.message_thread_id) {
-                    // Get forum topic info using correct method name
-                    const forumTopicInfo = await ctx.telegram.getForumTopicByID(
-                        chatID,
-                        ctx.message.message_thread_id
-                    );
-                    if (forumTopicInfo?.name) {
-                        category = forumTopicInfo.name;
+                    // Try to get forum topic info - note: Telegraf doesn't have a direct method for this
+                    // We'll need to use alternative approaches to get the topic name
+                    try {
+                        // Alternative approach: check if the message is a reply to the topic creation message
+                        if (ctx.message.reply_to_message?.forum_topic_created?.name) {
+                            category = ctx.message.reply_to_message.forum_topic_created.name;
+                        } else {
+                            // For now, use the thread ID as a fallback category name
+                            category = `Topic ${ctx.message.message_thread_id}`;
+                        }
+                    } catch (topicErr) {
+                        console.log('Error processing forum topic info:', topicErr);
+                        category = `Topic ${ctx.message.message_thread_id}`;
                     }
                 }
             } catch (err) {
-                console.log('Error getting forum topic:', err);
-                // Fallback: try to get the thread name directly from the message if available
-                if (ctx.message.reply_to_message?.forum_topic_created?.name) {
-                    category = ctx.message.reply_to_message.forum_topic_created.name;
-                }
+                console.log('Error getting forum topic info:', err);
+                // Fallback: use default category
+                category = '';
             }
         }
 

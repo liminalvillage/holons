@@ -106,99 +106,7 @@ class UI {
     }
   }
 
-  async getFederatedUsers(chatID) {
-    // Get all users from the chat
-    let users = await this.db.getAll(chatID + '/users');
-    
-    try {
-      // Get users from federated spaces using holosphere's federated functionality
-      const federatedUsers = await this.db.holosphere.getFederated(chatID, 'users', {
-        aggregate: true,
-        idField: 'username',
-        sumFields: ['received', 'sent'],
-        includeFederated: true,
-        includeLocal: false
-      });
-      
-      // Combine local and federated users
-      if (federatedUsers && federatedUsers.length > 0) {
-        for (const fedUser of federatedUsers) {
-          let found = false;
-          for (let i = 0; i < users.length; i++) {
-            if (users[i].username === fedUser.username) {
-              // Merge user data
-              users[i].received = (users[i].received || 0) + (fedUser.received || 0);
-              users[i].sent = (users[i].sent || 0) + (fedUser.sent || 0);
-              found = true;
-              break;
-            }
-          }
-          
-          if (!found) {
-            // Add new federated user
-            users.push(fedUser);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error getting federated users:', error);
-    }
-    
-    return users;
-  }
 
-  async getFederatedQuests(chatID) {
-    try {
-      // Get local quests using getAll and wait for results
-      const localQuests = await this.db.getAll(chatID + '/quests') || [];
-
-      // Get federated quests (if available) and wait for results
-      let federatedQuests = [];
-      if (this.db.holosphere && typeof this.db.holosphere.getFederated === 'function') {
-        federatedQuests = await this.db.holosphere.getFederated(chatID, 'quests', {
-          includeFederated: true,
-          includeLocal: false
-        }) || [];
-      }
-
-      // Ensure both arrays are valid before merging
-      const validLocalQuests = Array.isArray(localQuests) ? localQuests : [];
-      const validFederatedQuests = Array.isArray(federatedQuests) ? federatedQuests : [];
-
-      // Merge and deduplicate by quest id (if needed)
-      const allQuests = [...validLocalQuests, ...validFederatedQuests];
-      
-      // Deduplicate by id if federated and local overlap
-      const uniqueQuests = Array.from(new Map(allQuests.map(q => [q.id, q])).values());
-
-      return uniqueQuests;
-    } catch (error) {
-      console.error('Error getting federated quests:', error);
-      return [];
-    }
-  }
-
-  async getFederatedValues(chatID) {
-    try {
-      // First get all users with their values from both local and federated spaces
-      let users = await this.getFederatedUsers(chatID);
-      
-      // Extract and combine all values
-      let allValues = [];
-      for (let i = 0; i < users.length; i++) {
-        if (users[i].values && Array.isArray(users[i].values)) {
-          allValues = allValues.concat(users[i].values);
-        }
-      }
-      
-      // Remove duplicates
-      const uniqueValues = [...new Set(allValues)];
-      return uniqueValues;
-    } catch (error) {
-      console.error('Error getting federated values:', error);
-      return [];
-    }
-  }
 
 
   async leaderboard(ctx) {
@@ -206,7 +114,7 @@ class UI {
     const currentSettings = await this.settings.getSettings(chatID) // Get all settings
     const valueEquation = currentSettings.valueEquation
     const currencies = currentSettings.currencies || []
-    let users = await this.getFederatedUsers(chatID)
+    let users = await this.db.holosphere.getAll(chatID, 'users')
     const language = await this.settings.getLanguage(chatID)
 
     // Assuming Expenses class instance is available via this.bot.expenses
@@ -350,10 +258,17 @@ class UI {
     try {
     let chatID = ctx.message.chat.id
     let language = await this.settings.getLanguage(chatID)
+    const isTopic = ctx.message.is_topic_message;
+    const threadId = isTopic ? ctx.message.message_thread_id : null;
     
-      // Wait for users and quests to be retrieved using getAll
-    let users = await this.getFederatedUsers(chatID)
-    let quests = await this.getFederatedQuests(chatID)
+      // Wait for users and quests to be retrieved using holosphere.getAll with holograms
+    let users = await this.db.holosphere.getAll(chatID, 'users')
+    let quests = await this.db.holosphere.getAll(chatID, 'quests')
+
+    // If in a topic, filter quests by message_thread_id
+    if (isTopic && threadId) {
+      quests = quests.filter(quest => quest.message_thread_id === threadId);
+    }
     
       // Wait for the table image to be generated
       const path = await this.getBulletinTable(users, quests, chatID);
@@ -488,8 +403,8 @@ class UI {
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
-      // Wait for all quests to be retrieved using getAll (via getFederatedQuests)
-    let quests = await this.getFederatedQuests(chatID)
+      // Wait for all quests to be retrieved using holosphere.getAll with holograms
+    let quests = await this.db.holosphere.getAll(chatID, 'quests')
     
       // Ensure we have a valid array before filtering
       if (!Array.isArray(quests)) {
@@ -547,10 +462,17 @@ class UI {
     // Get a list of requests
     let chatID = ctx.message.chat.id
     const language = await this.settings.getLanguage(chatID)
+    const isTopic = ctx.message.is_topic_message;
+    const threadId = isTopic ? ctx.message.message_thread_id : null;
 
-      // Get requests from quests collection using getAll and wait for results
-    let allQuests = await this.db.getAll(chatID + '/quests') || []
+      // Get requests from quests collection using holosphere.getAll with holograms
+    let allQuests = await this.db.holosphere.getAll(chatID, 'quests') || []
     let requests = allQuests.filter(quest => quest.type === 'request')
+
+    // If in a topic, filter further by message_thread_id
+    if (isTopic && threadId) {
+      requests = requests.filter(quest => quest.message_thread_id === threadId);
+    }
 
       // Wait for the table image to be generated
       const path = await this.getRequestsTable(requests, chatID);
@@ -583,10 +505,17 @@ class UI {
     // Get a list of offers
     let chatID = ctx.message.chat.id
     const language = await this.settings.getLanguage(chatID)
+    const isTopic = ctx.message.is_topic_message;
+    const threadId = isTopic ? ctx.message.message_thread_id : null;
 
-      // Get offers from quests collection using getAll and wait for results
-    let allQuests = await this.db.getAll(chatID + '/quests') || []
+      // Get offers from quests collection using holosphere.getAll with holograms
+    let allQuests = await this.db.holosphere.getAll(chatID, 'quests') || []
     let offers = allQuests.filter(quest => quest.type === 'offer')
+
+    // If in a topic, filter further by message_thread_id
+    if (isTopic && threadId) {
+      offers = offers.filter(quest => quest.message_thread_id === threadId);
+    }
 
       // Wait for the table image to be generated
       const path = await this.getOffersTable(offers, chatID);

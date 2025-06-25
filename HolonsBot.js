@@ -438,7 +438,7 @@ class HolonsBot {
     let k = 0;
 
     for (const chatID of chats) {
-      let users = await this.ui.getFederatedUsers(chatID);
+      let users = await this.db.holosphere.getAll(chatID, 'users');
       for (const user of users) {
         for (let j = 0; j < user.offers.length; j++) {
           offers.push({ id: k++, title: user.offers[j], description: user.username, price: '$10' });
