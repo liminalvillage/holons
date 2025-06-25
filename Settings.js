@@ -1863,12 +1863,7 @@ export default class Settings {
             console.log('FEDERATING', chatID, federationID)
             console.log("!!!!!!!!!!!!!!!!!!!!!!!FEDERATION HAS HAPPENED!"); 
             await this.db.holosphere.federate(chatID, federationID);
-<<<<<<< Updated upstream
             const federationName = await this.getHolonDisplayName(federationID, ctx);
-=======
-            const federationName = await utils.getHolonName(this.db, federationID, ctx);
-            console.log("!!!!!!!!!!!!!!!!!!!!!!!FEDERATION HAS HAPPENED!"); 
->>>>>>> Stashed changes
             ctx.reply('This chat has been federated with ' + federationName);
         } catch (error) {
             console.error('Federation error:', error);

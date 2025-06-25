@@ -576,7 +576,6 @@ export default class Holons {
           } catch (error) {
             console.error("Error in manage_zones_view:", error);
             if (error.response && error.response.error_code === 400 && error.response.description.includes('message is not modified')) {
-<<<<<<< Updated upstream
               console.log("Zone management view: message not modified, answering callback");
               // Message not modified, just answer the callback query if possible
               if (ctx.callbackQuery) {
@@ -589,12 +588,6 @@ export default class Holons {
                 reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]] }
               }).catch(e => console.log("Edit error:", e.message));
             }
-=======
-          } else {
-              // Optionally, provide a generic error message to the user if safe to do so
-               await ctx.reply("An error occurred while trying to manage zones.").catch(e => console.log("Reply error", e.message));
-              }
->>>>>>> Stashed changes
           }
           break;
         case 'manage_splitter_view':
@@ -3235,7 +3228,6 @@ Select the TARGET zone:`;
     await this._updateSplitterManagementView(ctx, internalPercent, splitterAddress);
   }
 
-<<<<<<< Updated upstream
   // Polynomial Reward Function Management Methods
 
   async handleSetRewardFunction(ctx) {
@@ -3591,7 +3583,6 @@ Select the TARGET zone:`;
   async setSettings(settings) {
     return await this.settings.setSettings(settings);
   }
-=======
   // Check if the -id has associated smart contract address ( bundle is created )
 
   async checkGroupAddress(federationID) {
