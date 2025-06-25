@@ -3803,5 +3803,4 @@ async getHolonContracts(holonId, holonsContract, wallet) {
 }
 
 
->>>>>>> Stashed changes
 }
