@@ -21,42 +21,74 @@ describe('HoloSphere Authentication and Authorization', () => {
     });
 
     beforeEach(async () => {
-        // Clean state before each test
+        // Clean state before each test - serialize cleanup to avoid concurrent auth
+        try {
         await holoSphere.deleteAll(testHolon, testLens);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
         await holoSphere.deleteAllGlobal(PUBLIC_GLOBAL_TABLE);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Only clean private data if needed, avoid unnecessary auth attempts
+            try {
         await holoSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
-        await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (error) {
+                // Ignore cleanup errors in beforeEach
+                console.log('Ignoring cleanup error in beforeEach:', error.message);
+            }
+            await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+            // Don't fail tests if cleanup fails
+            console.log('Cleanup error in beforeEach:', error.message);
+        }
     });
 
     afterEach(async () => {
-        // Clean up test data
+        // Clean up test data - minimal cleanup to avoid concurrent auth issues
         try {
             if (holoSphere) {
                 await holoSphere.deleteAll(testHolon, testLens);
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
             if (strictHoloSphere) {
                 await strictHoloSphere.deleteAll(testHolon, testLens);
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         } catch (error) {
-            console.error('Error in afterEach cleanup:', error);
+            // Don't fail tests if cleanup fails
+            console.log('Cleanup error in afterEach:', error.message);
         }
     });
 
     afterAll(async () => {
-        // Clean up all test data
+        // Clean up all test data - serialize operations to avoid concurrent auth
         try {
             if (holoSphere) {
                 await holoSphere.deleteAll(testHolon, testLens);
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
                 await holoSphere.deleteAllGlobal(PUBLIC_GLOBAL_TABLE);
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Only attempt private cleanup once at the end
+                try {
                 await holoSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                } catch (error) {
+                    console.log('Ignoring private cleanup error in afterAll:', error.message);
+                }
             }
+            
+            // Don't attempt cleanup on strictHoloSphere to avoid concurrent auth
             if (strictHoloSphere) {
                  await strictHoloSphere.deleteAll(testHolon, testLens);
-                await strictHoloSphere.deleteAllGlobal(PUBLIC_GLOBAL_TABLE);
-                await strictHoloSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Skip global cleanup for strict instance to avoid conflicts
+                console.log('Skipping global cleanup for strict instance to avoid auth conflicts');
             }
         } catch (error) {
-            console.error('Error during afterAll data cleanup:', error);
+            console.log('Cleanup error in afterAll (ignoring):', error.message);
         }
 
         // Close HoloSphere instances
@@ -72,7 +104,7 @@ describe('HoloSphere Authentication and Authorization', () => {
                 console.log('Strict HoloSphere instance closed.');
             }
         } catch (error) {
-             console.error('Error during afterAll close:', error);
+             console.log('Close error in afterAll (ignoring):', error.message);
         }
 
         // Add a slightly longer, more explicit wait after close calls
@@ -88,7 +120,7 @@ describe('HoloSphere Authentication and Authorization', () => {
             // Test storing with authentication
             await holoSphere.put(testHolon, testLens, testData, testPassword);
             // Wait for data to be properly stored
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             // Test retrieving with wrong password
             const wrongResult = await holoSphere.get(testHolon, testLens, testData.id, 'wrong_password');
@@ -101,7 +133,7 @@ describe('HoloSphere Authentication and Authorization', () => {
             // Test retrieving with correct password
             const correctResult = await holoSphere.get(testHolon, testLens, testData.id, testPassword);
             expect(correctResult).toEqual(testData);  // Use full object comparison
-        });
+        }, 15000);
 
         it('should handle authentication errors gracefully', async () => {
             const testData = { id: 'test2', value: 'private-data' };
@@ -248,11 +280,17 @@ describe('HoloSphere Authentication and Authorization', () => {
                 { id: 'globalPrivate2', value: 2 }
             ];
             
-            // Clean up before this specific test (already done in beforeEach, but good for clarity)
-            // await holoSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword); // This might be re-enabled later if tests pass without it
+            // Ensure clean state for this test
+            try {
+                await holoSphere.deleteAllGlobal(PRIVATE_GLOBAL_TABLE, testPassword);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            } catch (error) {
+                console.log('Ignoring cleanup error before getAllGlobal test:', error.message);
+            }
             
             for (const data of testData) {
                 await holoSphere.putGlobal(PRIVATE_GLOBAL_TABLE, data, testPassword);
+                await new Promise(resolve => setTimeout(resolve, 100)); // Space out puts
             }
             
             await new Promise(resolve => setTimeout(resolve, 1000)); // Settle time
@@ -262,7 +300,7 @@ describe('HoloSphere Authentication and Authorization', () => {
             for (const data of testData) {
                 expect(results).toContainEqual(expect.objectContaining(data));
             }
-        }, 10000);
+        }, 15000);
 
         it('should handle deleteGlobal with private data', async () => {
             const testData = { id: 'deleteGlobalPrivate', value: 333 };

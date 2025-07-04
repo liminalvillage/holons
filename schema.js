@@ -130,3 +130,10 @@ export function clearSchemaCache(holoInstance, lens = null) {
         return true;
     }
 } 
+
+// Export all schema operations as default
+export default {
+    setSchema,
+    getSchema,
+    clearSchemaCache
+}; 

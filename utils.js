@@ -288,3 +288,15 @@ export function userName(holoInstance, holonId) {
     if (!holonId) return null;
     return `${holoInstance.appname}:${holonId}`;
 } 
+
+// Export all utility operations as default
+export default {
+    getHolon,
+    getScalespace,
+    getHolonScalespace,
+    subscribe,
+    notifySubscribers,
+    generateId,
+    close,
+    userName
+}; 

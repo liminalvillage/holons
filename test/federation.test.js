@@ -132,7 +132,8 @@ describe('Federation Tests', () => {
       const shoppingData = { id: 'test-shopping', item: 'Test Item' };
       const shoppingResult = await holosphere.propagate(space1, 'shopping', shoppingData);
       expect(shoppingResult.success).toBe(0); // Should not propagate
-      expect(shoppingResult.message).toContain("Propagation of lens 'shopping' to target space " + space2 + " skipped: lens not in 'federate' configuration.");
+      expect(shoppingResult.messages).toBeDefined();
+      expect(shoppingResult.messages.some(msg => msg.includes("Propagation of lens 'shopping' to target space " + space2 + " skipped: lens not in 'federate' configuration."))).toBe(true);
     });
 
     test('should handle wildcard lens configuration', async () => {
@@ -291,9 +292,10 @@ describe('Federation Tests', () => {
       // Try to propagate to a space with no federation
       const result = await holosphere.propagate(space, 'items', data);
       
-      // Should have a message property but not fail
+      // Should have a messages property but not fail
       expect(result).toBeDefined();
-      expect(result.message).toBeDefined();
+      expect(result.messages).toBeDefined();
+      expect(Array.isArray(result.messages)).toBe(true);
     });
   });
 

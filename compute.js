@@ -287,3 +287,12 @@ export async function updateParent(holoInstance, id, report) {
         throw error;
     }
 } 
+
+// Export all compute operations as default
+export default {
+    computeHierarchy,
+    compute,
+    summarize,
+    upcast,
+    updateParent
+}; 

@@ -1,8 +1,9 @@
 {
   "name": "holosphere",
-  "version": "1.1.14",
+  "version": "1.1.17",
   "description": "Holonic Geospatial Communication Infrastructure",
   "main": "holosphere.js",
+  "module": "holosphere.js",
   "types": "holosphere.d.ts",
   "type": "module",
   "scripts": {
@@ -33,7 +34,7 @@
     "testEnvironment": "node",
     "transform": {}
   },
-    "browser": "holosphere-bundle.js",
+    "browser": "holosphere.js",
   "unpkg": "holosphere-bundle.js", 
   "jsdelivr": "holosphere-bundle.js",
   "cdn": "holosphere-bundle.js",
@@ -58,7 +59,6 @@
   ],
   "exports": {
     ".": {
-      "browser": "./holosphere-bundle.js",
       "import": "./holosphere.js",
       "require": "./holosphere.js",
       "default": "./holosphere.js"

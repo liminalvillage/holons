@@ -39,10 +39,8 @@ export async function putNode(holoInstance, holon, lens, data) {
                                     // Soul of the hologram that was *actually stored* at holon/lens/value
                                     const storedHologramInstanceSoul = `${holoInstance.appname}/${holon}/${lens}/value`;
                                     
-                                    targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
-                                    
-                                    console.log(`Data (ID: ${data.id}) being put is a hologram. Added its instance soul ${storedHologramInstanceSoul} to its target ${data.value.soul}'s _holograms set.`);
-                                } else {
+                                                                targetNodeRef.get('_holograms').get(storedHologramInstanceSoul).put(true);
+                        } else {
                                     console.warn(`Data (ID: ${data.id}) being put is a hologram, but could not parse its soul ${data.value.soul} for tracking.`);
                                 }
                             } catch (trackingError) {
@@ -204,9 +202,8 @@ export async function deleteNode(holoInstance, holon, lens, key) {
                         targetNodeRef.get('_holograms').get(deletedHologramSoul).put(null, (ack) => { // Remove the hologram entry completely
                             if (ack.err) {
                                 console.warn(`[deleteNode] Error removing hologram ${deletedHologramSoul} from target ${targetSoul}:`, ack.err);
-                            }
-                            console.log(`Removed hologram ${deletedHologramSoul} from target ${targetSoul}'s _holograms list`);
-                            resolveTrack(); // Resolve regardless of ack error to not block main delete
+                                                    }
+                        resolveTrack(); // Resolve regardless of ack error to not block main delete
                         });
                     });
                 } else {
@@ -238,3 +235,12 @@ export async function deleteNode(holoInstance, holon, lens, key) {
         throw error;
     }
 } 
+
+// Export all node operations as default
+export default {
+    putNode,
+    getNode,
+    getNodeRef,
+    getNodeBySoul,
+    deleteNode
+}; 

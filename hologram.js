@@ -12,7 +12,6 @@ export function createHologram(holoInstance, holon, lens, data) {
     // Check if the input data is already a hologram
     if (isHologram(data)) {
         // If it is, just return its existing ID and Soul, ignoring the provided holon/lens
-        console.warn('createHologram called with data that is already a hologram. Reusing existing soul:', data.soul);
         return {
             id: data.id,
             soul: data.soul
@@ -85,6 +84,8 @@ export function isHologram(data) {
  * @param {object} [options] - Optional parameters
  * @param {boolean} [options.followHolograms=true] - Whether to follow nested holograms
  * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
+ * @param {number} [options.maxDepth=10] - Maximum resolution depth to prevent infinite loops
+ * @param {number} [options.currentDepth=0] - Current resolution depth
  * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original hologram for circular/invalid cases.
  */
 export async function resolveHologram(holoInstance, hologram, options = {}) {
@@ -92,29 +93,42 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
         return hologram; // Not a hologram, return as is
     }
 
-    const { followHolograms = true, visited = new Set() } = options;
+    const { 
+        followHolograms = true, 
+        visited = new Set(), 
+        maxDepth = 10, 
+        currentDepth = 0 
+    } = options;
 
-    // Check for circular hologram FIRST
+    // Check depth limit first
+    if (currentDepth >= maxDepth) {
+        console.warn(`!!! Maximum resolution depth (${maxDepth}) reached for soul: ${hologram.soul}. Stopping resolution.`);
+        return null;
+    }
+
+    // Check for circular hologram
     if (hologram.soul && visited.has(hologram.soul)) {
-        console.warn(`!!! CIRCULAR hologram detected for soul: ${hologram.soul}. Returning original hologram.`);
-        throw new Error(`CIRCULAR_REFERENCE:${hologram.soul}`);
-    } else {
+        console.warn(`!!! CIRCULAR hologram detected for soul: ${hologram.soul}. Breaking loop.`);
+        return null;
+    }
+
         try {
             // Handle direct soul hologram
             if (hologram.soul) {
                 const soulInfo = parseSoulPath(hologram.soul);
                 if (!soulInfo) {
                     console.warn(`Invalid soul format: ${hologram.soul}`);
-                    return hologram;
+                return null;
                 }
 
                 // Add current soul to visited set for THIS resolution path
                 const nextVisited = new Set(visited);
                 nextVisited.add(hologram.soul);
 
-                console.log(`Resolving hologram with soul: ${hologram.soul}`);
+            // Only log when actually resolving a hologram for debugging if needed
+            // console.log(`Resolving hologram: ${hologram.soul}`);
 
-                // Get original data
+            // Get original data with increased depth
                 const originalData = await holoInstance.get(
                     soulInfo.holon,
                     soulInfo.lens,
@@ -122,35 +136,48 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
                     null,
                     {
                         resolveHolograms: followHolograms,
-                        visited: nextVisited
+                    visited: nextVisited,
+                    maxDepth: maxDepth,
+                    currentDepth: currentDepth + 1
                     }
                 );
 
-                console.log('### resolveHologram received originalData:', originalData);
-
-                if (originalData) {
-                    console.log(`### Returning RESOLVED data for soul: ${hologram.soul}`);
+            if (originalData && !originalData._invalidHologram) {
                     // Structure for the returned object - isHologram (top-level) is removed
                     return {
                         ...originalData,
                         _meta: {
                             ...(originalData._meta || {}), // Preserve original _meta
                             resolvedFromHologram: true,    // This is now the primary indicator
-                            hologramSoul: hologram.soul     // Clarified meta field
+                        hologramSoul: hologram.soul,   // Clarified meta field
+                        resolutionDepth: currentDepth
                         }
                     };
                 } else {
-                    console.warn(`!!! Original data NOT FOUND for soul: ${hologram.soul}. Returning null.`);
-                    return null;
+                console.warn(`!!! Original data NOT FOUND for soul: ${hologram.soul}. Removing broken hologram.`);
+                
+                // Return null to indicate the hologram should be removed
+                return null;
                 }
             } else {
                  // Should not happen if isHologram() passed
                  console.warn('!!! resolveHologram called with object missing soul:', hologram);
-                 return hologram;
+            return null;
             }
         } catch (error) {
-            console.error(`!!! Error resolving hologram: ${error.message}`, error);
-            return hologram; // Return original hologram on error
+        if (error.message?.startsWith('CIRCULAR_REFERENCE')) {
+            console.warn(`!!! Circular reference detected during hologram resolution: ${error.message}`);
+            return null;
         }
+        console.error(`!!! Error resolving hologram: ${error.message}`, error);
+        return null; // Return null on error to prevent loops
     }
-} 
+}
+
+// Export all hologram operations as default
+export default {
+    createHologram,
+    parseSoulPath,
+    isHologram,
+    resolveHologram
+}; 

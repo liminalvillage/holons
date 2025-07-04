@@ -115,8 +115,6 @@ describe('HoloSphere Reference System', () => {
         // fetch originalData, and return it.
         const resolved = await holoSphere.get(testHolon, testLens, 'hologram2-id'); 
 
-        console.log("!!!!!!!!!!!!! nested hologram", resolved);
-
         expect(resolved).toBeNull(); // Expect null if new logic dictates this for nested resolution
 
         // Resolve Hologram 2 without following deeply - should return Hologram 1 data
@@ -125,8 +123,6 @@ describe('HoloSphere Reference System', () => {
         // Now, resolve *this specific hologram object* one level deep.
         const resolvedShallow = await holoSphere.resolveHologram(fetchedHologram2, { followHolograms: false });
         
-        console.log("!!!!!!!!!!!!! nested hologram shallow", resolvedShallow);
-
         expect(resolvedShallow).toBeDefined();
         // Should match hologram2Storage because of put redirection
         expect(resolvedShallow.id).toBe('hologram2-id'); // ID from hologram2Storage

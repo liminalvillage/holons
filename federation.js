@@ -890,7 +890,7 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         
         // Check if we should propagate to parent hexagons
         if (propagateToParents) {
-            console.log(`[Federation] Starting parent propagation for holon: ${holon}`);
+            
             try {
                 // Validate if the holon is a proper H3 hexagon
                 // H3 hexagons should start with '8' and have a valid format
@@ -898,13 +898,12 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                 let isValidH3 = false;
                 
                 // First check: H3 hexagons should start with '8' and be at least 15 characters long
-                if (typeof holon === 'string' && holon.startsWith('8') && holon.length >= 15) {
+                if (typeof holon === 'string' && /^[8][0-9A-Fa-f]+$/.test(holon) && holon.length >= 15) {
                     try {
                         holonResolution = h3.getResolution(holon);
                         // Additional validation: resolution should be >= 0 and <= 15
                         if (holonResolution >= 0 && holonResolution <= 15) {
                             isValidH3 = true;
-                            console.log(`[Federation] Holon ${holon} is valid H3 hexagon with resolution: ${holonResolution}`);
                         } else {
                             console.log(`[Federation] Holon ${holon} has invalid resolution: ${holonResolution}`);
                         }
@@ -912,11 +911,9 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                         console.log(`[Federation] Holon ${holon} failed H3 validation: ${error.message}`);
                     }
                 } else {
-                    console.log(`[Federation] Holon ${holon} is not a valid H3 hexagon: does not start with '8' or too short`);
                 }
                 
                 if (!isValidH3) {
-                    console.log(`[Federation] Skipping parent propagation for non-H3 holon: ${holon}`);
                     result.parentPropagation.messages.push(`Holon ${holon} is not a valid H3 hexagon. Skipping parent propagation.`);
                     result.parentPropagation.skipped++;
                 }
@@ -928,13 +925,10 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                     let currentRes = holonResolution;
                     let levelsProcessed = 0;
                     
-                    console.log(`[Federation] Getting parent hexagons for ${holon} (resolution ${holonResolution}) up to ${maxParentLevels} levels`);
-                    
                     while (currentRes > 0 && levelsProcessed < maxParentLevels) {
                         try {
                             const parent = h3.cellToParent(currentHolon, currentRes - 1);
                             parentHexagons.push(parent);
-                            console.log(`[Federation] Found parent hexagon: ${parent} (resolution ${currentRes - 1})`);
                             currentHolon = parent;
                             currentRes--;
                             levelsProcessed++;
@@ -947,17 +941,14 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                     }
                     
                     if (parentHexagons.length > 0) {
-                        console.log(`[Federation] Found ${parentHexagons.length} parent hexagons to propagate to: ${parentHexagons.join(', ')}`);
                         result.parentPropagation.messages.push(`Found ${parentHexagons.length} parent hexagons to propagate to: ${parentHexagons.join(', ')}`);
                         
                         // Check if data is already a hologram (reuse from federation section)
                         const isAlreadyHologram = holosphere.isHologram(data);
-                        console.log(`[Federation] Data is already hologram: ${isAlreadyHologram}`);
                         
                         // Propagate to each parent hexagon
                         const parentPropagatePromises = parentHexagons.map(async (parentHexagon) => {
                             try {
-                                console.log(`[Federation] Propagating to parent hexagon: ${parentHexagon}`);
                                 let payloadToPut;
                                 const parentFederationMeta = {
                                     origin: holon,           // The original holon from which this data is being propagated
@@ -971,7 +962,6 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                 if (useHolograms && !isAlreadyHologram) {
                                     // Create a new hologram referencing the original data
                                     const newHologram = holosphere.createHologram(holon, lens, data);
-                                    console.log(`[Federation] Created hologram for parent propagation:`, newHologram);
                                     payloadToPut = {
                                         ...newHologram, // This will be { id: data.id, soul: 'path/to/original' }
                                         _federation: parentFederationMeta
@@ -987,8 +977,6 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                                         }
                                     };
                                 }
-                                
-                                console.log(`[Federation] Storing in parent hexagon ${parentHexagon} with payload:`, payloadToPut);
                                 
                                 // Store in the parent hexagon with redirection disabled and no further auto-propagation
                                 await holosphere.put(parentHexagon, lens, payloadToPut, null, { 
@@ -1009,7 +997,6 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                         
                         await Promise.all(parentPropagatePromises);
                     } else {
-                        console.log(`[Federation] No parent hexagons found for ${holon} (already at resolution 0 or max levels reached)`);
                         result.parentPropagation.messages.push(`No parent hexagons found for ${holon} (already at resolution 0 or max levels reached)`);
                         result.parentPropagation.skipped++;
                     }
@@ -1019,8 +1006,6 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                 result.parentPropagation.errors++;
                 result.parentPropagation.messages.push(`Error during parent propagation: ${error.message}`);
             }
-        } else {
-            console.log(`[Federation] Parent propagation disabled for holon: ${holon}`);
         }
         
         // ================================ END PARENT PROPAGATION ================================
@@ -1231,3 +1216,19 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
         };
     }
 } 
+
+// Export all federation operations as default
+export default {
+    federate,
+    subscribeFederation,
+    getFederation,
+    getFederatedConfig,
+    unfederate,
+    removeNotify,
+    getFederated,
+    propagate,
+    federateMessage,
+    getFederatedMessages,
+    updateFederatedMessages,
+    resetFederation
+}; 
