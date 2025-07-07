@@ -4,7 +4,7 @@ contact:
   title : Contact Us
   subtitle : Contact Details
   content : Would you like to know more or join in the fractal organism ?
-  form_action: "https://wequest.typeform.com/to/gXMheBaH" #contact form works with https://formspree.io
+  form_action: "https://wequest.typeform.com/to/I1PLIb60" #contact form works with https://formspree.io
 
   contact_details :
     - icon : ti-location-pin # themify icon pack : https://themify.me/themify-icons
