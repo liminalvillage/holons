@@ -252,6 +252,7 @@ class HolonsBot {
             await ctx.reply(
               i18next.t('personalWelcome', { lng: language }),
               {
+                parse_mode: 'Markdown',
                 reply_markup: {
                   inline_keyboard: [
                     //[{ text: i18next.t('personalWelcomeButtons.updateProfile'), callback_data: "start_personal_wizard" }],
@@ -390,7 +391,7 @@ class HolonsBot {
 
       if (botWasAdded) {
         const language = await this.settings.getLanguage(ctx.chat.id) || 'en';
-        await ctx.reply(i18next.t('groupWelcome', { lng: language }));
+        await ctx.reply(i18next.t('groupWelcome', { lng: language }), { parse_mode: 'Markdown' });
       }
 
       // Add all new members to the database using Users module
