@@ -1,4 +1,5 @@
 "use strict";
+import 'dotenv/config';
 import Server from './Server.js';
 import qrReader from 'qrcode-reader';
 import Jimp from 'jimp';

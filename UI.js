@@ -4,6 +4,7 @@ import * as utils from './utilities.js'
 import fs from 'fs';
 import { Markup } from 'telegraf'; 
 import { getDisplayName, getAvatarUrl, getHolonName } from './utilities.js';
+import QRCode from 'qrcode';
 
 let browser = null;
 
@@ -40,10 +41,48 @@ class UI {
     this.bot.command('dashboard', async (ctx) => {
       let chatID = ctx.message.chat.id
       const language = await this.settings.getLanguage(chatID)
-      ctx.reply('Holonic Dashboard', Markup.inlineKeyboard([
-        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-          `https://dashboard.holons.io/${chatID}/`)
-      ]))
+      const dashboardUrl = `https://dashboard.holons.io/${chatID}/dashboard`
+      
+      try {
+        // Generate QR code
+        const qrCodePath = `./temp/qr_dashboard_${chatID}.png`
+        
+        // Ensure temp directory exists
+        if (!fs.existsSync('./temp')) {
+          fs.mkdirSync('./temp', { recursive: true })
+        }
+        
+        // Generate QR code as PNG
+        await QRCode.toFile(qrCodePath, dashboardUrl, {
+          width: 300,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          }
+        })
+        
+        // Send QR code image with caption and button
+        await ctx.replyWithPhoto(
+          { source: fs.createReadStream(qrCodePath) },
+          {
+            caption: i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' }),
+            reply_markup: Markup.inlineKeyboard([
+              Markup.button.url(i18next.t('Open Dashboard', { lng: language }), dashboardUrl)
+            ]).reply_markup
+          }
+        )
+        
+        // Clean up the temporary QR code file
+        fs.unlinkSync(qrCodePath)
+        
+      } catch (error) {
+        console.error('Error generating QR code:', error)
+        // Fallback to original behavior if QR generation fails
+        ctx.reply('Holonic Dashboard', Markup.inlineKeyboard([
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), dashboardUrl)
+        ]))
+      }
     })
   }
 

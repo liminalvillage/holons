@@ -45,6 +45,7 @@
     "openai": "^4.20.1",
     "orbit-db": "^0.29.0",
     "puppeteer": "^23.10.0",
+    "qrcode": "^1.5.4",
     "qrcode-reader": "^1.0.4",
     "sharp": "^0.32.1",
     "telegraf": "^4.16.3",
