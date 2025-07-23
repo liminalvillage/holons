@@ -163,33 +163,53 @@ export const getDisplayName = (user) => {
  */
 export const getHolonName = async (db, holonId, ctx = null) => {
   if (!holonId) return 'Unknown Holon';
+  let normalizedHolonId = holonId;
+
+    // New: Handle chat_ prefix, as that's how holons are registered in Managed / Zoned
+    if (typeof holonId === 'string' && holonId.startsWith('chat_')) {
+      const idPart = holonId.slice(5); // Remove 'chat_'
+      normalizedHolonId = idPart;
+    }
+
+    // Only normalize if it starts with 'chat_'. If already normalized (starts with '-' and is numeric), leave as is.
+    if (typeof holonId === 'string') {
+      if (holonId.startsWith('chat_')) {
+        normalizedHolonId = `-${holonId.slice(5)}`;
+      } else if (/^-[0-9]+$/.test(holonId)) {
+        normalizedHolonId = holonId;
+        // Already normalized, do nothing
+      }
+    }
 
   try {
     // Attempt to get settings for this holonId
     // Settings are stored at chatID + '/settings'
-    const settings = await db.get(holonId.toString() + '/settings', holonId.toString());
+    const settings = await db.get(normalizedHolonId.toString() + '/settings', normalizedHolonId.toString());
     if (settings && settings.name) {
+      console.log("we found settings, this is settings.name", settings.name);
       return settings.name;
     }
   } catch (error) {
     // Log benignly, as this is an attempt to get a prettier name
-    console.warn(`Could not fetch settings name for holon ${holonId}: ${error.message}`);
+    console.warn(`Could not fetch settings name for holon ${normalizedHolonId}: ${error.message}`);
   }
 
   // Fallback 1: Try Telegram chat name if ctx is provided and getChatName is available
   if (ctx && typeof getChatName === 'function') {
     try {
-      const chatName = await getChatName(ctx, holonId.toString());
+      const chatName = await getChatName(ctx, normalizedHolonId.toString());
       // Ensure getChatName doesn't return an empty, null, or default 'unknown' string
       if (chatName && chatName !== 'unknown' && chatName !== null && chatName.trim() !== '') {
         return chatName;
       }
     } catch (error) {
-      console.warn(`Could not fetch Telegram chat name for ${holonId}: ${error.message}`);
+      console.warn(`Could not fetch Telegram chat name for ${normalizedHolonId}: ${error.message}`);
     }
   }
 
   // Final fallback: return a generic name instead of the ID
+  console.log("This is the id that is being passed to this function", holonId);
+  console.log("This is being displayed when we are listing the holons in the Zoned")
   return `External Holon`;
 };
 
@@ -210,4 +230,24 @@ export const getAvatarUrl = (user) => {
   //     return `file://${avatarPath}`;
   //   }
   // }
+};
+
+/**
+ * Normalizes a Holon ID to the canonical form (e.g., '-4829278292' for 'chat_4829278292')
+ * as this chat_4829278292 is how holons are registered in Solidity contracts ( Managed / Zoned ), 
+ * because of the issues with - sign.
+ * If already normalized, returns as is.
+ * @param {string} holonId - The Holon ID to normalize.
+ * @returns {string} - The normalized Holon ID.
+ */
+
+export const normalizeHolonId = (holonId) => {
+  if (typeof holonId === 'string') {
+    if (holonId.startsWith('chat_')) {
+      return `-${holonId.slice(5)}`;
+    } else if (/^-[0-9]+$/.test(holonId)) {
+      return holonId;
+    }
+  }
+  return holonId;
 };

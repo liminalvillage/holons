@@ -532,7 +532,7 @@ export default class SettingsScenes {
                     return;
                 }
 
-                // Federate with the provided ID
+                // Here is where the federation happens: Federate with the provided ID
                 // console.log('Federation actually happens here, in the scenes!');
                 await this.db.holosphere.federate(chatID.toString(), federationID);
                 const isGroup = federationID < 0;
@@ -738,22 +738,6 @@ export default class SettingsScenes {
                         const childGroupMembers = await this.db.getAll(federationID + '/users');
                         console.log("Found members:", childGroupMembers);
 
-                        // 5. Add members to the child's Zoned contract
-                        // if (childGroupMembers && childGroupMembers.length > 0) {
-                        //     console.log("Adding members to child's Zoned contract");
-                        //     const memberAddresses = childGroupMembers.map(member => member.id.toString());
-                            
-                        //     // Get child's Zoned contract
-                        //     const childZonedContract = new ethers.Contract(childZonedAddress, zonedABI, this.wallet);
-                            
-                        //     console.log("What are the members, and what are we adding there, and why are we doing it?");
-                        //     const addMembersTx = await childZonedContract.addMembers(
-                        //         memberAddresses,     // Array of member addresses
-                        //         { gasLimit: 5_000_000 } // Options object
-                        //     );
-                        //     await addMembersTx.wait();
-                        //     console.log("Members added successfully to Zoned contract");
-                        // }
 
                         console.log("Federation process completed successfully");
 

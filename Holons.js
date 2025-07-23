@@ -533,6 +533,67 @@ export default class Holons {
       ctx.scene.enter('add_external_holon_scene');
     });
 
+    // Handler for removing the zoned member
+    this.bot.action(/zone_confirm_remove_([^_]+)_(\d+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in zone_confirm_remove:", e.message));
+      const memberId = ctx.match[1];
+      const chatID = utils.getChatId(ctx);
+      const senderUserId = utils.getUserId(ctx).toString();
+      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      let memberDisplay = memberId;
+    
+      // Try to get a display name for the member
+      try {
+        const users = await this.db.getAll(chatID.toString() + '/users');
+        const userMap = users.reduce((map, user) => {
+          map[user.id.toString()] = user.username || user.id.toString();
+          return map;
+        }, {});
+        memberDisplay = `@${userMap[memberId] || memberId}`;
+      } catch {}
+    
+      try {
+        const zonedContract = await this.getZonedContract(chatIdNormalized);
+        if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
+          throw new Error("External contract not found for this chat.");
+        }
+    
+        // Get the current zone from the contract
+        const currentZone = Number(await zonedContract.zone(memberId));
+    
+        await ctx.editMessageText(
+          `➖ Removing ${memberDisplay} from Zone ${currentZone}...`,
+          { reply_markup: { inline_keyboard: [[{ text: "Processing...", callback_data: "noop" }]] } }
+        ).catch(e => console.log("Edit error:", e.message));
+    
+        // Remove the member using the contract's removeFromZone function
+        const data = zonedContract.interface.encodeFunctionData(
+          "removeFromZone",
+          [senderUserId, memberId]
+        );
+        const txRequest = {
+          to: zonedContract.target,
+          data,
+          gasLimit: 3000000,
+        };
+        const tx = await this.wallet.sendTransaction(txRequest);
+        this.waitForTransaction(
+          tx,
+          ctx,
+          `Successfully removed ${memberDisplay} from zone. Tx: ${tx.hash}`
+        );
+        await ctx.reply(`Transaction submitted to remove ${memberDisplay} from zone. You'll be notified upon completion.`).catch(e => console.log("Error replying for remove submission:", e.message));
+        // Refresh the main zone management view after submitting the transaction
+        return this.showZoneManagementView(ctx);
+      } catch (error) {
+        console.error(`Error removing member ${memberId} from zone:`, error);
+        await ctx.editMessageText(
+          `❌ Failed to remove ${memberDisplay}: ${error.message}`,
+          { reply_markup: { inline_keyboard: [[{ text: "◀️ Back to Zone Management", callback_data: "holons_manage_zones_view" }]] } }
+        ).catch(e => console.log("Error editing message for remove failure:", e.message));
+      }
+    });
+
     // REMOVING UNIQUE TEST HANDLER
     // this.bot.action('__test_unique_callback_123__', async (ctx) => { ... });
 
@@ -1779,6 +1840,8 @@ export default class Holons {
       }
 
       // Use the executeTransaction method for consistency with other functions
+      console.log("userId of the member that is added as federationMember:", String(userID));
+      console.log("name of the member that is added as federationMember:", String(federationId));
       const tx = await this.executeTransaction(
         holon,
         'addMember(string,string)',
@@ -2054,6 +2117,7 @@ export default class Holons {
     try {
       // First get the Splitter contract
       const splitterContract = await this.getSplitterContract(chatID);
+      console.log("splitter contract address: ", splitterContract.target);
       
       if (!splitterContract) {
         return null;
@@ -2459,6 +2523,71 @@ export default class Holons {
     }
   }
 
+  // TODO: This is debugging function: 
+
+  /**
+ * Utility that:
+ *   • prints the calldata you are about to send
+ *   • sends the tx
+ *   • waits for the receipt
+ *   • prints status / gas / revert reason (if any)
+ */
+  async traceTx(label, txReq, iface, signer) {
+    console.log(`\n----- ${label} -----`);
+    console.log("calldata        :", txReq.data);
+    console.log("to              :", txReq.to);
+  
+    try {
+      const tx = await signer.sendTransaction(txReq);
+      const receipt = await tx.wait();
+      console.log("status (1=ok/0=rev):", receipt.status);
+      console.log("gasUsed         :", receipt.gasUsed.toString());
+      console.log("----- end -----\n");
+      return { tx, receipt };
+    } catch (err) {
+      // ------- 1. whatever the provider gave us -----------
+      const revertData =
+        err.error?.data ??      // ethers v6 (most JSON-RPCs)
+        err.data ??             // ethers v5
+        err.receipt?.revertReason;
+  
+      console.log("status          : 0 (revert)");
+      console.log("revert data(raw):", revertData ?? "<none>");
+  
+      // ------- 2. if provider gave nothing, try a static call -----------
+      let callRevert;
+      if (!revertData) {
+        try {
+          await signer.provider.call(txReq); // will throw & include data
+        } catch (callErr) {
+          callRevert = callErr.error?.data ?? callErr.data;
+          console.log("revert data(via call):", callRevert ?? "<none>");
+        }
+      }
+  
+      const dataToDecode = revertData || callRevert;
+      if (dataToDecode && dataToDecode.startsWith("0x08c379a0")) {
+        // require("reason") string => slice after function selector & offset
+        const reasonHex = "0x" + dataToDecode.slice(138);
+        try {
+          const reasonStr = ethers.toUtf8String(reasonHex).trim();
+          console.log("string reason  :", reasonStr);
+        } catch { /* ignore */ }
+      } else if (dataToDecode) {
+        try {
+          const decoded = iface.parseError(dataToDecode);
+          console.log("decoded reason :", decoded?.name, decoded?.args);
+        } catch { /* not a custom error */ }
+      }
+  
+      console.log("----- end -----\n");
+      const tx = err?.transaction ?? err?.tx;
+      const receipt = err?.receipt;
+      console.log("----- end -----\n");
+      return { tx, receipt }; 
+    }
+  }
+
   async claim(ctx) {
     const chatID = utils.getChatId(ctx);
     const userID = utils.getUserId(ctx);
@@ -2481,36 +2610,54 @@ export default class Holons {
       if (!ethers.isAddress(beneficiaryAddress)) {
         return ctx.reply("Please provide a valid Ethereum address");
       }
-  
+ 
       // Execute the transaction using the contract's claim function
+      console.log("userID.toString(): ", userID.toString());
+      // let's add members here as well:
 
-      const data = holon.interface.encodeFunctionData('claim', [userID.toString(), beneficiaryAddress]);
-      
-      const tx = await this.wallet.sendTransaction({
-        to: holon.target,
-        data,
-        gasLimit: 3000000,
-        // maxPriorityFeePerGas: maxPriorityFee,
-        // maxFeePerGas: maxFee,
-        nonce: await this.wallet.getNonce()
-      });
-      // const tx = await this.executeTransaction(
-      //   holon,
-      //   'claim',
-      //   [userID.toString(), beneficiaryAddress],
-      //   {
-      //     gasLimit: 3000000,
-      //     maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-      //     maxFeePerGas: ethers.parseUnits("30", "gwei"),
-      //   }
-      // );
-      
-      // Don't await the transaction completion
-      this.waitForTransaction(
-        tx,
-        ctx,
-        `Claim successful! Transaction hash: ${tx.hash}`
+            // ------------- prepare calldata -------------
+      // calldata
+      const userIdStr = userID.toString();
+      const dataAdd  = holon.interface.encodeFunctionData("addMember(string)", [userIdStr]);
+      const dataClaim = holon.interface.encodeFunctionData("claim", [userIdStr, beneficiaryAddress]);
+
+      // 1️⃣ addMember
+      const { tx: addTx, receipt: addRcpt } = await this.traceTx(
+        "addMember",
+        { to: holon.target, data: dataAdd, gasLimit: 3_000_000 },
+        holon.interface,
+        this.wallet
       );
+
+      if (!addRcpt || addRcpt.status !== 1) {   // 🔺 extra !addRcpt guard
+        console.error("❌ addMember failed – aborting");
+        return;
+      }
+
+      // async notification
+      this.waitForTransaction(addTx, ctx, `Added member! Tx hash: ${addTx.hash}`);
+
+      // 2️⃣ skip claim if already done
+      const already = await holon.hasClaimed(userIdStr);
+      if (already) {
+        console.log("⏩ user already claimed, skipping");
+        return;
+      }
+
+      // 3️⃣ claim
+      const { tx: claimTx, receipt: claimRcpt } = await this.traceTx(
+        "claim",
+        { to: holon.target, data: dataClaim, gasLimit: 3_000_000 },
+        holon.interface,
+        this.wallet
+      );
+
+      if (!claimRcpt || claimRcpt.status !== 1) {  // 🔺 extra null guard
+        console.error("❌ claim reverted");
+        return;
+      }
+
+      this.waitForTransaction(claimTx, ctx, `Claim successful! Tx hash: ${claimTx.hash}`);
       
       // Provide immediate feedback
       return ctx.reply(`Transaction submitted. You will be notified when your claim is processed.`);
@@ -2600,13 +2747,15 @@ export default class Holons {
                 let holonName;
                 try {
                     holonName = await utils.getHolonName(this.db, memberId, ctx);
+                    console.log("holonName from a function utils.getHolonName inside ShowZoneManagementView: ", holonName);
                 } catch (error) {
                     console.warn(`Could not get holon name for ${memberId}:`, error.message);
                     holonName = `Holon ${memberId}`; // Fallback name
                 }
                 
                 // Only show ID in brackets if the name is different from the ID
-                const displayName = holonName === memberId.toString() ? holonName : `${holonName} (${memberId})`;
+                const normalizedMemberId = utils.normalizeHolonId(memberId);
+                const displayName = holonName === normalizedMemberId.toString() ? holonName : `${holonName} (${normalizedMemberId})`;
                 
                 let buttonText = displayName;
                 let callbackData = `zone_member_${memberId}_${i}`;
@@ -3086,11 +3235,28 @@ Select the TARGET zone:`;
           return this.showZoneManagementView(ctx); 
         }
 
-        const tx = await this.executeTransaction(
-          zonedContract,
+        // Was before, but data is being empty
+        // const tx = await this.executeTransaction(
+        //   zonedContract,
+        //   'addMembers',
+        //   [senderUserId, holonIdsToAddArray] 
+        // );
+        // Explicitly encode the function data
+        const data = zonedContract.interface.encodeFunctionData(
           'addMembers',
-          [senderUserId, holonIdsToAddArray] 
+          [senderUserId, holonIdsToAddArray]
         );
+        console.log("Data:", data);
+        console.log("SenderUserId:", senderUserId); // Should be string
+        console.log("HolonIdsArray:", holonIdsToAddArray); // Array of string or address?
+
+        // Send the transaction directly
+        const tx = await this.wallet.sendTransaction({
+          to: zonedContract.target,
+          data,
+          gasLimit: 3000000,
+          nonce: await this.wallet.getNonce()
+        });
 
         this.waitForTransaction(tx, ctx, `Successfully submitted request to add ${holonIdsToAddArray.length} external Holon(s).`);
         
@@ -3163,11 +3329,31 @@ Select the TARGET zone:`;
 
       // Assuming 'addToZone' is the correct method for moving, as per existing patterns.
       // It typically takes (sender, memberToMove, targetZone)
-      const tx = await this.executeTransaction(
-        zonedContract,
-        'addToZone',
+      // Was before but it was returning empty string for the data encoded
+      // const tx = await this.executeTransaction(
+      //   zonedContract,
+      //   'addToZone',
+      //   [senderUserId, memberId, solidityTargetZone]
+      // );
+      // Manually encoding the data so we find a solution
+      // 1. Encode the function data manually
+      const data = zonedContract.interface.encodeFunctionData(
+        "addToZone",
         [senderUserId, memberId, solidityTargetZone]
       );
+      console.log("move between the zones, senderUserId: ", senderUserId);
+      console.log("move between the zones, memberId: ", memberId);
+      console.log("move between the zones, solidityTargetZone", solidityTargetZone);
+      // 2. Prepare the transaction object
+      const txRequest = {
+        to: zonedContract.target, // or zonedContract.address depending on ethers version
+        data,
+        gasLimit: 3000000,
+        // Add any other options you need (nonce, gasPrice, etc.)
+      };
+
+      // 3. Send the transaction using the wallet
+      const tx = await this.wallet.sendTransaction(txRequest);
 
       this.waitForTransaction(
         tx,
