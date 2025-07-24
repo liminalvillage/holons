@@ -29,6 +29,7 @@ export default class Holons {
     this.bot = bot;
     this.db = db;
     this.settings = settings;
+    console.log("Holons constructed, settings:", settings);
     this.ui = null; // Will be set by main app
     this.privateKey = process.env.WEB3KEY;
     this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
@@ -667,7 +668,7 @@ export default class Holons {
           await ctx.reply("Unknown action").catch(e => console.log("Error replying to unknown action:", e.message));
       }
     });
-
+    // #TO-DO - Trying to fix an issues of internal members not displaying
 
     // === SPLITTER MANAGEMENT ACTION HANDLER===
   
@@ -2902,6 +2903,7 @@ export default class Holons {
         if (members.length === 0) {
           message += "No members in internal yet.";
         } else {
+          console.log("showMemberManagementView: understanding if the settings is properly initialized!", this.settings);
           // Get value equation for score calculation
           const equation = await this.settings.getValueEquation(chatID);
           

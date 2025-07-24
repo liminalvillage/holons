@@ -191,7 +191,7 @@ export const getHolonName = async (db, holonId, ctx = null) => {
     }
   } catch (error) {
     // Log benignly, as this is an attempt to get a prettier name
-    console.warn(`Could not fetch settings name for holon ${normalizedHolonId}: ${error.message}`);
+    console.warn(`Could not fetch settings name for holon ${holonId} which is normalized to${normalizedHolonId}: ${error.message}`);
   }
 
   // Fallback 1: Try Telegram chat name if ctx is provided and getChatName is available
