@@ -1861,6 +1861,7 @@ export default class Settings {
         try {
             // Use holosphere federate method
             console.log('FEDERATING', chatID, federationID)
+            console.log("!!!!!!!!!!!!!!!!!!!!!!!FEDERATION HAS HAPPENED!"); 
             await this.db.holosphere.federate(chatID, federationID);
             const federationName = await this.getHolonDisplayName(federationID, ctx);
             ctx.reply('This chat has been federated with ' + federationName);

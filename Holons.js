@@ -20,6 +20,8 @@ import * as holons from './contracts/Holons.json' with { type: "json" };
 // "Holons": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
 // "TestToken": "0x0165878A594ca255338adfa4d48449f69242Eb8F"
 
+import { createHolonBundle, createBundleContracts } from './utils/holonOperations.js';
+
 export default class Holons {
   constructor(bot, db, settings) {
     this.network = process.env.NETWORK;
@@ -58,8 +60,8 @@ export default class Holons {
       await ctx.answerCbQuery().catch()
       const flavor = ctx.match[1];
       await ctx.editMessageText(`You selected ${flavor}. Do you want to proceed with creation?`, {
-        reply_markup: {
-          inline_keyboard: [
+          reply_markup: {
+            inline_keyboard: [
             [{ text: "✅ Yes", callback_data: `confirm_holon_creation_${flavor}` }, { text: "❌ No", callback_data: "holons_back" }]
           ]}
       }).catch(error => console.error("Error editing message:", error));
@@ -110,8 +112,17 @@ export default class Holons {
       }
       
       try {
-        let address = await this.holonsContract.toAddress(chatID.toString());
-        let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
+        const contracts = await this.getHolonContracts(chatID, this.holonsContract, this.wallet);
+        if (!contracts.success) {
+            throw new Error(`Failed to get holon contracts: ${contracts.error}`);
+        }
+
+        const { managed, zoned } = contracts.contracts;
+        // Now you have access to:
+        // managed.contract - The Managed contract instance
+        // managed.address - The Managed contract address
+        // zoned.contract - The Zoned contract instance
+        // zoned.address - The Zoned contract address
         
         // Get token balance for the contract itself
         let tokenContract = new ethers.Contract(tokenAddress, ['function balanceOf(address) view returns (uint256)'], this.provider);
@@ -180,7 +191,22 @@ export default class Holons {
       }
       
       try {
-        let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+        const contracts = await this.getHolonContracts(chatID, this.holonsContract, this.wallet);
+        if (!contracts.success) {
+            throw new Error(`Failed to get holon contracts: ${contracts.error}`);
+        }
+
+        const { splitter, managed, zoned } = contracts.contracts;
+
+        // Now you have access to:
+        // managed.contract - The Managed contract instance
+        // managed.address - The Managed contract address
+        // zoned.contract - The Zoned contract instance
+        // zoned.address - The Zoned contract address
+        
+        let holonAddress = managed.address;
+        console.log("We are logging managed address: ", managed.address);
+        console.log("We are logging zoned address: ", zoned.address);
         if (holonAddress === '0x0000000000000000000000000000000000000000') {
           await ctx.reply("No holon exists for this chat. Create one first with /createholon");
           await ctx.scene.leave();
@@ -226,7 +252,8 @@ export default class Holons {
     
     this.rewardScene.on('text', async (ctx) => {
       const chatID = utils.getChatId(ctx);
-      const args = ctx.message.text.split(" ").slice(1);
+      // const args = ctx.message.text.split(" ").slice(1);
+      const args = ctx.message.text.split(" ");
       
       if (args.length < 2) {
         await ctx.reply("Please provide both token address and amount.\nFormat: [token address] [amount]");
@@ -236,58 +263,119 @@ export default class Holons {
       const tokenAddress = args[0];
       const amount = args[1];
       
-      // Validate the token address
-      if (!ethers.isAddress(tokenAddress)) {
-        await ctx.reply("Invalid token address. Please enter a valid Ethereum address.");
-        return;
-      }
-      
       try {
         // Parse the amount with 18 decimals (adjust if needed)
         const parsedAmount = ethers.parseUnits(amount, 18);
         
-        let holonAddress = await this.holonsContract.toAddress(chatID.toString());
-        let holon = new ethers.Contract(holonAddress, managed.default.abi, this.wallet);
+        const contracts = await this.getHolonContracts(chatID, this.holonsContract, this.wallet);
+        if (!contracts.success) {
+            throw new Error(`Failed to get holon contracts: ${contracts.error}`);
+        }
+    
+        const { splitter, managed, zoned } = contracts.contracts;
+        console.log("splitter: ", splitter.address);
+        console.log("managed: ", managed.address);
+        console.log("zoned: ", zoned.address);
+    
+        // Check if this is an ETH transfer (tokenAddress is zero address)
+        const isEthTransfer = tokenAddress === '0x0000000000000000000000000000000000000000';
+    
+        // Log network information
+        console.log("Network:", this.network);
+        console.log("Transaction sender (wallet) address:", this.wallet.address);
         
-        // First, approve the holon contract to spend tokens
-        let tokenContract = new ethers.Contract(tokenAddress, [
-          'function approve(address spender, uint256 amount) public returns (bool)',
-          'function allowance(address owner, address spender) public view returns (uint256)'
-        ], this.wallet);
+        // Get and log balances
+        const senderBalance = await this.provider.getBalance(this.wallet.address);
+        console.log("Sender balance:", ethers.formatEther(senderBalance), "ETH");
         
-        // Check current allowance
-        const currentAllowance = await tokenContract.allowance(this.wallet.address, holonAddress);
-        if (currentAllowance < parsedAmount) {
-          await ctx.reply("Approving token transfer...");
-          const approveTx = await tokenContract.approve(holonAddress, parsedAmount);
-          await approveTx.wait();
-          await ctx.reply('Approval transaction completed');
+        const zonedBalance = await this.provider.getBalance(zoned.address);
+        console.log("Zoned contract balance:", ethers.formatEther(zonedBalance), "ETH");
+        
+        // Calculate gas costs
+        const gasPrice = await this.provider.getFeeData();
+        console.log("Current gas price:", ethers.formatUnits(gasPrice.gasPrice, "gwei"), "gwei");
+        
+        // Set fixed gas limit for estimation
+        const gasLimit = BigInt(300000);
+        console.log("Using fixed gas limit:", gasLimit.toString());
+        
+        // Calculate total cost including gas
+        const gasCost = gasLimit * gasPrice.gasPrice;
+        const totalCost = isEthTransfer ? parsedAmount + gasCost : gasCost;
+        console.log("Gas cost:", ethers.formatEther(gasCost), "ETH");
+        console.log("Amount to send:", ethers.formatEther(parsedAmount), "ETH");
+        console.log("Total cost (including gas):", ethers.formatEther(totalCost), "ETH");
+        console.log("Raw values - Gas cost:", gasCost.toString());
+        console.log("Raw values - Amount:", parsedAmount.toString());
+        console.log("Raw values - Total:", totalCost.toString());
+        console.log("Raw values - Balance:", senderBalance.toString());
+        
+        // Check if we have enough balance
+        if (senderBalance < totalCost) {
+            const neededEth = ethers.formatEther(totalCost);
+            const haveEth = ethers.formatEther(senderBalance);
+            throw new Error(`Insufficient balance. Need ${neededEth} ETH but have ${haveEth} ETH`);
+        }
+        
+        if (!isEthTransfer) {
+            // Handle ERC20 token transfer
+            if (!ethers.isAddress(tokenAddress)) {
+                throw new Error("Invalid token address provided");
+            }
+
+            console.log("tokenAddress:", tokenAddress);
+    
+            try {
+              // Approve only the splitter contract to spend tokens
+              let tokenContract = new ethers.Contract(tokenAddress, [
+                  'function approve(address spender, uint256 amount) public returns (bool)',
+                  'function allowance(address owner, address spender) public view returns (uint256)'
+              ], this.wallet);
+
+              console.log("Token contract: ", tokenContract.target);
+              console.log("Splitter address from the reward scene, approval: ", splitter.address);
+              // Check current allowance for splitter contract only
+              const splitterAllowance = await tokenContract.allowance(this.wallet.address, splitter.address);
+              
+              if (splitterAllowance < parsedAmount) {
+                  await ctx.reply("Approving token transfer for splitter contract...");
+                  const approveTx = await tokenContract.approve(splitter.address, parsedAmount);
+                  await approveTx.wait();
+                  await ctx.reply('Splitter contract approval completed');
+              }
+          } catch (error) {
+              console.error("Error during token approval:", error);
+              throw new Error(`Failed to process token approval: ${error.message}`);
+          }
         }
         
         await ctx.reply("Distributing reward... Please wait.");
         
-        // Now call the reward function 
-        const tx = await holon.reward(tokenAddress, parsedAmount, {
-          gasLimit: 3000000,
-          maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-          maxFeePerGas: ethers.parseUnits("30", "gwei"),
-        });
-        
-        // Don't await the transaction completion
+        // Call reward function on both contracts
+        // For ETH transfers, we need to include the value in the transaction
+        const txOptions = {
+            gasLimit: 3000000,
+            maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
+            maxFeePerGas: ethers.parseUnits("30", "gwei"),
+            ...(isEthTransfer ? { value: parsedAmount } : {}) // Include value for ETH transfers
+        };
+    
+        // Call reward function on the splitter contract only
+        const splitterTx = await splitter.contract.reward(tokenAddress, parsedAmount, txOptions);
         this.waitForTransaction(
-          tx,
-          ctx,
-          `Reward of ${ethers.formatUnits(parsedAmount, 18)} tokens successfully distributed to holon members.`
+            splitterTx,
+            ctx,
+            `Reward of ${ethers.formatUnits(parsedAmount, 18)} ${isEthTransfer ? 'ETH' : 'tokens'} successfully distributed to holon members.`
         );
         
         // Provide immediate feedback
-        await ctx.reply(`Transaction submitted. You will be notified when the reward of ${ethers.formatUnits(parsedAmount, 18)} tokens is distributed.`);
-      } catch (error) {
+        await ctx.reply(`Transaction submitted. You will be notified when the reward of ${ethers.formatUnits(parsedAmount, 18)} ${isEthTransfer ? 'ETH' : 'tokens'} is distributed.`);
+    } catch (error) {
         console.error("Error in reward function:", error);
         await ctx.reply("An error occurred while processing the reward: " + error.message);
         await ctx.scene.leave();
-      }
-    });
+    }
+  });
     
     this.assignMemberToZoneScene = new Scenes.BaseScene('assign_member_to_zone_scene');
     this.addMemberScene = new Scenes.BaseScene('add_member_scene');
@@ -445,6 +533,67 @@ export default class Holons {
       ctx.scene.enter('add_external_holon_scene');
     });
 
+    // Handler for removing the zoned member
+    this.bot.action(/zone_confirm_remove_([^_]+)_(\d+)/, async (ctx) => {
+      await ctx.answerCbQuery().catch(e => console.log("CBQ Error in zone_confirm_remove:", e.message));
+      const memberId = ctx.match[1];
+      const chatID = utils.getChatId(ctx);
+      const senderUserId = utils.getUserId(ctx).toString();
+      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      let memberDisplay = memberId;
+    
+      // Try to get a display name for the member
+      try {
+        const users = await this.db.getAll(chatID.toString() + '/users');
+        const userMap = users.reduce((map, user) => {
+          map[user.id.toString()] = user.username || user.id.toString();
+          return map;
+        }, {});
+        memberDisplay = `@${userMap[memberId] || memberId}`;
+      } catch {}
+    
+      try {
+        const zonedContract = await this.getZonedContract(chatIdNormalized);
+        if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
+          throw new Error("External contract not found for this chat.");
+        }
+    
+        // Get the current zone from the contract
+        const currentZone = Number(await zonedContract.zone(memberId));
+    
+        await ctx.editMessageText(
+          `➖ Removing ${memberDisplay} from Zone ${currentZone}...`,
+          { reply_markup: { inline_keyboard: [[{ text: "Processing...", callback_data: "noop" }]] } }
+        ).catch(e => console.log("Edit error:", e.message));
+    
+        // Remove the member using the contract's removeFromZone function
+        const data = zonedContract.interface.encodeFunctionData(
+          "removeFromZone",
+          [senderUserId, memberId]
+        );
+        const txRequest = {
+          to: zonedContract.target,
+          data,
+          gasLimit: 3000000,
+        };
+        const tx = await this.wallet.sendTransaction(txRequest);
+        this.waitForTransaction(
+          tx,
+          ctx,
+          `Successfully removed ${memberDisplay} from zone. Tx: ${tx.hash}`
+        );
+        await ctx.reply(`Transaction submitted to remove ${memberDisplay} from zone. You'll be notified upon completion.`).catch(e => console.log("Error replying for remove submission:", e.message));
+        // Refresh the main zone management view after submitting the transaction
+        return this.showZoneManagementView(ctx);
+      } catch (error) {
+        console.error(`Error removing member ${memberId} from zone:`, error);
+        await ctx.editMessageText(
+          `❌ Failed to remove ${memberDisplay}: ${error.message}`,
+          { reply_markup: { inline_keyboard: [[{ text: "◀️ Back to Zone Management", callback_data: "holons_manage_zones_view" }]] } }
+        ).catch(e => console.log("Error editing message for remove failure:", e.message));
+      }
+    });
+
     // REMOVING UNIQUE TEST HANDLER
     // this.bot.action('__test_unique_callback_123__', async (ctx) => { ... });
 
@@ -540,7 +689,7 @@ export default class Holons {
         const splitterContract = await this.getSplitterContract(chatIdNormalized);
         if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
           splitterAddress = splitterContract.target;
-        } else {
+            } else {
           await ctx.editMessageText("Error: Splitter details unavailable.", { reply_markup: { inline_keyboard: [[{text: "◀️ Back", callback_data: "holons_back"}]] } }).catch(e => console.log("E:", e.message)); return;
         }
       } catch (error) {
@@ -579,7 +728,7 @@ export default class Holons {
           this.waitForTransaction(tx, ctx, `Split ratio set to Managed ${finalInternalPercent}% / Zoned ${finalExternalPercent}%!`);
           await ctx.reply("✅ Split ratio transaction submitted!").catch(e => console.log("E:", e.message));
           await this.showHolonsMenu(ctx, false);
-      } catch (error) {
+          } catch (error) {
           console.error("Error executing setContractSplit in confirm handler:", error);
           await ctx.editMessageText(`❌ Error setting split: ${error.message}. Please try again.`, {reply_markup: {inline_keyboard: [[{text: "Try Again", callback_data: "holons_manage_splitter_view"}]]}}).catch(e => console.log("E:", e.message));
       }
@@ -1317,67 +1466,35 @@ export default class Holons {
       // Log input parameters
       const chatID = utils.getChatId(ctx);
       const userID = utils.getUserId(ctx);
-  
+      
       console.log("Input parameters:");
       console.log("- chatID:", chatID, "(" + typeof chatID + ")");
       console.log("- userID:", userID, "(" + typeof userID + ")");
-  
+      
       const holonsAddress = this.holonsContract.target;
       console.log("Holons contract address:", holonsAddress);
-  
+      
       const creatorUserId = userID.toString();
       const holonName = `chat_${Math.abs(chatID)}`;
-      const parameterValue = 5; 
+      const parameterValue = 5;
       
       console.log(`Creating holon bundle with name: ${holonName}`);
-  
-      // 1. Create the Holon Bundle (Splitter) - with higher gas limit
-      const txBundle = await this.holonsContract.newHolonBundle(
-        creatorUserId, 
-        holonName, 
-        parameterValue, 
-        { gasLimit: 15_000_000 }
+
+      // Create the bundle using the utility function
+      const bundleResult = await createHolonBundle(
+        this.holonsContract,
+        creatorUserId,
+        holonName,
+        parameterValue
       );
-      console.log("Transaction submitted for newHolonBundle:", txBundle.hash);
-      
-      const receiptBundle = await txBundle.wait();
-      console.log("newHolonBundle transaction confirmed:", receiptBundle.status === 1 ? 'Success' : 'Failed');
-      if (receiptBundle.status !== 1) {
-        throw new Error(`Holon Bundle creation transaction failed (Hash: ${txBundle.hash})`);
+
+      if (!bundleResult.success) {
+        throw new Error(bundleResult.error);
       }
-  
-      // 2. Read the bundle address directly from the transaction receipt events
-      let splitterAddress;
-      for (const log of receiptBundle.logs) {
-        // Look for the relevant event that contains the new address
-        try {
-          // Assuming the event is emitted with the bundle address
-          const parsedLog = this.holonsContract.interface.parseLog(log);
-          if (parsedLog && parsedLog.name === "HolonBundleCreated") {
-            splitterAddress = parsedLog.args.bundleAddress;
-            console.log(`Found Splitter address from event: ${splitterAddress}`);
-            break;
-          }
-        } catch (e) {
-          // Not all logs can be parsed by this interface
-          continue;
-        }
-      }
-  
-      // Fallback: try to get address from contract mapping if event parsing failed
-      if (!splitterAddress) {
-        console.log(`Retrieving Splitter address mapped in Holons contract for holonName: ${holonName}`);
-        splitterAddress = await this.holonsContract.toAddress(holonName);
-        console.log(`Retrieved Splitter Address from Holons mapping: ${splitterAddress}`);
-      }
-  
-      // Check if splitterAddress is valid before proceeding
-      if (!splitterAddress || splitterAddress === '0x0000000000000000000000000000000000000000') {
-        throw new Error(`Failed to retrieve a valid Splitter address for ${holonName} after bundle creation.`);
-      }
-  
-      // 3. Create Splitter Contract Instance
-      // Make sure you're using the correct ABI for the Splitter contract
+
+      const splitterAddress = bundleResult.bundleAddress;
+
+      // Create Splitter Contract Instance
       const splitterContract = new ethers.Contract(
         splitterAddress, 
         [
@@ -1388,49 +1505,21 @@ export default class Holons {
         this.wallet
       );
       console.log("Splitter contract instance created.");
-  
-      // 4. Create Managed Contract with higher gas limit
-      console.log(`Calling createManagedContract on ${splitterAddress} with user ${creatorUserId}, name ${holonName}, param ${parameterValue}`);
-      const txManaged = await splitterContract.createManagedContract(
-        creatorUserId, 
-        holonName, 
-        parameterValue, 
-        { gasLimit: 6_000_000 }
-      ); 
-      console.log("Transaction submitted for createManagedContract:", txManaged.hash);
-  
-      const receiptManaged = await txManaged.wait();
-      console.log("createManagedContract transaction confirmed:", receiptManaged.status === 1 ? 'Success' : 'Failed');
-      if (receiptManaged.status !== 1) {
-        throw new Error(`Managed Contract creation transaction failed (Hash: ${txManaged.hash})`);
+
+      // Create the managed and zoned contracts using the utility function
+      const contractsResult = await createBundleContracts(
+        splitterContract,
+        creatorUserId,
+        holonName,
+        parameterValue
+      );
+
+      if (!contractsResult.success) {
+        throw new Error(contractsResult.error);
       }
-  
-      // Get the managed contract address
-      const managedContractKey = `${holonName}_managed`;
-      const managedAddress = await splitterContract.contractsByType(managedContractKey);
-      console.log(`Managed contract address: ${managedAddress}`);
-  
-      // 5. Create Zoned Contract with higher gas limit
-      console.log(`Calling createZonedContract on ${splitterAddress} with user ${creatorUserId}, name ${holonName}, param ${parameterValue}`);
-      const txZoned = await splitterContract.createZonedContract(
-        creatorUserId, 
-        holonName, 
-        parameterValue, 
-        { gasLimit: 10_000_000 }
-      ); 
-      console.log("Transaction submitted for createZonedContract:", txZoned.hash);
-  
-      const receiptZoned = await txZoned.wait();
-      console.log("createZonedContract transaction confirmed:", receiptZoned.status === 1 ? 'Success' : 'Failed');
-      if (receiptZoned.status !== 1) {
-        throw new Error(`Zoned Contract creation transaction failed (Hash: ${txZoned.hash})`);
-      }
-  
-      // Get the zoned contract address
-      const zonedContractKey = `${holonName}_zoned`;
-      const zonedAddress = await splitterContract.contractsByType(zonedContractKey);
-      console.log(`Zoned contract address: ${zonedAddress}`);
-  
+
+      const { managedAddress, zonedAddress } = contractsResult;
+
       // Edit the initial message on final success
       await ctx.telegram.editMessageText(
         ctx.chat.id, 
@@ -1450,12 +1539,12 @@ export default class Holons {
         managedAddress,
         zonedAddress
       }; 
-  
+      
     } catch (error) {
       console.error("========== ERROR CREATING HOLON ==========");
       console.error("Error:", error);
       console.error("Error message:", error.message);
-  
+      
       // More detailed error logging
       if (error.code) console.error("Error code:", error.code);
       if (error.stack) console.error("Stack trace:", error.stack);
@@ -1739,6 +1828,34 @@ export default class Holons {
     }
   }
 
+  // AddFederationMember - Helper function to add federation member to Zoned contract
+  async addFederationMember(holonAddress, userID, federationId) {
+    try {
+      let holon = await this.getHolonContract(holonAddress);
+      
+      // Check if this is a Zoned holon by checking the flavor
+      const flavor = await holon.flavor();
+      if (flavor !== "Zoned") {
+        throw new Error(`This holon is of type "${flavor}" and does not support federation members. Only "Zoned" holons have federation functionality.`);
+      }
+
+      // Use the executeTransaction method for consistency with other functions
+      console.log("userId of the member that is added as federationMember:", String(userID));
+      console.log("name of the member that is added as federationMember:", String(federationId));
+      const tx = await this.executeTransaction(
+        holon,
+        'addMember(string,string)',
+        [String(userID), String(federationId)]
+      );
+      
+      // Wait for the transaction to be mined
+      const receipt = await tx.wait();
+      return receipt;
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async showHolonTypes(ctx) {
     try {
       const flavors = await this.holonsContract.listFlavors();
@@ -1966,7 +2083,7 @@ export default class Holons {
       throw error;
     }
   }
-  
+    
   async getZonedContract(chatID) {
     try {
       // First get the Splitter contract
@@ -2000,13 +2117,14 @@ export default class Holons {
     try {
       // First get the Splitter contract
       const splitterContract = await this.getSplitterContract(chatID);
+      console.log("splitter contract address: ", splitterContract.target);
       
       if (!splitterContract) {
         return null;
       }
       
       const holonName = chatID + "_managed"; 
-      
+
       // Get the Managed contract from the Splitter
       const managedContractAddress = await splitterContract.contractsByType(holonName);
       const managedContract = new ethers.Contract(managedContractAddress, managed.default.abi, this.wallet);
@@ -2405,6 +2523,71 @@ export default class Holons {
     }
   }
 
+  // TODO: This is debugging function: 
+
+  /**
+ * Utility that:
+ *   • prints the calldata you are about to send
+ *   • sends the tx
+ *   • waits for the receipt
+ *   • prints status / gas / revert reason (if any)
+ */
+  async traceTx(label, txReq, iface, signer) {
+    console.log(`\n----- ${label} -----`);
+    console.log("calldata        :", txReq.data);
+    console.log("to              :", txReq.to);
+  
+    try {
+      const tx = await signer.sendTransaction(txReq);
+      const receipt = await tx.wait();
+      console.log("status (1=ok/0=rev):", receipt.status);
+      console.log("gasUsed         :", receipt.gasUsed.toString());
+      console.log("----- end -----\n");
+      return { tx, receipt };
+    } catch (err) {
+      // ------- 1. whatever the provider gave us -----------
+      const revertData =
+        err.error?.data ??      // ethers v6 (most JSON-RPCs)
+        err.data ??             // ethers v5
+        err.receipt?.revertReason;
+  
+      console.log("status          : 0 (revert)");
+      console.log("revert data(raw):", revertData ?? "<none>");
+  
+      // ------- 2. if provider gave nothing, try a static call -----------
+      let callRevert;
+      if (!revertData) {
+        try {
+          await signer.provider.call(txReq); // will throw & include data
+        } catch (callErr) {
+          callRevert = callErr.error?.data ?? callErr.data;
+          console.log("revert data(via call):", callRevert ?? "<none>");
+        }
+      }
+  
+      const dataToDecode = revertData || callRevert;
+      if (dataToDecode && dataToDecode.startsWith("0x08c379a0")) {
+        // require("reason") string => slice after function selector & offset
+        const reasonHex = "0x" + dataToDecode.slice(138);
+        try {
+          const reasonStr = ethers.toUtf8String(reasonHex).trim();
+          console.log("string reason  :", reasonStr);
+        } catch { /* ignore */ }
+      } else if (dataToDecode) {
+        try {
+          const decoded = iface.parseError(dataToDecode);
+          console.log("decoded reason :", decoded?.name, decoded?.args);
+        } catch { /* not a custom error */ }
+      }
+  
+      console.log("----- end -----\n");
+      const tx = err?.transaction ?? err?.tx;
+      const receipt = err?.receipt;
+      console.log("----- end -----\n");
+      return { tx, receipt }; 
+    }
+  }
+
   async claim(ctx) {
     const chatID = utils.getChatId(ctx);
     const userID = utils.getUserId(ctx);
@@ -2427,36 +2610,54 @@ export default class Holons {
       if (!ethers.isAddress(beneficiaryAddress)) {
         return ctx.reply("Please provide a valid Ethereum address");
       }
-  
+ 
       // Execute the transaction using the contract's claim function
+      console.log("userID.toString(): ", userID.toString());
+      // let's add members here as well:
 
-      const data = holon.interface.encodeFunctionData('claim', [userID.toString(), beneficiaryAddress]);
-      
-      const tx = await this.wallet.sendTransaction({
-        to: holon.target,
-        data,
-        gasLimit: 3000000,
-        // maxPriorityFeePerGas: maxPriorityFee,
-        // maxFeePerGas: maxFee,
-        nonce: await this.wallet.getNonce()
-      });
-      // const tx = await this.executeTransaction(
-      //   holon,
-      //   'claim',
-      //   [userID.toString(), beneficiaryAddress],
-      //   {
-      //     gasLimit: 3000000,
-      //     maxPriorityFeePerGas: ethers.parseUnits("3", "gwei"),
-      //     maxFeePerGas: ethers.parseUnits("30", "gwei"),
-      //   }
-      // );
-      
-      // Don't await the transaction completion
-      this.waitForTransaction(
-        tx,
-        ctx,
-        `Claim successful! Transaction hash: ${tx.hash}`
+            // ------------- prepare calldata -------------
+      // calldata
+      const userIdStr = userID.toString();
+      const dataAdd  = holon.interface.encodeFunctionData("addMember(string)", [userIdStr]);
+      const dataClaim = holon.interface.encodeFunctionData("claim", [userIdStr, beneficiaryAddress]);
+
+      // 1️⃣ addMember
+      const { tx: addTx, receipt: addRcpt } = await this.traceTx(
+        "addMember",
+        { to: holon.target, data: dataAdd, gasLimit: 3_000_000 },
+        holon.interface,
+        this.wallet
       );
+
+      if (!addRcpt || addRcpt.status !== 1) {   // 🔺 extra !addRcpt guard
+        console.error("❌ addMember failed – aborting");
+        return;
+      }
+
+      // async notification
+      this.waitForTransaction(addTx, ctx, `Added member! Tx hash: ${addTx.hash}`);
+
+      // 2️⃣ skip claim if already done
+      const already = await holon.hasClaimed(userIdStr);
+      if (already) {
+        console.log("⏩ user already claimed, skipping");
+        return;
+      }
+
+      // 3️⃣ claim
+      const { tx: claimTx, receipt: claimRcpt } = await this.traceTx(
+        "claim",
+        { to: holon.target, data: dataClaim, gasLimit: 3_000_000 },
+        holon.interface,
+        this.wallet
+      );
+
+      if (!claimRcpt || claimRcpt.status !== 1) {  // 🔺 extra null guard
+        console.error("❌ claim reverted");
+        return;
+      }
+
+      this.waitForTransaction(claimTx, ctx, `Claim successful! Tx hash: ${claimTx.hash}`);
       
       // Provide immediate feedback
       return ctx.reply(`Transaction submitted. You will be notified when your claim is processed.`);
@@ -2546,13 +2747,15 @@ export default class Holons {
                 let holonName;
                 try {
                     holonName = await utils.getHolonName(this.db, memberId, ctx);
+                    console.log("holonName from a function utils.getHolonName inside ShowZoneManagementView: ", holonName);
                 } catch (error) {
                     console.warn(`Could not get holon name for ${memberId}:`, error.message);
                     holonName = `Holon ${memberId}`; // Fallback name
                 }
                 
                 // Only show ID in brackets if the name is different from the ID
-                const displayName = holonName === memberId.toString() ? holonName : `${holonName} (${memberId})`;
+                const normalizedMemberId = utils.normalizeHolonId(memberId);
+                const displayName = holonName === normalizedMemberId.toString() ? holonName : `${holonName} (${normalizedMemberId})`;
                 
                 let buttonText = displayName;
                 let callbackData = `zone_member_${memberId}_${i}`;
@@ -3032,11 +3235,28 @@ Select the TARGET zone:`;
           return this.showZoneManagementView(ctx); 
         }
 
-        const tx = await this.executeTransaction(
-          zonedContract,
+        // Was before, but data is being empty
+        // const tx = await this.executeTransaction(
+        //   zonedContract,
+        //   'addMembers',
+        //   [senderUserId, holonIdsToAddArray] 
+        // );
+        // Explicitly encode the function data
+        const data = zonedContract.interface.encodeFunctionData(
           'addMembers',
-          [senderUserId, holonIdsToAddArray] 
+          [senderUserId, holonIdsToAddArray]
         );
+        console.log("Data:", data);
+        console.log("SenderUserId:", senderUserId); // Should be string
+        console.log("HolonIdsArray:", holonIdsToAddArray); // Array of string or address?
+
+        // Send the transaction directly
+        const tx = await this.wallet.sendTransaction({
+          to: zonedContract.target,
+          data,
+          gasLimit: 3000000,
+          nonce: await this.wallet.getNonce()
+        });
 
         this.waitForTransaction(tx, ctx, `Successfully submitted request to add ${holonIdsToAddArray.length} external Holon(s).`);
         
@@ -3109,11 +3329,31 @@ Select the TARGET zone:`;
 
       // Assuming 'addToZone' is the correct method for moving, as per existing patterns.
       // It typically takes (sender, memberToMove, targetZone)
-      const tx = await this.executeTransaction(
-        zonedContract,
-        'addToZone',
+      // Was before but it was returning empty string for the data encoded
+      // const tx = await this.executeTransaction(
+      //   zonedContract,
+      //   'addToZone',
+      //   [senderUserId, memberId, solidityTargetZone]
+      // );
+      // Manually encoding the data so we find a solution
+      // 1. Encode the function data manually
+      const data = zonedContract.interface.encodeFunctionData(
+        "addToZone",
         [senderUserId, memberId, solidityTargetZone]
       );
+      console.log("move between the zones, senderUserId: ", senderUserId);
+      console.log("move between the zones, memberId: ", memberId);
+      console.log("move between the zones, solidityTargetZone", solidityTargetZone);
+      // 2. Prepare the transaction object
+      const txRequest = {
+        to: zonedContract.target, // or zonedContract.address depending on ethers version
+        data,
+        gasLimit: 3000000,
+        // Add any other options you need (nonce, gasPrice, etc.)
+      };
+
+      // 3. Send the transaction using the wallet
+      const tx = await this.wallet.sendTransaction(txRequest);
 
       this.waitForTransaction(
         tx,
@@ -3529,4 +3769,224 @@ Select the TARGET zone:`;
   async setSettings(settings) {
     return await this.settings.setSettings(settings);
   }
+  // Check if the -id has associated smart contract address ( bundle is created )
+
+  async checkGroupAddress(federationID) {
+    try {
+        // Convert federationID to string and normalize it for the contract
+        const groupId = `chat_${Math.abs(federationID)}`;
+        
+        // Get the address from the toAddress mapping
+        const address = await this.holonsContract.toAddress(groupId);
+        
+        // Check if the address is not the zero address
+        const exists = address !== '0x0000000000000000000000000000000000000000';
+        
+        return {
+            exists,
+            address: exists ? address : null
+        };
+    } catch (error) {
+        console.error("Error checking group address:", error);
+        return {
+            exists: false,
+            address: null,
+            error: error.message
+        };
+    }
+}
+
+//  technical debt - modularize this
+
+async createHolonBundle(holonsContract, creatorUserId, holonName, parameterValue) {
+  try {
+    // 1. Create the Holon Bundle (Splitter)
+    const txBundle = await holonsContract.newHolonBundle(
+      creatorUserId,
+      holonName,
+      parameterValue,
+      { gasLimit: 15_000_000 }
+    );
+    console.log("Transaction submitted for newHolonBundle:", txBundle.hash);
+    
+    const receiptBundle = await txBundle.wait();
+    console.log("newHolonBundle transaction confirmed:", receiptBundle.status === 1 ? 'Success' : 'Failed');
+    if (receiptBundle.status !== 1) {
+      throw new Error(`Holon Bundle creation transaction failed (Hash: ${txBundle.hash})`);
+    }
+
+    // 2. Get the bundle address from the transaction receipt events
+    let splitterAddress;
+    for (const log of receiptBundle.logs) {
+      try {
+        const parsedLog = holonsContract.interface.parseLog(log);
+        if (parsedLog && parsedLog.name === "HolonBundleCreated") {
+          splitterAddress = parsedLog.args.bundleAddress;
+          console.log(`Found Splitter address from event: ${splitterAddress}`);
+          break;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+
+    // Fallback: try to get address from contract mapping if event parsing failed
+    if (!splitterAddress) {
+      console.log(`Retrieving Splitter address mapped in Holons contract for holonName: ${holonName}`);
+      splitterAddress = await holonsContract.toAddress(holonName);
+      console.log(`Retrieved Splitter Address from Holons mapping: ${splitterAddress}`);
+    }
+
+    // Check if splitterAddress is valid
+    if (!splitterAddress || splitterAddress === '0x0000000000000000000000000000000000000000') {
+      throw new Error(`Failed to retrieve a valid Splitter address for ${holonName} after bundle creation.`);
+    }
+
+    return {
+      success: true,
+      bundleAddress: splitterAddress
+    };
+
+  } catch (error) {
+    console.error("Error creating holon bundle:", error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Creates managed and zoned contracts for a bundle
+ * @param {Object} splitterContract - The Splitter contract instance
+ * @param {string} creatorUserId - The ID of the user creating the contracts
+ * @param {string} holonName - The name for the contracts
+ * @param {number} parameterValue - The parameter value for the contracts
+ * @returns {Promise<Object>} Result object with success status and contract addresses
+ */
+async createBundleContracts(splitterContract, creatorUserId, holonName, parameterValue) {
+  try {
+    // Create Managed Contract
+    const txManaged = await splitterContract.createManagedContract(
+      creatorUserId,
+      holonName,
+      parameterValue,
+      { gasLimit: 6_000_000 }
+    );
+    console.log("Transaction submitted for createManagedContract:", txManaged.hash);
+    
+    const receiptManaged = await txManaged.wait();
+    if (receiptManaged.status !== 1) {
+      throw new Error(`Managed Contract creation transaction failed (Hash: ${txManaged.hash})`);
+    }
+
+    // Get the managed contract address
+    const managedContractKey = `${holonName}_managed`;
+    const managedAddress = await splitterContract.contractsByType(managedContractKey);
+
+    // Create Zoned Contractd
+    const txZoned = await splitterContract.createZonedContract(
+      creatorUserId,
+      holonName,
+      parameterValue,
+      { gasLimit: 10_000_000 }
+    );
+    console.log("Transaction submitted for createZonedContract:", txZoned.hash);
+    
+    const receiptZoned = await txZoned.wait();
+    if (receiptZoned.status !== 1) {
+      throw new Error(`Zoned Contract creation transaction failed (Hash: ${txZoned.hash})`);
+    }
+
+    // Get the zoned contract address
+    const zonedContractKey = `${holonName}_zoned`;
+    const zonedAddress = await splitterContract.contractsByType(zonedContractKey);
+
+    return {
+      success: true,
+      managedAddress,
+      zonedAddress
+    };
+
+  } catch (error) {
+    console.error("Error creating bundle contracts:", error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+async getHolonContracts(holonId, holonsContract, wallet) {
+  try {
+      // Define ABIs
+      const splitterABI = JSON.parse(fs.readFileSync('./contracts/Splitter.json', 'utf-8')).abi;
+      const zonedABI = JSON.parse(fs.readFileSync('./contracts/Zoned.json', 'utf-8')).abi;
+      const managedABI = JSON.parse(fs.readFileSync('./contracts/Managed.json', 'utf-8')).abi;  // Added Managed ABI
+
+
+      // Check if the holon has a bundle
+      const groupInfo = await this.checkGroupAddress(holonId);
+      console.log("Holon bundle info:", groupInfo);
+
+      if (!groupInfo.exists) {
+          console.log("Holon does not have a bundle yet");
+          return {
+              success: false,
+              error: "Holon does not have a bundle",
+              contracts: null
+          };
+      }
+
+      // Get the Splitter contract instance
+      const splitterAddress = groupInfo.address;
+      const splitterContract = new ethers.Contract(splitterAddress, splitterABI, wallet);
+      console.log("getHolonContracts has a splitter address & contract: ", splitterAddress);
+
+      // Get the Zoned contract address from the Splitter
+      const zonedContractKey = `chat_${Math.abs(holonId)}_zoned`;
+      const zonedAddress = await splitterContract.contractsByType(zonedContractKey);
+      const zonedContract = new ethers.Contract(zonedAddress, zonedABI, wallet);
+
+      // Get all contract keys and addresses for debugging
+      const [keys, addresses] = await splitterContract.getContractAddresses();
+      console.log("All contracts in Splitter:");
+      for (let i = 0; i < keys.length; i++) {
+          console.log(`Key: ${keys[i]}, Address: ${addresses[i]}`);
+      }
+
+      // Get specific contract info
+      const managedContractKey = `chat_${Math.abs(holonId)}_managed`;
+      const managedAddress = await splitterContract.contractsByType(managedContractKey);
+      const managedContract = new ethers.Contract(managedAddress, managedABI, wallet);
+
+      return {
+          success: true,
+          contracts: {
+              splitter: {
+                  address: splitterAddress,
+                  contract: splitterContract
+              },
+              zoned: {
+                  address: zonedAddress,
+                  contract: zonedContract
+              },
+              managed: {
+                  address: managedAddress,
+                  contract: managedContract // You would need to add the Managed ABI to instantiate this
+              }
+          }
+      };
+
+  } catch (error) {
+      console.error("Error getting holon contracts:", error);
+      return {
+          success: false,
+          error: error.message,
+          contracts: null
+      };
+  }
+}
+
+
 }
