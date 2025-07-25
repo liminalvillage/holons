@@ -1288,6 +1288,16 @@ export default class Holons {
     const memberAdjustments = settings.memberAdjustments || {};
 
     let userids = users.map((user) => user.id.toString());
+    
+    // ADD THIS LOGGING SECTION
+    console.log("=== HOURS DEBUGGING ===");
+    console.log("Equation hours value:", equation.hours);
+    console.log("Users and their hours:");
+    users.forEach(user => {
+      console.log(`User ${user.id}: hours = ${user.hours}, type = ${typeof user.hours}`);
+    });
+    console.log("=== END HOURS DEBUGGING ===");
+    
     // Format scores to ensure they're BigInts for the contract call
     let contractScores = users.map((user) => {
       const calculatedScore = Math.floor(
@@ -1300,6 +1310,18 @@ export default class Holons {
         (user.wants?.length || 0) * (equation.wants || 0) +
         (user.offers?.length || 0) * (equation.offers || 0)
       );
+      
+      // ADD THIS DETAILED LOGGING
+      console.log(`User ${user.id} score breakdown:`);
+      console.log(`  - initiated: ${user.initiated?.length || 0} * ${equation.initiated || 0} = ${(user.initiated?.length || 0) * (equation.initiated || 0)}`);
+      console.log(`  - completed: ${user.completed?.length || 0} * ${equation.completed || 0} = ${(user.completed?.length || 0) * (equation.completed || 0)}`);
+      console.log(`  - sent: ${user.sent || 0} * ${equation.sent || 0} = ${(user.sent || 0) * (equation.sent || 0)}`);
+      console.log(`  - received: ${user.received || 0} * ${equation.received || 0} = ${(user.received || 0) * (equation.received || 0)}`);
+      console.log(`  - hours: ${user.hours || 0} * ${equation.hours || 0} = ${(user.hours || 0) * (equation.hours || 0)}`);
+      console.log(`  - collaboration: ${user.collaboration || 0} * ${equation.collaboration || 0} = ${(user.collaboration || 0) * (equation.collaboration || 0)}`);
+      console.log(`  - wants: ${user.wants?.length || 0} * ${equation.wants || 0} = ${(user.wants?.length || 0) * (equation.wants || 0)}`);
+      console.log(`  - offers: ${user.offers?.length || 0} * ${equation.offers || 0} = ${(user.offers?.length || 0) * (equation.offers || 0)}`);
+      console.log(`  - Total calculated score: ${calculatedScore}`);
       
       // Apply manual adjustment
       const adjustment = memberAdjustments[user.id.toString()] || 0;
