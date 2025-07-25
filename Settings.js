@@ -1632,6 +1632,10 @@ export default class Settings {
     // Re-add this method to allow injection of Holons instance
     setHolonsInstance(holonsInstance) {
         this.holons = holonsInstance;
+        // Forward the holons instance to the scenes
+        if (this.scenes && typeof this.scenes.setHolons === 'function') {
+            this.scenes.setHolons(holonsInstance);
+        }
     }
 
     async getHex(ctx) {

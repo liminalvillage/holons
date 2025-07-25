@@ -24,12 +24,18 @@ import { createHolonBundle, createBundleContracts } from './utils/holonOperation
 
 export default class Holons {
   constructor(bot, db, settings) {
+    console.log("=== Holons constructor called ===");
+    console.log("settings passed to constructor:", settings);
+    console.log("settings type:", typeof settings);
+    console.log("settings constructor:", settings?.constructor?.name);
+    console.log("Call stack:", new Error().stack);
+    
     this.network = process.env.NETWORK;
     this.chainId = parseInt(process.env.CHAINID);
     this.bot = bot;
     this.db = db;
     this.settings = settings;
-    console.log("Holons constructed, settings:", settings);
+    // console.log("Holons constructed, this.settings:", this.settings);
     this.ui = null; // Will be set by main app
     this.privateKey = process.env.WEB3KEY;
     this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
@@ -485,6 +491,11 @@ export default class Holons {
   }
 
   setupCallbackHandlers() {
+    console.log("=== setupCallbackHandlers START ===");
+    // console.log("this in setupCallbackHandlers:", this);
+    // console.log("this.settings in setupCallbackHandlers:", this.settings);
+    console.log("Registering member_sync_scores on instance:", this.bot?.botInfo?.id);
+    
     // Specific zone-related action handlers
     this.bot.action('zone_prepare_move', async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("Error answering CB query in zone_prepare_move:", e.message));
@@ -616,7 +627,12 @@ export default class Holons {
         case 'addmembers': await this.addMembersBundle(ctx); break;
         case 'smart_sync': await this.smartSync(ctx); break;
         case 'claim': await ctx.scene.enter('claim_scene'); break;
-        case 'reward': await ctx.scene.enter('reward_scene'); break;
+        case 'reward': 
+          console.log("=== reward case START ===");
+          console.log("this in reward case:", this);
+          console.log("this.settings in reward case:", this.settings);
+          await ctx.scene.enter('reward_scene'); 
+          break;
         case 'ethbalance': await this.ethBalance(ctx); break;
         case 'tokenbalance': await ctx.scene.enter('token_balance_scene'); break;
         case 'manage_members_view': 
@@ -808,11 +824,23 @@ export default class Holons {
     });
 
     // === MEMBER MANAGEMENT ACTION HANDLERS ===
-    this.bot.action('member_sync_scores', async (ctx) => {
+    this.bot.action('member_sync_scores', async function(ctx) {
+      console.log("=== member_sync_scores handler START ===");
+      // console.log("this in handler:", this);
+      console.log("this.settings in handler:", this.settings);
+      // console.log("this.bot:", this.bot);
+      console.log("ctx.bot:", ctx.bot);
+      console.log("Are they the same?", this.bot === ctx.bot);
+      
+      // Add this to check if this is the main instance
+      console.log("Is this the main HolonsBot instance?", this === global.mainHolonsInstance);
+      // console.log("Handler registered on:", this.bot);
+      
       await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member_sync_scores:", e.message));
       await ctx.editMessageText("🔄 Syncing scores to contract... Please wait.").catch(e => console.log("Edit error:", e.message));
       
       try {
+        console.log("About to call syncScore...");
         await this.syncScore(ctx);
         // Show updated member management view after sync
         setTimeout(async () => {
@@ -824,7 +852,7 @@ export default class Holons {
           reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_manage_members_view" }]] }
         }).catch(e => console.log("Error edit:", e.message));
       }
-    });
+    }.bind(this));
 
     this.bot.action('member_enter_add_scene', async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member_enter_add_scene:", e.message));
@@ -3779,6 +3807,7 @@ Select the TARGET zone:`;
         const groupId = `chat_${Math.abs(federationID)}`;
         
         // Get the address from the toAddress mapping
+        consol.log("this.holonsContract: ", this.holonsContract);
         const address = await this.holonsContract.toAddress(groupId);
         
         // Check if the address is not the zero address

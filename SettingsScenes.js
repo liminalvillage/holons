@@ -43,7 +43,7 @@ export default class SettingsScenes {
         this.privateKey = process.env.WEB3KEY;
         this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
         this.wallet = new ethers.Wallet(this.privateKey, this.provider);
-        this.holons = new Holons(this.bot, this.db, this.settings);
+        // this.holons = new Holons(this.bot, this.db, this.settings);
         // spagheti
         
         // more spagheti
@@ -53,8 +53,8 @@ export default class SettingsScenes {
         this.holonsContract = new ethers.Contract(holonsAddress, holonsABI, this.wallet);
     
         // Create Holons instance and pass the contract
-        this.holons = new Holons(this.bot, this.db, this.settings);
-        this.holons.holonsContract = this.holonsContract;
+        this.holons = null;
+        // this.holons.setHolons(this.holons);
 
         //  more spagheti
         // Create scenes for text input
@@ -1209,4 +1209,8 @@ export default class SettingsScenes {
     //         };
     //     }
     // }
+
+    setHolons(holons) {
+        this.holons = holons;
+    }
 }
