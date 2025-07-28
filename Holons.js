@@ -37,6 +37,7 @@ export default class Holons {
     this.settings = settings;
     // console.log("Holons constructed, this.settings:", this.settings);
     this.ui = null; // Will be set by main app
+    this.expensesInstance = null;
     this.privateKey = process.env.WEB3KEY;
     this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);
     this.wallet = new ethers.Wallet(this.privateKey, this.provider);
@@ -488,6 +489,10 @@ export default class Holons {
       }
       await ctx.scene.enter('assign_member_to_zone_scene');
     });
+  }
+
+  setExpensesInstance(expensesInstance) {
+    this.expensesInstance = expensesInstance;
   }
 
   setupCallbackHandlers() {
@@ -1281,47 +1286,40 @@ export default class Holons {
     const chatID = utils.getChatId(ctx);
     let users = await this.db.getAll(chatID.toString() + '/users')
     if (!users) return ctx.reply("No users found");
-    const equation = await this.settings.getValueEquation(chatID)
+    
+    // Check if expensesInstance is available
+    if (!this.expensesInstance) {
+        console.error('Expenses instance not available in Holons.js for score calculation.');
+        ctx.reply('Error calculating scores: Expenses module not accessible.');
+        return;
+    }
     
     // Get manual score adjustments
     const settings = await this.getSettings(chatID);
     const memberAdjustments = settings.memberAdjustments || {};
 
-    let userids = users.map((user) => user.id.toString());
-    
-    // ADD THIS LOGGING SECTION
-    console.log("=== HOURS DEBUGGING ===");
-    console.log("Equation hours value:", equation.hours);
-    console.log("Users and their hours:");
+    // Convert users array to object format expected by calculateUserScores
+    const usersObject = {};
     users.forEach(user => {
-      console.log(`User ${user.id}: hours = ${user.hours}, type = ${typeof user.hours}`);
+        usersObject[user.id] = user;
     });
-    console.log("=== END HOURS DEBUGGING ===");
+
+    // Calculate scores using Settings method (includes currencies)
+    const scoredUsers = await this.settings.calculateUserScores(usersObject, chatID, this.expensesInstance);
+    
+    // Create mapping from user ID to calculated score
+    const userScoreMap = {};
+    scoredUsers.forEach(user => {
+        userScoreMap[user.id] = user.score;
+    });
+
+    let userids = users.map((user) => user.id.toString());
     
     // Format scores to ensure they're BigInts for the contract call
     let contractScores = users.map((user) => {
-      const calculatedScore = Math.floor(
-        (user.initiated?.length || 0) * (equation.initiated || 0) +
-        (user.completed?.length || 0) * (equation.completed || 0) +
-        (user.sent || 0) * (equation.sent || 0) +
-        (user.received || 0) * (equation.received || 0) +
-        (user.hours || 0) * (equation.hours || 0) +
-        (user.collaboration || 0) * (equation.collaboration || 0) +
-        (user.wants?.length || 0) * (equation.wants || 0) +
-        (user.offers?.length || 0) * (equation.offers || 0)
-      );
+      const calculatedScore = Math.floor(userScoreMap[user.id] || 0);
       
-      // ADD THIS DETAILED LOGGING
-      console.log(`User ${user.id} score breakdown:`);
-      console.log(`  - initiated: ${user.initiated?.length || 0} * ${equation.initiated || 0} = ${(user.initiated?.length || 0) * (equation.initiated || 0)}`);
-      console.log(`  - completed: ${user.completed?.length || 0} * ${equation.completed || 0} = ${(user.completed?.length || 0) * (equation.completed || 0)}`);
-      console.log(`  - sent: ${user.sent || 0} * ${equation.sent || 0} = ${(user.sent || 0) * (equation.sent || 0)}`);
-      console.log(`  - received: ${user.received || 0} * ${equation.received || 0} = ${(user.received || 0) * (equation.received || 0)}`);
-      console.log(`  - hours: ${user.hours || 0} * ${equation.hours || 0} = ${(user.hours || 0) * (equation.hours || 0)}`);
-      console.log(`  - collaboration: ${user.collaboration || 0} * ${equation.collaboration || 0} = ${(user.collaboration || 0) * (equation.collaboration || 0)}`);
-      console.log(`  - wants: ${user.wants?.length || 0} * ${equation.wants || 0} = ${(user.wants?.length || 0) * (equation.wants || 0)}`);
-      console.log(`  - offers: ${user.offers?.length || 0} * ${equation.offers || 0} = ${(user.offers?.length || 0) * (equation.offers || 0)}`);
-      console.log(`  - Total calculated score: ${calculatedScore}`);
+      console.log(`User ${user.id} calculated score (including currencies): ${calculatedScore}`);
       
       // Apply manual adjustment
       const adjustment = memberAdjustments[user.id.toString()] || 0;
@@ -2962,30 +2960,35 @@ export default class Holons {
           let totalContractScore = 0;
           const memberData = [];
           
+          // Calculate scores using Settings method (includes currencies) for all users first
+          let userScoreMap = {};
+          if (this.expensesInstance) {
+            try {
+              // Convert users array to object format expected by calculateUserScores
+              const usersObject = {};
+              usersFromDB.forEach(user => {
+                  usersObject[user.id] = user;
+              });
+              
+              // Calculate scores using Settings method
+              const scoredUsers = await this.settings.calculateUserScores(usersObject, chatID, this.expensesInstance);
+              
+              // Create mapping from user ID to calculated score
+              scoredUsers.forEach(user => {
+                  userScoreMap[user.id] = user.score;
+              });
+            } catch (e) {
+              console.error('Error calculating scores with Settings method:', e);
+              // Fall back to empty scores if calculation fails
+            }
+          }
+
           for (const memberId of members) {
             let calculatedScore = 0;
             let contractScore = 0;
             
-            // Always calculate fresh score from database using current value equation
-            try {
-              const user = usersFromDB.find(u => u.id.toString() === memberId.toString());
-              
-              if (user) {
-                // Calculate base score from current user data and equation
-                calculatedScore = Math.floor(
-                  (user.initiated?.length || 0) * (equation.initiated || 0) +
-                  (user.completed?.length || 0) * (equation.completed || 0) +
-                  (user.sent || 0) * (equation.sent || 0) +
-                  (user.received || 0) * (equation.received || 0) +
-                  (user.hours || 0) * (equation.hours || 0) +
-                  (user.collaboration || 0) * (equation.collaboration || 0) +
-                  (user.wants?.length || 0) * (equation.wants || 0) +
-                  (user.offers?.length || 0) * (equation.offers || 0)
-                );
-              }
-            } catch (e) {
-              // Silently continue if score calculation fails
-            }
+            // Get calculated score from Settings method
+            calculatedScore = Math.floor(userScoreMap[memberId] || 0);
             
             // Try to fetch from smart contract
             try {

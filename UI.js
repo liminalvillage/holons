@@ -150,9 +150,6 @@ class UI {
 
   async leaderboard(ctx) {
     let chatID = ctx.message.chat.id
-    const currentSettings = await this.settings.getSettings(chatID) // Get all settings
-    const valueEquation = currentSettings.valueEquation
-    const currencies = currentSettings.currencies || []
     let users = await this.db.holosphere.getAll(chatID, 'users')
     const language = await this.settings.getLanguage(chatID)
 
@@ -165,8 +162,8 @@ class UI {
         return;
     }
 
-    // Create a table header
-    this.getRankTable(users, valueEquation, currencies, chatID, expensesInstance).then((path) => {
+    // Calculate user scores using the Settings class method
+    this.getRankTable(users, chatID, expensesInstance).then((path) => {
       if (path) {
         ctx.replyWithPhoto(
           { source: fs.createReadStream(path) },
@@ -185,45 +182,12 @@ class UI {
     return;
   }
 
-  async getRankTable(users, equation, currencies, chatID, expensesInstance) {
+  async getRankTable(users, chatID, expensesInstance) {
     const language = await this.settings.getLanguage(chatID)
     const rows = []
 
-    // Calculate scores first, then sort
-    const userScores = [];
-    for (const userId in users) {
-        const user = users[userId];
-        if (!user || user.id === undefined) continue; // Skip if user or user.id is undefined
-
-        let score = (user.initiated && user.initiated.length * equation.initiated || 0) +
-            (user.completed && user.completed.length * equation.completed || 0) +
-            (user.sent * equation.sent || 0) +
-            (user.received * equation.received || 0) +
-            (user.hours * equation.hours || 0) +
-            (user.collaboration * equation.collaboration || 0) +
-            (user.wants && user.wants.length * equation.wants || 0) +
-            (user.offers && user.offers.length * equation.offers || 0);
-
-        let currencyScoreContribution = 0;
-        if (currencies && currencies.length > 0 && expensesInstance) {
-            for (const currencyName of currencies) {
-                const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                if (currencyKey && equation[currencyKey] !== undefined) {
-                    try {
-                        const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currencyKey);
-                        const weight = equation[currencyKey] || 0;
-                        currencyScoreContribution += balance * weight;
-                    } catch (e) {
-                        console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
-                    }
-                }
-            }
-        }
-        score += currencyScoreContribution;
-        userScores.push({ ...user, score });
-    }
-
-    const sortedUsers = userScores.sort((a, b) => b.score - a.score);
+    // Calculate and sort user scores using the Settings class method
+    const sortedUsers = await this.settings.calculateUserScores(users, chatID, expensesInstance);
 
     for (let i = 0; i < sortedUsers.length; i++) {
       const user = sortedUsers[i]

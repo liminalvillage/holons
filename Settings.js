@@ -1744,7 +1744,6 @@ export default class Settings {
                 completed: 1,
                 sent: 1,
                 received: 1,
-                collaboration: 1,
                 wants: 1,
                 offers: 1
             },
@@ -2034,6 +2033,47 @@ export default class Settings {
     async getValueEquation(chatID) {
         let settings = await this.getSettings(chatID)
         return settings.valueEquation
+    }
+
+    async calculateUserScores(users, chatID, expensesInstance) {
+        const settings = await this.getSettings(chatID);
+        const equation = settings.valueEquation;
+        const currencies = settings.currencies || [];
+        
+        const userScores = [];
+        for (const userId in users) {
+            const user = users[userId];
+            if (!user || user.id === undefined) continue; // Skip if user or user.id is undefined
+
+            let score = (user.initiated && user.initiated.length * equation.initiated || 0) +
+                (user.completed && user.completed.length * equation.completed || 0) +
+                (user.sent * equation.sent || 0) +
+                (user.received * equation.received || 0) +
+                (user.hours * equation.hours || 0) +
+                (user.collaboration * equation.collaboration || 0) +
+                (user.wants && user.wants.length * equation.wants || 0) +
+                (user.offers && user.offers.length * equation.offers || 0);
+
+            let currencyScoreContribution = 0;
+            if (currencies && currencies.length > 0 && expensesInstance) {
+                for (const currencyName of currencies) {
+                    const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                    if (currencyKey && equation[currencyKey] !== undefined) {
+                        try {
+                            const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currencyKey);
+                            const weight = equation[currencyKey] || 0;
+                            currencyScoreContribution += balance * weight;
+                        } catch (e) {
+                            console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
+                        }
+                    }
+                }
+            }
+            score += currencyScoreContribution;
+            userScores.push({ ...user, score });
+        }
+
+        return userScores.sort((a, b) => b.score - a.score);
     }
 
     async whitelisted(ctx) {

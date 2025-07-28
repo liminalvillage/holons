@@ -174,6 +174,10 @@ class HolonsBot {
     if (this.ui && this.expenses) {
         this.ui.setExpensesInstance(this.expenses);
     }
+    
+    if (this.holons && this.expenses) {
+        this.holons.setExpensesInstance(this.expenses);
+    }
 
     this.lunation = new Lunation(this.telebot);
     this.shopping = new Shopping(this.telebot, this.db, this.settings);

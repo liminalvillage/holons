@@ -819,7 +819,7 @@ export default class Quests {
                             'hour',
                             quest.title,
                             userID,
-                            [6152474485]
+                            chatID // declare the expense to the holon
                         );
                     }
                 }
@@ -1786,29 +1786,6 @@ export default class Quests {
         }
         
         await this.db.put(chatID + '/quests', quest);
-        try {
-            const users = await this.db.getAll(chatID.toString() + '/users');
-            const user = users.find(u => u.id.toString() === userId.toString());
-            
-            if (user) {
-                // Calculate total hours from all quests for this user
-                const allQuests = await this.db.getAll(chatID.toString() + '/quests');
-                let totalHours = 0;
-                
-                for (const q of allQuests) {
-                    if (q.timeTracking && q.timeTracking[userId]) {
-                        totalHours += Number(q.timeTracking[userId]) || 0;
-                    }
-                }
-                
-                // Update user's hours
-                user.hours = totalHours;
-                await this.db.put(chatID.toString() + '/users', user);
-                console.log(`Updated user ${userId} hours to ${totalHours}`);
-            }
-        } catch (error) {
-            console.error("Error updating user hours:", error);
-        }
         if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
             await this.personalHologram(sender.id, quest);
             await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
@@ -1851,30 +1828,6 @@ export default class Quests {
             }
             
             await this.db.put(chatID + '/quests', quest);
-            // NEW: Update user's hours in database
-            try {
-                const users = await this.db.getAll(chatID.toString() + '/users');
-                const user = users.find(u => u.id.toString() === userId.toString());
-                
-                if (user) {
-                    // Calculate total hours from all quests for this user
-                    const allQuests = await this.db.getAll(chatID.toString() + '/quests');
-                    let totalHours = 0;
-                    
-                    for (const q of allQuests) {
-                        if (q.timeTracking && q.timeTracking[userId]) {
-                            totalHours += Number(q.timeTracking[userId]) || 0;
-                        }
-                    }
-                    
-                    // Update user's hours
-                    user.hours = totalHours;
-                    await this.db.put(chatID.toString() + '/users', user);
-                    console.log(`Updated user ${userId} hours to ${totalHours}`);
-                }
-            } catch (error) {
-                console.error("Error updating user hours:", error);
-            }
             if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
                 await this.personalHologram(sender.id, quest);
                 await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
