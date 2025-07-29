@@ -3,6 +3,7 @@ import {
   Markup
 } from 'telegraf';
 import categoryTypes from "../data/roles.json" with { type: "json" };
+import { createPaddedCaption } from '../utilities.js';
 
 import fs from 'fs';
 
@@ -16,7 +17,7 @@ categoriesScene.enter(async (ctx) => {
   
   ctx.replyWithPhoto({
       source: fs.createReadStream('./data/roles.png'),
-      caption: 'Please select a category you would like to join'
+      caption: createPaddedCaption('')
     },
     Markup.inlineKeyboard([
       [Markup.button.callback(categoryTypes.roles[0].name, 'category_' + categoryTypes.roles[0].name), Markup.button.callback('ℹ️', 'explain_' + categoryTypes.roles[0].name)],

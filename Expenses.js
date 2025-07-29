@@ -3,6 +3,7 @@ import { Telegraf, Markup } from 'telegraf';
 import fs from 'fs';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
+import { createPaddedCaption } from './utilities.js';
 
 
 export default class Expenses {
@@ -97,10 +98,13 @@ export default class Expenses {
                 return ctx.reply(i18next.t('balanceusage', { lng: language }));
             const { creditMatrix, userNames } = await this.calculateCredits(chatID, currency);
             this.ui.getCreditTable(creditMatrix, userNames, chatID).then((path) => {
-                ctx.replyWithPhoto({ source: fs.createReadStream(path) },Markup.inlineKeyboard([
-                    Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-                      `https://dashboard.holons.io/${chatID}/expenses`)
-                  ])).catch(err => console.log(err));
+                ctx.replyWithPhoto({ source: fs.createReadStream(path) }, {
+                    caption: createPaddedCaption(''),
+                    ...Markup.inlineKeyboard([
+                        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+                          `https://dashboard.holons.io/${chatID}/expenses`)
+                      ])
+                }).catch(err => console.log(err));
             });
         });
 

@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import * as fs from 'fs';
 import { Scenes } from 'telegraf';
 import * as utils from './utilities.js';
+import { createPaddedCaption } from './utilities.js';
 
 import * as appreciative from './contracts/Appreciative.json' with { type: "json" };
 import * as appreciativefactory from './contracts/AppreciativeFactory.json' with { type: "json" };
@@ -3674,7 +3675,7 @@ Select the TARGET zone:`;
         await ctx.replyWithPhoto(
           { source: fs.createReadStream(chartPath) },
           {
-            caption: message,
+            caption: createPaddedCaption(''),
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: keyboard }
           }
@@ -3684,7 +3685,7 @@ Select the TARGET zone:`;
           {
             type: 'photo',
             media: { source: fs.createReadStream(chartPath) },
-            caption: message,
+            caption: createPaddedCaption(''),
             parse_mode: 'Markdown'
           },
           { reply_markup: { inline_keyboard: keyboard } }

@@ -4,6 +4,13 @@ import path from 'path';
 
 export { i18next };
 
+// Helper function to create padded caption for image stretching
+export const createPaddedCaption = (text = '') => {
+    const minSpaces = 23;
+    const padding = '\u2800'.repeat(Math.max(0, minSpaces - text.length));
+    return text + padding;
+};
+
 // Use format "functionName_callbackData" with callback functions
 export const getCallbackData = (ctx) => ctx.match[0].split("_")[1];
 

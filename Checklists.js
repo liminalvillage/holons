@@ -1,11 +1,22 @@
 import { Markup, Scenes } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
+
+// Define standard checklist types
+const CHECKLIST_TYPES = {
+    CHECKLIST: 'checklist',    // Regular user-created checklist
+    AGENDA: 'agenda',          // Agenda/schedule checklist
+    SHOPPING: 'shopping',      // Shopping list
+    QUEST: 'quest',           // Quest/task checklist
+    ROLE: 'role'              // Role checklist
+};
+
 class Checklists {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
         this.questInstance = null; // Initialize questInstance
+        this.rolesInstance = null; // Initialize rolesInstance
         
         // Create scenes
         this.addItemScene = new Scenes.BaseScene('add_item_scene');
@@ -36,10 +47,66 @@ class Checklists {
         this.bot.action(/exit_remove_mode_(.+)/, (ctx) => this.exitRemoveMode(ctx));
         this.bot.action(/remove_item_(.+)/, (ctx) => this.removeItem(ctx));
         this.bot.action(/back_to_quest_(.+)/, (ctx) => this.handleBackToQuest(ctx));
+        this.bot.action(/back_to_role_(.+)/, (ctx) => this.handleBackToRole(ctx)); // Add role back handler
         this.bot.action('enter_delete_checklists_mode', (ctx) => this.enterDeleteChecklistsMode(ctx));
         this.bot.action('exit_delete_checklists_mode', (ctx) => this.exitDeleteChecklistsMode(ctx));
         this.bot.action(/delete_checklist_(.+)/, (ctx) => this.deleteChecklist(ctx));
         this.bot.action('back_to_all_checklists', (ctx) => this.handleBackToChecklists(ctx));
+    }
+
+    // Helper method to create a standardized checklist object
+    createChecklistObject(id, type, options = {}) {
+        const baseChecklist = {
+            id: id,
+            type: type,
+            items: [],
+            created: new Date(),
+            creator: options.creator || null
+        };
+
+        // Add type-specific fields
+        switch (type) {
+            case CHECKLIST_TYPES.QUEST:
+                return {
+                    ...baseChecklist,
+                    questId: options.questId,
+                    parentTitle: options.parentTitle,
+                    chatId: options.chatId
+                };
+            case CHECKLIST_TYPES.ROLE:
+                return {
+                    ...baseChecklist,
+                    roleId: options.roleId,
+                    parentTitle: options.parentTitle,
+                    chatId: options.chatId
+                };
+            case CHECKLIST_TYPES.AGENDA:
+            case CHECKLIST_TYPES.SHOPPING:
+                return baseChecklist;
+            case CHECKLIST_TYPES.CHECKLIST:
+            default:
+                return baseChecklist;
+        }
+    }
+
+    // Helper method to get display title for any checklist
+    getChecklistDisplayTitle(checklist) {
+        if (checklist.parentTitle) {
+            return checklist.parentTitle;
+        }
+        return checklist.id.toUpperCase();
+    }
+
+    // Helper method to get checklist type display name
+    getTypeDisplayName(type) {
+        switch (type) {
+            case CHECKLIST_TYPES.QUEST: return 'task';
+            case CHECKLIST_TYPES.ROLE: return 'role task';
+            case CHECKLIST_TYPES.AGENDA: return 'agenda';
+            case CHECKLIST_TYPES.SHOPPING: return 'shopping list';
+            case CHECKLIST_TYPES.CHECKLIST: 
+            default: return 'checklist';
+        }
     }
 
     setupScenes() {
@@ -72,7 +139,6 @@ class Checklists {
             const chatId = ctx.scene.state.chatId;
             const originalMessageId = ctx.scene.state.originalMessageId;
             const promptMessageId = ctx.scene.state.promptMessageId;
-            const isSpecial = ctx.scene.state.isSpecial;
             
             try {
                 // Get the checklist ID from the scene state
@@ -82,12 +148,8 @@ class Checklists {
                     return ctx.scene.leave();
                 }
 
-                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString()) || {
-                    id: checklistId,
-                    items: [],
-                    created: new Date(),
-                    type: checklistId // For special checklists
-                };
+                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString()) || 
+                    this.createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
 
                 // Check if text starts with /additem command
                 let newItems = [];
@@ -122,12 +184,12 @@ class Checklists {
                 }
 
                 // Update the original checklist message
-                const icon = this.getChecklistIcon(checklistId);
+                const icon = this.getChecklistIcon(checklist);
                 await ctx.telegram.editMessageText(
                     chatId,
                     originalMessageId,
                     null,
-                    `${icon} ${checklistId.toUpperCase()}:`,
+                    `${icon} ${this.getChecklistDisplayTitle(checklist)}:`,
                     this.getChecklistKeyboard(checklist)
                 );
 
@@ -192,14 +254,8 @@ class Checklists {
                 return ctx.scene.leave();
             }
 
-            // Create the new empty checklist
-            const checklist = {
-                id: name,
-                items: [], // Start with an empty list
-                creator: ctx.from.id,
-                created: new Date(),
-                type: 'checklist'
-            };
+            // Create the new empty checklist with standardized type
+            const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
 
             await this.db.put(chatId + '/checklists', checklist);
             
@@ -248,29 +304,38 @@ class Checklists {
         // Ensure all lists have a type, defaulting to 'checklist' for backward compatibility
         lists = lists.map(list => {
             if (!list.type) {
-                list.type = 'checklist'; // Default type
-            }
-            // Ensure special lists have the correct type based on ID
-            if (['agenda', 'shopping'].includes(list.id)) {
-                 list.type = list.id; // Assign 'agenda' or 'shopping' as type
+                // Migrate legacy checklists based on their properties
+                if (['agenda', 'shopping'].includes(list.id)) {
+                    list.type = list.id;
+                } else if (list.questId || list.questTitle || list.isTaskChecklist) {
+                    list.type = CHECKLIST_TYPES.QUEST;
+                } else if (list.roleId || list.roleTitle || list.isRoleChecklist) {
+                    list.type = CHECKLIST_TYPES.ROLE;
+                } else {
+                    list.type = CHECKLIST_TYPES.CHECKLIST;
+                }
             }
             return list;
         });
 
         // Filter out subtask checklists and show only regular and special checklists
-        lists = lists.filter(list => list.type === 'checklist' || ['agenda', 'shopping'].includes(list.id));
+        lists = lists.filter(list => 
+            list.type === CHECKLIST_TYPES.CHECKLIST || 
+            list.type === CHECKLIST_TYPES.AGENDA || 
+            list.type === CHECKLIST_TYPES.SHOPPING
+        );
         
         const buttons = lists.map(list => {
             if (deleteMode) {
                 return [Markup.button.callback(
-                    `❌ ${this.getChecklistIcon(list.id)} ${list.id}`,
+                    `❌ ${this.getChecklistIcon(list)} ${this.getChecklistDisplayTitle(list)}`,
                     `delete_checklist_${list.id}`
                 )];
             }
             const total = list.items.length;
             const checked = list.items.filter(item => item.checked).length;
             return [Markup.button.callback(
-                `${this.getChecklistIcon(list.id)} ${list.id}: ${checked}/${total} completed`,
+                `${this.getChecklistIcon(list)} ${this.getChecklistDisplayTitle(list)}: ${checked}/${total} completed`,
                 `show_checklist_${list.id}`
             )];
         });
@@ -348,14 +413,8 @@ class Checklists {
             return;
         }
 
-        // Create the new empty checklist
-        const checklist = {
-            id: name,
-            items: [], // No items added via command anymore
-            creator: ctx.from.id,
-            created: new Date(),
-            type: 'checklist'
-        };
+        // Create the new empty checklist with standardized type
+        const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
 
         await this.db.put(chatID + '/checklists', checklist);
         
@@ -429,39 +488,61 @@ class Checklists {
                     
                     // Checklist doesn't exist yet, but this is a valid quest ID
                     // Create a new checklist for this quest
-                    const newChecklist = {
-                        id: checklistId,
-                        items: [],
+                    const newChecklist = this.createChecklistObject(checklistId, CHECKLIST_TYPES.QUEST, {
                         creator: ctx.from.id,
-                        created: new Date(),
                         questId: quest.id,
-                        questTitle: quest.title,
-                        chatId: chatId,
-                        isTaskChecklist: true
-                    };
+                        parentTitle: quest.title,
+                        chatId: chatId
+                    });
+                    
+                    return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
+                }
+                
+                // Check if this might be a role ID instead
+                const role = await this.db.get(chatId + '/roles', checklistId);
+                
+                if (role) {
+                    // This might be a role's task list - check if it has a checklistId
+                    if (role.checklistId) {
+                        // Try to get the actual checklist
+                        const roleChecklist = await this.db.get(chatId + '/checklists', role.checklistId.toString());
+                        if (roleChecklist) {
+                            // Process items for the role's checklist
+                            return await this.processChecklistItems(roleChecklist, itemsText, chatId, ctx);
+                        }
+                    }
+                    
+                    // Checklist doesn't exist yet, but this is a valid role ID
+                    // Create a new checklist for this role
+                    const newChecklist = this.createChecklistObject(checklistId, CHECKLIST_TYPES.ROLE, {
+                        creator: ctx.from.id,
+                        roleId: role.id,
+                        parentTitle: role.title,
+                        chatId: chatId
+                    });
                     
                     return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
                 }
                 
                 // Create a new regular checklist
-                const newChecklist = {
-                    id: checklistId,
-                    items: [],
-                    creator: ctx.from.id,
-                    created: new Date(),
-                    type: 'checklist'
-                };
+                const newChecklist = this.createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, {
+                    creator: ctx.from.id
+                });
                 
                 return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
             }
             
-            // Existing checklist found - Ensure type is set
+            // Existing checklist found - Migrate legacy type if needed
             if (!checklist.type) {
-                checklist.type = 'checklist'; // Default type
-            }
-            // Ensure special list type is correct based on ID
-            if (['agenda', 'shopping'].includes(checklist.id)) {
-                 checklist.type = checklist.id; // Assign 'agenda' or 'shopping' as type
+                if (['agenda', 'shopping'].includes(checklist.id)) {
+                    checklist.type = checklist.id;
+                } else if (checklist.questId || checklist.questTitle || checklist.isTaskChecklist) {
+                    checklist.type = CHECKLIST_TYPES.QUEST;
+                } else if (checklist.roleId || checklist.roleTitle || checklist.isRoleChecklist) {
+                    checklist.type = CHECKLIST_TYPES.ROLE;
+                } else {
+                    checklist.type = CHECKLIST_TYPES.CHECKLIST;
+                }
             }
             return await this.processChecklistItems(checklist, itemsText, chatId, ctx);
             
@@ -490,11 +571,13 @@ class Checklists {
         
         // Show success message with added items
         const addedItemsText = newItems.map(item => `"${item.text}"`).join(', ');
-        ctx.reply(`Added ${newItems.length} items to ${checklist.questTitle ? 'task' : 'checklist'} "${checklist.id}": ${addedItemsText}`);
+        const checklistTypeName = this.getTypeDisplayName(checklist.type);
+        const displayTitle = this.getChecklistDisplayTitle(checklist);
+        ctx.reply(`Added ${newItems.length} items to ${checklistTypeName} "${displayTitle}": ${addedItemsText}`);
         
         // Show the updated checklist
         await ctx.reply(
-            `${this.getChecklistIcon(checklist.id)} ${checklist.questTitle || checklist.id.toUpperCase()}:`,
+            `${this.getChecklistIcon(checklist)} ${displayTitle}:`,
             this.getChecklistKeyboard(checklist)
         );
         
@@ -556,7 +639,7 @@ class Checklists {
 
             // Edit current message to show checklist
             await ctx.editMessageText(
-                `📋 ${checklist.questTitle || 'Checklist'}:`,
+                `${this.getChecklistIcon(checklist)} ${this.getChecklistDisplayTitle(checklist)}:`,
                 this.getChecklistKeyboard(checklist)
             ).catch((err) => { console.log(err) });
             
@@ -580,8 +663,8 @@ class Checklists {
         checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
         await this.db.put(chatID + '/checklists', checklist);
 
-        const icon = this.getChecklistIcon(listName);
-        const title = `${icon} ${listName.toUpperCase()}:`;
+        const icon = this.getChecklistIcon(checklist);
+        const title = `${icon} ${this.getChecklistDisplayTitle(checklist)}:`;
 
         await ctx.editMessageText(
             title,
@@ -600,13 +683,17 @@ class Checklists {
             return;
         }
 
-        // Ensure type exists, default to 'checklist'
+        // Migrate legacy checklist type if needed
         if (!checklist.type) {
-            checklist.type = 'checklist';
-        }
-        // Ensure special list type is correct based on ID
-        if (['agenda', 'shopping'].includes(checklist.id)) {
-            checklist.type = checklist.id;
+            if (['agenda', 'shopping'].includes(checklist.id)) {
+                checklist.type = checklist.id;
+            } else if (checklist.questId || checklist.questTitle || checklist.isTaskChecklist) {
+                checklist.type = CHECKLIST_TYPES.QUEST;
+            } else if (checklist.roleId || checklist.roleTitle || checklist.isRoleChecklist) {
+                checklist.type = CHECKLIST_TYPES.ROLE;
+            } else {
+                checklist.type = CHECKLIST_TYPES.CHECKLIST;
+            }
         }
 
         // Get the standard keyboard
@@ -643,7 +730,7 @@ class Checklists {
             return;
         }
 
-        if (listName === 'agenda') {
+        if (checklist.type === CHECKLIST_TYPES.AGENDA) {
             // For agenda, only remove checked items
             const checkedItems = checklist.items.filter(item => item.checked);
             if (checkedItems.length === 0) {
@@ -663,8 +750,8 @@ class Checklists {
 
         await this.db.put(chatID + '/checklists', checklist);
         
-        const icon = this.getChecklistIcon(listName);
-        const title = `${icon} ${listName.toUpperCase()}:`;
+        const icon = this.getChecklistIcon(checklist);
+        const title = `${icon} ${this.getChecklistDisplayTitle(checklist)}:`;
 
         await ctx.editMessageText(
             title,
@@ -694,19 +781,12 @@ class Checklists {
         }
 
         // Add control buttons based on checklist type
-        if (this.isSpecialChecklist(checklist.id)) {
-            if (checklist.id === 'agenda') {
-                buttons.push([
-                    Markup.button.callback('➕ Add Item', `add_item_to_${checklist.id}`),
-                    Markup.button.callback('🗑️ Remove Checked', `clear_checklist_${checklist.id}`)
-                ]);
-            } else {
-                // For shopping list and other special checklists
-                buttons.push([
-                    Markup.button.callback('➕ Add Item', `add_item_to_${checklist.id}`),
-                    Markup.button.callback('🗑️ Clear Completed', `clear_checklist_${checklist.id}`)
-                ]);
-            }
+        if (checklist.type === CHECKLIST_TYPES.AGENDA || checklist.type === CHECKLIST_TYPES.SHOPPING) {
+            const clearText = checklist.type === CHECKLIST_TYPES.AGENDA ? '🗑️ Remove Checked' : '🗑️ Clear Completed';
+            buttons.push([
+                Markup.button.callback('➕ Add Item', `add_item_to_${checklist.id}`),
+                Markup.button.callback(clearText, `clear_checklist_${checklist.id}`)
+            ]);
         } else {
             buttons.push([
                 Markup.button.callback(
@@ -724,11 +804,21 @@ class Checklists {
             ]);
 
             // Add back button for quest checklists
-            if (checklist.questId) {
+            if (checklist.type === CHECKLIST_TYPES.QUEST) {
                 buttons.push([
                     Markup.button.callback(
                         i18next.t('back_to_task'),
                         `back_to_quest_${checklist.chatId}_${checklist.questId}`
+                    )
+                ]);
+            }
+            
+            // Add back button for role checklists
+            if (checklist.type === CHECKLIST_TYPES.ROLE) {
+                buttons.push([
+                    Markup.button.callback(
+                        'Back to Role',
+                        `back_to_role_${checklist.roleId}`
                     )
                 ]);
             }
@@ -943,15 +1033,34 @@ class Checklists {
     }
 
     // Helper method to determine if a checklist is special
-    isSpecialChecklist(checklistId) {
-        return ['agenda', 'shopping'].includes(checklistId);
+    isSpecialChecklist(checklist) {
+        // Handle legacy calls with just ID
+        if (typeof checklist === 'string') {
+            return ['agenda', 'shopping'].includes(checklist);
+        }
+        
+        // New type-based logic
+        return checklist.type === CHECKLIST_TYPES.AGENDA || checklist.type === CHECKLIST_TYPES.SHOPPING;
     }
 
     // Helper method to get checklist icon
-    getChecklistIcon(checklistId) {
-        switch(checklistId) {
-            case 'agenda': return '📅';
-            case 'shopping': return '🛒';
+    getChecklistIcon(checklist) {
+        // Handle legacy calls with just ID
+        if (typeof checklist === 'string') {
+            switch(checklist) {
+                case 'agenda': return '📅';
+                case 'shopping': return '🛒';
+                default: return '📋';
+            }
+        }
+        
+        // New type-based logic
+        switch(checklist.type) {
+            case CHECKLIST_TYPES.AGENDA: return '📅';
+            case CHECKLIST_TYPES.SHOPPING: return '🛒';
+            case CHECKLIST_TYPES.QUEST: return '📋';
+            case CHECKLIST_TYPES.ROLE: return '👥';
+            case CHECKLIST_TYPES.CHECKLIST:
             default: return '📋';
         }
     }
@@ -995,8 +1104,11 @@ class Checklists {
         const listName = ctx.match[1];
         let chatID = ctx.chat.id;
         
+        // Get the checklist to check its type
+        const checklist = await this.db.get(chatID + '/checklists', listName);
+        
         // Don't allow deletion of special checklists
-        if (this.isSpecialChecklist(listName)) {
+        if (checklist && this.isSpecialChecklist(checklist)) {
             await ctx.answerCbQuery('Cannot delete special checklists');
             return;
         }
@@ -1014,6 +1126,42 @@ class Checklists {
         // Call showAllChecklists using options, it will edit the message 
         await this.showAllChecklists(ctx, {});
     }
+
+    async handleBackToRole(ctx) {
+        const roleId = ctx.match[1];
+        
+        try {
+            if (!this.rolesInstance) {
+                console.error('Roles instance not set');
+                await ctx.answerCbQuery('Error: Cannot return to role');
+                return;
+            }
+
+            // Use the roles instance's handleBackToRole method to rerender the role
+            await this.rolesInstance.handleBackToRole(ctx);
+
+        } catch (error) {
+            console.error('Error handling back to role:', error);
+            await ctx.answerCbQuery('Error returning to role');
+        }
+    }
+
+    // Add a method to get the roles instance
+    async getRolesInstance() {
+        // This should be set from outside after construction
+        if (!this.rolesInstance) {
+            console.error('Roles instance not set');
+            return null;
+        }
+        return this.rolesInstance;
+    }
+
+    // Add a method to set the roles instance
+    setRolesInstance(rolesInstance) {
+        this.rolesInstance = rolesInstance;
+        console.log('Roles instance set successfully');
+    }
 }
 
-export default Checklists; 
+export default Checklists;
+export { CHECKLIST_TYPES }; 

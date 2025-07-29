@@ -3,7 +3,7 @@ import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
 import { Markup } from 'telegraf'; 
-import { getDisplayName, getAvatarUrl, getHolonName } from './utilities.js';
+import { getDisplayName, getAvatarUrl, getHolonName, createPaddedCaption } from './utilities.js';
 import QRCode from 'qrcode';
 
 let browser = null;
@@ -66,7 +66,7 @@ class UI {
         await ctx.replyWithPhoto(
           { source: fs.createReadStream(qrCodePath) },
           {
-            caption: i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' }),
+            caption: createPaddedCaption(''),
             reply_markup: Markup.inlineKeyboard([
               Markup.button.url(i18next.t('Open Dashboard', { lng: language }), dashboardUrl)
             ]).reply_markup
@@ -167,10 +167,13 @@ class UI {
       if (path) {
         ctx.replyWithPhoto(
           { source: fs.createReadStream(path) },
-          Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-              `https://dashboard.holons.io/${chatID}/status`)
-          ])
+          {
+            caption: createPaddedCaption(''),
+            ...Markup.inlineKeyboard([
+              Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+                `https://dashboard.holons.io/${chatID}/status`)
+            ])
+          }
         ).catch(err => console.error('Error sending leaderboard photo:', err));
       } else {
         ctx.reply(i18next.t('leaderboardgenerror', {lng: language}) || 'Could not generate leaderboard image.');
@@ -284,10 +287,13 @@ class UI {
       // Send the image
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
-        Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open in Holons', { lng: language }), 
-            `https://dashboard.holons.io/${chatID}/offers`)
-        ])
+        {
+          caption: createPaddedCaption(''),
+          ...Markup.inlineKeyboard([
+            Markup.button.url(i18next.t('Open in Holons', { lng: language }), 
+              `https://dashboard.holons.io/${chatID}/offers`)
+          ])
+        }
       );
       
     } catch (err) {
@@ -340,10 +346,13 @@ class UI {
     });
     await ctx.replyWithPhoto(
       { source: fs.createReadStream(path) },
-      Markup.inlineKeyboard([
-        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-          `https://dashboard.holons.io/${chatID}/values/`)
-      ])
+      {
+        caption: createPaddedCaption(''),
+        ...Markup.inlineKeyboard([
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+            `https://dashboard.holons.io/${chatID}/values/`)
+        ])
+      }
     )
   }
   async needscloud(ctx) {
@@ -387,10 +396,13 @@ class UI {
     });
     await ctx.replyWithPhoto(
       { source: fs.createReadStream(path) },
-      Markup.inlineKeyboard([
-        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-          `https://dashboard.holons.io/${chatID}/needs/`)
-      ])
+      {
+        caption: createPaddedCaption(''),
+        ...Markup.inlineKeyboard([
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+            `https://dashboard.holons.io/${chatID}/needs/`)
+        ])
+      }
     )
   }
 
@@ -448,7 +460,10 @@ class UI {
       // Send the photo with buttons
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
-        Markup.inlineKeyboard(inline_keyboard_buttons)
+        {
+          caption: createPaddedCaption(''),
+          ...Markup.inlineKeyboard(inline_keyboard_buttons)
+        }
       );
       
     } catch (err) {
@@ -488,10 +503,13 @@ class UI {
       // Send the image
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
-        Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-            `https://dashboard.holons.io/${chatID}/offers`)
-        ])
+        {
+          caption: createPaddedCaption(''),
+          ...Markup.inlineKeyboard([
+            Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+              `https://dashboard.holons.io/${chatID}/offers`)
+          ])
+        }
       );
       
     } catch (err) {
@@ -531,10 +549,13 @@ class UI {
       // Send the image
       await ctx.replyWithPhoto(
         { source: fs.createReadStream(path) },
-        Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-            `https://dashboard.holons.io/${chatID}/offers/`)
-        ])
+        {
+          caption: createPaddedCaption(''),
+          ...Markup.inlineKeyboard([
+            Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
+              `https://dashboard.holons.io/${chatID}/offers/`)
+          ])
+        }
       );
       
     } catch (err) {
@@ -912,29 +933,29 @@ class UI {
         // Combine profile wants and quest requests
         const allWants = [...userData.profileWants, ...userData.questRequests];
         const wantsList = allWants.length > 0 ? 
-          allWants.map(want => `<span class="item-text">${want}</span>`).join('<br/>') : 
-          '<span class="no-items">-</span>';
+          allWants.map(want => `<span class="item-text" style="font-size: 18px;">${want}</span>`).join('<br/>') : 
+          '<span class="no-items" style="font-size: 18px;">-</span>';
         
         // Combine profile offers and quest offers
         const allOffers = [...userData.profileOffers, ...userData.questOffers];
         const offersList = allOffers.length > 0 ? 
-          allOffers.map(offer => `<span class="item-text">${offer}</span>`).join('<br/>') : 
-          '<span class="no-items">-</span>';
+          allOffers.map(offer => `<span class="item-text" style="font-size: 18px;">${offer}</span>`).join('<br/>') : 
+          '<span class="no-items" style="font-size: 18px;">-</span>';
 
         const row = `<tr class="bulletin-row">
           <td class="name-cell-compact">
-            <div class="user-info-compact">
-              <div class="user-name-compact">${getDisplayName(userData.user)}</div>
-              ${userData.user.username ? `<div class="user-handle-compact">@${userData.user.username}</div>` : ''}
+            <div class="user-info-compact" style="font-size: 18px;">
+              <div class="user-name-compact" style="font-size: 20px; font-weight: bold;">${getDisplayName(userData.user)}</div>
+              ${userData.user.username ? `<div class="user-handle-compact" style="font-size: 16px;">@${userData.user.username}</div>` : ''}
             </div>
           </td>
           <td class="wants-cell-expanded">
-            <div class="items-container-expanded">
+            <div class="items-container-expanded" style="font-size: 18px;">
               ${wantsList}
             </div>
           </td>
           <td class="offers-cell-expanded">
-            <div class="items-container-expanded">
+            <div class="items-container-expanded" style="font-size: 18px;">
               ${offersList}
             </div>
           </td>
@@ -953,9 +974,9 @@ class UI {
       </tr>`);
     }
 
-    const element = `<div class="status-table-container">
+    const element = `<div class="status-table-container" style="font-size: 18px;">
       <div class="table-wrapper">
-        <table class="status-table bulletin-table">
+        <table class="status-table bulletin-table" style="font-size: 18px;">
           <colgroup>
             <col style="width: 15%;">
             <col style="width: 42.5%;">
@@ -963,9 +984,9 @@ class UI {
           </colgroup>
           <thead>
             <tr>
-              <th class="name-header-compact">${i18next.t('name', { lng: language })}</th>
-              <th class="wants-header-expanded">${i18next.t('Wants', { lng: language })}</th>
-              <th class="offers-header-expanded">${i18next.t('Offers', { lng: language })}</th>
+              <th class="name-header-compact" style="font-size: 20px; font-weight: bold;">${i18next.t('name', { lng: language })}</th>
+              <th class="wants-header-expanded" style="font-size: 20px; font-weight: bold;">${i18next.t('Wants', { lng: language })}</th>
+              <th class="offers-header-expanded" style="font-size: 20px; font-weight: bold;">${i18next.t('Offers', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>
@@ -1063,17 +1084,17 @@ class UI {
 
       const row = `<tr class="quest-row">
           <td class="quest-card-row" colspan="4">
-            <div class="quest-card-item${hologramClass}">
+            <div class="quest-card-item${hologramClass}" style="font-size: 18px;">
               ${hologramBadge}
               <div class="quest-header-row">
-                <div class="quest-status-badge ${quest.status}">${statusIcon}</div>
-                <div class="quest-title-main">${quest.title}</div>
-                <div class="quest-stats-mini">
+                <div class="quest-status-badge ${quest.status}" style="font-size: 20px;">${statusIcon}</div>
+                <div class="quest-title-main" style="font-size: 22px; font-weight: bold;">${quest.title}</div>
+                <div class="quest-stats-mini" style="font-size: 16px;">
                   <span class="stat-item">${participantCount}</span>
                   <span class="stat-item">${appreciationCount}</span>
             </div>
             </div>
-              <div class="quest-meta-row">
+              <div class="quest-meta-row" style="font-size: 16px;">
                 <span class="quest-initiator">by ${getDisplayName(quest.initiator)}</span>
                 <span class="quest-id-small">#${quest.id}</span>
               </div>
@@ -1083,13 +1104,13 @@ class UI {
       rows.push(row);
     }
 
-    const element = `<div class="quest-list-container">
+    const element = `<div class="quest-list-container" style="font-size: 18px;">
       <div class="quest-list-header">
-        <div class="header-title">${i18next.t('Quests', { lng: language })}</div>
-                        <div class="header-stats">🙋‍♂ ${i18next.t('People', { lng: language })} | 👏 ${i18next.t('Appreciation', { lng: language })}</div>
+        <div class="header-title" style="font-size: 24px; font-weight: bold;">${i18next.t('Quests', { lng: language })}</div>
+        <div class="header-stats" style="font-size: 16px;">🙋‍♂ ${i18next.t('People', { lng: language })} | 👏 ${i18next.t('Appreciation', { lng: language })}</div>
       </div>
       <div class="quest-list-wrapper">
-        <table class="quest-list-table">
+        <table class="quest-list-table" style="font-size: 18px;">
           <tbody>
             ${rows.join('\n')}
           </tbody>
@@ -1104,34 +1125,61 @@ class UI {
   }
 
   async getRolesTable(roles, chatID) {
-    const language = await this.settings.getLanguage(chatID)
-    const rows = []
-    for (let i = 0; i < roles.length; i++) {
-      const role = roles[i]
-      const row = `<tr>
-          <th scope="row">${role.title}</th>
-          <th>${role.participants ? role.participants.join(","):''}</th>
-        </tr>`
-      rows.push(row)
+    const language = await this.settings.getLanguage(chatID);
+    const rows = [];
+    
+    if (roles.length === 0) {
+      // Handle empty case
+      rows.push(`<tr class="empty-row">
+        <td colspan="2" class="empty-cell">
+          <div class="empty-message" style="font-size: 18px; text-align: center;">No roles found. Create one with /addrole [role name]</div>
+        </td>
+      </tr>`);
+    } else {
+      for (let i = 0; i < roles.length; i++) {
+        const role = roles[i];
+        const participantsList = role.participants && role.participants.length > 0 ? 
+          role.participants.map(participant => `<span class="participant-name" style="font-size: 18px;">${getDisplayName(participant)}</span>`).join(' ') : 
+          '<span class="no-participants" style="font-size: 18px;">-</span>';
+        
+        const row = `<tr class="role-row">
+            <td class="role-cell">
+              <div class="role-info" style="font-size: 18px; text-align: center;">
+                <span class="role-title" style="font-size: 22px; font-weight: bold;">${role.title}</span>
+                ${role.description ? `<div class="role-description" style="font-size: 16px;">${role.description}</div>` : ''}
+              </div>
+            </td>
+            <td class="participants-cell">
+              <div class="participants-info" style="font-size: 18px; text-align: center;">
+                ${participantsList}
+              </div>
+            </td>
+          </tr>`;
+
+        rows.push(row);
+      }
     }
 
-    const element = `<table>
-    <caption>${i18next.t('Roles', { lng: language })}</caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('Roles', { lng: language })}</th>
-            <th scope="col">${i18next.t('People', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`
+    const element = `<div class="status-table-container" style="font-size: 18px; background: transparent !important; border: none !important; box-shadow: none !important;">
+      <div class="table-wrapper">
+        <table class="status-table" style="font-size: 18px; background: transparent !important; border: none !important;">
+          <thead>
+            <tr>
+              <th class="role-header" style="font-size: 20px; font-weight: bold; text-align: center;">${i18next.t('Roles', { lng: language })}</th>
+              <th class="participants-header" style="font-size: 20px; font-weight: bold; text-align: center;">${i18next.t('People', { lng: language })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.join('\n')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
 
-    const path = './images/roles' + chatID + '.png'
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
-    await this.screenshotHtml(html, path, 'table')
-    return path
+    const path = './images/roles' + chatID + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    await this.screenshotHtml(html, path, '.status-table-container');
+    return path;
   }
 
 

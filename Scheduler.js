@@ -239,13 +239,13 @@ class Scheduler {
                             // Create a new checklist with copied items but unchecked
                             const newChecklist = {
                                 id: quest.id.toString(),
+                                type: 'quest', // Use standardized type
                                 items: originalChecklist.items.map(item => ({...item, checked: false})),
                                 creator: quest.initiator.id,
                                 created: new Date(),
                                 questId: quest.id,
-                                questTitle: quest.title,
-                                chatId: quest.chat,
-                                isTaskChecklist: true
+                                parentTitle: quest.title,
+                                chatId: quest.chat
                             };
                             
                             // Save new checklist

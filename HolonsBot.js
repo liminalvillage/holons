@@ -216,6 +216,10 @@ class HolonsBot {
     this.quests.setChecklists(this.checklists);
     this.checklists.setQuestInstance(this.quests);
     
+    // Connect roles and checklists instances
+    this.roles.setChecklists(this.checklists);
+    this.checklists.setRolesInstance(this.roles);
+    
     // Connect UI instance to Quests for image generation
     if (this.ui && this.quests && typeof this.quests.setUIInstance === 'function') {
       this.quests.setUIInstance(this.ui);

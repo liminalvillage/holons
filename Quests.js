@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName, isBotAdmin, getHolonName } from './utilities.js';
+import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName, isBotAdmin, getHolonName, createPaddedCaption } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import Users from './Users.js';
 import { Scenes } from 'telegraf';
@@ -347,8 +347,8 @@ export default class Quests {
                             null,
                             {
                                 type: 'photo',
-                                media: { source: questImagePath }
-                                // No caption when showing quests as images only
+                                media: { source: questImagePath },
+                                caption: createPaddedCaption('')
                             },
                             this.markup(realQuest, language)
                         );
@@ -361,7 +361,7 @@ export default class Quests {
 
                 ctx.replyWithPhoto(picture,
                     {
-                        // No caption when showing quests as images only
+                        caption: createPaddedCaption(''),
                         ...this.markup(quest, language)
                     }).catch((err) => { console.log(err) }).then(async (nctx) => {
                         // Add the message id to the quest
@@ -397,7 +397,7 @@ export default class Quests {
                 // Use original picture with caption if quest images are disabled
                 ctx.replyWithPhoto(picture,
                     {
-                        caption: await this.createMessage(quest, language),
+                        caption: createPaddedCaption(''),
                         parse_mode: 'Markdown',
                         ...this.markup(quest, language)
                     }).catch((err) => { console.log(err) }).then(async (nctx) => {
@@ -1865,13 +1865,13 @@ export default class Quests {
                 // Create a new checklist with the quest's title
                 const checklist = {
                     id: messageId.toString(),
+                    type: 'quest', // Use standardized type
                     items: [],
                     creator: quest.initiator.id,
                     created: new Date(),
                     questId: quest.id, // Store reference to the quest
-                    questTitle: quest.title, // Store quest title for display
-                    chatId: chatId, // Store chat ID for navigation
-                    type: 'task' // Explicitly set type for subtask checklists
+                    parentTitle: quest.title, // Store quest title for display
+                    chatId: chatId // Store chat ID for navigation
                 };
 
                 // Save the checklist
@@ -1966,7 +1966,7 @@ export default class Quests {
 
             // Update the message with new keyboard
             await ctx.editMessageText(
-                `📋 ${checklist.questTitle || 'Checklist'}:`,
+                `📋 ${checklist.parentTitle || 'Checklist'}:`,
                 Markup.inlineKeyboard(keyboard)
             );
 
@@ -1997,7 +1997,6 @@ export default class Quests {
                 checklistId: checklistId, // Pass original quest ID
                 chatId: chatId,
                 questId: checklist.questId, // This should be the same as checklistId
-                questTitle: checklist.questTitle,
                 canReadMessages: canReadMessages  // Pass the message reading permission status to the scene
             });
 
@@ -2278,7 +2277,7 @@ export default class Quests {
                 {
                     type: 'photo',
                     media: path,
-                    caption: await this.createMessage(quest, language)
+                    caption: createPaddedCaption('')
                 },
             );
         } catch (e) {
@@ -2434,7 +2433,7 @@ export default class Quests {
                                 {
                                     type: 'photo',
                                     media: quest.picture,
-                                    caption: hologramMessageText
+                                    caption: createPaddedCaption('')
                                 },
                                 this.markup(quest, language)
                             ).catch(err => console.error(`Error updating federated message in ${federatedChatId}:`, err));
@@ -2461,7 +2460,7 @@ export default class Quests {
                                 federatedChatId,
                                 quest.picture,
                                 {
-                                    caption: hologramMessageText,
+                                    caption: createPaddedCaption(''),
                                     ...this.markup(quest, language)
                                 }
                             );
@@ -3210,6 +3209,7 @@ export default class Quests {
             if (showQuestsAsImages && questImagePath) {
                 // Send with quest image (no caption when showing quests as images only)
                 newHologramMsg = await ctx.replyWithPhoto({ source: questImagePath }, {
+                    caption: createPaddedCaption(''),
                     parse_mode: 'Markdown',
                     ...markup
                 });
@@ -3601,8 +3601,8 @@ export default class Quests {
                 null,
                 {
                     type: 'photo',
-                    media: { source: questImagePath }
-                    // No caption when showing quests as images only
+                    media: { source: questImagePath },
+                    caption: createPaddedCaption('')
                 },
                 markupConfig
             );
@@ -3666,8 +3666,8 @@ export default class Quests {
                 null,
                 {
                     type: 'photo',
-                    media: { source: questImagePath }
-                    // No caption when showing quests as images only
+                    media: { source: questImagePath },
+                    caption: createPaddedCaption('')
                 },
                 markupConfig
             );
