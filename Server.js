@@ -61,20 +61,7 @@ class Server {
       axe: false,
       web: this.serverInstance,
       file: 'holosphere.db',
-      radisk: {
-        path: 'holosphere.db',
-        options: {
-          max: 1000000, // 1MB max file size
-          age: 1000 * 60 * 60 * 24 * 7, // 7 days
-          until: Date.now() + (1000 * 60 * 60 * 24 * 7), // 7 days from now
-          gzip: true, // Enable compression
-          cache: 1000, // Cache size
-          evict: 1000, // Eviction size
-          pack: true, // Enable packing
-          size: 1000000, // 1MB size limit
-          path: 'holosphere.db'
-        }
-      },
+      radisk: true,
       multicast: false,
       peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
     });
