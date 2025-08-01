@@ -15,6 +15,7 @@ body {
     padding: 0;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     overflow: visible;
+    border: none;
 }
 
 .status-table {
@@ -24,6 +25,7 @@ body {
     border-radius: 16px;
     overflow: visible;
     table-layout: fixed;
+    border: none;
 }
 
 .status-table thead {
@@ -32,14 +34,15 @@ body {
 
 .status-table th {
     padding: 10px 8px;
-    text-align: left;
+    text-align: center;
     font-weight: 600;
     font-size: 11px;
     color: #ffffff;
     border: none;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    white-space: nowrap;
+    white-space: normal;
+    word-wrap: break-word;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -75,9 +78,11 @@ body {
     color: #ffffff;
     font-size: 13px;
     vertical-align: middle;
-    white-space: nowrap;
+    white-space: normal;
+    word-wrap: break-word;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-align: center;
 }
 
 .status-table .rank-cell {
@@ -86,18 +91,23 @@ body {
 }
 
 .status-table .name-cell {
-    width: 30%;
+    width: 25%;
     text-align: left;
 }
 
 .status-table .stat-cell {
     text-align: center;
-    width: 10%;
+    width: 8%;
 }
 
 .status-table .score-cell {
     text-align: center;
-    width: 12%;
+    width: 10%;
+}
+
+.status-table .currency-cell {
+    text-align: center;
+    width: 8%;
 }
 
 /* Status Table User Info */
@@ -144,7 +154,7 @@ body {
     box-shadow: 
         0 20px 40px rgba(0,0,0,0.3),
         inset 0 1px 0 rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.1);
+    border: none;
 }
 
 .table-header {
@@ -468,7 +478,7 @@ caption {
 
 table {
     border-collapse: collapse;
-    border: 2px solid rgb(200, 200, 200);
+    border: none;
     letter-spacing: 1px;
     font-family: sans-serif;
     font-size: .8rem;
@@ -478,7 +488,7 @@ table {
 
 td,
 th {
-    border: 1px solid rgb(190, 190, 190);
+    border: none;
     padding: 5px 10px;
 }
 
@@ -1157,4 +1167,5 @@ ul {
 }
 
 
+  
   

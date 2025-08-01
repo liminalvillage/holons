@@ -30,7 +30,7 @@ class Scheduler {
         // Load recurring tasks and one-time reminders
         this.loadTasks();
         this.loadReminders();
-
+    
         // Add calendar-related commands and handlers
         this.bot.command('droprecurring', async (ctx) => this.deleteTasks(ctx));
         this.bot.command('recurring', async (ctx) => this.addTask(ctx));
@@ -134,7 +134,7 @@ class Scheduler {
 
         // Save to database
         await this.db.holosphere.putGlobal('recurring', task);
-        await this.db.holosphere.putGlobal('recurringlookup', {id: chatID + '_' + quest.id,  taskID: task.id});
+        await this.db.holosphere.putGlobal('recurringlookup', {id: chatID + quest.id,  taskID: task.id});
         
         // Schedule the task
         await this.scheduleTask(task,ctx);
@@ -267,10 +267,10 @@ class Scheduler {
                 
                 // Add the quest id to the lookup table
                 await this.db.holosphere.putGlobal('recurringlookup', {
-                    id: chatID + '_' + quest.id, 
+                    id: chatID + quest.id, 
                     taskID: task.id
                 });
-                console.log('Recurring Lookup TASK', chatID + '_' + quest.id, task.id);
+                console.log('Recurring Lookup TASK', chatID + quest.id, task.id);
                 
             } catch (error) {
                 console.error('Error in scheduled task execution');
@@ -398,6 +398,10 @@ class Scheduler {
         }
     }
 
+    async getRecurringLookup(chatId, questId) {
+        return await this.db.holosphere.getGlobal('recurringlookup', `${chatId}${questId}`);
+    }
+
     async updateTaskSchedule(chatId, questId, selectedDate, ctx) {
         try {
             // Get the quest
@@ -418,7 +422,7 @@ class Scheduler {
 
             // If this is a recurring task, update its schedule
             if (quest.type === 'recurring') {
-                const recurringID = await this.db.holosphere.getGlobal('recurringlookup', chatId + '_' + questId);
+                const recurringID = await this.getRecurringLookup(chatId, questId);
                 if (recurringID) {
                     let task = await this.db.holosphere.getGlobal('recurring', recurringID.taskID);
                     if (task) {
@@ -444,7 +448,7 @@ class Scheduler {
         
         try {
             // Find the task in recurring lookup
-            const lookup = await this.db.holosphere.getGlobal('recurringlookup', chatId + '_' + messageId);
+            const lookup = await this.getRecurringLookup(chatId, messageId);
             
             if (!lookup) {
                 console.log('No recurring task lookup found to remove');
@@ -764,7 +768,7 @@ class Scheduler {
             
             // Create lookup reference for easy retrieval
             await this.db.holosphere.putGlobal('reminderslookup', {
-                id: `${reminder.chatId}_${reminder.questId}`,
+                id: `${reminder.chatId}${reminder.questId}`,
                 reminderId: reminder.id
             });
             
@@ -784,7 +788,7 @@ class Scheduler {
             const reminder = await this.db.holosphere.getGlobal('reminders', reminderId);
             if (reminder) {
                 // Delete the lookup record if it exists
-                const lookupId = `${reminder.chatId}_${reminder.questId}`;
+                const lookupId = `${reminder.chatId}${reminder.questId}`;
                 await this.db.holosphere.deleteGlobal('reminderslookup', lookupId);
                 console.log(`Deleted reminder lookup: ${lookupId}`);
             }
@@ -981,7 +985,7 @@ class Scheduler {
             await this.db.holosphere.putGlobal('recurring', task);
             
             // Create lookup reference
-            const lookupId = task.chatID + '_' + task.questId;
+            const lookupId = task.chatID + task.questId;
             await this.db.holosphere.putGlobal('recurringlookup', {
                 id: lookupId,
                 taskID: task.id
@@ -1215,6 +1219,36 @@ class Scheduler {
             
         } catch (error) {
             console.error('Error loading reminders:', error);
+        }
+    }
+
+    async migrateRecurringLookup() {
+        console.log('Migrating recurring lookup from underscore to pipe format...');
+        try {
+            const lookups = await this.db.holosphere.getAllGlobal('recurringlookup');
+            let migratedCount = 0;
+
+            if (lookups && lookups.length > 0) {
+                console.log(`Found ${lookups.length} recurring lookup records to migrate.`);
+                for (const lookup of lookups) {
+                    if (lookup?.id?.includes('_')) {
+                        const [chatId, questId] = lookup.id.split('_');
+                        const newLookupId = `${chatId}|${questId}`;
+                        await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
+                        await this.db.holosphere.putGlobal('recurringlookup', {
+                            id: newLookupId,
+                            taskID: lookup.taskID
+                        });
+                        console.log(`Migrated lookup: ${lookup.id} -> ${newLookupId}`);
+                        migratedCount++;
+                    }
+                }
+                console.log(`Successfully migrated ${migratedCount} recurring lookup records.`);
+            } else {
+                console.log('No recurring lookup records to migrate.');
+            }
+        } catch (error) {
+            console.error('Error migrating recurring lookup:', error);
         }
     }
 }

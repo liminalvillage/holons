@@ -54,9 +54,11 @@ class Server {
 
     // Initialize Gun with server
     this.gun = Gun({
+      localStorage: false,
       axe: false,
       web: this.serverInstance,
       file: 'holosphere.db',
+      radisk: true,
       multicast: false,
       peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
     });

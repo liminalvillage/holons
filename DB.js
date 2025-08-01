@@ -1,8 +1,4 @@
-// Description: This file contains the DB class which is used to interact with the database.
-import {
-    create
-} from 'ipfs';
-import OrbitDB from 'orbit-db';
+
 import HoloSphere from 'holosphere';
 
 class DB {
@@ -22,16 +18,18 @@ class DB {
 
             this.gun = this.holosphere.gun;
             
-            if (this.db === 'orbit') {
-                this.ipfs = await create({
-                    address: "127.0.0.1",
-                    port: 5001,
-                    source: 'js-ipfs',
-                    repo: 'orbit'
-                });
+            // if (this.db === 'orbit') {
+            //     this.ipfs = await create({
+            //         address: "127.0.0.1",
+            //         port: 5001,
+            //         source: 'js-ipfs',
+            //         repo: 'orbit'
+            //     });
 
-                this.orbitdb = await OrbitDB.createInstance(this.ipfs);
-            }
+            //     this.orbitdb = await OrbitDB.createInstance(this.ipfs);
+            // }
+            this.orbitdb = this.holosphere;
+            this.orbitdb.docstore = this.holosphere
         } catch (error) {
             console.error("Error initializing database:", error);
         }
@@ -312,8 +310,17 @@ class DB {
         let [hex, lens] = table.split('/')
         console.log('deleteGunDB:', hex, lens, key);
 
-        if (lens === undefined) // TODO: this is a hack to get the lens and key from the key. Refactor from scheduler
-            [lens,key] = key.split('_')
+        if (lens === undefined) {
+            // TODO: this is a hack to get the lens and key from the key. Refactor from scheduler
+            // Handle cases where key might not contain underscore
+            if (key.includes('_')) {
+                [lens, key] = key.split('_');
+            } else {
+                // If no underscore found, use the key as both lens and key
+                lens = key;
+                // Keep the original key for deletion
+            }
+        }
         return this.holosphere.delete(hex, lens, key);
         return new Promise((resolve, reject) => {
             this.gun.get(this.dbName + '/' + table).get(key).put(null, ack => {
