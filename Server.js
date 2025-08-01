@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import Gun from 'gun';
+import 'gun/sea.js';
+import 'gun/axe.js';
+import 'gun/lib/radisk.js';
 import https from 'https';
 
 class Server {
@@ -58,7 +61,20 @@ class Server {
       axe: false,
       web: this.serverInstance,
       file: 'holosphere.db',
-      radisk: true,
+      radisk: {
+        path: 'holosphere.db',
+        options: {
+          max: 1000000, // 1MB max file size
+          age: 1000 * 60 * 60 * 24 * 7, // 7 days
+          until: Date.now() + (1000 * 60 * 60 * 24 * 7), // 7 days from now
+          gzip: true, // Enable compression
+          cache: 1000, // Cache size
+          evict: 1000, // Eviction size
+          pack: true, // Enable packing
+          size: 1000000, // 1MB size limit
+          path: 'holosphere.db'
+        }
+      },
       multicast: false,
       peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
     });
