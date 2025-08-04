@@ -98,7 +98,7 @@ export default class Settings {
                 let chatID = utils.getChatId(ctx)
                 let chatName = await utils.getChatName(ctx, chatID)
                 
-                // Await all drop operations
+                // Drop all local tables
                 await Promise.all([
                     this.db.drop(chatID + '/shopping'),
                     this.db.drop(chatID + '/quests'),
@@ -112,10 +112,19 @@ export default class Settings {
                     this.db.drop(chatID + '/roles')
                 ])
 
+                // Drop all holosphere global tables
+                await Promise.all([
+                    this.db.holosphere.deleteAllGlobal('recurring'),
+                    this.db.holosphere.deleteAllGlobal('recurringlookup'),
+                    this.db.holosphere.deleteAllGlobal('reminders'),
+                    this.db.holosphere.deleteAllGlobal('reminderslookup'),
+                    this.db.holosphere.deleteAllGlobal('federation')
+                ])
+
                 await this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
                 //clear federation
                 await this.db.holosphere.resetFederation(chatID)
-                ctx.reply('Holon resetted')
+                ctx.reply('Holon resetted - both local and holosphere tables dropped')
             } else {
                 ctx.reply('Only a chat admin can perform this action')
             }
