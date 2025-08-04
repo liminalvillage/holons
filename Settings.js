@@ -97,18 +97,22 @@ export default class Settings {
             if (utils.isAdmin(ctx)) {
                 let chatID = utils.getChatId(ctx)
                 let chatName = await utils.getChatName(ctx, chatID)
-                this.db.drop(chatID + '/shopping')
-                this.db.drop(chatID + '/quests')
-                this.db.drop(chatID + '/offers')
-                this.db.drop(chatID + '/users')
-                this.db.drop(chatID + '/tags')
-                this.db.drop(chatID + '/expenses')
-                this.db.drop(chatID + '/announcements')
-                this.db.drop(chatID + '/recurring')
-                this.db.drop(chatID + '/checklists')
-                this.db.drop(chatID + '/roles')
+                
+                // Await all drop operations
+                await Promise.all([
+                    this.db.drop(chatID + '/shopping'),
+                    this.db.drop(chatID + '/quests'),
+                    this.db.drop(chatID + '/offers'),
+                    this.db.drop(chatID + '/users'),
+                    this.db.drop(chatID + '/tags'),
+                    this.db.drop(chatID + '/expenses'),
+                    this.db.drop(chatID + '/announcements'),
+                    this.db.drop(chatID + '/recurring'),
+                    this.db.drop(chatID + '/checklists'),
+                    this.db.drop(chatID + '/roles')
+                ])
 
-                this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
+                await this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
                 //clear federation
                 await this.db.holosphere.resetFederation(chatID)
                 ctx.reply('Holon resetted')
