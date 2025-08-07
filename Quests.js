@@ -2842,7 +2842,7 @@ export default class Quests {
 
             // Update the quest immediately for responsive UI
             try {
-                await this.db.put(chatId + '/quests', quest);
+                await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                 await this.updateMessage(ctx, quest, language, true);
             } catch (dbError) {
                 console.error('Error updating quest in database:', dbError);
@@ -2851,7 +2851,7 @@ export default class Quests {
                     await this.clearOldData();
                     // Try again after clearing
                     try {
-                        await this.db.put(chatId + '/quests', quest);
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                         await this.updateMessage(ctx, quest, language, true);
                     } catch (retryError) {
                         console.error('Error after clearing old data:', retryError);
@@ -2882,12 +2882,12 @@ export default class Quests {
                         
                         // Remove the ID reference regardless of removal success
                         delete quest.recurringTaskId;
-                        await this.db.put(chatId + '/quests', quest);
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                     } catch (error) {
                         console.error('Error removing recurring task:', error);
                         // Continue even if removal fails
                         delete quest.recurringTaskId;
-                        await this.db.put(chatId + '/quests', quest);
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                     }
                 }
             } else {
@@ -2909,7 +2909,7 @@ export default class Quests {
                             // Fall back to creating a new task
                             const taskId = await this.createOrUpdateRecurringTask(quest, language);
                             quest.recurringTaskId = taskId;
-                            await this.db.put(chatId + '/quests', quest);
+                            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                         }
                     } catch (error) {
                         console.error('Error updating recurring task:', error);
@@ -2917,7 +2917,7 @@ export default class Quests {
                         try {
                             const taskId = await this.createOrUpdateRecurringTask(quest, language);
                             quest.recurringTaskId = taskId;
-                            await this.db.put(chatId + '/quests', quest);
+                            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                         } catch (dbError) {
                             console.error('Error creating recurring task:', dbError);
                             // If localStorage is full, try to clear some old data
@@ -2935,7 +2935,7 @@ export default class Quests {
                         const taskId = await this.createOrUpdateRecurringTask(quest, language);
                         quest.recurringTaskId = taskId;
                         console.log(`Task ID set to: ${taskId}`);
-                        await this.db.put(chatId + '/quests', quest);
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                     } catch (error) {
                         console.error('Error creating recurring task:', error);
                         // If localStorage is full, try to clear some old data
@@ -2983,18 +2983,6 @@ export default class Quests {
                         }
                         
                         // Save the updated original task
-<<<<<<< Updated upstream
-                        try {
-                            await this.db.put(chatId + '/quests', originalTask);
-                            console.log(`Original task ${originalTask.id} updated`);
-                        } catch (error) {
-                            console.error('Error saving original task:', error);
-                            if (error.message && error.message.includes('localStorage max')) {
-                                console.log('localStorage is full, attempting to clear old data...');
-                                await this.clearOldData();
-                            }
-                        }
-=======
                         await this.db.put(chatId + '/quests', originalTask).catch((err) => { console.log(err) });
                         // Removed personalHologram call - only create holograms on participation, not recurring changes
                         // if (chatId.toString() !== interactingUserId.toString()) {
@@ -3004,14 +2992,11 @@ export default class Quests {
                         
                         // Immediately update the original task's message - keep expanded view if it was expanded
                         await this.updateMessage(ctx, originalTask, language, true);
->>>>>>> Stashed changes
                     }
                 } catch (error) {
                     console.error('Error updating original task:', error);
                 }
             }
-<<<<<<< Updated upstream
-=======
 
             // Save the updated quest
             await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
@@ -3024,7 +3009,7 @@ export default class Quests {
             await this.updateMessage(ctx, quest, language, true);
             
             await ctx.answerCbQuery(`Set to repeat: ${frequencyName}`);
->>>>>>> Stashed changes
+
         } catch (error) {
             console.error('Error in background recurring operations:', error);
         }
@@ -3464,12 +3449,8 @@ export default class Quests {
 
                 // Save the original questToView, which now has the new Telegram view added to its activeHolograms
                 // This save must happen to its original location: originalQuestChatId + '/quests'
-<<<<<<< Updated upstream
-                await this.db.put(originalQuestChatId + '/quests', questToView);
-=======
                 await this.db.put(originalQuestChatId + '/quests', questToView).catch((err) => { console.log(err) });
                 console.log(`[viewOriginalQuest] Saved original quest ${questToView.id} in ${originalQuestChatId} after adding Telegram hologram view link.`);
->>>>>>> Stashed changes
 
                 // No need to call updateMessage here explicitly to update the just-sent message,
                 // as it was just created with the latest content. Future updates to questToView will propagate to it.

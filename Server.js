@@ -2,13 +2,6 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-<<<<<<< Updated upstream
-import Gun from 'gun';
-import 'gun/sea.js';
-import 'gun/axe.js';
-import 'gun/lib/radisk.js';
-=======
->>>>>>> Stashed changes
 import https from 'https';
 import crypto from 'crypto';
 
@@ -95,7 +88,7 @@ class Server {
     app.use((req, res, next) => {
       const clientIP = req.ip || req.connection.remoteAddress;
       const now = Date.now();
-      const windowMs = 15 * 60 * 1000; // 15 minutes
+      const windowMs = 1 * 60 * 1000; // 15 minutes
       const maxRequests = 100; // Max requests per window
 
       if (!this.requestCounts.has(clientIP)) {
@@ -251,18 +244,7 @@ class Server {
     return resolvedPath;
   }
 
-<<<<<<< Updated upstream
-    // Initialize Gun with server
-    this.gun = Gun({
-      localStorage: false,
-      axe: false,
-      web: this.serverInstance,
-      file: 'holosphere.db',
-      radisk: true,
-      multicast: false,
-      peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
-    });
-=======
+
   // Security: Validate file ID format
   validateFileId(fileId) {
     if (!fileId || typeof fileId !== 'string') {
@@ -273,7 +255,6 @@ class Server {
     const fileIdPattern = /^[a-zA-Z0-9_-]+$/;
     return fileIdPattern.test(fileId) && fileId.length <= 255;
   }
->>>>>>> Stashed changes
 
   // Security: Validate user ID format
   validateUserId(userId) {
