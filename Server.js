@@ -58,6 +58,7 @@ class Server {
       web: this.serverInstance,
       file: 'holosphere.db',
       multicast: false,
+      localStorage: false,
       peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
     });
 

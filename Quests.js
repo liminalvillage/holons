@@ -821,6 +821,16 @@ export default class Quests {
                             userID,
                             chatID // declare the expense to the holon
                         );
+                        
+                        // Update user's hours in user data
+                        try {
+                            const userInfo = await this.users.getUserInfo({ id: parseInt(userID) }, chatID);
+                            userInfo.hours = (userInfo.hours || 0) + hours;
+                            await this.db.put(chatID + '/users', userInfo);
+                            console.log(`✅ Updated user ${userID} hours: +${hours} (total: ${userInfo.hours})`);
+                        } catch (error) {
+                            console.error(`❌ Error updating hours for user ${userID}:`, error);
+                        }
                     }
                 }
             }

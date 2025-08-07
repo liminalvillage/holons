@@ -1284,95 +1284,122 @@ export default class Holons {
   }
 
   async syncScore(ctx) {
+    console.log("=== STARTING SCORE SYNC PROCESS ===");
     const chatID = utils.getChatId(ctx);
+    console.log(`Chat ID: ${chatID}`);
+    
+    // Step 1: Fetch users from database
+    console.log("\n--- STEP 1: Fetching users from database ---");
     let users = await this.db.getAll(chatID.toString() + '/users')
-    if (!users) return ctx.reply("No users found");
-    
-    // Check if expensesInstance is available
-    if (!this.expensesInstance) {
-        console.error('Expenses instance not available in Holons.js for score calculation.');
-        ctx.reply('Error calculating scores: Expenses module not accessible.');
-        return;
+    if (!users) {
+      console.log("❌ No users found in database");
+      return ctx.reply("No users found");
     }
+    console.log(`✅ Found ${users.length} users in database`);
+    console.log("User IDs:", users.map(u => u.id));
     
-    // Get manual score adjustments
+    // Step 2: Check expenses instance availability
+    console.log("\n--- STEP 2: Checking expenses instance ---");
+    if (!this.expensesInstance) {
+      console.error('❌ Expenses instance not available in Holons.js for score calculation.');
+      ctx.reply('Error calculating scores: Expenses module not accessible.');
+      return;
+    }
+    console.log("✅ Expenses instance available");
+    
+    // Step 3: Get settings and manual adjustments
+    console.log("\n--- STEP 3: Fetching settings and manual adjustments ---");
     const settings = await this.getSettings(chatID);
     const memberAdjustments = settings.memberAdjustments || {};
-
-    // Convert users array to object format expected by calculateUserScores
+    console.log("Settings retrieved:", {
+      valueEquation: settings.valueEquation,
+      currencies: settings.currencies,
+      memberAdjustments: memberAdjustments
+    });
+    
+    // Step 4: Convert users array to object format
+    console.log("\n--- STEP 4: Converting users to object format ---");
     const usersObject = {};
     users.forEach(user => {
-        usersObject[user.id] = user;
+      usersObject[user.id] = user;
+      console.log(`User ${user.id} data:`, {
+        initiated: user.initiated?.length || 0,
+        completed: user.completed?.length || 0,
+        sent: user.sent || 0,
+        received: user.received || 0,
+        hours: user.hours || 0,
+        collaboration: user.collaboration || 0,
+        wants: user.wants?.length || 0,
+        offers: user.offers?.length || 0
+      });
     });
-
-    // Calculate scores using Settings method (includes currencies)
-    const scoredUsers = await this.settings.calculateUserScores(usersObject, chatID, this.expensesInstance);
     
-    // Create mapping from user ID to calculated score
+    // Step 5: Calculate scores using Settings method
+    console.log("\n--- STEP 5: Calculating scores with Settings method ---");
+    console.log("Calling this.settings.calculateUserScores with:");
+    console.log("- Users object keys:", Object.keys(usersObject));
+    console.log("- Chat ID:", chatID);
+    console.log("- Expenses instance:", !!this.expensesInstance);
+    
+    const scoredUsers = await this.settings.calculateUserScores(usersObject, chatID, this.expensesInstance);
+    console.log(`✅ Score calculation completed for ${scoredUsers.length} users`);
+    
+    // Step 6: Create score mapping and apply adjustments
+    console.log("\n--- STEP 6: Creating score mapping and applying adjustments ---");
     const userScoreMap = {};
     scoredUsers.forEach(user => {
-        userScoreMap[user.id] = user.score;
+      userScoreMap[user.id] = user.score;
+      console.log(`User ${user.id} base score: ${user.score}`);
     });
-
-    let userids = users.map((user) => user.id.toString());
     
-    // Format scores to ensure they're BigInts for the contract call
+    let userids = users.map((user) => user.id.toString());
+    console.log("User IDs for contract:", userids);
+    
+    // Step 7: Format scores for contract with adjustments
+    console.log("\n--- STEP 7: Formatting scores for contract with manual adjustments ---");
     let contractScores = users.map((user) => {
       const calculatedScore = Math.floor(userScoreMap[user.id] || 0);
-      
-      console.log(`User ${user.id} calculated score (including currencies): ${calculatedScore}`);
-      
-      // Apply manual adjustment
       const adjustment = memberAdjustments[user.id.toString()] || 0;
-      const finalScore = Math.max(0, calculatedScore + adjustment); // Ensure non-negative
+      const finalScore = Math.max(0, calculatedScore + adjustment);
+      
+      console.log(`User ${user.id}:`);
+      console.log(`  - Calculated score: ${calculatedScore}`);
+      console.log(`  - Manual adjustment: ${adjustment}`);
+      console.log(`  - Final score: ${finalScore}`);
       
       return ethers.toBigInt(finalScore);
     });
-
-    // let address = await this.holonsContract.toAddress(chatID.toString());
-
+    
+    console.log("Final contract scores (BigInt):", contractScores.map(s => s.toString()));
+    
+    // Step 8: Get holon contract
+    console.log("\n--- STEP 8: Getting holon contract ---");
     const holonName = `chat_${Math.abs(chatID)}`;
+    console.log(`Holon name: ${holonName}`);
     let holon = await this.getManagedContract(holonName);
-
-    console.log("User IDs:", userids);
-    console.log("Scores (for contract):", contractScores); // Log the BigInt array
-    // For prettier logging of scores as strings:
-    console.log("Scores (formatted for log):", contractScores.map(s => s.toString()));
-
-    // Get function info to verify expected types
-    const setAppreciationFunc = holon.interface.getFunction('setAppreciation');
-    console.log("setAppreciation expected parameters:", 
-    setAppreciationFunc.inputs.map(i => `${i.name}: ${i.type}`));
-
-    // Technical debt #2 - modularize
+    console.log("✅ Holon contract retrieved:", holon.target);
+    
+    // Step 9: Prepare transaction
+    console.log("\n--- STEP 9: Preparing transaction ---");
     const feeData = await this.wallet.provider.getFeeData();
     const bufferMultiplier = BigInt(110);
     const divisor = BigInt(100);
-
-    // // Apply the buffer to the fee values using native BigInt operations
+    
     const maxPriorityFeePerGas = (feeData.maxPriorityFeePerGas * bufferMultiplier) / divisor;
     const maxFeePerGas = (feeData.maxFeePerGas * bufferMultiplier) / divisor;
-    let data;
-
+    
+    console.log("Fee data:", {
+      maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      maxFeePerGas: maxFeePerGas.toString()
+    });
+    
+    // Step 10: Execute transaction
+    console.log("\n--- STEP 10: Executing transaction ---");
     try {
-      // Same approach as in your working function
-
-      // Specifically check for addMembers
-      const addMembersFunc = holon.interface.getFunction('setAppreciation');
-      if (addMembersFunc) {
-        console.log("Found addMembers function with signature:");
-        console.log(`  Inputs: ${addMembersFunc.inputs.map(i => i.type).join(', ')}`);
-      } else {
-        console.log("WARNING: addMembers function not found in contract ABI!");
-      }
-
-      data = holon.interface.encodeFunctionData('setAppreciation', [userids, contractScores]);
-      // console.log("Wallet address:", await this.wallet.getAddress());
-      // console.log("Wallet provider type:", this.wallet.provider.constructor.name);
-      // console.log("Holon target: ", holon.target);
-      // console.log("Encoded data:", data);
+      const setAppreciationFunc = holon.interface.getFunction('setAppreciation');
+      console.log("setAppreciation function signature:", 
+        setAppreciationFunc.inputs.map(i => `${i.name}: ${i.type}`));
       
-      // Technical debt #2 - modularize
       const tx = {
         to: holon.target,
         data: holon.interface.encodeFunctionData("setAppreciation", [userids, contractScores]),
@@ -1381,13 +1408,27 @@ export default class Holons {
         maxPriorityFeePerGas,
         nonce: await this.wallet.getNonce(),
       };
-
+      
+      console.log("Transaction prepared:", {
+        to: tx.to,
+        gasLimit: tx.gasLimit,
+        nonce: tx.nonce
+      });
+      
       const transactionResponse = await this.wallet.sendTransaction(tx);
+      console.log("✅ Transaction submitted:", transactionResponse.hash);
+      
       this.waitForTransaction(transactionResponse, ctx, `Successfully synced score for ${userids.length} members`);
-      // Provide immediate feedback
       await ctx.reply("Transaction submitted. You will be notified when the sync is completed.");
+      
+      console.log("=== SCORE SYNC PROCESS COMPLETED SUCCESSFULLY ===");
     } catch (error) {
-      console.error("Error in syncScore:", error);
+      console.error("❌ Error in syncScore:", error);
+      console.error("Error details:", {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       ctx.reply("Sync Failed: " + error.message);
     }
   }
@@ -3833,7 +3874,7 @@ Select the TARGET zone:`;
         const groupId = `chat_${Math.abs(federationID)}`;
         
         // Get the address from the toAddress mapping
-        consol.log("this.holonsContract: ", this.holonsContract);
+        console.log("this.holonsContract: ", this.holonsContract);
         const address = await this.holonsContract.toAddress(groupId);
         
         // Check if the address is not the zero address

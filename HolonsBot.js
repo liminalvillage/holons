@@ -171,13 +171,13 @@ class HolonsBot {
 
     this.expenses = new Expenses(this.telebot, this.db, this.ui, this.settings);
     
-    if (this.ui && this.expenses) {
-        this.ui.setExpensesInstance(this.expenses);
-    }
+    // if (this.ui && this.expenses) {
+    //     this.ui.setExpensesInstance(this.expenses);
+    // }
     
-    if (this.holons && this.expenses) {
-        this.holons.setExpensesInstance(this.expenses);
-    }
+    // if (this.holons && this.expenses) {
+    //     this.holons.setExpensesInstance(this.expenses);
+    // }
 
     this.lunation = new Lunation(this.telebot);
     this.shopping = new Shopping(this.telebot, this.db, this.settings);
@@ -186,6 +186,15 @@ class HolonsBot {
     this.library = new Library(this.telebot, this.db);
     this.users = new Users(this.telebot, this.db);
     this.holons = new Holons(this.telebot, this.db, this.settings);
+
+
+    if (this.ui && this.expenses) {
+      this.ui.setExpensesInstance(this.expenses);
+    }
+  
+    if (this.holons && this.expenses) {
+        this.holons.setExpensesInstance(this.expenses);
+    }
     
     // Connect UI instance to Holons for polynomial parameter charts
     if (this.ui && this.holons && typeof this.holons.setUIInstance === 'function') {

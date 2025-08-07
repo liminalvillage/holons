@@ -57,6 +57,7 @@ class GunServer {
       web: this.serverInstance,
       file: 'gun_data.db',
       multicast: false,
+      localStorage: false,
       peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : []
     });
 

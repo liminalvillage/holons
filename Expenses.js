@@ -94,10 +94,55 @@ export default class Expenses {
             const chatID = ctx.chat.id;
             const currency = ctx.message.text.split(' ').slice(1)[0];
             const language = await this.settings.getLanguage(chatID)
-            if (currency == null || currency.length == 0)
+            
+            console.log(`\n=== BALANCE COMMAND EXECUTED ===`);
+            console.log(`Chat ID: ${chatID}`);
+            console.log(`Currency: ${currency}`);
+            console.log(`Language: ${language}`);
+            
+            if (currency == null || currency.length == 0) {
+                console.log(`❌ No currency specified`);
                 return ctx.reply(i18next.t('balanceusage', { lng: language }));
+            }
+            
+            console.log(`✅ Currency specified: ${currency}`);
+            
             const { creditMatrix, userNames } = await this.calculateCredits(chatID, currency);
+            
+            // Add detailed logging for the balance calculation
+            console.log(`\n=== BALANCE CALCULATION RESULTS ===`);
+            console.log(`Credit Matrix Size: ${creditMatrix.length} x ${creditMatrix[0]?.length || 0}`);
+            console.log(`User Names:`, userNames);
+            
+            // FIX: Get users data for balance calculation
+            const users = await this.db.getAll(chatID + '/users');
+            
+            // Log individual user balances
+            console.log(`\n=== INDIVIDUAL USER BALANCES ===`);
+            for (let i = 0; i < userNames.length; i++) {
+                let netBalance = 0;
+                for (let j = 0; j < creditMatrix[i].length; j++) {
+                    if (i !== j) {
+                        netBalance += creditMatrix[i][j];
+                    }
+                }
+                const userId = users[i]?.id || 'unknown';
+                console.log(`${userNames[i]} (ID: ${userId}): ${netBalance.toFixed(2)} ${currency}`);
+            }
+            
+            // Log credit matrix details
+            console.log(`\n=== DETAILED CREDIT MATRIX ===`);
+            console.log(`Format: [Row User] owes [Column User] amount`);
+            for (let i = 0; i < creditMatrix.length; i++) {
+                for (let j = 0; j < creditMatrix[i].length; j++) {
+                    if (i !== j && creditMatrix[i][j] !== 0) {
+                        console.log(`${userNames[i]} owes ${userNames[j]}: ${creditMatrix[i][j].toFixed(2)} ${currency}`);
+                    }
+                }
+            }
+            
             this.ui.getCreditTable(creditMatrix, userNames, chatID).then((path) => {
+                console.log(`✅ Credit table image generated: ${path}`);
                 ctx.replyWithPhoto({ source: fs.createReadStream(path) }, {
                     caption: createPaddedCaption(''),
                     ...Markup.inlineKeyboard([
@@ -358,13 +403,18 @@ export default class Expenses {
     }
 
     async calculateCredits(chatID, currency) {
+        console.log(`\n=== CALCULATING CREDITS ===`);
+        console.log(`Chat ID: ${chatID}`);
+        console.log(`Currency: ${currency}`);
+        
         // Validate and normalize currency input
         if (!currency || typeof currency !== 'string' || currency.length === 0) {
-            console.error('Invalid currency provided to calculateCredits:', currency);
+            console.error('❌ Invalid currency provided to calculateCredits:', currency);
             return { creditMatrix: [], userNames: [] };
         }
         
         const requestedCurrencyNormalized = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
+        console.log(`✅ Normalized currency: ${requestedCurrencyNormalized}`);
 
         // Fetch data from the database
         let expenses = await this.db.getAll(chatID + '/expenses');
@@ -372,48 +422,108 @@ export default class Expenses {
         const currentSettings = await this.settings.getSettings(chatID); 
         const allowedCurrenciesSetting = currentSettings.currencies || [];
 
+        console.log(`📊 Data Summary:`);
+        console.log(`  - Total expenses: ${expenses?.length || 0}`);
+        console.log(`  - Total users: ${users?.length || 0}`);
+        console.log(`  - Allowed currencies: [${allowedCurrenciesSetting.join(', ')}]`);
+
         // Early exit if no users are found
         if (!users || users.length === 0) {
-            console.log('No users found for credit calculation in chat:', chatID);
+            console.log('❌ No users found for credit calculation in chat:', chatID);
             return { creditMatrix: [], userNames: [] }; // Return empty structure
         }
 
         let userArray = users.map(user => user.id);
         let creditMatrix = Array(userArray.length).fill(0).map(() => Array(userArray.length).fill(0));
 
+        console.log(`\n=== PROCESSING EXPENSES ===`);
+        let processedExpenses = 0;
+        let skippedExpenses = 0;
+
         // Process each expense to calculate credits
         expenses.forEach(expense => {
             // Ensure the expense currency matches the requested currency (case-insensitive)
             const expenseCurrencyNormalized = expense.currency ? expense.currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '') : '';
             
+            console.log(`\nExpense ID: ${expense.id}`);
+            console.log(`  Amount: ${expense.amount} ${expense.currency}`);
+            console.log(`  Description: ${expense.description}`);
+            console.log(`  Paid by: ${expense.paidBy}`);
+            
+            // FIX: Add proper type checking for splitWith
+            let splitWithDisplay = 'none';
+            if (expense.splitWith) {
+                if (Array.isArray(expense.splitWith)) {
+                    splitWithDisplay = expense.splitWith.join(', ');
+                } else if (typeof expense.splitWith === 'string') {
+                    splitWithDisplay = expense.splitWith;
+                } else if (typeof expense.splitWith === 'number') {
+                    splitWithDisplay = expense.splitWith.toString();
+                } else {
+                    splitWithDisplay = JSON.stringify(expense.splitWith);
+                }
+            }
+            console.log(`  Split with: [${splitWithDisplay}]`);
+            console.log(`  Currency match: ${expenseCurrencyNormalized} === ${requestedCurrencyNormalized} ? ${expenseCurrencyNormalized === requestedCurrencyNormalized}`);
+            
             if (expenseCurrencyNormalized === requestedCurrencyNormalized) {
                 // If allowed currencies are defined in settings, ensure this expense's currency is one of them
                 if (allowedCurrenciesSetting.length > 0 && !allowedCurrenciesSetting.includes(expenseCurrencyNormalized)) {
-                    console.warn(`Skipping expense ${expense.id} for credit calculation; its currency '${expense.currency}' (normalized: '${expenseCurrencyNormalized}') is not in the allowed list: [${allowedCurrenciesSetting.join(', ')}]`);
+                    console.warn(`⚠️ Skipping expense ${expense.id} for credit calculation; its currency '${expense.currency}' (normalized: '${expenseCurrencyNormalized}') is not in the allowed list: [${allowedCurrenciesSetting.join(', ')}]`);
+                    skippedExpenses++;
                     return; 
                 }
 
-                // Ensure splitWith is an array, default to empty if not
-                const splitWithArray = Array.isArray(expense.splitWith) ? expense.splitWith : [];
+                // FIX: Ensure splitWith is an array, default to empty if not
+                let splitWithArray = [];
+                if (expense.splitWith) {
+                    if (Array.isArray(expense.splitWith)) {
+                        splitWithArray = expense.splitWith;
+                    } else if (typeof expense.splitWith === 'string') {
+                        // Try to parse as JSON or treat as single value
+                        try {
+                            const parsed = JSON.parse(expense.splitWith);
+                            splitWithArray = Array.isArray(parsed) ? parsed : [parsed];
+                        } catch {
+                            splitWithArray = [expense.splitWith];
+                        }
+                    } else if (typeof expense.splitWith === 'number') {
+                        splitWithArray = [expense.splitWith];
+                    } else {
+                        console.warn(`⚠️ Unknown splitWith type for expense ${expense.id}:`, typeof expense.splitWith, expense.splitWith);
+                        splitWithArray = [];
+                    }
+                }
+                
                 const numberOfSplitters = splitWithArray.length > 0 ? splitWithArray.length : 1;
                 const amountPerPerson = expense.amount / numberOfSplitters;
+
+                console.log(`  ✅ Processing expense:`);
+                console.log(`    Number of splitters: ${numberOfSplitters}`);
+                console.log(`    Amount per person: ${amountPerPerson.toFixed(2)}`);
+                console.log(`    SplitWith array: [${splitWithArray.join(', ')}]`);
 
                 const payerIndex = userArray.indexOf(expense.paidBy);
 
                 // Ensure payer is found in the user list
                 if (payerIndex === -1) {
-                    console.warn(`Payer ID ${expense.paidBy} not found in user list for expense ${expense.id}`);
+                    console.warn(`⚠️ Payer ID ${expense.paidBy} not found in user list for expense ${expense.id}`);
+                    skippedExpenses++;
                     return; // Skip this expense if payer not found
                 }
+
+                console.log(`    Payer index: ${payerIndex}`);
 
                 splitWithArray.forEach(memberId => {
                     const memberIndex = userArray.indexOf(memberId);
 
                     // Ensure member is found in the user list
                     if (memberIndex === -1) {
-                        console.warn(`Member ID ${memberId} not found in user list for expense ${expense.id}`);
+                        console.warn(`⚠️ Member ID ${memberId} not found in user list for expense ${expense.id}`);
                         return; // Skip this member if not found
                     }
+
+                    console.log(`    Processing member ${memberId} (index: ${memberIndex})`);
 
                     // Update the credit matrix, avoiding self-credit updates
                     if (payerIndex !== memberIndex) {
@@ -421,16 +531,57 @@ export default class Expenses {
                         if (creditMatrix[payerIndex] && creditMatrix[memberIndex]) {
                            creditMatrix[payerIndex][memberIndex] += amountPerPerson;
                            creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
+                           console.log(`      ✅ Updated matrix: [${payerIndex}][${memberIndex}] += ${amountPerPerson.toFixed(2)}`);
+                           console.log(`      ✅ Updated matrix: [${memberIndex}][${payerIndex}] -= ${amountPerPerson.toFixed(2)}`);
                         } else {
-                           console.error(`Invalid indices for credit matrix update: payerIndex=${payerIndex}, memberIndex=${memberIndex}`);
+                           console.error(`❌ Invalid indices for credit matrix update: payerIndex=${payerIndex}, memberIndex=${memberIndex}`);
                         }
+                    } else {
+                        console.log(`      ⏭️ Skipping self-credit update for payer ${expense.paidBy}`);
                     }
                 });
+                
+                processedExpenses++;
+            } else {
+                console.log(`  ⏭️ Skipping - currency mismatch`);
+                skippedExpenses++;
             }
         });
 
+        console.log(`\n=== PROCESSING SUMMARY ===`);
+        console.log(`✅ Processed expenses: ${processedExpenses}`);
+        console.log(`⏭️ Skipped expenses: ${skippedExpenses}`);
+
         // Get display names for the users involved
         let userNames = await Promise.all(userArray.map(userId => this.getDisplayName(chatID, userId)));
+        
+        console.log(`\n=== FINAL USER LIST ===`);
+        userNames.forEach((name, index) => {
+            console.log(`  ${index}: ${name} (ID: ${userArray[index]})`);
+        });
+
+        // ADD: Detailed credit matrix analysis
+        console.log(`\n=== CREDIT MATRIX ANALYSIS ===`);
+        console.log(`Matrix format: [Row User] owes [Column User] amount`);
+        for (let i = 0; i < creditMatrix.length; i++) {
+            for (let j = 0; j < creditMatrix[i].length; j++) {
+                if (i !== j && creditMatrix[i][j] !== 0) {
+                    console.log(`  ${userNames[i]} owes ${userNames[j]}: ${creditMatrix[i][j].toFixed(2)}`);
+                }
+            }
+        }
+
+        // ADD: Net balance calculation for each user
+        console.log(`\n=== NET BALANCES ===`);
+        for (let i = 0; i < creditMatrix.length; i++) {
+            let netBalance = 0;
+            for (let j = 0; j < creditMatrix[i].length; j++) {
+                if (i !== j) {
+                    netBalance += creditMatrix[i][j]; // Positive = owes money, Negative = is owed money
+                }
+            }
+            console.log(`  ${userNames[i]}: ${netBalance.toFixed(2)} (${netBalance > 0 ? 'owes' : netBalance < 0 ? 'is owed' : 'balanced'})`);
+        }
 
         return { creditMatrix, userNames };
     }
@@ -469,32 +620,100 @@ export default class Expenses {
     }
 
     async getUserCurrencyBalance(chatID, userID, currencyName) {
+        console.log(`\n=== GETTING CURRENCY BALANCE ===`);
+        console.log(`Chat ID: ${chatID}, User ID: ${userID}, Currency: ${currencyName}`);
+        
         const expenses = await this.db.getAll(chatID + '/expenses');
         let netBalance = 0;
         const normalizedTargetCurrency = currencyName.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
 
+        console.log(`Total expenses found: ${expenses?.length || 0}`);
+        console.log(`Normalized target currency: ${normalizedTargetCurrency}`);
+
         if (!expenses || expenses.length === 0) {
+            console.log(`❌ No expenses found`);
             return 0;
         }
 
         for (const expense of expenses) {
             const expenseCurrencyNormalized = expense.currency ? expense.currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '') : '';
+            
+            // FIX: Handle splitWith properly for display
+            let splitWithDisplay = 'none';
+            if (expense.splitWith) {
+                if (Array.isArray(expense.splitWith)) {
+                    splitWithDisplay = expense.splitWith.join(', ');
+                } else if (typeof expense.splitWith === 'string') {
+                    splitWithDisplay = expense.splitWith;
+                } else if (typeof expense.splitWith === 'number') {
+                    splitWithDisplay = expense.splitWith.toString();
+                } else {
+                    splitWithDisplay = JSON.stringify(expense.splitWith);
+                }
+            }
+            
+            console.log(`\nExpense ID: ${expense.id}`);
+            console.log(`  Amount: ${expense.amount} ${expense.currency}`);
+            console.log(`  Paid by: ${expense.paidBy}`);
+            console.log(`  Split with: [${splitWithDisplay}]`);
+            console.log(`  Currency match: ${expenseCurrencyNormalized} === ${normalizedTargetCurrency} ? ${expenseCurrencyNormalized === normalizedTargetCurrency}`);
 
             if (expenseCurrencyNormalized === normalizedTargetCurrency) {
-                const numSplitters = expense.splitWith && expense.splitWith.length > 0 ? expense.splitWith.length : 1;
+                // FIX: Handle splitWith properly for calculation
+                let splitWithArray = [];
+                if (expense.splitWith) {
+                    if (Array.isArray(expense.splitWith)) {
+                        splitWithArray = expense.splitWith;
+                    } else if (typeof expense.splitWith === 'string') {
+                        // Try to parse as JSON or treat as single value
+                        try {
+                            const parsed = JSON.parse(expense.splitWith);
+                            splitWithArray = Array.isArray(parsed) ? parsed : [parsed];
+                        } catch {
+                            splitWithArray = [expense.splitWith];
+                        }
+                    } else if (typeof expense.splitWith === 'number') {
+                        splitWithArray = [expense.splitWith];
+                    } else {
+                        console.warn(`⚠️ Unknown splitWith type for expense ${expense.id}:`, typeof expense.splitWith, expense.splitWith);
+                        splitWithArray = [];
+                    }
+                }
+                
+                const numSplitters = splitWithArray.length > 0 ? splitWithArray.length : 1;
                 const share = expense.amount / numSplitters;
-                let userInSplit = expense.splitWith ? expense.splitWith.includes(userID) : false;
+                // FIX: Handle data type mismatch for includes check
+                let userInSplit = splitWithArray.some(id => id == userID); // Use == for type coercion
 
-                if (expense.paidBy === userID) {
+                console.log(`  ✅ Processing expense:`);
+                console.log(`    Number of splitters: ${numSplitters}`);
+                console.log(`    Share per person: ${share.toFixed(2)}`);
+                console.log(`    User in split: ${userInSplit}`);
+                console.log(`    User is payer: ${expense.paidBy === userID}`);
+                console.log(`    Data types - expense.paidBy: ${typeof expense.paidBy} (${expense.paidBy}), userID: ${typeof userID} (${userID})`);
+
+                // FIX: Handle data type mismatch for comparison
+                const isPayer = expense.paidBy == userID; // Use == instead of === for type coercion
+                
+                if (isPayer) {
                     netBalance += expense.amount; // User paid the full amount
+                    console.log(`    +${expense.amount} (paid full amount)`);
                     if (userInSplit) {
                         netBalance -= share; // Subtract their own share
+                        console.log(`    -${share.toFixed(2)} (own share)`);
                     }
                 } else if (userInSplit) {
                     netBalance -= share; // User is in split but didn't pay, so they owe their share
+                    console.log(`    -${share.toFixed(2)} (owe share)`);
                 }
+                
+                console.log(`    Current net balance: ${netBalance.toFixed(2)}`);
+            } else {
+                console.log(`  ⏭️ Skipping - currency mismatch`);
             }
         }
+        
+        console.log(`\nFinal net balance for user ${userID}: ${netBalance.toFixed(2)}`);
         return netBalance;
     }
 

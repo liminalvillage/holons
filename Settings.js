@@ -2049,26 +2049,40 @@ export default class Settings {
                 (user.completed && user.completed.length * equation.completed || 0) +
                 (user.sent * equation.sent || 0) +
                 (user.received * equation.received || 0) +
-                (user.hours * equation.hours || 0) +
+                // (user.hours * equation.hours || 0) + // COMMENTED OUT FOR TESTING
                 (user.collaboration * equation.collaboration || 0) +
                 (user.wants && user.wants.length * equation.wants || 0) +
                 (user.offers && user.offers.length * equation.offers || 0);
 
             let currencyScoreContribution = 0;
+            console.log(`\n=== CURRENCY CALCULATION FOR USER ${user.id} ===`);
+            console.log(`Available currencies: [${currencies.join(', ')}]`);
+            console.log(`Equation keys: [${Object.keys(equation).join(', ')}]`);
+            
             if (currencies && currencies.length > 0 && expensesInstance) {
                 for (const currencyName of currencies) {
                     const currencyKey = currencyName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                    console.log(`\nProcessing currency: ${currencyName} -> ${currencyKey}`);
+                    
                     if (currencyKey && equation[currencyKey] !== undefined) {
                         try {
                             const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currencyKey);
                             const weight = equation[currencyKey] || 0;
-                            currencyScoreContribution += balance * weight;
+                            const contribution = balance * weight;
+                            currencyScoreContribution += contribution;
+                            console.log(`  ✅ Balance: ${balance}, Weight: ${weight}, Contribution: ${contribution}`);
                         } catch (e) {
-                            console.error(`Error getting balance for ${currencyKey} for user ${user.id}:`, e);
+                            console.error(`❌ Error getting balance for ${currencyKey} for user ${user.id}:`, e);
                         }
+                    } else {
+                        console.log(`  ⏭️ Skipped - currencyKey: ${currencyKey}, equation[currencyKey]: ${equation[currencyKey]}`);
                     }
                 }
+            } else {
+                console.log(`  ⏭️ No currencies or expenses instance available`);
             }
+            
+            console.log(`Total currency contribution: ${currencyScoreContribution}`);
             score += currencyScoreContribution;
             userScores.push({ ...user, score });
         }
