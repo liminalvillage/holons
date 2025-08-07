@@ -2,16 +2,22 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
+<<<<<<< Updated upstream
 import Gun from 'gun';
 import 'gun/sea.js';
 import 'gun/axe.js';
 import 'gun/lib/radisk.js';
+=======
+>>>>>>> Stashed changes
 import https from 'https';
+import crypto from 'crypto';
 
 class Server {
   constructor(bot) {
     this.bot = bot;
     this.serverInstance = null;
+    this.isRunning = false;
+    this.requestCounts = new Map(); // For rate limiting
     this.setupServer();
   }
 
@@ -25,36 +31,227 @@ class Server {
     const isDebug = process.env.NODE_ENV === 'development';
     const port = process.env.PORT || (isDebug ? 8080 : 443);
 
-    // Setup static file serving and Gun middleware
-    app.use(express.static('public'));
-    app.use(Gun.serve);
+    // Security middleware
+    this.setupSecurityMiddleware(app);
+
+    // Setup static file serving with security
+    app.use(express.static('public', {
+      dotfiles: 'deny',
+      index: false,
+      maxAge: '1h'
+    }));
 
     // Setup avatar endpoints
     this.setupAvatarEndpoints(app);
 
+    // Setup file endpoints
+    this.setupFileEndpoints(app);
+
+    // Setup image endpoints (isolated)
+    this.setupImageEndpoints(app);
+
+    // Global error handler
+    this.setupGlobalErrorHandler(app);
+
     // Create server (HTTP for debug, HTTPS for production)
-    if (isDebug) {
-      this.serverInstance = app.listen(port, () => {
-        console.log(`HTTP Server running on port ${port} (debug mode)`);
-      });
-    } else {
-      // SSL certificate configuration
-      const sslOptions = {
-        key: fs.readFileSync(process.env.SSL_KEY_PATH || 'certs/private.key'),
-        cert: fs.readFileSync(process.env.SSL_CERT_PATH || 'certs/certificate.crt'),
-      };
-
-      this.serverInstance = https.createServer(sslOptions, app)
-        .listen(port, () => {
-          console.log(`HTTPS Server running on port ${port}`);
+    try {
+      if (isDebug) {
+        this.serverInstance = app.listen(port, () => {
+          console.log(`HTTP Server running on port ${port} (debug mode)`);
+          this.isRunning = true;
         });
-    }
+      } else {
+        // SSL certificate configuration with error handling
+        const sslOptions = this.getSSLOptions();
+        if (!sslOptions) {
+          console.error('Failed to load SSL certificates. Server will not start.');
+          return;
+        }
 
-    this.serverInstance.on('error', (error) => {
-      console.error(`Failed to start ${isDebug ? 'HTTP' : 'HTTPS'} server:`, error.message);
-      this.serverInstance = null;
+        this.serverInstance = https.createServer(sslOptions, app)
+          .listen(port, () => {
+            console.log(`HTTPS Server running on port ${port}`);
+            this.isRunning = true;
+          });
+      }
+
+      this.serverInstance.on('error', (error) => {
+        this.handleServerError(error, port, isDebug);
+      });
+
+      this.serverInstance.on('listening', () => {
+        console.log(`Server successfully started on port ${port}`);
+        this.isRunning = true;
+      });
+
+    } catch (error) {
+      console.error('Failed to create server instance:', error.message);
+      this.isRunning = false;
+    }
+  }
+
+  setupSecurityMiddleware(app) {
+    // Rate limiting middleware
+    app.use((req, res, next) => {
+      const clientIP = req.ip || req.connection.remoteAddress;
+      const now = Date.now();
+      const windowMs = 15 * 60 * 1000; // 15 minutes
+      const maxRequests = 100; // Max requests per window
+
+      if (!this.requestCounts.has(clientIP)) {
+        this.requestCounts.set(clientIP, { count: 0, resetTime: now + windowMs });
+      }
+
+      const clientData = this.requestCounts.get(clientIP);
+      
+      if (now > clientData.resetTime) {
+        clientData.count = 0;
+        clientData.resetTime = now + windowMs;
+      }
+
+      clientData.count++;
+
+      if (clientData.count > maxRequests) {
+        return res.status(429).json({ error: 'Too many requests' });
+      }
+
+      next();
     });
 
+    // Security headers
+    app.use((req, res, next) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      res.setHeader('Content-Security-Policy', "default-src 'self'");
+      next();
+    });
+
+    // Request size limiting
+    app.use(express.json({ limit: '1mb' }));
+    app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+  }
+
+  setupGlobalErrorHandler(app) {
+    // 404 handler
+    app.use((req, res) => {
+      res.status(404).json({ error: 'Not found' });
+    });
+
+    // Global error handler
+    app.use((error, req, res, next) => {
+      console.error('Unhandled error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    });
+
+    // Graceful shutdown handling
+    process.on('SIGTERM', () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      this.stopServer();
+    });
+
+    process.on('SIGINT', () => {
+      console.log('SIGINT received, shutting down gracefully');
+      this.stopServer();
+    });
+  }
+
+  getSSLOptions() {
+    try {
+      const keyPath = process.env.SSL_KEY_PATH || 'certs/private.key';
+      const certPath = process.env.SSL_CERT_PATH || 'certs/certificate.crt';
+
+      if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
+        console.error('SSL certificate files not found');
+        return null;
+      }
+
+      return {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+      };
+    } catch (error) {
+      console.error('Error loading SSL certificates:', error.message);
+      return null;
+    }
+  }
+
+  handleServerError(error, port, isDebug) {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`\n🚫 Port ${port} is already in use. Server will not start.`);
+      console.error(`\nPossible solutions:`);
+      console.error(`  • Stop the process using port ${port}:`);
+      console.error(`    - On macOS/Linux: lsof -ti:${port} | xargs kill -9`);
+      console.error(`    - On Windows: netstat -ano | findstr :${port}`);
+      console.error(`  • Use a different port:`);
+      console.error(`    - Set PORT environment variable: PORT=3000 node your-app.js`);
+      console.error(`    - Or modify the default port in the code`);
+      console.error(`  • Wait for the port to become available`);
+      console.error(`\nServer startup aborted.\n`);
+    } else if (error.code === 'EACCES') {
+      console.error(`\n🚫 Permission denied. Cannot bind to port ${port}.`);
+      console.error(`\nPossible solutions:`);
+      console.error(`  • Use a port above 1024 (ports below 1024 require root privileges)`);
+      console.error(`  • Run with sudo (not recommended for production)`);
+      console.error(`  • Set PORT environment variable to a higher port number`);
+      console.error(`\nServer startup aborted.\n`);
+    } else {
+      console.error(`\n🚫 Failed to start ${isDebug ? 'HTTP' : 'HTTPS'} server:`, error.message);
+      console.error(`\nServer startup aborted.\n`);
+    }
+    this.serverInstance = null;
+    this.isRunning = false;
+  }
+
+  // Method to check if server is running
+  isServerRunning() {
+    return this.isRunning && this.serverInstance !== null;
+  }
+
+  // Method to get server status
+  getServerStatus() {
+    return {
+      isRunning: this.isRunning,
+      hasInstance: this.serverInstance !== null,
+      port: process.env.PORT || (process.env.NODE_ENV === 'development' ? 80 : 443)
+    };
+  }
+
+  // Method to gracefully stop the server
+  stopServer() {
+    if (this.serverInstance && this.isRunning) {
+      this.serverInstance.close(() => {
+        console.log('Server stopped gracefully');
+        this.isRunning = false;
+        this.serverInstance = null;
+      });
+    } else {
+      console.log('Server is not running');
+    }
+  }
+
+  // Security: Validate and sanitize file paths
+  sanitizePath(inputPath) {
+    if (!inputPath || typeof inputPath !== 'string') {
+      return null;
+    }
+    
+    // Remove any path traversal attempts
+    const sanitized = inputPath.replace(/\.\./g, '').replace(/\/\//g, '/');
+    
+    // Ensure path is within allowed directories
+    const resolvedPath = path.resolve(sanitized);
+    const publicDir = path.resolve(process.cwd(), 'public');
+    
+    if (!resolvedPath.startsWith(publicDir)) {
+      return null;
+    }
+    
+    return resolvedPath;
+  }
+
+<<<<<<< Updated upstream
     // Initialize Gun with server
     this.gun = Gun({
       localStorage: false,
@@ -65,75 +262,280 @@ class Server {
       multicast: false,
       peers: process.env.GUN_PEERS ? process.env.GUN_PEERS.split(',') : ['https://59.src.eco/gun']
     });
+=======
+  // Security: Validate file ID format
+  validateFileId(fileId) {
+    if (!fileId || typeof fileId !== 'string') {
+      return false;
+    }
+    
+    // Telegram file IDs are typically alphanumeric and may contain underscores
+    const fileIdPattern = /^[a-zA-Z0-9_-]+$/;
+    return fileIdPattern.test(fileId) && fileId.length <= 255;
+  }
+>>>>>>> Stashed changes
 
-    console.log(`Gun server initialized with ${isDebug ? 'HTTP' : 'HTTPS'}`);
+  // Security: Validate user ID format
+  validateUserId(userId) {
+    if (!userId || typeof userId !== 'string') {
+      return false;
+    }
+    
+    // Telegram user IDs are numeric
+    const userIdPattern = /^\d+$/;
+    return userIdPattern.test(userId) && userId.length <= 20;
   }
 
   setupAvatarEndpoints(app) {
-    this.avatarsDir = path.join(process.cwd(), 'public', 'avatars');
-    if (!fs.existsSync(this.avatarsDir)) {
-      fs.mkdirSync(this.avatarsDir, { recursive: true });
-    }
-
-    this.defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
-    if (!fs.existsSync(this.defaultAvatarPath)) {
-      const defaultTemplate = path.join(process.cwd(), 'templates', 'default-avatar.png');
-      if (fs.existsSync(defaultTemplate)) {
-        fs.copyFileSync(defaultTemplate, this.defaultAvatarPath);
-      }
-    }
-
-    app.get('/getavatar', async (req, res) => {
-      const userId = req.query.user_id;
-
-      if (!userId) {
-        return res.sendFile(this.defaultAvatarPath);
+    try {
+      this.avatarsDir = path.join(process.cwd(), 'public', 'avatars');
+      if (!fs.existsSync(this.avatarsDir)) {
+        fs.mkdirSync(this.avatarsDir, { recursive: true });
       }
 
-      const localAvatarPath = path.join(this.avatarsDir, `${userId}.jpg`);
-
-      if (fs.existsSync(localAvatarPath)) {
-        return res.sendFile(localAvatarPath);
+      this.defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
+      if (!fs.existsSync(this.defaultAvatarPath)) {
+        const defaultTemplate = path.join(process.cwd(), 'templates', 'default-avatar.png');
+        if (fs.existsSync(defaultTemplate)) {
+          fs.copyFileSync(defaultTemplate, this.defaultAvatarPath);
+        }
       }
 
-      try {
-        const fileUrl = await this.getUserPicture(userId);
-        if (fileUrl) {
-          await this.downloadAndSaveAvatar(fileUrl, userId);
-          res.sendFile(localAvatarPath);
-        } else {
+      app.get('/getavatar', async (req, res) => {
+        try {
+          const userId = req.query.user_id;
+
+          if (!userId || !this.validateUserId(userId)) {
+            return res.sendFile(this.defaultAvatarPath);
+          }
+
+          const localAvatarPath = path.join(this.avatarsDir, `${userId}.jpg`);
+          const sanitizedPath = this.sanitizePath(localAvatarPath);
+          
+          if (!sanitizedPath) {
+            return res.sendFile(this.defaultAvatarPath);
+          }
+
+          if (fs.existsSync(sanitizedPath)) {
+            return res.sendFile(sanitizedPath);
+          }
+
+          const fileUrl = await this.getUserPicture(userId);
+          if (fileUrl) {
+            await this.downloadAndSaveAvatar(fileUrl, userId);
+            res.sendFile(sanitizedPath);
+          } else {
+            res.sendFile(this.defaultAvatarPath);
+          }
+        } catch (error) {
+          console.error('Error in getavatar endpoint:', error);
           res.sendFile(this.defaultAvatarPath);
         }
-      } catch (error) {
-        console.error('Error retrieving the profile photo for user', userId);
-        res.sendFile(this.defaultAvatarPath);
+      });
+    } catch (error) {
+      console.error('Error setting up avatar endpoints:', error);
+    }
+  }
+
+  setupFileEndpoints(app) {
+    try {
+      this.filesDir = path.join(process.cwd(), 'public', 'files');
+      if (!fs.existsSync(this.filesDir)) {
+        fs.mkdirSync(this.filesDir, { recursive: true });
       }
-    });
+
+      // Endpoint to get any file by file_id
+      app.get('/getfile', async (req, res) => {
+        try {
+          const fileId = req.query.file_id;
+          const fileName = req.query.file_name || 'file';
+
+          if (!fileId || !this.validateFileId(fileId)) {
+            return res.status(400).json({ error: 'Invalid file_id parameter' });
+          }
+
+          const filePath = await this.getTelegramFile(fileId, fileName);
+          if (filePath) {
+            const sanitizedPath = this.sanitizePath(filePath);
+            if (sanitizedPath && fs.existsSync(sanitizedPath)) {
+              res.sendFile(sanitizedPath);
+            } else {
+              res.status(404).json({ error: 'File not found' });
+            }
+          } else {
+            res.status(404).json({ error: 'File not found' });
+          }
+        } catch (error) {
+          console.error('Error in getfile endpoint:', error);
+          res.status(500).json({ error: 'Failed to retrieve file' });
+        }
+      });
+
+      // Endpoint to get file info without downloading
+      app.get('/fileinfo', async (req, res) => {
+        try {
+          const fileId = req.query.file_id;
+
+          if (!fileId || !this.validateFileId(fileId)) {
+            return res.status(400).json({ error: 'Invalid file_id parameter' });
+          }
+
+          const fileInfo = await this.getFileInfo(fileId);
+          if (fileInfo) {
+            res.json(fileInfo);
+          } else {
+            res.status(404).json({ error: 'File not found' });
+          }
+        } catch (error) {
+          console.error('Error in fileinfo endpoint:', error);
+          res.status(500).json({ error: 'Failed to retrieve file info' });
+        }
+      });
+
+      // Endpoint to get photo by file_id (optimized for images)
+      app.get('/getphoto', async (req, res) => {
+        try {
+          const fileId = req.query.file_id;
+          const quality = req.query.quality || 'high';
+
+          if (!fileId || !this.validateFileId(fileId)) {
+            return res.status(400).json({ error: 'Invalid file_id parameter' });
+          }
+
+          const filePath = await this.getTelegramPhoto(fileId, quality);
+          if (filePath) {
+            const sanitizedPath = this.sanitizePath(filePath);
+            if (sanitizedPath && fs.existsSync(sanitizedPath)) {
+              res.sendFile(sanitizedPath);
+            } else {
+              res.status(404).json({ error: 'Photo not found' });
+            }
+          } else {
+            res.status(404).json({ error: 'Photo not found' });
+          }
+        } catch (error) {
+          console.error('Error in getphoto endpoint:', error);
+          res.status(500).json({ error: 'Failed to retrieve photo' });
+        }
+      });
+    } catch (error) {
+      console.error('Error setting up file endpoints:', error);
+    }
+  }
+
+  setupImageEndpoints(app) {
+    try {
+      // Dedicated images directory
+      this.imagesDir = path.join(process.cwd(), 'public', 'images');
+      if (!fs.existsSync(this.imagesDir)) {
+        fs.mkdirSync(this.imagesDir, { recursive: true });
+      }
+
+      // Default image for fallback
+      this.defaultImagePath = path.join(process.cwd(), 'public', 'default-image.png');
+      if (!fs.existsSync(this.defaultImagePath)) {
+        const defaultTemplate = path.join(process.cwd(), 'templates', 'default-image.png');
+        if (fs.existsSync(defaultTemplate)) {
+          fs.copyFileSync(defaultTemplate, this.defaultImagePath);
+        }
+      }
+
+      // Isolated getimage endpoint
+      app.get('/getimage', async (req, res) => {
+        try {
+          const fileId = req.query.file_id;
+          const size = req.query.size || 'original';
+          const format = req.query.format || 'auto';
+
+          if (!fileId || !this.validateFileId(fileId)) {
+            return res.status(400).json({ error: 'Invalid file_id parameter' });
+          }
+
+          const imagePath = await this.getTelegramImage(fileId, size, format);
+          if (imagePath) {
+            const sanitizedPath = this.sanitizePath(imagePath);
+            if (sanitizedPath && fs.existsSync(sanitizedPath)) {
+              res.setHeader('Cache-Control', 'public, max-age=31536000');
+              res.setHeader('Content-Type', this.getImageContentType(sanitizedPath));
+              res.sendFile(sanitizedPath);
+            } else {
+              res.sendFile(this.defaultImagePath);
+            }
+          } else {
+            res.sendFile(this.defaultImagePath);
+          }
+        } catch (error) {
+          console.error('Error in getimage endpoint:', error);
+          res.sendFile(this.defaultImagePath);
+        }
+      });
+
+      // Image info endpoint
+      app.get('/imageinfo', async (req, res) => {
+        try {
+          const fileId = req.query.file_id;
+
+          if (!fileId || !this.validateFileId(fileId)) {
+            return res.status(400).json({ error: 'Invalid file_id parameter' });
+          }
+
+          const imageInfo = await this.getImageInfo(fileId);
+          if (imageInfo) {
+            res.json(imageInfo);
+          } else {
+            res.status(404).json({ error: 'Image not found' });
+          }
+        } catch (error) {
+          console.error('Error in imageinfo endpoint:', error);
+          res.status(500).json({ error: 'Failed to retrieve image info' });
+        }
+      });
+    } catch (error) {
+      console.error('Error setting up image endpoints:', error);
+    }
   }
 
   async downloadAndSaveAvatar(fileUrl, userId) {
-    const response = await axios({
-      url: fileUrl,
-      method: 'GET',
-      responseType: 'stream'
-    });
-    
-    const filePath = path.join(this.avatarsDir, `${userId}.jpg`);
-    const writer = fs.createWriteStream(filePath);
-    
-    return new Promise((resolve, reject) => {
-      response.data.pipe(writer);
-      writer.on('finish', () => resolve(filePath));
-      writer.on('error', reject);
-    });
+    try {
+      const response = await axios({
+        url: fileUrl,
+        method: 'GET',
+        responseType: 'stream',
+        timeout: 10000, // 10 second timeout
+        maxContentLength: 10 * 1024 * 1024 // 10MB limit
+      });
+      
+      const filePath = path.join(this.avatarsDir, `${userId}.jpg`);
+      const sanitizedPath = this.sanitizePath(filePath);
+      
+      if (!sanitizedPath) {
+        throw new Error('Invalid file path');
+      }
+      
+      const writer = fs.createWriteStream(sanitizedPath);
+      
+      return new Promise((resolve, reject) => {
+        response.data.pipe(writer);
+        writer.on('finish', () => resolve(sanitizedPath));
+        writer.on('error', reject);
+        response.data.on('error', reject);
+      });
+    } catch (error) {
+      console.error('Error downloading avatar:', error);
+      throw error;
+    }
   }
 
   async getUserPicture(userID) {
     try {
+      if (!this.validateUserId(userID)) {
+        return '';
+      }
+
       const photos = await this.bot.telegram.getUserProfilePhotos(userID);
 
       if (photos.total_count > 0) {
-        const photo = photos.photos[0].pop();  // Get the highest resolution photo
+        const photo = photos.photos[0].pop();
         const fileId = photo.file_id;
         const fileUrl = await this.bot.telegram.getFileLink(fileId);
 
@@ -143,6 +545,279 @@ class Server {
       console.error('Error retrieving the profile photo:', error);
       return ''; 
     }
+  }
+
+  async getTelegramFile(fileId, fileName) {
+    try {
+      if (!this.validateFileId(fileId)) {
+        return null;
+      }
+
+      const fileInfo = await this.bot.telegram.getFile(fileId);
+      if (!fileInfo) {
+        return null;
+      }
+
+      const fileExtension = this.getFileExtension(fileInfo.file_path || fileName);
+      const uniqueFileName = `${fileId}_${this.sanitizeFileName(fileName)}${fileExtension}`;
+      const localFilePath = path.join(this.filesDir, uniqueFileName);
+      const sanitizedPath = this.sanitizePath(localFilePath);
+
+      if (!sanitizedPath) {
+        return null;
+      }
+
+      if (fs.existsSync(sanitizedPath)) {
+        return sanitizedPath;
+      }
+
+      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      if (!fileUrl) {
+        return null;
+      }
+
+      await this.downloadAndSaveFile(fileUrl.href, sanitizedPath);
+      return sanitizedPath;
+    } catch (error) {
+      console.error('Error retrieving Telegram file:', error);
+      return null;
+    }
+  }
+
+  async getTelegramPhoto(fileId, quality = 'high') {
+    try {
+      if (!this.validateFileId(fileId)) {
+        return null;
+      }
+
+      const fileInfo = await this.bot.telegram.getFile(fileId);
+      if (!fileInfo) {
+        return null;
+      }
+
+      const fileExtension = this.getFileExtension(fileInfo.file_path || 'photo');
+      const uniqueFileName = `${fileId}_photo${fileExtension}`;
+      const localFilePath = path.join(this.filesDir, uniqueFileName);
+      const sanitizedPath = this.sanitizePath(localFilePath);
+
+      if (!sanitizedPath) {
+        return null;
+      }
+
+      if (fs.existsSync(sanitizedPath)) {
+        return sanitizedPath;
+      }
+
+      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      if (!fileUrl) {
+        return null;
+      }
+
+      await this.downloadAndSaveFile(fileUrl.href, sanitizedPath);
+      return sanitizedPath;
+    } catch (error) {
+      console.error('Error retrieving Telegram photo:', error);
+      return null;
+    }
+  }
+
+  async getTelegramImage(fileId, size = 'original', format = 'auto') {
+    try {
+      if (!this.validateFileId(fileId)) {
+        return null;
+      }
+
+      const fileInfo = await this.bot.telegram.getFile(fileId);
+      if (!fileInfo) {
+        return null;
+      }
+
+      const fileExtension = this.getFileExtension(fileInfo.file_path || '');
+      if (!this.isImageFile(fileExtension)) {
+        console.error('File is not an image:', fileExtension);
+        return null;
+      }
+
+      const imageFileName = this.generateImageFileName(fileId, size, format, fileExtension);
+      const localImagePath = path.join(this.imagesDir, imageFileName);
+      const sanitizedPath = this.sanitizePath(localImagePath);
+
+      if (!sanitizedPath) {
+        return null;
+      }
+
+      if (fs.existsSync(sanitizedPath)) {
+        return sanitizedPath;
+      }
+
+      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      if (!fileUrl) {
+        return null;
+      }
+
+      await this.downloadAndSaveImage(fileUrl.href, sanitizedPath);
+      return sanitizedPath;
+    } catch (error) {
+      console.error('Error retrieving Telegram image:', error);
+      return null;
+    }
+  }
+
+  async getImageInfo(fileId) {
+    try {
+      if (!this.validateFileId(fileId)) {
+        return null;
+      }
+
+      const fileInfo = await this.bot.telegram.getFile(fileId);
+      if (!fileInfo) {
+        return null;
+      }
+
+      const fileExtension = this.getFileExtension(fileInfo.file_path || '');
+      if (!this.isImageFile(fileExtension)) {
+        return { error: 'File is not an image' };
+      }
+
+      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      
+      return {
+        file_id: fileInfo.file_id,
+        file_unique_id: fileInfo.file_unique_id,
+        file_size: fileInfo.file_size,
+        file_path: fileInfo.file_path,
+        file_url: fileUrl ? fileUrl.href : null,
+        file_extension: fileExtension,
+        mime_type: this.getImageMimeType(fileExtension),
+        is_image: true,
+        timestamp: Date.now()
+      };
+    } catch (error) {
+      console.error('Error retrieving image info:', error);
+      return null;
+    }
+  }
+
+  async getFileInfo(fileId) {
+    try {
+      if (!this.validateFileId(fileId)) {
+        return null;
+      }
+
+      const fileInfo = await this.bot.telegram.getFile(fileId);
+      if (!fileInfo) {
+        return null;
+      }
+
+      const fileUrl = await this.bot.telegram.getFileLink(fileId);
+      
+      return {
+        file_id: fileInfo.file_id,
+        file_unique_id: fileInfo.file_unique_id,
+        file_size: fileInfo.file_size,
+        file_path: fileInfo.file_path,
+        file_url: fileUrl ? fileUrl.href : null,
+        file_extension: this.getFileExtension(fileInfo.file_path || ''),
+        timestamp: Date.now()
+      };
+    } catch (error) {
+      console.error('Error retrieving file info:', error);
+      return null;
+    }
+  }
+
+  async downloadAndSaveFile(fileUrl, filePath) {
+    try {
+      const response = await axios({
+        url: fileUrl,
+        method: 'GET',
+        responseType: 'stream',
+        timeout: 30000, // 30 second timeout
+        maxContentLength: 100 * 1024 * 1024 // 100MB limit
+      });
+      
+      const writer = fs.createWriteStream(filePath);
+      
+      return new Promise((resolve, reject) => {
+        response.data.pipe(writer);
+        writer.on('finish', () => resolve(filePath));
+        writer.on('error', reject);
+        response.data.on('error', reject);
+      });
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      throw error;
+    }
+  }
+
+  async downloadAndSaveImage(fileUrl, imagePath) {
+    try {
+      const response = await axios({
+        url: fileUrl,
+        method: 'GET',
+        responseType: 'stream',
+        timeout: 30000, // 30 second timeout
+        maxContentLength: 50 * 1024 * 1024 // 50MB limit for images
+      });
+      
+      const writer = fs.createWriteStream(imagePath);
+      
+      return new Promise((resolve, reject) => {
+        response.data.pipe(writer);
+        writer.on('finish', () => resolve(imagePath));
+        writer.on('error', reject);
+        response.data.on('error', reject);
+      });
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      throw error;
+    }
+  }
+
+  getFileExtension(filePath) {
+    if (!filePath) return '';
+    const ext = path.extname(filePath).toLowerCase();
+    return ext || '';
+  }
+
+  isImageFile(extension) {
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tga'];
+    return imageExtensions.includes(extension.toLowerCase());
+  }
+
+  generateImageFileName(fileId, size, format, originalExtension) {
+    const timestamp = Date.now();
+    const sizeSuffix = size !== 'original' ? `_${size}` : '';
+    const formatSuffix = format !== 'auto' ? `_${format}` : '';
+    return `${fileId}${sizeSuffix}${formatSuffix}_${timestamp}${originalExtension}`;
+  }
+
+  sanitizeFileName(fileName) {
+    if (!fileName || typeof fileName !== 'string') {
+      return 'file';
+    }
+    
+    // Remove any potentially dangerous characters
+    return fileName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 100);
+  }
+
+  getImageContentType(imagePath) {
+    const extension = this.getFileExtension(imagePath).toLowerCase();
+    const mimeTypes = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.bmp': 'image/bmp',
+      '.webp': 'image/webp',
+      '.tiff': 'image/tiff',
+      '.tga': 'image/tga'
+    };
+    return mimeTypes[extension] || 'image/jpeg';
+  }
+
+  getImageMimeType(extension) {
+    return this.getImageContentType(`dummy${extension}`);
   }
 }
 

@@ -133,7 +133,7 @@ export default class Quests {
                 lastInteracted: new Date().getTime()
             };
 
-            await this.db.holosphere.put(userHolonId, userLens, hologramData);
+            await this.db.holosphere.put(userHolonId, userLens, hologramData).catch((err) => { console.log(err) });
             console.log(`[personalHologram] Ensured/updated hologram for quest ${quest.id} in user holon ${userHolonId}/${userLens}`);
         } catch (error) {
             console.error(`[personalHologram] Error creating/updating hologram for quest ${quest.id} in user holon ${userId}:`, error);
@@ -222,7 +222,7 @@ export default class Quests {
     //     let quest = await this.db.get(chatID + '/quests',messageID.toString())
     //     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
     //     quest.where = ctx.message.location
-    //     this.db.put(chatID + '/quests', quest)
+    //     this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
     //     this.updateMessage(ctx, quest)
     // }
 
@@ -413,7 +413,7 @@ export default class Quests {
                         if (!quest.chat && nctx.chat.id) {
                             quest.chat = nctx.chat.id;
                         }
-                        await this.db.put(chatID + '/quests', quest) // Save the main quest first
+                        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) }); // Save the main quest first
 
                         //Pin the message in the original chat
                         ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -450,7 +450,7 @@ export default class Quests {
                         if (!quest.chat && nctx.chat.id) {
                             quest.chat = nctx.chat.id;
                         }
-                        await this.db.put(chatID + '/quests', quest) // Save the main quest first
+                        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) }); // Save the main quest first
 
                         //Pin the message in the original chat
                         ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -503,7 +503,7 @@ export default class Quests {
                 }
             }
 
-            await this.db.put(chatID + '/quests', quest) // Save the main quest first
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) }); // Save the main quest first
             
             // Update buttons with real quest ID now that quest has proper ID
             try {
@@ -584,7 +584,7 @@ export default class Quests {
             }
 
             // Save the updated quest to the database first
-            await this.db.put(chatID + '/quests', quest);
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
             if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
                 await this.personalHologram(sender.id, quest); // Update/create hologram for interacting user
                 await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language); // Ensure Telegram message for this hologram
@@ -645,7 +645,7 @@ export default class Quests {
             ctx.answerCbQuery(`${getDisplayName(sender)} appreciates the quest "${quest.title}"`);
         }
 
-        await this.db.put(chatID + '/quests', quest);
+        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
         // Removed personalHologram call - only create holograms on participation, not appreciation
         // if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
         //     await this.personalHologram(sender.id, quest);
@@ -844,7 +844,7 @@ export default class Quests {
         else
             quest.status = 'ongoing'
 
-        await this.db.put(chatID + '/quests', quest);
+        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
         // Removed personalHologram call - only create holograms on participation, not when stopping
         // if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
         //     await this.personalHologram(sender.id, quest);
@@ -909,7 +909,7 @@ export default class Quests {
             // await this.updateMessage(ctx, quest, language, false, hologramsToUpdateNow); // This was already called below
 
             // Save the main quest state before updating holograms for users
-            await this.db.put(chatID + '/quests', quest);
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
 
             // Removed personalHologram calls - only create holograms on participation, not completion
             // Update/create holograms for initiator, participants, and the completer
@@ -1024,7 +1024,7 @@ export default class Quests {
                 console.log(`Cancelling existing reminder ${quest.reminderId} before rescheduling`);
                 await this.scheduler.cancelReminder(quest.reminderId);
                 delete quest.reminderId;
-                await this.db.put(`${chatID}/quests`, quest);
+                await this.db.put(`${chatID}/quests`, quest).catch((err) => { console.log(err) });
                  // No need to call personalHologram here as scheduling doesn't change quest data for others
             }
 
@@ -1266,7 +1266,7 @@ export default class Quests {
             // Only save to original quest chat database if we still have some form of access
             // (The access was already checked above, but DB operations might still fail)
             try {
-                await this.db.put(quest.chat + '/quests', quest);
+                await this.db.put(quest.chat + '/quests', quest).catch((err) => { console.log(err) });
             } catch (dbError) {
                 console.error(`Error saving quest ${quest.id} to original chat ${quest.chat}:`, dbError);
                 // Continue with hologram updates even if we can't save to original location
@@ -1368,7 +1368,7 @@ export default class Quests {
                     quest.activeHolograms = quest.activeHolograms.filter(h => !hologramsToRemove.includes(h));
                     // Save the updated quest to persist the cleanup
                     try {
-                        await this.db.put(quest.chat + '/quests', quest);
+                        await this.db.put(quest.chat + '/quests', quest).catch((err) => { console.log(err) });
                     } catch (dbError) {
                         console.error(`Error saving quest ${quest.id} during hologram cleanup to original chat ${quest.chat}:`, dbError);
                         // Continue even if we can't save - hologram cleanup still happened in memory
@@ -1410,7 +1410,7 @@ export default class Quests {
             });
 
             // Save updated quest
-            await this.db.put(`${ctx.chat.id}/quests`, quest);
+            await this.db.put(`${ctx.chat.id}/quests`, quest).catch((err) => { console.log(err) });
             // No need to create a user-specific hologram for adding a note, 
             // as it's an update to the existing quest data which would be reflected if they already had one.
 
@@ -1681,7 +1681,7 @@ export default class Quests {
             };
 
             // Save the federation configuration
-            await this.db.holosphere.putGlobal('federation', fedInfo);
+            await this.db.holosphere.putGlobal('federation', fedInfo).catch((err) => { console.log(err) });
             
             return true;
         } catch (error) {
@@ -1869,7 +1869,7 @@ export default class Quests {
             quest.participants.push(sender);
         }
         
-        await this.db.put(chatID + '/quests', quest);
+        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
         if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
             await this.personalHologram(sender.id, quest);
             await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
@@ -1915,7 +1915,7 @@ export default class Quests {
                 quest.participants = quest.participants.filter(user => user.id !== sender.id);
             }
             
-            await this.db.put(chatID + '/quests', quest);
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
             if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
                 await this.personalHologram(sender.id, quest);
                 await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
@@ -1967,11 +1967,11 @@ export default class Quests {
                 };
 
                 // Save the checklist
-                await this.db.put(chatId + '/checklists', checklist);
+                await this.db.put(chatId + '/checklists', checklist).catch((err) => { console.log(err) });
 
                 // Update quest with checklist ID
                 quest.checklistId = messageId.toString();
-                await this.db.put(chatId + '/quests', quest);
+                await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                 // Removed personalHologram call - only create holograms on participation, not checklist interactions
                 // Update user's hologram as checklistId has changed on the quest
                 // if (chatId.toString() !== interactingUserId.toString()) {
@@ -2025,7 +2025,7 @@ export default class Quests {
 
             // Toggle the item's checked status
             checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
-            await this.db.put(chatId + '/checklists', checklist);
+            await this.db.put(chatId + '/checklists', checklist).catch((err) => { console.log(err) });
 
             // Since a sub-task status changed, the main quest display might need an update if it shows progress.
             // We also need to update the user's hologram of the main quest.
@@ -2402,7 +2402,7 @@ export default class Quests {
 
                 // Update the description
                 quest.description = ctx.message.text;
-                await this.db.put(ctx.scene.state.chatId + '/quests', quest);
+                await this.db.put(ctx.scene.state.chatId + '/quests', quest).catch((err) => { console.log(err) });
                 // Removed personalHologram call - only create holograms on participation, not description changes
                 // await this.personalHologram(ctx.from.id, quest); // Update user hologram after description change - Conditional update below
                 // if (ctx.scene.state.chatId.toString() !== ctx.from.id.toString()) { // Only if quest is not in user's own holon
@@ -2593,7 +2593,7 @@ export default class Quests {
 
             // Save the updated federation message tracking information
             if (federatedMessages.messages.length > 0) {
-                await this.db.put('federation_messages', federatedMessages);
+                await this.db.put('federation_messages', federatedMessages).catch((err) => { console.log(err) });
             }
 
         } catch (error) {
@@ -2713,7 +2713,7 @@ export default class Quests {
             quest.dependencies.push(dependencyId);
 
             // Save the updated quest
-            await this.db.put(chatId + '/quests', quest);
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
             // Removed personalHologram call - only create holograms on participation, not dependency changes
             // if (chatId.toString() !== interactingUserId.toString()) {
             //     await this.personalHologram(interactingUserId, quest);
@@ -2777,7 +2777,7 @@ export default class Quests {
             quest.dependencies = quest.dependencies.filter(id => id !== dependencyId);
 
             // Save the updated quest
-            await this.db.put(chatId + '/quests', quest);
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
             // Removed personalHologram call - only create holograms on participation, not dependency changes
             // if (chatId.toString() !== interactingUserId.toString()) {
             //     await this.personalHologram(interactingUserId, quest);
@@ -2983,6 +2983,7 @@ export default class Quests {
                         }
                         
                         // Save the updated original task
+<<<<<<< Updated upstream
                         try {
                             await this.db.put(chatId + '/quests', originalTask);
                             console.log(`Original task ${originalTask.id} updated`);
@@ -2993,11 +2994,37 @@ export default class Quests {
                                 await this.clearOldData();
                             }
                         }
+=======
+                        await this.db.put(chatId + '/quests', originalTask).catch((err) => { console.log(err) });
+                        // Removed personalHologram call - only create holograms on participation, not recurring changes
+                        // if (chatId.toString() !== interactingUserId.toString()) {
+                        //     await this.personalHologram(interactingUserId, originalTask); // Update user hologram for original task
+                        // }
+                        console.log(`Original task ${originalTask.id} updated`);
+                        
+                        // Immediately update the original task's message - keep expanded view if it was expanded
+                        await this.updateMessage(ctx, originalTask, language, true);
+>>>>>>> Stashed changes
                     }
                 } catch (error) {
                     console.error('Error updating original task:', error);
                 }
             }
+<<<<<<< Updated upstream
+=======
+
+            // Save the updated quest
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
+            // Removed personalHologram call - only create holograms on participation, not recurring changes
+            // if (chatId.toString() !== interactingUserId.toString()) {
+            //     await this.personalHologram(interactingUserId, quest); // Update user hologram for current quest instance
+            // }
+
+            // Update the message - keep expanded view
+            await this.updateMessage(ctx, quest, language, true);
+            
+            await ctx.answerCbQuery(`Set to repeat: ${frequencyName}`);
+>>>>>>> Stashed changes
         } catch (error) {
             console.error('Error in background recurring operations:', error);
         }
@@ -3181,7 +3208,7 @@ export default class Quests {
                         }
                         
                         // Save the updated original task
-                        await this.db.put(chatId + '/quests', originalTask);
+                        await this.db.put(chatId + '/quests', originalTask).catch((err) => { console.log(err) });
                         // Removed personalHologram call - only create holograms on participation, not recurring changes
                         // if (originalTask.chat.toString() !== interactingUserId.toString()) { // originalTask.chat should be same as chatId
                         //     await this.personalHologram(interactingUserId, originalTask);
@@ -3199,7 +3226,7 @@ export default class Quests {
             }
 
             // Update the quest
-            await this.db.put(chatId + '/quests', quest);
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
             // Removed personalHologram call - only create holograms on participation, not recurring changes
             // if (chatId.toString() !== interactingUserId.toString()) {
             //     await this.personalHologram(interactingUserId, quest);
@@ -3437,7 +3464,12 @@ export default class Quests {
 
                 // Save the original questToView, which now has the new Telegram view added to its activeHolograms
                 // This save must happen to its original location: originalQuestChatId + '/quests'
+<<<<<<< Updated upstream
                 await this.db.put(originalQuestChatId + '/quests', questToView);
+=======
+                await this.db.put(originalQuestChatId + '/quests', questToView).catch((err) => { console.log(err) });
+                console.log(`[viewOriginalQuest] Saved original quest ${questToView.id} in ${originalQuestChatId} after adding Telegram hologram view link.`);
+>>>>>>> Stashed changes
 
                 // No need to call updateMessage here explicitly to update the just-sent message,
                 // as it was just created with the latest content. Future updates to questToView will propagate to it.
@@ -3527,7 +3559,7 @@ export default class Quests {
                     messageId: sentMessage.message_id
                 });
                 // Save the quest object (which is in the original holon) with the new activeHologram entry
-                await this.db.put(quest.chat + '/quests', quest);
+                await this.db.put(quest.chat + '/quests', quest).catch((err) => { console.log(err) });
                 console.log(`[ensureTelegramHologramMessage] Updated original quest ${quest.id} in chat ${quest.chat} with new activeHologram entry.`);
             } else {
                 console.error(`[ensureTelegramHologramMessage] Failed to send Telegram hologram message for quest ${quest.id} to user ${interactingUserId}.`);

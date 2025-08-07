@@ -6,6 +6,11 @@ class DB {
         this.gun = null;
         this.dbName = dbName;
         this.holosphere = new HoloSphere(dbName);
+        this.preloadedDB = {};
+        this.holosphere = new HoloSphere(dbName,null, {peers: ['https://gun.holons.io/gun']});
+       
+        
+        this.db = 'gun'; // 'orbit' or 'gun' or 'both' (writing to both, reading from gub)
     }
 
     async init() {
