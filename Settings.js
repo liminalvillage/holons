@@ -607,6 +607,16 @@ export default class Settings {
             let settings = await this.getSettings(chatID);
             if (!settings[type]) settings[type] = [];
 
+            // Special protection for currencies - prevent removing 'hour' as it's connected with tasks
+            if (type === 'currencies') {
+                const itemToRemove = settings[type][index];
+                if (itemToRemove === 'hour') {
+                    const language = await this.getLanguage(chatID);
+                    await ctx.reply('⏰ Hour currency cannot be removed as it is the default currency for all groups.');
+                    return this.showArraySettingMenu(ctx, type, true);
+                }
+            }
+
             settings[type].splice(index, 1);
             await this.setSettings(settings);
 
@@ -1738,14 +1748,15 @@ export default class Settings {
             values: [],
             purpose: '',
             domains: [],
-            currencies: [],
+            currencies: ['hour'], // Default currency for all groups
             valueEquation: {
                 initiated: 1,
                 completed: 1,
                 sent: 1,
                 received: 1,
                 wants: 1,
-                offers: 1
+                offers: 1,
+                hour: 1 // Default weight for hour currency
             },
             maxTasks: 13, // Default to 13 (Fibonacci)
         }
@@ -2004,16 +2015,21 @@ export default class Settings {
                 },
                 maxTasks: typeof settings.maxTasks !== 'undefined' ? settings.maxTasks : defaultSettings.maxTasks,
             }
-            // Dynamically add currencies from settings.currencies to valueEquation if not present
-            if (settings.currencies && Array.isArray(settings.currencies)) {
-                settings.currencies.forEach(currency => {
-                    // Ensure currency is a simple string and suitable as a key
-                    const currencyKey = currency.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                    if (currencyKey && typeof settings.valueEquation[currencyKey] === 'undefined') {
-                        settings.valueEquation[currencyKey] = 0; // Default weight for new currency
-                    }
-                });
-            }
+                // Ensure 'hour' is always included as a default currency
+                if (!settings.currencies.includes('hour')) {
+                    settings.currencies.push('hour');
+                }
+
+                // Dynamically add currencies from settings.currencies to valueEquation if not present
+                if (settings.currencies && Array.isArray(settings.currencies)) {
+                    settings.currencies.forEach(currency => {
+                        // Ensure currency is a simple string and suitable as a key
+                        const currencyKey = currency.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                        if (currencyKey && typeof settings.valueEquation[currencyKey] === 'undefined') {
+                            settings.valueEquation[currencyKey] = 0; // Default weight for new currency
+                        }
+                    });
+                }
             // Save the updated settings with any missing fields
             await this.db.put(chatID + '/settings', settings)
         }
