@@ -41,12 +41,18 @@ class HoloSphere {
         });
 
        
-        // Define default Gun options
+        // Define default Gun options with radisk enabled
         const defaultGunOptions = {
-            peers: ['https://gun.holons.io/gun','https://59.src.eco/gun'],
-            axe: false
-            // Add other potential defaults here if needed
+            peers: ['https://gun.holons.io/gun'],
+            axe: false,
+            radisk: true,  // Enable radisk storage by default
+            file: './holosphere'  // Default directory for radisk storage
         };
+
+        // In browser environment, disable localStorage when radisk is enabled
+        if (typeof window !== 'undefined' && (gunOptions.radisk !== false)) {
+            defaultGunOptions.localStorage = false;
+        }
 
         // Merge provided options with defaults
         const finalGunOptions = { ...defaultGunOptions, ...gunOptions };
@@ -659,6 +665,55 @@ class HoloSphere {
      */
     getVersion() {
         return HOLOSPHERE_VERSION;
+    }
+
+    /**
+     * Configures radisk storage options for GunDB.
+     * @param {object} options - Radisk configuration options
+     * @param {string} [options.file='./radata'] - Directory for radisk storage
+     * @param {boolean} [options.radisk=true] - Whether to enable radisk storage
+     * @param {number} [options.until] - Timestamp until which to keep data
+     * @param {number} [options.retry] - Number of retries for failed operations
+     * @param {number} [options.timeout] - Timeout for operations in milliseconds
+     */
+    configureRadisk(options = {}) {
+        const defaultOptions = {
+            file: './radata',
+            radisk: true,
+            until: null,
+            retry: 3,
+            timeout: 5000
+        };
+        
+        const radiskOptions = { ...defaultOptions, ...options };
+        
+        if (this.gun && this.gun._.opt) {
+            Object.assign(this.gun._.opt, radiskOptions);
+            console.log("Radisk configuration updated:", radiskOptions);
+        } else {
+            console.warn("Gun instance not available for radisk configuration");
+        }
+    }
+
+    /**
+     * Gets radisk storage statistics and information.
+     * @returns {object} Radisk statistics including file path, enabled status, and storage info
+     */
+    getRadiskStats() {
+        if (!this.gun || !this.gun._.opt) {
+            return { error: "Gun instance not available" };
+        }
+        
+        const options = this.gun._.opt;
+        return {
+            enabled: options.radisk || false,
+            filePath: options.file || './radata',
+            retry: options.retry || 3,
+            timeout: options.timeout || 5000,
+            until: options.until || null,
+            peers: options.peers || [],
+            localStorage: options.localStorage || false
+        };
     }
 }
 

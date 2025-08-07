@@ -565,6 +565,37 @@ declare class HoloSphere {
      * @returns {Promise<void>}
      */
     close(): Promise<void>;
+
+    /**
+     * Configures radisk storage options for GunDB.
+     * @param {object} options - Radisk configuration options
+     * @param {string} [options.file='./radata'] - Directory for radisk storage
+     * @param {boolean} [options.radisk=true] - Whether to enable radisk storage
+     * @param {number} [options.until] - Timestamp until which to keep data
+     * @param {number} [options.retry] - Number of retries for failed operations
+     * @param {number} [options.timeout] - Timeout for operations in milliseconds
+     */
+    configureRadisk(options?: {
+        file?: string;
+        radisk?: boolean;
+        until?: number | null;
+        retry?: number;
+        timeout?: number;
+    }): void;
+
+    /**
+     * Gets radisk storage statistics and information.
+     * @returns {object} Radisk statistics including file path, enabled status, and storage info
+     */
+    getRadiskStats(): {
+        enabled: boolean;
+        filePath: string;
+        retry: number;
+        timeout: number;
+        until: number | null;
+        peers: any[];
+        localStorage: boolean;
+    } | { error: string };
 }
 
 export default HoloSphere;
