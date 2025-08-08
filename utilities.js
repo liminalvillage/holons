@@ -193,7 +193,6 @@ export const getHolonName = async (db, holonId, ctx = null) => {
     // Settings are stored at chatID + '/settings'
     const settings = await db.get(normalizedHolonId.toString() + '/settings', normalizedHolonId.toString());
     if (settings && settings.name) {
-      console.log("we found settings, this is settings.name", settings.name);
       return settings.name;
     }
   } catch (error) {

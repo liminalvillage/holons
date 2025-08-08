@@ -133,7 +133,7 @@ export default class Quests {
                 lastInteracted: new Date().getTime()
             };
 
-            await this.db.holosphere.put(userHolonId, userLens, hologramData);
+            await this.db.holosphere.put(userHolonId, userLens, hologramData).catch((err) => { console.log(err) });
             console.log(`[personalHologram] Ensured/updated hologram for quest ${quest.id} in user holon ${userHolonId}/${userLens}`);
         } catch (error) {
             console.error(`[personalHologram] Error creating/updating hologram for quest ${quest.id} in user holon ${userId}:`, error);
@@ -148,6 +148,50 @@ export default class Quests {
     // Method to set UI instance reference
     setUIInstance(ui) {
         this.ui = ui;
+    }
+
+    // Helper method to handle completed quest interactions
+    async handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language) {
+        if (quest.status === 'completed') {
+            console.log(`Quest ${messageID} is already completed. Updating interface to completed state.`);
+            
+            try {
+                // Update the message to show completed quest interface
+                await this.updateMessage(ctx, quest, language, false);
+                
+                ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`)
+                    .catch(err => console.error('Error answering callback query:', err));
+                
+                return true; // Indicate that the interaction was handled
+            } catch (error) {
+                console.error('Error updating completed quest interface:', error);
+                
+                // If update fails, try to delete the message
+                try {
+                    const originalMessageIdToDelete = ctx.callbackQuery ? ctx.callbackQuery.message.message_id : messageID;
+                    const originalChatIdToDelete = ctx.callbackQuery ? ctx.callbackQuery.message.chat.id : chatID;
+                    
+                    if (originalMessageIdToDelete && originalChatIdToDelete) {
+                        await ctx.telegram.deleteMessage(originalChatIdToDelete, originalMessageIdToDelete)
+                            .catch(err => console.warn(`Could not delete message ${originalMessageIdToDelete}: ${err.description || err.message}`));
+                        console.log(`Deleted message ${originalMessageIdToDelete} for non-existent completed quest`);
+                    }
+                    
+                    ctx.answerCbQuery('Quest not found or already completed.')
+                        .catch(err => console.error('Error answering callback query:', err));
+                    
+                    return true; // Indicate that the interaction was handled
+                } catch (deleteError) {
+                    console.error('Error deleting message for completed quest:', deleteError);
+                    ctx.answerCbQuery('Error handling completed quest.')
+                        .catch(err => console.error('Error answering callback query:', err));
+                    
+                    return true; // Indicate that the interaction was handled
+                }
+            }
+        }
+        
+        return false; // Indicate that the interaction was not handled (quest is not completed)
     }
 
     // Helper method to check if a user is admin in a specific chat
@@ -178,7 +222,7 @@ export default class Quests {
     //     let quest = await this.db.get(chatID + '/quests',messageID.toString())
     //     if (!quest || quest == '') { console.log('QUEST IS NOT FOUND'); return }
     //     quest.where = ctx.message.location
-    //     this.db.put(chatID + '/quests', quest)
+    //     this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
     //     this.updateMessage(ctx, quest)
     // }
 
@@ -369,7 +413,7 @@ export default class Quests {
                         if (!quest.chat && nctx.chat.id) {
                             quest.chat = nctx.chat.id;
                         }
-                        await this.db.put(chatID + '/quests', quest) // Save the main quest first
+                        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) }); // Save the main quest first
 
                         //Pin the message in the original chat
                         ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -406,7 +450,7 @@ export default class Quests {
                         if (!quest.chat && nctx.chat.id) {
                             quest.chat = nctx.chat.id;
                         }
-                        await this.db.put(chatID + '/quests', quest) // Save the main quest first
+                        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) }); // Save the main quest first
 
                         //Pin the message in the original chat
                         ctx.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch((err) => { });
@@ -459,7 +503,7 @@ export default class Quests {
                 }
             }
 
-            await this.db.put(chatID + '/quests', quest) // Save the main quest first
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) }); // Save the main quest first
             
             // Update buttons with real quest ID now that quest has proper ID
             try {
@@ -504,11 +548,9 @@ export default class Quests {
     
             if (!await this.questExists(quest, ctx, messageID)) { return; }
 
-            if (quest.status == 'completed') {
-                ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`, { reply_to_message_id: messageID })
-                    .catch(err => console.error('Error answering callback query:', err));
-                return;
-            }
+            // Handle completed quest interaction
+            const completedQuestResult = await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language);
+            if (completedQuestResult) { return; }
 
             // Make sure participants array exists
             if (!quest.participants) {
@@ -542,7 +584,7 @@ export default class Quests {
             }
 
             // Save the updated quest to the database first
-            await this.db.put(chatID + '/quests', quest);
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
             if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
                 await this.personalHologram(sender.id, quest); // Update/create hologram for interacting user
                 await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language); // Ensure Telegram message for this hologram
@@ -568,6 +610,10 @@ export default class Quests {
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
 
         if (!await this.questExists(quest, ctx, messageID)) { return; }
+
+        // Handle completed quest interaction
+        const completedQuestResult = await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language);
+        if (completedQuestResult) { return; }
 
         // Get the user who reacted
         const sender = ctx.callbackQuery.from; // This is the interacting user
@@ -599,7 +645,7 @@ export default class Quests {
             ctx.answerCbQuery(`${getDisplayName(sender)} appreciates the quest "${quest.title}"`);
         }
 
-        await this.db.put(chatID + '/quests', quest);
+        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
         // Removed personalHologram call - only create holograms on participation, not appreciation
         // if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
         //     await this.personalHologram(sender.id, quest);
@@ -625,6 +671,39 @@ export default class Quests {
             // Proceed with cancellation as quest might not exist or DB error
         }
 
+        // Check if this is a hologram (quest from another chat)
+        const isHologram = questToCancel && questToCancel.chat && questToCancel.chat.toString() !== chatID.toString();
+
+        if (isHologram) {
+            console.log(`Cancelling hologram quest ${messageID} in chat ${chatID} (original quest in chat ${questToCancel.chat})`);
+            
+            // For holograms, only delete the hologram message, not the original quest
+            try {
+                // Delete the hologram message
+                const originalMessageIdToDelete = ctx.callbackQuery ? ctx.callbackQuery.message.message_id : messageID;
+                const originalChatIdToDelete = ctx.callbackQuery ? ctx.callbackQuery.message.chat.id : chatID;
+
+                if (originalMessageIdToDelete && originalChatIdToDelete) {
+                    await ctx.telegram.deleteMessage(originalChatIdToDelete, originalMessageIdToDelete)
+                        .catch(err => console.warn(`Could not delete hologram message ${originalMessageIdToDelete}: ${err.description || err.message}`));
+                    console.log(`Deleted hologram message ${originalMessageIdToDelete} in chat ${originalChatIdToDelete}`);
+                }
+
+                // Try to delete the trigger message if it was a command reply
+                if (ctx.message && ctx.message.reply_to_message && ctx.message.reply_to_message.message_id === originalMessageIdToDelete) {
+                    await ctx.deleteMessage().catch(err => {}); // Delete the /delete command itself
+                }
+
+                ctx.answerCbQuery('Hologram cancelled.').catch(err => console.error('Error answering callback query:', err));
+                return;
+            } catch (error) {
+                console.error('Error during hologram cancellation:', error);
+                ctx.answerCbQuery('Error cancelling hologram.').catch(err => console.error('Error answering callback query:', err));
+                return;
+            }
+        }
+
+        // Handle regular quest cancellation (not hologram)
         if (questToCancel && questToCancel.activeHolograms && questToCancel.activeHolograms.length > 0) {
             console.log(`Found ${questToCancel.activeHolograms.length} active holograms for quest ${messageID} to delete.`);
             for (const hologram of questToCancel.activeHolograms) {
@@ -639,18 +718,14 @@ export default class Quests {
         }
 
         // --- Original cancellation logic below, adapted to use questToCancel if fetched ---
-        // let quest; // Original quest variable - renamed to questToCancel
         try {
-            // quest = await this.db.get(chatID + '/quests', messageID.toString()); // Already fetched as questToCancel
             if (!questToCancel && !chatID && !messageID) { // If it wasn't fetched and we don't have IDs, something is very wrong.
                 console.log("Cannot proceed with cancellation, IDs missing and quest not fetched.");
                 ctx.answerCbQuery('Error: Quest details missing for cancellation.').catch(err => console.error('Error answering CBQ:', err));
                 return;
             }
         } catch (err) {
-            // This catch is now less relevant if questToCancel fetch fails above, but kept for safety
             console.error(`Error re-fetching quest ${messageID} for cancellation check (should have been fetched):`, err);
-            // quest = null; // Treat fetch error same as not found for initial check
         }
 
         // If quest doesn't exist (based on initial fetch or re-fetch), try to delete the main message
@@ -769,7 +844,7 @@ export default class Quests {
         else
             quest.status = 'ongoing'
 
-        await this.db.put(chatID + '/quests', quest);
+        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
         // Removed personalHologram call - only create holograms on participation, not when stopping
         // if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
         //     await this.personalHologram(sender.id, quest);
@@ -844,7 +919,7 @@ export default class Quests {
             // await this.updateMessage(ctx, quest, language, false, hologramsToUpdateNow); // This was already called below
 
             // Save the main quest state before updating holograms for users
-            await this.db.put(chatID + '/quests', quest);
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
 
             // Removed personalHologram calls - only create holograms on participation, not completion
             // Update/create holograms for initiator, participants, and the completer
@@ -949,12 +1024,17 @@ export default class Quests {
             const quest = await this.db.get(`${chatID}/quests`, questID);
             if (!await this.questExists(quest, ctx, questID)) { return; }
 
+            // Handle completed quest interaction
+            const language = await this.settings.getLanguage(chatID);
+            const completedQuestResult = await this.handleCompletedQuestInteraction(ctx, quest, chatID, questID, language);
+            if (completedQuestResult) { return; }
+
             // Cancel any existing reminder
             if (quest.reminderId && this.scheduler) {
                 console.log(`Cancelling existing reminder ${quest.reminderId} before rescheduling`);
                 await this.scheduler.cancelReminder(quest.reminderId);
                 delete quest.reminderId;
-                await this.db.put(`${chatID}/quests`, quest);
+                await this.db.put(`${chatID}/quests`, quest).catch((err) => { console.log(err) });
                  // No need to call personalHologram here as scheduling doesn't change quest data for others
             }
 
@@ -1196,7 +1276,7 @@ export default class Quests {
             // Only save to original quest chat database if we still have some form of access
             // (The access was already checked above, but DB operations might still fail)
             try {
-                await this.db.put(quest.chat + '/quests', quest);
+                await this.db.put(quest.chat + '/quests', quest).catch((err) => { console.log(err) });
             } catch (dbError) {
                 console.error(`Error saving quest ${quest.id} to original chat ${quest.chat}:`, dbError);
                 // Continue with hologram updates even if we can't save to original location
@@ -1298,7 +1378,7 @@ export default class Quests {
                     quest.activeHolograms = quest.activeHolograms.filter(h => !hologramsToRemove.includes(h));
                     // Save the updated quest to persist the cleanup
                     try {
-                        await this.db.put(quest.chat + '/quests', quest);
+                        await this.db.put(quest.chat + '/quests', quest).catch((err) => { console.log(err) });
                     } catch (dbError) {
                         console.error(`Error saving quest ${quest.id} during hologram cleanup to original chat ${quest.chat}:`, dbError);
                         // Continue even if we can't save - hologram cleanup still happened in memory
@@ -1340,7 +1420,7 @@ export default class Quests {
             });
 
             // Save updated quest
-            await this.db.put(`${ctx.chat.id}/quests`, quest);
+            await this.db.put(`${ctx.chat.id}/quests`, quest).catch((err) => { console.log(err) });
             // No need to create a user-specific hologram for adding a note, 
             // as it's an update to the existing quest data which would be reflected if they already had one.
 
@@ -1611,7 +1691,7 @@ export default class Quests {
             };
 
             // Save the federation configuration
-            await this.db.holosphere.putGlobal('federation', fedInfo);
+            await this.db.holosphere.putGlobal('federation', fedInfo).catch((err) => { console.log(err) });
             
             return true;
         } catch (error) {
@@ -1777,6 +1857,10 @@ export default class Quests {
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
         if (!await this.questExists(quest, ctx, messageID)) { return; }
 
+        // Handle completed quest interaction
+        const completedQuestResult = await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language);
+        if (completedQuestResult) { return; }
+
         // Get the user who logged time
         const sender = ctx.callbackQuery.from; // This is the interacting user
         const userId = sender.id;
@@ -1795,7 +1879,7 @@ export default class Quests {
             quest.participants.push(sender);
         }
         
-        await this.db.put(chatID + '/quests', quest);
+        await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
         if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
             await this.personalHologram(sender.id, quest);
             await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
@@ -1814,6 +1898,10 @@ export default class Quests {
 
         let quest = await this.db.get(chatID + '/quests', messageID.toString())
         if (!await this.questExists(quest, ctx, messageID)) { return; }
+
+        // Handle completed quest interaction
+        const completedQuestResult = await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language);
+        if (completedQuestResult) { return; }
 
         // Get the user who logged time
         const sender = ctx.callbackQuery.from; // This is the interacting user
@@ -1837,7 +1925,7 @@ export default class Quests {
                 quest.participants = quest.participants.filter(user => user.id !== sender.id);
             }
             
-            await this.db.put(chatID + '/quests', quest);
+            await this.db.put(chatID + '/quests', quest).catch((err) => { console.log(err) });
             if (chatID.toString() !== sender.id.toString()) { // Only create personal hologram if quest is not in user's own holon
                 await this.personalHologram(sender.id, quest);
                 await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
@@ -1863,6 +1951,10 @@ export default class Quests {
 
         if (!await this.questExists(quest, ctx, messageId)) { return; }
 
+        // Handle completed quest interaction
+        const completedQuestResult = await this.handleCompletedQuestInteraction(ctx, quest, chatId, messageId, language);
+        if (completedQuestResult) { return; }
+
         if (!this.checklists) {
             console.error('Checklists instance not set');
             ctx.answerCbQuery('Checklist functionality not available');
@@ -1885,11 +1977,11 @@ export default class Quests {
                 };
 
                 // Save the checklist
-                await this.db.put(chatId + '/checklists', checklist);
+                await this.db.put(chatId + '/checklists', checklist).catch((err) => { console.log(err) });
 
                 // Update quest with checklist ID
                 quest.checklistId = messageId.toString();
-                await this.db.put(chatId + '/quests', quest);
+                await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                 // Removed personalHologram call - only create holograms on participation, not checklist interactions
                 // Update user's hologram as checklistId has changed on the quest
                 // if (chatId.toString() !== interactingUserId.toString()) {
@@ -1943,7 +2035,7 @@ export default class Quests {
 
             // Toggle the item's checked status
             checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
-            await this.db.put(chatId + '/checklists', checklist);
+            await this.db.put(chatId + '/checklists', checklist).catch((err) => { console.log(err) });
 
             // Since a sub-task status changed, the main quest display might need an update if it shows progress.
             // We also need to update the user's hologram of the main quest.
@@ -2320,7 +2412,7 @@ export default class Quests {
 
                 // Update the description
                 quest.description = ctx.message.text;
-                await this.db.put(ctx.scene.state.chatId + '/quests', quest);
+                await this.db.put(ctx.scene.state.chatId + '/quests', quest).catch((err) => { console.log(err) });
                 // Removed personalHologram call - only create holograms on participation, not description changes
                 // await this.personalHologram(ctx.from.id, quest); // Update user hologram after description change - Conditional update below
                 // if (ctx.scene.state.chatId.toString() !== ctx.from.id.toString()) { // Only if quest is not in user's own holon
@@ -2511,7 +2603,7 @@ export default class Quests {
 
             // Save the updated federation message tracking information
             if (federatedMessages.messages.length > 0) {
-                await this.db.put('federation_messages', federatedMessages);
+                await this.db.put('federation_messages', federatedMessages).catch((err) => { console.log(err) });
             }
 
         } catch (error) {
@@ -2631,7 +2723,7 @@ export default class Quests {
             quest.dependencies.push(dependencyId);
 
             // Save the updated quest
-            await this.db.put(chatId + '/quests', quest);
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
             // Removed personalHologram call - only create holograms on participation, not dependency changes
             // if (chatId.toString() !== interactingUserId.toString()) {
             //     await this.personalHologram(interactingUserId, quest);
@@ -2695,7 +2787,7 @@ export default class Quests {
             quest.dependencies = quest.dependencies.filter(id => id !== dependencyId);
 
             // Save the updated quest
-            await this.db.put(chatId + '/quests', quest);
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
             // Removed personalHologram call - only create holograms on participation, not dependency changes
             // if (chatId.toString() !== interactingUserId.toString()) {
             //     await this.personalHologram(interactingUserId, quest);
@@ -2747,23 +2839,68 @@ export default class Quests {
             quest.frequency = frequencies[currentIndex];
             console.log(`New frequency: ${quest.frequency}`);
 
-            // Get readable frequency name
+            // Get readable frequency name for immediate feedback
             let frequencyName;
             if (quest.frequency === null) {
                 frequencyName = i18next.t('never', { lng: language, defaultValue: 'Never' });
-                
+            } else {
+                frequencyName = i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency });
+            }
+
+            // Provide immediate feedback
+            await ctx.answerCbQuery(`Set to repeat: ${frequencyName}`);
+
+            // Update the quest immediately for responsive UI
+            try {
+                await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
+                await this.updateMessage(ctx, quest, language, true);
+            } catch (dbError) {
+                console.error('Error updating quest in database:', dbError);
+                if (dbError.message && dbError.message.includes('localStorage max')) {
+                    console.log('localStorage is full, attempting to clear old data...');
+                    await this.clearOldData();
+                    // Try again after clearing
+                    try {
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
+                        await this.updateMessage(ctx, quest, language, true);
+                    } catch (retryError) {
+                        console.error('Error after clearing old data:', retryError);
+                    }
+                }
+            }
+
+            // Do heavy operations asynchronously in the background
+            this.handleRecurringBackgroundOperations(quest, chatId, language, interactingUserId).catch(error => {
+                console.error('Background recurring operations failed:', error);
+            });
+
+        } catch (error) {
+            console.error('Error handling recurring button:', error);
+            await ctx.answerCbQuery('Error setting recurring frequency');
+        }
+    }
+
+    async handleRecurringBackgroundOperations(quest, chatId, language, interactingUserId) {
+        try {
+            if (quest.frequency === null) {
                 // If changing from recurring to never, remove any existing recurring task
                 if (quest.recurringTaskId) {
                     console.log(`Removing recurring task: ${quest.recurringTaskId}`);
-                    const removed = await this.removeRecurringTask(quest.recurringTaskId);
-                    console.log(`Recurring task removal ${removed ? 'succeeded' : 'failed'}`);
-                    
-                    // Remove the ID reference regardless of removal success
-                    delete quest.recurringTaskId;
+                    try {
+                        const removed = await this.removeRecurringTask(quest.recurringTaskId);
+                        console.log(`Recurring task removal ${removed ? 'succeeded' : 'failed'}`);
+                        
+                        // Remove the ID reference regardless of removal success
+                        delete quest.recurringTaskId;
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
+                    } catch (error) {
+                        console.error('Error removing recurring task:', error);
+                        // Continue even if removal fails
+                        delete quest.recurringTaskId;
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
+                    }
                 }
             } else {
-                frequencyName = i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency });
-                
                 // If this is a generated recurring quest (has recurringTaskId), we should update the original task instead
                 if (quest.recurringTaskId && !quest.originalTaskId) {
                     console.log(`This quest has recurringTaskId ${quest.recurringTaskId}, updating that task's frequency instead of creating new one`);
@@ -2782,20 +2919,41 @@ export default class Quests {
                             // Fall back to creating a new task
                             const taskId = await this.createOrUpdateRecurringTask(quest, language);
                             quest.recurringTaskId = taskId;
+                            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
                         }
                     } catch (error) {
                         console.error('Error updating recurring task:', error);
                         // Fall back to creating a new task
-                        const taskId = await this.createOrUpdateRecurringTask(quest, language);
-                        quest.recurringTaskId = taskId;
+                        try {
+                            const taskId = await this.createOrUpdateRecurringTask(quest, language);
+                            quest.recurringTaskId = taskId;
+                            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
+                        } catch (dbError) {
+                            console.error('Error creating recurring task:', dbError);
+                            // If localStorage is full, try to clear some old data
+                            if (dbError.message && dbError.message.includes('localStorage max')) {
+                                console.log('localStorage is full, attempting to clear old data...');
+                                await this.clearOldData();
+                            }
+                        }
                     }
                 }
                 // This is a regular quest (not generated and doesn't have recurringTaskId yet)
                 else if (!quest.recurringTaskId && this.scheduler) {
                     console.log(`Creating new recurring task for frequency: ${quest.frequency}`);
-                    const taskId = await this.createOrUpdateRecurringTask(quest, language);
-                    quest.recurringTaskId = taskId;
-                    console.log(`Task ID set to: ${taskId}`);
+                    try {
+                        const taskId = await this.createOrUpdateRecurringTask(quest, language);
+                        quest.recurringTaskId = taskId;
+                        console.log(`Task ID set to: ${taskId}`);
+                        await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
+                    } catch (error) {
+                        console.error('Error creating recurring task:', error);
+                        // If localStorage is full, try to clear some old data
+                        if (error.message && error.message.includes('localStorage max')) {
+                            console.log('localStorage is full, attempting to clear old data...');
+                            await this.clearOldData();
+                        }
+                    }
                 }
             }
 
@@ -2814,19 +2972,28 @@ export default class Quests {
                             // If setting to never, remove the recurring task
                             if (originalTask.recurringTaskId) {
                                 console.log(`Removing original task's recurring task: ${originalTask.recurringTaskId}`);
-                                const removed = await this.removeRecurringTask(originalTask.recurringTaskId);
-                                console.log(`Original task's recurring task removal ${removed ? 'succeeded' : 'failed'}`);
-                                delete originalTask.recurringTaskId;
+                                try {
+                                    const removed = await this.removeRecurringTask(originalTask.recurringTaskId);
+                                    console.log(`Original task's recurring task removal ${removed ? 'succeeded' : 'failed'}`);
+                                    delete originalTask.recurringTaskId;
+                                } catch (error) {
+                                    console.error('Error removing original recurring task:', error);
+                                    delete originalTask.recurringTaskId;
+                                }
                             }
                         } else if (this.scheduler) {
                             // Otherwise update the recurring task
-                            const taskId = await this.createOrUpdateRecurringTask(originalTask, language);
-                            originalTask.recurringTaskId = taskId;
-                            console.log(`Updated original task's recurring task ID to: ${taskId}`);
+                            try {
+                                const taskId = await this.createOrUpdateRecurringTask(originalTask, language);
+                                originalTask.recurringTaskId = taskId;
+                                console.log(`Updated original task's recurring task ID to: ${taskId}`);
+                            } catch (error) {
+                                console.error('Error updating original recurring task:', error);
+                            }
                         }
                         
                         // Save the updated original task
-                        await this.db.put(chatId + '/quests', originalTask);
+                        await this.db.put(chatId + '/quests', originalTask).catch((err) => { console.log(err) });
                         // Removed personalHologram call - only create holograms on participation, not recurring changes
                         // if (chatId.toString() !== interactingUserId.toString()) {
                         //     await this.personalHologram(interactingUserId, originalTask); // Update user hologram for original task
@@ -2842,7 +3009,7 @@ export default class Quests {
             }
 
             // Save the updated quest
-            await this.db.put(chatId + '/quests', quest);
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
             // Removed personalHologram call - only create holograms on participation, not recurring changes
             // if (chatId.toString() !== interactingUserId.toString()) {
             //     await this.personalHologram(interactingUserId, quest); // Update user hologram for current quest instance
@@ -2852,9 +3019,64 @@ export default class Quests {
             await this.updateMessage(ctx, quest, language, true);
             
             await ctx.answerCbQuery(`Set to repeat: ${frequencyName}`);
+
         } catch (error) {
-            console.error('Error handling recurring button:', error);
-            await ctx.answerCbQuery('Error setting recurring frequency');
+            console.error('Error in background recurring operations:', error);
+        }
+    }
+
+    async clearOldData() {
+        try {
+            console.log('Clearing old data to free up localStorage...');
+            
+            // Clear old quests (older than 30 days)
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            // Get all quests and remove old ones
+            const allQuests = await this.db.getAll('quests');
+            if (allQuests && allQuests.length > 0) {
+                let clearedCount = 0;
+                for (const quest of allQuests) {
+                    if (quest.created && new Date(quest.created) < thirtyDaysAgo) {
+                        try {
+                            await this.db.del('quests', quest.id);
+                            clearedCount++;
+                        } catch (error) {
+                            console.error('Error clearing old quest:', error);
+                        }
+                    }
+                }
+                console.log(`Cleared ${clearedCount} old quests`);
+            }
+            
+            // Clear old recurring tasks (older than 7 days)
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            
+            try {
+                const allRecurringTasks = await this.db.holosphere.getAllGlobal('recurring');
+                if (allRecurringTasks && allRecurringTasks.length > 0) {
+                    let clearedCount = 0;
+                    for (const task of allRecurringTasks) {
+                        if (task.createdAt && new Date(task.createdAt) < sevenDaysAgo) {
+                            try {
+                                await this.db.holosphere.deleteGlobal('recurring', task.id);
+                                clearedCount++;
+                            } catch (error) {
+                                console.error('Error clearing old recurring task:', error);
+                            }
+                        }
+                    }
+                    console.log(`Cleared ${clearedCount} old recurring tasks`);
+                }
+            } catch (error) {
+                console.error('Error clearing old recurring tasks:', error);
+            }
+            
+            console.log('Old data clearing completed');
+        } catch (error) {
+            console.error('Error clearing old data:', error);
         }
     }
 
@@ -2923,7 +3145,10 @@ export default class Quests {
         }
 
         try {
-            return await this.scheduler.stopTask(taskId);
+            console.log(`Attempting to remove recurring task: ${taskId}`);
+            const result = await this.scheduler.stopTask(taskId);
+            console.log(`Recurring task removal result: ${result}`);
+            return result;
         } catch (error) {
             console.error('Error removing recurring task:', error);
             return false;
@@ -2978,7 +3203,7 @@ export default class Quests {
                         }
                         
                         // Save the updated original task
-                        await this.db.put(chatId + '/quests', originalTask);
+                        await this.db.put(chatId + '/quests', originalTask).catch((err) => { console.log(err) });
                         // Removed personalHologram call - only create holograms on participation, not recurring changes
                         // if (originalTask.chat.toString() !== interactingUserId.toString()) { // originalTask.chat should be same as chatId
                         //     await this.personalHologram(interactingUserId, originalTask);
@@ -2996,7 +3221,7 @@ export default class Quests {
             }
 
             // Update the quest
-            await this.db.put(chatId + '/quests', quest);
+            await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
             // Removed personalHologram call - only create holograms on participation, not recurring changes
             // if (chatId.toString() !== interactingUserId.toString()) {
             //     await this.personalHologram(interactingUserId, quest);
@@ -3102,7 +3327,6 @@ export default class Quests {
     }
 
     async viewOriginalQuest(ctx) {
-        console.log("VIEW ORIGINAL QUEST ACTION");
         const originalQuestIdParts = ctx.match[1]; // Should be originalChatId_originalQuestMessageId
         const currentChatIdWhereButtonWasClicked = ctx.callbackQuery.message.chat.id; // This is the chat where the /quests command was issued and button clicked
         const language = await this.settings.getLanguage(currentChatIdWhereButtonWasClicked);
@@ -3118,20 +3342,15 @@ export default class Quests {
                 
                 // Additional validation
                 if (!originalQuestChatId || originalQuestChatId === 'undefined' || originalQuestChatId === 'null') {
-                    console.error(`[viewOriginalQuest] Invalid chat ID detected: ${originalQuestChatId}`);
                     await ctx.answerCbQuery(i18next.t('errorviewingquest.invalidchat', { lng: language, defaultValue: 'Error: Invalid quest source.' }));
                     return;
                 }
                 
                 if (!actualOriginalQuestId || actualOriginalQuestId === 'undefined' || actualOriginalQuestId === 'null') {
-                    console.error(`[viewOriginalQuest] Invalid quest ID detected: ${actualOriginalQuestId}`);
                     await ctx.answerCbQuery(i18next.t('errorviewingquest.invalidid', { lng: language, defaultValue: 'Error: Invalid quest identifier.' }));
                     return;
                 }
-                
-                console.log(`[viewOriginalQuest] Looking for quest ${actualOriginalQuestId} in chat ${originalQuestChatId}`);
             } else {
-                console.warn("[viewOriginalQuest] originalQuestIdParts format might be incorrect. Expected originalChatId_originalQuestMessageId. Got:", originalQuestIdParts);
                 await ctx.answerCbQuery(i18next.t('errorviewingquest.format', { lng: language, defaultValue: 'Error: Invalid quest identifier format.' }));
                 return;
             }
@@ -3140,18 +3359,13 @@ export default class Quests {
             try {
                 // First try to get the quest from the original holon
                 questToView = await this.db.get(originalQuestChatId + '/quests', actualOriginalQuestId.toString());
-                console.log(`[viewOriginalQuest] Database query result: ${questToView ? 'found' : 'not found'}`);
             } catch (dbError) {
-                console.error(`[viewOriginalQuest] Database error retrieving quest ${actualOriginalQuestId} from ${originalQuestChatId}:`, dbError);
-                
                 // If we can't access the original holon, try to find a local hologram copy
-                console.log(`[viewOriginalQuest] Attempting to find local hologram copy for quest ${actualOriginalQuestId}`);
                 try {
                     const userHologramData = await this.db.holosphere.get(interactingUserId.toString(), 'quests', actualOriginalQuestId.toString());
                     if (userHologramData && userHologramData.soul) {
                         // Extract the original quest data from the hologram soul path
                         const [appname, originalChatFromSoul, lens, questId] = userHologramData.soul.split('/');
-                        console.log(`[viewOriginalQuest] Found hologram data - reconstructing quest from soul: ${userHologramData.soul}`);
                         
                         // Create a minimal quest object from available hologram data
                         questToView = {
@@ -3167,19 +3381,16 @@ export default class Quests {
                             date: userHologramData.lastInteracted || Date.now(),
                             description: `This quest originates from a holon that is no longer accessible. Limited information is available.`
                         };
-                        console.log(`[viewOriginalQuest] Reconstructed quest from hologram data`);
                     } else {
                         throw new Error('No hologram data found either');
                     }
                 } catch (hologramError) {
-                    console.error(`[viewOriginalQuest] Could not find hologram data either:`, hologramError);
                     await ctx.answerCbQuery(i18next.t('errorviewingquest.inaccessible', { lng: language, defaultValue: 'Error: This quest is from an inaccessible holon.' }));
                     return;
                 }
             }
 
             if (!questToView) {
-                console.error(`[viewOriginalQuest] No quest data available for ${actualOriginalQuestId}`);
                 await ctx.answerCbQuery(i18next.t('errorviewingquest.notfound', { lng: language, defaultValue: 'Quest not found.' }));
                 return;
             }
@@ -3207,11 +3418,9 @@ export default class Quests {
             
             if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
                 try {
-                    console.log(`[viewOriginalQuest] Generating quest image for hologram view`);
                     questImagePath = await this.ui.getQuestImage(questToView, originalQuestChatId, true);
-                    console.log(`[viewOriginalQuest] Successfully generated quest image for hologram view: ${questImagePath}`);
                 } catch (error) {
-                    console.error(`[viewOriginalQuest] Error generating quest image for hologram view:`, error);
+                    // Silently handle image generation errors
                 }
             }
             
@@ -3246,21 +3455,18 @@ export default class Quests {
                         chatId: newHologramMsg.chat.id, // This is currentChatIdWhereButtonWasClicked
                         messageId: newHologramMsg.message_id
                     });
-                    console.log(`[viewOriginalQuest] Added Telegram hologram view ${newHologramMsg.message_id} in chat ${newHologramMsg.chat.id} to quest ${questToView.id}. Active Telegram Holograms now: ${questToView.activeHolograms.length}`);
-                } else {
-                    console.log(`[viewOriginalQuest] Telegram hologram view ${newHologramMsg.message_id} already tracked for quest ${questToView.id}.`);
                 }
 
                 // Save the original questToView, which now has the new Telegram view added to its activeHolograms
                 // This save must happen to its original location: originalQuestChatId + '/quests'
-                await this.db.put(originalQuestChatId + '/quests', questToView);
+                await this.db.put(originalQuestChatId + '/quests', questToView).catch((err) => { console.log(err) });
                 console.log(`[viewOriginalQuest] Saved original quest ${questToView.id} in ${originalQuestChatId} after adding Telegram hologram view link.`);
 
                 // No need to call updateMessage here explicitly to update the just-sent message,
                 // as it was just created with the latest content. Future updates to questToView will propagate to it.
 
             } catch (error) {
-                console.error('[viewOriginalQuest] Error adding Telegram hologram view link to quest object or saving original quest:', error);
+                // Silently handle tracking errors
             }
             // --- End Tracking ---
 
@@ -3344,7 +3550,7 @@ export default class Quests {
                     messageId: sentMessage.message_id
                 });
                 // Save the quest object (which is in the original holon) with the new activeHologram entry
-                await this.db.put(quest.chat + '/quests', quest);
+                await this.db.put(quest.chat + '/quests', quest).catch((err) => { console.log(err) });
                 console.log(`[ensureTelegramHologramMessage] Updated original quest ${quest.id} in chat ${quest.chat} with new activeHologram entry.`);
             } else {
                 console.error(`[ensureTelegramHologramMessage] Failed to send Telegram hologram message for quest ${quest.id} to user ${interactingUserId}.`);

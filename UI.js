@@ -189,6 +189,10 @@ class UI {
     const language = await this.settings.getLanguage(chatID)
     const rows = []
 
+    // Get currencies from settings
+    const settings = await this.settings.getSettings(chatID);
+    const currencies = settings.currencies || [];
+
     // Calculate and sort user scores using the Settings class method
     const sortedUsers = await this.settings.calculateUserScores(users, chatID, expensesInstance);
 
@@ -197,6 +201,27 @@ class UI {
       const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
       const scoreClass = i < 3 ? 'top-performer' : '';
       
+      // Get currency balances for this user
+      const currencyBalances = [];
+      if (currencies.length > 0 && expensesInstance) {
+        for (const currency of currencies) {
+          try {
+            const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currency);
+            currencyBalances.push(balance);
+          } catch (e) {
+            console.error(`Error getting balance for ${currency} for user ${user.id}:`, e);
+            currencyBalances.push(0);
+          }
+        }
+      }
+      
+      // Build currency cells HTML
+      const currencyCells = currencyBalances.map(balance => 
+        `<td class="currency-cell">
+          <span class="stat-value">${balance.toFixed(2)}</span>
+        </td>`
+      ).join('');
+      
       // Score is already calculated and part of the user object in sortedUsers
       const row = `<tr class="${scoreClass}">
         <td class="rank-cell">
@@ -204,14 +229,14 @@ class UI {
             <span class="rank-icon">${rankIcon}</span>
           </div>
         </td>
-                  <td class="name-cell">
-            <div class="user-info">
-              <div class="user-details">
-                <span class="user-name">${getDisplayName(user)}</span>
-                ${user.username ? `<span class="user-handle">@${user.username}</span>` : ''}
-              </div>
+        <td class="name-cell">
+          <div class="user-info">
+            <div class="user-details">
+              <span class="user-name">${getDisplayName(user)}</span>
+              ${user.username ? `<span class="user-handle">@${user.username}</span>` : ''}
             </div>
-          </td>
+          </div>
+        </td>
         <td class="stat-cell">
           <span class="stat-value">${user.initiated && user.initiated.length || 0}</span>
         </td>
@@ -219,11 +244,12 @@ class UI {
           <span class="stat-value">${user.completed && user.completed.length || 0}</span>
         </td>
         <td class="stat-cell">
-          <span class="stat-value">${user.sent || 0}</span>
+          <span class="stat-value" style="white-space: normal; word-wrap: break-word;">${user.sent || 0}</span>
         </td>
         <td class="stat-cell">
-          <span class="stat-value">${user.received || 0}</span>
+          <span class="stat-value" style="white-space: normal; word-wrap: break-word;">${user.received || 0}</span>
         </td>
+        ${currencyCells}
         <td class="score-cell">
           <span class="score-value">${user.score.toFixed(1)}</span>
         </td>
@@ -231,6 +257,11 @@ class UI {
 
       rows.push(row)
     }
+
+    // Build currency headers
+    const currencyHeaders = currencies.map(currency => 
+      `<th class="stat-header">${currency.toUpperCase()}</th>`
+    ).join('');
 
     const element = `<div class="status-table-container">
       <div class="table-wrapper">
@@ -241,8 +272,9 @@ class UI {
               <th class="name-header">${i18next.t('name', { lng: language })}</th>
               <th class="stat-header">${i18next.t('tasksinitiated', { lng: language })}</th>
               <th class="stat-header">${i18next.t('taskscompleted', { lng: language })}</th>
-              <th class="stat-header">${i18next.t('sent', { lng: language })}</th>
-              <th class="stat-header">${i18next.t('received', { lng: language })}</th>
+              <th class="stat-header" style="white-space: normal; word-wrap: break-word;">${i18next.t('appreciation_sent', { lng: language, defaultValue: 'Appreciation Sent' })}</th>
+              <th class="stat-header" style="white-space: normal; word-wrap: break-word;">${i18next.t('appreciation_received', { lng: language, defaultValue: 'Appreciation Received' })}</th>
+              ${currencyHeaders}
               <th class="score-header">${i18next.t('score', { lng: language })}</th>
             </tr>
           </thead>
@@ -946,7 +978,6 @@ class UI {
           <td class="name-cell-compact">
             <div class="user-info-compact" style="font-size: 18px;">
               <div class="user-name-compact" style="font-size: 20px; font-weight: bold;">${getDisplayName(userData.user)}</div>
-              ${userData.user.username ? `<div class="user-handle-compact" style="font-size: 16px;">@${userData.user.username}</div>` : ''}
             </div>
           </td>
           <td class="wants-cell-expanded">
@@ -978,15 +1009,15 @@ class UI {
       <div class="table-wrapper">
         <table class="status-table bulletin-table" style="font-size: 18px;">
           <colgroup>
-            <col style="width: 15%;">
-            <col style="width: 42.5%;">
-            <col style="width: 42.5%;">
+            <col style="width: 12%;">
+            <col style="width: 44%;">
+            <col style="width: 44%;">
           </colgroup>
           <thead>
             <tr>
-              <th class="name-header-compact" style="font-size: 20px; font-weight: bold;">${i18next.t('name', { lng: language })}</th>
-              <th class="wants-header-expanded" style="font-size: 20px; font-weight: bold;">${i18next.t('Wants', { lng: language })}</th>
-              <th class="offers-header-expanded" style="font-size: 20px; font-weight: bold;">${i18next.t('Offers', { lng: language })}</th>
+              <th class="name-header-compact" style="font-size: 20px; font-weight: bold; text-align: center;">${i18next.t('name', { lng: language })}</th>
+              <th class="wants-header-expanded" style="font-size: 20px; font-weight: bold; text-align: center;">${i18next.t('Wants', { lng: language })}</th>
+              <th class="offers-header-expanded" style="font-size: 20px; font-weight: bold; text-align: center;">${i18next.t('Offers', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>
@@ -1006,35 +1037,41 @@ class UI {
     const language = await this.settings.getLanguage(chatID);
     const rows = [];
     userArray.forEach((user, index) => {
-      const credits = creditMatrix[index].map((credit, creditIndex) => `<td >${credit.toFixed(2)}</td>`).join('');
-      const total = creditMatrix[index].reduce((a, b) => a + b, 0).toFixed(2);
+      const credits = creditMatrix[index].map((credit, creditIndex) => {
+        const color = credit > 0 ? 'color: #28a745;' : credit < 0 ? 'color: #dc3545;' : '';
+        return `<td style="text-align: center; white-space: normal; word-wrap: break-word; ${color}">${credit.toFixed(2)}</td>`;
+      }).join('');
+      const total = creditMatrix[index].reduce((a, b) => a + b, 0);
+      const totalColor = total > 0 ? 'color: #28a745;' : total < 0 ? 'color: #dc3545;' : '';
       const row = `<tr>
-          <td>${user}</td>
+          <td style="text-align: center; white-space: normal; word-wrap: break-word;">${user}</td>
           ${credits}
-          <td>${total}</td>
+          <td style="text-align: center; white-space: normal; word-wrap: break-word; ${totalColor}">${total.toFixed(2)}</td>
         </tr>`;
       rows.push(row);
     });
   
-    const headers = userArray.map((user, index) => `<th scope="col" style = "writing-mode: vertical-rl;
-    text-orientation: mixed;">${user}</th>`).join('');
-    const element = `<table>
-    <caption>${i18next.t('Credit Matrix', { lng: language })}</caption>
-    <thead>
-        <tr>
-            <th scope="col">${i18next.t('User', { lng: language })}</th>
-            ${headers}
-            <th scope="col">${i18next.t('Total', { lng: language })}</th>
-        </tr>
-    </thead>
-    <tbody>
-        ${rows.join('\n')}
-    </tbody>
-  </table>`;
+    const headers = userArray.map((user, index) => `<th scope="col" style="writing-mode: vertical-rl; text-orientation: mixed; text-align: center; white-space: normal; word-wrap: break-word;">${user}</th>`).join('');
+    const element = `<div class="status-table-container">
+      <div class="table-wrapper">
+        <table class="status-table">
+          <thead>
+            <tr>
+              <th scope="col" style="text-align: center; white-space: normal; word-wrap: break-word;">${i18next.t('User', { lng: language })}</th>
+              ${headers}
+              <th scope="col" style="text-align: center; white-space: normal; word-wrap: break-word;">${i18next.t('Total', { lng: language })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.join('\n')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
   
     const path = './images/creditMatrix' + chatID + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
-    await this.screenshotHtml(html, path, 'table');
+    await this.screenshotHtml(html, path, '.status-table-container');
     return path;
   }
 
@@ -1223,8 +1260,8 @@ class UI {
         <table class="status-table">
           <thead>
             <tr>
-              <th class="name-header">${i18next.t('Person', { lng: language })}</th>
-              <th class="request-header">${i18next.t('Request', { lng: language })}</th>
+              <th class="name-header" style="text-align: center;">${i18next.t('Person', { lng: language })}</th>
+              <th class="request-header" style="text-align: center;">${i18next.t('Request', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>
@@ -1280,8 +1317,8 @@ class UI {
         <table class="status-table">
           <thead>
             <tr>
-              <th class="name-header">${i18next.t('Person', { lng: language })}</th>
-              <th class="offer-header">${i18next.t('Offer', { lng: language })}</th>
+              <th class="name-header" style="text-align: center;">${i18next.t('Person', { lng: language })}</th>
+              <th class="offer-header" style="text-align: center;">${i18next.t('Offer', { lng: language })}</th>
             </tr>
           </thead>
           <tbody>

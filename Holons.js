@@ -24,13 +24,7 @@ import * as holons from './contracts/Holons.json' with { type: "json" };
 import { createHolonBundle, createBundleContracts } from './utils/holonOperations.js';
 
 export default class Holons {
-  constructor(bot, db, settings) {
-    console.log("=== Holons constructor called ===");
-    console.log("settings passed to constructor:", settings);
-    console.log("settings type:", typeof settings);
-    console.log("settings constructor:", settings?.constructor?.name);
-    console.log("Call stack:", new Error().stack);
-    
+  constructor(bot, db, settings) {    
     this.network = process.env.NETWORK;
     this.chainId = parseInt(process.env.CHAINID);
     this.bot = bot;
@@ -497,11 +491,6 @@ export default class Holons {
   }
 
   setupCallbackHandlers() {
-    console.log("=== setupCallbackHandlers START ===");
-    // console.log("this in setupCallbackHandlers:", this);
-    // console.log("this.settings in setupCallbackHandlers:", this.settings);
-    console.log("Registering member_sync_scores on instance:", this.bot?.botInfo?.id);
-    
     // Specific zone-related action handlers
     this.bot.action('zone_prepare_move', async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("Error answering CB query in zone_prepare_move:", e.message));
