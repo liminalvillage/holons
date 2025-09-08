@@ -2613,13 +2613,17 @@ export default class Quests {
 
     // Add dependency action handlers
     async handleDependenciesButton(ctx) {
-        const chatId = ctx.callbackQuery.message.chat.id;
-        const messageId = ctx.callbackQuery.data.split('_')[3];
+        const callbackData = ctx.callbackQuery.data;
+        const dataParts = callbackData.split('_');
+        
+        // Parse callback data: dependencies_quest_{chatId}_{questId}
+        const chatId = dataParts[2];
+        const questId = dataParts[3];
         const language = await this.settings.getLanguage(chatId);
 
         try {
-            const quest = await this.db.get(chatId + '/quests', messageId.toString());
-            if (!await this.questExists(quest, ctx, messageId)) { return; }
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!await this.questExists(quest, ctx, questId)) { return; }
 
             // Get all ongoing quests in this chat
             const allQuests = await this.db.getAll(chatId + '/quests');
@@ -2647,7 +2651,7 @@ export default class Quests {
                     if (depQuest) {
                         message += `- ${depQuest.title}\n`;
                         buttons.push([
-                            Markup.button.callback(`🗑️ Remove: ${depQuest.title}`, `remove_dependency_${chatId}_${messageId}_${depId}`)
+                            Markup.button.callback(`🗑️ Remove: ${depQuest.title}`, `remove_dependency_${chatId}_${questId}_${depId}`)
                         ]);
                     }
                 }
@@ -2668,14 +2672,14 @@ export default class Quests {
                 // Add buttons for each open quest that's not already a dependency
                 openQuests.forEach(q => {
                     buttons.push([
-                        Markup.button.callback(`➕ ${q.title}`, `set_dependency_${chatId}_${messageId}_${q.id}`)
+                        Markup.button.callback(`➕ ${q.title}`, `set_dependency_${chatId}_${questId}_${q.id}`)
                     ]);
                 });
             }
             
             // Add a back button
             buttons.push([
-                Markup.button.callback('↩️ Back', `back_from_dependencies_${chatId}_${messageId}`)
+                Markup.button.callback('↩️ Back', `back_from_dependencies_${chatId}_${questId}`)
             ]);
 
             // Show the message with dependency options
@@ -2745,13 +2749,14 @@ export default class Quests {
     async backFromDependencies(ctx) {
         console.log("BACK FROM DEPENDENCIES");
         const parts = ctx.callbackQuery.data.split('_');
+        // Parse callback data: back_from_dependencies_{chatId}_{questId}
         const chatId = parts[3]; 
-        const messageId = parts[4];
+        const questId = parts[4];
         const language = await this.settings.getLanguage(chatId);
 
         try {
-            const quest = await this.db.get(chatId + '/quests', messageId.toString());
-            if (!await this.questExists(quest, ctx, messageId)) { return; }
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!await this.questExists(quest, ctx, questId)) { return; }
 
             // Return to the quest view with expanded buttons using centralized helper
             const expandedMarkupConfig = {
@@ -2759,7 +2764,7 @@ export default class Quests {
                     inline_keyboard: this.getExpandedButtons(quest, language)
                 }
             };
-            await this.updateQuestMessage(ctx, quest, chatId, messageId, language, expandedMarkupConfig);
+            await this.updateQuestMessage(ctx, quest, chatId, questId, language, expandedMarkupConfig);
 
             await ctx.answerCbQuery().catch()
         } catch (error) {
