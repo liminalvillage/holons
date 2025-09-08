@@ -2683,10 +2683,19 @@ export default class Quests {
             ]);
 
             // Show the message with dependency options
-            await ctx.editMessageText(message, {
+            // Use a reply instead of editing the original message to avoid conflicts with media messages
+            const dependencyMessage = await ctx.reply(message, {
                 parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard(buttons)
             });
+            
+            // Delete the original message to keep chat clean
+            try {
+                await ctx.deleteMessage();
+            } catch (err) {
+                // Ignore errors if we can't delete the original message
+                console.log('Could not delete original message:', err.response?.description);
+            }
 
             await ctx.answerCbQuery().catch()
         } catch (error) {
@@ -2736,8 +2745,8 @@ export default class Quests {
             // Update the original quest message in the chat
             await this.updateMessage(ctx, quest, language);
 
-            // Show updated dependencies view
-            await this.handleDependenciesButton(ctx);
+            // Update the current dependency view instead of recreating it
+            await this.updateDependencyView(ctx, quest, chatId, questId, language);
             
             await ctx.answerCbQuery(`Added "${depQuest.title}" as a dependency`);
         } catch (error) {
@@ -2758,18 +2767,110 @@ export default class Quests {
             const quest = await this.db.get(chatId + '/quests', questId.toString());
             if (!await this.questExists(quest, ctx, questId)) { return; }
 
-            // Return to the quest view with expanded buttons using centralized helper
-            const expandedMarkupConfig = {
-                reply_markup: {
-                    inline_keyboard: this.getExpandedButtons(quest, language)
-                }
-            };
-            await this.updateQuestMessage(ctx, quest, chatId, questId, language, expandedMarkupConfig);
+            // Delete the dependency menu message and show the original quest
+            try {
+                await ctx.deleteMessage();
+            } catch (err) {
+                console.log('Could not delete dependency message:', err.response?.description);
+            }
+
+            // Send the quest message back with expanded buttons
+            const expandedButtons = this.getExpandedButtons(quest, language);
+            const showQuestsAsImages = this.shouldShowQuestsAsImages();
+            
+            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                // For image quests, send with image
+                const imageBuffer = await this.ui.getQuestImage(quest, language);
+                await ctx.replyWithPhoto(
+                    { source: imageBuffer },
+                    {
+                        caption: createPaddedCaption(quest.title || ''),
+                        reply_markup: { inline_keyboard: expandedButtons }
+                    }
+                );
+            } else {
+                // For text quests
+                const message = await this.createMessage(quest, language);
+                await ctx.reply(message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: expandedButtons }
+                });
+            }
 
             await ctx.answerCbQuery().catch()
         } catch (error) {
             console.error('Error returning from dependencies:', error);
             await ctx.answerCbQuery('Error returning to quest');
+        }
+    }
+
+    // Helper method to update the dependency view message
+    async updateDependencyView(ctx, quest, chatId, questId, language) {
+        try {
+            // Get all ongoing quests in this chat
+            const allQuests = await this.db.getAll(chatId + '/quests');
+            const openQuests = allQuests.filter(q => 
+                q.status === 'ongoing' && 
+                q.id !== quest.id &&
+                (q.type === 'task' || q.type === 'quest' || q.type === 'todo' || q.type === 'mission') &&
+                // Filter out quests that are already dependencies
+                !(quest.dependencies && quest.dependencies.includes(q.id))
+            );
+
+            // Create a message showing current dependencies
+            let message = `🔗 *Dependencies for "${quest.title}"*\n\n`;
+            
+            // Initialize buttons array
+            const buttons = [];
+            
+            // Show current dependencies if any
+            if (quest.dependencies && quest.dependencies.length > 0) {
+                message += '*Current dependencies:*\n';
+                
+                // Add buttons to remove existing dependencies
+                for (const depId of quest.dependencies) {
+                    const depQuest = await this.db.get(chatId + '/quests', depId.toString());
+                    if (depQuest) {
+                        message += `- ${depQuest.title}\n`;
+                        buttons.push([
+                            Markup.button.callback(`🗑️ Remove: ${depQuest.title}`, `remove_dependency_${chatId}_${questId}_${depId}`)
+                        ]);
+                    }
+                }
+                message += '\n';
+            } else {
+                message += '*No dependencies set*\n\n';
+            }
+            
+            if (openQuests.length === 0 && (!quest.dependencies || quest.dependencies.length === 0)) {
+                message += 'No other open tasks available to set as dependencies';
+            }
+            
+            // Add section header for adding new dependencies if we have open quests
+            if (openQuests.length > 0) {
+                message += 'Select a task to add as a dependency:';
+                
+                // Add buttons for each open quest that's not already a dependency
+                openQuests.forEach(q => {
+                    buttons.push([
+                        Markup.button.callback(`➕ ${q.title}`, `set_dependency_${chatId}_${questId}_${q.id}`)
+                    ]);
+                });
+            }
+            
+            // Add a back button
+            buttons.push([
+                Markup.button.callback('↩️ Back', `back_from_dependencies_${chatId}_${questId}`)
+            ]);
+
+            // Update the current message
+            await ctx.editMessageText(message, {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard(buttons)
+            });
+        } catch (error) {
+            console.error('Error updating dependency view:', error);
+            // If editing fails, just show a success message
         }
     }
 
@@ -2801,8 +2902,8 @@ export default class Quests {
             // Update the quest message
             await this.updateMessage(ctx, quest, language);
 
-            // Show updated dependencies view
-            await this.handleDependenciesButton(ctx);
+            // Update the current dependency view instead of recreating it
+            await this.updateDependencyView(ctx, quest, chatId, questId, language);
             
             await ctx.answerCbQuery('Dependency removed');
         } catch (error) {
