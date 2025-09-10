@@ -2188,11 +2188,10 @@ export default class Quests {
             // Get chat timezone setting
             let chatTimezone = await this.settings.getTimezone(quest.chat);
 
-            // Validate timezone and set default if invalid or "Not set"
-            const isValidTimezone = chatTimezone && typeof chatTimezone === 'string' && chatTimezone !== 'Not set';
-            if (!isValidTimezone) {
-                console.log(`Invalid or missing timezone for chat ${quest.chat}, defaulting to UTC.`);
-                chatTimezone = 'UTC'; // Default timezone to UTC
+            // Validate timezone and set default if invalid
+            if (!chatTimezone || typeof chatTimezone !== 'string') {
+                console.log(`Invalid timezone for chat ${quest.chat}, using UTC.`);
+                chatTimezone = 'UTC';
             }
 
             let dateStr = 'Invalid Date';
@@ -2235,11 +2234,10 @@ export default class Quests {
             // Get chat timezone setting
             let chatTimezone = await this.settings.getTimezone(quest.chat);
 
-            // Validate timezone and set default if invalid or "Not set"
-            const isValidTimezone = chatTimezone && typeof chatTimezone === 'string' && chatTimezone !== 'Not set';
-             if (!isValidTimezone) {
-                console.log(`Invalid or missing timezone for chat ${quest.chat} (until field), defaulting to UTC.`);
-                chatTimezone = 'UTC'; // Default timezone to UTC
+            // Validate timezone and set default if invalid
+            if (!chatTimezone || typeof chatTimezone !== 'string') {
+                console.log(`Invalid timezone for chat ${quest.chat} (until field), using UTC.`);
+                chatTimezone = 'UTC';
             }
 
             let dateStr = 'Invalid Date';
@@ -3812,6 +3810,26 @@ export default class Quests {
                               err.response.description.includes('chat not found') ||
                               err.response.description.includes('blocked by user')) {
                         console.log(`Quest message ${messageId} in chat ${chatId} no longer accessible for button update`);
+                        
+                        // Clean up inaccessible hologram from the quest's activeHolograms array
+                        if (quest.activeHolograms && Array.isArray(quest.activeHolograms)) {
+                            const hologramToRemove = quest.activeHolograms.find(
+                                h => h.chatId.toString() === chatId.toString() && h.messageId.toString() === messageId.toString()
+                            );
+                            
+                            if (hologramToRemove) {
+                                console.log(`Removing inaccessible hologram (chatId: ${chatId}, messageId: ${messageId}) from quest ${quest.id}`);
+                                quest.activeHolograms = quest.activeHolograms.filter(h => h !== hologramToRemove);
+                                
+                                // Save the updated quest to persist the cleanup
+                                try {
+                                    await this.db.put(quest.chat + '/quests', quest).catch((err) => { console.log(err) });
+                                } catch (saveError) {
+                                    console.error('Error saving quest after hologram cleanup:', saveError);
+                                }
+                            }
+                        }
+                        
                         return; // Skip image update too
                     } else {
                         console.error('Error in ultra-fast button update:', err);
@@ -3842,6 +3860,23 @@ export default class Quests {
                               err.response.description.includes('chat not found') ||
                               err.response.description.includes('blocked by user')) {
                         console.log(`Quest message ${messageId} in chat ${chatId} no longer accessible for text update`);
+                        
+                        // Clean up inaccessible hologram from the quest's activeHolograms array
+                        if (quest.activeHolograms && Array.isArray(quest.activeHolograms)) {
+                            const hologramToRemove = quest.activeHolograms.find(
+                                h => h.chatId.toString() === chatId.toString() && h.messageId.toString() === messageId.toString()
+                            );
+                            
+                            if (hologramToRemove) {
+                                console.log(`Removing inaccessible hologram (chatId: ${chatId}, messageId: ${messageId}) from quest ${quest.id}`);
+                                quest.activeHolograms = quest.activeHolograms.filter(h => h !== hologramToRemove);
+                                
+                                // Save the updated quest to persist the cleanup
+                                this.db.put(quest.chat + '/quests', quest).catch((saveErr) => { 
+                                    console.error('Error saving quest after hologram cleanup:', saveErr);
+                                });
+                            }
+                        }
                     } else {
                         console.error('Error updating text message:', err);
                     }

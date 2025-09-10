@@ -259,6 +259,11 @@
         "quest_image_quest_header": "Missione:",
         "quest_image_initiator_header": "Iniziatore:",
         "quest_image_joined_by_header": "Partecipanti:",
-        "quest_image_appreciated_by_header": "Apprezzato da:"
+        "quest_image_appreciated_by_header": "Apprezzato da:",
+        "by": "da",
+        "dependencies": "Dipendenze",
+        "never": "Mai",
+        "recurring": "Ricorrente",
+        "repeat": "Ripeti"
     }
 }

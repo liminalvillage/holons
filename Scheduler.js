@@ -544,10 +544,10 @@ class Scheduler {
             // --- Use dayjs for timezone-aware parsing --- 
             let chatTimezone = await this.settings.getTimezone(chatId);
 
-            // Validate timezone and set default if invalid or "Not set"
-            if (!chatTimezone || chatTimezone === 'Not set') {
-                console.log(`Invalid or missing timezone for chat ${chatId}: '${chatTimezone}', defaulting to UTC.`);
-                chatTimezone = 'UTC'; // Default to UTC if missing or explicitly "Not set"
+            // Validate timezone and set default if invalid
+            if (!chatTimezone || typeof chatTimezone !== 'string') {
+                console.log(`Invalid timezone for chat ${chatId}, using UTC.`);
+                chatTimezone = 'UTC';
             }
 
             // Parse the date/time string in the specified chat timezone

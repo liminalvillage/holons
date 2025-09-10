@@ -258,6 +258,11 @@
         "quest_image_quest_header": "Quête :",
         "quest_image_initiator_header": "Initiateur :",
         "quest_image_joined_by_header": "Rejoint par :",
-        "quest_image_appreciated_by_header": "Apprécié par :"
+        "quest_image_appreciated_by_header": "Apprécié par :",
+        "by": "par",
+        "dependencies": "Dépendances",
+        "never": "Jamais",
+        "recurring": "Récurrent",
+        "repeat": "Répéter"
     }
 }

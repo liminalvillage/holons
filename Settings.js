@@ -2345,7 +2345,7 @@ export default class Settings {
 
     async getTimezone(chatID) {
         let settings = await this.getSettings(chatID);
-        return settings.timezone || 'Not set';
+        return settings.timezone || 'UTC';
     }
 
     // Add method to show array setting menu

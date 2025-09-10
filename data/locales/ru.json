@@ -277,6 +277,11 @@
         "quest_image_quest_header": "Квест:",
         "quest_image_initiator_header": "Инициатор:",
         "quest_image_joined_by_header": "Присоединились:",
-        "quest_image_appreciated_by_header": "Оценили:"
+        "quest_image_appreciated_by_header": "Оценили:",
+        "by": "от",
+        "dependencies": "Зависимости",
+        "never": "Никогда",
+        "recurring": "Повторяющийся",
+        "repeat": "Повторить"
     }
 }

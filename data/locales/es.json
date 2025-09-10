@@ -259,5 +259,10 @@
     "selectdatetime": "Por favor seleccione una fecha y hora:",
     "navigafion": "Calendario de navegación",
     "dialog": "Calendario de diálogo",
-    "back": "Atrás"
+    "back": "Atrás",
+    "by": "por",
+    "dependencies": "Dependencias",
+    "never": "Nunca",
+    "recurring": "Recurrente",
+    "repeat": "Repetir"
 }
