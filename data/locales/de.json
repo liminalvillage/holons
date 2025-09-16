@@ -238,6 +238,12 @@
         "dependencies": "Abhängigkeiten",
         "never": "Nie",
         "recurring": "Wiederkehrend",
-        "repeat": "Wiederholen"
+        "repeat": "Wiederholen",
+        "minus_1h": "-1h",
+        "minus_15m": "-15m",
+        "plus_15m": "+15m",
+        "plus_1h": "+1h",
+        "select_participants": "Teilnehmer auswählen",
+        "creating_quest": "Quest wird erstellt..."
     }
 }

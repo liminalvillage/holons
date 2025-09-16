@@ -263,6 +263,12 @@
         "dependencies": "Dépendances",
         "never": "Jamais",
         "recurring": "Récurrent",
-        "repeat": "Répéter"
+        "repeat": "Répéter",
+        "minus_1h": "-1h",
+        "minus_15m": "-15m",
+        "plus_15m": "+15m",
+        "plus_1h": "+1h",
+        "select_participants": "Sélectionner les Participants",
+        "creating_quest": "Création de mission..."
     }
 }

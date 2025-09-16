@@ -282,6 +282,12 @@
         "dependencies": "Dependencies",
         "never": "Never",
         "recurring": "Recurring",
-        "repeat": "Repeat"
+        "repeat": "Repeat",
+        "minus_1h": "-1h",
+        "minus_15m": "-15m",
+        "plus_15m": "+15m",
+        "plus_1h": "+1h",
+        "select_participants": "Select Participants",
+        "creating_quest": "Creating quest..."
     }
 }

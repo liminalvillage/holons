@@ -282,6 +282,12 @@
         "dependencies": "Зависимости",
         "never": "Никогда",
         "recurring": "Повторяющийся",
-        "repeat": "Повторить"
+        "repeat": "Повторить",
+        "minus_1h": "-1ч",
+        "minus_15m": "-15м",
+        "plus_15m": "+15м",
+        "plus_1h": "+1ч",
+        "select_participants": "Выбрать Участников",
+        "creating_quest": "Создание квеста..."
     }
 }

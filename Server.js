@@ -284,7 +284,7 @@ class Server {
 
       app.get('/getavatar', async (req, res) => {
         try {
-          const userId = req.query.user_id;
+          const userId = String(req.query.user_id || '');
 
           if (!userId || !this.validateUserId(userId)) {
             return res.sendFile(this.defaultAvatarPath);
@@ -485,8 +485,8 @@ class Server {
         timeout: 10000, // 10 second timeout
         maxContentLength: 10 * 1024 * 1024 // 10MB limit
       });
-      
-      const filePath = path.join(this.avatarsDir, `${userId}.jpg`);
+
+      const filePath = path.join(this.avatarsDir, `${String(userId)}.jpg`);
       const sanitizedPath = this.sanitizePath(filePath);
       
       if (!sanitizedPath) {
@@ -509,11 +509,12 @@ class Server {
 
   async getUserPicture(userID) {
     try {
-      if (!this.validateUserId(userID)) {
+      const userIdString = String(userID);
+      if (!this.validateUserId(userIdString)) {
         return '';
       }
 
-      const photos = await this.bot.telegram.getUserProfilePhotos(userID);
+      const photos = await this.bot.telegram.getUserProfilePhotos(userIdString);
 
       if (photos.total_count > 0) {
         const photo = photos.photos[0].pop();

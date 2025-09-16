@@ -108,6 +108,14 @@ export default class Quests {
         // Add recurring action handlers
         this.bot.action(/recurring_quest_(.+)/, (ctx) => this.handleRecurringButton(ctx));
         this.bot.action(/stop_recurring_(.+)/, (ctx) => this.handleStopRecurring(ctx));
+        
+        // Add participant selection action handlers
+        this.bot.action(/participants_quest_(.+)/, (ctx) => this.handleParticipantsButton(ctx));
+        this.bot.action(/toggle_quest_participant:(.+)_(.+)/, (ctx) => this.handleToggleParticipant(ctx));
+        this.bot.action(/back_from_participants_(.+)/, (ctx) => this.backFromParticipants(ctx));
+        this.bot.action(/select_all_quest_participants:(.+)/, (ctx) => this.handleSelectAllParticipants(ctx));
+        this.bot.action(/toggle_quest_holon:(.+)/, (ctx) => this.handleToggleHolonParticipation(ctx));
+        this.bot.action(/back_to_quest_(.+)/, (ctx) => this.handleBackToQuest(ctx));
 
         // Add scheduler reference
         this.scheduler = null; // This should be set from outside after construction
@@ -483,7 +491,7 @@ export default class Quests {
             
             if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
                 // When quest images are enabled, start with placeholder and replace with quest image
-                nctx = await ctx.reply("📝 Creating quest...", this.markup(quest, language));
+                nctx = await ctx.reply("📝 " + i18next.t('creating_quest', { lng: language, defaultValue: 'Creating quest...' }), this.markup(quest, language));
                 // Quest creation message
             } else {
                 // Send text message if quest images are disabled
@@ -1035,7 +1043,8 @@ export default class Quests {
                 await this.scheduler.cancelReminder(quest.reminderId);
                 delete quest.reminderId;
                 await this.db.put(`${chatID}/quests`, quest).catch((err) => { console.log(err) });
-                 // No need to call personalHologram here as scheduling doesn't change quest data for others
+                // Update quest image to reflect scheduling changes
+                await this.updateMessage(ctx, quest, language);
             }
 
             // Pass the ctx object to showCalendar
@@ -1243,7 +1252,7 @@ export default class Quests {
             let questImagePath = null;
             if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
                 try {
-                    questImagePath = await this.ui.getQuestImage(quest, quest.chat);
+                    questImagePath = await this.ui.getQuestImage(quest, language);
                 } catch (error) {
                     console.error(`Error regenerating quest image for quest ${quest.id}:`, error);
                     // Continue with existing image if available, but don't fallback to text when images are enabled
@@ -1512,10 +1521,10 @@ export default class Quests {
 
             // Third row - time tracking
             buttons.push([
-                Markup.button.callback('⏰ -1h', 'subtract_1h_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('⏰ -15m', 'subtract_time_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('⏰ +15m', 'add_time_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('⏰ +1h', 'add_1h_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('⏰ ' + i18next.t('minus_1h', { lng: language, defaultValue: '-1h' }), 'subtract_1h_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ ' + i18next.t('minus_15m', { lng: language, defaultValue: '-15m' }), 'subtract_time_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ ' + i18next.t('plus_15m', { lng: language, defaultValue: '+15m' }), 'add_time_quest_' + quest.chat + '_' + quest.id),
+                Markup.button.callback('⏰ ' + i18next.t('plus_1h', { lng: language, defaultValue: '+1h' }), 'add_1h_quest_' + quest.chat + '_' + quest.id)
             ]);
 
         
@@ -1532,12 +1541,17 @@ export default class Quests {
                 Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language), 'recurring_quest_' + quest.chat + '_' + quest.id)
             ]);
             
+            // Add participants selection row
+            buttons.push([
+                Markup.button.callback('👥 ' + i18next.t('select_participants', { lng: language, defaultValue: 'Select Participants' }), 'participants_quest_' + quest.chat + '_' + quest.id)
+            ]);
+            
       
 
-            // Sixth row - publish and broadcast
+            // Sixth row - publish and dashboard
             buttons.push([
                 Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.url('📊 ' + i18next.t('dashboard', { lng: language, defaultValue: 'Dashboard' }), `https://dashboard.holons.io/${quest.chat}/tasks?task=${quest.id}`)
             ]);
 
             // Last row - less actions button
@@ -1558,12 +1572,11 @@ export default class Quests {
                 Markup.button.callback(i18next.t('schedule', { lng: language }), 'schedule_quest_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Third row - publish and broadcast
+            // Third row - publish only
             buttons.push([
-                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Last row - less actions button
             buttons.push([
                 Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
@@ -1592,18 +1605,17 @@ export default class Quests {
                 Markup.button.callback(i18next.t('accept', { lng: language }), 'participate_quest_' + quest.chat + '_' + quest.id),
                 Markup.button.callback(i18next.t('complete', { lng: language }), 'complete_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Second row - appreciation
             buttons.push([
                 Markup.button.callback(i18next.t('appreciate', { lng: language }), 'appreciate_quest_' + quest.chat + '_' + quest.id)
             ]);
 
-            // Third row - publish and broadcast
+            // Third row - publish only
             buttons.push([
-                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id),
-                Markup.button.callback('🎭 ' + i18next.t('broadcast', { lng: language }), 'broadcast_quest_' + quest.chat + '_' + quest.id)
+                Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 'publish_quest_' + quest.chat + '_' + quest.id)
             ]);
-            
+
             // Last row - less actions button
             buttons.push([
                 Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 'less_actions_' + quest.chat + '_' + quest.id)
@@ -1637,15 +1649,11 @@ export default class Quests {
 
     // Helper to get the recurring button text based on current frequency
     getRecurringButtonText(quest, language) {
-        let frequencyText;
-        
         if (quest.frequency === null || quest.frequency === undefined) {
-            frequencyText = i18next.t('never', { lng: language, defaultValue: 'Never' });
+            return i18next.t('never', { lng: language, defaultValue: 'Never' });
         } else {
-            frequencyText = i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency });
+            return i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency });
         }
-        
-        return i18next.t('recurring', { lng: language, defaultValue: 'Recurring' }) + ': ' + frequencyText;
     }
 
     // Helper function to setup federation with hex target
@@ -1982,11 +1990,8 @@ export default class Quests {
                 // Update quest with checklist ID
                 quest.checklistId = messageId.toString();
                 await this.db.put(chatId + '/quests', quest).catch((err) => { console.log(err) });
-                // Removed personalHologram call - only create holograms on participation, not checklist interactions
-                // Update user's hologram as checklistId has changed on the quest
-                // if (chatId.toString() !== interactingUserId.toString()) {
-                //     await this.personalHologram(interactingUserId, quest); 
-                // }
+                // Update quest image to show checklist was added
+                await this.updateMessage(ctx, quest, language);
             }
 
             // Let the Checklists class handle displaying the checklist
@@ -2300,7 +2305,7 @@ export default class Quests {
         // We'll generate buttons without callbacks for now, they'll be updated after quest creation
         if (!quest.id || quest.id === '') {
             return Markup.inlineKeyboard([
-                [Markup.button.callback('Creating quest...', 'placeholder')]
+                [Markup.button.callback(i18next.t('creating_quest', { lng: language, defaultValue: 'Creating quest...' }), 'placeholder')]
             ]);
         }
 
@@ -2677,22 +2682,19 @@ export default class Quests {
             
             // Add a back button
             buttons.push([
-                Markup.button.callback('↩️ Back', `back_from_dependencies_${chatId}_${questId}`)
+                Markup.button.callback('↩️ ' + i18next.t('back', { lng: language, defaultValue: 'Back' }), `back_from_dependencies_${chatId}_${questId}`)
             ]);
 
-            // Show the message with dependency options
-            // Use a reply instead of editing the original message to avoid conflicts with media messages
-            const dependencyMessage = await ctx.reply(message, {
-                parse_mode: 'Markdown',
-                ...Markup.inlineKeyboard(buttons)
-            });
+            // Show the message with dependency options - edit in place
+            const messageId = ctx.callbackQuery.message.message_id;
             
-            // Delete the original message to keep chat clean
-            try {
-                await ctx.deleteMessage();
-            } catch (err) {
-                // Ignore errors if we can't delete the original message
-                console.log('Could not delete original message:', err.response?.description);
+            // Check if this is a photo message or text message
+            if (ctx.callbackQuery.message.photo) {
+                // For photo messages, edit the caption and keyboard
+                await ctx.telegram.editMessageCaption(chatId, messageId, null, message, Markup.inlineKeyboard(buttons));
+            } else {
+                // For text messages, edit the text and keyboard
+                await ctx.telegram.editMessageText(chatId, messageId, null, message, Markup.inlineKeyboard(buttons));
             }
 
             await ctx.answerCbQuery().catch()
@@ -2762,37 +2764,43 @@ export default class Quests {
         const language = await this.settings.getLanguage(chatId);
 
         try {
+            await ctx.answerCbQuery().catch(() => {});
+            
             const quest = await this.db.get(chatId + '/quests', questId.toString());
             if (!await this.questExists(quest, ctx, questId)) { return; }
 
-            // Delete the dependency menu message and show the original quest
-            try {
-                await ctx.deleteMessage();
-            } catch (err) {
-                console.log('Could not delete dependency message:', err.response?.description);
-            }
-
-            // Send the quest message back with expanded buttons
-            const expandedButtons = this.getExpandedButtons(quest, language);
+            const messageId = ctx.callbackQuery.message.message_id;
             const showQuestsAsImages = this.shouldShowQuestsAsImages();
+            const expandedButtons = this.getExpandedButtons(quest, language);
             
-            if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
-                // For image quests, send with image
-                const imageBuffer = await this.ui.getQuestImage(quest, language);
-                await ctx.replyWithPhoto(
-                    { source: imageBuffer },
-                    {
-                        caption: createPaddedCaption(quest.title || ''),
-                        reply_markup: { inline_keyboard: expandedButtons }
-                    }
-                );
+            // Check if the current message is a photo or text
+            if (ctx.callbackQuery.message.photo) {
+                // This is currently a photo message (quest was displayed as image)
+                if (showQuestsAsImages && this.ui) {
+                    // Keep it as photo, edit the caption and buttons
+                    const questMessage = await this.createMessage(quest, language);
+                    await ctx.telegram.editMessageCaption(chatId, messageId, null, createPaddedCaption(questMessage), Markup.inlineKeyboard(expandedButtons));
+                } else {
+                    // Convert from photo to text - need to delete and send new
+                    await ctx.deleteMessage();
+                    const questMessage = await this.createMessage(quest, language);
+                    await ctx.reply(questMessage, { reply_markup: { inline_keyboard: expandedButtons } });
+                }
             } else {
-                // For text quests
-                const message = await this.createMessage(quest, language);
-                await ctx.reply(message, {
-                    parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: expandedButtons }
-                });
+                // This is a text message
+                if (showQuestsAsImages && this.ui) {
+                    // Convert from text to photo - need to delete and send new
+                    await ctx.deleteMessage();
+                    const questImagePath = await this.ui.getQuestImage(quest, language);
+                    await ctx.replyWithPhoto({ source: questImagePath }, {
+                        caption: createPaddedCaption(await this.createMessage(quest, language)),
+                        ...Markup.inlineKeyboard(expandedButtons)
+                    });
+                } else {
+                    // Keep it as text, edit the text and buttons
+                    const questMessage = await this.createMessage(quest, language);
+                    await ctx.telegram.editMessageText(chatId, messageId, null, questMessage, { reply_markup: { inline_keyboard: expandedButtons } });
+                }
             }
 
             await ctx.answerCbQuery().catch()
@@ -2858,7 +2866,7 @@ export default class Quests {
             
             // Add a back button
             buttons.push([
-                Markup.button.callback('↩️ Back', `back_from_dependencies_${chatId}_${questId}`)
+                Markup.button.callback('↩️ ' + i18next.t('back', { lng: language, defaultValue: 'Back' }), `back_from_dependencies_${chatId}_${questId}`)
             ]);
 
             // Update the current message
@@ -2907,6 +2915,302 @@ export default class Quests {
         } catch (error) {
             console.error('Error removing dependency:', error);
             await ctx.answerCbQuery('Error removing dependency');
+        }
+    }
+
+    // Participant selection handlers
+    async handleParticipantsButton(ctx) {
+        const callbackData = ctx.callbackQuery.data;
+        const dataParts = callbackData.split('_');
+        
+        // Parse callback data: participants_quest_{chatId}_{questId}
+        const chatId = dataParts[2];
+        const questId = dataParts[3];
+        const language = await this.settings.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            await this.showParticipantSelection(ctx, chatId, questId, quest, language);
+
+        } catch (error) {
+            console.error('Error showing participant selection:', error);
+            await ctx.answerCbQuery('Error showing participant selection');
+        }
+    }
+
+    async showParticipantSelection(ctx, chatId, questId, quest, language) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            
+            const users = await this.db.getAll(chatId + '/users');
+            const messageId = ctx.callbackQuery.message.message_id;
+            
+            // Ensure participants array exists
+            if (!quest.participants) {
+                quest.participants = [];
+            }
+            
+            // Create buttons for each user
+            const userButtons = [];
+            
+            // Add "This Holon" (group) button first
+            const isHolonSelected = quest.participants.some(p => p.id === parseInt(chatId));
+            const holonStatus = isHolonSelected ? '✅' : '⬜️';
+            userButtons.push([{
+                text: `${holonStatus} 🏛️ This Holon`,
+                callback_data: `toggle_quest_holon:${questId}`
+            }]);
+            
+            // Add individual user buttons
+            for (const user of users) {
+                const isSelected = quest.participants.some(p => p.id === user.id);
+                const status = isSelected ? '✅' : '⬜️';
+                const displayName = getDisplayName(user);
+                
+                userButtons.push([{
+                    text: `${status} ${displayName}`,
+                    callback_data: `toggle_quest_participant:${questId}_${user.id}`
+                }]);
+            }
+
+            // Add control buttons
+            userButtons.push([
+                {
+                    text: '☑️ Select All',
+                    callback_data: `select_all_quest_participants:${questId}`
+                },
+                {
+                    text: '🔙 Back',
+                    callback_data: `back_from_participants_${chatId}_${questId}`
+                }
+            ]);
+
+            const keyboard = Markup.inlineKeyboard(userButtons);
+            const message = 'Select participants for quest:';
+
+            // Check if this is a photo message or text message
+            if (ctx.callbackQuery.message.photo) {
+                // For photo messages, edit the caption and keyboard
+                await ctx.telegram.editMessageCaption(chatId, messageId, null, message, keyboard);
+            } else {
+                // For text messages, edit the text and keyboard
+                await ctx.telegram.editMessageText(chatId, messageId, null, message, keyboard);
+            }
+
+        } catch (error) {
+            console.error('Error showing participant selection:', error);
+            await ctx.answerCbQuery('Error showing participant selection');
+        }
+    }
+
+    async handleToggleParticipant(ctx) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            
+            const callbackData = ctx.callbackQuery.data;
+
+            // Format: toggle_quest_participant:questId_userId
+            const dataParts = callbackData.split(':')[1]; // Get "questId_userId"
+            const [questId, userIdStr] = dataParts.split('_'); // Split into questId and userId
+            const userId = parseInt(userIdStr);
+            const chatId = ctx.callbackQuery.message.chat.id;
+            
+            let quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            // Ensure participants array exists
+            if (!quest.participants) {
+                quest.participants = [];
+            }
+
+            // Toggle participant
+            const existingUserIndex = quest.participants.findIndex(p => p.id === userId);
+            if (existingUserIndex !== -1) {
+                // Remove user from participants
+                quest.participants.splice(existingUserIndex, 1);
+            } else {
+                // Add user to participants
+                const users = await this.db.getAll(chatId + '/users');
+                const user = users.find(u => u.id === userId);
+                if (user) {
+                    quest.participants.push(user);
+                    // Remove chatId ("This Holon") if it exists
+                    quest.participants = quest.participants.filter(p => p.id !== parseInt(chatId));
+                }
+            }
+
+            await this.db.put(chatId + '/quests', quest);
+
+            // Refresh the participant selection view only (don't interfere with main quest)
+            await this.updateParticipantSelectionView(ctx, chatId, questId, quest);
+
+        } catch (error) {
+            console.error('Error toggling participant:', error);
+            await ctx.answerCbQuery('Error updating participant');
+        }
+    }
+
+    async handleSelectAllParticipants(ctx) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+
+            const questId = ctx.callbackQuery.data.split(':')[1];
+            const chatId = ctx.callbackQuery.message.chat.id;
+            
+            let quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            const users = await this.db.getAll(chatId + '/users');
+            
+            // Add all users to participants (excluding chat ID to avoid duplication)
+            quest.participants = users.slice();
+            
+            await this.db.put(chatId + '/quests', quest);
+
+            // Refresh the participant selection view only (don't interfere with main quest)
+            await this.updateParticipantSelectionView(ctx, chatId, questId, quest);
+
+        } catch (error) {
+            console.error('Error selecting all participants:', error);
+            await ctx.answerCbQuery('Error selecting all participants');
+        }
+    }
+
+    async handleToggleHolonParticipation(ctx) {
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+
+            const questId = ctx.callbackQuery.data.split(':')[1];
+            const chatId = ctx.callbackQuery.message.chat.id;
+            
+            let quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            // Ensure participants array exists
+            if (!quest.participants) {
+                quest.participants = [];
+            }
+
+            const isHolonSelected = quest.participants.some(p => p.id === parseInt(chatId));
+            
+            if (isHolonSelected) {
+                // "This Holon" is currently selected, deselect it and select all individual users
+                const users = await this.db.getAll(chatId + '/users');
+                quest.participants = users.slice();
+            } else {
+                // "This Holon" is not selected, select it and deselect everyone else
+                const holonUser = { id: parseInt(chatId), first_name: "This Holon" };
+                quest.participants = [holonUser];
+            }
+
+            await this.db.put(chatId + '/quests', quest);
+
+            // Refresh the participant selection view only (don't interfere with main quest)
+            await this.updateParticipantSelectionView(ctx, chatId, questId, quest);
+
+        } catch (error) {
+            console.error('Error toggling holon participation:', error);
+            await ctx.answerCbQuery('Error updating holon participation');
+        }
+    }
+
+    async backFromParticipants(ctx) {
+        const dataParts = ctx.callbackQuery.data.split('_');
+        const chatId = dataParts[3];
+        const questId = dataParts[4];
+        const language = await this.settings.getLanguage(chatId);
+
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!await this.questExists(quest, ctx, questId)) { return; }
+
+            // Use updateMessage to properly regenerate quest image and update all holograms
+            await this.updateMessage(ctx, quest, language, true); // Use expanded markup
+
+        } catch (error) {
+            console.error('Error in back from participants:', error);
+            await ctx.answerCbQuery('Error returning to quest view');
+        }
+    }
+
+    async updateParticipantSelectionView(ctx, chatId, questId, quest) {
+        try {
+            const users = await this.db.getAll(chatId + '/users');
+
+            // Create buttons for each user
+            const userButtons = [];
+
+            // Add "This Holon" (group) button first
+            const isHolonSelected = quest.participants.some(p => p.id === parseInt(chatId));
+            const holonStatus = isHolonSelected ? '✅' : '⬜️';
+            userButtons.push([{
+                text: `${holonStatus} 🏛️ This Holon`,
+                callback_data: `toggle_quest_holon:${questId}`
+            }]);
+
+            // Add individual user buttons
+            for (const user of users) {
+                const isSelected = quest.participants.some(p => p.id === user.id);
+                const status = isSelected ? '✅' : '⬜️';
+                const displayName = getDisplayName(user);
+
+                userButtons.push([{
+                    text: `${status} ${displayName}`,
+                    callback_data: `toggle_quest_participant:${questId}_${user.id}`
+                }]);
+            }
+
+            // Add control buttons
+            userButtons.push([
+                {
+                    text: '☑️ Select All',
+                    callback_data: `select_all_quest_participants:${questId}`
+                },
+                {
+                    text: '🔙 Back',
+                    callback_data: `back_from_participants_${chatId}_${questId}`
+                }
+            ]);
+
+            const keyboard = Markup.inlineKeyboard(userButtons);
+
+            // Only try to edit if we have a valid message
+            if (ctx.callbackQuery?.message?.message_id) {
+                // Handle photo and text messages differently for keyboard updates
+                if (ctx.callbackQuery.message.photo) {
+                    // For photo messages, we need to edit the caption with the same text but new keyboard
+                    const message = 'Select participants for quest:';
+                    await ctx.telegram.editMessageCaption(chatId, ctx.callbackQuery.message.message_id, null, message, keyboard);
+                } else {
+                    // For text messages, we can use editMessageReplyMarkup since only buttons change
+                    await ctx.telegram.editMessageReplyMarkup(chatId, ctx.callbackQuery.message.message_id, null, keyboard.reply_markup);
+                }
+            }
+
+        } catch (error) {
+            // Handle the specific "message not modified" error silently
+            if (error.response?.description?.includes('message is not modified')) {
+                console.log('Message content unchanged, skipping update');
+                return;
+            }
+            console.error('Error updating participant selection view:', error);
+            // If editing fails, just continue
         }
     }
 
@@ -3119,10 +3423,8 @@ export default class Quests {
             //     await this.personalHologram(interactingUserId, quest); // Update user hologram for current quest instance
             // }
 
-            // Update the message - keep expanded view
-            await this.updateMessage(ctx, quest, language, true);
-            
-            await ctx.answerCbQuery(`Set to repeat: ${frequencyName}`);
+            // Note: This is a background operation, so we don't update the UI here
+            // The UI update happens in the main handleRecurringButton method
 
         } catch (error) {
             console.error('Error in background recurring operations:', error);
@@ -3719,9 +4021,12 @@ export default class Quests {
             title: quest.title,
             status: quest.status,
             type: quest.type,
-            participants: quest.participants?.length || 0,
+            participants: quest.participants?.map(p => p.id).sort() || [],
+            participantCount: quest.participants?.length || 0,
             appreciation: quest.appreciation?.length || 0,
             timeTracking: Object.keys(quest.timeTracking || {}).length,
+            dependencies: quest.dependencies?.slice().sort() || [],
+            dependencyCount: quest.dependencies?.length || 0,
             completed: quest.completed,
             when: quest.when,
             until: quest.until,
@@ -4074,5 +4379,6 @@ export default class Quests {
             }
         }
     }
+
 
 }
