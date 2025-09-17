@@ -910,7 +910,7 @@ ul {
 
 /* Quest Card Styling - Table-inspired compact design */
 .quest-card-container {
-    max-width: 400px;
+    max-width: 600px;
     width: 100%;
     margin: 5px auto;
     background: rgba(255,255,255,0.95);
@@ -943,6 +943,52 @@ ul {
 
 .quest-section:last-of-type {
     border-bottom: none;
+}
+
+.quest-picture {
+    text-align: center;
+    margin: 0;
+    padding: 0;
+}
+
+.quest-image {
+    max-width: 100%;
+    max-height: 250px;
+    border-radius: 12px;
+    object-fit: cover;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Side-by-side layout for quests with images */
+.quest-content-with-image {
+    display: flex;
+    gap: 0;
+    min-height: 200px;
+}
+
+.quest-info-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding-right: 0;
+}
+
+.quest-image-side {
+    flex: 0 0 40%;
+    background: #f8f9fa;
+    border-radius: 0 20px 20px 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.quest-side-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .quest-section.alert {
@@ -1010,6 +1056,21 @@ ul {
     overflow-wrap: break-word;
     hyphens: auto;
     box-sizing: border-box;
+}
+
+.quest-picture {
+    margin: 15px 0;
+    text-align: center;
+    padding: 0 20px;
+}
+
+.quest-image {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 12px;
+    object-fit: cover;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    border: 2px solid rgba(0,0,0,0.1);
 }
 
 .quest-initiator {

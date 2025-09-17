@@ -275,7 +275,43 @@ class HolonsBot {
     // This would be implemented by calling setup methods on individual services
     // For now, we maintain compatibility with the existing structure
     log.debug('Setting up Telegram handlers');
-    // Implementation would go here...
+
+    try {
+      const telebot = await this.container.get('telebot');
+      const quests = await this.container.get('quests');
+      const expenses = await this.container.get('expenses');
+
+      // Setup photo handler
+      telebot.on('photo', async (ctx) => {
+        if (ctx.message.caption) {
+          const command = ctx.message.caption.split(' ')[0];
+          console.log('Photo caption command:', command, 'Full caption:', ctx.message.caption);
+
+          if (['/task', '/quest', '/todo', '/offer', '/request', '/compito', '/missione'].includes(command)) {
+            console.log('Creating quest from photo caption:', command);
+            // Ensure ctx.message.text is set for quest creation
+            ctx.message.text = ctx.message.caption;
+            quests.quest(command.slice(1), ctx);
+            return; // Exit early to avoid QR processing
+          } else if (['/spent', '/expense', '/speso'].includes(command)) {
+            ctx.message.text = ctx.message.caption;
+            expenses.spent(ctx);
+            return; // Exit early to avoid QR processing
+          }
+        }
+
+        // Handle QR code processing here if needed
+        try {
+          // QR code processing logic would go here
+        } catch (error) {
+          console.log('QR processing error:', error.message);
+        }
+      });
+
+      log.debug('Photo handler setup completed');
+    } catch (error) {
+      log.error('Failed to setup photo handlers', { error: error.message });
+    }
   }
 
   /**

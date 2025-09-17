@@ -28,6 +28,7 @@ import Announcements from '../Announcements.js';
 import Checklists from '../Checklists.js';
 import Scheduler from '../Scheduler.js';
 import CapitalGame from '../CapitalGame.js';
+import SignalManager, { REQUIRED_SIGNALS } from './SignalManager.js';
 
 import { log } from '../utils/logger.js';
 import { config } from '../utils/config.js';
@@ -38,6 +39,16 @@ import { setupGlobalErrorHandlers } from '../utils/errorHandler.js';
  */
 export const serviceDefinitions = {
   // Core services
+  signalManager: {
+    factory: ({ telebot }) => {
+      const signalManager = new SignalManager(telebot);
+      log.info('SignalManager initialized');
+      return signalManager;
+    },
+    singleton: true,
+    dependencies: ['telebot'],
+  },
+
   config: {
     factory: () => config,
     singleton: true,
@@ -136,22 +147,31 @@ export const serviceDefinitions = {
 
   // Settings (must be initialized early as many services depend on it)
   settings: {
-    factory: ({ telebot, database }) => {
-      return new Settings(telebot, database);
+    factory: ({ telebot, database, signalManager }) => {
+      const settings = new Settings(telebot, database);
+      // Register with signal manager for debugging
+      if (signalManager && process.env.SIGNAL_DEBUG === 'true') {
+        log.debug('Settings module registered with SignalManager');
+      }
+      return settings;
     },
     singleton: true,
-    dependencies: ['telebot', 'database'],
+    dependencies: ['telebot', 'database', 'signalManager'],
   },
 
   // UI (needs to be initialized early for other services)
   ui: {
-    factory: async ({ telebot, database, settings }) => {
+    factory: async ({ telebot, database, settings, signalManager }) => {
       const ui = new UI(telebot, database, settings);
       await ui.init();
+      // Register with signal manager for debugging
+      if (signalManager && process.env.SIGNAL_DEBUG === 'true') {
+        log.debug('UI module registered with SignalManager');
+      }
       return ui;
     },
     singleton: true,
-    dependencies: ['telebot', 'database', 'settings'],
+    dependencies: ['telebot', 'database', 'settings', 'signalManager'],
   },
 
   // Users service
@@ -229,7 +249,7 @@ export const serviceDefinitions = {
 
   // Quests (depends on many services)
   quests: {
-    factory: ({ telebot, database, users, settings, checklists, ui, expenses }) => {
+    factory: ({ telebot, database, users, settings, checklists, ui, expenses, signalManager }) => {
       const quests = new Quests(telebot, database, users, settings);
       
       // Set cross-references
@@ -243,10 +263,15 @@ export const serviceDefinitions = {
         log.debug('UI instance passed to Quests');
       }
 
+      // Register with signal manager for debugging
+      if (signalManager && process.env.SIGNAL_DEBUG === 'true') {
+        log.debug('Quests module registered with SignalManager');
+      }
+
       return quests;
     },
     singleton: true,
-    dependencies: ['telebot', 'database', 'users', 'settings', 'checklists', 'ui', 'expenses'],
+    dependencies: ['telebot', 'database', 'users', 'settings', 'checklists', 'ui', 'expenses', 'signalManager'],
   },
 
   // Scheduler
@@ -349,6 +374,32 @@ export const serviceDefinitions = {
  * Post-initialization hooks for cross-service setup
  */
 export const postInitHooks = {
+  // Validate signals after all modules are loaded
+  signalManager: ({ signalManager }) => {
+    if (signalManager) {
+      // Validate that required signals are registered
+      const validation = signalManager.validateSignals(REQUIRED_SIGNALS);
+      
+      if (!validation.valid) {
+        log.warn('Signal validation failed:', validation);
+      }
+      
+      // Log diagnostics if in debug mode
+      if (process.env.SIGNAL_DEBUG === 'true') {
+        const diagnostics = signalManager.getDiagnostics();
+        log.info('Signal Manager Diagnostics:', {
+          totalSignals: diagnostics.totalSignals,
+          moduleCount: Object.keys(diagnostics.byModule).length,
+          conflictCount: diagnostics.conflicts.length
+        });
+        
+        if (diagnostics.conflicts.length > 0) {
+          log.warn('Signal conflicts detected:', diagnostics.conflicts);
+        }
+      }
+    }
+  },
+
   // Setup UI cross-references
   ui: async (ui, container) => {
     const expenses = await container.get('expenses');

@@ -237,11 +237,18 @@ class MultiBot extends Telegraf {
     async handlePhoto(ctx, platform) {
         if (ctx.message.caption) {
             const command = ctx.message.caption.split(' ')[0];
-            if (['/task', '/quest', '/todo', '/offer', '/request'].includes(command)) {
+            console.log('Photo caption command:', command, 'Full caption:', ctx.message.caption);
+
+            if (['/task', '/quest', '/todo', '/offer', '/request', '/compito', '/missione'].includes(command)) {
+                console.log('Creating quest from photo caption:', command);
+                // Ensure ctx.message.text is set for quest creation
+                ctx.message.text = ctx.message.caption;
                 this.quests.quest(command.slice(1), ctx);
+                return; // Exit early to avoid QR processing
             } else if (['/spent', '/expense', '/speso'].includes(command)) {
                 ctx.message.text = ctx.message.caption;
                 this.expenses.spent(ctx);
+                return; // Exit early to avoid QR processing
             }
         }
 

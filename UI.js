@@ -669,10 +669,41 @@ class UI {
       </div>
     `;
 
-    // Prominent title section
-    infoRows += `
-      <div class="quest-title">${quest.title}</div>
-    `;
+    // Check if we have an image to determine layout
+    let imageDataUrl = null;
+    if (quest.picture) {
+      try {
+        imageDataUrl = quest.picture;
+
+        // If it's a Telegram file_id, download and convert to base64
+        if (quest.picture.startsWith('AgAC') || quest.picture.startsWith('BAAL') || quest.picture.includes('file_id')) {
+          const fileUrl = await this.bot.telegram.getFileLink(quest.picture);
+          const response = await fetch(fileUrl.href);
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const base64 = buffer.toString('base64');
+          const mimeType = response.headers.get('content-type') || 'image/jpeg';
+          imageDataUrl = `data:${mimeType};base64,${base64}`;
+        }
+      } catch (error) {
+        console.log('Failed to convert quest image:', error);
+        imageDataUrl = null;
+      }
+    }
+
+    // If we have an image, use side-by-side layout
+    if (imageDataUrl) {
+      infoRows += `
+        <div class="quest-content-with-image">
+          <div class="quest-info-side">
+            <div class="quest-title">${quest.title}</div>
+      `;
+    } else {
+      // No image, use full-width layout
+      infoRows += `
+        <div class="quest-title">${quest.title}</div>
+      `;
+    }
 
     // PERFORMANCE: Only add essential sections to reduce HTML complexity
     
@@ -730,6 +761,29 @@ class UI {
       `;
     }
 
+    // Dependencies (if any)
+    if (quest.dependencies && quest.dependencies.length > 0) {
+      try {
+        const deps = await Promise.all(
+          quest.dependencies.map(async id => {
+            const dep = await this.db.get(quest.chat + '/quests', id);
+            return dep?.title || '';
+          })
+        );
+        const dependencyTitles = deps.filter(d => d).join(', ');
+        if (dependencyTitles) {
+          infoRows += `
+            <div class="quest-section">
+              <div class="section-label">🔗</div>
+              <div class="section-content">${dependencyTitles}</div>
+            </div>
+          `;
+        }
+      } catch (error) {
+        // Silently skip dependencies if there's an error
+      }
+    }
+
     // Timing information (simplified)
     if (quest.when) {
       infoRows += `
@@ -740,9 +794,20 @@ class UI {
       `;
     }
 
+    // Close the layout sections
+    if (imageDataUrl) {
+      infoRows += `
+          </div>
+          <div class="quest-image-side">
+            <img src="${imageDataUrl}" alt="Quest image" class="quest-side-image" />
+          </div>
+        </div>
+      `;
+    }
+
     // SKIP HEAVY OPERATIONS FOR PERFORMANCE:
     // - Skip timezone calculations
-    // - Skip dependency lookups 
+    // - Skip dependency lookups
     // - Skip checklist queries
     // - Skip complex time tracking calculations
 
@@ -836,6 +901,29 @@ class UI {
     return path;
   }
 
+  // Helper function to convert picture file_id to HTML with embedded base64
+  async getSimplePictureHtml(picture) {
+    try {
+      let imageDataUrl = picture;
+
+      // If it's a Telegram file_id, download and convert to base64
+      if (picture.startsWith('AgAC') || picture.startsWith('BAAL') || picture.includes('file_id')) {
+        const fileUrl = await this.bot.telegram.getFileLink(picture);
+        const response = await fetch(fileUrl.href);
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const base64 = buffer.toString('base64');
+        const mimeType = response.headers.get('content-type') || 'image/jpeg';
+        imageDataUrl = `data:${mimeType};base64,${base64}`;
+      }
+
+      return `<div class="simple-picture"><img src="${imageDataUrl}" alt="Quest image" class="simple-quest-image" /></div>`;
+    } catch (error) {
+      console.log('Failed to convert simple quest image:', error);
+      return '';
+    }
+  }
+
   // Ultra-fast simplified quest image for immediate updates
   async getSimplifiedQuestImage(quest, chatID, isHologram = false) {
     const statusIcon = quest.status === 'completed' ? '✅' : 
@@ -853,9 +941,11 @@ class UI {
           <span class="simple-status">${statusIcon}</span>
         </div>
         <div class="simple-title">${quest.title}</div>
+        ${quest.picture ? await this.getSimplePictureHtml(quest.picture) : ''}
         <div class="simple-footer">
           <span class="simple-participants">🙋‍♂ ${quest.participants?.length || 0}</span>
           <span class="simple-appreciation">👍 ${quest.appreciation?.length || 0}</span>
+          ${quest.dependencies?.length > 0 ? `<span class="simple-dependencies">🔗 ${quest.dependencies.length}</span>` : ''}
         </div>
       </div>
     `;
@@ -886,6 +976,16 @@ class UI {
         font-weight: bold;
         margin-bottom: 15px;
         color: #ecf0f1;
+      }
+      .simple-picture {
+        margin: 10px 0;
+        text-align: center;
+      }
+      .simple-quest-image {
+        max-width: 100%;
+        max-height: 200px;
+        border-radius: 8px;
+        object-fit: cover;
       }
       .simple-footer {
         display: flex;
@@ -1359,18 +1459,23 @@ class UI {
 
       page = await browser.newPage();
       
-      // DYNAMIC VIEWPORT: Start with larger default but adjust based on content
-      let initialViewport = { width: 1200, height: 800 };
-      
+      // DYNAMIC VIEWPORT: Use high DPI for better image quality
+      let initialViewport = { width: 1200, height: 800, deviceScaleFactor: 2 };
+
       // For table containers and quest lists, use even larger viewport to prevent clipping
-      if (onElement.includes('table-container') || 
-          onElement.includes('quest-list') || 
+      if (onElement.includes('table-container') ||
+          onElement.includes('quest-list') ||
           onElement.includes('status-table') ||
           onElement === 'table' ||
           onElement.includes('modern-table')) {
-        initialViewport = { width: 1400, height: 1200 };
+        initialViewport = { width: 1400, height: 1200, deviceScaleFactor: 2 };
       }
-      
+
+      // For quest cards with images, ensure high quality
+      if (onElement.includes('quest-card')) {
+        initialViewport = { width: 1200, height: 800, deviceScaleFactor: 2 };
+      }
+
       await page.setDefaultTimeout(5000); // Increased timeout for larger content
       await page.setViewport(initialViewport);
       
@@ -1384,10 +1489,12 @@ class UI {
         console.warn('Element wait timeout, proceeding anyway');
       }
       
-      // OPTIMIZED SCREENSHOT: Take screenshot without artificial size constraints
+      // OPTIMIZED SCREENSHOT: Take screenshot with high quality settings
       const screenshotOptions = {
         path: pathToSave,
-        type: 'png'
+        type: 'png',
+        omitBackground: false,
+        captureBeyondViewport: false
       };
 
       // Try to get element dimensions and adjust viewport if needed
