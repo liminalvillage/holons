@@ -1,8 +1,7 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import { getUserName, getUser, getChatId, getMessageId, capitalize, isAdmin, getDisplayName, isBotAdmin, getHolonName, createPaddedCaption } from './utilities.js';
+import { getChatId, getMessageId, capitalize, getDisplayName, isBotAdmin, getHolonName, createPaddedCaption } from './utilities.js';
 import { Calendar } from './Calendar.js';
-import Users from './Users.js';
 import { Scenes } from 'telegraf';
 
 /**
@@ -35,7 +34,15 @@ export default class Quests {
         this.questImageCache = new Map();
         this.imageUpdateQueue = new Map();
         this.imageUpdateTimer = null;
-        
+
+        // Performance caches
+        this.languageCache = new Map();
+        this.userCache = new Map();
+        this.cacheExpiry = 5 * 60 * 1000; // 5 minutes
+
+        // Start cache cleanup timer
+        this.startCacheCleanup();
+
         this.setupScenes();
         this.registerCommands();
         this.registerActions();
@@ -134,8 +141,14 @@ export default class Quests {
             'stop_recurring_': this.handleStopRecurring
         };
         
-        Object.entries(actions).forEach(([prefix, handler]) => {
-            this.bot.action(new RegExp(prefix + '(.+)'), handler.bind(this));
+        // Pre-compile action regexes for better performance
+        this.actionRegexes = Object.entries(actions).map(([prefix, handler]) => ({
+            regex: new RegExp(prefix + '(.+)'),
+            handler: handler.bind(this)
+        }));
+
+        this.actionRegexes.forEach(({ regex, handler }) => {
+            this.bot.action(regex, handler);
         });
         
         // Additional specific actions
@@ -146,6 +159,8 @@ export default class Quests {
         this.bot.action(/toggle_quest_participant:(.+)_(.+)/, ctx => this.handleToggleParticipant(ctx));
         this.bot.action(/select_all_quest_participants:(.+)/, ctx => this.handleSelectAllParticipants(ctx));
         this.bot.action(/toggle_quest_holon:(.+)/, ctx => this.handleToggleHolonParticipation(ctx));
+        this.bot.action(/set_recurring_(.+)/, ctx => this.handleSetRecurring(ctx));
+        this.bot.action(/back_from_recurring_(.+)/, ctx => this.handleBackFromRecurring(ctx));
         this.bot.action(/back_(.+)/, ctx => this.handleBackAction(ctx));
     }
 
@@ -153,7 +168,7 @@ export default class Quests {
     async quest(type, ctx) {
         const chatID = getChatId(ctx);
         const messageID = getMessageId(ctx);
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const text = ctx.message.text || ctx.message.caption;
         
         if (type === 'any') type = text.split(' ')[0].replace('/', '');
@@ -266,7 +281,7 @@ export default class Quests {
         this.bot.telegram.deleteMessage(chatID, messageID).catch(() => {});
         
         // Generate quest image if enabled (always generate when showAsImage is true)
-        if (showAsImage && this.ui?.getQuestImage) {
+        if (showAsImage) {
             this.regenerateQuestImageBackground(ctx, quest, quest.chat, quest.id, this.markup(quest, language));
         }
         
@@ -284,7 +299,7 @@ export default class Quests {
 
     async handleParticipation(ctx, action) {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', messageID);
         
         if (!await this.questExists(quest, ctx, messageID)) return;
@@ -293,7 +308,7 @@ export default class Quests {
         const sender = ctx.callbackQuery.from;
         quest.participants = quest.participants || [];
         quest.appreciation = quest.appreciation || [];
-        
+
         if (action === 'join') {
             const idx = quest.participants.findIndex(u => u.id === sender.id);
             if (idx > -1) {
@@ -312,7 +327,7 @@ export default class Quests {
                 }
                 quest.participants.splice(userIdx, 1);
             }
-            
+
             const appIdx = quest.appreciation.findIndex(u => u.id === sender.id);
             if (appIdx > -1) {
                 if (quest.status === "completed") {
@@ -326,8 +341,8 @@ export default class Quests {
                 ctx.answerCbQuery(`${getDisplayName(sender)} appreciates the quest "${quest.title}"`);
             }
         }
-        
-        await this.db.put(chatID + '/quests', quest);
+
+        await this.saveQuest(quest);
         if (action === 'join' && chatID.toString() !== sender.id.toString()) {
             await this.personalHologram(sender.id, quest);
             await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
@@ -338,7 +353,7 @@ export default class Quests {
 
     async cancel(ctx) {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         
         let quest;
         try {
@@ -386,7 +401,7 @@ export default class Quests {
 
     async complete(ctx) {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', messageID);
         
         if (!await this.questExists(quest, ctx, messageID)) return;
@@ -427,7 +442,7 @@ export default class Quests {
         
         const hologramsToUpdate = quest.activeHolograms ? [...quest.activeHolograms] : [];
         quest.activeHolograms = [];
-        await this.db.put(chatID + '/quests', quest);
+        await this.saveQuest(quest);
         await this.updateMessage(ctx, quest, language, false, hologramsToUpdate);
         
         ctx.telegram.unpinChatMessage(chatID, messageID).catch(() => {});
@@ -439,7 +454,7 @@ export default class Quests {
 
     async stop(ctx) {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', messageID);
         
         if (!await this.questExists(quest, ctx, messageID)) return;
@@ -458,7 +473,7 @@ export default class Quests {
         }
         
         quest.status = quest.stoppers.length > 0 ? 'stopped' : 'ongoing';
-        await this.db.put(chatID + '/quests', quest);
+        await this.saveQuest(quest);
         await this.updateMessage(ctx, quest, language);
     }
 
@@ -470,7 +485,7 @@ export default class Quests {
             const quest = await this.db.get(`${chatID}/quests`, questID);
             if (!await this.questExists(quest, ctx, questID)) return;
             
-            const language = await this.settings.getLanguage(chatID);
+            const language = await this.getLanguage(chatID);
             if (await this.handleCompletedQuestInteraction(ctx, quest, chatID, questID, language)) return;
             
             if (quest.reminderId && this.scheduler) {
@@ -497,7 +512,7 @@ export default class Quests {
 
     async handleTimeTracking(ctx, amount, isAdding) {
         const [, , , chatID, messageID] = ctx.callbackQuery.data.split('_');
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', messageID);
         
         if (!await this.questExists(quest, ctx, messageID)) return;
@@ -540,7 +555,7 @@ export default class Quests {
     // UI Methods
     async showMoreActions(ctx) {
         const [,, chatID, questID] = ctx.callbackQuery.data.split('_');
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', questID);
         
         if (!await this.questExists(quest, ctx, questID)) return;
@@ -553,7 +568,7 @@ export default class Quests {
 
     async hideMoreActions(ctx) {
         const [,, chatID, questID] = ctx.callbackQuery.data.split('_');
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', questID);
         
         if (!await this.questExists(quest, ctx, questID)) return;
@@ -735,7 +750,7 @@ export default class Quests {
 
     async createMessage(quest, language) {
         const lines = [
-            `| ${i18next.t(capitalize(quest.type), { lng: language })}: ${quest.title.padEnd(200)}`,
+            `| ${i18next.t(capitalize(quest.type), { lng: language })}${quest.recurringTaskId ? ' 🔄' : ''}: ${quest.title.padEnd(200)}`,
             `| 💡 ${i18next.t('by', { lng: language })}: ${getDisplayName(quest.initiator)}`
         ];
         
@@ -744,13 +759,11 @@ export default class Quests {
         if (quest.category) lines.push(`| 📑 ${i18next.t('category', { lng: language })}: ${quest.category}`);
         
         if (quest.dependencies?.length) {
-            const deps = await Promise.all(
-                quest.dependencies.map(async id => {
-                    const dep = await this.db.get(quest.chat + '/quests', id);
-                    return dep?.title || '';
-                })
-            );
-            lines.push(`| 🔗 ${i18next.t('dependencies', { lng: language })}: ${deps.filter(d => d).join(', ')}`);
+            const deps = await this.batchLoadDependencies(quest.chat, quest.dependencies);
+            const titles = deps.map(dep => dep?.title || '').filter(title => title);
+            if (titles.length > 0) {
+                lines.push(`| 🔗 ${i18next.t('dependencies', { lng: language })}: ${titles.join(', ')}`);
+            }
         }
         
         if (quest.checklistId && this.checklists) {
@@ -804,7 +817,7 @@ export default class Quests {
     async updateMessage(ctx, quest, language, useExpandedMarkup = false, explicitHologramsToUpdate = null) {
         if (!quest?.chat || !quest.id) return;
         
-        language = language || await this.settings.getLanguage(quest.chat);
+        language = language || await this.getLanguage(quest.chat);
         const markupConfig = useExpandedMarkup 
             ? { reply_markup: { inline_keyboard: this.getExpandedButtons(quest, language) } }
             : this.markup(quest, language);
@@ -846,8 +859,14 @@ export default class Quests {
 
     async checkUserAdmin(userId, chatId) {
         try {
+            // Private chats (positive IDs) should always allow admin actions
+            // Group chats (negative IDs) need proper admin checking
+            if (chatId > 0) {
+                return true; // Private chat - user is admin of their own chat
+            }
+
             const member = await this.bot.telegram.getChatMember(chatId, userId);
-            return ['administrator', 'creator'].includes(member.status) || chatId > 0;
+            return ['administrator', 'creator'].includes(member.status);
         } catch {
             return false;
         }
@@ -856,7 +875,7 @@ export default class Quests {
     async questExists(quest, ctx, questId = 'N/A') {
         if (!quest || quest === '') {
             const chatId = getChatId(ctx);
-            const language = chatId ? await this.settings.getLanguage(chatId) : 'en';
+            const language = chatId ? await this.getLanguage(chatId) : 'en';
             
             if (ctx.callbackQuery) {
                 await ctx.answerCbQuery(i18next.t('questnotfound', { lng: language, defaultValue: 'Quest not found.' })).catch(() => {});
@@ -902,18 +921,49 @@ export default class Quests {
     }
 
     async recordCompletionActions(quest, chatID) {
-        await this.users.saveUserAction(quest.initiator, "initiated", quest.title, 0, chatID);
-        
+        const actions = [];
+
+        // Batch all user actions for parallel processing
+        actions.push({
+            user: quest.initiator,
+            action: "initiated",
+            quest: quest.title,
+            value: 0,
+            chatID
+        });
+
         for (const user of quest.participants) {
-            await this.users.saveUserAction(user, "completed", quest.title, 0, chatID);
+            actions.push({
+                user,
+                action: "completed",
+                quest: quest.title,
+                value: 0,
+                chatID
+            });
         }
-        
+
         for (const sender of quest.appreciation) {
-            await this.users.saveUserAction(sender, "sent", quest.title, 0, chatID);
+            actions.push({
+                user: sender,
+                action: "sent",
+                quest: quest.title,
+                value: 0,
+                chatID
+            });
+
             for (const recipient of quest.participants) {
-                await this.users.saveUserAction(recipient, "received", quest.title, 0, chatID);
+                actions.push({
+                    user: recipient,
+                    action: "received",
+                    quest: quest.title,
+                    value: 0,
+                    chatID
+                });
             }
         }
+
+        // Process actions in parallel batches
+        await this.batchSaveUserActions(actions);
     }
 
     async handleBackAction(ctx) {
@@ -981,13 +1031,15 @@ export default class Quests {
     async regenerateQuestImageBackground(ctx, quest, chatId, messageId, markupConfig) {
         try {
             const isHologram = chatId.toString() !== quest.chat.toString();
-            const imagePath = await this.ui.getQuestImage(quest, chatId, isHologram);
-            
-            await ctx.telegram.editMessageMedia(chatId, messageId, null, {
-                type: 'photo',
-                media: { source: imagePath },
-                caption: createPaddedCaption('')
-            }, markupConfig);
+            const imagePath = await this.getCachedQuestImage(quest, chatId, isHologram);
+
+            if (imagePath) {
+                await ctx.telegram.editMessageMedia(chatId, messageId, null, {
+                    type: 'photo',
+                    media: { source: imagePath },
+                    caption: createPaddedCaption('')
+                }, markupConfig);
+            }
         } catch {}
     }
 
@@ -1004,7 +1056,7 @@ export default class Quests {
         if (type && type[type.length - 1] === 's') type = type.slice(0, -1);
         
         const chatID = ctx.message.chat.id;
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.getLanguage(chatID);
         const quests = await this.db.getAll(chatID + '/quests');
         
         const filtered = quests.filter(q => q.type === type);
@@ -1035,14 +1087,279 @@ export default class Quests {
     }
 
     // Stub remaining complex methods - implement as needed
-    async listOpenQuests(ctx) { /* See part2 for implementation */ }
-    async sendAppreciation(ctx) { /* See part2 for implementation */ }
-    async publish(ctx) { /* See part2 for implementation */ }
-    async broadcast(ctx) { /* See part2 for implementation */ }
+    async listOpenQuests(ctx) {
+        const chatID = getChatId(ctx);
+        const language = await this.getLanguage(chatID);
+
+        try {
+            const quests = await this.db.getAll(chatID + '/quests');
+            const openQuests = quests.filter(q => q.status === 'ongoing');
+
+            if (!openQuests.length) {
+                return ctx.reply(i18next.t('no_open_quests', {
+                    lng: language,
+                    defaultValue: 'No open quests found.'
+                }));
+            }
+
+            // Group quests by type
+            const questsByType = {};
+            openQuests.forEach(quest => {
+                if (!questsByType[quest.type]) {
+                    questsByType[quest.type] = [];
+                }
+                questsByType[quest.type].push(quest);
+            });
+
+            let message = `*${i18next.t('open_quests', { lng: language, defaultValue: 'Open Quests' })}*\n\n`;
+
+            for (const [type, typeQuests] of Object.entries(questsByType)) {
+                message += `*${capitalize(type)}s (${typeQuests.length}):*\n`;
+
+                typeQuests.forEach(quest => {
+                    const participantCount = quest.participants?.length || 0;
+                    const appreciationCount = quest.appreciation?.length || 0;
+                    const timeTracked = Object.values(quest.timeTracking || {}).reduce((sum, hours) => sum + hours, 0);
+
+                    message += `• ${quest.title}`;
+                    if (quest.recurringTaskId && quest.frequency) message += ` 🔄${i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency })}`;
+                    if (participantCount > 0) message += ` 👥${participantCount}`;
+                    if (appreciationCount > 0) message += ` 👍${appreciationCount}`;
+                    if (timeTracked > 0) message += ` ⏰${timeTracked.toFixed(1)}h`;
+                    if (quest.checklistId && this.checklists) {
+                        // Note: We'd need to fetch checklist to show progress, but keeping it simple
+                        message += ` 📋`;
+                    }
+                    message += `\n`;
+                });
+
+                message += '\n';
+            }
+
+            ctx.reply(message, { parse_mode: 'Markdown' });
+
+        } catch (error) {
+            console.error('Error listing open quests:', error);
+            ctx.reply(i18next.t('error_listing_quests', {
+                lng: language,
+                defaultValue: 'Error retrieving quest list.'
+            }));
+        }
+    }
+    async sendAppreciation(ctx) {
+        const chatID = getChatId(ctx);
+        const language = await this.getLanguage(chatID);
+        const text = ctx.message.text || ctx.message.caption;
+        const args = text.split(' ').slice(1);
+
+        if (args.length === 0) {
+            return ctx.reply(i18next.t('appreciation_usage', {
+                lng: language,
+                defaultValue: 'Usage: /appreciate [user] [amount] [reason]'
+            }));
+        }
+
+        try {
+            // Parse arguments
+            let targetUser = null;
+            let amount = 1;
+            let reason = '';
+
+            // Try to find user mention or username
+            if (args[0].startsWith('@')) {
+                const username = args[0].substring(1);
+                const users = await this.getUsers(chatID);
+                targetUser = users.find(u => u.username === username);
+
+                if (!targetUser) {
+                    return ctx.reply(i18next.t('user_not_found', {
+                        lng: language,
+                        defaultValue: 'User not found.'
+                    }));
+                }
+
+                // Parse amount if provided
+                if (args.length > 1 && !isNaN(args[1])) {
+                    amount = parseInt(args[1]);
+                    reason = args.slice(2).join(' ');
+                } else {
+                    reason = args.slice(1).join(' ');
+                }
+            } else if (ctx.message.reply_to_message) {
+                // Replying to a message
+                targetUser = ctx.message.reply_to_message.from;
+
+                if (!isNaN(args[0])) {
+                    amount = parseInt(args[0]);
+                    reason = args.slice(1).join(' ');
+                } else {
+                    reason = args.join(' ');
+                }
+            } else {
+                // Assume first argument is reason
+                reason = args.join(' ');
+            }
+
+            if (!targetUser) {
+                return ctx.reply(i18next.t('specify_user', {
+                    lng: language,
+                    defaultValue: 'Please specify a user to appreciate by replying to their message or using @username.'
+                }));
+            }
+
+            // Record appreciation
+            const sender = ctx.message.from;
+            const appreciation = {
+                id: Date.now().toString(),
+                from: sender,
+                to: targetUser,
+                amount: amount,
+                reason: reason || i18next.t('general_appreciation', { lng: language, defaultValue: 'General appreciation' }),
+                date: Date.now(),
+                chatId: chatID
+            };
+
+            // Save appreciation record
+            await this.db.put(chatID + '/appreciations', appreciation);
+
+            // Update user stats
+            try {
+                const targetUserInfo = await this.users.getUserInfo(targetUser, chatID);
+                targetUserInfo.appreciationReceived = (targetUserInfo.appreciationReceived || 0) + amount;
+                await this.db.put(chatID + '/users', targetUserInfo);
+
+                const senderInfo = await this.users.getUserInfo(sender, chatID);
+                senderInfo.appreciationGiven = (senderInfo.appreciationGiven || 0) + amount;
+                await this.db.put(chatID + '/users', senderInfo);
+            } catch (userError) {
+                console.error('Error updating user appreciation stats:', userError);
+            }
+
+            // Send confirmation
+            const message = i18next.t('appreciation_sent', {
+                lng: language,
+                sender: getDisplayName(sender),
+                target: getDisplayName(targetUser),
+                amount: amount,
+                reason: reason,
+                defaultValue: `${getDisplayName(sender)} appreciated ${getDisplayName(targetUser)} ${amount > 1 ? `(${amount})` : ''} ${reason ? `for: ${reason}` : ''} 🙏`
+            });
+
+            ctx.reply(message, { reply_to_message_id: ctx.message.message_id });
+
+        } catch (error) {
+            console.error('Error sending appreciation:', error);
+            ctx.reply(i18next.t('appreciation_error', {
+                lng: language,
+                defaultValue: 'Error sending appreciation.'
+            }));
+        }
+    }
+    async publish(ctx) {
+        const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
+        const language = await this.getLanguage(chatID);
+        const quest = await this.db.get(chatID + '/quests', messageID);
+
+        if (!await this.questExists(quest, ctx, messageID)) return;
+
+        const hasPermission = quest.initiator?.id === ctx.from.id ||
+                             await this.checkUserAdmin(ctx.from.id, chatID);
+
+        if (!hasPermission) {
+            return ctx.answerCbQuery(i18next.t('only_initiator_can_publish', {
+                lng: language,
+                defaultValue: 'Only the quest initiator or admins can publish this quest.'
+            })).catch(() => {});
+        }
+
+        try {
+            // Toggle publish status
+            quest.published = !quest.published;
+            await this.saveQuest(quest);
+
+            // Update the quest message
+            await this.updateMessage(ctx, quest, language);
+
+            const statusMessage = quest.published
+                ? i18next.t('quest_published', { lng: language, defaultValue: 'Quest published to public feed!' })
+                : i18next.t('quest_unpublished', { lng: language, defaultValue: 'Quest removed from public feed.' });
+
+            ctx.answerCbQuery(statusMessage).catch(() => {});
+
+            // If publishing, optionally send to other connected holons or federation
+            if (quest.published && this.handleFederatedMessages) {
+                await this.handleFederatedMessages(ctx, quest, language).catch(error => {
+                    console.error('Error handling federated publishing:', error);
+                });
+            }
+
+        } catch (error) {
+            console.error('Error publishing quest:', error);
+            ctx.answerCbQuery(i18next.t('publish_error', {
+                lng: language,
+                defaultValue: 'Error publishing quest.'
+            })).catch(() => {});
+        }
+    }
+    async broadcast(ctx) {
+        const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
+        const language = await this.getLanguage(chatID);
+        const quest = await this.db.get(chatID + '/quests', messageID);
+
+        if (!await this.questExists(quest, ctx, messageID)) return;
+
+        const hasPermission = quest.initiator?.id === ctx.from.id ||
+                             await this.checkUserAdmin(ctx.from.id, chatID);
+
+        if (!hasPermission) {
+            return ctx.answerCbQuery(i18next.t('only_initiator_can_broadcast', {
+                lng: language,
+                defaultValue: 'Only the quest initiator or admins can broadcast this quest.'
+            })).catch(() => {});
+        }
+
+        try {
+            // Toggle broadcast status
+            quest.broadcasted = !quest.broadcasted;
+            await this.saveQuest(quest);
+
+            // Update the quest message
+            await this.updateMessage(ctx, quest, language);
+
+            if (quest.broadcasted) {
+                // Send quest to all users who have interacted with this holon
+                const users = await this.getUsers(chatID);
+                const broadcastCount = await this.batchBroadcastToUsers(ctx, quest, users, language);
+
+                const statusMessage = i18next.t('quest_broadcasted', {
+                    lng: language,
+                    count: broadcastCount,
+                    defaultValue: `Quest broadcasted to ${broadcastCount} users!`
+                });
+
+                ctx.answerCbQuery(statusMessage).catch(() => {});
+            } else {
+                // Remove broadcast - optionally clean up hologram messages
+                const statusMessage = i18next.t('quest_broadcast_removed', {
+                    lng: language,
+                    defaultValue: 'Quest broadcast removed.'
+                });
+
+                ctx.answerCbQuery(statusMessage).catch(() => {});
+            }
+
+        } catch (error) {
+            console.error('Error broadcasting quest:', error);
+            ctx.answerCbQuery(i18next.t('broadcast_error', {
+                lng: language,
+                defaultValue: 'Error broadcasting quest.'
+            })).catch(() => {});
+        }
+    }
     async handleChecklistButton(ctx) {
         const chatId = ctx.callbackQuery.message.chat.id;
         const messageId = ctx.callbackQuery.data.split('_')[3]; // This is the quest.id
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             let quest = await this.db.get(chatId + '/quests', messageId.toString());
@@ -1154,7 +1471,7 @@ export default class Quests {
         // Parse callback data: dependencies_quest_{chatId}_{questId}
         const chatId = dataParts[2];
         const questId = dataParts[3];
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             const quest = await this.db.get(chatId + '/quests', questId.toString());
@@ -1180,9 +1497,11 @@ export default class Quests {
             if (quest.dependencies && quest.dependencies.length > 0) {
                 message += '*Current dependencies:*\n';
 
-                // Add buttons to remove existing dependencies
-                for (const depId of quest.dependencies) {
-                    const depQuest = await this.db.get(chatId + '/quests', depId.toString());
+                // Batch load all dependencies
+                const dependencies = await this.batchLoadDependencies(chatId, quest.dependencies);
+                for (let i = 0; i < quest.dependencies.length; i++) {
+                    const depId = quest.dependencies[i];
+                    const depQuest = dependencies[i];
                     if (depQuest) {
                         message += `- ${depQuest.title}\n`;
                         buttons.push([
@@ -1244,7 +1563,7 @@ export default class Quests {
         const chatId = ctx.callbackQuery.data.split('_')[2]; // Original quest's chat
         const questId = ctx.callbackQuery.data.split('_')[3];
         const dependencyId = ctx.callbackQuery.data.split('_')[4];
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             // Get the quest and dependency
@@ -1277,7 +1596,7 @@ export default class Quests {
             await this.updateMessage(ctx, quest, language);
 
             // Update the current dependency view
-            await this.refreshDependencyView(ctx, quest, chatId, questId, language);
+            await this.refreshDependencyView(ctx);
 
             await ctx.answerCbQuery(`Added "${depQuest.title}" as a dependency`);
         } catch (error) {
@@ -1289,7 +1608,7 @@ export default class Quests {
         const chatId = ctx.callbackQuery.data.split('_')[2]; // Original quest's chat
         const questId = ctx.callbackQuery.data.split('_')[3];
         const dependencyId = ctx.callbackQuery.data.split('_')[4];
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             const quest = await this.db.get(chatId + '/quests', questId.toString());
@@ -1308,7 +1627,7 @@ export default class Quests {
             await this.updateMessage(ctx, quest, language);
 
             // Update the current dependency view
-            await this.refreshDependencyView(ctx, quest, chatId, questId, language);
+            await this.refreshDependencyView(ctx);
 
             await ctx.answerCbQuery('Dependency removed');
         } catch (error) {
@@ -1321,7 +1640,7 @@ export default class Quests {
         // Parse callback data: back_from_dependencies_{chatId}_{questId}
         const chatId = parts[3];
         const questId = parts[4];
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             await ctx.answerCbQuery().catch(() => {});
@@ -1338,8 +1657,113 @@ export default class Quests {
             await ctx.answerCbQuery('Error going back');
         }
     }
-    async handleRecurringButton(ctx) { /* See part2 for implementation */ }
-    async handleStopRecurring(ctx) { /* See part2 for implementation */ }
+    async handleRecurringButton(ctx) {
+        const callbackData = ctx.callbackQuery.data;
+        const dataParts = callbackData.split('_');
+
+        const chatId = dataParts[2];
+        const questId = dataParts[3];
+        const language = await this.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!await this.questExists(quest, ctx, questId)) return;
+
+            // Show recurring options
+            const recurringOptions = [
+                { text: 'Never', value: null },
+                { text: 'Daily', value: 'daily' },
+                { text: 'Weekly', value: 'weekly' },
+                { text: 'Monthly', value: 'monthly' },
+                { text: 'Yearly', value: 'yearly' }
+            ];
+
+            const buttons = recurringOptions.map(option => {
+                const isSelected = quest.frequency === option.value;
+                const prefix = isSelected ? '✅ ' : '';
+
+                return [Markup.button.callback(
+                    `${prefix}${i18next.t(option.text.toLowerCase(), { lng: language, defaultValue: option.text })}`,
+                    `set_recurring_${chatId}_${questId}_${option.value || 'never'}`
+                )];
+            });
+
+            // Add stop recurring button if currently recurring
+            if (quest.frequency) {
+                buttons.push([
+                    Markup.button.callback(
+                        '🛑 ' + i18next.t('stop_recurring', { lng: language, defaultValue: 'Stop Recurring' }),
+                        `stop_recurring_${chatId}_${questId}`
+                    )
+                ]);
+            }
+
+            // Add back button
+            buttons.push([
+                Markup.button.callback(
+                    '↩️ ' + i18next.t('back', { lng: language, defaultValue: 'Back' }),
+                    `back_from_recurring_${chatId}_${questId}`
+                )
+            ]);
+
+            const message = `🔄 *${i18next.t('recurring_settings', { lng: language, defaultValue: 'Recurring Settings' })}*\n\n` +
+                          `${i18next.t('current_frequency', { lng: language, defaultValue: 'Current frequency' })}: ${quest.frequency ? i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency }) : i18next.t('never', { lng: language, defaultValue: 'Never' })}\n\n` +
+                          i18next.t('select_frequency', { lng: language, defaultValue: 'Select how often this quest should repeat:' });
+
+            const messageId = ctx.callbackQuery.message.message_id;
+
+            // Check if this is a photo message or text message
+            if (ctx.callbackQuery.message.photo) {
+                await ctx.telegram.editMessageCaption(chatId, messageId, null, message, Markup.inlineKeyboard(buttons));
+            } else {
+                await ctx.telegram.editMessageText(chatId, messageId, null, message, Markup.inlineKeyboard(buttons));
+            }
+
+            await ctx.answerCbQuery().catch(() => {});
+
+        } catch (error) {
+            if (error.response?.error_code === 400 && error.response?.description?.includes('message is not modified')) {
+                await ctx.answerCbQuery().catch(() => {});
+                return;
+            }
+            console.error('Error handling recurring button:', error);
+            await ctx.answerCbQuery('Error accessing recurring settings');
+        }
+    }
+    async handleStopRecurring(ctx) {
+        const parts = ctx.callbackQuery.data.split('_');
+        const chatId = parts[2];
+        const questId = parts[3];
+        const language = await this.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!await this.questExists(quest, ctx, questId)) return;
+
+            // Remove recurring settings
+            quest.frequency = null;
+            quest.recurringTaskId = null;
+
+            // Cancel any scheduled recurring tasks if scheduler is available
+            if (quest.recurringTaskId && this.scheduler) {
+                await this.scheduler.cancelRecurringTask(quest.recurringTaskId);
+            }
+
+            await this.db.put(chatId + '/quests', quest);
+
+            // Update back to the main quest view
+            await this.updateMessage(ctx, quest, language);
+
+            await ctx.answerCbQuery(i18next.t('recurring_stopped', {
+                lng: language,
+                defaultValue: 'Recurring stopped for this quest.'
+            })).catch(() => {});
+
+        } catch (error) {
+            console.error('Error stopping recurring:', error);
+            await ctx.answerCbQuery('Error stopping recurring');
+        }
+    }
     async handleParticipantsButton(ctx) {
         const callbackData = ctx.callbackQuery.data;
         const dataParts = callbackData.split('_');
@@ -1347,7 +1771,7 @@ export default class Quests {
         // Parse callback data: participants_quest_{chatId}_{questId}
         const chatId = dataParts[2];
         const questId = dataParts[3];
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             const quest = await this.db.get(chatId + '/quests', questId.toString());
@@ -1368,7 +1792,7 @@ export default class Quests {
         try {
             await ctx.answerCbQuery().catch(() => {});
 
-            const users = await this.db.getAll(chatId + '/users');
+            const users = await this.getUsers(chatId);
             const messageId = ctx.callbackQuery.message.message_id;
 
             // Ensure participants array exists
@@ -1463,7 +1887,7 @@ export default class Quests {
                 quest.participants.splice(existingUserIndex, 1);
             } else {
                 // Add user to participants
-                const users = await this.db.getAll(chatId + '/users');
+                const users = await this.getUsers(chatId);
                 const user = users.find(u => u.id === userId);
                 if (user) {
                     quest.participants.push(user);
@@ -1475,7 +1899,7 @@ export default class Quests {
             await this.db.put(chatId + '/quests', quest);
 
             // Refresh the participant selection view only
-            await this.refreshParticipantView(ctx, chatId, questId, quest);
+            await this.refreshParticipantView(ctx, chatId, questId);
 
         } catch (error) {
             console.error('Error toggling participant:', error);
@@ -1495,7 +1919,7 @@ export default class Quests {
                 return;
             }
 
-            const users = await this.db.getAll(chatId + '/users');
+            const users = await this.getUsers(chatId);
 
             // Add all users to participants (excluding chat ID to avoid duplication)
             quest.participants = users.slice();
@@ -1503,7 +1927,7 @@ export default class Quests {
             await this.db.put(chatId + '/quests', quest);
 
             // Refresh the participant selection view
-            await this.refreshParticipantView(ctx, chatId, questId, quest);
+            await this.refreshParticipantView(ctx, chatId, questId);
 
         } catch (error) {
             console.error('Error selecting all participants:', error);
@@ -1532,7 +1956,7 @@ export default class Quests {
 
             if (isHolonSelected) {
                 // "This Holon" is currently selected, deselect it and select all individual users
-                const users = await this.db.getAll(chatId + '/users');
+                const users = await this.getUsers(chatId);
                 quest.participants = users.slice();
             } else {
                 // "This Holon" is not selected, select it and deselect everyone else
@@ -1543,7 +1967,7 @@ export default class Quests {
             await this.db.put(chatId + '/quests', quest);
 
             // Refresh the participant selection view
-            await this.refreshParticipantView(ctx, chatId, questId, quest);
+            await this.refreshParticipantView(ctx, chatId, questId);
 
         } catch (error) {
             console.error('Error toggling holon participation:', error);
@@ -1555,7 +1979,7 @@ export default class Quests {
         // Parse callback data: back_from_participants_{chatId}_{questId}
         const chatId = parts[3];
         const questId = parts[4];
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             await ctx.answerCbQuery().catch(() => {});
@@ -1574,7 +1998,7 @@ export default class Quests {
     }
     async handleBackToQuest(ctx) {
         const [chatId, questId] = ctx.match[1].split('_');
-        const language = await this.settings.getLanguage(chatId);
+        const language = await this.getLanguage(chatId);
 
         try {
             const quest = await this.db.get(chatId + '/quests', questId);
@@ -1611,7 +2035,7 @@ export default class Quests {
             // Update the main quest display
             const mainQuest = await this.db.get(chatId + '/quests', checklist.questId);
             if (mainQuest) {
-                await this.updateMessage(ctx, mainQuest, await this.settings.getLanguage(chatId));
+                await this.updateMessage(ctx, mainQuest, await this.getLanguage(chatId));
             }
 
             // Create updated checklist keyboard
@@ -1673,7 +2097,7 @@ export default class Quests {
                     // Update the main quest
                     const mainQuest = await this.db.get(chatId + '/quests', checklist.questId);
                     if (mainQuest) {
-                        await this.updateMessage(responseCtx, mainQuest, await this.settings.getLanguage(chatId));
+                        await this.updateMessage(responseCtx, mainQuest, await this.getLanguage(chatId));
                     }
 
                     // Update the checklist display
@@ -1722,7 +2146,7 @@ export default class Quests {
     async viewOriginalQuest(ctx) {
         const originalQuestIdParts = ctx.match[1];
         const currentChatId = ctx.callbackQuery.message.chat.id;
-        const language = await this.settings.getLanguage(currentChatId);
+        const language = await this.getLanguage(currentChatId);
         const interactingUserId = ctx.callbackQuery.from.id;
 
         try {
@@ -1859,11 +2283,191 @@ export default class Quests {
             await ctx.answerCbQuery('Error displaying quest details.');
         }
     }
-    async ensureTelegramHologramMessage(ctx, quest, userId, language) { /* See part2 for implementation */ }
-    async handleFederatedMessages(ctx, quest, language) { /* See part2 for implementation */ }
+    async ensureTelegramHologramMessage(ctx, quest, userId, language) {
+        if (!quest?.id || !quest.chat || !userId) return;
+
+        try {
+            // Check if user already has a hologram message for this quest
+            const existingHologram = quest.activeHolograms?.find(h =>
+                h.platform === 'telegram' && h.chatId === userId
+            );
+
+            if (existingHologram) {
+                // Update existing hologram
+                try {
+                    await this.updateQuestMessage(ctx, quest, userId, existingHologram.messageId, language, this.markup(quest, language));
+                    return existingHologram;
+                } catch (error) {
+                    // If update fails, remove the invalid hologram link and create a new one
+                    quest.activeHolograms = quest.activeHolograms.filter(h => h !== existingHologram);
+                }
+            }
+
+            // Create new hologram message
+            const showImages = this.shouldShowQuestsAsImages();
+            const baseMessageText = await this.createMessage(quest, language);
+            const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
+            const messageText = baseMessageText +
+                `| 🔗 Linked from ${originalHolonName}\n`;
+            const markup = this.markup(quest, language);
+
+            let hologramMessage;
+
+            if (showImages) {
+                const questImagePath = await this.getCachedQuestImage(quest, quest.chat, true);
+                if (questImagePath) {
+                    try {
+                        hologramMessage = await ctx.telegram.sendPhoto(userId,
+                            { source: questImagePath },
+                            {
+                                caption: createPaddedCaption(''),
+                                parse_mode: 'Markdown',
+                                ...markup
+                            }
+                        );
+                    } catch (imageError) {
+                        // Fallback to text if image sending fails
+                        hologramMessage = await ctx.telegram.sendMessage(userId, messageText, markup);
+                    }
+                } else {
+                    hologramMessage = await ctx.telegram.sendMessage(userId, messageText, markup);
+                }
+            } else {
+                hologramMessage = await ctx.telegram.sendMessage(userId, messageText, markup);
+            }
+
+            // Track the new hologram
+            if (!quest.activeHolograms) quest.activeHolograms = [];
+
+            const hologramLink = {
+                platform: 'telegram',
+                chatId: userId,
+                messageId: hologramMessage.message_id
+            };
+
+            quest.activeHolograms.push(hologramLink);
+
+            // Save updated quest with new hologram link
+            await this.db.put(quest.chat + '/quests', quest);
+
+            return hologramLink;
+
+        } catch (error) {
+            console.error(`Error creating hologram message for user ${userId}:`, error);
+            // If it's a blocked user error, silently continue
+            if (error.response?.error_code === 403) {
+                console.log(`User ${userId} has blocked the bot`);
+            }
+            return null;
+        }
+    }
+    async handleFederatedMessages(ctx, quest, language) {
+        if (!quest?.published) return;
+
+        try {
+            // Check if there are federated holons to share with
+            const federatedHolons = await this.db.getAll('federatedHolons').catch(() => []);
+
+            if (!federatedHolons?.length) {
+                console.log('No federated holons configured');
+                return;
+            }
+
+            // Share quest with federated holons
+            for (const holon of federatedHolons) {
+                try {
+                    if (holon.type === 'telegram' && holon.chatId) {
+                        // Create a federated quest message
+                        const baseMessageText = await this.createMessage(quest, language);
+                        const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
+                        const federatedMessageText = `🌐 **${i18next.t('federated_quest', { lng: language, defaultValue: 'Federated Quest' })}**\n` +
+                            `📡 ${i18next.t('from_holon', { lng: language, defaultValue: 'From holon' })}: ${originalHolonName}\n\n` +
+                            baseMessageText;
+
+                        // Create simplified markup for federated quest
+                        const federatedMarkup = Markup.inlineKeyboard([
+                            [Markup.button.callback(
+                                i18next.t('view_original', { lng: language, defaultValue: 'View Original' }),
+                                `view_original_quest_${quest.chat}_${quest.id}`
+                            )]
+                        ]);
+
+                        let federatedMessage;
+
+                        // Send to federated holon
+                        if (this.shouldShowQuestsAsImages()) {
+                            const questImagePath = await this.getCachedQuestImage(quest, quest.chat, true);
+                            if (questImagePath) {
+                                try {
+                                    federatedMessage = await ctx.telegram.sendPhoto(holon.chatId,
+                                        { source: questImagePath },
+                                        {
+                                            caption: createPaddedCaption(''),
+                                            parse_mode: 'Markdown',
+                                            ...federatedMarkup
+                                        }
+                                    );
+                                } catch (imageError) {
+                                    federatedMessage = await ctx.telegram.sendMessage(holon.chatId, federatedMessageText, federatedMarkup);
+                                }
+                            } else {
+                                federatedMessage = await ctx.telegram.sendMessage(holon.chatId, federatedMessageText, federatedMarkup);
+                            }
+                        } else {
+                            federatedMessage = await ctx.telegram.sendMessage(holon.chatId, federatedMessageText, federatedMarkup);
+                        }
+
+                        // Track federated message
+                        if (!quest.activeHolograms) quest.activeHolograms = [];
+                        quest.activeHolograms.push({
+                            platform: 'telegram',
+                            chatId: holon.chatId,
+                            messageId: federatedMessage.message_id,
+                            type: 'federated'
+                        });
+
+                        console.log(`Shared quest ${quest.id} with federated holon ${holon.chatId}`);
+
+                    } else if (holon.type === 'webhook' && holon.url) {
+                        // Send to webhook endpoint (for other platforms or services)
+                        const payload = {
+                            type: 'quest_published',
+                            quest: {
+                                id: quest.id,
+                                title: quest.title,
+                                type: quest.type,
+                                status: quest.status,
+                                initiator: quest.initiator,
+                                participants: quest.participants,
+                                appreciation: quest.appreciation,
+                                date: quest.date,
+                                chat: quest.chat
+                            },
+                            source_holon: await getHolonName(this.db, quest.chat, ctx)
+                        };
+
+                        // Make HTTP request to webhook (would need fetch or axios)
+                        // For now, just log the intent
+                        console.log(`Would send to webhook ${holon.url}:`, payload);
+                    }
+
+                } catch (holonError) {
+                    console.error(`Error sharing quest with federated holon ${holon.chatId || holon.url}:`, holonError);
+                }
+            }
+
+            // Save updated quest with federated hologram links
+            if (quest.activeHolograms?.length > 0) {
+                await this.db.put(quest.chat + '/quests', quest);
+            }
+
+        } catch (error) {
+            console.error('Error handling federated messages:', error);
+        }
+    }
 
     // Helper methods for dependency and participant management
-    async refreshDependencyView(ctx, quest, chatId, questId, language) {
+    async refreshDependencyView(ctx) {
         try {
             // Re-trigger the dependencies button to refresh the view
             await this.handleDependenciesButton(ctx);
@@ -1877,9 +2481,9 @@ export default class Quests {
         }
     }
 
-    async refreshParticipantView(ctx, chatId, questId, quest) {
+    async refreshParticipantView(ctx, chatId, questId) {
         try {
-            const language = await this.settings.getLanguage(chatId);
+            const language = await this.getLanguage(chatId);
 
             // Get fresh quest data to ensure we have the latest state
             const updatedQuest = await this.db.get(chatId + '/quests', questId.toString());
@@ -1898,6 +2502,377 @@ export default class Quests {
             throw error; // Re-throw other errors
         }
     }
-    async updateHolograms(ctx, quest, language, markupConfig, hologramsToUpdate) { /* See part2 for implementation */ }
-    async remind(ctx, quest) { /* See part2 for implementation */ }
+    async handleSetRecurring(ctx) {
+        const parts = ctx.callbackQuery.data.split('_');
+        const chatId = parts[2];
+        const questId = parts[3];
+        const frequency = parts[4];
+        const language = await this.getLanguage(chatId);
+
+        try {
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!await this.questExists(quest, ctx, questId)) return;
+
+            // Set the new frequency
+            quest.frequency = frequency === 'never' ? null : frequency;
+
+            // If setting up recurring, create a recurring task ID
+            if (quest.frequency && this.scheduler) {
+                // Cancel existing recurring task if any
+                if (quest.recurringTaskId) {
+                    await this.scheduler.cancelRecurringTask(quest.recurringTaskId);
+                }
+
+                // Create new recurring task
+                quest.recurringTaskId = await this.scheduler.createRecurringTask(quest, quest.frequency);
+            } else if (!quest.frequency && quest.recurringTaskId && this.scheduler) {
+                // Cancel recurring task if frequency is set to never
+                await this.scheduler.cancelRecurringTask(quest.recurringTaskId);
+                quest.recurringTaskId = null;
+            }
+
+            await this.db.put(chatId + '/quests', quest);
+
+            // Update back to the main quest view
+            await this.updateMessage(ctx, quest, language);
+
+            const frequencyText = quest.frequency
+                ? i18next.t(quest.frequency, { lng: language, defaultValue: quest.frequency })
+                : i18next.t('never', { lng: language, defaultValue: 'Never' });
+
+            await ctx.answerCbQuery(i18next.t('recurring_updated', {
+                lng: language,
+                frequency: frequencyText,
+                defaultValue: `Recurring frequency set to: ${frequencyText}`
+            })).catch(() => {});
+
+        } catch (error) {
+            console.error('Error setting recurring:', error);
+            await ctx.answerCbQuery('Error setting recurring frequency');
+        }
+    }
+
+    async handleBackFromRecurring(ctx) {
+        const parts = ctx.callbackQuery.data.split('_');
+        const chatId = parts[3];
+        const questId = parts[4];
+        const language = await this.getLanguage(chatId);
+
+        try {
+            await ctx.answerCbQuery().catch(() => {});
+            const quest = await this.db.get(chatId + '/quests', questId.toString());
+            if (!quest) {
+                await ctx.answerCbQuery('Quest not found');
+                return;
+            }
+
+            // Update back to the main quest view
+            await this.updateMessage(ctx, quest, language);
+        } catch (error) {
+            console.error('Error going back from recurring:', error);
+            await ctx.answerCbQuery('Error going back');
+        }
+    }
+
+    async updateHolograms(ctx, quest, language, markupConfig, hologramsToUpdate) {
+        if (!hologramsToUpdate?.length) return;
+
+        const updatePromises = hologramsToUpdate.map(async (hologram) => {
+            try {
+                if (hologram.platform === 'telegram') {
+                    await this.updateQuestMessage(ctx, quest, hologram.chatId, hologram.messageId, language, markupConfig);
+                }
+            } catch (error) {
+                console.error(`Error updating hologram ${hologram.chatId}/${hologram.messageId}:`, error);
+                // Remove invalid hologram links
+                if (quest.activeHolograms) {
+                    quest.activeHolograms = quest.activeHolograms.filter(h =>
+                        !(h.chatId === hologram.chatId && h.messageId === hologram.messageId)
+                    );
+                }
+            }
+        });
+
+        await Promise.allSettled(updatePromises);
+
+        // Save updated quest if hologram links were cleaned up
+        if (quest.activeHolograms && quest.activeHolograms.length !== hologramsToUpdate.length) {
+            try {
+                await this.db.put(quest.chat + '/quests', quest);
+            } catch (error) {
+                console.error('Error saving quest after hologram cleanup:', error);
+            }
+        }
+    }
+
+    async remind(ctx, quest) {
+        if (!this.scheduler) {
+            console.error('Scheduler not available for reminders');
+            return;
+        }
+
+        try {
+            const language = await this.getLanguage(quest.chat);
+            const message = i18next.t('quest_reminder', {
+                lng: language,
+                title: quest.title,
+                defaultValue: `Reminder: "${quest.title}" is still pending.`
+            });
+
+            // Send reminder to quest initiator
+            if (quest.initiator?.id) {
+                try {
+                    await ctx.telegram.sendMessage(quest.initiator.id, message, {
+                        reply_markup: this.markup(quest, language).reply_markup
+                    });
+                } catch (error) {
+                    console.error('Error sending reminder to initiator:', error);
+                }
+            }
+
+            // Send reminder to participants
+            if (quest.participants?.length) {
+                const reminderPromises = quest.participants.map(async (participant) => {
+                    try {
+                        await ctx.telegram.sendMessage(participant.id, message, {
+                            reply_markup: this.markup(quest, language).reply_markup
+                        });
+                    } catch (error) {
+                        console.error(`Error sending reminder to participant ${participant.id}:`, error);
+                    }
+                });
+
+                await Promise.allSettled(reminderPromises);
+            }
+
+        } catch (error) {
+            console.error('Error sending quest reminder:', error);
+        }
+    }
+
+    // Performance optimization methods
+    async getLanguage(chatId) {
+        const key = `lang_${chatId}`;
+        const cached = this.languageCache.get(key);
+        if (cached && cached.expires > Date.now()) {
+            return cached.language;
+        }
+
+        const language = await this.settings.getLanguage(chatId);
+        this.languageCache.set(key, {
+            language,
+            expires: Date.now() + this.cacheExpiry
+        });
+        return language;
+    }
+
+    async getUsers(chatId, forceRefresh = false) {
+        const key = `users_${chatId}`;
+        if (!forceRefresh && this.userCache.has(key)) {
+            const cached = this.userCache.get(key);
+            if (cached.expires > Date.now()) {
+                return cached.users;
+            }
+        }
+
+        const users = await this.db.getAll(chatId + '/users');
+        this.userCache.set(key, {
+            users,
+            expires: Date.now() + this.cacheExpiry
+        });
+        return users;
+    }
+
+    async getCachedQuestImage(quest, chatId, isHologram = false) {
+        // Create a cache key that includes quest data hash for invalidation
+        const questDataHash = this.getQuestDataHash(quest);
+        const cacheKey = `${quest.id}_${quest.chat}_${isHologram}_${questDataHash}`;
+
+        if (this.questImageCache.has(cacheKey)) {
+            return this.questImageCache.get(cacheKey);
+        }
+
+        if (!this.ui?.getQuestImage) {
+            return null;
+        }
+
+        try {
+            // Clear old cache entries for this quest (with different hashes)
+            this.invalidateQuestImageCache(quest.id, quest.chat, isHologram);
+
+            const imagePath = await this.ui.getQuestImage(quest, chatId, isHologram);
+            this.questImageCache.set(cacheKey, imagePath);
+
+            // Cleanup old cache entries
+            if (this.questImageCache.size > 100) {
+                const firstKey = this.questImageCache.keys().next().value;
+                this.questImageCache.delete(firstKey);
+            }
+
+            return imagePath;
+        } catch (error) {
+            console.error('Error generating quest image:', error);
+            return null;
+        }
+    }
+
+    startCacheCleanup() {
+        // Clean up expired cache entries every 10 minutes
+        setInterval(() => {
+            this.cleanupExpiredCache();
+        }, 10 * 60 * 1000);
+    }
+
+    cleanupExpiredCache() {
+        const now = Date.now();
+
+        // Clean language cache
+        for (const [key, value] of this.languageCache.entries()) {
+            if (value.expires < now) {
+                this.languageCache.delete(key);
+            }
+        }
+
+        // Clean user cache
+        for (const [key, value] of this.userCache.entries()) {
+            if (value.expires < now) {
+                this.userCache.delete(key);
+            }
+        }
+    }
+
+    // Invalidate cache when users change
+    invalidateUserCache(chatId) {
+        const key = `users_${chatId}`;
+        this.userCache.delete(key);
+    }
+
+    // Generate a hash of quest data that affects image rendering
+    getQuestDataHash(quest) {
+        const relevantData = {
+            title: quest.title,
+            status: quest.status,
+            participants: quest.participants?.length || 0,
+            appreciation: quest.appreciation?.length || 0,
+            timeTracking: Object.keys(quest.timeTracking || {}).length,
+            dependencies: quest.dependencies?.length || 0,
+            checklistId: quest.checklistId,
+            description: quest.description,
+            type: quest.type,
+            frequency: quest.frequency,
+            published: quest.published,
+            broadcasted: quest.broadcasted
+        };
+
+        // Simple hash function - convert to string and get a hash
+        const dataString = JSON.stringify(relevantData);
+        let hash = 0;
+        for (let i = 0; i < dataString.length; i++) {
+            const char = dataString.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return Math.abs(hash).toString(36);
+    }
+
+    // Invalidate quest image cache for a specific quest
+    invalidateQuestImageCache(questId, questChat, isHologram = null) {
+        const keysToDelete = [];
+
+        for (const key of this.questImageCache.keys()) {
+            // Match pattern: questId_questChat_isHologram_hash
+            const parts = key.split('_');
+            if (parts.length >= 3 && parts[0] === questId.toString() && parts[1] === questChat.toString()) {
+                if (isHologram === null || parts[2] === isHologram.toString()) {
+                    keysToDelete.push(key);
+                }
+            }
+        }
+
+        keysToDelete.forEach(key => this.questImageCache.delete(key));
+
+        if (keysToDelete.length > 0) {
+            console.log(`Invalidated ${keysToDelete.length} cached images for quest ${questId}`);
+        }
+    }
+
+    // Helper method to save quest and invalidate image cache
+    async saveQuest(quest, path = null) {
+        const questPath = path || `${quest.chat}/quests`;
+        await this.db.put(questPath, quest);
+
+        // Invalidate image cache for this quest
+        if (quest.id && quest.chat) {
+            this.invalidateQuestImageCache(quest.id, quest.chat);
+        }
+    }
+
+    // Database batching methods
+    async batchLoadDependencies(chatId, dependencyIds) {
+        if (!dependencyIds?.length) return [];
+
+        const promises = dependencyIds.map(id =>
+            this.db.get(chatId + '/quests', id.toString()).catch(() => null)
+        );
+
+        return Promise.all(promises);
+    }
+
+    async batchSaveUserActions(actions) {
+        if (!actions?.length) return;
+
+        // Check if users instance has batch method
+        if (this.users?.batchSaveUserActions) {
+            return this.users.batchSaveUserActions(actions);
+        }
+
+        // Fallback: Process in parallel batches of 10
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < actions.length; i += BATCH_SIZE) {
+            const batch = actions.slice(i, i + BATCH_SIZE);
+            const promises = batch.map(action =>
+                this.users.saveUserAction(action.user, action.action, action.quest, action.value, action.chatID)
+                    .catch(error => console.error('Error saving user action:', error))
+            );
+            await Promise.allSettled(promises);
+        }
+    }
+
+    async batchBroadcastToUsers(ctx, quest, users, language) {
+        if (!users?.length) return 0;
+
+        let successCount = 0;
+        const BATCH_SIZE = 10; // Process 10 users at a time to avoid overwhelming
+
+        for (let i = 0; i < users.length; i += BATCH_SIZE) {
+            const batch = users.slice(i, i + BATCH_SIZE);
+
+            const batchPromises = batch.map(async user => {
+                try {
+                    // Create a hologram for this user
+                    await this.personalHologram(user.id, quest);
+
+                    // Try to send as Telegram message if possible
+                    await this.ensureTelegramHologramMessage(ctx, quest, user.id, language);
+                    return true; // Success
+                } catch (error) {
+                    // Silently continue if we can't reach a user
+                    console.log(`Could not broadcast to user ${user.id}:`, error.message);
+                    return false; // Failure
+                }
+            });
+
+            const batchResults = await Promise.allSettled(batchPromises);
+            successCount += batchResults.filter(result =>
+                result.status === 'fulfilled' && result.value === true
+            ).length;
+
+            // Small delay between batches to avoid rate limiting
+            if (i + BATCH_SIZE < users.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        return successCount;
+    }
 }

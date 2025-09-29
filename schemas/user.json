@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "User Schema",
+  "description": "Schema for user objects in HolonsBot",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "number",
+      "description": "Telegram user ID"
+    },
+    "username": {
+      "type": "string",
+      "description": "Telegram username"
+    },
+    "first_name": {
+      "type": "string",
+      "description": "User's first name"
+    },
+    "last_name": {
+      "type": "string",
+      "description": "User's last name"
+    },
+    "language_code": {
+      "type": "string",
+      "description": "User's language code"
+    },
+    "values": {
+      "type": "array",
+      "description": "User's personal values",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "needs": {
+      "type": "array",
+      "description": "User's needs",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "offers": {
+      "type": "array",
+      "description": "What the user offers",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "wants": {
+      "type": "array",
+      "description": "What the user wants",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "initiated": {
+      "type": "array",
+      "description": "Quests initiated by user",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "completed": {
+      "type": "array",
+      "description": "Quests completed by user",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "participated": {
+      "type": "array",
+      "description": "Quests user participated in",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "balance": {
+      "type": "object",
+      "description": "User's currency balances",
+      "additionalProperties": {
+        "type": "number"
+      },
+      "default": {}
+    },
+    "roles": {
+      "type": "array",
+      "description": "Roles assigned to user",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "additionalProperties": true
+}

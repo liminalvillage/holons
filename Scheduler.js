@@ -967,11 +967,15 @@ class Scheduler {
                 task.id = Date.now().toString();
             }
             
-            // Validate the chat ID
-            if (!task.chatID || task.chatID === 0) {
+            // Validate the chat ID - check both chatID and chat properties
+            const chatId = task.chatID || task.chat;
+            if (!chatId || chatId === 0) {
                 console.error('Invalid chatID in createRecurringTask:', task);
                 throw new Error('Invalid chat ID');
             }
+
+            // Ensure the task has the chatID property for consistency
+            task.chatID = chatId;
             
             console.log('Creating recurring task with chat ID:', task.chatID);
             console.log('Task details:', {
