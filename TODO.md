@@ -122,7 +122,8 @@ modules/                 # Business logic organization
 tests/                   # Testing framework and setup
 ```
 
-### Migration Path:
-- **New Code**: Use `core/HolonsBotRefactored.js` for new implementations
-- **Legacy Support**: Original `HolonsBot.js` remains available during transition
+### Architecture:
+- **Core Implementation**: `core/HolonsBotCore.js` contains the main bot implementation
+- **Entry Point**: `HolonsBot.js` is the main entry point that initializes the bot
 - **Services**: Access via dependency injection: `await bot.getService('serviceName')`
+- **Clean Start**: All legacy references and environment toggles have been removed

@@ -13,17 +13,17 @@ describe('Integration Tests', () => {
     vi.restoreAllMocks();
   });
 
-  describe('Refactored HolonsBot Initialization', () => {
-    it('should import HolonsBotRefactored without errors', async () => {
-      const { default: HolonsBot } = await import('../core/HolonsBotRefactored.js');
+  describe('HolonsBot Initialization', () => {
+    it('should import HolonsBot without errors', async () => {
+      const { default: HolonsBot } = await import('../core/HolonsBotCore.js');
       expect(HolonsBot).toBeDefined();
       expect(typeof HolonsBot).toBe('function');
     });
 
     it('should create HolonsBot instance', async () => {
-      const { default: HolonsBot } = await import('../core/HolonsBotRefactored.js');
+      const { default: HolonsBot } = await import('../core/HolonsBotCore.js');
       const bot = new HolonsBot();
-      
+
       expect(bot).toBeDefined();
       expect(bot.container).toBeDefined();
       expect(bot.isInitialized).toBe(false);
@@ -31,9 +31,9 @@ describe('Integration Tests', () => {
     });
 
     it('should have required methods', async () => {
-      const { default: HolonsBot } = await import('../core/HolonsBotRefactored.js');
+      const { default: HolonsBot } = await import('../core/HolonsBotCore.js');
       const bot = new HolonsBot();
-      
+
       expect(typeof bot.init).toBe('function');
       expect(typeof bot.shutdown).toBe('function');
       expect(typeof bot.getService).toBe('function');
@@ -42,7 +42,7 @@ describe('Integration Tests', () => {
     // This test would require mocking lots of dependencies
     // For now, we'll skip actual initialization testing
     it.skip('should initialize with minimal setup', async () => {
-      const { default: HolonsBot } = await import('../core/HolonsBotRefactored.js');
+      const { default: HolonsBot } = await import('../core/HolonsBotCore.js');
       const bot = new HolonsBot();
       
       // Would need extensive mocking for this to work
