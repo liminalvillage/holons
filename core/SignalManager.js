@@ -62,14 +62,15 @@ export default class SignalManager {
             const effectivePriority = priority === existing.priority ? 
                 (specificity > existing.specificity ? priority + 1 : priority) : priority;
             
-            log.warn(`Signal conflict detected:`, {
+            const conflictInfo = {
                 pattern: patternKey,
                 existingModule: existing.module,
                 newModule: module,
                 existingSpecificity: existing.specificity,
                 newSpecificity: specificity,
                 resolution: effectivePriority > existing.priority ? 'new wins' : 'existing wins'
-            });
+            };
+            log.warn(`Signal conflict detected: ${patternKey} - ${existing.module} vs ${module} -> ${conflictInfo.resolution}`, conflictInfo);
             
             // Only override if new effective priority is higher
             if (effectivePriority <= existing.priority) {

@@ -475,20 +475,7 @@ export default class Settings {
             }
         });
 
-        // Handle timezone settings selection
-        this.bot.action(/timezone_set_(.+)/, async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            const timezone = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID);
-            settings.timezone = timezone;
-            await this.setSettings(settings);
-            const displayTimezone = timezone.split('/')[1].replace('_', ' ');
-            await ctx.reply(i18next.t('settings_timezone_updated', { timezone: displayTimezone }));
-            await ctx.editMessageText(i18next.t('settings_select_timezone_region'), {
-                reply_markup: await this.getTimezoneKeyboard(chatID)
-            }).catch((err) => { console.log(err) });
-        });
+        // Duplicate removed - timezone_set_ handler already registered above around line 284
 
         this.bot.action(/settings_equation_change/, async (ctx) => {
             await ctx.answerCbQuery().catch()
@@ -566,18 +553,8 @@ export default class Settings {
 
         // Register action handlers for settings
         this.bot.action('settings', (ctx) => this.showSettingsMenu(ctx, true));
-        
-        // Unified back button handler for all settings menus
-        this.bot.action('settings_back', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            console.log('Going back to settings menu');
-            // Leave any active scene
-            if (ctx.scene && ctx.scene.current) {
-                await ctx.scene.leave();
-            }
-            // Always edit existing message when returning to settings
-            await this.showSettingsMenu(ctx, true);
-        });
+
+        // Duplicate removed - settings_back handler already registered above around line 66
 
         // Handle array setting actions
         this.bot.action(/settings_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
@@ -636,50 +613,7 @@ export default class Settings {
             return this.showArraySettingMenu(ctx, type, true);
         });
 
-        // Handle adding items with explicit handlers for each type
-        this.bot.action('settings_values_change', async (ctx) => {
-            console.log('VALUES ADD button clicked');
-            await ctx.answerCbQuery().catch()
-            try {
-                return await ctx.scene.enter('add_array_item_scene', { type: 'values' });
-            } catch (error) {
-                console.error('Error entering values add scene:', error);
-                return ctx.reply('Error adding values. Please try again later.');
-            }
-        });
-
-        this.bot.action('settings_domains_change', async (ctx) => {
-            console.log('DOMAINS ADD button clicked');
-            await ctx.answerCbQuery().catch()
-            try {
-                return await ctx.scene.enter('add_array_item_scene', { type: 'domains' });
-            } catch (error) {
-                console.error('Error entering domains add scene:', error);
-                return ctx.reply('Error adding domains. Please try again later.');
-            }
-        });
-
-        this.bot.action('settings_roles_change', async (ctx) => {
-            console.log('ROLES ADD button clicked');
-            await ctx.answerCbQuery().catch()
-            try {
-                return await ctx.scene.enter('add_array_item_scene', { type: 'roles' });
-            } catch (error) {
-                console.error('Error entering roles add scene:', error);
-                return ctx.reply('Error adding roles. Please try again later.');
-            }
-        });
-
-        this.bot.action('settings_currencies_change', async (ctx) => {
-            console.log('CURRENCIES ADD button clicked');
-            await ctx.answerCbQuery().catch()
-            try {
-                return await ctx.scene.enter('add_array_item_scene', { type: 'currencies' });
-            } catch (error) {
-                console.error('Error entering currencies add scene:', error);
-                return ctx.reply('Error adding currencies. Please try again later.');
-            }
-        });
+        // Duplicate handlers removed - these are already registered dynamically in the loop around line 517-522
 
         this.bot.action('settings_purpose_change', async (ctx) => {
             console.log('PURPOSE ADD button clicked');
@@ -946,15 +880,7 @@ export default class Settings {
             await ctx.reply(message);
         });
 
-        // Action handler for adding federation (from federation keyboard)
-        this.bot.action('add_federation', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            // Store the original message ID in scene state
-            ctx.scene.state = { 
-                originalMessageId: ctx.callbackQuery.message.message_id 
-            };
-            await ctx.scene.enter('federation_scene');
-        });
+        // Duplicate removed - add_federation handler already registered above around line 673
         
         // Federation and hex back handlers have been removed and consolidated with unified settings_back handler
 
@@ -1244,59 +1170,9 @@ export default class Settings {
             });
         });
 
-        this.bot.action('settings_values_change', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('array_input_scene', {
-                field: 'values',
-                title: i18next.t('settings_values', { lng: await this.getLanguage(ctx.chat.id) }),
-                command: '/addvalues'
-            });
-        });
-
-        this.bot.action('settings_domains_change', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('array_input_scene', {
-                field: 'domains',
-                title: i18next.t('settings_domains', { lng: await this.getLanguage(ctx.chat.id) }),
-                command: '/adddomains'
-            });
-        });
-
-        this.bot.action('settings_roles_change', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('array_input_scene', {
-                field: 'roles',
-                title: i18next.t('settings_roles', { lng: await this.getLanguage(ctx.chat.id) }),
-                command: '/addroles'
-            });
-        });
-
-        this.bot.action('settings_currencies_change', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('array_input_scene', {
-                field: 'currencies',
-                title: i18next.t('settings_currencies', { lng: await this.getLanguage(ctx.chat.id), defaultValue: "Currencies" }),
-                command: '/addcurrencies'
-            });
-        });
-
-        this.bot.action('help_add_purpose', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('text_input_scene', {
-                field: 'purpose',
-                title: i18next.t('settings_purpose', { lng: await this.getLanguage(ctx.chat.id) }),
-                command: '/setpurpose'
-            });
-        });
-
-        this.bot.action('help_add_hex', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('text_input_scene', {
-                field: 'hex',
-                title: i18next.t('settings_hex', { lng: await this.getLanguage(ctx.chat.id) }),
-                command: '/sethex'
-            });
-        });
+        // Duplicates removed - these handlers are already registered above around line 617-670:
+        // - settings_values_change, settings_domains_change, settings_roles_change, settings_currencies_change
+        // Also removed duplicate help_add_hex (registered around line 1065)
 
         this.bot.action('help_add_currencies', async (ctx) => {
             await ctx.answerCbQuery().catch()

@@ -5,8 +5,8 @@ import { log } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 
 /**
- * Refactored HolonsBot using Dependency Injection
- * This replaces the anti-pattern constructor with proper service management
+ * HolonsBot using Dependency Injection
+ * This implementation uses proper service management and dependency injection
  */
 class HolonsBot {
   constructor() {
@@ -257,7 +257,7 @@ class HolonsBot {
   }
 
   /**
-   * Legacy method compatibility - setup Telegram commands
+   * Setup Telegram commands
    * TODO: Move this logic to individual service modules
    */
   async setupTelegramCommands() {
@@ -268,7 +268,7 @@ class HolonsBot {
   }
 
   /**
-   * Legacy method compatibility - setup Telegram handlers
+   * Setup Telegram handlers
    * TODO: Move this logic to individual service modules
    */
   async setupTelegramHandlers() {
@@ -315,8 +315,8 @@ class HolonsBot {
   }
 
   /**
-   * Legacy compatibility - direct property access
-   * Provides backward compatibility while encouraging migration to getService()
+   * Direct property access for convenience
+   * Provides easy access to commonly used services
    */
   get telebot() {
     if (!this.isInitialized) return null;
@@ -333,7 +333,7 @@ class HolonsBot {
     return this.container.get('settings').catch(() => null);
   }
 
-  // Add other legacy property getters as needed...
+  // Add other property getters as needed...
 }
 
 export default HolonsBot;

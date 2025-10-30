@@ -120,7 +120,7 @@ export default class Quests {
         const actions = {
             'participate_quest_': this.join,
             'appreciate_quest_': this.appreciate,
-            'schedule_quest_': this.schedule,
+            // 'schedule_quest_' removed - owned by Scheduler.js:40
             'cancel_quest_': this.cancel,
             'complete_quest_': this.complete,
             'stop_quest_': this.stop,
@@ -150,10 +150,10 @@ export default class Quests {
         this.actionRegexes.forEach(({ regex, handler }) => {
             this.bot.action(regex, handler);
         });
-        
+
         // Additional specific actions
-        this.bot.action(/check_(.+)/, ctx => this.handleCheckItem(ctx));
-        this.bot.action(/add_item_to_(.+)/, ctx => this.handleAddItem(ctx));
+        // Removed duplicate check_ and add_item_to_ handlers - owned by Checklists.js:41,44
+        // Quest checklists are handled through the Checklists module
         this.bot.action(/set_dependency_(.+)/, ctx => this.handleSetDependency(ctx));
         this.bot.action(/remove_dependency_(.+)/, ctx => this.handleRemoveDependency(ctx));
         this.bot.action(/toggle_quest_participant:(.+)_(.+)/, ctx => this.handleToggleParticipant(ctx));

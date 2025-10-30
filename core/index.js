@@ -12,9 +12,6 @@ export { default as ServiceContainer } from './ServiceContainer.js';
 // Service definitions
 export { serviceDefinitions, postInitHooks } from './ServiceDefinitions.js';
 
-// Legacy compatibility
-export { default as HolonsBotLegacy } from '../HolonsBot.js';
-
 /**
  * Factory function to create a properly configured bot instance
  */

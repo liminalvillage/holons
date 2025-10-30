@@ -19,25 +19,41 @@ class Announcements {
         let messageID = ctx.message.message_id;
         const language = await this.settings.getLanguage(chatID)
         const message = ctx.message.text.split(' ').slice(1).join(' ')
+
         if (!message || message.length === 0 || message === '') {
-            ctx.reply(utils.i18next.t('announcementusage', { lng: language }));
-            return;
+            // No message provided, use InputScene to collect it
+            return ctx.scene.enter('input_scene', {
+                promptText: utils.i18next.t('announcementprompt', { lng: language }),
+                allowEmpty: false,
+                onComplete: async (callbackCtx, message) => {
+                    await this.createAndPublishAnnouncement(callbackCtx, message);
+                }
+            });
         }
 
-        let announcement = { 
-            id: messageID, 
-            user: ctx.from, 
-            date: new Date(), 
+        // Message provided in command, process directly
+        await this.createAndPublishAnnouncement(ctx, message);
+    }
+
+    async createAndPublishAnnouncement(ctx, message) {
+        let chatID = ctx.chat.id;
+        let messageID = ctx.message.message_id;
+        const language = await this.settings.getLanguage(chatID);
+
+        let announcement = {
+            id: messageID,
+            user: ctx.from,
+            date: new Date(),
             content: message,
             chat: chatID
         }
-       
+
         await this.db.put(chatID + '/announcements', announcement);
-        
+
         // Send formatted announcement in local chat
         const formattedMessage = this.createAnnouncementMessage(announcement, language);
-        ctx.reply(formattedMessage, { parse_mode: 'Markdown' });
-        
+        await ctx.reply(formattedMessage, { parse_mode: 'Markdown' });
+
         // Check federation lens and replicate to other chats
         await this.handleFederatedAnnouncements(ctx, announcement, language);
     }

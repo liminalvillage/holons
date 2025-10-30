@@ -123,6 +123,5 @@ tests/                   # Testing framework and setup
 ```
 
 ### Migration Path:
-- **New Code**: Use `core/HolonsBotRefactored.js` for new implementations
-- **Legacy Support**: Original `HolonsBot.js` remains available during transition
+- **Main Implementation**: Use `core/HolonsBotRefactored.js` as the primary bot implementation
 - **Services**: Access via dependency injection: `await bot.getService('serviceName')`
