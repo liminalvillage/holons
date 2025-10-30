@@ -1,13 +1,15 @@
 // Description: This file contains the DB class which is used to interact with the database.
-import HoloSphere from 'holosphere';
+import {HoloSphere} from 'holosphere';
 
 class DB {
     constructor(dbName) {
         this.gun = null;
         this.dbName = dbName;
-        this.holosphere = new HoloSphere(dbName);
         this.preloadedDB = {};
-        this.holosphere = new HoloSphere(dbName,null, {peers: ['https://gun.holons.io/gun']});
+        this.holosphere = new HoloSphere({
+            appName: dbName,
+            logLevel: 'WARN'
+        });
        
         
         this.db = 'gun'; // 'orbit' or 'gun' or 'both' (writing to both, reading from gub)

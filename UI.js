@@ -451,7 +451,7 @@ class UI {
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Wait for all quests to be retrieved using holosphere.getAll with holograms
-    let quests = await this.db.holosphere.getAll(chatID, 'quests')
+    let quests = await this.db.holosphere.getAll(chatID.toString(), 'quests')
     
       // Ensure we have a valid array before filtering
       if (!Array.isArray(quests)) {
