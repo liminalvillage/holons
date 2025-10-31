@@ -34,7 +34,7 @@ class Checklists {
         this.bot.command('deletechecked', (ctx) => this.deleteCheckedItems(ctx));
         this.bot.command('checklists', (ctx) => this.showAllChecklists(ctx, {}));
         this.bot.command('agenda', (ctx) => this.showSpecialChecklist(ctx, 'agenda', '📅'));
-        this.bot.command('shopping', (ctx) => this.showSpecialChecklist(ctx, 'shopping', '🛒'));
+        // Note: /shopping command is handled by Shopping.js module
         this.bot.command('additem', (ctx) => this.directAddItem(ctx));
         
         // Register actions (unified for all checklist types)
@@ -47,7 +47,7 @@ class Checklists {
         this.bot.action(/exit_remove_mode_(.+)/, (ctx) => this.exitRemoveMode(ctx));
         this.bot.action(/remove_item_(.+)/, (ctx) => this.removeItem(ctx));
         this.bot.action(/back_to_quest_(.+)/, (ctx) => this.handleBackToQuest(ctx));
-        this.bot.action(/back_to_role_(.+)/, (ctx) => this.handleBackToRole(ctx)); // Add role back handler
+        // Removed duplicate back_to_role_ handler - owned by Roles.js:29
         this.bot.action('enter_delete_checklists_mode', (ctx) => this.enterDeleteChecklistsMode(ctx));
         this.bot.action('exit_delete_checklists_mode', (ctx) => this.exitDeleteChecklistsMode(ctx));
         this.bot.action(/delete_checklist_(.+)/, (ctx) => this.deleteChecklist(ctx));

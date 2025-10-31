@@ -33,6 +33,7 @@ import SignalManager, { REQUIRED_SIGNALS } from './SignalManager.js';
 import { log } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { setupGlobalErrorHandlers } from '../utils/errorHandler.js';
+import InputScene from '../utils/InputScene.js';
 
 /**
  * Service factory definitions for the dependency injection container
@@ -178,7 +179,7 @@ export const serviceDefinitions = {
   users: {
     factory: ({ telebot, database }) => {
       const users = new Users(telebot, database);
-      
+
       // Add middleware to track user interactions
       telebot.use((ctx, next) => {
         if (ctx.callbackQuery) {
@@ -194,6 +195,17 @@ export const serviceDefinitions = {
     },
     singleton: true,
     dependencies: ['telebot', 'database'],
+  },
+
+  // InputScene - Utility scene for collecting user input
+  inputScene: {
+    factory: ({ telebot }) => {
+      const inputScene = new InputScene(telebot);
+      log.info('InputScene utility initialized and registered');
+      return inputScene;
+    },
+    singleton: true,
+    dependencies: ['telebot'],
   },
 
   // Expenses

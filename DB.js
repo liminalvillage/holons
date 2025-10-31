@@ -1,5 +1,6 @@
 // Description: This file contains the DB class which is used to interact with the database.
 import {HoloSphere} from 'holosphere';
+import { getRelays } from './relay-config.js';
 
 class DB {
     constructor(dbName) {
@@ -8,16 +9,17 @@ class DB {
         this.preloadedDB = {};
         this.holosphere = new HoloSphere({
             appName: dbName,
-            logLevel: 'WARN'
+            logLevel: 'WARN',
+            relays: getRelays('production') // Use Nostr relays for distributed sync
         });
-       
-        
-        this.db = 'gun'; // 'orbit' or 'gun' or 'both' (writing to both, reading from gub)
+        this.db = 'nostr'; // Using Nostr relays for distributed storage
     }
 
     async init() {
         try {
-            this.gun = this.holosphere.gun;
+            // HoloSphere is now initialized with Nostr relays
+            // No additional initialization needed
+            console.log(`DB "${this.dbName}" initialized with ${this.holosphere.config.relays.length} Nostr relays`);
         } catch (error) {
             console.error("Error initializing database:", error);
         }
@@ -77,10 +79,13 @@ class DB {
 
     async addGunDB(table, data) {
         let [hex, lens] = table.split('/')
-        if (lens === undefined)
-            return this.holosphere.putGlobal(table, data);
-        else
+        if (lens === undefined) {
+            // For global tables, extract the key from data.id
+            const key = data.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            return this.holosphere.putGlobal(table, key, data);
+        } else {
             return this.holosphere.put(hex, lens, data);
+        }
     }
 
     async getGunDB(table, key) {

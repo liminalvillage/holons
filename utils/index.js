@@ -37,7 +37,7 @@ export const getAvatarUrl = (user) => {
   // TODO: Implement base64 encoding or caching for better performance
 };
 
-// Legacy compatibility exports (for gradual migration)
+// Compatibility exports (for gradual migration)
 export { 
   getUserId as getUser,  // Note: original getUser returned object, this returns ID
   getChatId,

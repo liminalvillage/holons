@@ -3,7 +3,7 @@
 /**
  * HolonsBot - Main Entry Point
  *
- * This file initializes and starts the HolonsBot application
+ * Uses the refactored dependency-injected core implementation.
  */
 
 import 'dotenv/config';
@@ -31,7 +31,6 @@ async function startBot() {
       await bot.shutdown();
       process.exit(0);
     });
-
   } catch (error) {
     log.error('Failed to start HolonsBot', { error: error.message, stack: error.stack });
     process.exit(1);

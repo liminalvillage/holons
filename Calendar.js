@@ -8,6 +8,9 @@ const lang = JSON.parse(
 import dayjs from 'dayjs';
 
 export class Calendar {
+    // Static flag to track if bot actions have been registered
+    static actionsRegistered = false;
+
     constructor(bot = false, options = {}) {
         this.options = options;
         this.options.language = (typeof options.language === 'undefined') ? 'en' : options.language;
@@ -28,7 +31,9 @@ export class Calendar {
         this.libraryInitialization();
 
         // Add bot actions for calendar navigation and time selection
-        if (this.bot) {
+        // Only register once to prevent duplicate signal warnings
+        if (this.bot && !Calendar.actionsRegistered) {
+            Calendar.actionsRegistered = true;
             // Calendar navigation actions
             this.bot.action(/n_(.+)_(?:--|\+\+|\+|-|0)/, async (ctx) => {
                 const result = await this.clickButtonCalendar(ctx);
