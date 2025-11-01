@@ -3,11 +3,12 @@ import i18next from 'i18next';
 import { getChatId, getMessageId, capitalize, getDisplayName, isBotAdmin, getHolonName, createPaddedCaption } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
+import { log } from './utils/logger.js';
 
 /**
  * Optimized Quest Management System
  * Reduced from 4,385 lines to ~1,800 lines (59% reduction)
- * 
+ *
  * Environment Variables:
  * - SHOW_QUESTS_AS_IMAGES: 'true' for image display, 'false' for text-only
  */
@@ -35,6 +36,9 @@ export default class Quests {
         this.imageUpdateQueue = new Map();
         this.imageUpdateTimer = null;
 
+        // Operation queue to prevent race conditions on rapid clicks
+        this.questOperationQueues = new Map(); // Map<questKey, Promise>
+
         // Performance caches
         this.languageCache = new Map();
         this.userCache = new Map();
@@ -46,6 +50,38 @@ export default class Quests {
         this.setupScenes();
         this.registerCommands();
         this.registerActions();
+    }
+
+    /**
+     * Wrap handler functions with error protection
+     * Prevents bot from crashing on unhandled errors
+     */
+    safeHandler(fn) {
+        return async (ctx, next) => {
+            try {
+                await fn.call(this, ctx, next);
+            } catch (error) {
+                log.error('Quest handler error', {
+                    error: error.message,
+                    stack: error.stack,
+                    handler: fn.name,
+                    userId: ctx.from?.id,
+                    chatId: ctx.chat?.id,
+                    data: ctx.callbackQuery?.data,
+                });
+
+                // Try to notify the user
+                try {
+                    if (ctx.answerCbQuery) {
+                        await ctx.answerCbQuery('⚠️ An error occurred. Please try again.').catch(() => {});
+                    } else if (ctx.reply) {
+                        await ctx.reply('⚠️ An error occurred. Please try again.').catch(() => {});
+                    }
+                } catch {}
+
+                // Don't rethrow - let the bot continue
+            }
+        };
     }
 
     setupScenes() {
@@ -97,23 +133,23 @@ export default class Quests {
                   'inspiration', 'motivation', 'reminder', 'warning', 'note', 'comment', 
                   'feedback', 'review', 'critique', 'compliment', 'complaint']
         };
-        
+
         Object.entries(commandGroups).forEach(([type, commands]) => {
-            commands.forEach(cmd => this.bot.command(cmd, ctx => this.quest(type, ctx)));
+            commands.forEach(cmd => this.bot.command(cmd, this.safeHandler(ctx => this.quest(type, ctx))));
         });
-        
+
         // List commands
-        this.bot.command('quests', ctx => this.listOpenQuests(ctx));
-        this.bot.command('delete', ctx => this.delete(ctx));
-        this.bot.command('listtype', ctx => this.listtype(ctx));
-        
+        this.bot.command('quests', this.safeHandler(ctx => this.listOpenQuests(ctx)));
+        this.bot.command('delete', this.safeHandler(ctx => this.delete(ctx)));
+        this.bot.command('listtype', this.safeHandler(ctx => this.listtype(ctx)));
+
         // List plural forms
         const pluralCommands = commandGroups.any.map(cmd => cmd + 's');
-        pluralCommands.forEach(cmd => this.bot.command(cmd, ctx => this.listanytype(ctx)));
-        
+        pluralCommands.forEach(cmd => this.bot.command(cmd, this.safeHandler(ctx => this.listanytype(ctx))));
+
         // Appreciation
-        this.bot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo', 'fiorino'], 
-                        ctx => this.sendAppreciation(ctx));
+        this.bot.command(['appreciate', 'praise', 'kudo', 'apprezza', 'apprezziamo', 'fiorino'],
+                        this.safeHandler(ctx => this.sendAppreciation(ctx)));
     }
 
     registerActions() {
@@ -148,20 +184,20 @@ export default class Quests {
         }));
 
         this.actionRegexes.forEach(({ regex, handler }) => {
-            this.bot.action(regex, handler);
+            this.bot.action(regex, this.safeHandler(handler));
         });
 
         // Additional specific actions
         // Removed duplicate check_ and add_item_to_ handlers - owned by Checklists.js:41,44
         // Quest checklists are handled through the Checklists module
-        this.bot.action(/set_dependency_(.+)/, ctx => this.handleSetDependency(ctx));
-        this.bot.action(/remove_dependency_(.+)/, ctx => this.handleRemoveDependency(ctx));
-        this.bot.action(/toggle_quest_participant:(.+)_(.+)/, ctx => this.handleToggleParticipant(ctx));
-        this.bot.action(/select_all_quest_participants:(.+)/, ctx => this.handleSelectAllParticipants(ctx));
-        this.bot.action(/toggle_quest_holon:(.+)/, ctx => this.handleToggleHolonParticipation(ctx));
-        this.bot.action(/set_recurring_(.+)/, ctx => this.handleSetRecurring(ctx));
-        this.bot.action(/back_from_recurring_(.+)/, ctx => this.handleBackFromRecurring(ctx));
-        this.bot.action(/back_(.+)/, ctx => this.handleBackAction(ctx));
+        this.bot.action(/set_dependency_(.+)/, this.safeHandler(ctx => this.handleSetDependency(ctx)));
+        this.bot.action(/remove_dependency_(.+)/, this.safeHandler(ctx => this.handleRemoveDependency(ctx)));
+        this.bot.action(/toggle_quest_participant:(.+)_(.+)/, this.safeHandler(ctx => this.handleToggleParticipant(ctx)));
+        this.bot.action(/select_all_quest_participants:(.+)/, this.safeHandler(ctx => this.handleSelectAllParticipants(ctx)));
+        this.bot.action(/toggle_quest_holon:(.+)/, this.safeHandler(ctx => this.handleToggleHolonParticipation(ctx)));
+        this.bot.action(/set_recurring_(.+)/, this.safeHandler(ctx => this.handleSetRecurring(ctx)));
+        this.bot.action(/back_from_recurring_(.+)/, this.safeHandler(ctx => this.handleBackFromRecurring(ctx)));
+        this.bot.action(/back_(.+)/, this.safeHandler(ctx => this.handleBackAction(ctx)));
     }
 
     // Core quest creation
@@ -299,138 +335,158 @@ export default class Quests {
 
     async handleParticipation(ctx, action) {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
-        const language = await this.getLanguage(chatID);
-        const quest = await this.db.get(chatID + '/quests', messageID);
-        
-        if (!await this.questExists(quest, ctx, messageID)) return;
-        if (await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language)) return;
-        
         const sender = ctx.callbackQuery.from;
-        quest.participants = quest.participants || [];
-        quest.appreciation = quest.appreciation || [];
 
-        if (action === 'join') {
-            const idx = quest.participants.findIndex(u => u.id === sender.id);
-            if (idx > -1) {
-                quest.participants.splice(idx, 1);
-                ctx.answerCbQuery(`${getDisplayName(sender)} left the quest "${quest.title}"`).catch(() => {});
-            } else {
-                quest.participants.push(sender);
-                ctx.answerCbQuery(`${getDisplayName(sender)} joined the quest "${quest.title}"`).catch(() => {});
-            }
-            quest.appreciation = quest.appreciation.filter(u => u.id !== sender.id);
-        } else {
-            const userIdx = quest.participants.findIndex(u => u.id === sender.id);
-            if (userIdx > -1) {
-                if (quest.status === "completed") {
-                    return ctx.answerCbQuery(`You cannot appreciate a ${quest.type} that you participated in`);
-                }
-                quest.participants.splice(userIdx, 1);
+        log.info(`handleParticipation called - action: ${action}, chatID: ${chatID}, messageID: ${messageID}, user: ${sender.id}`);
+
+        // Answer callback query IMMEDIATELY to prevent UI freezing
+        ctx.answerCbQuery().catch(() => {});
+
+        // Queue this operation to prevent race conditions
+        await this.queueQuestOperation(chatID, messageID, async () => {
+            const language = await this.getLanguage(chatID);
+
+            log.info(`Attempting to fetch quest from DB: ${chatID}/quests, key: ${messageID}`);
+            let quest;
+            try {
+                quest = await this.db.get(chatID + '/quests', messageID);
+                log.info(`Quest fetched successfully: ${quest ? quest.title : 'null'}`);
+            } catch (err) {
+                log.error(`Failed to fetch quest from DB: ${chatID}/quests/${messageID}`, err);
             }
 
-            const appIdx = quest.appreciation.findIndex(u => u.id === sender.id);
-            if (appIdx > -1) {
-                if (quest.status === "completed") {
-                    ctx.answerCbQuery(`You have already appreciated this ${quest.type}`);
+            if (!await this.questExists(quest, ctx, messageID)) {
+                log.warn(`Quest does not exist: ${chatID}/quests/${messageID}`);
+                return;
+            }
+            if (await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language)) return;
+
+            quest.participants = quest.participants || [];
+            quest.appreciation = quest.appreciation || [];
+
+            if (action === 'join') {
+                const idx = quest.participants.findIndex(u => u.id === sender.id);
+                if (idx > -1) {
+                    quest.participants.splice(idx, 1);
                 } else {
-                    quest.appreciation.splice(appIdx, 1);
-                    ctx.answerCbQuery(`${getDisplayName(sender)}'s appreciation removed`);
+                    quest.participants.push(sender);
                 }
+                quest.appreciation = quest.appreciation.filter(u => u.id !== sender.id);
             } else {
-                quest.appreciation.push(sender);
-                ctx.answerCbQuery(`${getDisplayName(sender)} appreciates the quest "${quest.title}"`);
-            }
-        }
+                const userIdx = quest.participants.findIndex(u => u.id === sender.id);
+                if (userIdx > -1) {
+                    if (quest.status === "completed") {
+                        return;
+                    }
+                    quest.participants.splice(userIdx, 1);
+                }
 
-        await this.saveQuest(quest);
-        if (action === 'join' && chatID.toString() !== sender.id.toString()) {
-            await this.personalHologram(sender.id, quest);
-            await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
-        }
-        
-        await this.updateMessage(ctx, quest, language);
+                const appIdx = quest.appreciation.findIndex(u => u.id === sender.id);
+                if (appIdx > -1) {
+                    if (quest.status === "completed") {
+                        return;
+                    }
+                    quest.appreciation.splice(appIdx, 1);
+                } else {
+                    quest.appreciation.push(sender);
+                }
+            }
+
+            await this.saveQuest(quest);
+            if (action === 'join' && chatID.toString() !== sender.id.toString()) {
+                await this.personalHologram(sender.id, quest);
+                await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
+            }
+
+            await this.updateMessage(ctx, quest, language);
+        });
     }
 
     async cancel(ctx) {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(chatID);
-        
+
         let quest;
         try {
             quest = await this.db.get(chatID + '/quests', messageID);
         } catch {}
-        
+
         const isHologram = quest?.chat && quest.chat.toString() !== chatID.toString();
-        
+
         if (isHologram) {
             const msgId = ctx.callbackQuery?.message.message_id || messageID;
             const chatId = ctx.callbackQuery?.message.chat.id || chatID;
             await ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
             return ctx.answerCbQuery('Hologram cancelled.').catch(() => {});
         }
-        
+
         if (!quest) {
             const msgId = ctx.callbackQuery?.message.message_id || messageID;
             const chatId = ctx.callbackQuery?.message.chat.id || chatID;
             await ctx.telegram.deleteMessage(chatId, msgId).catch(() => {});
             return ctx.answerCbQuery('Quest not found or already cancelled.').catch(() => {});
         }
-        
-        const hasPermission = quest.initiator?.id === ctx.from.id || 
+
+        const hasPermission = quest.initiator?.id === ctx.from.id ||
                              await this.checkUserAdmin(ctx.from.id, chatID);
-        
+
         if (!hasPermission) {
             return ctx.answerCbQuery(i18next.t('onlyinitatorcancel', { lng: language })).catch(() => {});
         }
-        
+
+        // Answer callback query IMMEDIATELY before heavy operations
+        ctx.answerCbQuery('Cancelling quest...').catch(() => {});
+
         if (quest.activeHolograms?.length > 0) {
             for (const h of quest.activeHolograms) {
                 await ctx.telegram.deleteMessage(h.chatId, h.messageId).catch(() => {});
             }
         }
-        
+
         if (quest.reminderId && this.scheduler) {
             await this.scheduler.cancelReminder(quest.reminderId);
         }
-        
+
         await this.db.del(chatID + '/quests', messageID);
         await ctx.telegram.unpinChatMessage(chatID, messageID).catch(() => {});
         await ctx.deleteMessage(messageID).catch(() => {});
-        ctx.answerCbQuery('Quest cancelled.').catch(() => {});
     }
 
     async complete(ctx) {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', messageID);
-        
+
         if (!await this.questExists(quest, ctx, messageID)) return;
         if (quest.status === 'stopped') {
             return ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }));
         }
-        
+
         const completerId = ctx.from.id;
-        const canComplete = quest.initiator.id === completerId || 
+        const canComplete = quest.initiator.id === completerId ||
                            quest.participants.some(u => u.id === completerId) ||
                            await this.checkUserAdmin(completerId, chatID);
-        
+
         if (!canComplete) {
             return ctx.answerCbQuery(i18next.t('onlyinitiatorcomplete', { lng: language }));
         }
-        
+
+        // Answer callback query IMMEDIATELY before heavy operations
+        ctx.answerCbQuery(`Completing "${quest.title}"...`).catch(() => {});
+
         quest.status = "completed";
-        
+
         if (quest.reminderId && this.scheduler) {
             await this.scheduler.cancelReminder(quest.reminderId);
             delete quest.reminderId;
         }
-        
+
         if (quest.timeTracking) {
             for (const [userID, hours] of Object.entries(quest.timeTracking)) {
                 if (hours > 0) {
-                    await this.expenses?.addExpense(messageID, chatID, hours, 'hour', 
+                    await this.expenses?.addExpense(messageID, chatID, hours, 'hour',
                                                    quest.title, userID, chatID);
-                    
+
                     try {
                         const userInfo = await this.users.getUserInfo({ id: parseInt(userID) }, chatID);
                         userInfo.hours = (userInfo.hours || 0) + hours;
@@ -439,16 +495,16 @@ export default class Quests {
                 }
             }
         }
-        
+
         const hologramsToUpdate = quest.activeHolograms ? [...quest.activeHolograms] : [];
         quest.activeHolograms = [];
         await this.saveQuest(quest);
         await this.updateMessage(ctx, quest, language, false, hologramsToUpdate);
-        
+
         ctx.telegram.unpinChatMessage(chatID, messageID).catch(() => {});
-        
+
         await this.recordCompletionActions(quest, chatID);
-        
+
         ctx.reply(`Quest "${quest.title}" completed! 🎊`, { reply_to_message_id: messageID }).catch(() => {});
     }
 
@@ -456,22 +512,25 @@ export default class Quests {
         const [, , chatID, messageID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(chatID);
         const quest = await this.db.get(chatID + '/quests', messageID);
-        
+
         if (!await this.questExists(quest, ctx, messageID)) return;
-        
+
         const sender = ctx.callbackQuery.from;
         const idx = quest.stoppers.findIndex(u => u.id === sender.id);
-        
+
+        // Answer callback query IMMEDIATELY
+        ctx.answerCbQuery().catch(() => {});
+
         if (idx > -1) {
             quest.stoppers.splice(idx, 1);
-            ctx.reply(`${getDisplayName(sender)} revoked veto for "${quest.title}"`, 
+            ctx.reply(`${getDisplayName(sender)} revoked veto for "${quest.title}"`,
                      { reply_to_message_id: messageID }).catch(() => {});
         } else {
             quest.stoppers.push(sender);
-            ctx.reply(`${getDisplayName(sender)} stopped "${quest.title}". Please address concerns.`, 
+            ctx.reply(`${getDisplayName(sender)} stopped "${quest.title}". Please address concerns.`,
                      { reply_to_message_id: messageID }).catch(() => {});
         }
-        
+
         quest.status = quest.stoppers.length > 0 ? 'stopped' : 'ongoing';
         await this.saveQuest(quest);
         await this.updateMessage(ctx, quest, language);
@@ -512,44 +571,62 @@ export default class Quests {
 
     async handleTimeTracking(ctx, amount, isAdding) {
         const [, , , chatID, messageID] = ctx.callbackQuery.data.split('_');
-        const language = await this.getLanguage(chatID);
-        const quest = await this.db.get(chatID + '/quests', messageID);
-        
-        if (!await this.questExists(quest, ctx, messageID)) return;
-        if (await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language)) return;
-        
         const sender = ctx.callbackQuery.from;
-        const userId = sender.id;
-        
-        if (!quest.timeTracking[userId]) quest.timeTracking[userId] = 0;
-        
-        if (isAdding) {
-            quest.timeTracking[userId] += amount;
-            if (!quest.participants.some(u => u.id === sender.id)) {
-                quest.participants.push(sender);
+
+        log.info(`handleTimeTracking called - amount: ${amount}, isAdding: ${isAdding}, chatID: ${chatID}, messageID: ${messageID}, user: ${sender.id}`);
+
+        // Answer callback query IMMEDIATELY to prevent UI freezing
+        ctx.answerCbQuery().catch(() => {});
+
+        // Queue this operation to prevent race conditions
+        await this.queueQuestOperation(chatID, messageID, async () => {
+            const language = await this.getLanguage(chatID);
+
+            log.info(`Attempting to fetch quest from DB: ${chatID}/quests, key: ${messageID}`);
+            let quest;
+            try {
+                quest = await this.db.get(chatID + '/quests', messageID);
+                log.info(`Quest fetched successfully: ${quest ? quest.title : 'null'}`);
+            } catch (err) {
+                log.error(`Failed to fetch quest from DB: ${chatID}/quests/${messageID}`, err);
             }
-        } else if (quest.timeTracking[userId] >= amount) {
-            quest.timeTracking[userId] -= amount;
-            
-            if (quest.timeTracking[userId] === 0 && 
-                quest.initiator.id !== sender.id && 
-                !quest.appreciation.some(u => u.id === sender.id)) {
-                quest.participants = quest.participants.filter(u => u.id !== sender.id);
+
+            if (!await this.questExists(quest, ctx, messageID)) {
+                log.warn(`Quest does not exist: ${chatID}/quests/${messageID}`);
+                return;
             }
-        } else {
-            return ctx.answerCbQuery(`No time logged for ${getDisplayName(sender)} to remove`);
-        }
-        
-        await this.db.put(chatID + '/quests', quest);
-        if (chatID.toString() !== sender.id.toString()) {
-            await this.personalHologram(sender.id, quest);
-            await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
-        }
-        
-        await this.updateMessage(ctx, quest, language, true);
-        
-        const action = isAdding ? 'Added' : 'Removed';
-        ctx.answerCbQuery(`${action} ${amount} hours ${isAdding ? 'to' : 'from'} ${getDisplayName(sender)}'s time on "${quest.title}"`);
+            if (await this.handleCompletedQuestInteraction(ctx, quest, chatID, messageID, language)) return;
+
+            const userId = sender.id;
+
+            if (!quest.timeTracking[userId]) quest.timeTracking[userId] = 0;
+
+            // Perform the time tracking operation
+            if (isAdding) {
+                quest.timeTracking[userId] += amount;
+                if (!quest.participants.some(u => u.id === sender.id)) {
+                    quest.participants.push(sender);
+                }
+            } else if (quest.timeTracking[userId] >= amount) {
+                quest.timeTracking[userId] -= amount;
+
+                if (quest.timeTracking[userId] === 0 &&
+                    quest.initiator.id !== sender.id &&
+                    !quest.appreciation.some(u => u.id === sender.id)) {
+                    quest.participants = quest.participants.filter(u => u.id !== sender.id);
+                }
+            } else {
+                return; // Not enough time to remove
+            }
+
+            await this.db.put(chatID + '/quests', quest);
+            if (chatID.toString() !== sender.id.toString()) {
+                await this.personalHologram(sender.id, quest);
+                await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
+            }
+
+            await this.updateMessage(ctx, quest, language, true);
+        });
     }
 
     // UI Methods
@@ -816,9 +893,11 @@ export default class Quests {
 
     async updateMessage(ctx, quest, language, useExpandedMarkup = false, explicitHologramsToUpdate = null) {
         if (!quest?.chat || !quest.id) return;
-        
+
+        log.info(`updateMessage called - quest: ${quest.title}, chatID: ${quest.chat}, messageID: ${quest.id}, useExpandedMarkup: ${useExpandedMarkup}`);
+
         language = language || await this.getLanguage(quest.chat);
-        const markupConfig = useExpandedMarkup 
+        const markupConfig = useExpandedMarkup
             ? { reply_markup: { inline_keyboard: this.getExpandedButtons(quest, language) } }
             : this.markup(quest, language);
         
@@ -989,21 +1068,27 @@ export default class Quests {
 
     async updateQuestMessage(ctx, quest, chatId, messageId, language, markupConfig) {
         const showImages = this.shouldShowQuestsAsImages();
-        
+
+        log.info(`updateQuestMessage - showImages: ${showImages}, chatId: ${chatId}, messageId: ${messageId}`);
+
         try {
             if (showImages) {
+                log.info('Updating reply markup for image mode');
                 await ctx.telegram.editMessageReplyMarkup(chatId, messageId, null, markupConfig.reply_markup)
-                    .catch(() => {});
-                
+                    .catch((err) => { log.error('Error editing reply markup', err); });
+
                 if (this.ui?.getQuestImage) {
                     this.queueImageUpdate(ctx, quest, chatId, messageId, markupConfig);
                 }
             } else {
+                log.info('Updating message text for text mode');
                 const message = await this.createMessage(quest, language);
                 await ctx.telegram.editMessageText(chatId, messageId, null, message, markupConfig)
-                    .catch(() => {});
+                    .catch((err) => { log.error('Error editing message text', err); });
             }
-        } catch {}
+        } catch (err) {
+            log.error('Error in updateQuestMessage', err);
+        }
     }
 
     queueImageUpdate(ctx, quest, chatId, messageId, markupConfig) {
@@ -2804,6 +2889,39 @@ export default class Quests {
         // Invalidate image cache for this quest
         if (quest.id && quest.chat) {
             this.invalidateQuestImageCache(quest.id, quest.chat);
+        }
+    }
+
+    // Queue operation to prevent race conditions on rapid button clicks
+    async queueQuestOperation(chatID, questID, operation) {
+        const questKey = `${chatID}_${questID}`;
+
+        log.info(`queueQuestOperation - questKey: ${questKey}`);
+
+        // Wait for any pending operation on this quest to complete
+        const existingOp = this.questOperationQueues.get(questKey);
+        if (existingOp) {
+            log.info(`Waiting for existing operation on ${questKey}`);
+            await existingOp.catch(() => {}); // Wait but ignore errors
+        }
+
+        // Execute the new operation and store its promise
+        log.info(`Executing new operation on ${questKey}`);
+        const newOp = operation();
+        this.questOperationQueues.set(questKey, newOp);
+
+        try {
+            const result = await newOp;
+            log.info(`Operation completed successfully on ${questKey}`);
+            return result;
+        } catch (err) {
+            log.error(`Operation failed on ${questKey}`, err);
+            throw err;
+        } finally {
+            // Clean up if this is still the current operation
+            if (this.questOperationQueues.get(questKey) === newOp) {
+                this.questOperationQueues.delete(questKey);
+            }
         }
     }
 

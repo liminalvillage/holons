@@ -169,7 +169,7 @@ class H3 {
                 };
 
                 // Save the federation configuration
-                await this.holosphere.putGlobal('federation', fedInfo);
+                await this.holosphere.putGlobal('federation', fedInfo.id, fedInfo);
 
                 // Create hologram for the quest
                 const questReference = { id: messageID };

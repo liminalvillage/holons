@@ -127,14 +127,14 @@ class Scheduler {
             chatID: chatID,
             title: taskDetails,
             frequency: frequency,
-            when: new Date(),
-            createdAt: new Date(),
+            when: new Date().toISOString(), // Convert Date to string for Nostr serialization
+            createdAt: new Date().toISOString(), // Convert Date to string for Nostr serialization
             initiator: ctx.message.from
         };
 
         // Save to database
-        await this.db.holosphere.putGlobal('recurring', task);
-        await this.db.holosphere.putGlobal('recurringlookup', {id: chatID + quest.id,  taskID: task.id});
+        await this.db.holosphere.putGlobal('recurring', task.id, task);
+        await this.db.holosphere.putGlobal('recurringlookup', chatID + quest.id, {id: chatID + quest.id,  taskID: task.id});
         
         // Schedule the task
         await this.scheduleTask(task,ctx);
@@ -266,8 +266,8 @@ class Scheduler {
                 await this.quests.updateMessage(ctx, quest, language, false);
                 
                 // Add the quest id to the lookup table
-                await this.db.holosphere.putGlobal('recurringlookup', {
-                    id: chatID + quest.id, 
+                await this.db.holosphere.putGlobal('recurringlookup', chatID + quest.id, {
+                    id: chatID + quest.id,
                     taskID: task.id
                 });
                 console.log('Recurring Lookup TASK', chatID + quest.id, task.id);
@@ -285,8 +285,15 @@ class Scheduler {
     }
 
     getCronTime(frequency, whenDate) {
-        // Ensure whenDate is a Date object
+        // Ensure whenDate is a Date object (handle both Date objects and ISO strings)
         const date = (whenDate instanceof Date) ? whenDate : new Date(whenDate);
+
+        // Validate the date
+        if (isNaN(date.getTime())) {
+            console.error(`Invalid date provided to getCronTime: ${whenDate}`);
+            return null;
+        }
+
         // Use UTC components for scheduling
         const minute = date.getUTCMinutes();
         const hour = date.getUTCHours();
@@ -426,8 +433,9 @@ class Scheduler {
                 if (recurringID) {
                     let task = await this.db.holosphere.getGlobal('recurring', recurringID.taskID);
                     if (task) {
-                        task.when = selectedDate;
-                        await this.db.holosphere.putGlobal('recurring', task);
+                        // Convert Date to ISO string for Nostr serialization
+                        task.when = selectedDate instanceof Date ? selectedDate.toISOString() : selectedDate;
+                        await this.db.holosphere.putGlobal('recurring', task.id, task);
                         await this.scheduleTask(task, ctx);
                     }
                 }
@@ -747,10 +755,10 @@ class Scheduler {
                 id: reminderId,
                 questId: quest.id,
                 chatId: quest.chat,
-                when: reminderDate,
+                when: reminderDate.toISOString(), // Convert Date to string for Nostr serialization
                 cronExpression: cronExpression,
                 title: quest.title || "Task reminder",
-                createdAt: now
+                createdAt: now.toISOString() // Convert Date to string for Nostr serialization
             });
             
             return reminderId;
@@ -763,19 +771,28 @@ class Scheduler {
     async saveReminderRecord(reminder) {
         try {
             console.log(`Saving reminder record: ${reminder.id} for quest ${reminder.questId}`);
+
+            // Debug: Log the reminder object to see what we're trying to save
+            console.log('Reminder object to save:', JSON.stringify(reminder, null, 2));
+
             // Store in the global reminders table
-            await this.db.holosphere.putGlobal('reminders', reminder);
-            
+            await this.db.holosphere.putGlobal('reminders', reminder.id, reminder);
+
             // Create lookup reference for easy retrieval
-            await this.db.holosphere.putGlobal('reminderslookup', {
-                id: `${reminder.chatId}${reminder.questId}`,
+            const lookupKey = `${reminder.chatId}${reminder.questId}`;
+            const lookupData = {
+                id: lookupKey,
                 reminderId: reminder.id
-            });
-            
+            };
+            console.log('Lookup data to save:', JSON.stringify(lookupData, null, 2));
+
+            await this.db.holosphere.putGlobal('reminderslookup', lookupKey, lookupData);
+
             console.log(`Reminder ${reminder.id} saved to global table`);
             return true;
         } catch (error) {
             console.error('Error saving reminder record:', error);
+            console.error('Failed reminder data:', JSON.stringify(reminder, null, 2));
             return false;
         }
     }
@@ -986,11 +1003,11 @@ class Scheduler {
             });
             
             // Save to database
-            await this.db.holosphere.putGlobal('recurring', task);
-            
+            await this.db.holosphere.putGlobal('recurring', task.id, task);
+
             // Create lookup reference
             const lookupId = task.chatID + task.questId;
-            await this.db.holosphere.putGlobal('recurringlookup', {
+            await this.db.holosphere.putGlobal('recurringlookup', lookupId, {
                 id: lookupId,
                 taskID: task.id
             });
@@ -1049,7 +1066,7 @@ class Scheduler {
             }
             
             // Save updated task
-            await this.db.holosphere.putGlobal('recurring', task);
+            await this.db.holosphere.putGlobal('recurring', task.id, task);
             
             // Stop existing job
             const existingJob = this.jobs.get(taskId);
@@ -1239,7 +1256,7 @@ class Scheduler {
                         const [chatId, questId] = lookup.id.split('_');
                         const newLookupId = `${chatId}|${questId}`;
                         await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
-                        await this.db.holosphere.putGlobal('recurringlookup', {
+                        await this.db.holosphere.putGlobal('recurringlookup', newLookupId, {
                             id: newLookupId,
                             taskID: lookup.taskID
                         });

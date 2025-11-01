@@ -268,21 +268,27 @@ export class ErrorHandler {
  */
 export function setupGlobalErrorHandlers() {
   process.on('uncaughtException', (error) => {
-    log.error('Uncaught Exception', {
+    log.error('Uncaught Exception - Bot will continue running', {
       error: error.message,
       stack: error.stack,
     });
-    
-    // Graceful shutdown
-    process.exit(1);
+
+    // DO NOT exit - let the bot continue running
+    // Only exit for truly fatal errors
+    if (isFatalError(error)) {
+      log.error('Fatal error detected, shutting down');
+      process.exit(1);
+    }
   });
 
   process.on('unhandledRejection', (reason, promise) => {
-    log.error('Unhandled Promise Rejection', {
+    log.error('Unhandled Promise Rejection - Bot will continue running', {
       reason: reason?.message || reason,
       stack: reason?.stack,
       promise: promise.toString(),
     });
+
+    // DO NOT exit - log and continue
   });
 
   process.on('SIGTERM', () => {
@@ -294,6 +300,26 @@ export function setupGlobalErrorHandlers() {
     log.info('SIGINT received, shutting down gracefully');
     process.exit(0);
   });
+}
+
+/**
+ * Determine if an error is truly fatal and requires shutdown
+ */
+function isFatalError(error) {
+  // Only exit for critical system-level errors
+  const fatalPatterns = [
+    'EADDRINUSE',     // Port already in use
+    'MODULE_NOT_FOUND', // Critical module missing (only at startup)
+    'EACCES',         // Permission denied for critical resources
+    'ENOSPC',         // No space left on device
+  ];
+
+  const errorMessage = error.message || '';
+  const errorCode = error.code || '';
+
+  return fatalPatterns.some(pattern =>
+    errorMessage.includes(pattern) || errorCode === pattern
+  );
 }
 
 export default ErrorHandler;

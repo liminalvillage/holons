@@ -8,23 +8,21 @@
  */
 
 export const RELAY_CONFIG = {
-  // Production relays - Use these for real network synchronization
-  // Based on your relay list with good connectivity and event support
+  // Production relays - UPDATED to use open relays that accept events
+  // Previous relays (nos.lol, at.nostrworks.com, btc.klendazu.com) were rejecting events:
+  //   - nos.lol: requires 28-bit Proof of Work
+  //   - at.nostrworks.com: whitelist only
+  //   - btc.klendazu.com: connection timeout
   production: [
-    'wss://nos.lol',                    // 128 events, connected
-    'wss://at.nostrworks.com',          // 100 events, connected
-    'wss://btc.klendazu.com',           // 100 events, connected
-    'wss://nostr.wine',                 // 0 events, connected
-    'wss://lightningrelay.com',         // 0 events, connected
-    'wss://knostr.neutrine.com',        // 0 events, connected
-    'wss://nostr-1.nbo.angani.co',      // connected
+    'wss://relay.damus.io',           // Open relay - accepts events
+    'wss://relay.nostr.band',         // Open relay - accepts events
   ],
 
-  // Development relays - Use for testing (most active relays)
+  // Development relays - Use open relays for testing
   development: [
-    'wss://nos.lol',
-    'wss://at.nostrworks.com',
-    'wss://btc.klendazu.com',
+    'wss://relay.damus.io',
+    'wss://relay.nostr.band',
+    'wss://nostr.wine',               // Requires signup but still useful
   ],
 
   // Local only - No network sync (for offline testing)

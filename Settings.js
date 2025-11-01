@@ -1498,7 +1498,7 @@ export default class Settings {
                 fedInfo.lensConfig[targetChatID] = linkSpecificConfig;
                 fedInfo.timestamp = Date.now();
 
-                await this.db.holosphere.putGlobal('federation', fedInfo); // Save the entire modified fedInfo
+                await this.db.holosphere.putGlobal('federation', fedInfo.id, fedInfo); // Save the entire modified fedInfo
 
                 // Fetch the updated config for UI refresh
                 const updatedLensesForUI = await this.getLensesConfigForUI(chatID, targetChatID, relationshipType);

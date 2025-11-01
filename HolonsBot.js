@@ -14,6 +14,11 @@ async function startBot() {
 
   try {
     const { default: HolonsBot } = await import('./core/HolonsBotCore.js');
+    const { setupGlobalErrorHandlers } = await import('./utils/errorHandler.js');
+
+    // Setup global error handlers to prevent crashes
+    setupGlobalErrorHandlers();
+
     const bot = new HolonsBot();
     await bot.init();
 
@@ -32,13 +37,22 @@ async function startBot() {
       process.exit(0);
     });
   } catch (error) {
-    log.error('Failed to start HolonsBot', { error: error.message, stack: error.stack });
-    process.exit(1);
+    log.error('Failed to start HolonsBot - Will retry in 10 seconds', { error: error.message, stack: error.stack });
+
+    // Instead of exiting, retry after delay
+    setTimeout(() => {
+      log.info('Retrying bot startup...');
+      startBot();
+    }, 10000);
   }
 }
 
 // Start the bot
 startBot().catch(error => {
   console.error('Failed to start HolonsBot:', error);
-  process.exit(1);
+  // Retry instead of exiting
+  setTimeout(() => {
+    console.log('Retrying bot startup...');
+    startBot();
+  }, 10000);
 });

@@ -237,7 +237,7 @@ const commands = {
             };
 
             console.log(\`📤 Updating schema: \${schemaName}\`);
-            await holosphere.putGlobal('schemas', updatedSchema, schemaName);
+            await holosphere.putGlobal('schemas', schemaName, updatedSchema);
             console.log(\`✅ Successfully updated: \${schemaName}\`);
 
             // Update registry
@@ -256,7 +256,7 @@ const commands = {
                         registry.totalSchemas++;
                     }
 
-                    await holosphere.putGlobal('schema_registry', registry);
+                    await holosphere.putGlobal('schema_registry', 'registry', registry);
                     console.log('✅ Registry updated');
                 }
             } catch (registryError) {
