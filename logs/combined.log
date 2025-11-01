@@ -4346,3 +4346,288 @@
 {"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:11:53"}
 {"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:11:54"}
 {"level":"\u001b[32minfo\u001b[39m","message":"SIGINT received, shutting down gracefully","timestamp":"2025-11-01 21:12:30"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:15:23"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:15:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:15:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:15:24"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:15:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:15:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:15:31"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:15:31"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:15:31"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:15:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:15:44"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:15:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:15:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:15:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Waiting for existing operation on 235114395_16300","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:15:56"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:16:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:16:09"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:16:09"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:16:09"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:16:09"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:16:12"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:12"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:12"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:16:14"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Waiting for existing operation on 235114395_16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:16:15"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:16:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:16:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:47"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:16:48"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:49"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:16:50"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:57"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:57"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleTimeTracking called - amount: 1, isAdding: true, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: true","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:16:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleTimeTracking called - amount: 1, isAdding: true, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: true","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:17:00"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleTimeTracking called - amount: 1, isAdding: true, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: true","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:17:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleTimeTracking called - amount: 1, isAdding: true, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: true","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:17:02"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:17:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleTimeTracking called - amount: 1, isAdding: true, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:17:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:17:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:17:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:17:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:17:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: true","timestamp":"2025-11-01 21:17:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:17:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:17:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:17:05"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:17:16"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:17:17"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16300, user: 235114395","timestamp":"2025-11-01 21:17:20"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16300","timestamp":"2025-11-01 21:17:20"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16300","timestamp":"2025-11-01 21:17:20"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16300","timestamp":"2025-11-01 21:17:20"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:17:20"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:17:21"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:17:21"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:17:21"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16300","timestamp":"2025-11-01 21:17:21"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16300, useExpandedMarkup: false","timestamp":"2025-11-01 21:17:25"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16300","timestamp":"2025-11-01 21:17:25"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:17:25"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SIGINT received, shutting down gracefully","timestamp":"2025-11-01 21:17:37"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:17:38"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:17:39"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:17:39"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:17:39"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:17:39"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:17:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16306, user: 235114395","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16306","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16306","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16306","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 1","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 1, chatID: 235114395, messageID: 16306, useExpandedMarkup: false","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16306","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16306","timestamp":"2025-11-01 21:18:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16309, user: 235114395","timestamp":"2025-11-01 21:18:06"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16309","timestamp":"2025-11-01 21:18:06"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16309","timestamp":"2025-11-01 21:18:06"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16309","timestamp":"2025-11-01 21:18:06"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 2","timestamp":"2025-11-01 21:18:06"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16309, useExpandedMarkup: false","timestamp":"2025-11-01 21:18:06"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16309","timestamp":"2025-11-01 21:18:07"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:18:07"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16309","timestamp":"2025-11-01 21:18:07"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 2, chatID: 235114395, messageID: 16309, useExpandedMarkup: false","timestamp":"2025-11-01 21:18:21"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16309","timestamp":"2025-11-01 21:18:21"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:18:21"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:19:36"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:19:37"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:19:37"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:19:37"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:19:37"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:19:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:19:51"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:19:52"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:19:52"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:19:52"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:19:52"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:19:52"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:20:02"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:20:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:20:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:20:03"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:20:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:20:03"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:20:10"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:20:11"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:20:11"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:20:11"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:20:11"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:20:11"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:20:23"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:20:23"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:20:23"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:20:23"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:20:23"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:20:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:20:30"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:20:30"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:20:30"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:20:30"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:20:31"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:20:31"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SIGINT received, shutting down gracefully","timestamp":"2025-11-01 21:20:58"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot","timestamp":"2025-11-01 21:21:00"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Starting HolonsBot initialization","timestamp":"2025-11-01 21:21:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Telegram bot initialized (not yet launched)","timestamp":"2025-11-01 21:21:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SignalManager initialized","timestamp":"2025-11-01 21:21:01"}
+{"appname":"Holons","level":"\u001b[32minfo\u001b[39m","message":"Database initialized","timestamp":"2025-11-01 21:21:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"InputScene utility initialized and registered","timestamp":"2025-11-01 21:21:01"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16319, user: 235114395","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16319","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16319","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16319","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 123","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 123, chatID: 235114395, messageID: 16319, useExpandedMarkup: false","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16319","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:21:22"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16319","timestamp":"2025-11-01 21:21:23"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16319, user: 235114395","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16319","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16319","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16319","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 123","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 123, chatID: 235114395, messageID: 16319, useExpandedMarkup: false","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16319","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16319","timestamp":"2025-11-01 21:21:24"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16322, user: 235114395","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16322","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16322","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16322","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 456","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 456, chatID: 235114395, messageID: 16322, useExpandedMarkup: false","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16322","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:21:38"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16322","timestamp":"2025-11-01 21:21:39"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16322, user: 235114395","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16322","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16322","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16322","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 456","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 456, chatID: 235114395, messageID: 16322, useExpandedMarkup: false","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16322","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:21:40"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16322","timestamp":"2025-11-01 21:21:41"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16322, user: 235114395","timestamp":"2025-11-01 21:21:58"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16322","timestamp":"2025-11-01 21:21:58"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16322","timestamp":"2025-11-01 21:21:58"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16322","timestamp":"2025-11-01 21:21:58"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 456","timestamp":"2025-11-01 21:21:58"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 456, chatID: 235114395, messageID: 16322, useExpandedMarkup: false","timestamp":"2025-11-01 21:21:58"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16322","timestamp":"2025-11-01 21:21:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:21:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16326","timestamp":"2025-11-01 21:21:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:21:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16322","timestamp":"2025-11-01 21:21:59"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16322, user: 235114395","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16322","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16322","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16322","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 456","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 456, chatID: 235114395, messageID: 16322, useExpandedMarkup: false","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16322","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:22:04"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16326","timestamp":"2025-11-01 21:22:05"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:22:05"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16322","timestamp":"2025-11-01 21:22:05"}
+{"level":"\u001b[32minfo\u001b[39m","message":"handleParticipation called - action: join, chatID: 235114395, messageID: 16322, user: 235114395","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"queueQuestOperation - questKey: 235114395_16322","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Executing new operation on 235114395_16322","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Attempting to fetch quest from DB: 235114395/quests, key: 16322","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Quest fetched successfully: 456","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 456, chatID: 235114395, messageID: 16322, useExpandedMarkup: false","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16322","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:22:08"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16326","timestamp":"2025-11-01 21:22:09"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:22:09"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Operation completed successfully on 235114395_16322","timestamp":"2025-11-01 21:22:09"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateMessage called - quest: 456, chatID: 235114395, messageID: 16322, useExpandedMarkup: false","timestamp":"2025-11-01 21:22:12"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16322","timestamp":"2025-11-01 21:22:12"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:22:12"}
+{"level":"\u001b[32minfo\u001b[39m","message":"updateQuestMessage - showImages: false, chatId: 235114395, messageId: 16326","timestamp":"2025-11-01 21:22:13"}
+{"level":"\u001b[32minfo\u001b[39m","message":"Updating message text for text mode","timestamp":"2025-11-01 21:22:13"}
+{"level":"\u001b[32minfo\u001b[39m","message":"SIGINT received, shutting down gracefully","timestamp":"2025-11-01 21:23:03"}

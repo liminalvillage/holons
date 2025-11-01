@@ -35,9 +35,12 @@ class DB {
 
         // Short-lived write cache for performance (handles race conditions)
         // Nostr relays are the primary storage, cache just prevents immediate re-reads
-        // Format: { 'table/key': { data, timestamp } }
+        // Format: { 'table/key': { data, timestamp, hash } }
         this.writeCache = new Map();
         this.writeCacheTTL = 60000; // Cache for 60 seconds for performance
+
+        // Track pending writes to prevent duplicate Nostr writes
+        this.pendingWrites = new Map();
     }
 
     async init() {
@@ -112,72 +115,91 @@ class DB {
         }
     }
 
+    // Simple hash function for dirty checking
+    _hashData(data) {
+        return JSON.stringify(data);
+    }
+
     async put(table, data) {
         try {
             const key = data.id;
+            if (!key) return data;
 
-            // Write to Nostr first (this is the primary storage)
-            await this.addGunDB(table, data);
-            console.log(`DB.put: Stored in Nostr: ${table}/${key}`);
+            const cacheKey = `${table}/${key}`;
+            const dataHash = this._hashData(data);
 
-            // Cache for 60 seconds to prevent immediate re-reads
-            if (key) {
-                const cacheKey = `${table}/${key}`;
-                const cacheEntry = {
-                    data: JSON.parse(JSON.stringify(data)),
-                    timestamp: Date.now()
-                };
-                this.writeCache.set(cacheKey, cacheEntry);
-                console.log(`DB.put: Cached for performance: ${cacheKey}`);
-
-                // Auto-expire after TTL
-                setTimeout(() => {
-                    const cached = this.writeCache.get(cacheKey);
-                    if (cached && Date.now() - cached.timestamp >= this.writeCacheTTL) {
-                        this.writeCache.delete(cacheKey);
-                        console.log(`DB.put: Cache expired: ${cacheKey}`);
-                    }
-                }, this.writeCacheTTL);
+            // Check if data has changed (dirty checking)
+            const cached = this.writeCache.get(cacheKey);
+            if (cached && cached.hash === dataHash) {
+                // Data unchanged, skip Nostr write
+                return data;
             }
+
+            // Check if a write is already pending for this key
+            if (this.pendingWrites.has(cacheKey)) {
+                // Wait for pending write to complete
+                await this.pendingWrites.get(cacheKey);
+                return data;
+            }
+
+            // Mark write as pending
+            const writePromise = this.addGunDB(table, data);
+            this.pendingWrites.set(cacheKey, writePromise);
+
+            try {
+                await writePromise;
+            } finally {
+                this.pendingWrites.delete(cacheKey);
+            }
+
+            // Update cache with new data and hash
+            const cacheEntry = {
+                data: JSON.parse(JSON.stringify(data)),
+                timestamp: Date.now(),
+                hash: dataHash
+            };
+            this.writeCache.set(cacheKey, cacheEntry);
+
+            // Auto-expire after TTL
+            setTimeout(() => {
+                const cached = this.writeCache.get(cacheKey);
+                if (cached && Date.now() - cached.timestamp >= this.writeCacheTTL) {
+                    this.writeCache.delete(cacheKey);
+                }
+            }, this.writeCacheTTL);
 
             return data;
         } catch (error) {
-            console.error("Error putting data:", error);
+            console.error(`DB.put error: ${table}/${data.id}:`, error.message);
             throw error;
         }
     }
 
     async get(table, key) {
         try {
-            console.log(`DB.get attempting to fetch: table=${table}, key=${key}`);
-
             // Check cache first for recently written data (performance optimization)
             const cacheKey = `${table}/${key}`;
             const cached = this.writeCache.get(cacheKey);
             if (cached && Date.now() - cached.timestamp < this.writeCacheTTL) {
-                console.log(`DB.get: Found in cache: ${cacheKey}`);
                 // Return a deep clone to prevent mutations
                 return JSON.parse(JSON.stringify(cached.data));
             }
 
             // Fetch from Nostr (primary storage)
-            console.log(`DB.get: Fetching from Nostr: ${cacheKey}`);
             const result = await this.withTimeout(this.getGunDB(table, key));
 
             if (result) {
-                console.log(`DB.get: Found in Nostr: ${cacheKey}`);
-                // Cache the result for performance
+                // Cache the result for performance (with hash for dirty checking)
                 this.writeCache.set(cacheKey, {
                     data: result,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    hash: this._hashData(result)
                 });
-            } else {
-                console.log(`DB.get: Not found in Nostr: ${cacheKey}`);
             }
 
             return result;
         } catch (error) {
-            console.error(`DB.get error: table=${table}, key=${key}, error:`, error.message);
+            console.error(`DB.get error: ${table}/${key}:`, error.message);
             throw error;
         }
     }
@@ -187,16 +209,16 @@ class DB {
             // Get all items from Nostr relays
             const items = await this.withTimeout(this.getAllGunDB(table));
 
-            // Cache all items for performance
+            // Cache all items for performance (with hash for dirty checking)
             if (items && Array.isArray(items)) {
                 items.forEach(item => {
                     if (item && item.id) {
                         const cacheKey = `${table}/${item.id}`;
                         this.writeCache.set(cacheKey, {
                             data: item,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
+                            hash: this._hashData(item)
                         });
-                        console.log(`DB.getAll: Cached item: ${cacheKey}`);
                     }
                 });
             }
@@ -212,38 +234,26 @@ class DB {
 
     async addGunDB(table, data) {
         let [hex, lens] = table.split('/')
-        console.log(`DB.addGunDB: hex=${hex}, lens=${lens}, data.id=${data.id}`);
         try {
             if (lens === undefined) {
                 // For global tables, extract the key from data.id
                 const key = data.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                console.log(`DB.addGunDB (global): key=${key}`);
-                const result = await this.holosphere.putGlobal(table, key, data);
-                console.log(`DB.addGunDB (global): write completed for ${table}/${key}`);
-                return result;
+                return await this.holosphere.putGlobal(table, key, data);
             } else {
-                console.log(`DB.addGunDB (scoped): storing with data.id=${data.id}`);
-                const result = await this.holosphere.put(hex, lens, data);
-                console.log(`DB.addGunDB (scoped): write completed for ${hex}/${lens}/${data.id}`);
-                return result;
+                return await this.holosphere.put(hex, lens, data);
             }
         } catch (error) {
-            console.error(`DB.addGunDB: FAILED to write ${table}/${data.id}:`, error);
+            console.error(`DB.addGunDB: FAILED to write ${table}/${data.id}:`, error.message);
             throw error;
         }
     }
 
     async getGunDB(table, key) {
         let [hex, lens] = table.split('/')
-        console.log(`DB.getGunDB: hex=${hex}, lens=${lens}, key=${key}`);
         if (lens === undefined) {
-            const result = await this.holosphere.getGlobal(table, key);
-            console.log(`DB.getGunDB (global): result=${result ? 'found' : 'null'}`);
-            return result;
+            return await this.holosphere.getGlobal(table, key);
         } else {
-            const result = await this.holosphere.get(hex, lens, key);
-            console.log(`DB.getGunDB (scoped): result=${result ? 'found' : 'null'}`);
-            return result;
+            return await this.holosphere.get(hex, lens, key);
         }
     }
 
