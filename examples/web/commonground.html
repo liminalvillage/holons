@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CommonGround - Community Land Trust | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #3b82f6; }
+    .btn-project { background: #3b82f6; color: white; }
+    .btn-project:hover { background: #2563eb; text-decoration: none; }
+    .parcel-map {
+      background: linear-gradient(135deg, #dbeafe 0%, #d1fae5 100%);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      margin: 1rem 0;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .parcel-item {
+      background: white;
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 1rem;
+      align-items: center;
+    }
+    .parcel-icon {
+      width: 48px;
+      height: 48px;
+      background: #3b82f6;
+      color: white;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+    .parcel-info {
+      flex: 1;
+    }
+    .parcel-title {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      color: var(--text);
+    }
+    .parcel-meta {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    .parcel-stats {
+      text-align: right;
+    }
+    .parcel-hectares {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #3b82f6;
+    }
+    .tenure-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-top: 0.5rem;
+    }
+    .tenure-trust { background: #dbeafe; color: #1e40af; }
+    .tenure-commons { background: #d1fae5; color: #065f46; }
+    .tenure-steward { background: #fef3c7; color: #92400e; }
+    .tenure-coop { background: #e0e7ff; color: #3730a3; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🏛️</div>
+          <span>CommonGround</span>
+        </div>
+        <nav class="nav">
+          <a href="voicevillage.html">← VoiceVillage</a>
+          <a href="index.html">Ecosystem</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Land Tenure & Community Governance</div>
+      <h1>CommonGround</h1>
+      <p>Community land trust management and stewardship tracking. Manage land parcels, record tenure agreements, track stewardship activities, and ensure equitable access to land through decentralized, transparent governance using geospatial holons.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="parcels-count">0</span>
+        <span class="stat-label">Land Parcels</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="total-hectares">0</span>
+        <span class="stat-label">Total Hectares</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="stewards-count">0</span>
+        <span class="stat-label">Active Stewards</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="communities-count">0</span>
+        <span class="stat-label">Communities</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers CommonGround</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Geospatial Land Registry:</strong> Each parcel is a geographic holon (H3 cell) with precise location</li>
+          <li><strong>Nested Land Commons:</strong> Parcels nest within watersheds, bioregions, and communities</li>
+          <li><strong>Federation with Monitoring:</strong> Land data federates with TerraTrust, WaterWise for stewardship tracking</li>
+          <li><strong>Transparent Tenure:</strong> All tenure agreements, transfers, and stewardship recorded immutably</li>
+          <li><strong>Community Ownership:</strong> Decentralized trust model—no landlords, no speculation</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🌱</span> <strong>TerraTrust:</strong> Monitors land health
+          </div>
+          <div class="connection-tag">
+            <span>🌊</span> <strong>WaterWise:</strong> Tracks watersheds
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>CoopCreds:</strong> Finances acquisitions
+          </div>
+          <div class="connection-tag">
+            <span>💚</span> <strong>HealingSpaces:</strong> Locates wellness areas
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Land Trust Management</h2>
+
+      <div class="card mb-lg">
+        <h3>Register Land Parcel</h3>
+        <div class="form-group">
+          <label for="community-holon">Community Holon</label>
+          <input type="text" id="community-holon" placeholder="e.g., bioregion-cascade" value="bioregion-cascade">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="parcel-name">Parcel Name</label>
+            <input type="text" id="parcel-name" placeholder="e.g., Riverside Commons">
+          </div>
+          <div class="form-group">
+            <label for="parcel-hectares">Hectares</label>
+            <input type="number" id="parcel-hectares" placeholder="5.5" step="0.1">
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="tenure-type">Tenure Type</label>
+            <select id="tenure-type">
+              <option value="trust">Community Land Trust</option>
+              <option value="commons">Commons</option>
+              <option value="steward">Stewardship</option>
+              <option value="coop">Cooperative</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="primary-use">Primary Use</label>
+            <select id="primary-use">
+              <option value="agriculture">Agriculture</option>
+              <option value="forest">Forest</option>
+              <option value="housing">Housing</option>
+              <option value="mixed">Mixed Use</option>
+              <option value="conservation">Conservation</option>
+              <option value="recreation">Recreation</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="steward-name">Primary Steward</label>
+          <input type="text" id="steward-name" placeholder="Name of person or group responsible">
+        </div>
+        <div class="form-group">
+          <label for="parcel-notes">Notes</label>
+          <textarea id="parcel-notes" rows="3" placeholder="Additional information about the parcel, stewardship plan, etc."></textarea>
+        </div>
+        <button class="btn btn-project" onclick="registerParcel()">Register Parcel</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Record Stewardship Activity</h3>
+        <div class="form-group">
+          <label for="activity-parcel">Parcel ID (from listing)</label>
+          <input type="text" id="activity-parcel" placeholder="Parcel ID">
+        </div>
+        <div class="form-group">
+          <label for="activity-type">Activity Type</label>
+          <select id="activity-type">
+            <option value="planting">Tree Planting</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="monitoring">Monitoring Visit</option>
+            <option value="harvest">Harvest</option>
+            <option value="restoration">Restoration Work</option>
+            <option value="event">Community Event</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="activity-description">Description</label>
+          <textarea id="activity-description" rows="2" placeholder="What was done?"></textarea>
+        </div>
+        <button class="btn btn-secondary" onclick="recordActivity()">Record Activity</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>View Land Registry</h3>
+        <div class="form-group">
+          <label for="view-community">Community to View</label>
+          <input type="text" id="view-community" placeholder="bioregion-cascade" value="bioregion-cascade">
+        </div>
+        <button class="btn btn-secondary" onclick="loadParcels()">Load Parcels</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Land parcels will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize CommonGround with HoloSphere
+const common = new HoloSphere('CommonGround', strict=false);
+
+// Register a land parcel
+await common.put('bioregion-cascade', 'parcels', {
+  id: 'parcel-riverside-001',
+  name: 'Riverside Commons',
+  hectares: 5.5,
+  tenure_type: 'trust',
+  primary_use: 'agriculture',
+  steward: 'Oak Valley Collective',
+  acquired_date: '2024-03-15',
+  h3_cells: ['8c2baad0d2b3fff', '8c2baad0d2b7fff'], // H3 cells
+  timestamp: Date.now()
+});
+
+// Get all parcels in a bioregion
+const parcels = await common.getAll('bioregion-cascade', 'parcels');
+
+// Record stewardship activity
+await common.put('bioregion-cascade', 'activities', {
+  id: Date.now().toString(),
+  parcel_id: 'parcel-riverside-001',
+  type: 'planting',
+  description: 'Planted 50 native tree saplings along riparian zone',
+  steward: 'Jane Smith',
+  hours: 6,
+  timestamp: Date.now()
+});
+
+// Subscribe to land changes
+common.subscribe('bioregion-cascade', 'parcels', (parcel) => {
+  console.log('Land parcel updated:', parcel);
+});
+
+// Federate with TerraTrust for land monitoring
+await common.federate('bioregion-cascade', 'terratrust-monitoring');
+
+// Get combined land + monitoring data
+const combined = await common.getFederated('bioregion-cascade', 'observations');
+
+// Federate with VoiceVillage for land use decisions
+await common.federate('bioregion-cascade', 'voicevillage-governance');
+// Now land decisions go through democratic process</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">CommonGround integrates deeply with ecosystem monitoring and governance</p>
+      <div class="connection-list">
+        <span class="connection-tag">🌱 TerraTrust monitors soil health and biodiversity</span>
+        <span class="connection-tag">🌊 WaterWise tracks watershed health on trust lands</span>
+        <span class="connection-tag">💰 CoopCreds enables cooperative land financing</span>
+        <span class="connection-tag">🏛️ VoiceVillage governs land use democratically</span>
+        <span class="connection-tag">💚 HealingSpaces locates wellness areas on land</span>
+        <span class="connection-tag">🏘️ NeighborHub hosts stewardship gatherings</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>CommonGround - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('CommonGround', 'CommonGround', '#3b82f6');
+
+    async function initSampleData() {
+      const samples = [
+        {
+          name: 'Riverside Commons',
+          hectares: 5.5,
+          tenure: 'trust',
+          use: 'agriculture',
+          steward: 'Oak Valley Collective'
+        },
+        {
+          name: 'Forest Sanctuary',
+          hectares: 12.3,
+          tenure: 'commons',
+          use: 'forest',
+          steward: 'Wild Earth Stewards'
+        },
+        {
+          name: 'Community Housing Co-op',
+          hectares: 2.1,
+          tenure: 'coop',
+          use: 'housing',
+          steward: 'Housing Collective'
+        },
+        {
+          name: 'Meadow Conservation Area',
+          hectares: 8.7,
+          tenure: 'steward',
+          use: 'conservation',
+          steward: 'Prairie Keepers'
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put('bioregion-cascade', 'parcels', {
+          id: Date.now().toString() + Math.random(),
+          name: sample.name,
+          hectares: sample.hectares,
+          tenure_type: sample.tenure,
+          primary_use: sample.use,
+          steward: sample.steward,
+          acquired_date: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          activities_count: Math.floor(Math.random() * 20),
+          timestamp: Date.now() - Math.random() * 180 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function registerParcel() {
+      const community = document.getElementById('community-holon').value;
+      const name = document.getElementById('parcel-name').value;
+      const hectares = parseFloat(document.getElementById('parcel-hectares').value);
+      const tenure = document.getElementById('tenure-type').value;
+      const use = document.getElementById('primary-use').value;
+      const steward = document.getElementById('steward-name').value;
+      const notes = document.getElementById('parcel-notes').value;
+
+      if (!community || !name || !hectares || !steward) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      const parcel = {
+        id: Date.now().toString(),
+        name: name,
+        hectares: hectares,
+        tenure_type: tenure,
+        primary_use: use,
+        steward: steward,
+        notes: notes,
+        acquired_date: new Date().toISOString().split('T')[0],
+        activities_count: 0,
+        timestamp: Date.now()
+      };
+
+      await sphere.put(community, 'parcels', parcel);
+      showNotification('Land parcel registered successfully!');
+
+      // Clear form
+      document.getElementById('parcel-name').value = '';
+      document.getElementById('parcel-hectares').value = '';
+      document.getElementById('steward-name').value = '';
+      document.getElementById('parcel-notes').value = '';
+
+      if (document.getElementById('view-community').value === community) {
+        await loadParcels();
+      }
+
+      updateStats();
+    }
+
+    async function recordActivity() {
+      const parcelId = document.getElementById('activity-parcel').value;
+      const type = document.getElementById('activity-type').value;
+      const description = document.getElementById('activity-description').value;
+
+      if (!parcelId || !description) {
+        showNotification('Please fill in all activity fields', 'error');
+        return;
+      }
+
+      const community = document.getElementById('view-community').value || 'bioregion-cascade';
+
+      await sphere.put(community, 'activities', {
+        id: Date.now().toString(),
+        parcel_id: parcelId,
+        type: type,
+        description: description,
+        steward: 'Demo User',
+        timestamp: Date.now()
+      });
+
+      // Update activity count on parcel
+      const parcels = await sphere.getAll(community, 'parcels');
+      const parcel = parcels.find(p => p.id === parcelId);
+      if (parcel) {
+        parcel.activities_count = (parcel.activities_count || 0) + 1;
+        localStorage.setItem(
+          `CommonGround:${community}:parcels:${parcelId}`,
+          JSON.stringify(parcel)
+        );
+      }
+
+      showNotification('Stewardship activity recorded!');
+
+      document.getElementById('activity-parcel').value = '';
+      document.getElementById('activity-description').value = '';
+
+      await loadParcels();
+    }
+
+    async function loadParcels() {
+      const community = document.getElementById('view-community').value;
+      if (!community) {
+        showNotification('Please enter a community holon', 'error');
+        return;
+      }
+
+      const parcels = await sphere.getAll(community, 'parcels');
+      const output = document.getElementById('output');
+
+      if (parcels.length === 0) {
+        output.innerHTML = `<p class="text-muted">No land parcels found for ${community}</p>`;
+        return;
+      }
+
+      // Sort by hectares, largest first
+      parcels.sort((a, b) => b.hectares - a.hectares);
+
+      let html = `<h4>Land Registry for ${community}</h4><div class="parcel-map">`;
+
+      for (const parcel of parcels) {
+        const tenureClass = `tenure-${parcel.tenure_type}`;
+        const acquiredDate = parcel.acquired_date || 'Unknown';
+
+        html += `
+          <div class="parcel-item">
+            <div class="parcel-icon">🏛️</div>
+            <div class="parcel-info">
+              <div class="parcel-title">${parcel.name}</div>
+              <div class="parcel-meta">
+                <strong>Steward:</strong> ${parcel.steward} |
+                <strong>Use:</strong> ${parcel.primary_use} |
+                <strong>Acquired:</strong> ${acquiredDate}
+              </div>
+              <div class="parcel-meta">
+                <strong>Activities:</strong> ${parcel.activities_count || 0} recorded |
+                <strong>ID:</strong> ${parcel.id}
+              </div>
+              ${parcel.notes ? `<div class="parcel-meta" style="margin-top: 0.5rem; font-style: italic;">${parcel.notes}</div>` : ''}
+              <span class="tenure-badge ${tenureClass}">${parcel.tenure_type}</span>
+            </div>
+            <div class="parcel-stats">
+              <div class="parcel-hectares">${parcel.hectares}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">hectares</div>
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let parcelsCount = 0, totalHectares = 0;
+      const stewards = new Set();
+      const communities = new Set();
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('CommonGround:') && key.includes(':parcels:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+          parcelsCount++;
+          totalHectares += item.hectares || 0;
+          if (item.steward) stewards.add(item.steward);
+          if (item._holon) communities.add(item._holon);
+        }
+      }
+
+      document.getElementById('parcels-count').textContent = parcelsCount;
+      document.getElementById('total-hectares').textContent = totalHectares.toFixed(1);
+      document.getElementById('stewards-count').textContent = stewards.size;
+      document.getElementById('communities-count').textContent = communities.size;
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('bioregion-cascade', 'parcels');
+      if (existing.length === 0) {
+        await initSampleData();
+      }
+      await updateStats();
+      await loadParcels();
+    })();
+  </script>
+</body>
+</html>

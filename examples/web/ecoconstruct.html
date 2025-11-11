@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EcoConstruct - Sustainable Building Marketplace | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #a16207; }
+    .btn-project { background: #a16207; color: white; }
+    .btn-project:hover { background: #854d0e; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🏗️</div>
+          <span>EcoConstruct</span>
+        </div>
+        <nav class="nav">
+          <a href="neighborhub.html">← NeighborHub</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="toollibrary.html">ToolLibrary →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Built Environment</div>
+      <h1>EcoConstruct</h1>
+      <p>Sustainable building materials marketplace and project collaboration. Source reclaimed materials, coordinate eco-builds, and track the environmental impact of construction projects.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="materials-count">0</span>
+        <span class="stat-label">Materials Listed</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="projects-count">0</span>
+        <span class="stat-label">Active Projects</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="co2-saved">0</span>
+        <span class="stat-label">kg CO₂ Saved</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="waste-diverted">0</span>
+        <span class="stat-label">kg Waste Diverted</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers EcoConstruct</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Location-based Materials:</strong> Find reclaimed materials near project sites</li>
+          <li><strong>Project Holons:</strong> Each construction site is a holon tracking materials & progress</li>
+          <li><strong>Federation with ToolLibrary:</strong> Connect material needs with tool availability</li>
+          <li><strong>Impact Tracking:</strong> Aggregate environmental savings across projects</li>
+          <li><strong>Local Currency Integration:</strong> Trade materials using LocalLoop</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🔧</span> <strong>ToolLibrary:</strong> Equipment for projects
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>LocalLoop:</strong> Material trading
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Workshop spaces
+          </div>
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Building workshops
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Materials & Projects</h2>
+
+      <div class="card mb-lg">
+        <h3>List Reclaimed Material</h3>
+        <div class="form-group">
+          <label for="location">Location Holon</label>
+          <input type="text" id="location" placeholder="e.g., construction-site-elm-st" value="ecomart-warehouse">
+        </div>
+        <div class="form-group">
+          <label for="material-name">Material Name</label>
+          <input type="text" id="material-name" placeholder="e.g., Reclaimed Oak Beams">
+        </div>
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label for="quantity">Quantity</label>
+            <input type="text" id="quantity" placeholder="10 beams">
+          </div>
+          <div class="form-group">
+            <label for="condition">Condition</label>
+            <select id="condition">
+              <option>Excellent</option>
+              <option>Good</option>
+              <option>Fair</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="price">Price (LC)</label>
+            <input type="number" id="price" placeholder="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="co2-impact">Estimated CO₂ Saved (kg)</label>
+          <input type="number" id="co2-impact" placeholder="50" step="0.1">
+        </div>
+        <button class="btn btn-project" onclick="listMaterial()">List Material</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Available materials will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize EcoConstruct
+const eco = new HoloSphere('EcoConstruct');
+
+// List reclaimed material
+await eco.put('ecomart-warehouse', 'materials', {
+  id: 'oak-beams-001',
+  name: 'Reclaimed Oak Beams',
+  quantity: '10 beams',
+  condition: 'excellent',
+  price: 0,
+  co2_saved: 50,
+  supplier: 'Local Deconstruction Co'
+});
+
+// Track a sustainable building project
+await eco.put('construction-site-elm-st', 'projects', {
+  id: 'elm-st-renovation',
+  name: 'Community Center Renovation',
+  materials_used: ['oak-beams-001'],
+  total_co2_saved: 250,
+  status: 'in_progress'
+});
+
+// Federate with ToolLibrary
+await eco.federate('construction-site-elm-st', 'tool-library-downtown');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <div class="connection-list">
+        <span class="connection-tag">🔧 ToolLibrary provides construction equipment</span>
+        <span class="connection-tag">💰 LocalLoop enables material trading</span>
+        <span class="connection-tag">🏘️ NeighborHub offers workshop space</span>
+        <span class="connection-tag">📚 LearnLocal teaches sustainable building</span>
+        <span class="connection-tag">🌱 TerraTrust supplies natural materials</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>EcoConstruct - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('EcoConstruct', 'EcoConstruct', '#a16207');
+
+    async function initSampleData() {
+      const samples = [
+        { name: 'Reclaimed Oak Beams', qty: '10 beams', condition: 'Excellent', price: 0, co2: 50 },
+        { name: 'Recycled Steel I-Beams', qty: '5 beams', condition: 'Good', price: 25, co2: 120 },
+        { name: 'Salvaged Brick Pavers', qty: '200 bricks', condition: 'Good', price: 0, co2: 30 }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put('ecomart-warehouse', 'materials', {
+          id: Date.now().toString() + Math.random(),
+          name: sample.name,
+          quantity: sample.qty,
+          condition: sample.condition,
+          price: sample.price,
+          co2_saved: sample.co2,
+          supplier: 'Demo Supplier',
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    async function listMaterial() {
+      const location = document.getElementById('location').value;
+      const name = document.getElementById('material-name').value;
+      const quantity = document.getElementById('quantity').value;
+      const condition = document.getElementById('condition').value;
+      const price = parseFloat(document.getElementById('price').value) || 0;
+      const co2 = parseFloat(document.getElementById('co2-impact').value) || 0;
+
+      if (!location || !name || !quantity) {
+        showNotification('Please fill in required fields', 'error');
+        return;
+      }
+
+      await sphere.put(location, 'materials', {
+        id: Date.now().toString(),
+        name,
+        quantity,
+        condition,
+        price,
+        co2_saved: co2,
+        supplier: 'Demo User',
+        timestamp: Date.now()
+      });
+
+      showNotification('Material listed successfully!');
+
+      document.getElementById('material-name').value = '';
+      document.getElementById('quantity').value = '';
+      document.getElementById('price').value = '';
+      document.getElementById('co2-impact').value = '';
+
+      await loadMaterials();
+      updateStats();
+    }
+
+    async function loadMaterials() {
+      const materials = await sphere.getAll('ecomart-warehouse', 'materials');
+      const output = document.getElementById('output');
+
+      if (materials.length === 0) {
+        output.innerHTML = `<p class="text-muted">No materials listed yet</p>`;
+        return;
+      }
+
+      materials.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = `<h4>Available Materials</h4><div class="item-list">`;
+
+      for (const mat of materials) {
+        html += `
+          <div class="item">
+            <div class="item-content">
+              <div class="item-title">${mat.name} - ${mat.quantity}</div>
+              <div class="item-meta">
+                Condition: ${mat.condition} |
+                Price: ${mat.price > 0 ? mat.price + ' LC' : 'Free'} |
+                CO₂ Saved: ${mat.co2_saved}kg
+              </div>
+            </div>
+            ${createStatusBadge('available').outerHTML}
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let materialsCount = 0, projectsCount = 0, totalCO2 = 0, totalWaste = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('EcoConstruct:')) {
+          if (key.includes(':materials:')) {
+            materialsCount++;
+            const item = JSON.parse(localStorage.getItem(key));
+            totalCO2 += item.co2_saved || 0;
+            totalWaste += parseFloat(item.quantity) || 10;
+          } else if (key.includes(':projects:')) {
+            projectsCount++;
+          }
+        }
+      }
+
+      document.getElementById('materials-count').textContent = materialsCount;
+      document.getElementById('projects-count').textContent = projectsCount;
+      document.getElementById('co2-saved').textContent = Math.round(totalCO2);
+      document.getElementById('waste-diverted').textContent = Math.round(totalWaste * 20);
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('ecomart-warehouse', 'materials');
+      if (existing.length === 0) await initSampleData();
+      await loadMaterials();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>

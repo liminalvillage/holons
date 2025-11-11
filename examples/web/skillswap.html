@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillSwap - Local Expertise Exchange | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #6366f1; }
+    .btn-project { background: #6366f1; color: white; }
+    .btn-project:hover { background: #4f46e5; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🎓</div>
+          <span>SkillSwap</span>
+        </div>
+        <nav class="nav">
+          <a href="toollibrary.html">← ToolLibrary</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="storycircle.html">StoryCircle →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Tools & Technology</div>
+      <h1>SkillSwap</h1>
+      <p>Connect with local experts and exchange knowledge through peer-to-peer skill sharing. Learn carpentry, coding, gardening, or any skill from neighbors while teaching your own expertise.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="skills-count">0</span>
+        <span class="stat-label">Skills Listed</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="exchanges-count">0</span>
+        <span class="stat-label">Exchanges</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="experts-count">0</span>
+        <span class="stat-label">Experts</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="hours-shared">0</span>
+        <span class="stat-label">Hours Shared</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers SkillSwap</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Skills as Holons:</strong> Each skill category is a holon connecting experts and learners</li>
+          <li><strong>Location Matching:</strong> Find experts near you using geospatial indexing</li>
+          <li><strong>Reputation Tracking:</strong> Build trust through federated review systems</li>
+          <li><strong>Real-time Matching:</strong> Subscribe to skill requests in your area</li>
+          <li><strong>Time Banking Integration:</strong> Trade skills using LocalLoop time credits</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Formal teaching
+          </div>
+          <div class="connection-tag">
+            <span>🔧</span> <strong>ToolLibrary:</strong> Equipment needs
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>LocalLoop:</strong> Time credits
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Meeting spaces
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Share & Learn Skills</h2>
+
+      <div class="card mb-lg">
+        <h3>List Your Skills</h3>
+        <div class="form-group">
+          <label for="location">Location/Community</label>
+          <input type="text" id="location" placeholder="e.g., downtown-skillshare" value="neighborhood-skillhub">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="skill-name">Skill Name</label>
+            <input type="text" id="skill-name" placeholder="e.g., Woodworking">
+          </div>
+          <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category">
+              <option>Crafts & Making</option>
+              <option>Technology & Coding</option>
+              <option>Gardening & Farming</option>
+              <option>Home Repair & Building</option>
+              <option>Arts & Music</option>
+              <option>Language & Writing</option>
+              <option>Health & Wellness</option>
+              <option>Business & Finance</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label for="proficiency">Proficiency Level</label>
+            <select id="proficiency">
+              <option>Beginner</option>
+              <option>Intermediate</option>
+              <option>Advanced</option>
+              <option>Expert</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="availability">Availability</label>
+            <select id="availability">
+              <option>Weekdays</option>
+              <option>Weekends</option>
+              <option>Evenings</option>
+              <option>Flexible</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="rate">Rate (LC/hour)</label>
+            <input type="number" id="rate" placeholder="0" step="1" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea id="description" rows="3" placeholder="What you can teach, your experience, what learners should expect..."></textarea>
+        </div>
+        <button class="btn btn-project" onclick="addSkill()">List Skill</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Request Help</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="request-skill">What do you want to learn?</label>
+            <input type="text" id="request-skill" placeholder="e.g., Basic Plumbing">
+          </div>
+          <div class="form-group">
+            <label for="request-duration">Duration (hours)</label>
+            <input type="number" id="request-duration" placeholder="2" value="2">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="request-details">Details</label>
+          <textarea id="request-details" rows="2" placeholder="What you need help with..."></textarea>
+        </div>
+        <button class="btn btn-secondary" onclick="requestHelp()">Find an Expert</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Available skills will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize SkillSwap
+const skills = new HoloSphere('SkillSwap');
+
+// List a skill you can teach
+await skills.put('neighborhood-skillhub', 'skills', {
+  id: 'skill-woodworking-101',
+  name: 'Woodworking Basics',
+  category: 'Crafts & Making',
+  teacher: 'john@example.com',
+  proficiency: 'expert',
+  availability: 'weekends',
+  rate: 0, // Free - or use LocalLoop time credits
+  description: '20 years experience in furniture making',
+  rating: 4.8,
+  exchanges_completed: 15
+});
+
+// Request help with a skill
+await skills.put('neighborhood-skillhub', 'requests', {
+  id: Date.now().toString(),
+  skill: 'Basic Plumbing',
+  learner: 'user@example.com',
+  duration_hours: 2,
+  details: 'Need to fix a leaky faucet',
+  status: 'open'
+});
+
+// Find experts in your area
+const woodworkers = await skills.getAll('neighborhood-skillhub', 'skills');
+const available = woodworkers.filter(s =>
+  s.category === 'Crafts & Making' &&
+  s.availability === 'weekends'
+);
+
+// Subscribe to new skill requests
+skills.subscribe('neighborhood-skillhub', 'requests', (request) => {
+  console.log('New skill request:', request);
+  // Match with available teachers
+});
+
+// Federate with other skill hubs
+await skills.federate('neighborhood-skillhub', 'downtown-skillhub');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">SkillSwap connects with other ecosystem projects for comprehensive learning</p>
+      <div class="connection-list">
+        <span class="connection-tag">📚 LearnLocal offers structured courses and certifications</span>
+        <span class="connection-tag">🔧 ToolLibrary provides equipment for hands-on learning</span>
+        <span class="connection-tag">💰 LocalLoop enables time banking and skill credits</span>
+        <span class="connection-tag">🏘️ NeighborHub provides workshop and meeting spaces</span>
+        <span class="connection-tag">🏗️ EcoConstruct connects builders with skilled tradespeople</span>
+        <span class="connection-tag">🌱 TerraTrust teaches ecological monitoring skills</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>SkillSwap - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('SkillSwap', 'SkillSwap', '#6366f1');
+
+    async function initSampleData() {
+      const samples = [
+        {
+          name: 'Woodworking Basics',
+          category: 'Crafts & Making',
+          proficiency: 'Expert',
+          availability: 'Weekends',
+          rate: 0,
+          description: '20 years experience. Learn furniture making, joinery, and finishing techniques.',
+          rating: 4.8,
+          exchanges: 15
+        },
+        {
+          name: 'Web Development',
+          category: 'Technology & Coding',
+          proficiency: 'Advanced',
+          availability: 'Evenings',
+          rate: 10,
+          description: 'Full-stack developer. HTML, CSS, JavaScript, React, Node.js. Build your first website!',
+          rating: 4.9,
+          exchanges: 23
+        },
+        {
+          name: 'Organic Gardening',
+          category: 'Gardening & Farming',
+          proficiency: 'Expert',
+          availability: 'Flexible',
+          rate: 0,
+          description: 'Permaculture certified. Teach composting, soil building, companion planting.',
+          rating: 5.0,
+          exchanges: 31
+        },
+        {
+          name: 'Basic Plumbing',
+          category: 'Home Repair & Building',
+          proficiency: 'Intermediate',
+          availability: 'Weekdays',
+          rate: 5,
+          description: 'Learn to fix common household plumbing issues. Faucets, drains, toilets.',
+          rating: 4.7,
+          exchanges: 12
+        },
+        {
+          name: 'Spanish Conversation',
+          category: 'Language & Writing',
+          proficiency: 'Advanced',
+          availability: 'Evenings',
+          rate: 0,
+          description: 'Native speaker from Mexico. Practice conversational Spanish in casual setting.',
+          rating: 4.9,
+          exchanges: 28
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put('neighborhood-skillhub', 'skills', {
+          id: 'skill-' + Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9),
+          name: sample.name,
+          category: sample.category,
+          teacher: 'Demo Teacher',
+          proficiency: sample.proficiency,
+          availability: sample.availability,
+          rate: sample.rate,
+          description: sample.description,
+          rating: sample.rating,
+          exchanges_completed: sample.exchanges,
+          timestamp: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function addSkill() {
+      const location = document.getElementById('location').value;
+      const name = document.getElementById('skill-name').value;
+      const category = document.getElementById('category').value;
+      const proficiency = document.getElementById('proficiency').value;
+      const availability = document.getElementById('availability').value;
+      const rate = parseInt(document.getElementById('rate').value) || 0;
+      const description = document.getElementById('description').value;
+
+      if (!location || !name || !description) {
+        showNotification('Please fill in required fields', 'error');
+        return;
+      }
+
+      await sphere.put(location, 'skills', {
+        id: 'skill-' + Date.now().toString(),
+        name,
+        category,
+        teacher: 'Demo User',
+        proficiency,
+        availability,
+        rate,
+        description,
+        rating: 5.0,
+        exchanges_completed: 0,
+        timestamp: Date.now()
+      });
+
+      showNotification('Skill listed successfully!');
+
+      document.getElementById('skill-name').value = '';
+      document.getElementById('description').value = '';
+
+      await loadSkills();
+      updateStats();
+    }
+
+    async function requestHelp() {
+      const skill = document.getElementById('request-skill').value;
+      const duration = parseInt(document.getElementById('request-duration').value) || 2;
+      const details = document.getElementById('request-details').value;
+
+      if (!skill) {
+        showNotification('Please specify what you want to learn', 'error');
+        return;
+      }
+
+      await sphere.put('neighborhood-skillhub', 'requests', {
+        id: 'request-' + Date.now().toString(),
+        skill,
+        learner: 'Demo User',
+        duration_hours: duration,
+        details,
+        status: 'open',
+        timestamp: Date.now()
+      });
+
+      showNotification(`Looking for ${skill} experts...`);
+
+      // Try to match with available skills
+      const skills = await sphere.getAll('neighborhood-skillhub', 'skills');
+      const matches = skills.filter(s =>
+        s.name.toLowerCase().includes(skill.toLowerCase()) ||
+        s.description.toLowerCase().includes(skill.toLowerCase())
+      );
+
+      if (matches.length > 0) {
+        setTimeout(() => {
+          showNotification(`Found ${matches.length} potential expert(s)!`);
+        }, 1000);
+      }
+
+      document.getElementById('request-skill').value = '';
+      document.getElementById('request-details').value = '';
+
+      updateStats();
+    }
+
+    async function loadSkills() {
+      const skills = await sphere.getAll('neighborhood-skillhub', 'skills');
+      const output = document.getElementById('output');
+
+      if (skills.length === 0) {
+        output.innerHTML = `<p class="text-muted">No skills listed yet</p>`;
+        return;
+      }
+
+      skills.sort((a, b) => b.rating - a.rating);
+
+      let html = `<h4>Available Skills</h4><div class="item-list">`;
+
+      for (const skill of skills) {
+        const stars = '⭐'.repeat(Math.round(skill.rating));
+
+        html += `
+          <div class="item">
+            <div class="item-content">
+              <div class="item-title">${skill.name} - ${skill.teacher}</div>
+              <div class="item-meta">
+                ${skill.category} | ${skill.proficiency} | ${skill.availability} |
+                ${skill.rate > 0 ? skill.rate + ' LC/hour' : 'Free/Trade'}
+              </div>
+              <div class="text-small" style="margin-top: 0.5rem;">${skill.description}</div>
+              <div class="text-small text-muted" style="margin-top: 0.5rem;">
+                ${stars} (${skill.exchanges_completed} exchanges)
+              </div>
+            </div>
+            <span class="badge badge-success">Available</span>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let skillsCount = 0, requestsCount = 0, totalHours = 0;
+      const teachers = new Set();
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('SkillSwap:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+
+          if (key.includes(':skills:')) {
+            skillsCount++;
+            teachers.add(item.teacher);
+            totalHours += (item.exchanges_completed || 0) * 2; // Assume 2 hours per exchange
+          } else if (key.includes(':requests:')) {
+            requestsCount++;
+          }
+        }
+      }
+
+      document.getElementById('skills-count').textContent = skillsCount;
+      document.getElementById('exchanges-count').textContent = requestsCount;
+      document.getElementById('experts-count').textContent = teachers.size;
+      document.getElementById('hours-shared').textContent = totalHours;
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('neighborhood-skillhub', 'skills');
+      if (existing.length === 0) await initSampleData();
+      await loadSkills();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>

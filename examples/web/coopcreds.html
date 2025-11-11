@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CoopCreds - Cooperative Credit & Mutual Aid | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #fb923c; }
+    .btn-project { background: #fb923c; color: white; }
+    .btn-project:hover { background: #f97316; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">💳</div>
+          <span>CoopCreds</span>
+        </div>
+        <nav class="nav">
+          <a href="localloop.html">← LocalLoop</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="voicevillage.html">VoiceVillage →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Finance & Economics</div>
+      <h1>CoopCreds</h1>
+      <p>Cooperative credit and mutual aid network. Create lending circles, extend peer-to-peer credit, and organize mutual aid pledges to support community members without traditional banking infrastructure.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="credit-extended">0</span>
+        <span class="stat-label">Credit Extended</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="mutual-aid">0</span>
+        <span class="stat-label">Mutual Aid Pledges</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="lending-circles">0</span>
+        <span class="stat-label">Lending Circles</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="repayment-rate">0%</span>
+        <span class="stat-label">Repayment Rate</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers CoopCreds</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Lending Circles:</strong> Self-organized groups pool resources and extend credit</li>
+          <li><strong>Peer-to-Peer Credit:</strong> Direct lending without banks or credit agencies</li>
+          <li><strong>Mutual Aid Networks:</strong> Pledge and track community support commitments</li>
+          <li><strong>Trust-based Scoring:</strong> Reputation built on community relationships, not credit scores</li>
+          <li><strong>Transparent Terms:</strong> All agreements stored on member-controlled holons</li>
+          <li><strong>Integration with LocalLoop:</strong> Credit denominated in local currency</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>CommonGround:</strong> Land purchase financing
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>LocalLoop:</strong> Credit in local currency
+          </div>
+          <div class="connection-tag">
+            <span>🏗️</span> <strong>EcoConstruct:</strong> Project financing
+          </div>
+          <div class="connection-tag">
+            <span>🌱</span> <strong>TerraTrust:</strong> Farm startup loans
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Emergency aid coordination
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Credit & Mutual Aid</h2>
+
+      <div class="card mb-lg">
+        <h3>Create Lending Circle</h3>
+        <div class="form-group">
+          <label for="circle-holon">Community Holon</label>
+          <input type="text" id="circle-holon" placeholder="e.g., portland-mutual-aid" value="portland-mutual-aid">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="circle-name">Circle Name</label>
+            <input type="text" id="circle-name" placeholder="e.g., Downtown Small Business Circle">
+          </div>
+          <div class="form-group">
+            <label for="member-count">Number of Members</label>
+            <input type="number" id="member-count" placeholder="8" min="3">
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="pool-size">Pool Size (LC)</label>
+            <input type="number" id="pool-size" placeholder="5000" step="100">
+          </div>
+          <div class="form-group">
+            <label for="term-length">Term (months)</label>
+            <input type="number" id="term-length" placeholder="12" min="1">
+          </div>
+        </div>
+        <button class="btn btn-project" onclick="createLendingCircle()">Create Circle</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Request Credit</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="borrower">Borrower Name</label>
+            <input type="text" id="borrower" placeholder="Your name">
+          </div>
+          <div class="form-group">
+            <label for="credit-amount">Amount Requested (LC)</label>
+            <input type="number" id="credit-amount" placeholder="500" step="10">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="purpose">Purpose</label>
+          <select id="purpose">
+            <option>Business startup</option>
+            <option>Emergency expense</option>
+            <option>Education</option>
+            <option>Home improvement</option>
+            <option>Equipment purchase</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="repayment-plan">Repayment Plan</label>
+          <input type="text" id="repayment-plan" placeholder="e.g., 50 LC per month for 10 months">
+        </div>
+        <button class="btn btn-secondary" onclick="requestCredit()">Request Credit</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Pledge Mutual Aid</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="pledger">Your Name</label>
+            <input type="text" id="pledger" placeholder="Your name">
+          </div>
+          <div class="form-group">
+            <label for="aid-type">Aid Type</label>
+            <select id="aid-type">
+              <option>Financial</option>
+              <option>Housing</option>
+              <option>Childcare</option>
+              <option>Food</option>
+              <option>Transportation</option>
+              <option>Skills/Labor</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="aid-details">What can you offer?</label>
+          <input type="text" id="aid-details" placeholder="e.g., Emergency housing for up to 2 weeks, 100 LC for unexpected expenses">
+        </div>
+        <button class="btn btn-secondary" onclick="pledgeMutualAid()">Make Pledge</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Credit requests and lending circles will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize CoopCreds mutual aid system
+const coopcreds = new HoloSphere('CoopCreds');
+
+// Create a lending circle
+await coopcreds.put('portland-mutual-aid', 'lending-circles', {
+  id: Date.now().toString(),
+  name: 'Downtown Small Business Circle',
+  members: 8,
+  pool_size: 5000,
+  term_months: 12,
+  created: Date.now()
+});
+
+// Request credit from the community
+await coopcreds.put('portland-mutual-aid', 'credit-requests', {
+  id: Date.now().toString(),
+  borrower: 'alice@local',
+  amount: 500,
+  purpose: 'Business startup',
+  repayment_plan: '50 LC per month for 10 months',
+  status: 'pending',
+  timestamp: Date.now()
+});
+
+// Pledge mutual aid to community
+await coopcreds.put('portland-mutual-aid', 'mutual-aid', {
+  id: Date.now().toString(),
+  pledger: 'bob@local',
+  type: 'Housing',
+  details: 'Emergency housing for up to 2 weeks',
+  available: true,
+  timestamp: Date.now()
+});
+
+// Get all active lending circles
+const circles = await coopcreds.getAll('portland-mutual-aid', 'lending-circles');
+
+// Track repayments
+await coopcreds.put('portland-mutual-aid', 'repayments', {
+  id: Date.now().toString(),
+  credit_request_id: 'req-123',
+  amount: 50,
+  timestamp: Date.now()
+});
+
+// Subscribe to new credit requests
+coopcreds.subscribe('portland-mutual-aid', 'credit-requests', (request) => {
+  console.log(`New credit request: ${request.borrower} needs ${request.amount}`);
+});
+
+// Federate with LocalLoop for currency integration
+await coopcreds.federate('portland-mutual-aid', 'portland-hours');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">CoopCreds enables peer-to-peer financing across the ecosystem</p>
+      <div class="connection-list">
+        <span class="connection-tag">🏛️ CommonGround finances community land purchases</span>
+        <span class="connection-tag">💰 LocalLoop denominates credit in local currency</span>
+        <span class="connection-tag">🏗️ EcoConstruct finances sustainable building projects</span>
+        <span class="connection-tag">🌱 TerraTrust provides farm and garden startup loans</span>
+        <span class="connection-tag">🏘️ NeighborHub coordinates emergency mutual aid</span>
+        <span class="connection-tag">📚 LearnLocal finances education and training</span>
+        <span class="connection-tag">🤝 SkillSwap tracks time-banking credits</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>CoopCreds - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('CoopCreds', 'CoopCreds', '#fb923c');
+
+    async function initSampleData() {
+      // Sample lending circles
+      const circles = [
+        { name: 'Downtown Small Business Circle', members: 8, pool: 5000, term: 12 },
+        { name: 'Organic Farmers Collective', members: 12, pool: 8000, term: 18 },
+        { name: 'Artists & Makers Fund', members: 6, pool: 3000, term: 6 }
+      ];
+
+      for (const circle of circles) {
+        await sphere.put('portland-mutual-aid', 'lending-circles', {
+          id: Date.now().toString() + Math.random(),
+          name: circle.name,
+          members: circle.members,
+          pool_size: circle.pool,
+          term_months: circle.term,
+          created: Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000
+        });
+      }
+
+      // Sample credit requests
+      const requests = [
+        { borrower: 'Alice Chen', amount: 500, purpose: 'Business startup', plan: '50 LC/month for 10 months', status: 'approved' },
+        { borrower: 'Bob Rivera', amount: 300, purpose: 'Emergency expense', plan: '100 LC/month for 3 months', status: 'approved' },
+        { borrower: 'Carol Martinez', amount: 800, purpose: 'Equipment purchase', plan: '80 LC/month for 10 months', status: 'pending' }
+      ];
+
+      for (const req of requests) {
+        await sphere.put('portland-mutual-aid', 'credit-requests', {
+          id: Date.now().toString() + Math.random(),
+          borrower: req.borrower,
+          amount: req.amount,
+          purpose: req.purpose,
+          repayment_plan: req.plan,
+          status: req.status,
+          timestamp: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
+        });
+      }
+
+      // Sample mutual aid pledges
+      const pledges = [
+        { pledger: 'David Kim', type: 'Housing', details: 'Emergency housing for up to 2 weeks' },
+        { pledger: 'Emma Torres', type: 'Financial', details: '100 LC for unexpected expenses' },
+        { pledger: 'Frank Johnson', type: 'Skills/Labor', details: 'Carpentry and home repair skills' },
+        { pledger: 'Grace Lee', type: 'Childcare', details: 'Daytime childcare, flexible hours' }
+      ];
+
+      for (const pledge of pledges) {
+        await sphere.put('portland-mutual-aid', 'mutual-aid', {
+          id: Date.now().toString() + Math.random(),
+          pledger: pledge.pledger,
+          type: pledge.type,
+          details: pledge.details,
+          available: true,
+          timestamp: Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000
+        });
+      }
+
+      // Sample repayments
+      for (let i = 0; i < 15; i++) {
+        await sphere.put('portland-mutual-aid', 'repayments', {
+          id: Date.now().toString() + Math.random(),
+          credit_request_id: 'req-' + Math.floor(Math.random() * 3),
+          amount: 50 + Math.random() * 100,
+          timestamp: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function createLendingCircle() {
+      const holon = document.getElementById('circle-holon').value;
+      const name = document.getElementById('circle-name').value;
+      const members = parseInt(document.getElementById('member-count').value);
+      const poolSize = parseFloat(document.getElementById('pool-size').value);
+      const term = parseInt(document.getElementById('term-length').value);
+
+      if (!name || !members || !poolSize || !term) {
+        showNotification('Please fill in all fields', 'error');
+        return;
+      }
+
+      await sphere.put(holon, 'lending-circles', {
+        id: Date.now().toString(),
+        name,
+        members,
+        pool_size: poolSize,
+        term_months: term,
+        created: Date.now()
+      });
+
+      showNotification('Lending circle created!');
+
+      document.getElementById('circle-name').value = '';
+      document.getElementById('member-count').value = '';
+      document.getElementById('pool-size').value = '';
+      document.getElementById('term-length').value = '';
+
+      await loadData();
+      updateStats();
+    }
+
+    async function requestCredit() {
+      const holon = document.getElementById('circle-holon').value;
+      const borrower = document.getElementById('borrower').value;
+      const amount = parseFloat(document.getElementById('credit-amount').value);
+      const purpose = document.getElementById('purpose').value;
+      const plan = document.getElementById('repayment-plan').value;
+
+      if (!borrower || !amount) {
+        showNotification('Please fill in borrower and amount', 'error');
+        return;
+      }
+
+      await sphere.put(holon, 'credit-requests', {
+        id: Date.now().toString(),
+        borrower,
+        amount,
+        purpose,
+        repayment_plan: plan || 'To be determined',
+        status: 'pending',
+        timestamp: Date.now()
+      });
+
+      showNotification('Credit request submitted!');
+
+      document.getElementById('borrower').value = '';
+      document.getElementById('credit-amount').value = '';
+      document.getElementById('repayment-plan').value = '';
+
+      await loadData();
+      updateStats();
+    }
+
+    async function pledgeMutualAid() {
+      const holon = document.getElementById('circle-holon').value;
+      const pledger = document.getElementById('pledger').value;
+      const type = document.getElementById('aid-type').value;
+      const details = document.getElementById('aid-details').value;
+
+      if (!pledger || !details) {
+        showNotification('Please fill in your name and details', 'error');
+        return;
+      }
+
+      await sphere.put(holon, 'mutual-aid', {
+        id: Date.now().toString(),
+        pledger,
+        type,
+        details,
+        available: true,
+        timestamp: Date.now()
+      });
+
+      showNotification('Mutual aid pledge recorded!');
+
+      document.getElementById('pledger').value = '';
+      document.getElementById('aid-details').value = '';
+
+      await loadData();
+      updateStats();
+    }
+
+    async function loadData() {
+      const circles = await sphere.getAll('portland-mutual-aid', 'lending-circles');
+      const requests = await sphere.getAll('portland-mutual-aid', 'credit-requests');
+      const pledges = await sphere.getAll('portland-mutual-aid', 'mutual-aid');
+      const output = document.getElementById('output');
+
+      let html = '';
+
+      // Display lending circles
+      if (circles.length > 0) {
+        html += `<h4>Active Lending Circles</h4><div class="grid grid-2 mb-lg">`;
+        for (const circle of circles) {
+          html += `
+            <div class="card">
+              <h3>${circle.name}</h3>
+              <p><strong>Members:</strong> ${circle.members}</p>
+              <p><strong>Pool Size:</strong> ${circle.pool_size} LC</p>
+              <p><strong>Term:</strong> ${circle.term_months} months</p>
+              ${createStatusBadge('active').outerHTML}
+            </div>
+          `;
+        }
+        html += `</div>`;
+      }
+
+      // Display credit requests
+      if (requests.length > 0) {
+        requests.sort((a, b) => b.timestamp - a.timestamp);
+        html += `<h4>Credit Requests</h4><div class="item-list">`;
+        for (const req of requests.slice(0, 5)) {
+          const statusBadge = req.status === 'approved' ? 'completed' : req.status === 'pending' ? 'pending' : 'closed';
+          html += `
+            <div class="item">
+              <div class="item-content">
+                <div class="item-title">${req.borrower} - ${req.amount} LC</div>
+                <div class="item-meta">
+                  ${req.purpose} • ${req.repayment_plan}
+                </div>
+              </div>
+              ${createStatusBadge(statusBadge).outerHTML}
+            </div>
+          `;
+        }
+        html += `</div>`;
+      }
+
+      // Display mutual aid pledges
+      if (pledges.length > 0) {
+        html += `<h4 class="mt-lg">Mutual Aid Pledges</h4><div class="item-list">`;
+        for (const pledge of pledges.slice(0, 5)) {
+          html += `
+            <div class="item">
+              <div class="item-content">
+                <div class="item-title">${pledge.pledger} - ${pledge.type}</div>
+                <div class="item-meta">${pledge.details}</div>
+              </div>
+              ${createStatusBadge('available').outerHTML}
+            </div>
+          `;
+        }
+        html += `</div>`;
+      }
+
+      if (!html) {
+        html = `<p class="text-muted">No data yet. Create a lending circle or request credit to get started!</p>`;
+      }
+
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let totalCredit = 0, aidCount = 0, circleCount = 0;
+      let totalRepayments = 0, totalRequests = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('CoopCreds:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+
+          if (key.includes(':credit-requests:')) {
+            totalCredit += item.amount || 0;
+            if (item.status === 'approved') {
+              totalRequests += item.amount || 0;
+            }
+          } else if (key.includes(':mutual-aid:')) {
+            aidCount++;
+          } else if (key.includes(':lending-circles:')) {
+            circleCount++;
+          } else if (key.includes(':repayments:')) {
+            totalRepayments += item.amount || 0;
+          }
+        }
+      }
+
+      const repaymentRate = totalRequests > 0 ? Math.round((totalRepayments / totalRequests) * 100) : 0;
+
+      document.getElementById('credit-extended').textContent = totalCredit.toFixed(0);
+      document.getElementById('mutual-aid').textContent = aidCount;
+      document.getElementById('lending-circles').textContent = circleCount;
+      document.getElementById('repayment-rate').textContent = repaymentRate + '%';
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('portland-mutual-aid', 'lending-circles');
+      if (existing.length === 0) await initSampleData();
+      await loadData();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>

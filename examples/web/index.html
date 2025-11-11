@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Permaculture Flower Ecosystem - HoloSphere Examples</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .ecosystem-hero {
+      background: linear-gradient(135deg, #059669 0%, #2563eb 100%);
+      color: white;
+      padding: 4rem 0;
+      text-align: center;
+    }
+
+    .ecosystem-hero h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .ecosystem-hero p {
+      font-size: 1.25rem;
+      max-width: 800px;
+      margin: 0 auto 2rem;
+      opacity: 0.95;
+    }
+
+    .flower-visual {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 1rem;
+      margin: 3rem 0;
+    }
+
+    .petal {
+      text-align: center;
+      padding: 2rem 1rem;
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .petal:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    .petal-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .petal-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1.5rem;
+      color: #1f2937;
+    }
+
+    .petal-projects {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .petal a {
+      display: block;
+      padding: 0.75rem;
+      background: #f9fafb;
+      border-radius: 0.5rem;
+      color: #059669;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .petal a:hover {
+      background: #059669;
+      color: white;
+      text-decoration: none;
+    }
+
+    .ecosystem-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .stat-box {
+      text-align: center;
+      padding: 2rem;
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-box .number {
+      font-size: 3rem;
+      font-weight: 700;
+      color: #059669;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-box .label {
+      color: #6b7280;
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .how-it-works {
+      background: white;
+      border-radius: 1rem;
+      padding: 3rem;
+      margin: 3rem 0;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .how-it-works h2 {
+      text-align: center;
+      margin-bottom: 2rem;
+      color: #1f2937;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+    }
+
+    .feature {
+      text-align: center;
+    }
+
+    .feature-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 1rem;
+      background: linear-gradient(135deg, #059669, #2563eb);
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+    }
+
+    .feature h3 {
+      font-size: 1.125rem;
+      margin-bottom: 0.5rem;
+      color: #1f2937;
+    }
+
+    .feature p {
+      color: #6b7280;
+      font-size: 0.875rem;
+      margin: 0;
+    }
+
+    .connections-map {
+      background: linear-gradient(135deg, #fef3c7, #dbeafe, #e0e7ff);
+      border-radius: 1rem;
+      padding: 3rem;
+      margin: 3rem 0;
+    }
+
+    .connections-map h2 {
+      text-align: center;
+      margin-bottom: 2rem;
+      color: #1f2937;
+    }
+
+    .connection-items {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+    }
+
+    .connection-item {
+      background: white;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .connection-arrow {
+      color: #059669;
+      font-weight: 700;
+    }
+
+    @media (max-width: 1200px) {
+      .flower-visual {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .flower-visual {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .ecosystem-stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .features {
+        grid-template-columns: 1fr;
+      }
+
+      .connection-items {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: linear-gradient(135deg, #059669, #2563eb); color: white;">🌐</div>
+          <span>HoloSphere</span>
+        </div>
+        <nav class="nav">
+          <a href="../../README.md">Docs</a>
+          <a href="https://github.com/your-repo/holosphere">GitHub</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="ecosystem-hero">
+    <div class="container">
+      <div class="hero-tagline">HoloSphere Examples</div>
+      <h1>Permaculture Flower Ecosystem</h1>
+      <p>14 interconnected projects demonstrating how HoloSphere enables decentralized, location-based collaboration across the full spectrum of community needs.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="ecosystem-stats">
+      <div class="stat-box">
+        <span class="number">14</span>
+        <span class="label">Projects</span>
+      </div>
+      <div class="stat-box">
+        <span class="number">7</span>
+        <span class="label">Petals</span>
+      </div>
+      <div class="stat-box">
+        <span class="number">28+</span>
+        <span class="label">Integrations</span>
+      </div>
+      <div class="stat-box">
+        <span class="number">∞</span>
+        <span class="label">Possibilities</span>
+      </div>
+    </div>
+
+    <div class="flower-visual">
+      <!-- Land & Nature Stewardship -->
+      <div class="petal" style="border-top: 4px solid #2d5016;">
+        <div class="petal-icon">🌱</div>
+        <div class="petal-title">Land & Nature</div>
+        <div class="petal-projects">
+          <a href="terratrust.html">TerraTrust</a>
+          <a href="waterwise.html">WaterWise</a>
+        </div>
+      </div>
+
+      <!-- Built Environment -->
+      <div class="petal" style="border-top: 4px solid #8b4513;">
+        <div class="petal-icon">🏘️</div>
+        <div class="petal-title">Built Environment</div>
+        <div class="petal-projects">
+          <a href="neighborhub.html">NeighborHub</a>
+          <a href="ecoconstruct.html">EcoConstruct</a>
+        </div>
+      </div>
+
+      <!-- Tools & Technology -->
+      <div class="petal" style="border-top: 4px solid #4a5568;">
+        <div class="petal-icon">🔧</div>
+        <div class="petal-title">Tools & Tech</div>
+        <div class="petal-projects">
+          <a href="toollibrary.html">ToolLibrary</a>
+          <a href="skillswap.html">SkillSwap</a>
+        </div>
+      </div>
+
+      <!-- Culture & Education -->
+      <div class="petal" style="border-top: 4px solid #7c3aed;">
+        <div class="petal-icon">📚</div>
+        <div class="petal-title">Culture & Education</div>
+        <div class="petal-projects">
+          <a href="storycircle.html">StoryCircle</a>
+          <a href="learnlocal.html">LearnLocal</a>
+        </div>
+      </div>
+
+      <!-- Health & Spiritual Well-being -->
+      <div class="petal" style="border-top: 4px solid #ec4899;">
+        <div class="petal-icon">💚</div>
+        <div class="petal-title">Health & Spirit</div>
+        <div class="petal-projects">
+          <a href="healingspaces.html">HealingSpaces</a>
+          <a href="mindfulmeets.html">MindfulMeets</a>
+        </div>
+      </div>
+
+      <!-- Finances & Economics -->
+      <div class="petal" style="border-top: 4px solid #f59e0b;">
+        <div class="petal-icon">💰</div>
+        <div class="petal-title">Finance & Economics</div>
+        <div class="petal-projects">
+          <a href="localloop.html">LocalLoop</a>
+          <a href="coopcreds.html">CoopCreds</a>
+        </div>
+      </div>
+
+      <!-- Land Tenure & Community Governance -->
+      <div class="petal" style="border-top: 4px solid #2563eb;">
+        <div class="petal-icon">🏛️</div>
+        <div class="petal-title">Governance</div>
+        <div class="petal-projects">
+          <a href="voicevillage.html">VoiceVillage</a>
+          <a href="commonground.html">CommonGround</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="how-it-works">
+      <h2>How HoloSphere Powers This Ecosystem</h2>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">🗺️</div>
+          <h3>Geographic Organization</h3>
+          <p>H3 hexagonal indexing organizes all data by location, enabling natural spatial relationships between projects.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🔗</div>
+          <h3>Federation</h3>
+          <p>Projects can federate their data holons, automatically sharing relevant information while maintaining autonomy.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📡</div>
+          <h3>Decentralized</h3>
+          <p>Built on GunDB, all data is distributed with no central authority required—perfect for community resilience.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="connections-map">
+      <h2>Ecosystem Connections</h2>
+      <div class="connection-items">
+        <div class="connection-item">
+          <strong>TerraTrust</strong> <span class="connection-arrow">→</span> <strong>WaterWise</strong><br>
+          Land health data feeds watershed management
+        </div>
+        <div class="connection-item">
+          <strong>NeighborHub</strong> <span class="connection-arrow">→</span> <strong>LearnLocal</strong><br>
+          Community spaces host educational workshops
+        </div>
+        <div class="connection-item">
+          <strong>ToolLibrary</strong> <span class="connection-arrow">→</span> <strong>EcoConstruct</strong><br>
+          Shared tools enable sustainable building
+        </div>
+        <div class="connection-item">
+          <strong>SkillSwap</strong> <span class="connection-arrow">→</span> <strong>LearnLocal</strong><br>
+          Experts share knowledge through classes
+        </div>
+        <div class="connection-item">
+          <strong>HealingSpaces</strong> <span class="connection-arrow">→</span> <strong>CommonGround</strong><br>
+          Wellness locations on community land
+        </div>
+        <div class="connection-item">
+          <strong>LocalLoop</strong> <span class="connection-arrow">→</span> <strong>ToolLibrary</strong><br>
+          Local currency enables tool sharing
+        </div>
+        <div class="connection-item">
+          <strong>CoopCreds</strong> <span class="connection-arrow">→</span> <strong>CommonGround</strong><br>
+          Cooperative financing for land acquisition
+        </div>
+        <div class="connection-item">
+          <strong>VoiceVillage</strong> <span class="connection-arrow">→</span> <strong>All Projects</strong><br>
+          Democratic governance across ecosystem
+        </div>
+        <div class="connection-item">
+          <strong>StoryCircle</strong> <span class="connection-arrow">→</span> <strong>VoiceVillage</strong><br>
+          Cultural wisdom guides decisions
+        </div>
+        <div class="connection-item">
+          <strong>NeighborHub</strong> <span class="connection-arrow">→</span> <strong>MindfulMeets</strong><br>
+          Spaces host spiritual gatherings
+        </div>
+        <div class="connection-item">
+          <strong>WaterWise</strong> <span class="connection-arrow">→</span> <strong>CommonGround</strong><br>
+          Watershed data informs land stewardship
+        </div>
+        <div class="connection-item">
+          <strong>EcoConstruct</strong> <span class="connection-arrow">→</span> <strong>LocalLoop</strong><br>
+          Sustainable materials traded locally
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../README.md">Documentation</a>
+        <a href="../../LICENSE">License (LGPL-3.0)</a>
+        <a href="https://github.com/your-repo/holosphere">GitHub</a>
+      </div>
+      <p>Built with HoloSphere - Holonic Geospatial Communication Infrastructure</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+</body>
+</html>

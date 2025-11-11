@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ToolLibrary - Community Tool Sharing | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #4a5568; }
+    .btn-project { background: #4a5568; color: white; }
+    .btn-project:hover { background: #374151; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🔧</div>
+          <span>ToolLibrary</span>
+        </div>
+        <nav class="nav">
+          <a href="ecoconstruct.html">← EcoConstruct</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="skillswap.html">SkillSwap →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Tools & Technology</div>
+      <h1>ToolLibrary</h1>
+      <p>Community tool sharing network that connects people with equipment they need. Share power tools, garden equipment, and specialized instruments across your neighborhood using location-based holons.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="tools-count">0</span>
+        <span class="stat-label">Tools Available</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="loans-count">0</span>
+        <span class="stat-label">Active Loans</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="communities-count">0</span>
+        <span class="stat-label">Communities</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="hours-saved">0</span>
+        <span class="stat-label">Usage Hours</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers ToolLibrary</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Location-based Discovery:</strong> Find tools near you using H3 geospatial indexing</li>
+          <li><strong>Availability Tracking:</strong> Real-time tool status with subscription updates</li>
+          <li><strong>Community Holons:</strong> Each neighborhood is a holon with its own tool inventory</li>
+          <li><strong>Federation:</strong> Connect multiple tool libraries for wider access</li>
+          <li><strong>Booking Management:</strong> Track loans, returns, and maintenance history</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🏗️</span> <strong>EcoConstruct:</strong> Tools for building
+          </div>
+          <div class="connection-tag">
+            <span>🎓</span> <strong>SkillSwap:</strong> Tool experts
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>LocalLoop:</strong> Tool deposits
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Storage spaces
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Share & Book Tools</h2>
+
+      <div class="card mb-lg">
+        <h3>Add Tool to Library</h3>
+        <div class="form-group">
+          <label for="location">Location/Community</label>
+          <input type="text" id="location" placeholder="e.g., maple-street-tool-shed" value="downtown-tool-library">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="tool-name">Tool Name</label>
+            <input type="text" id="tool-name" placeholder="e.g., Electric Drill">
+          </div>
+          <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category">
+              <option>Power Tools</option>
+              <option>Hand Tools</option>
+              <option>Garden Equipment</option>
+              <option>Ladders & Scaffolding</option>
+              <option>Measuring & Leveling</option>
+              <option>Specialty Equipment</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label for="condition">Condition</label>
+            <select id="condition">
+              <option>Excellent</option>
+              <option>Good</option>
+              <option>Fair</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="deposit">Deposit (LC)</label>
+            <input type="number" id="deposit" placeholder="0" step="1" value="0">
+          </div>
+          <div class="form-group">
+            <label for="loan-period">Max Loan (days)</label>
+            <input type="number" id="loan-period" placeholder="7" value="7">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea id="description" rows="2" placeholder="Tool details, accessories included, special notes..."></textarea>
+        </div>
+        <button class="btn btn-project" onclick="addTool()">Add Tool</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Book a Tool</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="book-tool">Tool ID</label>
+            <input type="text" id="book-tool" placeholder="Click a tool above to auto-fill">
+          </div>
+          <div class="form-group">
+            <label for="book-days">Loan Duration (days)</label>
+            <input type="number" id="book-days" placeholder="3" value="3">
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="bookTool()">Book Tool</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Available tools will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize ToolLibrary
+const tools = new HoloSphere('ToolLibrary');
+
+// Add a tool to community library
+await tools.put('downtown-tool-library', 'tools', {
+  id: 'drill-makita-001',
+  name: 'Makita 18V Cordless Drill',
+  category: 'Power Tools',
+  condition: 'excellent',
+  deposit: 20, // LocalLoop credits
+  owner: 'jane@example.com',
+  available: true,
+  location: 'downtown-tool-library'
+});
+
+// Find available tools nearby
+const available = await tools.getAll('downtown-tool-library', 'tools');
+const readyToUse = available.filter(t => t.available);
+
+// Book a tool
+await tools.put('downtown-tool-library', 'bookings', {
+  id: Date.now().toString(),
+  tool_id: 'drill-makita-001',
+  borrower: 'user@example.com',
+  start_date: Date.now(),
+  end_date: Date.now() + (7 * 24 * 60 * 60 * 1000),
+  status: 'active'
+});
+
+// Subscribe to tool availability updates
+tools.subscribe('downtown-tool-library', 'tools', (tool) => {
+  console.log('Tool status updated:', tool);
+});
+
+// Federate with neighbor libraries
+await tools.federate('downtown-tool-library', 'eastside-tool-shed');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">ToolLibrary connects with other ecosystem projects for seamless tool sharing</p>
+      <div class="connection-list">
+        <span class="connection-tag">🏗️ EcoConstruct requests tools for building projects</span>
+        <span class="connection-tag">🎓 SkillSwap connects tool experts with borrowers</span>
+        <span class="connection-tag">💰 LocalLoop manages deposits and sharing credits</span>
+        <span class="connection-tag">🏘️ NeighborHub provides storage locations</span>
+        <span class="connection-tag">🌱 TerraTrust shares field equipment</span>
+        <span class="connection-tag">📚 LearnLocal offers tool safety workshops</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>ToolLibrary - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('ToolLibrary', 'ToolLibrary', '#4a5568');
+    let selectedToolId = null;
+
+    async function initSampleData() {
+      const samples = [
+        {
+          name: 'Makita 18V Cordless Drill',
+          category: 'Power Tools',
+          condition: 'Excellent',
+          deposit: 20,
+          days: 7,
+          description: 'Includes 2 batteries, charger, and carrying case'
+        },
+        {
+          name: 'Werner 8ft Extension Ladder',
+          category: 'Ladders & Scaffolding',
+          condition: 'Good',
+          deposit: 30,
+          days: 3,
+          description: 'Aluminum, 250lb capacity'
+        },
+        {
+          name: 'Honda Push Lawn Mower',
+          category: 'Garden Equipment',
+          condition: 'Excellent',
+          deposit: 25,
+          days: 2,
+          description: 'Self-propelled, recently serviced'
+        },
+        {
+          name: 'Bosch Compound Miter Saw',
+          category: 'Power Tools',
+          condition: 'Good',
+          deposit: 40,
+          days: 7,
+          description: '10-inch blade, laser guide included'
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put('downtown-tool-library', 'tools', {
+          id: 'tool-' + Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9),
+          name: sample.name,
+          category: sample.category,
+          condition: sample.condition,
+          deposit: sample.deposit,
+          max_loan_days: sample.days,
+          description: sample.description,
+          owner: 'Demo User',
+          available: true,
+          usage_hours: Math.floor(Math.random() * 100),
+          timestamp: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function addTool() {
+      const location = document.getElementById('location').value;
+      const name = document.getElementById('tool-name').value;
+      const category = document.getElementById('category').value;
+      const condition = document.getElementById('condition').value;
+      const deposit = parseInt(document.getElementById('deposit').value) || 0;
+      const loanPeriod = parseInt(document.getElementById('loan-period').value) || 7;
+      const description = document.getElementById('description').value;
+
+      if (!location || !name) {
+        showNotification('Please fill in required fields', 'error');
+        return;
+      }
+
+      await sphere.put(location, 'tools', {
+        id: 'tool-' + Date.now().toString(),
+        name,
+        category,
+        condition,
+        deposit,
+        max_loan_days: loanPeriod,
+        description,
+        owner: 'Demo User',
+        available: true,
+        usage_hours: 0,
+        timestamp: Date.now()
+      });
+
+      showNotification('Tool added successfully!');
+
+      document.getElementById('tool-name').value = '';
+      document.getElementById('description').value = '';
+
+      await loadTools();
+      updateStats();
+    }
+
+    async function bookTool() {
+      const toolId = document.getElementById('book-tool').value;
+      const days = parseInt(document.getElementById('book-days').value) || 3;
+
+      if (!toolId) {
+        showNotification('Please select a tool to book', 'error');
+        return;
+      }
+
+      // Get the tool to update its status
+      const tools = await sphere.getAll('downtown-tool-library', 'tools');
+      const tool = tools.find(t => t.id === toolId);
+
+      if (!tool) {
+        showNotification('Tool not found', 'error');
+        return;
+      }
+
+      if (!tool.available) {
+        showNotification('Tool is currently unavailable', 'error');
+        return;
+      }
+
+      // Create booking
+      await sphere.put('downtown-tool-library', 'bookings', {
+        id: 'booking-' + Date.now().toString(),
+        tool_id: toolId,
+        tool_name: tool.name,
+        borrower: 'Demo User',
+        start_date: Date.now(),
+        end_date: Date.now() + (days * 24 * 60 * 60 * 1000),
+        duration_days: days,
+        status: 'active',
+        timestamp: Date.now()
+      });
+
+      // Update tool availability
+      tool.available = false;
+      tool.current_booking = Date.now();
+
+      showNotification(`${tool.name} booked for ${days} days!`);
+
+      document.getElementById('book-tool').value = '';
+      document.getElementById('book-days').value = '3';
+      selectedToolId = null;
+
+      await loadTools();
+      updateStats();
+    }
+
+    async function loadTools() {
+      const tools = await sphere.getAll('downtown-tool-library', 'tools');
+      const output = document.getElementById('output');
+
+      if (tools.length === 0) {
+        output.innerHTML = `<p class="text-muted">No tools in library yet</p>`;
+        return;
+      }
+
+      tools.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = `<h4>Available Tools</h4><div class="item-list">`;
+
+      for (const tool of tools) {
+        const statusBadge = tool.available
+          ? '<span class="badge badge-success">Available</span>'
+          : '<span class="badge badge-warning">On Loan</span>';
+
+        html += `
+          <div class="item" onclick="selectTool('${tool.id}', '${tool.name}')" style="cursor: pointer;">
+            <div class="item-content">
+              <div class="item-title">${tool.name}</div>
+              <div class="item-meta">
+                ${tool.category} | ${tool.condition} condition |
+                ${tool.deposit > 0 ? tool.deposit + ' LC deposit' : 'No deposit'} |
+                Max loan: ${tool.max_loan_days} days
+              </div>
+              ${tool.description ? `<div class="text-small text-muted">${tool.description}</div>` : ''}
+            </div>
+            ${statusBadge}
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    function selectTool(toolId, toolName) {
+      selectedToolId = toolId;
+      document.getElementById('book-tool').value = toolId;
+      showNotification(`Selected: ${toolName}`, 'success');
+    }
+
+    async function updateStats() {
+      let toolsCount = 0, loansCount = 0, totalHours = 0;
+      const communities = new Set();
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('ToolLibrary:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+
+          if (key.includes(':tools:')) {
+            toolsCount++;
+            totalHours += item.usage_hours || 0;
+            communities.add(item._holon);
+          } else if (key.includes(':bookings:') && item.status === 'active') {
+            loansCount++;
+          }
+        }
+      }
+
+      document.getElementById('tools-count').textContent = toolsCount;
+      document.getElementById('loans-count').textContent = loansCount;
+      document.getElementById('communities-count').textContent = communities.size;
+      document.getElementById('hours-saved').textContent = totalHours;
+    }
+
+    // Make selectTool available globally
+    window.selectTool = selectTool;
+
+    (async () => {
+      const existing = await sphere.getAll('downtown-tool-library', 'tools');
+      if (existing.length === 0) await initSampleData();
+      await loadTools();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>

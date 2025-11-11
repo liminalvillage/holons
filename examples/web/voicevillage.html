@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceVillage - Participatory Governance | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #2563eb; }
+    .btn-project { background: #2563eb; color: white; }
+    .btn-project:hover { background: #1d4ed8; text-decoration: none; }
+    .vote-option {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: var(--space-md);
+      margin-bottom: var(--space-sm);
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .vote-option:hover {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .vote-option.selected {
+      border-color: #2563eb;
+      background: #dbeafe;
+    }
+    .vote-bar {
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      margin-top: 0.5rem;
+      overflow: hidden;
+    }
+    .vote-bar-fill {
+      height: 100%;
+      background: #2563eb;
+      transition: width 0.3s;
+    }
+    .vote-count {
+      font-weight: 600;
+      color: #2563eb;
+    }
+    .proposal-status {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-active { background: #dbeafe; color: #1e40af; }
+    .status-passed { background: #d1fae5; color: #065f46; }
+    .status-rejected { background: #fee2e2; color: #991b1b; }
+    .status-implemented { background: #e0e7ff; color: #3730a3; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🏛️</div>
+          <span>VoiceVillage</span>
+        </div>
+        <nav class="nav">
+          <a href="coopcreds.html">← CoopCreds</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="commonground.html">CommonGround →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Land Tenure & Community Governance</div>
+      <h1>VoiceVillage</h1>
+      <p>Participatory decision-making and democratic governance platform. Submit proposals, deliberate collectively, vote transparently, and track implementation—all powered by decentralized holons representing communities, neighborhoods, and bioregions.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="active-proposals">0</span>
+        <span class="stat-label">Active Proposals</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="participants-count">0</span>
+        <span class="stat-label">Participants</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="decisions-made">0</span>
+        <span class="stat-label">Decisions Made</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="implementation-rate">--</span>
+        <span class="stat-label">Implementation Rate</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers VoiceVillage</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Geographic Governance:</strong> Each community holon (neighborhood, bioregion) has its own decision space</li>
+          <li><strong>Nested Democracy:</strong> Decisions cascade from neighborhoods to regions to bioregions</li>
+          <li><strong>Federation Across Projects:</strong> Governance holons federate with all ecosystem projects</li>
+          <li><strong>Real-time Deliberation:</strong> Subscribe to proposal updates and discussion threads</li>
+          <li><strong>Transparent & Auditable:</strong> All votes and decisions recorded immutably on distributed ledger</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🌐</span> <strong>All Projects:</strong> Democratic governance
+          </div>
+          <div class="connection-tag">
+            <span>📖</span> <strong>StoryCircle:</strong> Cultural wisdom guides decisions
+          </div>
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>CommonGround:</strong> Land use decisions
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Hosts town halls
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Community Governance</h2>
+
+      <div class="card mb-lg">
+        <h3>Submit a Proposal</h3>
+        <div class="form-group">
+          <label for="community-id">Community Holon</label>
+          <input type="text" id="community-id" placeholder="e.g., neighborhood-oak-valley" value="neighborhood-oak-valley">
+        </div>
+        <div class="form-group">
+          <label for="proposal-title">Proposal Title</label>
+          <input type="text" id="proposal-title" placeholder="e.g., Community Garden Initiative">
+        </div>
+        <div class="form-group">
+          <label for="proposal-description">Description</label>
+          <textarea id="proposal-description" rows="4" placeholder="Describe the proposal, its benefits, and implementation plan..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="proposal-category">Category</label>
+          <select id="proposal-category">
+            <option value="land-use">Land Use</option>
+            <option value="infrastructure">Infrastructure</option>
+            <option value="resource-allocation">Resource Allocation</option>
+            <option value="policy">Policy</option>
+            <option value="budget">Budget</option>
+            <option value="event">Community Event</option>
+          </select>
+        </div>
+        <button class="btn btn-project" onclick="submitProposal()">Submit Proposal</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Vote on Active Proposals</h3>
+        <div class="form-group">
+          <label for="view-community">Community to View</label>
+          <input type="text" id="view-community" placeholder="neighborhood-oak-valley" value="neighborhood-oak-valley">
+        </div>
+        <button class="btn btn-secondary" onclick="loadProposals()">Load Proposals</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Proposals and voting will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize VoiceVillage with HoloSphere
+const voice = new HoloSphere('VoiceVillage', strict=false);
+
+// Submit a community proposal
+await voice.put('neighborhood-oak-valley', 'proposals', {
+  id: Date.now().toString(),
+  title: 'Community Garden Initiative',
+  description: 'Establish a 2-acre community garden...',
+  category: 'land-use',
+  proposer: 'Jane Smith',
+  status: 'active',
+  votes: { yes: 0, no: 0, abstain: 0 },
+  deadline: Date.now() + 14 * 24 * 60 * 60 * 1000, // 2 weeks
+  timestamp: Date.now()
+});
+
+// Get all active proposals for a community
+const proposals = await voice.getAll('neighborhood-oak-valley', 'proposals');
+
+// Cast a vote on a proposal
+await voice.put('neighborhood-oak-valley', 'votes', {
+  id: Date.now().toString(),
+  proposal_id: 'proposal-123',
+  voter: 'resident-456',
+  vote: 'yes',
+  comment: 'Great idea for community building!',
+  timestamp: Date.now()
+});
+
+// Subscribe to proposal updates
+voice.subscribe('neighborhood-oak-valley', 'proposals', (proposal) => {
+  console.log('Proposal updated:', proposal);
+  if (proposal.status === 'passed') {
+    // Trigger implementation workflow
+  }
+});
+
+// Federate governance across projects
+await voice.federate('neighborhood-oak-valley', 'commonground-parcels');
+// Now land decisions automatically sync with CommonGround</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">VoiceVillage provides democratic governance for the entire ecosystem</p>
+      <div class="connection-list">
+        <span class="connection-tag">🏛️ CommonGround makes land tenure decisions</span>
+        <span class="connection-tag">📖 StoryCircle provides cultural context and wisdom</span>
+        <span class="connection-tag">🏘️ NeighborHub hosts community assemblies</span>
+        <span class="connection-tag">💰 CoopCreds finances approved initiatives</span>
+        <span class="connection-tag">🌱 TerraTrust votes on conservation priorities</span>
+        <span class="connection-tag">📚 LearnLocal decides on educational programs</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>VoiceVillage - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('VoiceVillage', 'VoiceVillage', '#2563eb');
+
+    // Track voters to prevent duplicate voting in demo
+    const voters = new Set();
+
+    async function initSampleData() {
+      const samples = [
+        {
+          title: 'Community Garden Initiative',
+          description: 'Establish a 2-acre community garden with raised beds, composting system, and tool shed. Budget: 5000 LC.',
+          category: 'land-use',
+          votes: { yes: 12, no: 2, abstain: 1 },
+          status: 'active'
+        },
+        {
+          title: 'Solar Panel Installation',
+          description: 'Install solar panels on the community center roof to reduce energy costs and carbon footprint.',
+          category: 'infrastructure',
+          votes: { yes: 18, no: 0, abstain: 2 },
+          status: 'passed'
+        },
+        {
+          title: 'Monthly Skill-Share Events',
+          description: 'Organize monthly evening events where residents can teach and learn skills from each other.',
+          category: 'event',
+          votes: { yes: 25, no: 1, abstain: 3 },
+          status: 'implemented'
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put('neighborhood-oak-valley', 'proposals', {
+          id: Date.now().toString() + Math.random(),
+          title: sample.title,
+          description: sample.description,
+          category: sample.category,
+          proposer: 'Demo User',
+          status: sample.status,
+          votes: sample.votes,
+          deadline: Date.now() + 14 * 24 * 60 * 60 * 1000,
+          timestamp: Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function submitProposal() {
+      const community = document.getElementById('community-id').value;
+      const title = document.getElementById('proposal-title').value;
+      const description = document.getElementById('proposal-description').value;
+      const category = document.getElementById('proposal-category').value;
+
+      if (!community || !title || !description) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      const proposal = {
+        id: Date.now().toString(),
+        title: title,
+        description: description,
+        category: category,
+        proposer: 'Demo User',
+        status: 'active',
+        votes: { yes: 0, no: 0, abstain: 0 },
+        deadline: Date.now() + 14 * 24 * 60 * 60 * 1000, // 2 weeks
+        timestamp: Date.now()
+      };
+
+      await sphere.put(community, 'proposals', proposal);
+      showNotification('Proposal submitted successfully!');
+
+      // Clear form
+      document.getElementById('proposal-title').value = '';
+      document.getElementById('proposal-description').value = '';
+
+      if (document.getElementById('view-community').value === community) {
+        await loadProposals();
+      }
+
+      updateStats();
+    }
+
+    async function loadProposals() {
+      const community = document.getElementById('view-community').value;
+      if (!community) {
+        showNotification('Please enter a community ID', 'error');
+        return;
+      }
+
+      const proposals = await sphere.getAll(community, 'proposals');
+      const output = document.getElementById('output');
+
+      if (proposals.length === 0) {
+        output.innerHTML = `<p class="text-muted">No proposals found for ${community}</p>`;
+        return;
+      }
+
+      // Sort by timestamp, newest first
+      proposals.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = `<h4>Proposals for ${community}</h4><div class="item-list">`;
+
+      for (const proposal of proposals) {
+        const totalVotes = proposal.votes.yes + proposal.votes.no + proposal.votes.abstain;
+        const yesPercent = totalVotes > 0 ? Math.round((proposal.votes.yes / totalVotes) * 100) : 0;
+        const noPercent = totalVotes > 0 ? Math.round((proposal.votes.no / totalVotes) * 100) : 0;
+        const abstainPercent = totalVotes > 0 ? Math.round((proposal.votes.abstain / totalVotes) * 100) : 0;
+
+        const statusClass = `status-${proposal.status}`;
+        const canVote = proposal.status === 'active';
+
+        html += `
+          <div class="item">
+            <div class="item-content" style="width: 100%;">
+              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                <div class="item-title">${proposal.title}</div>
+                <span class="proposal-status ${statusClass}">${proposal.status}</span>
+              </div>
+              <div class="item-meta">${proposal.description}</div>
+              <div style="margin-top: 1rem; font-size: 0.875rem;">
+                <strong>Category:</strong> ${proposal.category} |
+                <strong>Proposer:</strong> ${proposal.proposer} |
+                <strong>Total Votes:</strong> ${totalVotes}
+              </div>
+
+              <div style="margin-top: 1rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.875rem; margin-bottom: 0.25rem;">
+                  <span><strong>Yes:</strong> ${proposal.votes.yes} (${yesPercent}%)</span>
+                </div>
+                <div class="vote-bar">
+                  <div class="vote-bar-fill" style="width: ${yesPercent}%; background: #10b981;"></div>
+                </div>
+              </div>
+
+              <div style="margin-top: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.875rem; margin-bottom: 0.25rem;">
+                  <span><strong>No:</strong> ${proposal.votes.no} (${noPercent}%)</span>
+                </div>
+                <div class="vote-bar">
+                  <div class="vote-bar-fill" style="width: ${noPercent}%; background: #ef4444;"></div>
+                </div>
+              </div>
+
+              <div style="margin-top: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.875rem; margin-bottom: 0.25rem;">
+                  <span><strong>Abstain:</strong> ${proposal.votes.abstain} (${abstainPercent}%)</span>
+                </div>
+                <div class="vote-bar">
+                  <div class="vote-bar-fill" style="width: ${abstainPercent}%; background: #6b7280;"></div>
+                </div>
+              </div>
+
+              ${canVote ? `
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                  <button class="btn btn-project" onclick="castVote('${proposal.id}', 'yes')" style="flex: 1; padding: 0.5rem;">Vote Yes</button>
+                  <button class="btn btn-secondary" onclick="castVote('${proposal.id}', 'no')" style="flex: 1; padding: 0.5rem; background: #ef4444;">Vote No</button>
+                  <button class="btn btn-outline" onclick="castVote('${proposal.id}', 'abstain')" style="flex: 1; padding: 0.5rem;">Abstain</button>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function castVote(proposalId, voteType) {
+      const voteKey = `${proposalId}-${voteType}`;
+
+      if (voters.has(proposalId)) {
+        showNotification('You have already voted on this proposal', 'error');
+        return;
+      }
+
+      const community = document.getElementById('view-community').value;
+
+      // Record the vote
+      await sphere.put(community, 'votes', {
+        id: Date.now().toString(),
+        proposal_id: proposalId,
+        voter: 'demo-user-' + Date.now(),
+        vote: voteType,
+        timestamp: Date.now()
+      });
+
+      // Update the proposal with new vote count
+      const proposals = await sphere.getAll(community, 'proposals');
+      const proposal = proposals.find(p => p.id === proposalId);
+
+      if (proposal) {
+        proposal.votes[voteType]++;
+
+        // Check if proposal should pass (simple majority)
+        const totalVotes = proposal.votes.yes + proposal.votes.no + proposal.votes.abstain;
+        if (totalVotes >= 10 && proposal.votes.yes > totalVotes / 2) {
+          proposal.status = 'passed';
+        } else if (totalVotes >= 10 && proposal.votes.no > totalVotes / 2) {
+          proposal.status = 'rejected';
+        }
+
+        // Update the proposal in storage
+        localStorage.setItem(
+          `VoiceVillage:${community}:proposals:${proposalId}`,
+          JSON.stringify(proposal)
+        );
+
+        voters.add(proposalId);
+        showNotification(`Vote recorded: ${voteType}`);
+        await loadProposals();
+        updateStats();
+      }
+    }
+
+    async function updateStats() {
+      let activeCount = 0, totalProposals = 0, participantsSet = new Set(), implementedCount = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('VoiceVillage:') && key.includes(':proposals:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+          totalProposals++;
+          if (item.status === 'active') activeCount++;
+          if (item.status === 'implemented') implementedCount++;
+
+          // Count participants from votes
+          const totalVotes = item.votes.yes + item.votes.no + item.votes.abstain;
+          for (let j = 0; j < totalVotes; j++) {
+            participantsSet.add(`voter-${item._holon}-${j}`);
+          }
+        }
+      }
+
+      document.getElementById('active-proposals').textContent = activeCount;
+      document.getElementById('participants-count').textContent = participantsSet.size;
+      document.getElementById('decisions-made').textContent = totalProposals - activeCount;
+
+      const passedProposals = totalProposals - activeCount;
+      const implRate = passedProposals > 0
+        ? Math.round((implementedCount / passedProposals) * 100) + '%'
+        : '--';
+      document.getElementById('implementation-rate').textContent = implRate;
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('neighborhood-oak-valley', 'proposals');
+      if (existing.length === 0) {
+        await initSampleData();
+      }
+      await updateStats();
+      await loadProposals();
+    })();
+  </script>
+</body>
+</html>
