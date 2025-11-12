@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WaterWise - Watershed Management | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #0891b2; }
+    .btn-project { background: #0891b2; color: white; }
+    .btn-project:hover { background: #0e7490; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🌊</div>
+          <span>WaterWise</span>
+        </div>
+        <nav class="nav">
+          <a href="terratrust.html">← TerraTrust</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="neighborhub.html">NeighborHub →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Land & Nature Stewardship</div>
+      <h1>WaterWise</h1>
+      <p>Community watershed management and water quality monitoring. Track rainfall, stream health, and water usage patterns across your local watershed using geospatial holons.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="monitoring-sites">0</span>
+        <span class="stat-label">Monitoring Points</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="water-readings">0</span>
+        <span class="stat-label">Water Quality Readings</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="avg-quality">--</span>
+        <span class="stat-label">Avg Water Quality</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="rainfall-total">--</span>
+        <span class="stat-label">Total Rainfall (mm)</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers WaterWise</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Watershed Holons:</strong> Each stream, pond, or watershed is a geographic holon</li>
+          <li><strong>Nested Hierarchies:</strong> Tributaries roll up to streams, streams to rivers, rivers to basins</li>
+          <li><strong>Federation with TerraTrust:</strong> Receives land health data to correlate with water quality</li>
+          <li><strong>Real-time Monitoring:</strong> Subscribe to sensor readings and alerts</li>
+          <li><strong>Community-owned Data:</strong> Local communities control their watershed information</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🌱</span> <strong>TerraTrust:</strong> Receives land health data
+          </div>
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>CommonGround:</strong> Manages watershed lands
+          </div>
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Water education programs
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Hosts watershed meetings
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Water Quality Monitoring</h2>
+
+      <div class="card mb-lg">
+        <h3>Record Water Quality Reading</h3>
+        <div class="form-group">
+          <label for="location-id">Monitoring Location</label>
+          <input type="text" id="location-id" placeholder="e.g., creek-downstream" value="creek-downstream">
+        </div>
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label for="ph-level">pH Level</label>
+            <input type="number" id="ph-level" placeholder="7.0" step="0.1" min="0" max="14">
+          </div>
+          <div class="form-group">
+            <label for="temp">Temperature (°C)</label>
+            <input type="number" id="temp" placeholder="18" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="turbidity">Turbidity (NTU)</label>
+            <input type="number" id="turbidity" placeholder="5" step="0.1">
+          </div>
+        </div>
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label for="dissolved-oxygen">Dissolved O₂ (mg/L)</label>
+            <input type="number" id="dissolved-oxygen" placeholder="8.5" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="flow-rate">Flow Rate (L/s)</label>
+            <input type="number" id="flow-rate" placeholder="150" step="1">
+          </div>
+          <div class="form-group">
+            <label for="rainfall">Rainfall (mm)</label>
+            <input type="number" id="rainfall" placeholder="0" step="0.1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="notes-water">Notes</label>
+          <input type="text" id="notes-water" placeholder="Observations, weather conditions, etc.">
+        </div>
+        <button class="btn btn-project" onclick="recordReading()">Record Reading</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>View Location Readings</h3>
+        <div class="form-group">
+          <label for="view-location">Location to View</label>
+          <input type="text" id="view-location" placeholder="creek-downstream" value="creek-downstream">
+        </div>
+        <button class="btn btn-secondary" onclick="loadReadings()">Load Readings</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Water quality readings will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize WaterWise with HoloSphere
+const waterwise = new HoloSphere('WaterWise', strict=false);
+
+// Record a water quality reading
+await waterwise.put('creek-downstream', 'water-quality', {
+  id: Date.now().toString(),
+  ph: 7.2,
+  temperature: 18.5,
+  turbidity: 4.2,
+  dissolved_oxygen: 8.8,
+  flow_rate: 150,
+  rainfall: 5.2,
+  timestamp: Date.now()
+});
+
+// Get all readings from a location
+const readings = await waterwise.getAll('creek-downstream', 'water-quality');
+
+// Subscribe to real-time readings
+waterwise.subscribe('creek-downstream', 'water-quality', (reading) => {
+  if (reading.ph < 6.5 || reading.ph > 8.5) {
+    alert('pH level out of safe range!');
+  }
+});
+
+// Federate with TerraTrust to combine land & water data
+await waterwise.federate('creek-downstream', 'watershed-north-meadow');
+
+// Get federated data (water quality + land observations)
+const combined = await waterwise.getFederated('creek-downstream', 'observations');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">WaterWise integrates with ecosystem projects through HoloSphere federation</p>
+      <div class="connection-list">
+        <span class="connection-tag">🌱 TerraTrust provides soil & vegetation context</span>
+        <span class="connection-tag">🏛️ CommonGround manages riparian zones</span>
+        <span class="connection-tag">📚 LearnLocal teaches watershed stewardship</span>
+        <span class="connection-tag">🏘️ NeighborHub hosts water quality workshops</span>
+        <span class="connection-tag">🏛️ VoiceVillage makes water use decisions</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>WaterWise - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('WaterWise', 'WaterWise', '#0891b2');
+
+    // Sample data initialization
+    async function initSampleData() {
+      const samples = [
+        {
+          location: 'creek-downstream',
+          ph: 7.2,
+          temp: 18.5,
+          turbidity: 4.2,
+          do: 8.8,
+          flow: 150,
+          rainfall: 5.2,
+          notes: 'Clear water, good flow'
+        },
+        {
+          location: 'creek-downstream',
+          ph: 7.0,
+          temp: 19.0,
+          turbidity: 6.1,
+          do: 8.2,
+          flow: 145,
+          rainfall: 0,
+          notes: 'Slightly cloudy after rain'
+        },
+        {
+          location: 'pond-north',
+          ph: 7.5,
+          temp: 20.2,
+          turbidity: 3.5,
+          do: 9.1,
+          flow: 0,
+          rainfall: 2.5,
+          notes: 'Healthy pond ecosystem'
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put(sample.location, 'water-quality', {
+          id: Date.now().toString() + Math.random(),
+          ph: sample.ph,
+          temperature: sample.temp,
+          turbidity: sample.turbidity,
+          dissolved_oxygen: sample.do,
+          flow_rate: sample.flow,
+          rainfall: sample.rainfall,
+          notes: sample.notes,
+          observer: 'Demo User',
+          timestamp: Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000
+        });
+      }
+    }
+
+    async function recordReading() {
+      const location = document.getElementById('location-id').value;
+      const ph = parseFloat(document.getElementById('ph-level').value);
+      const temp = parseFloat(document.getElementById('temp').value);
+      const turbidity = parseFloat(document.getElementById('turbidity').value);
+      const dissolvedOxygen = parseFloat(document.getElementById('dissolved-oxygen').value);
+      const flowRate = parseFloat(document.getElementById('flow-rate').value);
+      const rainfall = parseFloat(document.getElementById('rainfall').value);
+      const notes = document.getElementById('notes-water').value;
+
+      if (!location || isNaN(ph)) {
+        showNotification('Please fill in at least location and pH', 'error');
+        return;
+      }
+
+      const reading = {
+        id: Date.now().toString(),
+        ph: ph || null,
+        temperature: temp || null,
+        turbidity: turbidity || null,
+        dissolved_oxygen: dissolvedOxygen || null,
+        flow_rate: flowRate || null,
+        rainfall: rainfall || 0,
+        notes: notes,
+        observer: 'Demo User',
+        timestamp: Date.now()
+      };
+
+      await sphere.put(location, 'water-quality', reading);
+      showNotification('Water quality reading recorded!');
+
+      // Clear form
+      document.getElementById('ph-level').value = '';
+      document.getElementById('temp').value = '';
+      document.getElementById('turbidity').value = '';
+      document.getElementById('dissolved-oxygen').value = '';
+      document.getElementById('flow-rate').value = '';
+      document.getElementById('rainfall').value = '';
+      document.getElementById('notes-water').value = '';
+
+      if (document.getElementById('view-location').value === location) {
+        await loadReadings();
+      }
+
+      updateStats();
+    }
+
+    async function loadReadings() {
+      const location = document.getElementById('view-location').value;
+      if (!location) {
+        showNotification('Please enter a location', 'error');
+        return;
+      }
+
+      const readings = await sphere.getAll(location, 'water-quality');
+      const output = document.getElementById('output');
+
+      if (readings.length === 0) {
+        output.innerHTML = `<p class="text-muted">No readings found for ${location}</p>`;
+        return;
+      }
+
+      readings.sort((a, b) => b.timestamp - a.timestamp);
+
+      let html = `<h4>Water Quality Readings - ${location}</h4><div class="item-list">`;
+
+      for (const reading of readings) {
+        const date = new Date(reading.timestamp).toLocaleString();
+        const quality = assessQuality(reading);
+
+        html += `
+          <div class="item">
+            <div class="item-content">
+              <div class="item-title">
+                ${date} ${createStatusBadge(quality.status).outerHTML}
+              </div>
+              <div class="item-meta">${reading.notes || 'No notes'}</div>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 0.5rem; font-size: 0.875rem;">
+                <div><strong>pH:</strong> ${reading.ph || '--'}</div>
+                <div><strong>Temp:</strong> ${reading.temperature ? reading.temperature + '°C' : '--'}</div>
+                <div><strong>Turbidity:</strong> ${reading.turbidity ? reading.turbidity + ' NTU' : '--'}</div>
+                <div><strong>DO:</strong> ${reading.dissolved_oxygen ? reading.dissolved_oxygen + ' mg/L' : '--'}</div>
+                <div><strong>Flow:</strong> ${reading.flow_rate ? reading.flow_rate + ' L/s' : '--'}</div>
+                <div><strong>Rain:</strong> ${reading.rainfall ? reading.rainfall + ' mm' : '0 mm'}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    function assessQuality(reading) {
+      let score = 0;
+      let issues = [];
+
+      if (reading.ph >= 6.5 && reading.ph <= 8.5) score += 20;
+      else issues.push('pH out of range');
+
+      if (reading.dissolved_oxygen >= 6) score += 20;
+      else if (reading.dissolved_oxygen) issues.push('Low oxygen');
+
+      if (reading.turbidity <= 10) score += 20;
+      else if (reading.turbidity) issues.push('High turbidity');
+
+      if (reading.temperature <= 25) score += 20;
+      else if (reading.temperature) issues.push('High temperature');
+
+      score += 20; // Base score
+
+      if (score >= 80) return { status: 'active', label: 'Excellent' };
+      if (score >= 60) return { status: 'pending', label: 'Good' };
+      return { status: 'closed', label: 'Poor' };
+    }
+
+    async function updateStats() {
+      const allReadings = [];
+      const locations = new Set();
+      let totalQuality = 0;
+      let totalRainfall = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('WaterWise:') && key.includes(':water-quality:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+          allReadings.push(item);
+          locations.add(item._holon);
+
+          if (item.ph) {
+            totalQuality += assessQuality(item).status === 'active' ? 1 : 0;
+          }
+          if (item.rainfall) {
+            totalRainfall += item.rainfall;
+          }
+        }
+      }
+
+      document.getElementById('monitoring-sites').textContent = locations.size;
+      document.getElementById('water-readings').textContent = allReadings.length;
+      document.getElementById('avg-quality').textContent = allReadings.length > 0
+        ? Math.round((totalQuality / allReadings.length) * 100) + '%'
+        : '--';
+      document.getElementById('rainfall-total').textContent = totalRainfall > 0
+        ? totalRainfall.toFixed(1)
+        : '--';
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('creek-downstream', 'water-quality');
+      if (existing.length === 0) {
+        await initSampleData();
+      }
+      await updateStats();
+      await loadReadings();
+    })();
+  </script>
+</body>
+</html>

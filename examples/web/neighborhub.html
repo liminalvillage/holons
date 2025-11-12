@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeighborHub - Community Space Sharing | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #8b4513; }
+    .btn-project { background: #8b4513; color: white; }
+    .btn-project:hover { background: #6d3410; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">🏘️</div>
+          <span>NeighborHub</span>
+        </div>
+        <nav class="nav">
+          <a href="waterwise.html">← WaterWise</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="ecoconstruct.html">EcoConstruct →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Built Environment</div>
+      <h1>NeighborHub</h1>
+      <p>Community space sharing and resource pooling. List available spaces, book meeting rooms, coordinate events, and share underutilized buildings across your neighborhood holons.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="spaces-count">0</span>
+        <span class="stat-label">Available Spaces</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="bookings-count">0</span>
+        <span class="stat-label">Active Bookings</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="neighborhoods">0</span>
+        <span class="stat-label">Neighborhoods</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="events-hosted">0</span>
+        <span class="stat-label">Events Hosted</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers NeighborHub</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Neighborhood Holons:</strong> Each neighborhood or building is a geographic holon</li>
+          <li><strong>Space Discovery:</strong> Find community spaces by location using H3 indexing</li>
+          <li><strong>Federation:</strong> Spaces federate with event and activity holons</li>
+          <li><strong>Real-time Availability:</strong> Subscribe to booking updates</li>
+          <li><strong>Community-owned:</strong> No platform fee, no central authority</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>📚</span> <strong>LearnLocal:</strong> Hosts workshops
+          </div>
+          <div class="connection-tag">
+            <span>💚</span> <strong>MindfulMeets:</strong> Hosts gatherings
+          </div>
+          <div class="connection-tag">
+            <span>🏛️</span> <strong>VoiceVillage:</strong> Hosts community meetings
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>LocalLoop:</strong> Accepts local currency
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Manage Community Spaces</h2>
+
+      <div class="card mb-lg">
+        <h3>List a Space</h3>
+        <div class="form-group">
+          <label for="neighborhood">Neighborhood Holon</label>
+          <input type="text" id="neighborhood" placeholder="e.g., downtown-hub" value="downtown-hub">
+        </div>
+        <div class="form-group">
+          <label for="space-name">Space Name</label>
+          <input type="text" id="space-name" placeholder="Community Hall, Rooftop Garden, etc.">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="capacity">Capacity (people)</label>
+            <input type="number" id="capacity" placeholder="20">
+          </div>
+          <div class="form-group">
+            <label for="hourly-rate">Rate (local currency/hour)</label>
+            <input type="number" id="hourly-rate" placeholder="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="amenities">Amenities (comma-separated)</label>
+          <input type="text" id="amenities" placeholder="WiFi, Projector, Kitchen, etc.">
+        </div>
+        <button class="btn btn-project" onclick="addSpace()">List Space</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Book a Space</h3>
+        <div class="form-group">
+          <label for="space-id">Space ID (from listing)</label>
+          <input type="text" id="space-id" placeholder="Space ID">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="event-name">Event Name</label>
+            <input type="text" id="event-name" placeholder="Workshop, Meeting, etc.">
+          </div>
+          <div class="form-group">
+            <label for="event-date">Date & Time</label>
+            <input type="datetime-local" id="event-date">
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="bookSpace()">Book Space</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Available spaces will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize NeighborHub
+const hub = new HoloSphere('NeighborHub');
+
+// List a community space
+await hub.put('downtown-hub', 'spaces', {
+  id: 'community-hall-1',
+  name: 'Community Hall',
+  capacity: 50,
+  hourly_rate: 0,
+  amenities: ['WiFi', 'Projector', 'Kitchen'],
+  available: true
+});
+
+// Get all spaces in a neighborhood
+const spaces = await hub.getAll('downtown-hub', 'spaces');
+
+// Book a space
+await hub.put('downtown-hub', 'bookings', {
+  space_id: 'community-hall-1',
+  event: 'Permaculture Workshop',
+  date: '2025-11-15T14:00',
+  organizer: 'LearnLocal'
+});
+
+// Federate with LearnLocal for cross-platform booking
+await hub.federate('downtown-hub', 'learnlocal-events');</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <div class="connection-list">
+        <span class="connection-tag">📚 LearnLocal schedules classes in spaces</span>
+        <span class="connection-tag">💚 MindfulMeets books meditation rooms</span>
+        <span class="connection-tag">🏛️ VoiceVillage holds governance meetings</span>
+        <span class="connection-tag">🌱 TerraTrust hosts field days</span>
+        <span class="connection-tag">💰 LocalLoop enables community currency payments</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>NeighborHub - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('NeighborHub', 'NeighborHub', '#8b4513');
+
+    async function initSampleData() {
+      const samples = [
+        { name: 'Community Hall', capacity: 50, rate: 0, amenities: 'WiFi, Projector, Kitchen' },
+        { name: 'Rooftop Garden', capacity: 20, rate: 0, amenities: 'Outdoor seating, Garden tools' },
+        { name: 'Workshop Studio', capacity: 15, rate: 5, amenities: 'Tools, Workbenches, Storage' }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put('downtown-hub', 'spaces', {
+          id: Date.now().toString() + Math.random(),
+          name: sample.name,
+          capacity: sample.capacity,
+          hourly_rate: sample.rate,
+          amenities: sample.amenities.split(', '),
+          available: true,
+          listed_by: 'Demo User',
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    async function addSpace() {
+      const neighborhood = document.getElementById('neighborhood').value;
+      const name = document.getElementById('space-name').value;
+      const capacity = parseInt(document.getElementById('capacity').value);
+      const rate = parseFloat(document.getElementById('hourly-rate').value) || 0;
+      const amenities = document.getElementById('amenities').value;
+
+      if (!neighborhood || !name || !capacity) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      const space = {
+        id: Date.now().toString(),
+        name,
+        capacity,
+        hourly_rate: rate,
+        amenities: amenities ? amenities.split(',').map(a => a.trim()) : [],
+        available: true,
+        listed_by: 'Demo User',
+        timestamp: Date.now()
+      };
+
+      await sphere.put(neighborhood, 'spaces', space);
+      showNotification('Space listed successfully!');
+
+      document.getElementById('space-name').value = '';
+      document.getElementById('capacity').value = '';
+      document.getElementById('hourly-rate').value = '';
+      document.getElementById('amenities').value = '';
+
+      await loadSpaces();
+      updateStats();
+    }
+
+    async function bookSpace() {
+      const spaceId = document.getElementById('space-id').value;
+      const eventName = document.getElementById('event-name').value;
+      const eventDate = document.getElementById('event-date').value;
+
+      if (!spaceId || !eventName || !eventDate) {
+        showNotification('Please fill in all booking fields', 'error');
+        return;
+      }
+
+      await sphere.put('downtown-hub', 'bookings', {
+        id: Date.now().toString(),
+        space_id: spaceId,
+        event: eventName,
+        date: new Date(eventDate).getTime(),
+        organizer: 'Demo User',
+        status: 'confirmed',
+        timestamp: Date.now()
+      });
+
+      showNotification('Space booked successfully!');
+      document.getElementById('space-id').value = '';
+      document.getElementById('event-name').value = '';
+      document.getElementById('event-date').value = '';
+
+      updateStats();
+    }
+
+    async function loadSpaces() {
+      const spaces = await sphere.getAll('downtown-hub', 'spaces');
+      const output = document.getElementById('output');
+
+      if (spaces.length === 0) {
+        output.innerHTML = `<p class="text-muted">No spaces listed yet</p>`;
+        return;
+      }
+
+      let html = `<h4>Available Spaces</h4><div class="grid grid-2">`;
+
+      for (const space of spaces) {
+        html += `
+          <div class="card">
+            <h3>${space.name}</h3>
+            <p><strong>Capacity:</strong> ${space.capacity} people</p>
+            <p><strong>Rate:</strong> ${space.hourly_rate > 0 ? space.hourly_rate + ' LC/hour' : 'Free'}</p>
+            <p><strong>Amenities:</strong> ${Array.isArray(space.amenities) ? space.amenities.join(', ') : space.amenities}</p>
+            <p class="text-small text-muted">ID: ${space.id}</p>
+            ${createStatusBadge('available').outerHTML}
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      let spacesCount = 0, bookingsCount = 0, neighborhoods = new Set(), events = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('NeighborHub:')) {
+          if (key.includes(':spaces:')) {
+            spacesCount++;
+            const item = JSON.parse(localStorage.getItem(key));
+            neighborhoods.add(item._holon);
+          } else if (key.includes(':bookings:')) {
+            bookingsCount++;
+            events++;
+          }
+        }
+      }
+
+      document.getElementById('spaces-count').textContent = spacesCount;
+      document.getElementById('bookings-count').textContent = bookingsCount;
+      document.getElementById('neighborhoods').textContent = neighborhoods.size;
+      document.getElementById('events-hosted').textContent = events;
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('downtown-hub', 'spaces');
+      if (existing.length === 0) await initSampleData();
+      await loadSpaces();
+      await updateStats();
+    })();
+  </script>
+</body>
+</html>

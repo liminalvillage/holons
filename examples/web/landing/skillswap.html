@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillSwap - Your Skills Are Currency</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --skill-primary: #6366f1;
+      --skill-secondary: #8b5cf6;
+      --skill-accent: #a78bfa;
+      --skill-light: #f5f3ff;
+      --skill-dark: #4c1d95;
+    }
+
+    body {
+      background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
+    }
+
+    .skill-hero {
+      background: linear-gradient(135deg, rgba(76,29,149,0.95) 0%, rgba(99,102,241,0.95) 50%, rgba(139,92,246,0.95) 100%),
+                  url('https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1920&q=80') center/cover;
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .skill-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="20" cy="20" r="2" fill="rgba(255,255,255,0.1)"/><circle cx="50" cy="40" r="2" fill="rgba(255,255,255,0.08)"/><circle cx="80" cy="60" r="2" fill="rgba(255,255,255,0.12)"/><path d="M 20 20 L 50 40 L 80 60" stroke="rgba(255,255,255,0.05)" stroke-width="0.5" fill="none"/></svg>');
+      background-size: 120px 120px;
+      opacity: 0.5;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .skill-hero h1 {
+      font-size: 4rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .skill-hero .tagline {
+      font-size: 1.75rem;
+      opacity: 0.95;
+      margin-bottom: 2rem;
+      font-weight: 300;
+    }
+
+    .skill-hero .subtitle {
+      font-size: 1.125rem;
+      opacity: 0.85;
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.6;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-skill {
+      background: var(--skill-accent);
+      color: var(--skill-dark);
+      padding: 1rem 2.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .btn-skill:hover {
+      background: #c4b5fd;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      text-decoration: none;
+    }
+
+    .btn-skill-outline {
+      background: transparent;
+      border: 2px solid white;
+      color: white;
+    }
+
+    .btn-skill-outline:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: var(--skill-accent);
+    }
+
+    .section {
+      padding: 4rem 0;
+    }
+
+    .section-dark {
+      background: var(--skill-primary);
+      color: white;
+    }
+
+    .section-purple {
+      background: linear-gradient(135deg, var(--skill-primary) 0%, var(--skill-secondary) 100%);
+      color: white;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: var(--skill-primary);
+    }
+
+    .section-dark .section-title,
+    .section-purple .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.25rem;
+      color: #6b7280;
+      max-width: 700px;
+      margin: 0 auto 3rem;
+    }
+
+    .section-dark .section-subtitle,
+    .section-purple .section-subtitle {
+      color: rgba(255,255,255,0.8);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+      transition: all 0.3s;
+      border: 1px solid #e0e7ff;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
+      border-color: var(--skill-accent);
+    }
+
+    .feature-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .community-photo {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .feature-icon {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, var(--skill-secondary), var(--skill-primary));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--skill-primary);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.7;
+    }
+
+    .stats-banner {
+      background: linear-gradient(135deg, var(--skill-secondary), var(--skill-primary));
+      padding: 3rem;
+      border-radius: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      text-align: center;
+      color: white;
+      margin: 3rem 0;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-number {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+      font-size: 1rem;
+      opacity: 0.95;
+      font-weight: 500;
+    }
+
+    .holosystem {
+      background: var(--skill-light);
+      padding: 2rem;
+      border-radius: 1rem;
+      border-left: 4px solid var(--skill-secondary);
+      margin: 2rem 0;
+    }
+
+    .holosystem-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--skill-primary);
+    }
+
+    .holosystem-content {
+      color: #374151;
+      line-height: 1.8;
+    }
+
+    .impact-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .impact-card {
+      background: rgba(255,255,255,0.1);
+      padding: 1.5rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .impact-value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .impact-label {
+      opacity: 0.9;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    .skill-visual {
+      background: linear-gradient(135deg, rgba(167,139,250,0.2) 0%, rgba(139,92,246,0.2) 100%);
+      padding: 3rem;
+      border-radius: 1rem;
+      text-align: center;
+      margin: 3rem 0;
+      border: 2px solid var(--skill-accent);
+    }
+
+    .skill-icon-large {
+      font-size: 5rem;
+      margin-bottom: 1rem;
+    }
+
+    .reciprocity-demo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      margin: 2rem 0;
+      flex-wrap: wrap;
+    }
+
+    .skill-node {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 1rem;
+      border: 2px solid var(--skill-accent);
+      text-align: center;
+      min-width: 150px;
+    }
+
+    .skill-arrow {
+      font-size: 2rem;
+      color: var(--skill-secondary);
+    }
+
+    @media (max-width: 768px) {
+      .skill-hero h1 {
+        font-size: 2.5rem;
+      }
+
+      .skill-hero .tagline {
+        font-size: 1.25rem;
+      }
+
+      .stats-banner {
+        grid-template-columns: 1fr;
+      }
+
+      .impact-metrics {
+        grid-template-columns: 1fr;
+      }
+
+      .reciprocity-demo {
+        flex-direction: column;
+      }
+
+      .skill-arrow {
+        transform: rotate(90deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--skill-primary); color: white;">🤝</div>
+          <span>SkillSwap</span>
+        </div>
+        <nav class="nav">
+          <a href="../index.html">Ecosystem</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="mailto:hello@skillswap.community">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="skill-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Your Skills<br>Are Currency</h1>
+        <p class="tagline">Every hour you give, you receive back</p>
+        <p class="subtitle">Everyone has skills to teach. No platform fees, no exploitation. Just neighbors helping neighbors build community wealth through time-banked expertise exchange.</p>
+        <div class="cta-buttons">
+          <a href="#get-started" class="btn-skill">Offer Your Skills</a>
+          <a href="#how-it-works" class="btn-skill btn-skill-outline">Learn More</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="stats-banner">
+        <div class="stat">
+          <div class="stat-number">1 hr = 1</div>
+          <div class="stat-label">Credit (All Skills Equal)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">0%</div>
+          <div class="stat-label">Platform Fees</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">∞</div>
+          <div class="stat-label">Skills Valued</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">100%</div>
+          <div class="stat-label">Community-Owned</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">The Expertise Problem</h2>
+      <p class="section-subtitle">Communities have abundant skills, but platforms extract value and limit connections</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="card">
+          <h3 style="color: var(--skill-primary); margin-bottom: 1rem;">❌ Platform Economy</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>TaskRabbit takes 30% fees</li>
+            <li>Must be constantly available</li>
+            <li>Devalues unpaid skills (elder care, etc.)</li>
+            <li>Surveillance and ratings anxiety</li>
+            <li>Profits leave community</li>
+            <li>Expertise becomes commodity</li>
+          </ul>
+        </div>
+        <div class="card" style="border: 2px solid var(--skill-secondary);">
+          <h3 style="color: var(--skill-primary); margin-bottom: 1rem;">✓ SkillSwap Way</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Zero fees, all value to you</li>
+            <li>Set your own availability</li>
+            <li>All skills valued equally</li>
+            <li>Trust-based reputation</li>
+            <li>Wealth stays in community</li>
+            <li>Relationships, not transactions</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="skill-visual">
+        <h3 style="font-size: 1.5rem; color: var(--skill-dark); margin-bottom: 1.5rem;">How Time Banking Works</h3>
+        <div class="reciprocity-demo">
+          <div class="skill-node">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">👵</div>
+            <div style="font-weight: 600; color: var(--skill-primary);">Elder Care</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">1 hour</div>
+          </div>
+          <div class="skill-arrow">→</div>
+          <div class="skill-node">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">💻</div>
+            <div style="font-weight: 600; color: var(--skill-primary);">Web Design</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">1 hour</div>
+          </div>
+          <div class="skill-arrow">→</div>
+          <div class="skill-node">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔧</div>
+            <div style="font-weight: 600; color: var(--skill-primary);">Plumbing</div>
+            <div style="font-size: 0.875rem; color: #6b7280;">1 hour</div>
+          </div>
+        </div>
+        <p style="color: var(--skill-secondary); margin-top: 1rem;">All hours are equal. All skills are valued. All people contribute.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by HoloSphere</h2>
+      <p class="section-subtitle">Novel geospatial features that make local expertise exchange actually work</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=800&q=80" alt="Network visualization showing skill connections in community" class="feature-image">
+          <div class="feature-icon">🕸️</div>
+          <h3 class="feature-title">Skill Mesh</h3>
+          <p class="feature-desc">Real-time expertise discovery within your community. See who knows what, where they are, when they're available—all in one living map.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=800&q=80" alt="People collaborating and exchanging ideas" class="feature-image">
+          <div class="feature-icon">🔄</div>
+          <h3 class="feature-title">Reciprocity Paths</h3>
+          <p class="feature-desc">"I teach guitar, who can teach me plumbing?" Automatic matching finds multi-hop exchange chains. Your skill connects to the skill you need.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1491975474562-1f4e30bc9468?auto=format&fit=crop&w=800&q=80" alt="Mentor teaching student one-on-one" class="feature-image">
+          <div class="feature-icon">👨‍🏫</div>
+          <h3 class="feature-title">Mentorship Chains</h3>
+          <p class="feature-desc">Track skill lineages and teaching relationships. See who learned from whom, preserve knowledge transmission, honor teaching traditions.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80" alt="Community responding to emergency call for help" class="feature-image">
+          <div class="feature-icon">🚨</div>
+          <h3 class="feature-title">Emergency Broadcast</h3>
+          <p class="feature-desc">"Need help NOW" propagates to nearby experts instantly. Crisis support mobilizes in minutes, not hours.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1559136555-9303baea8ebd?auto=format&fit=crop&w=800&q=80" alt="Map highlighting areas with skill gaps" class="feature-image">
+          <div class="feature-icon">📍</div>
+          <h3 class="feature-title">Skill Gaps</h3>
+          <p class="feature-desc">Identify missing expertise in your neighborhood. Visualize what skills are abundant, what's needed, guide learning priorities.</p>
+        </div>
+
+        <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1553729459-efe14ef6055d?auto=format&fit=crop&w=800&q=80" alt="Time credits and equal exchange visualization" class="feature-image">
+          <div class="feature-icon">⚖️</div>
+          <h3 class="feature-title">Time Credits</h3>
+          <p class="feature-desc">Simple hour-for-hour exchange. 1 hour teaching = 1 credit = 1 hour learning. No inflation, no extraction, just reciprocity.</p>
+        </div>
+      </div>
+
+      <div class="holosystem" style="margin-top: 3rem; background: rgba(255,255,255,0.1); border-color: white;">
+        <div class="holosystem-title" style="color: white;">
+          <span>🤝</span>
+          <span>How Skill Holons Work</span>
+        </div>
+        <div class="holosystem-content" style="color: rgba(255,255,255,0.9);">
+          <p>Each skill is a <strong>holon</strong>—a geospatial entity that knows who has it, who needs it, and how they connect. Skills automatically become discoverable to neighbors within your chosen radius.</p>
+          <p style="margin-top: 1rem;">This creates a <strong>parallel economy</strong> outside capitalism. Your grandmother's lifetime of caregiving wisdom becomes as valuable as a software engineer's code. Time is the universal currency.</p>
+          <ul style="margin-top: 0.5rem; margin-left: 1.5rem; line-height: 1.8;">
+            <li>Instant "who can teach me carpentry?" queries</li>
+            <li>Automatic reciprocity path finding</li>
+            <li>Federate with LearnLocal for formal teaching</li>
+            <li>Integrate with LocalLoop for asymmetric exchanges</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-purple">
+    <div class="container">
+      <h2 class="section-title">Social Impact</h2>
+      <p class="section-subtitle">Building a parallel economy where all skills are valued equally</p>
+
+      <div class="impact-metrics">
+        <div class="impact-card">
+          <div class="impact-value">Parallel Economy</div>
+          <div class="impact-label">Creates economic resilience outside capitalism. When money fails, skills sustain communities.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Equal Value</div>
+          <div class="impact-label">Elder care = coding = plumbing. Challenges market's arbitrary skill hierarchy.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Intergenerational</div>
+          <div class="impact-label">Builds relationships across age groups. Retirees teaching young people, youth teaching elders technology.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Reduces Loneliness</div>
+          <div class="impact-label">Purposeful connection through teaching and learning. You're needed, you're valued, you belong.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Who Benefits</h2>
+      <div class="features-grid">
+        <div class="card">
+          <h3>👴 Retirees</h3>
+          <p>Lifetime expertise becomes currency. Share decades of knowledge while learning new skills. Stay engaged, stay valued.</p>
+        </div>
+        <div class="card">
+          <h3>🌍 Immigrants</h3>
+          <p>Non-credentialed skills are honored. Master craftspeople teach traditional techniques, build dignity through contribution.</p>
+        </div>
+        <div class="card">
+          <h3>👷 Young People</h3>
+          <p>Build trade skills through mentorship. Learn from elders, avoid expensive training programs, earn credits while learning.</p>
+        </div>
+        <div class="card">
+          <h3>👨‍👩‍👧 Stay-at-Home Parents</h3>
+          <p>Flexible availability, valuable skills. Childcare, cooking, budgeting—all earn equal credits.</p>
+        </div>
+        <div class="card">
+          <h3>♿ Disabled People</h3>
+          <p>Digital skills, counseling, art—work from home on your schedule. Accessibility as core design principle.</p>
+        </div>
+        <div class="card">
+          <h3>🏘️ Community Builders</h3>
+          <p>Strengthen neighborhood bonds through reciprocity. Every exchange builds trust and social capital.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Learning Together</h2>
+      <p class="section-subtitle">Community members teaching and learning from each other</p>
+
+      <div class="features-grid">
+        <div>
+          <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80" alt="Diverse group of people learning together in workshop" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Workshop sessions bringing neighbors together</p>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1609619385002-f40fc3162fae?auto=format&fit=crop&w=800&q=80" alt="Elder teaching young person traditional craft skill" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Intergenerational knowledge sharing</p>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=800&q=80" alt="Community members collaborating on project" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Building skills and friendships simultaneously</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="background: var(--skill-light);">
+    <div class="container">
+      <h2 class="section-title">Real Stories</h2>
+      <div class="features-grid">
+        <div class="card" style="border-left: 4px solid var(--skill-secondary);">
+          <p style="font-style: italic; color: #4b5563; margin-bottom: 1rem;">"I'm 68 and retired. Teaching woodworking through SkillSwap gave me purpose again. I've trained 12 neighbors and learned smartphone photography from a teenager. My credits help with computer problems."</p>
+          <p style="color: var(--skill-primary); font-weight: 600;">— Thomas, Denver</p>
+        </div>
+        <div class="card" style="border-left: 4px solid var(--skill-secondary);">
+          <p style="font-style: italic; color: #4b5563; margin-bottom: 1rem;">"As an immigrant, my nursing degree isn't recognized here. But through SkillSwap I teach health literacy and earn credits for English tutoring. I'm valued again."</p>
+          <p style="color: var(--skill-primary); font-weight: 600;">— Amara, Boston</p>
+        </div>
+        <div class="card" style="border-left: 4px solid var(--skill-secondary);">
+          <p style="font-style: italic; color: #4b5563; margin-bottom: 1rem;">"I traded guitar lessons for plumbing help, then used my credits for tax advice. Saved $1,200 in one month, made three new friends, learned a skill. This is how community should work."</p>
+          <p style="color: var(--skill-primary); font-weight: 600;">— Sarah, Oakland</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Free & Democratic</h2>
+      <p class="section-subtitle">No extraction. No surveillance. Just community wealth building.</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="impact-card">
+          <div class="impact-value">Free Forever</div>
+          <div class="impact-label">Time-banking with 1 hour = 1 credit. No subscriptions, no fees, no tricks.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Open Source</div>
+          <div class="impact-label">Built on HoloSphere's LGPL-licensed infrastructure. Community-controlled code.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">LocalLoop</div>
+          <div class="impact-label">Optional integration for asymmetric exchanges when time credits aren't enough.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Grant Funded</div>
+          <div class="impact-label">Supported by community economic development foundations, not venture capital.</div>
+        </div>
+      </div>
+
+      <div class="holosystem" style="margin-top: 3rem; background: rgba(255,255,255,0.1); border-color: white;">
+        <div class="holosystem-title" style="color: white;">
+          <span>🌐</span>
+          <span>Part of the Ecosystem</span>
+        </div>
+        <div class="holosystem-content" style="color: rgba(255,255,255,0.9);">
+          <p><strong>SkillSwap</strong> integrates with other HoloSphere projects:</p>
+          <ul style="margin-top: 0.5rem; margin-left: 1.5rem; line-height: 1.8;">
+            <li><strong>LearnLocal</strong>: Federated teaching leads to formal workshops</li>
+            <li><strong>ToolLibrary</strong>: Maintenance alerts connect to mechanics</li>
+            <li><strong>NeighborHub</strong>: Find spaces for skill workshops</li>
+            <li><strong>LocalLoop</strong>: Community currency for asymmetric exchanges</li>
+            <li><strong>EcoConstruct</strong>: Builders teach construction skills</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="get-started">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Start Swapping Skills Today</h2>
+      <p class="section-subtitle">Join thousands building a parallel economy where all skills are valued</p>
+
+      <div style="max-width: 600px; margin: 2rem auto; text-align: left;">
+        <div style="background: var(--skill-light); padding: 2rem; border-radius: 1rem; border: 2px solid var(--skill-accent);">
+          <h3 style="color: var(--skill-primary); margin-bottom: 1rem;">What skills do you have?</h3>
+          <ul style="color: #4b5563; line-height: 2;">
+            <li>Teaching? Tutoring? Mentoring?</li>
+            <li>Repairs? Maintenance? Building?</li>
+            <li>Cooking? Baking? Food preservation?</li>
+            <li>Childcare? Elder care? Pet care?</li>
+            <li>Art? Music? Crafts?</li>
+            <li>Technology? Design? Writing?</li>
+            <li>Languages? Translation? Cultural knowledge?</li>
+          </ul>
+          <p style="color: var(--skill-secondary); margin-top: 1rem; font-weight: 600;">If you can do it, someone needs to learn it.</p>
+        </div>
+      </div>
+
+      <div class="cta-buttons" style="margin-top: 2rem;">
+        <a href="#" class="btn-skill" style="background: var(--skill-primary); color: white;">Offer Your Skills</a>
+        <a href="#" class="btn-skill" style="background: var(--skill-secondary); color: white;">Find a Teacher</a>
+      </div>
+      <p style="margin-top: 2rem; color: #6b7280; font-size: 0.875rem;">
+        Part of the <a href="../index.html" style="color: var(--skill-primary); font-weight: 600;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="mailto:hello@skillswap.community">Contact</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>SkillSwap - Powered by HoloSphere | Time-banked, community-owned, economically liberating</p>
+    </div>
+  </footer>
+</body>
+</html>

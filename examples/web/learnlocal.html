@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LearnLocal - Peer Learning Platform | HoloSphere</title>
+  <link rel="stylesheet" href="assets/css/shared.css">
+  <style>
+    .project-color { background: #8b5cf6; }
+    .btn-project { background: #8b5cf6; color: white; }
+    .btn-project:hover { background: #7c3aed; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon project-color" style="color: white;">📚</div>
+          <span>LearnLocal</span>
+        </div>
+        <nav class="nav">
+          <a href="storycircle.html">← StoryCircle</a>
+          <a href="index.html">Ecosystem</a>
+          <a href="healingspaces.html">HealingSpaces →</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="hero-tagline">Culture & Education</div>
+      <h1>LearnLocal</h1>
+      <p>Peer-to-peer learning platform for community-based education. Organize workshops, share skills, track learning paths, and build local knowledge networks using location-based holons.</p>
+    </div>
+  </div>
+
+  <main class="container">
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="workshops-count">0</span>
+        <span class="stat-label">Active Workshops</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="learners-count">0</span>
+        <span class="stat-label">Learners</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="topics-count">0</span>
+        <span class="stat-label">Topics</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="hours-taught">0</span>
+        <span class="stat-label">Hours Taught</span>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-lg">
+      <div class="card">
+        <h3>How HoloSphere Powers LearnLocal</h3>
+        <ul style="line-height: 1.8;">
+          <li><strong>Location-Based Learning:</strong> Workshops tied to neighborhood holons</li>
+          <li><strong>Skill Lenses:</strong> Organize by topic, skill level, or learning path</li>
+          <li><strong>Federation:</strong> Learning resources shared across communities</li>
+          <li><strong>Real-time Enrollment:</strong> Subscribe to new workshops and updates</li>
+          <li><strong>Decentralized:</strong> No platform fees—communities own their education</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Ecosystem Connections</h3>
+        <div class="connection-list">
+          <div class="connection-tag">
+            <span>🔧</span> <strong>SkillSwap:</strong> Connects learners with experts
+          </div>
+          <div class="connection-tag">
+            <span>🏘️</span> <strong>NeighborHub:</strong> Provides teaching spaces
+          </div>
+          <div class="connection-tag">
+            <span>📖</span> <strong>StoryCircle:</strong> Integrates cultural knowledge
+          </div>
+          <div class="connection-tag">
+            <span>💰</span> <strong>LocalLoop:</strong> Enables course payments
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Interactive Demo: Organize & Join Learning</h2>
+
+      <div class="card mb-lg">
+        <h3>Create a Workshop</h3>
+        <div class="form-group">
+          <label for="workshop-holon">Location (Neighborhood Holon)</label>
+          <input type="text" id="workshop-holon" placeholder="e.g., downtown-learning-center" value="downtown-learning-center">
+        </div>
+        <div class="form-group">
+          <label for="workshop-title">Workshop Title</label>
+          <input type="text" id="workshop-title" placeholder="e.g., Introduction to Permaculture">
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="workshop-topic">Topic/Category</label>
+            <select id="workshop-topic">
+              <option value="permaculture">Permaculture & Gardening</option>
+              <option value="technology">Technology & Tools</option>
+              <option value="arts-crafts">Arts & Crafts</option>
+              <option value="health-wellness">Health & Wellness</option>
+              <option value="language">Language Learning</option>
+              <option value="ecology">Ecology & Environment</option>
+              <option value="building">Building & Construction</option>
+              <option value="cooking">Cooking & Food</option>
+              <option value="governance">Governance & Community</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="skill-level">Skill Level</label>
+            <select id="skill-level">
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+              <option value="all-levels">All Levels</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label for="instructor">Instructor</label>
+            <input type="text" id="instructor" placeholder="Your name">
+          </div>
+          <div class="form-group">
+            <label for="max-students">Max Students</label>
+            <input type="number" id="max-students" placeholder="20" value="20">
+          </div>
+          <div class="form-group">
+            <label for="duration">Duration (hours)</label>
+            <input type="number" id="duration" placeholder="2" step="0.5" value="2">
+          </div>
+        </div>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="workshop-date">Date & Time</label>
+            <input type="datetime-local" id="workshop-date">
+          </div>
+          <div class="form-group">
+            <label for="cost">Cost (Local Currency)</label>
+            <input type="number" id="cost" placeholder="0" step="0.01" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea id="description" rows="3" placeholder="What will students learn?"></textarea>
+        </div>
+        <button class="btn btn-project" onclick="createWorkshop()">Create Workshop</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Enroll in Workshop</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="enroll-workshop-id">Workshop ID</label>
+            <input type="text" id="enroll-workshop-id" placeholder="Copy from listing below">
+          </div>
+          <div class="form-group">
+            <label for="student-name">Your Name</label>
+            <input type="text" id="student-name" placeholder="Student name">
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="enrollInWorkshop()">Enroll</button>
+      </div>
+
+      <div class="card mb-lg">
+        <h3>Browse Workshops</h3>
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="filter-location">Filter by Location</label>
+            <input type="text" id="filter-location" placeholder="Leave empty for all">
+          </div>
+          <div class="form-group">
+            <label for="filter-topic">Filter by Topic</label>
+            <select id="filter-topic">
+              <option value="">All Topics</option>
+              <option value="permaculture">Permaculture & Gardening</option>
+              <option value="technology">Technology & Tools</option>
+              <option value="arts-crafts">Arts & Crafts</option>
+              <option value="health-wellness">Health & Wellness</option>
+              <option value="language">Language Learning</option>
+              <option value="ecology">Ecology & Environment</option>
+              <option value="building">Building & Construction</option>
+              <option value="cooking">Cooking & Food</option>
+              <option value="governance">Governance & Community</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-secondary" onclick="loadWorkshops()">Browse Workshops</button>
+      </div>
+
+      <div class="demo-output" id="output">
+        <p class="text-muted">Workshops will appear here...</p>
+      </div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Code Example</h2>
+      <div class="demo-code">
+        <code>// Initialize LearnLocal with HoloSphere
+const learn = new HoloSphere('LearnLocal', strict=false);
+
+// Create a workshop
+await learn.put('downtown-learning-center', 'workshops', {
+  id: Date.now().toString(),
+  title: 'Introduction to Permaculture',
+  topic: 'permaculture',
+  skill_level: 'beginner',
+  instructor: 'Jane Smith',
+  description: 'Learn the basics of permaculture design...',
+  max_students: 20,
+  enrolled: 0,
+  duration: 2,
+  date: new Date('2025-12-01T14:00').getTime(),
+  cost: 0,
+  status: 'open',
+  created: Date.now()
+});
+
+// Get all workshops in a neighborhood
+const workshops = await learn.getAll('downtown-learning-center', 'workshops');
+
+// Enroll in a workshop
+await learn.put('downtown-learning-center', 'enrollments', {
+  workshop_id: 'workshop-123',
+  student_name: 'John Doe',
+  enrolled_at: Date.now()
+});
+
+// Subscribe to new workshops
+learn.subscribe('downtown-learning-center', 'workshops', (workshop) => {
+  console.log('New workshop:', workshop.title);
+});
+
+// Federate with regional education networks
+await learn.federate('downtown-learning-center', 'regional-education');
+// Workshops become discoverable across the network</code>
+      </div>
+    </div>
+
+    <div class="connections">
+      <h3>Integration Points</h3>
+      <p class="text-center mb-lg text-muted">LearnLocal weaves education throughout the ecosystem</p>
+      <div class="connection-list">
+        <span class="connection-tag">🔧 SkillSwap connects workshop leaders with learners</span>
+        <span class="connection-tag">🏘️ NeighborHub provides workshop spaces</span>
+        <span class="connection-tag">📖 StoryCircle preserves traditional knowledge</span>
+        <span class="connection-tag">💰 LocalLoop enables payment in local currency</span>
+        <span class="connection-tag">🌱 TerraTrust hosts ecology field courses</span>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>LearnLocal - Powered by HoloSphere</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/holosphere-web.js"></script>
+  <script>
+    const sphere = new HoloSphereDemo('LearnLocal', 'LearnLocal', '#8b5cf6');
+
+    // Initialize sample data
+    async function initSampleData() {
+      const samples = [
+        {
+          location: 'downtown-learning-center',
+          title: 'Introduction to Permaculture',
+          topic: 'permaculture',
+          level: 'beginner',
+          instructor: 'Jane Smith',
+          description: 'Learn the basics of permaculture design principles and how to create regenerative gardens.',
+          max: 20,
+          duration: 2,
+          date: Date.now() + 7 * 24 * 60 * 60 * 1000,
+          cost: 0
+        },
+        {
+          location: 'downtown-learning-center',
+          title: 'Solar Panel Installation',
+          topic: 'technology',
+          level: 'intermediate',
+          instructor: 'Carlos Rodriguez',
+          description: 'Hands-on workshop covering solar panel installation, wiring, and maintenance.',
+          max: 12,
+          duration: 4,
+          date: Date.now() + 14 * 24 * 60 * 60 * 1000,
+          cost: 25
+        },
+        {
+          location: 'neighborhood-hub-west',
+          title: 'Community Bread Baking',
+          topic: 'cooking',
+          level: 'all-levels',
+          instructor: 'Maria Garcia',
+          description: 'Traditional bread-making techniques using local grains and community ovens.',
+          max: 15,
+          duration: 3,
+          date: Date.now() + 3 * 24 * 60 * 60 * 1000,
+          cost: 5
+        },
+        {
+          location: 'downtown-learning-center',
+          title: 'Watershed Ecology',
+          topic: 'ecology',
+          level: 'beginner',
+          instructor: 'Dr. Sarah Chen',
+          description: 'Understanding local watershed systems, water quality monitoring, and stream health.',
+          max: 25,
+          duration: 2.5,
+          date: Date.now() + 10 * 24 * 60 * 60 * 1000,
+          cost: 0
+        },
+        {
+          location: 'makerspace-east',
+          title: 'Natural Building with Cob',
+          topic: 'building',
+          level: 'beginner',
+          instructor: 'Tom Wilson',
+          description: 'Learn to build with earth, straw, and sand. Create beautiful, sustainable structures.',
+          max: 10,
+          duration: 6,
+          date: Date.now() + 21 * 24 * 60 * 60 * 1000,
+          cost: 15
+        }
+      ];
+
+      for (const sample of samples) {
+        await sphere.put(sample.location, 'workshops', {
+          id: Date.now().toString() + Math.random(),
+          title: sample.title,
+          topic: sample.topic,
+          skill_level: sample.level,
+          instructor: sample.instructor,
+          description: sample.description,
+          max_students: sample.max,
+          enrolled: Math.floor(Math.random() * sample.max * 0.6),
+          duration: sample.duration,
+          date: sample.date,
+          cost: sample.cost,
+          status: 'open',
+          created: Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    async function createWorkshop() {
+      const holon = document.getElementById('workshop-holon').value;
+      const title = document.getElementById('workshop-title').value;
+      const topic = document.getElementById('workshop-topic').value;
+      const level = document.getElementById('skill-level').value;
+      const instructor = document.getElementById('instructor').value;
+      const maxStudents = parseInt(document.getElementById('max-students').value);
+      const duration = parseFloat(document.getElementById('duration').value);
+      const dateInput = document.getElementById('workshop-date').value;
+      const cost = parseFloat(document.getElementById('cost').value) || 0;
+      const description = document.getElementById('description').value;
+
+      if (!holon || !title || !instructor || !dateInput) {
+        showNotification('Please fill in required fields (location, title, instructor, date)', 'error');
+        return;
+      }
+
+      const workshop = {
+        id: Date.now().toString(),
+        title,
+        topic,
+        skill_level: level,
+        instructor,
+        description: description || 'No description provided',
+        max_students: maxStudents || 20,
+        enrolled: 0,
+        duration: duration || 2,
+        date: new Date(dateInput).getTime(),
+        cost,
+        status: 'open',
+        created: Date.now(),
+        timestamp: Date.now()
+      };
+
+      await sphere.put(holon, 'workshops', workshop);
+      showNotification('Workshop created successfully!');
+
+      // Clear form
+      document.getElementById('workshop-title').value = '';
+      document.getElementById('instructor').value = '';
+      document.getElementById('description').value = '';
+      document.getElementById('workshop-date').value = '';
+
+      await loadWorkshops();
+      updateStats();
+    }
+
+    async function enrollInWorkshop() {
+      const workshopId = document.getElementById('enroll-workshop-id').value;
+      const studentName = document.getElementById('student-name').value;
+
+      if (!workshopId || !studentName) {
+        showNotification('Please provide workshop ID and your name', 'error');
+        return;
+      }
+
+      // Find the workshop
+      let workshop = null;
+      let workshopHolon = null;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes(workshopId)) {
+          const item = JSON.parse(localStorage.getItem(key));
+          if (item && item.id === workshopId) {
+            workshop = item;
+            workshopHolon = item._holon;
+            break;
+          }
+        }
+      }
+
+      if (!workshop) {
+        showNotification('Workshop not found', 'error');
+        return;
+      }
+
+      if (workshop.enrolled >= workshop.max_students) {
+        showNotification('Workshop is full', 'error');
+        return;
+      }
+
+      // Create enrollment
+      await sphere.put(workshopHolon, 'enrollments', {
+        id: Date.now().toString(),
+        workshop_id: workshopId,
+        workshop_title: workshop.title,
+        student_name: studentName,
+        enrolled_at: Date.now()
+      });
+
+      // Update workshop enrollment count
+      workshop.enrolled++;
+      if (workshop.enrolled >= workshop.max_students) {
+        workshop.status = 'full';
+      }
+      await sphere.put(workshopHolon, 'workshops', workshop);
+
+      showNotification(`Enrolled in "${workshop.title}"!`);
+
+      document.getElementById('enroll-workshop-id').value = '';
+      document.getElementById('student-name').value = '';
+
+      await loadWorkshops();
+      updateStats();
+    }
+
+    async function loadWorkshops() {
+      const filterLocation = document.getElementById('filter-location').value;
+      const filterTopic = document.getElementById('filter-topic').value;
+      const output = document.getElementById('output');
+
+      let workshops = [];
+
+      if (filterLocation) {
+        workshops = await sphere.getAll(filterLocation, 'workshops');
+      } else {
+        // Get all workshops
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('LearnLocal:') && key.includes(':workshops:')) {
+            const item = JSON.parse(localStorage.getItem(key));
+            workshops.push(item);
+          }
+        }
+      }
+
+      // Apply topic filter
+      if (filterTopic) {
+        workshops = workshops.filter(w => w.topic === filterTopic);
+      }
+
+      if (workshops.length === 0) {
+        output.innerHTML = `<p class="text-muted">No workshops found. Try adjusting filters or create a new workshop.</p>`;
+        return;
+      }
+
+      // Sort by date, soonest first
+      workshops.sort((a, b) => a.date - b.date);
+
+      let html = `<h4>Available Workshops (${workshops.length})</h4><div class="grid grid-2">`;
+
+      for (const workshop of workshops) {
+        const date = new Date(workshop.date).toLocaleString();
+        const spotsLeft = workshop.max_students - workshop.enrolled;
+        const statusBadge = workshop.status === 'full' ? 'badge-warning' : 'badge-success';
+        const costText = workshop.cost > 0 ? `${workshop.cost} LC` : 'Free';
+
+        html += `
+          <div class="card">
+            <h3 style="margin-bottom: 0.5rem;">${workshop.title}</h3>
+            <div style="margin-bottom: 1rem;">
+              <span class="badge ${statusBadge}">${workshop.status}</span>
+              <span class="badge badge-info" style="margin-left: 0.5rem;">${workshop.skill_level}</span>
+            </div>
+            <p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+              ${workshop.description}
+            </p>
+            <div style="font-size: 0.875rem; line-height: 1.8; margin-top: 1rem;">
+              <div><strong>Instructor:</strong> ${workshop.instructor}</div>
+              <div><strong>Topic:</strong> ${workshop.topic}</div>
+              <div><strong>When:</strong> ${date}</div>
+              <div><strong>Duration:</strong> ${workshop.duration} hours</div>
+              <div><strong>Location:</strong> ${workshop._holon}</div>
+              <div><strong>Cost:</strong> ${costText}</div>
+              <div><strong>Enrolled:</strong> ${workshop.enrolled}/${workshop.max_students} (${spotsLeft} spots left)</div>
+            </div>
+            <div class="text-small text-muted" style="margin-top: 1rem;">
+              <strong>Workshop ID:</strong> ${workshop.id}
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      output.innerHTML = html;
+    }
+
+    async function updateStats() {
+      const allWorkshops = [];
+      const topics = new Set();
+      let totalLearners = 0;
+      let totalHours = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('LearnLocal:') && key.includes(':workshops:')) {
+          const item = JSON.parse(localStorage.getItem(key));
+          allWorkshops.push(item);
+          topics.add(item.topic);
+          totalLearners += item.enrolled || 0;
+          totalHours += (item.duration || 0) * (item.enrolled || 0);
+        }
+      }
+
+      document.getElementById('workshops-count').textContent = allWorkshops.length;
+      document.getElementById('learners-count').textContent = totalLearners;
+      document.getElementById('topics-count').textContent = topics.size;
+      document.getElementById('hours-taught').textContent = totalHours.toFixed(1);
+    }
+
+    (async () => {
+      const existing = await sphere.getAll('downtown-learning-center', 'workshops');
+      if (existing.length === 0) {
+        await initSampleData();
+      }
+      await updateStats();
+      await loadWorkshops();
+    })();
+  </script>
+</body>
+</html>
