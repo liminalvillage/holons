@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocalLoop - Money That Stays Home</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --loop-primary: #d97706;
+      --loop-secondary: #f59e0b;
+      --loop-accent: #fbbf24;
+      --loop-light: #fef3c7;
+      --loop-dark: #92400e;
+    }
+
+    body {
+      background: linear-gradient(180deg, #fef3c7 0%, #ffffff 100%);
+    }
+
+    .loop-hero {
+      background: linear-gradient(135deg, #78350f 0%, #92400e 30%, #d97706 70%, #f59e0b 100%);
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .loop-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image:
+        radial-gradient(circle at 20% 50%, rgba(251, 191, 36, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(245, 158, 11, 0.15) 0%, transparent 50%),
+        url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="2" fill="rgba(255,255,255,0.1)"/><path d="M50,30 A20,20 0 1,1 50,70 A20,20 0 1,1 50,30" stroke="rgba(255,255,255,0.05)" fill="none" stroke-width="1"/></svg>');
+      background-size: 100% 100%, 100% 100%, 60px 60px;
+      opacity: 0.4;
+      animation: float 20s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-20px); }
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .loop-hero h1 {
+      font-size: 4.5rem;
+      font-weight: 900;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 3px 8px rgba(0,0,0,0.3);
+      background: linear-gradient(to right, #ffffff, #fcd34d);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .loop-hero .tagline {
+      font-size: 2rem;
+      margin-bottom: 2rem;
+      font-weight: 400;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .loop-hero .subtitle {
+      font-size: 1.25rem;
+      opacity: 0.9;
+      max-width: 700px;
+      margin: 0 auto 3rem;
+      line-height: 1.7;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-loop {
+      background: var(--loop-accent);
+      color: #78350f;
+      padding: 1.125rem 3rem;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 6px 20px rgba(217, 119, 6, 0.3);
+    }
+
+    .btn-loop:hover {
+      background: #fcd34d;
+      transform: translateY(-3px);
+      box-shadow: 0 8px 28px rgba(217, 119, 6, 0.4);
+      text-decoration: none;
+    }
+
+    .btn-loop-outline {
+      background: transparent;
+      border: 2px solid white;
+      color: white;
+    }
+
+    .btn-loop-outline:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: var(--loop-accent);
+      color: white;
+    }
+
+    .section {
+      padding: 5rem 0;
+    }
+
+    .section-dark {
+      background: linear-gradient(135deg, #92400e 0%, #d97706 100%);
+      color: white;
+    }
+
+    .section-accent {
+      background: var(--loop-light);
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 3rem;
+      margin-bottom: 1.25rem;
+      color: var(--loop-dark);
+      font-weight: 800;
+    }
+
+    .section-dark .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.375rem;
+      color: #6b7280;
+      max-width: 800px;
+      margin: 0 auto 4rem;
+      line-height: 1.6;
+    }
+
+    .section-dark .section-subtitle {
+      color: rgba(255,255,255,0.9);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2.5rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+      box-shadow: 0 8px 20px rgba(217, 119, 6, 0.12);
+      transition: all 0.3s;
+      border: 2px solid transparent;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 32px rgba(217, 119, 6, 0.2);
+      border-color: var(--loop-accent);
+    }
+
+    .feature-icon {
+      width: 70px;
+      height: 70px;
+      background: linear-gradient(135deg, var(--loop-secondary), var(--loop-accent));
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+
+    .feature-title {
+      font-size: 1.625rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--loop-dark);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.8;
+      font-size: 1.0625rem;
+    }
+
+    .stats-banner {
+      background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #fcd34d 100%);
+      padding: 4rem;
+      border-radius: 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 3rem;
+      text-align: center;
+      color: #78350f;
+      margin: 3rem 0;
+      box-shadow: 0 12px 40px rgba(217, 119, 6, 0.25);
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-number {
+      font-size: 3.5rem;
+      font-weight: 900;
+      line-height: 1;
+      margin-bottom: 0.75rem;
+    }
+
+    .stat-label {
+      font-size: 1.125rem;
+      font-weight: 600;
+      opacity: 0.9;
+    }
+
+    .holosystem {
+      background: rgba(255,255,255,0.1);
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+      border-left: 5px solid var(--loop-accent);
+      margin: 2.5rem 0;
+      backdrop-filter: blur(10px);
+    }
+
+    .holosystem-title {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      color: white;
+    }
+
+    .holosystem-content {
+      color: rgba(255,255,255,0.95);
+      line-height: 1.9;
+      font-size: 1.0625rem;
+    }
+
+    .impact-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .impact-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      border-top: 4px solid var(--loop-secondary);
+      box-shadow: 0 4px 12px rgba(217, 119, 6, 0.1);
+    }
+
+    .impact-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .impact-value {
+      font-size: 2.25rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+      color: var(--loop-dark);
+    }
+
+    .impact-label {
+      color: #4b5563;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .comparison-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+    }
+
+    .comparison-card.new {
+      border: 3px solid var(--loop-accent);
+      box-shadow: 0 8px 24px rgba(245, 158, 11, 0.2);
+    }
+
+    .comparison-card h3 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .comparison-card ul {
+      line-height: 2.2;
+      color: #4b5563;
+      font-size: 1.0625rem;
+    }
+
+    .currency-flow {
+      background: linear-gradient(to right, rgba(255,255,255,0.05), rgba(255,255,255,0.15), rgba(255,255,255,0.05));
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+      text-align: center;
+      margin: 3rem 0;
+      border: 2px dashed rgba(255,255,255,0.3);
+    }
+
+    .currency-flow-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 2rem;
+      color: white;
+    }
+
+    .flow-visual {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      font-size: 1.125rem;
+    }
+
+    .flow-step {
+      background: rgba(255,255,255,0.15);
+      padding: 1.25rem 2rem;
+      border-radius: 50px;
+      font-weight: 600;
+      backdrop-filter: blur(5px);
+    }
+
+    .flow-arrow {
+      font-size: 2rem;
+      color: var(--loop-accent);
+    }
+
+    @media (max-width: 768px) {
+      .loop-hero h1 {
+        font-size: 2.75rem;
+      }
+
+      .loop-hero .tagline {
+        font-size: 1.5rem;
+      }
+
+      .stats-banner {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-visual {
+        flex-direction: column;
+      }
+
+      .flow-arrow {
+        transform: rotate(90deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--loop-primary); color: white;">🔄</div>
+          <span>LocalLoop</span>
+        </div>
+        <nav class="nav">
+          <a href="../index.html">Ecosystem</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="mailto:hello@localloop.money">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="loop-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Money That<br>Stays Home</h1>
+        <p class="tagline">Every dollar spent is a vote for your neighbors</p>
+        <p class="subtitle">Community currency that builds local wealth, not corporate profits. Watch your money circulate 2-3x faster, creating jobs and resilience right where you live.</p>
+        <div class="cta-buttons">
+          <a href="#join" class="btn-loop">Join Your LocalLoop</a>
+          <a href="#how-it-works" class="btn-loop btn-loop-outline">See How It Works</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="stats-banner">
+        <div class="stat">
+          <div class="stat-number">2.7x</div>
+          <div class="stat-label">Economic Multiplier</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">$480K</div>
+          <div class="stat-label">Kept Local Monthly</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">156</div>
+          <div class="stat-label">Local Businesses</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">$350</div>
+          <div class="stat-label">Monthly UBI Per Person</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">The Extraction Problem</h2>
+      <p class="section-subtitle">When you spend a dollar at a chain store, 85 cents leaves your community forever. LocalLoop changes that.</p>
+
+      <div class="comparison-grid">
+        <div class="comparison-card">
+          <h3 style="color: #dc2626;">❌ Traditional Money</h3>
+          <ul>
+            <li>Flows to distant shareholders</li>
+            <li>Accumulates in financial centers</li>
+            <li>No visibility into circulation</li>
+            <li>Banks control the supply</li>
+            <li>Interest extracts wealth</li>
+            <li>Inequality accelerates</li>
+          </ul>
+        </div>
+        <div class="comparison-card new">
+          <h3 style="color: var(--loop-primary);">✓ LocalLoop Currency</h3>
+          <ul>
+            <li>Circulates within your community</li>
+            <li>Builds local wealth and jobs</li>
+            <li>Transparent velocity metrics</li>
+            <li>Democratic governance</li>
+            <li>Zero interest, just circulation</li>
+            <li>Universal basic income built-in</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by HoloSphere</h2>
+      <p class="section-subtitle">Geospatial currency architecture that makes community economics actually work</p>
+
+      <div class="currency-flow">
+        <div class="currency-flow-title">How Your Money Circulates</div>
+        <div class="flow-visual">
+          <div class="flow-step">You earn LocalLoop</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Spend at local business</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Business pays worker</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Worker spends locally</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Loop continues!</div>
+        </div>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3 class="feature-title">Velocity Holons</h3>
+          <p class="feature-desc">Track how fast money circulates in real-time. Higher velocity means healthier local economy. See exactly where money flows and where it gets stuck.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3 class="feature-title">Leakage Detection</h3>
+          <p class="feature-desc">Visualize when money leaves your community. Identify supply chain gaps and invest in local alternatives to plug the leaks.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3 class="feature-title">Spending Patterns</h3>
+          <p class="feature-desc">Anonymous analytics reveal community needs. Guide local economic development with real data about what people actually buy.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💰</div>
+          <h3 class="feature-title">Automatic Basic Income</h3>
+          <p class="feature-desc">New currency issues as UBI to all community members. No poverty, no bureaucracy—just money distributed equitably from day one.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3 class="feature-title">Federation Exchanges</h3>
+          <p class="feature-desc">Trade seamlessly with neighboring LocalLoops. Regional solidarity economy emerges organically through geospatial federation.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⏰</div>
+          <h3 class="feature-title">Smart Demurrage</h3>
+          <p class="feature-desc">Currency slowly loses value if hoarded, encouraging circulation. This fee funds community projects—money that sits still works for everyone.</p>
+        </div>
+      </div>
+
+      <div class="holosystem">
+        <div class="holosystem-title">
+          <span>🌐</span>
+          <span>How Currency Holons Work</span>
+        </div>
+        <div class="holosystem-content">
+          <p>Each LocalLoop is a <strong>currency holon</strong>—an H3 geographic cell that acts as its own monetary zone while federating with neighbors. Your neighborhood currency automatically relates to your city, which can relate to regional exchanges.</p>
+          <p style="margin-top: 1rem;">This is fundamentally different from cryptocurrency or traditional banking. With HoloSphere, <strong>geography defines the monetary boundary</strong>. This means:</p>
+          <ul style="margin-top: 0.5rem; margin-left: 1.5rem; line-height: 1.9;">
+            <li>Instant visibility into local economic health</li>
+            <li>Automatic trade between adjacent communities</li>
+            <li>Democratic control over your monetary zone</li>
+            <li>Offline-first transactions with eventual settlement</li>
+            <li>No blockchain mining waste—just pure circulation</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-accent">
+    <div class="container">
+      <h2 class="section-title">Social Impact</h2>
+      <p class="section-subtitle">Building economic resilience through democratic money</p>
+
+      <div class="impact-grid">
+        <div class="impact-card">
+          <div class="impact-icon">📈</div>
+          <h3 style="color: var(--loop-primary);">2-3x Economic Multiplier</h3>
+          <p class="impact-label">Every dollar circulates multiple times locally before leaving, creating more jobs and wealth than traditional currency.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">🛡️</div>
+          <h3 style="color: var(--loop-primary);">Shock Resilience</h3>
+          <p class="impact-label">When national economy crashes, LocalLoop communities maintain purchasing power and employment through parallel economy.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">🎯</div>
+          <h3 style="color: var(--loop-primary);">Poverty Reduction</h3>
+          <p class="impact-label">Universal basic income built into currency issuance ensures no one is left behind. Every community member has purchasing power.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">⚖️</div>
+          <h3 style="color: var(--loop-primary);">Economic Democracy</h3>
+          <p class="impact-label">Communities govern their own monetary policy through VoiceVillage integration. No distant Fed making decisions for you.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">🌱</div>
+          <h3 style="color: var(--loop-primary);">Local Business Growth</h3>
+          <p class="impact-label">Small businesses thrive when money stays local. Competition shifts from price to quality and community contribution.</p>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-icon">🤝</div>
+          <h3 style="color: var(--loop-primary);">Solidarity Economy</h3>
+          <p class="impact-label">Economic relationships based on mutual aid rather than extraction. Money becomes a tool for cooperation, not competition.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Who Uses LocalLoop</h2>
+      <div class="features-grid">
+        <div class="card">
+          <h3>🏪 Local Businesses</h3>
+          <p>Accept LocalLoop to attract community-minded customers and reduce payment processing fees. Keep revenue circulating locally.</p>
+        </div>
+        <div class="card">
+          <h3>👷 Workers</h3>
+          <p>Receive part of wages in LocalLoop, guaranteed to spend locally. Basic income supplements ensure security during transitions.</p>
+        </div>
+        <div class="card">
+          <h3>🏘️ Neighborhood Associations</h3>
+          <p>Launch your own LocalLoop to revitalize struggling commercial districts and build community wealth.</p>
+        </div>
+        <div class="card">
+          <h3>🌾 Farmers</h3>
+          <p>Receive fair payment in currency that can only be spent locally, ensuring direct farm-to-community relationships.</p>
+        </div>
+        <div class="card">
+          <h3>🏛️ Municipalities</h3>
+          <p>Collect taxes in LocalLoop and pay city workers partly in community currency, boosting the local multiplier effect.</p>
+        </div>
+        <div class="card">
+          <h3>🤝 Co-ops</h3>
+          <p>Build solidarity economy connections across housing, worker, and credit co-ops through shared currency infrastructure.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Community-Governed, Not Corporate-Owned</h2>
+      <p class="section-subtitle">Your money, your rules</p>
+
+      <div class="impact-grid">
+        <div class="impact-card">
+          <div class="impact-value">0%</div>
+          <div class="impact-label">Venture Capital Ownership</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">100%</div>
+          <div class="impact-label">Community Controlled</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Democratic</div>
+          <div class="impact-label">Monetary Policy Decisions</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Local</div>
+          <div class="impact-label">Transaction Fees Stay Here</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Open Source</div>
+          <div class="impact-label">Built on HoloSphere LGPL</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Cooperative</div>
+          <div class="impact-label">Managed by Currency Co-op</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="join">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Start Your LocalLoop Today</h2>
+      <p class="section-subtitle">Join communities worldwide building parallel economies that work for people, not profit</p>
+      <div class="cta-buttons" style="margin-top: 2.5rem;">
+        <a href="mailto:hello@localloop.money" class="btn-loop" style="background: var(--loop-primary); color: white;">Launch Your Community</a>
+        <a href="../index.html" class="btn-loop" style="background: var(--loop-secondary); color: white;">Explore Ecosystem</a>
+      </div>
+      <p style="margin-top: 2.5rem; color: #6b7280; font-size: 0.9375rem;">
+        Part of the <a href="../index.html" style="color: var(--loop-primary); font-weight: 700;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="#how-it-works">How It Works</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>LocalLoop - Powered by HoloSphere | Community-owned, democratically governed, economically regenerative</p>
+    </div>
+  </footer>
+</body>
+</html>

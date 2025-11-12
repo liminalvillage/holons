@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MindfulMeets - Your Spiritual Home, In Every Neighborhood</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --mindful-primary: #f472b6;
+      --mindful-secondary: #f9a8d4;
+      --mindful-accent: #fbcfe8;
+      --mindful-light: #fdf4ff;
+      --mindful-soft: #fae8ff;
+    }
+
+    body {
+      background: linear-gradient(180deg, #fdf4ff 0%, #ffffff 100%);
+    }
+
+    .mindful-hero {
+      background: linear-gradient(135deg, #a21caf 0%, #c026d3 20%, #d946ef 40%, #f472b6 70%, #f9a8d4 100%);
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mindful-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background:
+        radial-gradient(circle at 30% 40%, rgba(249, 168, 212, 0.4) 0%, transparent 50%),
+        radial-gradient(circle at 70% 60%, rgba(251, 207, 232, 0.4) 0%, transparent 50%),
+        radial-gradient(circle at 50% 90%, rgba(244, 114, 182, 0.3) 0%, transparent 40%);
+      opacity: 0.7;
+    }
+
+    .mindful-hero::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="20" stroke="rgba(255,255,255,0.1)" stroke-width="1" fill="none"/><circle cx="50" cy="50" r="15" stroke="rgba(255,255,255,0.08)" stroke-width="1" fill="none"/><circle cx="50" cy="50" r="10" stroke="rgba(255,255,255,0.06)" stroke-width="1" fill="none"/></svg>');
+      background-size: 60px 60px;
+      opacity: 0.3;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .mindful-hero h1 {
+      font-size: 4rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 2px 12px rgba(0,0,0,0.2);
+      letter-spacing: -0.02em;
+    }
+
+    .mindful-hero .tagline {
+      font-size: 1.875rem;
+      opacity: 0.98;
+      margin-bottom: 2rem;
+      font-weight: 300;
+      line-height: 1.5;
+      font-style: italic;
+    }
+
+    .mindful-hero .subtitle {
+      font-size: 1.125rem;
+      opacity: 0.92;
+      max-width: 700px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.8;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-mindful {
+      background: white;
+      color: var(--mindful-primary);
+      padding: 1rem 2.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 16px rgba(244, 114, 182, 0.3);
+    }
+
+    .btn-mindful:hover {
+      background: var(--mindful-soft);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(244, 114, 182, 0.4);
+      text-decoration: none;
+    }
+
+    .btn-mindful-outline {
+      background: transparent;
+      border: 2px solid white;
+      color: white;
+    }
+
+    .btn-mindful-outline:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: white;
+    }
+
+    .section {
+      padding: 4rem 0;
+    }
+
+    .section-soft {
+      background: linear-gradient(135deg, #fdf4ff 0%, #fae8ff 50%, #fbcfe8 100%);
+    }
+
+    .section-dark {
+      background: linear-gradient(135deg, #a21caf 0%, #c026d3 30%, #d946ef 60%, #f472b6 100%);
+      color: white;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 2.75rem;
+      margin-bottom: 1rem;
+      color: var(--mindful-primary);
+      font-weight: 800;
+    }
+
+    .section-dark .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.25rem;
+      color: #6b7280;
+      max-width: 750px;
+      margin: 0 auto 3rem;
+      line-height: 1.7;
+    }
+
+    .section-dark .section-subtitle {
+      color: rgba(255,255,255,0.95);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.5rem;
+      box-shadow: 0 4px 20px rgba(244, 114, 182, 0.12);
+      transition: all 0.3s;
+      border: 2px solid transparent;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 32px rgba(244, 114, 182, 0.22);
+      border-color: var(--mindful-secondary);
+    }
+
+    .feature-icon {
+      width: 70px;
+      height: 70px;
+      background: linear-gradient(135deg, var(--mindful-primary), #d946ef);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.25rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 16px rgba(244, 114, 182, 0.3);
+    }
+
+    .feature-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--mindful-primary);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.8;
+      font-size: 1rem;
+    }
+
+    .spiritual-banner {
+      background: linear-gradient(135deg, #fae8ff 0%, #fbcfe8 100%);
+      padding: 4rem;
+      border-radius: 2rem;
+      margin: 4rem 0;
+      text-align: center;
+      border: 3px solid var(--mindful-secondary);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .spiritual-banner::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(249, 168, 212, 0.3) 0%, transparent 70%);
+      animation: gentle-pulse 8s ease-in-out infinite;
+    }
+
+    @keyframes gentle-pulse {
+      0%, 100% { transform: scale(1); opacity: 0.5; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+    }
+
+    .spiritual-banner-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .spiritual-banner h3 {
+      font-size: 2rem;
+      color: var(--mindful-primary);
+      margin-bottom: 1rem;
+      font-weight: 700;
+    }
+
+    .spiritual-banner p {
+      font-size: 1.25rem;
+      color: #4b5563;
+      max-width: 700px;
+      margin: 0 auto;
+      line-height: 1.8;
+    }
+
+    .impact-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .impact-card {
+      background: rgba(255,255,255,0.15);
+      padding: 2rem;
+      border-radius: 1.25rem;
+      border: 2px solid rgba(255,255,255,0.3);
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+    }
+
+    .impact-card:hover {
+      background: rgba(255,255,255,0.25);
+      transform: translateY(-4px);
+    }
+
+    .impact-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+
+    .impact-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .impact-desc {
+      opacity: 0.95;
+      line-height: 1.7;
+    }
+
+    .holosystem {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.5rem;
+      border-left: 6px solid var(--mindful-primary);
+      margin: 3rem 0;
+      box-shadow: 0 4px 20px rgba(244, 114, 182, 0.1);
+    }
+
+    .holosystem-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      color: var(--mindful-primary);
+    }
+
+    .holosystem-content {
+      color: #374151;
+      line-height: 1.9;
+      font-size: 1.05rem;
+    }
+
+    .holosystem-content p {
+      margin-bottom: 1rem;
+    }
+
+    .holosystem-content ul {
+      margin-left: 1.5rem;
+      line-height: 1.9;
+    }
+
+    .holosystem-content strong {
+      color: var(--mindful-primary);
+      font-weight: 600;
+    }
+
+    .dana-card {
+      background: white;
+      padding: 3rem;
+      border-radius: 1.5rem;
+      box-shadow: 0 8px 30px rgba(244, 114, 182, 0.15);
+      max-width: 600px;
+      margin: 3rem auto;
+      text-align: center;
+      border: 3px solid var(--mindful-secondary);
+    }
+
+    .dana-card h3 {
+      font-size: 2.25rem;
+      color: var(--mindful-primary);
+      margin-bottom: 1rem;
+      font-weight: 800;
+    }
+
+    .dana-card .dana-symbol {
+      font-size: 4rem;
+      margin: 1.5rem 0;
+    }
+
+    .dana-card p {
+      color: #4b5563;
+      font-size: 1.125rem;
+      line-height: 1.8;
+      margin-bottom: 1rem;
+    }
+
+    .testimonial {
+      background: rgba(255,255,255,0.2);
+      padding: 2rem;
+      border-radius: 1rem;
+      margin: 2rem 0;
+      border-left: 4px solid white;
+    }
+
+    .testimonial-text {
+      font-style: italic;
+      font-size: 1.125rem;
+      margin-bottom: 1rem;
+      line-height: 1.8;
+    }
+
+    .testimonial-author {
+      font-weight: 600;
+      opacity: 0.95;
+    }
+
+    .practice-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .practice-item {
+      text-align: center;
+      padding: 1.5rem;
+      background: rgba(255,255,255,0.15);
+      border-radius: 1rem;
+      border: 2px solid rgba(255,255,255,0.2);
+      transition: all 0.3s;
+    }
+
+    .practice-item:hover {
+      background: rgba(255,255,255,0.25);
+      transform: scale(1.05);
+    }
+
+    .practice-emoji {
+      font-size: 3rem;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .practice-name {
+      font-weight: 600;
+      font-size: 1.125rem;
+    }
+
+    @media (max-width: 768px) {
+      .mindful-hero h1 {
+        font-size: 2.5rem;
+      }
+
+      .mindful-hero .tagline {
+        font-size: 1.375rem;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .spiritual-banner {
+        padding: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--mindful-primary); color: white;">🧘</div>
+          <span>MindfulMeets</span>
+        </div>
+        <nav class="nav">
+          <a href="#features">Features</a>
+          <a href="../index.html">Ecosystem</a>
+          <a href="mailto:hello@mindfulmeets.org">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="mindful-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Sit Together.<br>Pray Together.<br>Heal Together.</h1>
+        <p class="tagline">Your spiritual home, in every neighborhood.</p>
+        <p class="subtitle">A decentralized network connecting meditation groups, prayer circles, and spiritual communities. Find your sangha, coordinate practice times, and build interfaith bridges—all grounded in the dana (gift) economy.</p>
+        <div class="cta-buttons">
+          <a href="#" class="btn-mindful">Find Your Community</a>
+          <a href="#how-it-works" class="btn-mindful btn-mindful-outline">Learn More</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="spiritual-banner">
+        <div class="spiritual-banner-content">
+          <h3>100% Free. 100% Donation-Based.</h3>
+          <p>Built on the dana (generosity) model, honoring ancient traditions where spiritual teachings are never bought or sold—only offered freely.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-soft">
+    <div class="container">
+      <h2 class="section-title">The Spiritual Crisis</h2>
+      <p class="section-subtitle">Spiritual isolation is driving mental health crisis. Communities exist but can't find each other.</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="card">
+          <h3 style="color: var(--mindful-primary); margin-bottom: 1rem;">😔 The Problem</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Meditation groups can't find space</li>
+            <li>Spiritual seekers practice alone</li>
+            <li>Traditions operate in silos</li>
+            <li>Commercial apps commodify practice</li>
+            <li>No interfaith connection</li>
+          </ul>
+        </div>
+        <div class="card" style="border: 3px solid var(--mindful-secondary); background: var(--mindful-light);">
+          <h3 style="color: var(--mindful-primary); margin-bottom: 1rem;">🙏 MindfulMeets Solution</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Find spaces through NeighborHub</li>
+            <li>Discover sangha in your neighborhood</li>
+            <li>Optional interfaith bridges</li>
+            <li>No platform extraction, pure dana</li>
+            <li>Build community, not followers</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by HoloSphere</h2>
+      <p class="section-subtitle">Novel geospatial architecture designed for spiritual community coordination</p>
+
+      <div class="features-grid" id="features">
+        <div class="feature-card">
+          <div class="feature-icon">⏰</div>
+          <h3 class="feature-title">Sacred Time Coordination</h3>
+          <p class="feature-desc">Respect multiple traditions' practice schedules. Coordinate meditation sits, prayer times, and ceremonies across different lineages without conflict.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌉</div>
+          <h3 class="feature-title">Interfaith Bridges</h3>
+          <p class="feature-desc">Optional federation between compatible practices. Buddhist sangha meets Christian contemplatives. Indigenous ceremony honors all traditions. You choose who you connect with.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🤫</div>
+          <h3 class="feature-title">Silence Holons</h3>
+          <p class="feature-desc">Geospatial quiet zones for urban retreat. Discover parks, chapels, and sacred spaces for silent practice within walking distance. Map the sacred in your city.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📿</div>
+          <h3 class="feature-title">Practice Lineages</h3>
+          <p class="feature-desc">Track teaching transmissions and verify authenticity. Know who taught whom, which tradition they represent, and how the lineage flows. Protect against spiritual appropriation.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💫</div>
+          <h3 class="feature-title">Collective Intention</h3>
+          <p class="feature-desc">Aggregate meditation and prayer for specific places or causes. When a neighborhood needs healing, practitioners across traditions can focus their practice together.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🏘️</div>
+          <h3 class="feature-title">Neighborhood Sangha</h3>
+          <p class="feature-desc">Discover spiritual community within walking distance. Morning meditation in a church basement, evening dhikr in a community center, Shabbat in someone's home.</p>
+        </div>
+      </div>
+
+      <div class="holosystem">
+        <div class="holosystem-title">
+          <span>🌐</span>
+          <span>How Spiritual Holons Work</span>
+        </div>
+        <div class="holosystem-content">
+          <p>Each meditation group, prayer circle, or spiritual gathering is a <strong>holon</strong>—an autonomous community that can optionally federate with others. Your practice maintains complete sovereignty while discovering resonance with neighbors.</p>
+          <p>This means:</p>
+          <ul>
+            <li><strong>Find practice by location:</strong> "Show me all meditation sits within 15 minutes walk"</li>
+            <li><strong>Respect boundaries:</strong> Closed practices stay closed. Open circles welcome newcomers.</li>
+            <li><strong>Bridge traditions:</strong> Opt-in interfaith connection when it serves the practice</li>
+            <li><strong>Track lineages:</strong> Know the authentic teachers and protect against appropriation</li>
+            <li><strong>Collective healing:</strong> Multiple traditions focusing intention on shared needs</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Social Impact</h2>
+      <p class="section-subtitle">Reducing spiritual isolation, building interfaith understanding, supporting mental health through community</p>
+
+      <div class="impact-grid">
+        <div class="impact-card">
+          <span class="impact-icon">🤗</span>
+          <h3 class="impact-title">End Spiritual Isolation</h3>
+          <p class="impact-desc">Millions practice alone who long for sangha. Find your community, practice together, grow in connection.</p>
+        </div>
+
+        <div class="impact-card">
+          <span class="impact-icon">🕊️</span>
+          <h3 class="impact-title">Interfaith Understanding</h3>
+          <p class="impact-desc">Build bridges between traditions. Discover shared contemplative roots. Reduce religious conflict through practice, not debate.</p>
+        </div>
+
+        <div class="impact-card">
+          <span class="impact-icon">🧠</span>
+          <h3 class="impact-title">Mental Health Support</h3>
+          <p class="impact-desc">Community contemplative practice reduces anxiety, depression, loneliness. Ancient medicine for modern crisis.</p>
+        </div>
+
+        <div class="impact-card">
+          <span class="impact-icon">🌍</span>
+          <h3 class="impact-title">Contemplative Activism</h3>
+          <p class="impact-desc">Practitioners organizing for justice, environmental healing, peace. Spiritual practice meets social action.</p>
+        </div>
+      </div>
+
+      <div class="testimonial">
+        <p class="testimonial-text">"After my Zen center closed, I meditated alone for years. MindfulMeets helped me find a small sit group three blocks away. We meet every morning now. I'm home again."</p>
+        <p class="testimonial-author">— David, Meditation Practitioner</p>
+      </div>
+
+      <div class="testimonial">
+        <p class="testimonial-text">"Our mosque and the Buddhist temple down the street discovered we both do dawn practice. Now we occasionally sit together in interfaith silence. It's profound."</p>
+        <p class="testimonial-author">— Amina, Muslim Community Leader</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">All Traditions Welcome</h2>
+      <p class="section-subtitle">Honoring the diversity of human spiritual expression</p>
+
+      <div class="practice-grid">
+        <div class="practice-item">
+          <span class="practice-emoji">🧘</span>
+          <div class="practice-name">Buddhist Meditation</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🙏</span>
+          <div class="practice-name">Christian Contemplation</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🕌</span>
+          <div class="practice-name">Islamic Prayer</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🕍</span>
+          <div class="practice-name">Jewish Study</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🪶</span>
+          <div class="practice-name">Indigenous Ceremony</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🕉️</span>
+          <div class="practice-name">Hindu Practice</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">☸️</span>
+          <div class="practice-name">Dharma Study</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🌙</span>
+          <div class="practice-name">Pagan Ritual</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">⚛️</span>
+          <div class="practice-name">Secular Mindfulness</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🔆</span>
+          <div class="practice-name">Yoga & Movement</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">🌿</span>
+          <div class="practice-name">Nature Spirituality</div>
+        </div>
+        <div class="practice-item">
+          <span class="practice-emoji">💝</span>
+          <div class="practice-name">Loving-kindness</div>
+        </div>
+      </div>
+
+      <div class="holosystem" style="margin-top: 3rem;">
+        <div class="holosystem-title">
+          <span>🛡️</span>
+          <span>Protecting Sacred Traditions</span>
+        </div>
+        <div class="holosystem-content">
+          <p><strong>Cultural appropriation is spiritual theft.</strong> MindfulMeets includes fine-grained access controls so Indigenous ceremonies, closed practices, and sacred knowledge remain protected.</p>
+          <p style="margin-top: 1rem;">Communities decide who can see their gatherings, who can attend, and how their tradition is represented. <strong>Sovereignty first, connection second.</strong></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-soft">
+    <div class="container">
+      <h2 class="section-title">The Dana Model</h2>
+      <p class="section-subtitle">Honoring ancient traditions where spiritual practice is never commodified</p>
+
+      <div class="dana-card">
+        <h3>100% Donation-Based</h3>
+        <div class="dana-symbol">🎁</div>
+        <p><strong>Dana</strong> (Pali for "generosity") is the ancient Buddhist practice of freely offering teachings. In this spirit, MindfulMeets is completely free.</p>
+        <p style="margin-top: 1rem;">If it serves your practice, you can offer dana to support the infrastructure. No one is excluded. No one profits. Just practice.</p>
+      </div>
+
+      <div class="holosystem">
+        <div class="holosystem-title">
+          <span>🏘️</span>
+          <span>Integration with NeighborHub</span>
+        </div>
+        <div class="holosystem-content">
+          <p>Spiritual communities need physical space. MindfulMeets integrates with <strong>NeighborHub</strong> (community space sharing) so groups can find churches, community centers, homes, and parks to gather.</p>
+          <p style="margin-top: 1rem;">No rental fees. No platform extraction. Just neighbors sharing space for contemplative practice.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Find Your Spiritual Home</h2>
+      <p class="section-subtitle">Join communities practicing together in every neighborhood</p>
+      <div class="cta-buttons" style="margin-top: 2rem;">
+        <a href="#" class="btn-mindful" style="background: var(--mindful-primary); color: white;">Discover Community</a>
+        <a href="mailto:hello@mindfulmeets.org" class="btn-mindful" style="background: #d946ef; color: white;">Start a Practice Group</a>
+      </div>
+      <p style="margin-top: 2rem; color: #6b7280; font-size: 0.875rem;">
+        Part of the <a href="../index.html" style="color: var(--mindful-primary); font-weight: 600;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="#features">Features</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>MindfulMeets - Powered by HoloSphere | Dana-based, interfaith, spiritually sovereign</p>
+    </div>
+  </footer>
+</body>
+</html>

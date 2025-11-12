@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WaterWise - See Your Whole Watershed</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --water-primary: #0e7490;
+      --water-secondary: #0891b2;
+      --water-accent: #06b6d4;
+      --water-light: #ecfeff;
+      --water-dark: #164e63;
+    }
+
+    body {
+      background: linear-gradient(180deg, #ecfeff 0%, #ffffff 100%);
+    }
+
+    .water-hero {
+      background: linear-gradient(135deg, #164e63 0%, #0e7490 30%, #0891b2 70%, #06b6d4 100%);
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Flowing water animation */
+    .water-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background:
+        linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: flowRight 8s ease-in-out infinite;
+      opacity: 0.5;
+    }
+
+    /* Wave pattern overlay */
+    .water-hero::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 150px;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none"><path d="M0,50 C200,80 400,20 600,50 C800,80 1000,20 1200,50 L1200,120 L0,120 Z" fill="rgba(255,255,255,0.1)"/></svg>');
+      background-size: cover;
+      animation: waveFlow 15s ease-in-out infinite;
+    }
+
+    @keyframes flowRight {
+      0%, 100% { background-position: 0% 0%; }
+      50% { background-position: 100% 0%; }
+    }
+
+    @keyframes waveFlow {
+      0%, 100% { transform: translateX(0) scaleY(1); }
+      50% { transform: translateX(-100px) scaleY(1.1); }
+    }
+
+    @keyframes ripple {
+      0% { transform: scale(0.8); opacity: 0.8; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .water-hero h1 {
+      font-size: 4.5rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      background: linear-gradient(to bottom, #ffffff, #e0f2fe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .water-hero .tagline {
+      font-size: 2rem;
+      opacity: 0.95;
+      margin-bottom: 2rem;
+      font-weight: 300;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .water-hero .subtitle {
+      font-size: 1.125rem;
+      opacity: 0.9;
+      max-width: 650px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.7;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-water {
+      background: rgba(255,255,255,0.95);
+      color: var(--water-primary);
+      padding: 1rem 2.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+
+    .btn-water:hover {
+      background: white;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(0,0,0,0.3);
+      text-decoration: none;
+    }
+
+    .btn-water-outline {
+      background: transparent;
+      border: 2px solid rgba(255,255,255,0.9);
+      color: white;
+    }
+
+    .btn-water-outline:hover {
+      background: rgba(255,255,255,0.15);
+      border-color: white;
+    }
+
+    .section {
+      padding: 4rem 0;
+    }
+
+    .section-dark {
+      background: linear-gradient(135deg, var(--water-dark) 0%, var(--water-primary) 100%);
+      color: white;
+      position: relative;
+    }
+
+    .section-dark::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="1.5" fill="rgba(255,255,255,0.05)"/></svg>');
+      background-size: 40px 40px;
+      opacity: 0.3;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 2.75rem;
+      margin-bottom: 1rem;
+      color: var(--water-primary);
+      font-weight: 800;
+    }
+
+    .section-dark .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.25rem;
+      color: #6b7280;
+      max-width: 750px;
+      margin: 0 auto 3rem;
+      line-height: 1.6;
+    }
+
+    .section-dark .section-subtitle {
+      color: rgba(255,255,255,0.85);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1.25rem;
+      box-shadow: 0 4px 16px rgba(14, 116, 144, 0.12);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(6, 182, 212, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--water-accent), var(--water-secondary));
+      transform: scaleX(0);
+      transition: transform 0.4s;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 32px rgba(14, 116, 144, 0.2);
+      border-color: var(--water-accent);
+    }
+
+    .feature-card:hover::before {
+      transform: scaleX(1);
+    }
+
+    .feature-icon {
+      width: 65px;
+      height: 65px;
+      background: linear-gradient(135deg, var(--water-accent), var(--water-secondary));
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+    }
+
+    .feature-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--water-primary);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.8;
+    }
+
+    .stats-banner {
+      background: linear-gradient(135deg, var(--water-secondary) 0%, var(--water-accent) 100%);
+      padding: 3.5rem 3rem;
+      border-radius: 2rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 2.5rem;
+      text-align: center;
+      color: white;
+      margin: 3rem 0;
+      box-shadow: 0 8px 32px rgba(6, 182, 212, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stats-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+      background-size: 200% 200%;
+      animation: shimmer 3s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0%, 100% { background-position: 0% 0%; }
+      50% { background-position: 100% 100%; }
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      z-index: 1;
+    }
+
+    .stat-number {
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .stat-label {
+      font-size: 1rem;
+      opacity: 0.95;
+      font-weight: 500;
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .comparison-card {
+      background: white;
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+
+    .comparison-card.highlighted {
+      border: 3px solid var(--water-accent);
+      background: linear-gradient(to bottom, white, #f0fdff);
+    }
+
+    .comparison-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .comparison-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .comparison-list li {
+      padding: 0.75rem 0;
+      border-bottom: 1px solid #e5e7eb;
+      color: #4b5563;
+      line-height: 1.6;
+    }
+
+    .comparison-list li:last-child {
+      border-bottom: none;
+    }
+
+    .holosystem {
+      background: rgba(255,255,255,0.1);
+      padding: 2.5rem;
+      border-radius: 1.25rem;
+      border-left: 5px solid rgba(255,255,255,0.5);
+      margin: 2.5rem 0;
+      backdrop-filter: blur(10px);
+    }
+
+    .holosystem-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      color: white;
+    }
+
+    .holosystem-content {
+      color: rgba(255,255,255,0.9);
+      line-height: 1.9;
+    }
+
+    .holosystem-content strong {
+      color: white;
+      font-weight: 600;
+    }
+
+    .impact-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin: 2.5rem 0;
+    }
+
+    .impact-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      border-left: 4px solid var(--water-accent);
+      transition: all 0.3s;
+    }
+
+    .impact-card:hover {
+      transform: translateX(5px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+    }
+
+    .impact-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      color: var(--water-primary);
+      font-weight: 700;
+    }
+
+    .impact-card p {
+      color: #4b5563;
+      line-height: 1.7;
+    }
+
+    .impact-card strong {
+      color: var(--water-primary);
+      font-weight: 600;
+    }
+
+    .revenue-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin: 2.5rem 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .revenue-card {
+      background: rgba(255,255,255,0.12);
+      padding: 2rem;
+      border-radius: 1rem;
+      border: 1px solid rgba(255,255,255,0.2);
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+    }
+
+    .revenue-card:hover {
+      background: rgba(255,255,255,0.18);
+      border-color: rgba(255,255,255,0.4);
+    }
+
+    .revenue-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: white;
+    }
+
+    .revenue-label {
+      opacity: 0.9;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    .user-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+
+    .user-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      transition: all 0.3s;
+      border: 2px solid transparent;
+    }
+
+    .user-card:hover {
+      border-color: var(--water-accent);
+      box-shadow: 0 4px 16px rgba(6, 182, 212, 0.15);
+    }
+
+    .user-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.75rem;
+      color: var(--water-primary);
+      font-weight: 600;
+    }
+
+    .user-card p {
+      color: #6b7280;
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 768px) {
+      .water-hero h1 {
+        font-size: 2.75rem;
+      }
+
+      .water-hero .tagline {
+        font-size: 1.4rem;
+      }
+
+      .stats-banner {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .revenue-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--water-primary); color: white;">💧</div>
+          <span>WaterWise</span>
+        </div>
+        <nav class="nav">
+          <a href="../waterwise.html">Try Demo</a>
+          <a href="../index.html">Ecosystem</a>
+          <a href="mailto:hello@waterwise.earth">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="water-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>See Your Whole<br>Watershed</h1>
+        <p class="tagline">Every stream, every measurement, one living map</p>
+        <p class="subtitle">Federated water monitoring that flows from mountain to sea. Real-time quality data, contamination alerts, and cooperative governance for the entire watershed.</p>
+        <div class="cta-buttons">
+          <a href="../waterwise.html" class="btn-water">Explore the Map</a>
+          <a href="#how-it-works" class="btn-water btn-water-outline">See How It Works</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="stats-banner">
+        <div class="stat">
+          <div class="stat-number">1,847</div>
+          <div class="stat-label">Water Monitoring Points</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">240K+</div>
+          <div class="stat-label">Water Quality Readings</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">34</div>
+          <div class="stat-label">Watersheds Connected</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">98%</div>
+          <div class="stat-label">Alert Accuracy</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">The Problem We're Solving</h2>
+      <p class="section-subtitle">Water quality data is scattered across agencies, making holistic watershed management impossible. Communities downstream have no visibility into upstream conditions.</p>
+
+      <div class="comparison-grid">
+        <div class="comparison-card">
+          <div class="comparison-title">
+            <span style="font-size: 2rem;">❌</span>
+            <span>Old Way</span>
+          </div>
+          <ul class="comparison-list">
+            <li>Data siloed in different agencies</li>
+            <li>Downstream has no upstream visibility</li>
+            <li>Contamination detected too late</li>
+            <li>No community early warning systems</li>
+            <li>Citizen data ignored or inaccessible</li>
+            <li>Watershed fragmented by jurisdictions</li>
+          </ul>
+        </div>
+        <div class="comparison-card highlighted">
+          <div class="comparison-title">
+            <span style="font-size: 2rem;">✓</span>
+            <span>WaterWise Way</span>
+          </div>
+          <ul class="comparison-list">
+            <li><strong>Federated mesh</strong> - all data in one view</li>
+            <li><strong>Cascade alerts</strong> - upstream flows to downstream</li>
+            <li><strong>Real-time warnings</strong> - detect contamination early</li>
+            <li><strong>Community sensors</strong> - everyone can contribute</li>
+            <li><strong>Data sovereignty</strong> - you own your water data</li>
+            <li><strong>Whole watershed</strong> - geography over politics</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by HoloSphere</h2>
+      <p class="section-subtitle">Novel geospatial features that make watershed-scale coordination actually possible</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⬇️</div>
+          <h3 class="feature-title">Cascade Propagation</h3>
+          <p class="feature-desc">Upstream water quality data automatically flows to all downstream holons. See what's coming before it arrives.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌊</div>
+          <h3 class="feature-title">Tributary Federation</h3>
+          <p class="feature-desc">Sub-watersheds automatically federate up to river basins. Natural watershed boundaries, not political ones.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🚨</div>
+          <h3 class="feature-title">Alert Meshes</h3>
+          <p class="feature-desc">Contamination detection triggers automatic alerts to all downstream communities. Minutes matter.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📡</div>
+          <h3 class="feature-title">Sensor Fusion</h3>
+          <p class="feature-desc">Blend citizen science, IoT sensors, official stations, and satellite data in one unified view.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔮</div>
+          <h3 class="feature-title">Flow Modeling</h3>
+          <p class="feature-desc">Real-time flow predictions using federated hydrological models. Know what's happening now and next.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🗺️</div>
+          <h3 class="feature-title">H3 Watershed Mapping</h3>
+          <p class="feature-desc">Every water body is a geospatial holon. Query any resolution from puddle to ocean.</p>
+        </div>
+      </div>
+
+      <div class="holosystem">
+        <div class="holosystem-title">
+          <span>💧</span>
+          <span>Water as a Holonic System</span>
+        </div>
+        <div class="holosystem-content">
+          <p>Water doesn't respect political boundaries—it flows through watersheds. WaterWise treats <strong>watersheds as holons</strong>: each stream, tributary, and river is both autonomous and part of a larger system.</p>
+          <p style="margin-top: 1rem;">This matches how water actually works. A contamination event upstream automatically propagates downstream. Tributary data federates up to the main river. Data sovereignty stays with each community while maintaining watershed-wide visibility.</p>
+          <ul style="margin-top: 1rem; margin-left: 1.5rem; line-height: 1.9;">
+            <li><strong>Upstream → Downstream:</strong> Data flows like water flows</li>
+            <li><strong>Tributary → River → Basin:</strong> Natural hierarchies, not administrative ones</li>
+            <li><strong>Local Control:</strong> Each watershed council owns their data</li>
+            <li><strong>Global Visibility:</strong> See the whole system while respecting sovereignty</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Social Impact</h2>
+      <p class="section-subtitle">Protecting water rights, health, and ecosystems through federated data</p>
+
+      <div class="impact-metrics">
+        <div class="impact-card">
+          <h3>🏥 Prevent Waterborne Illness</h3>
+          <p>Early warning systems detect contamination <strong>hours before it reaches communities</strong>, preventing disease outbreaks before they start.</p>
+        </div>
+
+        <div class="impact-card">
+          <h3>🪶 Protect Indigenous Water Rights</h3>
+          <p>Data evidence supports <strong>treaty rights and sacred water protection</strong>. Communities control their own monitoring data.</p>
+        </div>
+
+        <div class="impact-card">
+          <h3>🤝 Enable Cooperative Governance</h3>
+          <p>Watershed associations govern water as a commons with <strong>transparent, real-time data</strong> accessible to all stakeholders.</p>
+        </div>
+
+        <div class="impact-card">
+          <h3>🐟 Restore Fish Habitats</h3>
+          <p>Data-driven decisions about temperature, flow, and quality help <strong>bring salmon and other species back</strong> to degraded streams.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="background: var(--water-light);">
+    <div class="container">
+      <h2 class="section-title">Who Uses WaterWise</h2>
+      <p class="section-subtitle">From mountain springs to coastal estuaries, communities protecting their watersheds</p>
+
+      <div class="user-grid">
+        <div class="user-card">
+          <h3>🌊 Watershed Associations</h3>
+          <p>Coordinate monitoring across entire river systems with federated data from all tributaries.</p>
+        </div>
+        <div class="user-card">
+          <h3>💧 Water Cooperatives</h3>
+          <p>Rural co-ops monitor source water quality and share data with member communities.</p>
+        </div>
+        <div class="user-card">
+          <h3>🪶 Indigenous Water Protectors</h3>
+          <p>Assert sovereignty with community-owned monitoring data and early contamination alerts.</p>
+        </div>
+        <div class="user-card">
+          <h3>🏛️ Municipal Utilities</h3>
+          <p>Meet compliance requirements while contributing to watershed-wide visibility.</p>
+        </div>
+        <div class="user-card">
+          <h3>🐟 Aquaculture Operations</h3>
+          <p>Monitor water quality for fish farms and coordinate with upstream/downstream neighbors.</p>
+        </div>
+        <div class="user-card">
+          <h3>🔬 Citizen Scientists</h3>
+          <p>Contribute low-cost sensor data that fills gaps between official monitoring stations.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Built to Last</h2>
+      <p class="section-subtitle">Cooperative ownership and sustainable revenue model</p>
+
+      <div class="revenue-grid">
+        <div class="revenue-card">
+          <div class="revenue-value">🤝 Co-op Owned</div>
+          <div class="revenue-label">Watershed councils collectively own and govern the platform. No venture capital, no exit strategy.</div>
+        </div>
+
+        <div class="revenue-card">
+          <div class="revenue-value">💰 IoT Sensors</div>
+          <div class="revenue-label">Hardware sales of affordable, open-source water quality sensors fund development.</div>
+        </div>
+
+        <div class="revenue-card">
+          <div class="revenue-value">📋 Municipal Contracts</div>
+          <div class="revenue-label">Cities and utilities pay for compliance monitoring while data remains community-accessible.</div>
+        </div>
+
+        <div class="revenue-card">
+          <div class="revenue-value">🛡️ Insurance Partnerships</div>
+          <div class="revenue-label">Flood prediction and early warning systems create value for insurers and communities alike.</div>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 3rem; padding: 2rem; background: rgba(255,255,255,0.1); border-radius: 1rem; backdrop-filter: blur(10px);">
+        <h3 style="font-size: 1.5rem; margin-bottom: 1rem; color: white;">100% Transparent Pricing</h3>
+        <p style="color: rgba(255,255,255,0.9); max-width: 600px; margin: 0 auto; line-height: 1.8;">
+          Free for community groups and citizen scientists. Watershed associations pay based on size. Municipal contracts fund the commons. All financial data published quarterly.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Start Monitoring Your Watershed</h2>
+      <p class="section-subtitle">Join the growing network of communities protecting their water through federated data</p>
+      <div class="cta-buttons" style="margin-top: 2.5rem;">
+        <a href="../waterwise.html" class="btn-water" style="background: var(--water-primary); color: white;">Explore the Demo</a>
+        <a href="mailto:hello@waterwise.earth" class="btn-water" style="background: var(--water-secondary); color: white;">Get Started</a>
+      </div>
+      <p style="margin-top: 2.5rem; color: #6b7280; font-size: 0.95rem;">
+        Part of the <a href="../index.html" style="color: var(--water-primary); font-weight: 600;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../waterwise.html">Demo</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>WaterWise - Powered by HoloSphere | Cooperative governance, data sovereignty, watershed protection</p>
+    </div>
+  </footer>
+</body>
+</html>

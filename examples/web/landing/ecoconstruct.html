@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EcoConstruct - Build Better, Waste Nothing</title>
+  <link rel="stylesheet" href="../assets/css/shared.css">
+  <style>
+    :root {
+      --eco-primary: #a16207;
+      --eco-secondary: #d97706;
+      --eco-accent: #f59e0b;
+      --eco-light: #fffbeb;
+    }
+
+    body {
+      background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+    }
+
+    .eco-hero {
+      background: linear-gradient(135deg, #78350f 0%, #a16207 50%, #d97706 100%);
+      color: white;
+      padding: 6rem 0 4rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .eco-hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10,50 L90,50 M50,10 L50,90" stroke="rgba(255,255,255,0.05)" stroke-width="2"/><rect x="30" y="30" width="40" height="40" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="2"/></svg>');
+      background-size: 60px 60px;
+      opacity: 0.4;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .eco-hero h1 {
+      font-size: 4rem;
+      font-weight: 800;
+      margin-bottom: 1.5rem;
+      line-height: 1.1;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .eco-hero .tagline {
+      font-size: 1.75rem;
+      opacity: 0.95;
+      margin-bottom: 2rem;
+      font-weight: 300;
+    }
+
+    .eco-hero .subtitle {
+      font-size: 1.125rem;
+      opacity: 0.85;
+      max-width: 600px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.6;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-eco {
+      background: var(--eco-accent);
+      color: #78350f;
+      padding: 1rem 2.5rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 1.125rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .btn-eco:hover {
+      background: #fbbf24;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+      text-decoration: none;
+    }
+
+    .btn-eco-outline {
+      background: transparent;
+      border: 2px solid white;
+      color: white;
+    }
+
+    .btn-eco-outline:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: var(--eco-accent);
+      color: white;
+    }
+
+    .section {
+      padding: 4rem 0;
+    }
+
+    .section-dark {
+      background: var(--eco-primary);
+      color: white;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: var(--eco-primary);
+    }
+
+    .section-dark .section-title {
+      color: white;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      font-size: 1.25rem;
+      color: #6b7280;
+      max-width: 700px;
+      margin: 0 auto 3rem;
+    }
+
+    .section-dark .section-subtitle {
+      color: rgba(255,255,255,0.8);
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(161, 98, 7, 0.1);
+      transition: all 0.3s;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(161, 98, 7, 0.2);
+    }
+
+    .feature-icon {
+      width: 60px;
+      height: 60px;
+      background: linear-gradient(135deg, var(--eco-accent), var(--eco-secondary));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--eco-primary);
+    }
+
+    .feature-desc {
+      color: #4b5563;
+      line-height: 1.7;
+    }
+
+    .stats-banner {
+      background: linear-gradient(135deg, var(--eco-accent), var(--eco-secondary));
+      padding: 3rem;
+      border-radius: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      text-align: center;
+      color: #78350f;
+      margin: 3rem 0;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-number {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+      font-size: 1rem;
+      opacity: 0.9;
+      font-weight: 500;
+    }
+
+    .holosystem {
+      background: var(--eco-light);
+      padding: 2rem;
+      border-radius: 1rem;
+      border-left: 4px solid var(--eco-accent);
+      margin: 2rem 0;
+    }
+
+    .holosystem-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--eco-primary);
+    }
+
+    .holosystem-content {
+      color: #374151;
+      line-height: 1.8;
+    }
+
+    .impact-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+
+    .impact-card {
+      background: rgba(255,255,255,0.1);
+      padding: 1.5rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .impact-value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .impact-label {
+      opacity: 0.9;
+      font-size: 0.875rem;
+    }
+
+    .carbon-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(16, 185, 129, 0.2);
+      color: #059669;
+      padding: 0.5rem 1rem;
+      border-radius: 50px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 768px) {
+      .eco-hero h1 {
+        font-size: 2.5rem;
+      }
+
+      .eco-hero .tagline {
+        font-size: 1.25rem;
+      }
+
+      .stats-banner {
+        grid-template-columns: 1fr;
+      }
+
+      .impact-metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">
+          <div class="logo-icon" style="background: var(--eco-primary); color: white;">🏗️</div>
+          <span>EcoConstruct</span>
+        </div>
+        <nav class="nav">
+          <a href="#how-it-works">How It Works</a>
+          <a href="../index.html">Ecosystem</a>
+          <a href="mailto:hello@ecoconstruct.build">Contact</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <section class="eco-hero">
+    <div class="container">
+      <div class="hero-content">
+        <h1>Build Better,<br>Waste Nothing</h1>
+        <p class="tagline">Every beam saved, every ton of carbon kept in the ground</p>
+        <p class="subtitle">Location-based materials marketplace where reclaimed materials become geospatial holons. Find nearby materials, track carbon savings, coordinate deconstruction—transform waste into wealth.</p>
+        <div class="cta-buttons">
+          <a href="#get-started" class="btn-eco">Find Materials</a>
+          <a href="#how-it-works" class="btn-eco btn-eco-outline">Learn More</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="stats-banner">
+        <div class="stat">
+          <div class="stat-number">15,000+</div>
+          <div class="stat-label">Tons Diverted from Landfills</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">6,800+</div>
+          <div class="stat-label">Active Material Listings</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">52%</div>
+          <div class="stat-label">Average Carbon Reduction</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">240+</div>
+          <div class="stat-label">Green Jobs Created</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">The Problem We're Solving</h2>
+      <p class="section-subtitle">Construction waste fills landfills while builders pay premium prices for virgin materials. Reclaimed material markets are fragmented with no way to match supply with nearby demand or track environmental impact.</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="card">
+          <h3 style="color: var(--eco-primary); margin-bottom: 1rem;">❌ Old Way</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>600+ million tons to landfills annually</li>
+            <li>Virgin materials = 40% of construction emissions</li>
+            <li>Reclaimed materials hard to find</li>
+            <li>No provenance or carbon tracking</li>
+            <li>Transport costs make reuse uneconomical</li>
+          </ul>
+        </div>
+        <div class="card" style="border: 2px solid var(--eco-accent);">
+          <h3 style="color: var(--eco-primary); margin-bottom: 1rem;">✓ EcoConstruct Way</h3>
+          <ul style="line-height: 2; color: #4b5563;">
+            <li>Materials get second, third, fourth lives</li>
+            <li>40-60% carbon reduction tracked</li>
+            <li>Find materials within optimal radius</li>
+            <li>Full lifecycle and structural history</li>
+            <li>Coordinate proximity-based reuse</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Powered by HoloSphere</h2>
+      <p class="section-subtitle">Novel geospatial architecture that makes material reuse economically viable</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🧬</div>
+          <h3 class="feature-title">Material DNA</h3>
+          <p class="feature-desc">Track provenance, embodied carbon, and structural history of every piece. Know the complete story of every beam, brick, and window.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📍</div>
+          <h3 class="feature-title">Proximity Matching</h3>
+          <p class="feature-desc">Auto-match material availability to project sites within optimal transport radius. Geography makes reuse economical.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🏚️</div>
+          <h3 class="feature-title">Deconstruction Coordination</h3>
+          <p class="feature-desc">Multiple buyers coordinate on salvaging a building together. Collaborative deconstruction makes projects viable that weren't before.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3 class="feature-title">Impact Ledgers</h3>
+          <p class="feature-desc">Aggregate environmental savings across all projects. Generate carbon credits and impact certifications automatically.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔧</div>
+          <h3 class="feature-title">Skills Federation</h3>
+          <p class="feature-desc">Auto-connect material types to SkillSwap experts. Find the craftsperson who knows how to work with reclaimed timber or salvaged brick.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">♻️</div>
+          <h3 class="feature-title">Circular Economy</h3>
+          <p class="feature-desc">Materials circulate indefinitely instead of becoming waste. Build a regenerative construction economy.</p>
+        </div>
+      </div>
+
+      <div class="holosystem" style="margin-top: 3rem; background: rgba(255,255,255,0.1); border-color: white;">
+        <div class="holosystem-title" style="color: white;">
+          <span>🌐</span>
+          <span>How Holons Work</span>
+        </div>
+        <div class="holosystem-content" style="color: rgba(255,255,255,0.9);">
+          <p>Each material listing is a <strong>holon</strong>—an H3 geographic cell containing supply that can match with demand in neighboring cells. Your oak beams automatically relate to nearby projects, which relate to regional building patterns.</p>
+          <p style="margin-top: 1rem;">This is fundamentally different from traditional marketplaces. With HoloSphere, <strong>geography is the database</strong>. Proximity relationships are native, not calculated. This means:</p>
+          <ul style="margin-top: 0.5rem; margin-left: 1.5rem; line-height: 1.8;">
+            <li>Instant "show me materials within economic transport radius" queries</li>
+            <li>Automatic clustering of compatible materials for projects</li>
+            <li>Natural boundaries for regional material economies</li>
+            <li>Real-time coordination across deconstruction crews</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Social & Environmental Impact</h2>
+      <p class="section-subtitle">Building regenerative construction economies, one material at a time</p>
+
+      <div class="impact-metrics">
+        <div class="card">
+          <h3 style="color: var(--eco-primary);">🌍 Carbon Reduction</h3>
+          <p>Projects using EcoConstruct achieve <strong>40-60% carbon emissions reduction</strong> compared to virgin materials.</p>
+          <div class="carbon-badge">
+            <span>✓</span>
+            <span>Carbon Credit Certified</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="color: var(--eco-primary);">💼 Green Jobs</h3>
+          <p><strong>240+ deconstruction jobs created</strong> in underserved communities, providing living wages.</p>
+        </div>
+
+        <div class="card">
+          <h3 style="color: var(--eco-primary);">🏡 Affordable Housing</h3>
+          <p>Makes natural building <strong>30-50% more affordable</strong> through accessible reclaimed materials.</p>
+        </div>
+
+        <div class="card">
+          <h3 style="color: var(--eco-primary);">♻️ Waste Diversion</h3>
+          <p><strong>15,000+ tons diverted from landfills</strong>, transforming waste into community wealth.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="background: var(--eco-light);">
+    <div class="container">
+      <h2 class="section-title">Who Uses EcoConstruct</h2>
+      <div class="features-grid">
+        <div class="card">
+          <h3>🌿 Natural Builders</h3>
+          <p>Source local, reclaimed timber and stone for sustainable construction projects.</p>
+        </div>
+        <div class="card">
+          <h3>🔨 Deconstruction Companies</h3>
+          <p>List salvaged materials from demolition projects, creating revenue from waste streams.</p>
+        </div>
+        <div class="card">
+          <h3>🏘️ Community Land Trusts</h3>
+          <p>Build affordable housing with low-carbon materials while creating local jobs.</p>
+        </div>
+        <div class="card">
+          <h3>🏠 Renovation Contractors</h3>
+          <p>Find character materials for historic renovations and unique client projects.</p>
+        </div>
+        <div class="card">
+          <h3>🌾 DIY Homesteaders</h3>
+          <p>Build barns, sheds, and homes affordably using reclaimed materials from nearby sources.</p>
+        </div>
+        <div class="card">
+          <h3>🎓 Trade Schools</h3>
+          <p>Access materials for student projects while teaching sustainable construction practices.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-dark">
+    <div class="container">
+      <h2 class="section-title">Sustainable Revenue Model</h2>
+      <p class="section-subtitle">Built to scale while staying mission-aligned</p>
+
+      <div class="grid grid-2" style="margin-top: 3rem;">
+        <div class="impact-card">
+          <div class="impact-value">LocalLoop Fees</div>
+          <div class="impact-label">Small transaction fees in community currency keep money local. 2-5% vs 15-30% on traditional platforms.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Premium Listings</div>
+          <div class="impact-label">Commercial suppliers can pay for visibility while community members list for free.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Impact Certification</div>
+          <div class="impact-label">Generate carbon credit revenue from documented environmental savings.</div>
+        </div>
+
+        <div class="impact-card">
+          <div class="impact-value">Training Programs</div>
+          <div class="impact-label">Teach deconstruction skills, creating green jobs and expanding material supply.</div>
+        </div>
+      </div>
+
+      <div class="holosystem" style="margin-top: 3rem; background: rgba(255,255,255,0.1); border-color: white;">
+        <div class="holosystem-title" style="color: white;">
+          <span>🔗</span>
+          <span>Part of the Ecosystem</span>
+        </div>
+        <div class="holosystem-content" style="color: rgba(255,255,255,0.9);">
+          <p>EcoConstruct is part of the HoloSphere Permaculture Flower Ecosystem, connecting seamlessly with:</p>
+          <ul style="margin-top: 0.5rem; margin-left: 1.5rem; line-height: 1.8;">
+            <li><strong>SkillSwap</strong> - Find experts in timber framing, masonry, and natural building</li>
+            <li><strong>LocalLoop</strong> - Transact in community currency, keeping wealth local</li>
+            <li><strong>CommonGround</strong> - Integrate with land trust portfolios for affordable housing</li>
+            <li><strong>ToolLibrary</strong> - Access tools needed for deconstruction and rebuilding</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">How It Works</h2>
+      <div class="grid grid-2" style="margin-top: 3rem; gap: 3rem;">
+        <div>
+          <h3 style="color: var(--eco-primary); font-size: 1.5rem; margin-bottom: 1.5rem;">For Material Suppliers</h3>
+          <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">1</div>
+              <div>
+                <strong style="color: var(--eco-primary);">List Your Materials</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">Photo, dimensions, condition, history. Takes 5 minutes.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">2</div>
+              <div>
+                <strong style="color: var(--eco-primary);">Auto-Match to Projects</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">Get notified when nearby builders need your materials.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">3</div>
+              <div>
+                <strong style="color: var(--eco-primary);">Coordinate Pickup</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">Arrange deconstruction timing with multiple buyers.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">4</div>
+              <div>
+                <strong style="color: var(--eco-primary);">Track Impact</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">See carbon saved, revenue earned, jobs created.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3 style="color: var(--eco-primary); font-size: 1.5rem; margin-bottom: 1.5rem;">For Builders</h3>
+          <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">1</div>
+              <div>
+                <strong style="color: var(--eco-primary);">Search by Location</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">Find materials within economic transport radius of your site.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">2</div>
+              <div>
+                <strong style="color: var(--eco-primary);">Review Material DNA</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">See full history, structural data, and carbon savings.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">3</div>
+              <div>
+                <strong style="color: var(--eco-primary);">Connect with Experts</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">Auto-matched to SkillSwap craftspeople who work with this material.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+              <div style="background: var(--eco-accent); color: #78350f; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0;">4</div>
+              <div>
+                <strong style="color: var(--eco-primary);">Build & Certify</strong>
+                <p style="color: #6b7280; margin-top: 0.25rem;">Document impact and receive carbon credit certification.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="background: var(--eco-light);">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title">Start Building Better Today</h2>
+      <p class="section-subtitle">Join the community of builders creating a regenerative construction economy</p>
+      <div class="cta-buttons" style="margin-top: 2rem;">
+        <a href="#get-started" class="btn-eco" style="background: var(--eco-primary); color: white;">List Materials</a>
+        <a href="#get-started" class="btn-eco" style="background: var(--eco-secondary); color: white;">Find Materials</a>
+      </div>
+      <p style="margin-top: 2rem; color: #6b7280; font-size: 0.875rem;">
+        Part of the <a href="../index.html" style="color: var(--eco-primary); font-weight: 600;">HoloSphere Permaculture Flower Ecosystem</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="#get-started">Get Started</a>
+        <a href="../../README.md">HoloSphere Docs</a>
+        <a href="../index.html">Ecosystem</a>
+        <a href="../../LICENSE">License</a>
+      </div>
+      <p>EcoConstruct - Powered by HoloSphere | Circular economy, carbon reduction, regenerative building</p>
+    </div>
+  </footer>
+</body>
+</html>
