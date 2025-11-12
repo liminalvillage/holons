@@ -18,7 +18,9 @@
     }
 
     .neighbor-hero {
-      background: linear-gradient(135deg, #654321 0%, #8b4513 50%, #a0522d 100%);
+      background:
+        linear-gradient(135deg, rgba(101, 67, 33, 0.85) 0%, rgba(139, 69, 19, 0.85) 50%, rgba(160, 82, 45, 0.85) 100%),
+        url('https://source.unsplash.com/1600x900/?community-center,neighborhood-gathering,shared-space') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -34,7 +36,7 @@
       bottom: 0;
       background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="20" y="30" width="15" height="20" fill="rgba(255,255,255,0.05)"/><rect x="40" y="25" width="15" height="25" fill="rgba(255,255,255,0.05)"/><rect x="60" y="28" width="15" height="22" fill="rgba(255,255,255,0.05)"/></svg>');
       background-size: 80px 80px;
-      opacity: 0.3;
+      opacity: 0.2;
     }
 
     .hero-content {
@@ -262,6 +264,92 @@
       font-size: 0.875rem;
     }
 
+    .image-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(139, 69, 19, 0.15);
+      transition: all 0.3s;
+    }
+
+    .image-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(139, 69, 19, 0.25);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 240px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .image-caption {
+      padding: 1rem;
+      background: white;
+      font-size: 0.875rem;
+      color: #4b5563;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .before-after {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .before-after-item {
+      position: relative;
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 6px 16px rgba(139, 69, 19, 0.2);
+    }
+
+    .before-after-item img {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .before-after-label {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      background: var(--neighbor-accent);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 0.875rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .before-after-caption {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      color: white;
+      padding: 2rem 1rem 1rem;
+      font-size: 0.9375rem;
+    }
+
+    @media (max-width: 768px) {
+      .before-after {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 768px) {
       .neighbor-hero h1 {
         font-size: 2.5rem;
@@ -453,6 +541,20 @@
           <p>Mutual aid networks coordinate <strong>without tech platforms</strong>, maintaining autonomy and resilience.</p>
         </div>
       </div>
+
+      <h3 style="text-align: center; font-size: 2rem; margin-top: 4rem; margin-bottom: 1rem; color: var(--neighbor-primary);">Spaces in Action</h3>
+      <div class="before-after">
+        <div class="before-after-item">
+          <img src="https://source.unsplash.com/600x400/?empty-church-hall,unused-community-space" alt="Empty community space before activation">
+          <div class="before-after-label">Before</div>
+          <div class="before-after-caption">Empty church hall, unused 6 days a week</div>
+        </div>
+        <div class="before-after-item">
+          <img src="https://source.unsplash.com/600x400/?community-meeting,neighborhood-gathering,workshop" alt="Active community gathering space">
+          <div class="before-after-label">After</div>
+          <div class="before-after-caption">Hosting 12+ community events per week</div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -483,6 +585,27 @@
         <div class="card">
           <h3>🎨 Artists & Makers</h3>
           <p>Find studio space, host pop-up galleries, and coordinate creative gatherings.</p>
+        </div>
+      </div>
+
+      <h3 style="text-align: center; font-size: 2rem; margin-top: 4rem; margin-bottom: 1rem; color: var(--neighbor-primary);">Community Spaces</h3>
+      <p style="text-align: center; color: #6b7280; margin-bottom: 2rem;">Real neighborhoods sharing real spaces</p>
+      <div class="image-gallery">
+        <div class="image-card">
+          <img src="https://source.unsplash.com/600x400/?backyard-garden-party,outdoor-gathering" alt="Backyard gathering space shared through NeighborHub">
+          <div class="image-caption">Backyard workshop space - Portland, OR</div>
+        </div>
+        <div class="image-card">
+          <img src="https://source.unsplash.com/600x400/?church-hall,community-hall-interior" alt="Church hall available for community events">
+          <div class="image-caption">Church fellowship hall - Denver, CO</div>
+        </div>
+        <div class="image-card">
+          <img src="https://source.unsplash.com/600x400/?community-garden,neighborhood-park" alt="Community garden gathering area">
+          <div class="image-caption">Community garden pavilion - Austin, TX</div>
+        </div>
+        <div class="image-card">
+          <img src="https://source.unsplash.com/600x400/?neighborhood-library,community-room" alt="Neighborhood library meeting room">
+          <div class="image-caption">Library community room - Seattle, WA</div>
         </div>
       </div>
     </div>

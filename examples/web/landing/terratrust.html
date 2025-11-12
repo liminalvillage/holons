@@ -153,6 +153,15 @@
       border-radius: 1rem;
       box-shadow: 0 4px 12px rgba(45, 80, 22, 0.1);
       transition: all 0.3s;
+      overflow: hidden;
+    }
+
+    .feature-card-image {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 0.5rem;
+      margin-bottom: 1.5rem;
     }
 
     .feature-card:hover {
@@ -194,11 +203,29 @@
       text-align: center;
       color: white;
       margin: 3rem 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stats-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: url('https://source.unsplash.com/1600x900/?forest,monitoring,ecology');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.15;
+      z-index: 0;
     }
 
     .stat {
       display: flex;
       flex-direction: column;
+      position: relative;
+      z-index: 1;
     }
 
     .stat-number {
@@ -299,6 +326,9 @@
   </header>
 
   <section class="terra-hero">
+    <img src="https://source.unsplash.com/1600x900/?biodiversity,meadow,nature"
+         alt="Lush biodiverse meadow with wildflowers"
+         style="object-fit: cover; width: 100%; height: 100%; position: absolute; top: 0; left: 0; opacity: 0.2; z-index: 0;">
     <div class="container">
       <div class="hero-content">
         <h1>Turn Your Land<br>Into Living Data</h1>
@@ -372,18 +402,27 @@
 
       <div class="features-grid">
         <div class="feature-card">
+          <img src="https://source.unsplash.com/600x400/?wildlife,monitoring,camera"
+               alt="Wildlife monitoring camera in natural habitat"
+               class="feature-card-image">
           <div class="feature-icon">📡</div>
           <h3 class="feature-title">Observation Streams</h3>
           <p class="feature-desc">Subscribe to any geographic area and receive real-time biodiversity alerts. Know the moment something changes in your watershed.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://source.unsplash.com/600x400/?forest,seasons,time"
+               alt="Forest landscape showing seasonal changes"
+               class="feature-card-image">
           <div class="feature-icon">⏰</div>
           <h3 class="feature-title">Time-Travel Holons</h3>
           <p class="feature-desc">Query historical ecological data at any H3 resolution. See how your land has changed over months, years, or decades.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://source.unsplash.com/600x400/?data,network,ecology"
+               alt="Network of interconnected ecological data points"
+               class="feature-card-image">
           <div class="feature-icon">🧠</div>
           <h3 class="feature-title">Prediction Propagation</h3>
           <p class="feature-desc">ML models trained on one bioregion automatically federate predictions to similar areas. Your observations help others.</p>
@@ -461,14 +500,23 @@
       <h2 class="section-title">Who Uses TerraTrust</h2>
       <div class="features-grid">
         <div class="card">
+          <img src="https://source.unsplash.com/600x400/?farming,regenerative,soil"
+               alt="Farmer examining healthy soil in regenerative agriculture"
+               style="width: 100%; height: 150px; object-fit: cover; border-radius: 0.5rem; margin-bottom: 1rem;">
           <h3>🌾 Land Stewards & Farmers</h3>
           <p>Track soil health, biodiversity, and regenerative agriculture outcomes over time.</p>
         </div>
         <div class="card">
+          <img src="https://source.unsplash.com/600x400/?conservation,nature,preserve"
+               alt="Protected conservation land with diverse ecosystems"
+               style="width: 100%; height: 150px; object-fit: cover; border-radius: 0.5rem; margin-bottom: 1rem;">
           <h3>🏞️ Land Trusts</h3>
           <p>Monitor ecological health across entire portfolios of conservation land.</p>
         </div>
         <div class="card">
+          <img src="https://source.unsplash.com/600x400/?indigenous,community,nature"
+               alt="Indigenous community members in traditional territory"
+               style="width: 100%; height: 150px; object-fit: cover; border-radius: 0.5rem; margin-bottom: 1rem;">
           <h3>🪶 Indigenous Communities</h3>
           <p>Preserve traditional ecological knowledge and assert data sovereignty.</p>
         </div>

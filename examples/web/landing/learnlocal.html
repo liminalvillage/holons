@@ -19,7 +19,8 @@
     }
 
     .learn-hero {
-      background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 50%, #a78bfa 100%);
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.9) 0%, rgba(139, 92, 246, 0.85) 50%, rgba(167, 139, 250, 0.9) 100%),
+                  url('https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=1920&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -370,6 +371,55 @@
       line-height: 1.6;
     }
 
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+      transition: all 0.3s;
+    }
+
+    .image-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.25);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 280px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .image-caption {
+      padding: 1rem;
+      background: white;
+      color: #4b5563;
+      font-size: 0.875rem;
+      font-style: italic;
+      text-align: center;
+    }
+
+    .featured-image {
+      width: 100%;
+      border-radius: 1.5rem;
+      overflow: hidden;
+      margin: 2rem 0;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.2);
+    }
+
+    .featured-image img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
     @media (max-width: 768px) {
       .learn-hero h1 {
         font-size: 2.5rem;
@@ -470,6 +520,21 @@
           </ul>
         </div>
       </div>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1577896851905-dc92e1ab534c?auto=format&fit=crop&w=800&q=80" alt="Community workshop with diverse participants">
+          <div class="image-caption">Hands-on community workshops for all ages</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=800&q=80" alt="Elder teaching young learner">
+          <div class="image-caption">Intergenerational skill sharing and mentorship</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=800&q=80" alt="People working together in classroom">
+          <div class="image-caption">Collaborative peer-to-peer learning environments</div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -559,6 +624,44 @@
         <div class="impact-card">
           <div class="impact-value">🌱 Learning Culture</div>
           <p class="impact-label">Communities develop <strong>culture of continuous learning</strong> where teaching is valued work.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Learning in Action</h2>
+      <p class="section-subtitle">Real skills, real communities, real impact</p>
+
+      <div class="featured-image">
+        <img src="https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=1600&q=80" alt="Diverse group learning together in workshop">
+      </div>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80" alt="Students working on group project">
+          <div class="image-caption">Hands-on project-based learning in community spaces</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1544027993-37dbfe43562a?auto=format&fit=crop&w=800&q=80" alt="One-on-one teaching moment">
+          <div class="image-caption">Personalized instruction and skill development</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=800&q=80" alt="Community members learning together">
+          <div class="image-caption">Building community through shared learning experiences</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1556761175-4b46a572b786?auto=format&fit=crop&w=800&q=80" alt="Workshop with tools and materials">
+          <div class="image-caption">Practical skills training with real-world applications</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=800&q=80" alt="Group discussion and collaboration">
+          <div class="image-caption">Collaborative problem-solving and peer support</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1529390079861-591de354faf5?auto=format&fit=crop&w=800&q=80" alt="Teaching traditional skills">
+          <div class="image-caption">Preserving and teaching traditional crafts and skills</div>
         </div>
       </div>
     </div>

@@ -19,7 +19,9 @@
     }
 
     .healing-hero {
-      background: linear-gradient(135deg, #9f1239 0%, #be123c 30%, #ec4899 70%, #f472b6 100%);
+      background:
+        linear-gradient(135deg, rgba(159, 18, 57, 0.85) 0%, rgba(190, 18, 60, 0.85) 30%, rgba(236, 72, 153, 0.85) 70%, rgba(244, 114, 182, 0.85) 100%),
+        url('https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1920&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -176,6 +178,16 @@
       box-shadow: 0 4px 20px rgba(236, 72, 153, 0.12);
       transition: all 0.3s;
       border: 2px solid transparent;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 1rem;
+      margin-bottom: 1.5rem;
     }
 
     .feature-card:hover {
@@ -211,7 +223,9 @@
     }
 
     .wellness-banner {
-      background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%);
+      background:
+        linear-gradient(135deg, rgba(252, 231, 243, 0.95) 0%, rgba(251, 207, 232, 0.95) 100%),
+        url('https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=1200&q=80') center/cover;
       padding: 4rem;
       border-radius: 2rem;
       margin: 4rem 0;
@@ -309,6 +323,14 @@
     .holosystem-content strong {
       color: var(--healing-primary);
       font-weight: 600;
+    }
+
+    .card-image {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 1rem;
+      margin-bottom: 1rem;
     }
 
     .pricing-card {
@@ -470,36 +492,42 @@
 
       <div class="features-grid" id="features">
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80" alt="Wellness journey" class="feature-card-image">
           <div class="feature-icon">📍</div>
           <h3 class="feature-title">Healing Radius</h3>
           <p class="feature-desc">Discover all healing modalities within walking distance. Acupuncture, massage, herbalism, energy work, traditional medicine—see what's available in your neighborhood.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=600&q=80" alt="Holistic healing modalities" class="feature-card-image">
           <div class="feature-icon">🕸️</div>
           <h3 class="feature-title">Modality Meshes</h3>
           <p class="feature-desc">"People who see acupuncturists also visit massage therapists." Discover complementary healing paths based on community patterns and practitioner recommendations.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1593811167562-9cef47bfc4a7?w=600&q=80" alt="Health tracking and wellness" class="feature-card-image">
           <div class="feature-icon">📊</div>
           <h3 class="feature-title">Outcomes Tracking</h3>
           <p class="feature-desc">Anonymous healing journey data helps others find what works. Track your own progress and contribute to community understanding of different modalities.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=80" alt="Accessible healing for all" class="feature-card-image">
           <div class="feature-icon">💰</div>
           <h3 class="feature-title">Sliding Scale Federation</h3>
           <p class="feature-desc">Practitioners share sliding scale capacity across the network. See real-time availability of affordable sessions. No one turned away for lack of funds.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1516450137517-162bfbeb8dba?w=600&q=80" alt="Traditional healing wisdom" class="feature-card-image">
           <div class="feature-icon">🪶</div>
           <h3 class="feature-title">Traditional Knowledge Protection</h3>
           <p class="feature-desc">Indigenous and cultural healing practices with fine-grained access controls. Communities maintain sovereignty over sacred knowledge while offering care.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&q=80" alt="Healing practitioners community" class="feature-card-image">
           <div class="feature-icon">🤝</div>
           <h3 class="feature-title">Practitioner Support</h3>
           <p class="feature-desc">Connect with other healers, share resources, coordinate care, and build referral networks. Prevent burnout through community mutual aid.</p>
@@ -574,26 +602,32 @@
       <h2 class="section-title">Who We Serve</h2>
       <div class="features-grid">
         <div class="card">
+          <img src="https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=600&q=80" alt="People seeking healing" class="card-image">
           <h3>🌿 People Seeking Healing</h3>
           <p>Find affordable holistic care, explore multiple modalities, and discover traditional healing in your community.</p>
         </div>
         <div class="card">
+          <img src="https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=600&q=80" alt="Holistic practitioners" class="card-image">
           <h3>💆 Holistic Practitioners</h3>
           <p>Build your practice, connect with clients, share sliding scale capacity, and collaborate with other healers.</p>
         </div>
         <div class="card">
+          <img src="https://images.unsplash.com/photo-1474418397713-7ede21d49118?w=600&q=80" alt="Traditional healers" class="card-image">
           <h3>🪶 Traditional Healers</h3>
           <p>Serve your community while protecting sacred knowledge. Maintain sovereignty over cultural practices.</p>
         </div>
         <div class="card">
+          <img src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=600&q=80" alt="Community health workers" class="card-image">
           <h3>🩺 Community Health Workers</h3>
           <p>Refer patients to culturally appropriate care. Connect people to affordable healing resources.</p>
         </div>
         <div class="card">
+          <img src="https://images.unsplash.com/photo-1573497491208-6b1acb260507?w=600&q=80" alt="Chronic illness community" class="card-image">
           <h3>💪 Chronic Illness Community</h3>
           <p>Find alternative approaches when Western medicine falls short. Build multi-modal healing strategies.</p>
         </div>
         <div class="card">
+          <img src="https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=600&q=80" alt="Wellness centers" class="card-image">
           <h3>🏘️ Wellness Centers</h3>
           <p>Offer your space for sliding scale sessions. Connect with practitioners seeking affordable locations.</p>
         </div>

@@ -19,7 +19,8 @@
     }
 
     .tool-hero {
-      background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%);
+      background: linear-gradient(135deg, rgba(30,41,59,0.95) 0%, rgba(51,65,85,0.95) 50%, rgba(71,85,105,0.95) 100%),
+                  url('https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=1920&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -168,6 +169,22 @@
       transform: translateY(-5px);
       box-shadow: 0 8px 24px rgba(74, 85, 104, 0.2);
       border-color: var(--tool-accent);
+    }
+
+    .feature-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .community-photo {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
 
     .feature-icon {
@@ -416,36 +433,42 @@
 
       <div class="features-grid">
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80" alt="Urban neighborhood map showing tool locations" class="feature-image">
           <div class="feature-icon">📍</div>
           <h3 class="feature-title">Tool Radius</h3>
           <p class="feature-desc">Automatically discover tools within walking or biking distance. See what's available in real-time on your block, neighborhood, or city.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=800&q=80" alt="Analytics dashboard showing tool usage patterns" class="feature-image">
           <div class="feature-icon">📊</div>
           <h3 class="feature-title">Usage Analytics</h3>
           <p class="feature-desc">See which tools are most needed in your area. Data informs group purchases and reveals gaps in community inventory.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=800&q=80" alt="Person repairing power tools in workshop" class="feature-image">
           <div class="feature-icon">🔔</div>
           <h3 class="feature-title">Maintenance Alerts</h3>
           <p class="feature-desc">Tools need care? Alerts federate to SkillSwap mechanics who can fix them. Keep the whole inventory in working condition.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1416339442236-8ceb164046f8?auto=format&fit=crop&w=800&q=80" alt="Collection of woodworking tools organized on pegboard" class="feature-image">
           <div class="feature-icon">📦</div>
           <h3 class="feature-title">Bundle Booking</h3>
           <p class="feature-desc">"Book all tools needed for deck building this weekend." Smart bundling assembles complete toolkits from multiple neighbors.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=800&q=80" alt="Community fund pooling and financial planning" class="feature-image">
           <div class="feature-icon">💰</div>
           <h3 class="feature-title">Replacement Pooling</h3>
           <p class="feature-desc">Automatically pool deposits for eventual replacement. When tools wear out, the community has funds ready to replace them.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=800&q=80" alt="Neighbors shaking hands and building trust" class="feature-image">
           <div class="feature-icon">🤝</div>
           <h3 class="feature-title">Trust Circles</h3>
           <p class="feature-desc">Reputation builds through sharing. Neighbors who return tools on time and in good condition unlock access to more valuable equipment.</p>
@@ -527,6 +550,28 @@
         <div class="card">
           <h3>🌍 Climate Champions</h3>
           <p>Reduce consumption through sharing. Demonstrate the circular economy in action.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Community in Action</h2>
+      <p class="section-subtitle">See tool sharing building stronger neighborhoods</p>
+
+      <div class="features-grid">
+        <div>
+          <img src="https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=800&q=80" alt="Neighbors sharing tools in community workshop" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Neighbors collaborating on home improvement projects</p>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1534237886190-ced735ca4b73?auto=format&fit=crop&w=800&q=80" alt="Community garden members using shared tools" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Community gardens thriving with shared equipment</p>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=800&q=80" alt="Diverse group working together with tools" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Building connections through tool lending</p>
         </div>
       </div>
     </div>

@@ -212,6 +212,14 @@
       overflow: hidden;
     }
 
+    .feature-card-image {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
     .feature-card::before {
       content: '';
       position: absolute;
@@ -275,6 +283,19 @@
     }
 
     .stats-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: url('https://source.unsplash.com/1600x900/?water,quality,testing');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.12;
+    }
+
+    .stats-banner::after {
       content: '';
       position: absolute;
       top: 0;
@@ -535,6 +556,9 @@
   </header>
 
   <section class="water-hero">
+    <img src="https://source.unsplash.com/1600x900/?watershed,river,stream,mountains"
+         alt="Pristine mountain river flowing through watershed"
+         style="object-fit: cover; width: 100%; height: 100%; position: absolute; top: 0; left: 0; opacity: 0.25; z-index: 0;">
     <div class="container">
       <div class="hero-content">
         <h1>See Your Whole<br>Watershed</h1>
@@ -616,18 +640,27 @@
 
       <div class="features-grid">
         <div class="feature-card">
+          <img src="https://source.unsplash.com/600x400/?upstream,downstream,waterflow"
+               alt="River water flowing downstream from mountains"
+               class="feature-card-image">
           <div class="feature-icon">⬇️</div>
           <h3 class="feature-title">Cascade Propagation</h3>
           <p class="feature-desc">Upstream water quality data automatically flows to all downstream holons. See what's coming before it arrives.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://source.unsplash.com/600x400/?tributary,river,confluence"
+               alt="Tributary streams merging into main river"
+               class="feature-card-image">
           <div class="feature-icon">🌊</div>
           <h3 class="feature-title">Tributary Federation</h3>
           <p class="feature-desc">Sub-watersheds automatically federate up to river basins. Natural watershed boundaries, not political ones.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://source.unsplash.com/600x400/?water,sensor,monitoring"
+               alt="Water quality sensor monitoring system"
+               class="feature-card-image">
           <div class="feature-icon">🚨</div>
           <h3 class="feature-title">Alert Meshes</h3>
           <p class="feature-desc">Contamination detection triggers automatic alerts to all downstream communities. Minutes matter.</p>
@@ -707,14 +740,23 @@
 
       <div class="user-grid">
         <div class="user-card">
+          <img src="https://source.unsplash.com/600x400/?watershed,community,river"
+               alt="Community watershed association members"
+               style="width: 100%; height: 140px; object-fit: cover; border-radius: 0.5rem; margin-bottom: 1rem;">
           <h3>🌊 Watershed Associations</h3>
           <p>Coordinate monitoring across entire river systems with federated data from all tributaries.</p>
         </div>
         <div class="user-card">
+          <img src="https://source.unsplash.com/600x400/?rural,water,cooperative"
+               alt="Rural water cooperative testing water quality"
+               style="width: 100%; height: 140px; object-fit: cover; border-radius: 0.5rem; margin-bottom: 1rem;">
           <h3>💧 Water Cooperatives</h3>
           <p>Rural co-ops monitor source water quality and share data with member communities.</p>
         </div>
         <div class="user-card">
+          <img src="https://source.unsplash.com/600x400/?indigenous,water,nature"
+               alt="Indigenous water protectors at traditional water source"
+               style="width: 100%; height: 140px; object-fit: cover; border-radius: 0.5rem; margin-bottom: 1rem;">
           <h3>🪶 Indigenous Water Protectors</h3>
           <p>Assert sovereignty with community-owned monitoring data and early contamination alerts.</p>
         </div>

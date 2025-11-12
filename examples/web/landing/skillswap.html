@@ -19,7 +19,8 @@
     }
 
     .skill-hero {
-      background: linear-gradient(135deg, #4c1d95 0%, #6366f1 50%, #8b5cf6 100%);
+      background: linear-gradient(135deg, rgba(76,29,149,0.95) 0%, rgba(99,102,241,0.95) 50%, rgba(139,92,246,0.95) 100%),
+                  url('https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1920&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -168,6 +169,22 @@
       transform: translateY(-5px);
       box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
       border-color: var(--skill-accent);
+    }
+
+    .feature-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .community-photo {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
 
     .feature-icon {
@@ -454,36 +471,42 @@
 
       <div class="features-grid">
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=800&q=80" alt="Network visualization showing skill connections in community" class="feature-image">
           <div class="feature-icon">🕸️</div>
           <h3 class="feature-title">Skill Mesh</h3>
           <p class="feature-desc">Real-time expertise discovery within your community. See who knows what, where they are, when they're available—all in one living map.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=800&q=80" alt="People collaborating and exchanging ideas" class="feature-image">
           <div class="feature-icon">🔄</div>
           <h3 class="feature-title">Reciprocity Paths</h3>
           <p class="feature-desc">"I teach guitar, who can teach me plumbing?" Automatic matching finds multi-hop exchange chains. Your skill connects to the skill you need.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1491975474562-1f4e30bc9468?auto=format&fit=crop&w=800&q=80" alt="Mentor teaching student one-on-one" class="feature-image">
           <div class="feature-icon">👨‍🏫</div>
           <h3 class="feature-title">Mentorship Chains</h3>
           <p class="feature-desc">Track skill lineages and teaching relationships. See who learned from whom, preserve knowledge transmission, honor teaching traditions.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80" alt="Community responding to emergency call for help" class="feature-image">
           <div class="feature-icon">🚨</div>
           <h3 class="feature-title">Emergency Broadcast</h3>
           <p class="feature-desc">"Need help NOW" propagates to nearby experts instantly. Crisis support mobilizes in minutes, not hours.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1559136555-9303baea8ebd?auto=format&fit=crop&w=800&q=80" alt="Map highlighting areas with skill gaps" class="feature-image">
           <div class="feature-icon">📍</div>
           <h3 class="feature-title">Skill Gaps</h3>
           <p class="feature-desc">Identify missing expertise in your neighborhood. Visualize what skills are abundant, what's needed, guide learning priorities.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1553729459-efe14ef6055d?auto=format&fit=crop&w=800&q=80" alt="Time credits and equal exchange visualization" class="feature-image">
           <div class="feature-icon">⚖️</div>
           <h3 class="feature-title">Time Credits</h3>
           <p class="feature-desc">Simple hour-for-hour exchange. 1 hour teaching = 1 credit = 1 hour learning. No inflation, no extraction, just reciprocity.</p>
@@ -565,6 +588,28 @@
         <div class="card">
           <h3>🏘️ Community Builders</h3>
           <p>Strengthen neighborhood bonds through reciprocity. Every exchange builds trust and social capital.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Learning Together</h2>
+      <p class="section-subtitle">Community members teaching and learning from each other</p>
+
+      <div class="features-grid">
+        <div>
+          <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80" alt="Diverse group of people learning together in workshop" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Workshop sessions bringing neighbors together</p>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1609619385002-f40fc3162fae?auto=format&fit=crop&w=800&q=80" alt="Elder teaching young person traditional craft skill" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Intergenerational knowledge sharing</p>
+        </div>
+        <div>
+          <img src="https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=800&q=80" alt="Community members collaborating on project" class="community-photo">
+          <p style="text-align: center; margin-top: 1rem; color: #4b5563; font-weight: 500;">Building skills and friendships simultaneously</p>
         </div>
       </div>
     </div>

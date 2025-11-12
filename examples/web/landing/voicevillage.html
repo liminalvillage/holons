@@ -19,7 +19,8 @@
     }
 
     .voice-hero {
-      background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+      background: linear-gradient(135deg, rgba(30, 58, 138, 0.9) 0%, rgba(37, 99, 235, 0.85) 50%, rgba(59, 130, 246, 0.8) 100%),
+                  url('https://images.unsplash.com/photo-1529107386315-e1a2ed48a620?w=1600&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -287,6 +288,44 @@
       font-size: 1rem;
     }
 
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      position: relative;
+      border-radius: 1rem;
+      overflow: hidden;
+      height: 300px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.3s;
+    }
+
+    .image-card:hover img {
+      transform: scale(1.05);
+    }
+
+    .image-caption {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      color: white;
+      padding: 1.5rem 1rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
     @media (max-width: 768px) {
       .voice-hero h1 {
         font-size: 2.5rem;
@@ -484,6 +523,32 @@
   </section>
 
   <section class="section" style="background: var(--voice-light);">
+    <div class="container">
+      <h2 class="section-title">Civic Engagement in Action</h2>
+      <p class="section-subtitle">Communities around the world building participatory democracy</p>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?w=800&q=80" alt="Community meeting">
+          <div class="image-caption">Community members deliberating on local issues</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?w=800&q=80" alt="Voting">
+          <div class="image-caption">Direct democracy through transparent voting</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=800&q=80" alt="Diverse community">
+          <div class="image-caption">Amplifying diverse voices in governance</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=800&q=80" alt="Community gathering">
+          <div class="image-caption">Building trust through face-to-face dialogue</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
     <div class="container">
       <h2 class="section-title">Who Uses VoiceVillage</h2>
       <div class="features-grid">

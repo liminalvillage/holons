@@ -18,7 +18,9 @@
     }
 
     .eco-hero {
-      background: linear-gradient(135deg, #78350f 0%, #a16207 50%, #d97706 100%);
+      background:
+        linear-gradient(135deg, rgba(120, 53, 15, 0.85) 0%, rgba(161, 98, 7, 0.85) 50%, rgba(217, 119, 6, 0.85) 100%),
+        url('https://source.unsplash.com/1600x900/?reclaimed-wood,sustainable-building,salvaged-timber') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -34,7 +36,7 @@
       bottom: 0;
       background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10,50 L90,50 M50,10 L50,90" stroke="rgba(255,255,255,0.05)" stroke-width="2"/><rect x="30" y="30" width="40" height="40" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="2"/></svg>');
       background-size: 60px 60px;
-      opacity: 0.4;
+      opacity: 0.2;
     }
 
     .hero-content {
@@ -276,6 +278,143 @@
       margin-top: 1rem;
     }
 
+    .materials-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .material-card {
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(161, 98, 7, 0.15);
+      transition: all 0.3s;
+      background: white;
+    }
+
+    .material-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(161, 98, 7, 0.25);
+    }
+
+    .material-card img {
+      width: 100%;
+      height: 240px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .material-caption {
+      padding: 1rem;
+      background: white;
+      font-size: 0.875rem;
+      color: #4b5563;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .transformation-showcase {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .transformation-item {
+      position: relative;
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 6px 16px rgba(161, 98, 7, 0.2);
+    }
+
+    .transformation-item img {
+      width: 100%;
+      height: 320px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .transformation-label {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      background: var(--eco-accent);
+      color: #78350f;
+      padding: 0.5rem 1rem;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 0.875rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .transformation-caption {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+      color: white;
+      padding: 2.5rem 1.25rem 1.25rem;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+    }
+
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .project-card {
+      position: relative;
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(161, 98, 7, 0.15);
+      transition: all 0.3s;
+    }
+
+    .project-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(161, 98, 7, 0.25);
+    }
+
+    .project-card img {
+      width: 100%;
+      height: 220px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .project-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(120, 53, 15, 0.95), transparent);
+      color: white;
+      padding: 2rem 1rem 1rem;
+      font-size: 0.875rem;
+      text-align: center;
+    }
+
+    @media (max-width: 968px) {
+      .project-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .transformation-showcase {
+        grid-template-columns: 1fr;
+      }
+
+      .project-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 768px) {
       .eco-hero h1 {
         font-size: 2.5rem;
@@ -471,6 +610,46 @@
           <p><strong>15,000+ tons diverted from landfills</strong>, transforming waste into community wealth.</p>
         </div>
       </div>
+
+      <h3 style="text-align: center; font-size: 2rem; margin-top: 4rem; margin-bottom: 1rem; color: var(--eco-primary);">Material Transformations</h3>
+      <div class="transformation-showcase">
+        <div class="transformation-item">
+          <img src="https://source.unsplash.com/600x400/?demolition,construction-waste,old-building" alt="Building scheduled for demolition with valuable materials">
+          <div class="transformation-label">Source</div>
+          <div class="transformation-caption">1920s warehouse demolition - 12,000 board feet of old-growth timber, vintage brick, steel I-beams</div>
+        </div>
+        <div class="transformation-item">
+          <img src="https://source.unsplash.com/600x400/?reclaimed-wood-furniture,salvaged-timber-home,rustic-interior" alt="Beautiful home built with reclaimed materials">
+          <div class="transformation-label">Reborn</div>
+          <div class="transformation-caption">3 homes built, 5 workshops created, 2 tons kept out of landfill - 52% carbon reduction</div>
+        </div>
+      </div>
+
+      <h3 style="text-align: center; font-size: 2rem; margin-top: 4rem; margin-bottom: 1rem; color: var(--eco-primary);">Featured Projects</h3>
+      <p style="text-align: center; color: #6b7280; margin-bottom: 2rem;">Real builds with reclaimed materials</p>
+      <div class="project-grid">
+        <div class="project-card">
+          <img src="https://source.unsplash.com/600x400/?timber-frame-construction,reclaimed-wood-building" alt="Timber frame structure from reclaimed beams">
+          <div class="project-overlay">
+            <strong>Portland Workshop</strong><br>
+            Reclaimed timber frame
+          </div>
+        </div>
+        <div class="project-card">
+          <img src="https://source.unsplash.com/600x400/?brick-wall,reclaimed-brick,restored-masonry" alt="Restored brick wall from salvaged materials">
+          <div class="project-overlay">
+            <strong>Denver Cafe</strong><br>
+            1890s salvaged brick
+          </div>
+        </div>
+        <div class="project-card">
+          <img src="https://source.unsplash.com/600x400/?barn-wood,rustic-wood-interior,reclaimed-flooring" alt="Reclaimed barn wood flooring">
+          <div class="project-overlay">
+            <strong>Austin Home</strong><br>
+            Barn wood flooring
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -501,6 +680,35 @@
         <div class="card">
           <h3>🎓 Trade Schools</h3>
           <p>Access materials for student projects while teaching sustainable construction practices.</p>
+        </div>
+      </div>
+
+      <h3 style="text-align: center; font-size: 2rem; margin-top: 4rem; margin-bottom: 1rem; color: var(--eco-primary);">Available Materials</h3>
+      <p style="text-align: center; color: #6b7280; margin-bottom: 2rem;">Every material has a story - and a second life</p>
+      <div class="materials-gallery">
+        <div class="material-card">
+          <img src="https://source.unsplash.com/600x400/?reclaimed-wood-beams,salvaged-timber,old-growth-lumber" alt="Stack of reclaimed wood beams ready for reuse">
+          <div class="material-caption">Old-growth timber beams - Seattle, WA</div>
+        </div>
+        <div class="material-card">
+          <img src="https://source.unsplash.com/600x400/?vintage-brick,reclaimed-brick-pile,salvaged-masonry" alt="Pile of cleaned vintage bricks">
+          <div class="material-caption">1920s red brick - Chicago, IL</div>
+        </div>
+        <div class="material-card">
+          <img src="https://source.unsplash.com/600x400/?reclaimed-metal,salvaged-steel,construction-materials" alt="Salvaged steel beams and metal materials">
+          <div class="material-caption">Industrial steel I-beams - Detroit, MI</div>
+        </div>
+        <div class="material-card">
+          <img src="https://source.unsplash.com/600x400/?vintage-windows,reclaimed-doors,salvaged-fixtures" alt="Collection of vintage windows and doors">
+          <div class="material-caption">Antique windows & doors - Portland, OR</div>
+        </div>
+        <div class="material-card">
+          <img src="https://source.unsplash.com/600x400/?barnwood,weathered-wood,reclaimed-siding" alt="Weathered barn wood siding">
+          <div class="material-caption">Barn wood siding - Montana</div>
+        </div>
+        <div class="material-card">
+          <img src="https://source.unsplash.com/600x400/?stone-pavers,reclaimed-stone,salvaged-granite" alt="Reclaimed stone and pavers">
+          <div class="material-caption">Granite pavers - Boston, MA</div>
         </div>
       </div>
     </div>

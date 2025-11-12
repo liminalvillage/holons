@@ -19,7 +19,9 @@
     }
 
     .mindful-hero {
-      background: linear-gradient(135deg, #a21caf 0%, #c026d3 20%, #d946ef 40%, #f472b6 70%, #f9a8d4 100%);
+      background:
+        linear-gradient(135deg, rgba(162, 28, 175, 0.88) 0%, rgba(192, 38, 211, 0.88) 20%, rgba(217, 70, 239, 0.88) 40%, rgba(244, 114, 182, 0.88) 70%, rgba(249, 168, 212, 0.88) 100%),
+        url('https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=1920&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -178,6 +180,16 @@
       box-shadow: 0 4px 20px rgba(244, 114, 182, 0.12);
       transition: all 0.3s;
       border: 2px solid transparent;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 1rem;
+      margin-bottom: 1.5rem;
     }
 
     .feature-card:hover {
@@ -213,7 +225,9 @@
     }
 
     .spiritual-banner {
-      background: linear-gradient(135deg, #fae8ff 0%, #fbcfe8 100%);
+      background:
+        linear-gradient(135deg, rgba(250, 232, 255, 0.96) 0%, rgba(251, 207, 232, 0.96) 100%),
+        url('https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=1200&q=80') center/cover;
       padding: 4rem;
       border-radius: 2rem;
       margin: 4rem 0;
@@ -334,6 +348,14 @@
     .holosystem-content strong {
       color: var(--mindful-primary);
       font-weight: 600;
+    }
+
+    .practice-item-image {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 0.75rem;
+      margin-bottom: 0.75rem;
     }
 
     .dana-card {
@@ -516,36 +538,42 @@
 
       <div class="features-grid" id="features">
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80" alt="Meditation schedule and practice times" class="feature-card-image">
           <div class="feature-icon">⏰</div>
           <h3 class="feature-title">Sacred Time Coordination</h3>
           <p class="feature-desc">Respect multiple traditions' practice schedules. Coordinate meditation sits, prayer times, and ceremonies across different lineages without conflict.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1545389336-cf090694435e?w=600&q=80" alt="Interfaith spiritual community" class="feature-card-image">
           <div class="feature-icon">🌉</div>
           <h3 class="feature-title">Interfaith Bridges</h3>
           <p class="feature-desc">Optional federation between compatible practices. Buddhist sangha meets Christian contemplatives. Indigenous ceremony honors all traditions. You choose who you connect with.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=600&q=80" alt="Peaceful meditation space" class="feature-card-image">
           <div class="feature-icon">🤫</div>
           <h3 class="feature-title">Silence Holons</h3>
           <p class="feature-desc">Geospatial quiet zones for urban retreat. Discover parks, chapels, and sacred spaces for silent practice within walking distance. Map the sacred in your city.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1516450137517-162bfbeb8dba?w=600&q=80" alt="Spiritual lineage and tradition" class="feature-card-image">
           <div class="feature-icon">📿</div>
           <h3 class="feature-title">Practice Lineages</h3>
           <p class="feature-desc">Track teaching transmissions and verify authenticity. Know who taught whom, which tradition they represent, and how the lineage flows. Protect against spiritual appropriation.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1447452001602-7090c7ab2db3?w=600&q=80" alt="Collective prayer and meditation" class="feature-card-image">
           <div class="feature-icon">💫</div>
           <h3 class="feature-title">Collective Intention</h3>
           <p class="feature-desc">Aggregate meditation and prayer for specific places or causes. When a neighborhood needs healing, practitioners across traditions can focus their practice together.</p>
         </div>
 
         <div class="feature-card">
+          <img src="https://images.unsplash.com/photo-1591228127791-8e2eaef098d3?w=600&q=80" alt="Neighborhood spiritual community" class="feature-card-image">
           <div class="feature-icon">🏘️</div>
           <h3 class="feature-title">Neighborhood Sangha</h3>
           <p class="feature-desc">Discover spiritual community within walking distance. Morning meditation in a church basement, evening dhikr in a community center, Shabbat in someone's home.</p>
@@ -622,50 +650,62 @@
 
       <div class="practice-grid">
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80" alt="Buddhist meditation" class="practice-item-image">
           <span class="practice-emoji">🧘</span>
           <div class="practice-name">Buddhist Meditation</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1473172707857-f9e276582ab6?w=400&q=80" alt="Christian contemplation" class="practice-item-image">
           <span class="practice-emoji">🙏</span>
           <div class="practice-name">Christian Contemplation</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?w=400&q=80" alt="Islamic prayer" class="practice-item-image">
           <span class="practice-emoji">🕌</span>
           <div class="practice-name">Islamic Prayer</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1519817914152-22d216bb9170?w=400&q=80" alt="Jewish study" class="practice-item-image">
           <span class="practice-emoji">🕍</span>
           <div class="practice-name">Jewish Study</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1474418397713-7ede21d49118?w=400&q=80" alt="Indigenous ceremony" class="practice-item-image">
           <span class="practice-emoji">🪶</span>
           <div class="practice-name">Indigenous Ceremony</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1600881333168-2ef49b341f30?w=400&q=80" alt="Hindu practice" class="practice-item-image">
           <span class="practice-emoji">🕉️</span>
           <div class="practice-name">Hindu Practice</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1545389336-cf090694435e?w=400&q=80" alt="Dharma study" class="practice-item-image">
           <span class="practice-emoji">☸️</span>
           <div class="practice-name">Dharma Study</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1532693322450-2cb5c511067d?w=400&q=80" alt="Pagan ritual" class="practice-item-image">
           <span class="practice-emoji">🌙</span>
           <div class="practice-name">Pagan Ritual</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=400&q=80" alt="Secular mindfulness" class="practice-item-image">
           <span class="practice-emoji">⚛️</span>
           <div class="practice-name">Secular Mindfulness</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1588286840104-8957b019727f?w=400&q=80" alt="Yoga and movement" class="practice-item-image">
           <span class="practice-emoji">🔆</span>
           <div class="practice-name">Yoga & Movement</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&q=80" alt="Nature spirituality" class="practice-item-image">
           <span class="practice-emoji">🌿</span>
           <div class="practice-name">Nature Spirituality</div>
         </div>
         <div class="practice-item">
+          <img src="https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=400&q=80" alt="Loving-kindness practice" class="practice-item-image">
           <span class="practice-emoji">💝</span>
           <div class="practice-name">Loving-kindness</div>
         </div>

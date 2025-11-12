@@ -19,7 +19,8 @@
     }
 
     .common-hero {
-      background: linear-gradient(135deg, #0c4a6e 0%, #0369a1 30%, #0284c7 70%, #38bdf8 100%);
+      background: linear-gradient(135deg, rgba(12, 74, 110, 0.9) 0%, rgba(3, 105, 161, 0.85) 30%, rgba(2, 132, 199, 0.8) 70%, rgba(56, 189, 248, 0.75) 100%),
+                  url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=1600&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -298,6 +299,44 @@
       margin-top: 0.5rem;
     }
 
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      position: relative;
+      border-radius: 1rem;
+      overflow: hidden;
+      height: 300px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.3s;
+    }
+
+    .image-card:hover img {
+      transform: scale(1.05);
+    }
+
+    .image-caption {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      color: white;
+      padding: 1.5rem 1rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
     @media (max-width: 768px) {
       .common-hero h1 {
         font-size: 2.5rem;
@@ -489,6 +528,32 @@
         <div class="card">
           <h3 style="color: var(--common-primary);">🌾 Regenerative Agriculture</h3>
           <p>Integrated ecological monitoring supports <strong>regenerative farming</strong> with evidence-based stewardship.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="background: var(--common-light);">
+    <div class="container">
+      <h2 class="section-title">Community Land Stewardship</h2>
+      <p class="section-subtitle">Building the commons through collective care of the land</p>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1464207687429-7505649dae38?w=800&q=80" alt="Community garden">
+          <div class="image-caption">Community gardens building food sovereignty</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=800&q=80" alt="Conservation land">
+          <div class="image-caption">Protected lands for future generations</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=800&q=80" alt="Community gathering outdoors">
+          <div class="image-caption">Communities deciding together on land use</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?w=800&q=80" alt="Sustainable farming">
+          <div class="image-caption">Regenerative agriculture on trust lands</div>
         </div>
       </div>
     </div>

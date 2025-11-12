@@ -19,7 +19,11 @@
     }
 
     .coop-hero {
-      background: linear-gradient(135deg, #7c2d12 0%, #9a3412 20%, #c2410c 50%, #ea580c 80%, #fb923c 100%);
+      background: linear-gradient(135deg, rgba(124, 45, 18, 0.9) 0%, rgba(154, 52, 18, 0.85) 20%, rgba(194, 65, 12, 0.8) 50%, rgba(234, 88, 12, 0.8) 80%, rgba(251, 146, 60, 0.75) 100%),
+                  url('https://images.unsplash.com/photo-1559027615-cd4628902d4a?auto=format&fit=crop&w=2000&q=80');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -400,6 +404,54 @@
       line-height: 1.7;
     }
 
+    .image-section {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      border-radius: 1.25rem;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(234, 88, 12, 0.15);
+      transition: transform 0.3s;
+      position: relative;
+      height: 300px;
+    }
+
+    .image-card:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 36px rgba(234, 88, 12, 0.25);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .image-card-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      padding: 1.5rem;
+      color: white;
+    }
+
+    .image-card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .image-card-desc {
+      font-size: 0.9375rem;
+      opacity: 0.95;
+    }
+
     @media (max-width: 768px) {
       .coop-hero h1 {
         font-size: 2.75rem;
@@ -501,6 +553,30 @@
             <li>Hardship help, not penalties</li>
             <li>Build collective wealth together</li>
           </ul>
+        </div>
+      </div>
+
+      <div class="image-section">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1531206715517-5c0ba140b2b8?auto=format&fit=crop&w=800&q=80" alt="Hands stacked together in solidarity">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Mutual Aid in Action</div>
+            <div class="image-card-desc">Communities lifting each other up through cooperative finance</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80" alt="Community members in circle discussion">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Credit Circles Meeting</div>
+            <div class="image-card-desc">Democratic decision-making about lending and support</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1525026198548-4baa812f1183?auto=format&fit=crop&w=800&q=80" alt="Diverse group of people together">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Solidarity Economy</div>
+            <div class="image-card-desc">Building financial systems based on trust and cooperation</div>
+          </div>
         </div>
       </div>
     </div>
@@ -656,6 +732,31 @@
   <section class="section">
     <div class="container">
       <h2 class="section-title">Who Uses CoopCreds</h2>
+
+      <div class="image-section">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80" alt="Women entrepreneurs collaborating">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Women-Led Circles</div>
+            <div class="image-card-desc">Economic empowerment through community-controlled capital</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=800&q=80" alt="Immigrant community gathering">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Cultural Traditions</div>
+            <div class="image-card-desc">Honoring tandas, ROSCAs, and traditional lending practices</div>
+          </div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=800&q=80" alt="Community support network">
+          <div class="image-card-overlay">
+            <div class="image-card-title">Financial Sovereignty</div>
+            <div class="image-card-desc">Building wealth together, escaping extractive banking</div>
+          </div>
+        </div>
+      </div>
+
       <div class="features-grid">
         <div class="card">
           <h3>🌎 Immigrant Communities</h3>

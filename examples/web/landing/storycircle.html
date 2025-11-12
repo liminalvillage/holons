@@ -19,7 +19,8 @@
     }
 
     .story-hero {
-      background: linear-gradient(135deg, #581c87 0%, #7c3aed 50%, #9333ea 100%);
+      background: linear-gradient(135deg, rgba(88, 28, 135, 0.9) 0%, rgba(124, 58, 237, 0.85) 50%, rgba(147, 51, 234, 0.9) 100%),
+                  url('https://images.unsplash.com/photo-1509099863731-ef4bff19e808?auto=format&fit=crop&w=1920&q=80') center/cover;
       color: white;
       padding: 6rem 0 4rem;
       position: relative;
@@ -326,6 +327,55 @@
       line-height: 1.6;
     }
 
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin: 3rem 0;
+    }
+
+    .image-card {
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.15);
+      transition: all 0.3s;
+    }
+
+    .image-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(124, 58, 237, 0.25);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 280px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .image-caption {
+      padding: 1rem;
+      background: white;
+      color: #4b5563;
+      font-size: 0.875rem;
+      font-style: italic;
+      text-align: center;
+    }
+
+    .featured-image {
+      width: 100%;
+      border-radius: 1.5rem;
+      overflow: hidden;
+      margin: 2rem 0;
+      box-shadow: 0 8px 24px rgba(124, 58, 237, 0.2);
+    }
+
+    .featured-image img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
     @media (max-width: 768px) {
       .story-hero h1 {
         font-size: 2.5rem;
@@ -426,6 +476,21 @@
           </ul>
         </div>
       </div>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1577896851905-dc92e1ab534c?auto=format&fit=crop&w=800&q=80" alt="Indigenous elder sharing traditional knowledge">
+          <div class="image-caption">Indigenous elders preserving traditional knowledge</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=800&q=80" alt="Grandmother and grandchild reading together">
+          <div class="image-caption">Intergenerational storytelling and connection</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=800&q=80" alt="Community gathering sharing stories">
+          <div class="image-caption">Community circles keeping oral traditions alive</div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -515,6 +580,32 @@
         <div class="impact-card">
           <div class="impact-value">🎓 Alternative History</div>
           <p>Communities create <strong>counter-narratives</strong> to colonial histories, reclaiming their truth.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Cultural Knowledge in Action</h2>
+      <p class="section-subtitle">Communities worldwide using StoryCircle to preserve and share traditional wisdom</p>
+
+      <div class="featured-image">
+        <img src="https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=1600&q=80" alt="Diverse group of elders and youth in workshop">
+      </div>
+
+      <div class="image-grid">
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80" alt="Multi-generational learning workshop">
+          <div class="image-caption">Youth learning traditional crafts from community elders</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1529390079861-591de354faf5?auto=format&fit=crop&w=800&q=80" alt="Cultural heritage classroom">
+          <div class="image-caption">Cultural heritage education in community spaces</div>
+        </div>
+        <div class="image-card">
+          <img src="https://images.unsplash.com/photo-1544027993-37dbfe43562a?auto=format&fit=crop&w=800&q=80" alt="Elder teaching young person">
+          <div class="image-caption">One-on-one mentorship and knowledge transfer</div>
         </div>
       </div>
     </div>
