@@ -1,0 +1,357 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global styles */
+body {
+  background: linear-gradient(
+    141deg,
+    black 0%,
+    #001432 30%,
+    #000f21 80%,
+    #00124c 100%
+  );
+  background-repeat: no-repeat;
+  background-size: cover;
+  height: 100%;
+  overflow-y: scroll;
+}
+
+html {
+  background: transparent;
+}
+
+/* Profile styles */
+.profile-card {
+  @apply max-w-sm overflow-hidden shadow-lg rounded-full bg-transparent mx-3 p-6;
+}
+
+.profile-view {
+  padding-top: 4rem;
+  background: white;
+  min-height: calc(100vh - 30px);
+  overflow: hidden;
+}
+
+.profile-view .slider-inner {
+  z-index: 9999999999;
+}
+
+.profile-view .slider-inner svg {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.profile-view .slider-inner svg circle:nth-child(3) {
+  stroke-width: 0.2;
+  stroke: black;
+}
+
+a.holon-link {
+  max-width: 13rem;
+  display: inline-block;
+  margin-right: 1rem;
+  @apply truncate text-white;
+}
+
+a.holon-link:hover {
+  @apply text-blue-300;
+}
+
+/* Modal styles */
+.modal-mask {
+  position: fixed;
+  z-index: 9998;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: table;
+  transition: opacity 0.3s ease;
+}
+
+.modal-wrapper {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+.modal-container {
+  max-width: 400px;
+  width: 40%;
+  margin: 0px auto;
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.33);
+  transition: all 0.3s ease;
+  font-family: Helvetica, Arial, sans-serif;
+}
+
+.modal-body {
+  @apply m-4;
+}
+
+.modal-default-button {
+  float: right;
+}
+
+/* Form slider styles */
+.slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 15px;
+  border-radius: 5px;
+  background: #d3d3d3;
+  outline: none;
+  opacity: 1;
+  -webkit-transition: 0.2s;
+  transition: opacity 0.2s;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  @apply bg-blue-600;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  @apply bg-blue-700;
+}
+
+.slider::-moz-range-thumb {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  @apply bg-blue-600;
+  cursor: pointer;
+}
+
+.slider::-moz-range-thumb:hover {
+  @apply bg-blue-700;
+}
+
+/* Metatron Grid Styles */
+.m-grid-outer {
+  display: flex;
+  flex: 1;
+}
+
+.m-grid-container {
+  height: 60rem;
+  width: 54rem;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(36, 1fr);
+  grid-template-rows: repeat(40, 1fr);
+  position: relative;
+  grid-gap: 0;
+}
+
+.m-grid-container .frame {
+  width: 60%;
+}
+
+.m-grid-container .frame .path-hex {
+  stroke-width: 0.2;
+  stroke: rgba(255, 255, 255, 0.9);
+  fill: none;
+}
+
+.m-grid-container .frame .animated {
+  stroke-width: 0.1;
+  stroke: rgba(255, 255, 255, 0.4);
+  fill: none;
+  stroke-dasharray: 210;
+  animation: 4s dash ease-in forwards;
+}
+
+.m-grid-container .frame .path-circle {
+  stroke-width: 0.05;
+  stroke: rgba(255, 255, 255, 0.7);
+  fill: none;
+  stroke-dasharray: 210;
+  animation: 5s dash2 ease-in;
+}
+
+.m-grid-container .frame .path-circle.sm {
+  stroke-width: 0.1;
+  animation: 5s dash2 ease-in;
+  animation-direction: alternate;
+}
+
+@keyframes dash {
+  0% {
+    opacity: 0;
+  }
+  1% {
+    opacity: 1;
+    stroke-dashoffset: 110;
+  }
+  100% {
+    stroke-dashoffset: 310;
+  }
+}
+
+@keyframes dash2 {
+  0% {
+    stroke-dashoffset: 210;
+  }
+  70% {
+    stroke-dashoffset: 10;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.m-grid-container .circle {
+  display: block;
+  position: absolute;
+  opacity: 1;
+  z-index: 1;
+}
+
+.m-grid-container .circle .c-inner {
+  border-radius: 100%;
+  display: flex;
+  height: 12rem;
+  width: 12rem;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  transition: 0.2s ease-in-out;
+}
+
+.m-grid-container .circle .c-inner.circleXL {
+  height: 24rem;
+  width: 24rem;
+  z-index: 9999;
+}
+
+.m-grid-container .circle .c-inner p {
+  font-size: 0.7rem;
+  opacity: 1;
+  transition: all 0.6s ease-in;
+  transition-delay: 0.9s;
+}
+
+.m-grid-container .circle.circle-blue .c-inner {
+  background: linear-gradient(
+    141deg,
+    black 0%,
+    #001432 30%,
+    #000f21 80%,
+    #00124c 100%
+  );
+  border-radius: 100%;
+}
+
+.m-grid-container .circle.circle-blue.c-light .c-inner {
+  background: transparent;
+  border: 2px solid #001432;
+}
+
+.m-grid-container .circle.c-home {
+  opacity: 0;
+  z-index: 1;
+}
+
+.m-grid-container .circle.c-home .c-inner {
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.m-grid-container .circle.c-home .c-inner svg,
+.m-grid-container .circle.c-home .c-inner p {
+  opacity: 0;
+}
+
+/* Grid positioning classes - rows */
+.m-grid-container .circle.row-1 {
+  grid-row-start: 1;
+  grid-row-end: 9;
+}
+
+.m-grid-container .circle.row-2 {
+  grid-row-start: 9;
+  grid-row-end: 17;
+}
+
+.m-grid-container .circle.row-3 {
+  grid-row-start: 13;
+  grid-row-end: 21;
+}
+
+.m-grid-container .circle.row-4 {
+  grid-row-start: 17;
+  grid-row-end: 25;
+}
+
+.m-grid-container .circle.row-5 {
+  grid-row-start: 21;
+  grid-row-end: 29;
+}
+
+.m-grid-container .circle.row-6 {
+  grid-row-start: 25;
+  grid-row-end: 33;
+}
+
+.m-grid-container .circle.row-7 {
+  grid-row-start: 33;
+  grid-row-end: 41;
+}
+
+/* Grid positioning classes - columns */
+.m-grid-container .circle.c-1 {
+  grid-column-start: 1;
+  grid-column-end: 9;
+}
+
+.m-grid-container .circle.c-2 {
+  grid-column-start: 8;
+  grid-column-end: 16;
+}
+
+.m-grid-container .circle.c-3 {
+  grid-column-start: 15;
+  grid-column-end: 23;
+}
+
+.m-grid-container .circle.c-4 {
+  grid-column-start: 22;
+  grid-column-end: 30;
+}
+
+.m-grid-container .circle.c-5 {
+  grid-column-start: 29;
+  grid-column-end: 37;
+}
+
+.m-grid-container.grid-gap {
+  grid-gap: 1px;
+}
+
+.m-grid-container.grid-gap .circle-inner {
+  max-width: 80%;
+  max-height: 80%;
+}
+
+.m-grid-container.grid-gap .circle-inner p {
+  opacity: 0;
+  height: 0;
+  transition: 0.5s;
+}
+
+/* Animation helper */
+.animate-all {
+  transition: all 0.3s ease-in-out;
+}
