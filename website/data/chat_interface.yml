@@ -1,11 +1,12 @@
 enable: true
 heading:
-  title: "Meet the people where they are"
-  subtitle: "Create your holon from your telegram community"
+  title: "Coordinate Where You Already Gather"
+  subtitle: "Start your Holon from your Telegram community"
 
 description: |
-  Create and manage your organization right where your community already chats. 
-  No new apps. No learning curve. Just simple commands in Telegram.
+  Build living networks of mutual support right where your community already connects.
+  Express needs, track multi-resource exchanges, and coordinate collective projects using simple
+  commands—no complex tools, just natural conversation in Telegram.
 
 platform:
   title: "Ready to Start?"

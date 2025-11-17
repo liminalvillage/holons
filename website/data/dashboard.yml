@@ -1,28 +1,29 @@
 enable: true
 heading:
   title: "Holonic Dashboard"
-  subtitle: "Visually Navigate and Track Your Holonic Network"
+  subtitle: "Navigate Your Interdependent Network of Places"
 
 description: |
-  A powerful visual interface to monitor and manage your holonic organizations. Track resources, 
-  visualize relationships, and navigate the federation of interconnected holons in real-time.
+  A powerful visual interface to monitor resource flows, track regenerative impacts, and navigate the living network
+  of interconnected Holons. See the full spectrum of value exchanges—financial, material, labor, expertise, and
+  ecological regeneration—flowing through your community.
 
 features:
-  - title: "Network Visualization"
-    description: "Interactive graph view of your holonic network showing relationships, resource flows, and nested structures"
-    icon: "ti-vector"
-    
-  - title: "Resource Tracking"
-    description: "Real-time monitoring of resources, contributions, and distributions across your organization"
-    icon: "ti-dashboard"
-    
-  - title: "Federation Explorer"
-    description: "Navigate through connected holons and discover potential collaborations within the network"
-    icon: "ti-search"
-    
-  - title: "Analytics & Insights"
-    description: "Data-driven insights about your organization's health, impact, and opportunities"
-    icon: "ti-stats-up"
+  - title: "Multi-Resource Flows"
+    description: "Visualize exchanges across all resource types: money, labor, materials, land, expertise, and regenerative impacts. Watch value flow through sophisticated multi-hop exchanges."
+    icon: "ti-exchange-vertical"
+
+  - title: "Regenerative Impact Tracking"
+    description: "Monitor positive externalities and regenerative actions—trees planted, plastic removed, carbon sequestered, soil restored—as recognized value within the network."
+    icon: "ti-world"
+
+  - title: "Network Health Indicators"
+    description: "Track the health of the whole organism. See how each Holon contributes to and benefits from collective abundance, with early signals for imbalances."
+    icon: "ti-pulse"
+
+  - title: "Needs & Subscriptions"
+    description: "Explore collective needs across the network, subscribe to solutions you want to see manifested, and discover how your contributions address others' expressed needs."
+    icon: "ti-heart"
 
 dashboard_preview:
   - tab_name: ""

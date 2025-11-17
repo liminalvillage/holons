@@ -1,27 +1,37 @@
 ############################# feature ###################################
 feature:
   enable : true
-  image : images/about/about-business-man.jpg
-  image_webp : images/about/about-business-man.webp
-  title : We’re A Digital Design Agency.
-  content : "Lorem ipsum dolor sit amet consectetur adipisicing elit. Aliquam tempora itaque, autem dolores culpa cum mollitia voluptate nesciunt voluptatibus quasi."
-  feature_item : 
+  image : images/backgrounds/Cymatics5.jpg
+  image_webp : images/backgrounds/Cymatics5.webp
+  title : Trois Voies d'Accès
+  content : "Pour chaque produit ou service développé au sein du réseau, les participants peuvent choisir comment ils s'engagent—transformant les consommateurs en propriétaires-producteurs et permettant la manifestation collective de besoins partagés."
+  feature_item :
       # feature item loop
-    - title : SEO Optimized
-      icon : ti-world # themify icon pack : https://themify.me/themify-icons
-      content : Lorem ipsum, dolor sit amet consectetur adipisicing elit. Possimus consectetur dolores repellendus eos saepe
-      
-      # feature item loop
-    - title : Easy Customization
-      icon : ti-panel # themify icon pack : https://themify.me/themify-icons
-      content : Lorem ipsum, dolor sit amet consectetur adipisicing elit. Possimus consectetur dolores repellendus eos saepe
+    - title : Acheter (Licence Solaire)
+      icon : ti-money # themify icon pack : https://themify.me/themify-icons
+      content : Acquérir des produits tout en apportant des ressources financières au réseau. Chaque achat inclut un jeton de propriété de la production future, vous faisant passer de consommateur à propriétaire-producteur.
 
       # feature item loop
-    - title : SEO Optimized
-      icon : ti-stats-up # themify icon pack : https://themify.me/themify-icons
-      content : Lorem ipsum, dolor sit amet consectetur adipisicing elit. Possimus consectetur dolores repellendus eos saepe
-      
+    - title : Produire (Licence Lunaire)
+      icon : ti-settings # themify icon pack : https://themify.me/themify-icons
+      content : Recevoir tous les plans, instructions et soutien pour devenir vous-même un centre de production. Ouvrez votre travail sous la même licence régénérative, servant automatiquement les abonnés les plus proches.
+
       # feature item loop
-    - title : Easy Customization
-      icon : ti-announcement # themify icon pack : https://themify.me/themify-icons
-      content : Lorem ipsum, dolor sit amet consectetur adipisicing elit. Possimus consectetur dolores repellendus eos saepe
+    - title : Attirer (Propriété Collective)
+      icon : ti-layers # themify icon pack : https://themify.me/themify-icons
+      content : Rassembler un groupe local pour mettre en commun les ressources—travail, expertise, matériaux, lieux, finances—pour manifester collectivement des produits ou services comme infrastructure partagée.
+
+      # feature item loop
+    - title : Reconnaissance par Jeton Flow
+      icon : ti-pulse # themify icon pack : https://themify.me/themify-icons
+      content : La valeur est reconnue par des jetons Flow distribués mensuellement à ceux qui contribuent aux besoins collectifs, pondérant à la fois la performance et la qualité de la collaboration.
+
+      # feature item loop
+    - title : Dynamique Nouvelle Lune / Pleine Lune
+      icon : ti-shine # themify icon pack : https://themify.me/themify-icons
+      content : Choisissez votre orientation dans le cycle lunaire. Deux perspectives complémentaires sur le même cycle perpétuel, échangeant le travail aux phases de demi-lune pour se servir mutuellement.
+
+      # feature item loop
+    - title : Réseau d'Amorçage
+      icon : ti-hand-open # themify icon pack : https://themify.me/themify-icons
+      content : Un refuge pour ceux qui transitionnent des systèmes conventionnels, fournissant des outils passerelles, des flux de ressources hybrides, des espaces de guérison et une véritable optionalité pour répondre à divers besoins.

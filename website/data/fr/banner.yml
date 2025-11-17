@@ -1,12 +1,12 @@
 ############################### Banner ################################
 banner:
   enable : true
-  bg_image_webp : "images/backgrounds/hero-area.webp"
-  bg_image : "images/backgrounds/hero-area.jpg"
+  bg_image_webp : "images/backgrounds/fractalmembrane.webp"
+  bg_image : "images/backgrounds/Sbackgrounds/fractalmembrane.jpg"
   icon : "" # themify icon pack : https://themify.me/themify-icons
-  title : "Experience the new reality"
-  content : "Lorem ipsum dolor sit amet consectetur adipisicing elit. Fugit, excepturi. At recusandae sit perferendis autem,iste tempora nostrum numquam sapiente!"
+  title : "Un Réseau de Lieux Interdépendants"
+  content : "Les Holons sont des cellules vivantes au sein d'un organisme plus vaste—chaque lieu contribuant à la santé de l'ensemble et en bénéficiant. Nous nous organisons autour des cycles lunaires naturels, alignons l'activité économique avec la régénération écologique, et créons l'abondance au sein de nos communautés avant d'extraire vers les marchés externes. Rejoignez un réseau planétaire où l'activité humaine régénère le monde vivant."
   button:
     enable : true
-    label : "Explore Us"
-    link : "#services"
+    label : "Démarrer Votre Holon"
+    link : "https://wequest.typeform.com/to/I1PLIb60"

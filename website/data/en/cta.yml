@@ -3,9 +3,9 @@ cta:
   enable : true
   bg_image :
   bg_image_webp :
-  title : "Enter the future of scale-free organizations and collaborations"
-  content : "Every new holon will be tracked forever on the blockchain. Open one now, and be amongst the first movers in the holonic revolution."
+  title : "A Parallel System for Regenerative Living"
+  content : "We can imagine a better world, and we possess the technical means and collective intelligence to manifest it. Join communities organizing around natural cycles, aligning economic activity with ecological regeneration, and creating the conditions for a fundamentally different relationship between human communities and the living world."
   button:
     enable : true
-    label : "Join the holonic ecosystem"
+    label : "Join the Network"
     link : "https://wequest.typeform.com/to/gXMheBaH"

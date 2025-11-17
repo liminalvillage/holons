@@ -1,11 +1,11 @@
 ############################# call to action ##############################
 cta:
   enable : true
-  bg_image : "images/backgrounds/bg-white-wall.jpg"
-  bg_image_webp : "images/backgrounds/bg-white-wall.webp"
-  title : "Great Design & Incredible Features"
-  content : "Lorem ipsum dolor sit amet consectetur adipisicing elit. Officiis tenetur odio impedit incidunt? Omnis accusantium ea reiciendis, fugit commodi nostrum."
+  bg_image :
+  bg_image_webp :
+  title : "Un Système Parallèle pour une Vie Régénérative"
+  content : "Nous pouvons imaginer un monde meilleur, et nous possédons les moyens techniques et l'intelligence collective pour le manifester. Rejoignez des communautés qui s'organisent autour des cycles naturels, alignent l'activité économique avec la régénération écologique, et créent les conditions d'une relation fondamentalement différente entre les communautés humaines et le monde vivant."
   button:
     enable : true
-    label : "Start a project with us"
-    link : "#contact"
+    label : "Rejoindre le Réseau"
+    link : "https://wequest.typeform.com/to/gXMheBaH"

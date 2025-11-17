@@ -1,17 +1,17 @@
 ############################# About ###################################
 about:
   enable : true
-  title : About Holons
+  title : How Holons Work
   about_item :
 
-  - icon : ti-user # themify icon pack : https://themify.me/themify-icons
-    title : Create a Holon
-    content : "Form a holon with your collaborators. Holons can be stacked : Other holons can also join as members!"
+  - icon : ti-light-bulb # themify icon pack : https://themify.me/themify-icons
+    title : Organize by Natural Cycles
+    content : "Work flows with the lunar calendar—new moon to full moon cycles create visible progress indicators in the sky. Quarterly gatherings at solstices and equinoxes anchor our collective rhythm for celebration and co-creation."
 
-  - icon : ti-heart # themify icon pack : https://themify.me/themify-icons
-    title : Track Contributions
-    content : Use a multitude of ways to signals and highlight contributions towards the purpose of the holon
+  - icon : ti-world # themify icon pack : https://themify.me/themify-icons
+    title : Multi-Resource Accounting
+    content : "Track the full spectrum of value—not just money, but labor, materials, land, expertise, and regenerative impacts. Exchange happens through sophisticated multi-hop flows that honor diverse forms of contribution."
 
-  - icon : ti-pie-chart # themify icon pack : https://themify.me/themify-icons
-    title : Share Rewards
-    content : Every rewards or perks sent to the holon will be divided according to the current contribution signals
+  - icon : ti-infinite # themify icon pack : https://themify.me/themify-icons
+    title : Regenerative by Design
+    content : "Establish abundance within the network before extracting to external markets. Every negative externality becomes a need that other projects can address, creating a self-correcting system that naturally evolves toward circularity."

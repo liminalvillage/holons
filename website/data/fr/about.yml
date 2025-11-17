@@ -1,16 +1,16 @@
 ############################# About ###################################
 about:
   enable : true
-  title : About Us
+  title : Comment Fonctionnent les Holons
   about_item :
-  - icon : ti-ruler-pencil # themify icon pack : https://themify.me/themify-icons
-    title : We're Creative
-    content : Lorem ipsum dolor sit amet, consectetur adipisicing elit. Velit, nihil, libero, perspiciatis eos provident laborum eum dignissimos.
+  - icon : ti-light-bulb # themify icon pack : https://themify.me/themify-icons
+    title : Organisation par Cycles Naturels
+    content : "Le travail suit le calendrier lunaire—les cycles de nouvelle lune à pleine lune créent des indicateurs de progrès visibles dans le ciel. Les rassemblements trimestriels aux solstices et équinoxes ancrent notre rythme collectif de célébration et de co-création."
 
-  - icon : ti-cup # themify icon pack : https://themify.me/themify-icons
-    title : We're Professional
-    content : Lorem ipsum dolor sit amet, consectetur adipisicing elit. Velit, nihil, libero, perspiciatis eos provident laborum eum dignissimos.
+  - icon : ti-world # themify icon pack : https://themify.me/themify-icons
+    title : Comptabilité Multi-Ressources
+    content : "Suivre tout le spectre de la valeur—pas seulement l'argent, mais le travail, les matériaux, la terre, l'expertise et les impacts régénératifs. L'échange se fait par des flux multi-sauts sophistiqués qui honorent diverses formes de contribution."
 
-  - icon : ti-thought # themify icon pack : https://themify.me/themify-icons
-    title : We're Genius
-    content : Lorem ipsum dolor sit amet, consectetur adipisicing elit. Velit, nihil, libero, perspiciatis eos provident laborum eum dignissimos.
+  - icon : ti-infinite # themify icon pack : https://themify.me/themify-icons
+    title : Régénératif par Conception
+    content : "Établir l'abondance au sein du réseau avant d'extraire vers les marchés externes. Chaque externalité négative devient un besoin que d'autres projets peuvent adresser, créant un système auto-correcteur qui évolue naturellement vers la circularité."

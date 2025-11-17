@@ -1,41 +1,43 @@
 enable: true
 heading:
-  title: "The Holonic Earth Operating System"
-  subtitle: "AI-Enhanced Protocol for Planetary Coordination"
+  title: "Theos: Digital Protocol for Collective Coordination"
+  subtitle: "Where Expressed Needs Become Specifications for Development"
 
 description: |
-  Beyond the user interfaces, there's a powerful open source protocol enhanced by AI agents that facilitate communication and agreements between holons. 
-  A decentralized infrastructure designed for intelligent emergence, seamless adaptation, and planetary regeneration.
+  Theos is the software infrastructure enabling our vision to function at scale. Participants specify their needs within the platform,
+  subscribing to desired products, services, or solutions. These subscriptions aggregate into collective demand signals that creators
+  and innovators respond to with their skills. Market research is built into the system by design—expressed needs automatically become
+  the specifications for development.
 
 features:
-  - title: "AI Facilitation"
-    description: "Intelligent agents that help coordinate between holons, facilitate agreements, and optimize resource flows across the network."
-    icon: "ti-thought"
-    
-  - title: "Holonic Architecture"
-    description: "A system of nested, self-organizing units that mirrors nature's most successful patterns, from cells to ecosystems."
-    icon: "ti-infinite"
-    
-  - title: "Smart Agreements"
-    description: "AI-assisted creation and management of inter-holonic agreements, ensuring clear terms and fair execution."
-    icon: "ti-file"
-    
-  - title: "Resource-Based Allocation"
-    description: "Intelligent distribution based on real needs and ecological capacity, using AI to optimize resource flows."
+  - title: "Needs-Based Coordination"
+    description: "Express your needs as subscriptions. When many people subscribe to the same need, it demonstrates true collective demand worthy of coordination and resource allocation."
+    icon: "ti-heart"
+
+  - title: "Input & Output Interfaces"
+    description: "Each Holon has two fundamental interfaces: inputs (needs traveling with individuals) and outputs (positive externalities addressing needs across the network)."
+    icon: "ti-exchange-vertical"
+
+  - title: "Multi-Resource Exchange"
+    description: "Track financial capital, labor, materials, land, expertise, regenerative impacts, and social capital. Resources are indexed by name, location, and usage with contextual exchange rates."
+    icon: "ti-stats-up"
+
+  - title: "Flow Token Distribution"
+    description: "Monthly token distribution to those contributing toward collective needs. Recognition based on both performance (measurable results) and relationality (quality of collaboration)."
     icon: "ti-pulse"
-    
-  - title: "Open Source Protocol"
-    description: "Community-driven development ensuring the system remains transparent, adaptable, and aligned with the common good."
-    icon: "ti-world"
-    
-  - title: "Place-Based Integration"
-    description: "Deep connection with local ecosystems and communities, using AI to map and enhance bioregional relationships."
-    icon: "ti-map"
+
+  - title: "Open Source Infrastructure"
+    description: "All technology open-sourced under regenerative licenses. Success spreads naturally rather than being enclosed for profit extraction. Improvements remain available to the network."
+    icon: "ti-unlock"
+
+  - title: "Self-Correcting Circularity"
+    description: "Negative externalities become needs that other projects can address. The system naturally evolves toward circularity, with each problem becoming an opportunity for innovation."
+    icon: "ti-reload"
 
 call_to_action:
   enable: true
-  title: "Help Build the Future"
-  content: "Join us in developing the AI-enhanced infrastructure for a regenerative civilization"
+  title: "Open Source Technology Release"
+  content: "We're open-sourcing the Theos technology, making it available for anyone to use, study, modify, and improve. By releasing the technology openly, we invite relationality with the broader community—help us build the coordination infrastructure for a regenerative future."
   button:
-    label: "Contribute to THEOS"
+    label: "Explore Theos Documentation"
     url: "https://docs.theos.io"

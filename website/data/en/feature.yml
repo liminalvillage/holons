@@ -3,28 +3,28 @@ feature:
   enable : true
   image : images/backgrounds/Cymatics5.jpg
   image_webp : images/backgrounds/Cymatics5.webp
-  title : Holons come in different flavours 
-  content : "Depending on the group preferences, every holon can be initialized with different settings, allowing all sorts of organizations and reward structures to arise."
+  title : Three Pathways to Access
+  content : "For every product or service developed within the network, participants can choose how they engage—transforming consumers into producer-owners and enabling collective manifestation of shared needs."
   feature_item :
       # feature item loop
-    - title : Blanket holon
-      icon : ti-link # themify icon pack : https://themify.me/themify-icons
-      content : Reward every member equally, no question asked
+    - title : Purchase (Solar License)
+      icon : ti-money # themify icon pack : https://themify.me/themify-icons
+      content : Acquire products while bringing financial resources into the network. Every purchase includes an ownership token of future production, shifting you from consumer to producer-owner.
       # feature item loop
-    - title : Appreciation holon
-      icon : ti-vector # themify icon pack : https://themify.me/themify-icons
-      content : Share reward according to the level of appreciation received from other members
+    - title : Produce (Lunar License)
+      icon : ti-settings # themify icon pack : https://themify.me/themify-icons
+      content : Receive all plans, instructions, and support to become a production center yourself. Open-source your work under the same regenerative license, serving the nearest subscribers automatically.
       # feature item loop
-    - title : Hybrid holon
-      icon : ti-panel # themify icon pack : https://themify.me/themify-icons
-      content : "The best of both worlds: a percentage of the reward is splitted equally, while the rest is splitted according to the appreciation received."
+    - title : Attract (Collective Ownership)
+      icon : ti-layers # themify icon pack : https://themify.me/themify-icons
+      content : Gather a local group to pool resources—labor, expertise, materials, locations, finances—to collectively manifest products or services as shared infrastructure.
       # feature item loop
-    - title : Pop up holon
-      icon : ti-rocket  # themify icon pack : https://themify.me/themify-icons
-      content : Set a deadline, noone will be able to make changes to the holon after that. 
-    - title : Time based holon
-      icon : ti-time # themify icon pack : https://themify.me/themify-icons
-      content : Account for the hours spent on the project from each member
-    - title : Add your own ..
-      icon : ti-plus # themify icon pack : https://themify.me/themify-icons
-      content : You can choose to create your own flavour and to upload it to the system. People will pick it up if they find it more useful than others!
+    - title : Flow Token Recognition
+      icon : ti-pulse  # themify icon pack : https://themify.me/themify-icons
+      content : Value is recognized through Flow tokens distributed monthly to those contributing toward collective needs, weighing both performance and quality of collaboration.
+    - title : New Moon / Full Moon Dynamic
+      icon : ti-shine # themify icon pack : https://themify.me/themify-icons
+      content : Choose your orientation within the lunar cycle. Two complementary perspectives on the same perpetual cycle, exchanging work at half-moon phases to serve one another.
+    - title : Bootstrap Network
+      icon : ti-hand-open # themify icon pack : https://themify.me/themify-icons
+      content : A safe haven for those transitioning from conventional systems, providing gateway tools, hybrid resource flows, healing spaces, and genuine optionality for meeting diverse needs.

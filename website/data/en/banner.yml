@@ -4,8 +4,8 @@ banner:
   bg_image_webp: "images/backgrounds/fractalmembrane.webp"
   bg_image: "images/backgrounds/Sbackgrounds/fractalmembrane.jpg"
   icon: "" # themify icon pack : https://themify.me/themify-icons
-  title: "Build Living Organizations"
-  content: "Holons are the building blocks of life itself - from cells to societies. We've turned this natural pattern into an open protocol for creating organizations that are alive, adaptive, and interconnected. Start small, grow naturally, and join a planetary network of regenerative communities."
+  title: "A Network of Interdependent Places"
+  content: "Holons are living cells within a larger organism—each place contributing to and benefiting from the health of the whole. We organize around natural lunar cycles, align economic activity with ecological regeneration, and create abundance within our communities before extracting to external markets. Join a planetary network where human activity regenerates the living world."
   button:
     enable: true
     label: "Start Your Holon"
