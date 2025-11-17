@@ -2,12 +2,16 @@
  * Federation propagation options interface
  */
 interface PropagationOptions {
-  /** Whether to use references instead of duplicating data (default: true) */
-  useReferences?: boolean;
+  /** Whether to use holograms instead of duplicating data (default: true) */
+  useHolograms?: boolean;
   /** Specific target spaces to propagate to (default: all federated spaces) */
   targetSpaces?: string[];
   /** Password for accessing the source holon (if needed) */
   password?: string | null;
+  /** Whether to automatically propagate to parent hexagons (default: true) */
+  propagateToParents?: boolean;
+  /** Maximum number of parent levels to propagate to (default: 15) */
+  maxParentLevels?: number;
 }
 
 /**
@@ -18,14 +22,37 @@ interface PutOptions {
   autoPropagate?: boolean;
   /** Additional options to pass to propagate */
   propagationOptions?: PropagationOptions;
+  /** Whether to disable hologram redirection logic when putting data (default: false) */
+  disableHologramRedirection?: boolean;
 }
 
 /**
  * Get options interface
  */
 interface GetOptions {
-  /** Whether to automatically resolve federation references (default: true) */
-  resolveReferences?: boolean;
+  /** Whether to automatically resolve holograms (default: true) */
+  resolveHolograms?: boolean;
+  /** Options passed to the schema validator */
+  validationOptions?: object;
+}
+
+/**
+ * Resolve Hologram options interface
+ */
+interface ResolveHologramOptions {
+  /** Whether to follow nested holograms (default: true) */
+  followHolograms?: boolean;
+  /** Internal use: Tracks visited souls to prevent loops */
+  visited?: Set<string>;
+}
+
+/**
+ * Represents a Hologram object, typically containing an id and a soul path.
+ */
+interface Hologram {
+  id: string;
+  soul: string;
+  [key: string]: any; // Allow other properties, e.g., _federation
 }
 
 /**
@@ -90,13 +117,44 @@ interface PropagationResult {
   error?: string;
   /** Information message if applicable */
   message?: string;
+  /** Parent propagation results */
+  parentPropagation?: {
+    /** Number of successfully propagated items to parents */
+    success: number;
+    /** Number of errors encountered during parent propagation */
+    errors: number;
+    /** Number of parent propagations skipped */
+    skipped: number;
+    /** Messages from parent propagation */
+    messages: string[];
+  };
+}
+
+/**
+ * Result from a put operation
+ */
+interface PutResult {
+  /** Indicates if the put operation was successful */
+  success: boolean;
+  /** Indicates if the data ultimately put at the path was a hologram */
+  isHologramAtPath?: boolean;
+  /** The final holon where data was put (after potential redirection) */
+  pathHolon: string;
+  /** The final lens where data was put (after potential redirection) */
+  pathLens: string;
+  /** The final key under which data was put (after potential redirection) */
+  pathKey: string;
+  /** Result of any automatic propagation, if it occurred */
+  propagationResult?: PropagationResult | null;
+  /** Error message if the put operation failed at some point */
+  error?: string;
 }
 
 declare class HoloSphere {
     private appname;
     private strict;
     private validator;
-    private gun;
+    public gun;
     private sea;
     private openai?;
     private subscriptions;
@@ -109,6 +167,12 @@ declare class HoloSphere {
      * @param {object|null} gunInstance - The Gun instance to use.
      */
     constructor(appname: string, strict?: boolean, openaikey?: string | null, gunInstance?: any);
+
+    /**
+     * Gets the Gun instance.
+     * @returns {any} - The Gun instance.
+     */
+    getGun(): any;
 
     // ================================ SCHEMA FUNCTIONS ================================
 
@@ -138,7 +202,7 @@ declare class HoloSphere {
      * @param {PutOptions} [options] - Additional options
      * @returns {Promise<any>} - Returns result object if successful
      */
-    put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<any>;
+    put(holon: string, lens: string, data: object, password?: string | null, options?: PutOptions): Promise<PutResult>;
 
     /**
      * Retrieves content from the specified holon and lens.
@@ -231,6 +295,32 @@ declare class HoloSphere {
      * @returns {Promise<boolean>} - Returns true if successful
      */
     deleteNode(holon: string, lens: string, key: string): Promise<boolean>;
+
+    // ================================ HOLOGRAM FUNCTIONS ================================
+
+    /**
+     * Creates a soul hologram object for a data item.
+     * @param {string} holon - The holon where the original data is stored.
+     * @param {string} lens - The lens where the original data is stored.
+     * @param {object} data - The data to create a hologram for. Must have an 'id' field.
+     * @returns {Hologram} - A hologram object containing id and soul.
+     */
+    createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
+
+    /**
+     * Checks if an object is a hologram (has id and soul).
+     * @param {any} data - The data to check.
+     * @returns {boolean} - True if the object is considered a hologram.
+     */
+    isHologram(data: any): data is Hologram;
+
+    /**
+     * Resolves a hologram to its actual data by following its soul path.
+     * @param {Hologram} hologram - The hologram object to resolve.
+     * @param {ResolveHologramOptions} [options] - Options for resolution.
+     * @returns {Promise<object|null>} - The resolved data, null if not found, or the original hologram in case of loops/errors.
+     */
+    resolveHologram(hologram: Hologram, options?: ResolveHologramOptions): Promise<object | null>;
 
     // ================================ GLOBAL FUNCTIONS ================================
 
@@ -364,9 +454,12 @@ declare class HoloSphere {
      * @param {string} [password1] - Optional password for the first holon
      * @param {string} [password2] - Optional password for the second holon
      * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications automatically
+     * @param {object} [lensConfig] - Optional lens-specific configuration
+     * @param {string[]} [lensConfig.federate] - List of lenses to federate (default: all)
+     * @param {string[]} [lensConfig.notify] - List of lenses to notify (default: all)
      * @returns {Promise<boolean>} - True if federation was created successfully
      */
-    federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean): Promise<boolean>;
+    federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { federate?: string[], notify?: string[] }): Promise<boolean>;
 
     /**
      * Subscribes to federation notifications for a holon
@@ -385,6 +478,15 @@ declare class HoloSphere {
      * @returns {Promise<FederationInfo|null>} - Federation info or null if not found
      */
     getFederation(holonId: string, password?: string | null): Promise<FederationInfo | null>;
+
+    /**
+     * Retrieves the lens-specific configuration for a federation link between two holons.
+     * @param {string} holonId - The ID of the source holon.
+     * @param {string} targetHolonId - The ID of the target holon in the federation link.
+     * @param {string} [password] - Optional password for the source holon.
+     * @returns {Promise<{ federate: string[], notify: string[] } | null>} - An object with 'federate' and 'notify' arrays, or null if not found.
+     */
+    getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ federate: string[], notify: string[] } | null>;
 
     /**
      * Removes a federation relationship between holons
@@ -463,6 +565,37 @@ declare class HoloSphere {
      * @returns {Promise<void>}
      */
     close(): Promise<void>;
+
+    /**
+     * Configures radisk storage options for GunDB.
+     * @param {object} options - Radisk configuration options
+     * @param {string} [options.file='./radata'] - Directory for radisk storage
+     * @param {boolean} [options.radisk=true] - Whether to enable radisk storage
+     * @param {number} [options.until] - Timestamp until which to keep data
+     * @param {number} [options.retry] - Number of retries for failed operations
+     * @param {number} [options.timeout] - Timeout for operations in milliseconds
+     */
+    configureRadisk(options?: {
+        file?: string;
+        radisk?: boolean;
+        until?: number | null;
+        retry?: number;
+        timeout?: number;
+    }): void;
+
+    /**
+     * Gets radisk storage statistics and information.
+     * @returns {object} Radisk statistics including file path, enabled status, and storage info
+     */
+    getRadiskStats(): {
+        enabled: boolean;
+        filePath: string;
+        retry: number;
+        timeout: number;
+        until: number | null;
+        peers: any[];
+        localStorage: boolean;
+    } | { error: string };
 }
 
 export default HoloSphere;

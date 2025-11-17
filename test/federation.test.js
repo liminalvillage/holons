@@ -88,6 +88,136 @@ describe('Federation Tests', () => {
       await expect(holosphere.federate(space, space, null))
         .rejects.toThrow('Cannot federate a space with itself');
     });
+
+    test('should create a federation with lens-specific settings', async () => {
+      const space1 = `${testPrefix}lens_space1`;
+      const space2 = `${testPrefix}lens_space2`;
+      
+      // Create federation with specific lens configuration
+      const lensConfig = {
+        federate: ['quests', 'announcements'],
+        notify: ['quests']
+      };
+      
+      const result = await holosphere.federate(space1, space2, null, null, true, lensConfig);
+      expect(result).toBe(true);
+      
+      // Verify federation info contains lens configuration
+      const fedInfo = await holosphere.getFederation(space1);
+      expect(fedInfo).toBeTruthy();
+      expect(fedInfo.lensConfig).toBeTruthy();
+      expect(fedInfo.lensConfig[space2]).toBeTruthy();
+      expect(fedInfo.lensConfig[space2].federate).toEqual(['quests', 'announcements']);
+      expect(fedInfo.lensConfig[space2].notify).toEqual(['quests']);
+    });
+
+    test('should respect lens configuration during propagation', async () => {
+      const space1 = `${testPrefix}prop_space1`;
+      const space2 = `${testPrefix}prop_space2`;
+      
+      // Create federation with specific lens configuration
+      const lensConfig = {
+        federate: ['quests', 'announcements'],
+        notify: ['quests']
+      };
+      
+      await holosphere.federate(space1, space2, null, null, true, lensConfig);
+      
+      // Test propagation for allowed lens
+      const questData = { id: 'test-quest', title: 'Test Quest' };
+      const questResult = await holosphere.propagate(space1, 'quests', questData);
+      expect(questResult.success).toBe(1); // Should propagate
+      
+      // Test propagation for non-allowed lens
+      const shoppingData = { id: 'test-shopping', item: 'Test Item' };
+      const shoppingResult = await holosphere.propagate(space1, 'shopping', shoppingData);
+      expect(shoppingResult.success).toBe(0); // Should not propagate
+      expect(shoppingResult.messages).toBeDefined();
+      expect(shoppingResult.messages.some(msg => msg.includes("Propagation of lens 'shopping' to target space " + space2 + " skipped: lens not in 'federate' configuration."))).toBe(true);
+    });
+
+    test('should handle wildcard lens configuration', async () => {
+      const space1 = `${testPrefix}wild_space1`;
+      const space2 = `${testPrefix}wild_space2`;
+      
+      // Create federation with wildcard lens configuration
+      const lensConfig = {
+        federate: ['*'],
+        notify: ['quests', 'announcements']
+      };
+      
+      await holosphere.federate(space1, space2, null, null, true, lensConfig);
+      
+      // Test propagation for various lenses
+      const testData = { id: 'test-item', value: 'test' };
+      
+      // Should propagate for quests (in notify list)
+      const questResult = await holosphere.propagate(space1, 'quests', testData);
+      expect(questResult.success).toBe(1);
+      
+      // Should propagate for announcements (in notify list)
+      const announcementResult = await holosphere.propagate(space1, 'announcements', testData);
+      expect(announcementResult.success).toBe(1);
+      
+      // Should now propagate for other lenses because federate is ['*'] and space2 is in space1's notify list.
+      const otherResult = await holosphere.propagate(space1, 'shopping', testData);
+      expect(otherResult.success).toBe(1);
+    });
+
+    test('should handle bidirectional lens configuration correctly', async () => {
+      const space1 = `${testPrefix}bi_space1`;
+      const space2 = `${testPrefix}bi_space2`;
+      
+      // Create federation with different lens configs for each direction
+      const lensConfig = {
+        federate: ['quests', 'announcements'],
+        notify: ['quests']
+      };
+      
+      await holosphere.federate(space1, space2, null, null, true, lensConfig);
+      
+      // Verify both spaces have correct lens configuration
+      const fedInfo1 = await holosphere.getFederation(space1);
+      const fedInfo2 = await holosphere.getFederation(space2);
+      
+      expect(fedInfo1.lensConfig[space2].federate).toEqual(['quests', 'announcements']);
+      expect(fedInfo1.lensConfig[space2].notify).toEqual(['quests']);
+      expect(fedInfo2.lensConfig[space1].federate).toEqual(['quests', 'announcements']);
+      expect(fedInfo2.lensConfig[space1].notify).toEqual(['quests']);
+      
+      // Test propagation in both directions
+      const testData = { id: 'test-item', value: 'test' };
+      
+      // Space1 to Space2
+      const result1 = await holosphere.propagate(space1, 'quests', testData);
+      expect(result1.success).toBe(1);
+      
+      // Space2 to Space1
+      const result2 = await holosphere.propagate(space2, 'quests', testData);
+      expect(result2.success).toBe(1);
+    });
+
+    test('should handle unidirectional lens configuration', async () => {
+      const space1 = `${testPrefix}uni_space1`;
+      const space2 = `${testPrefix}uni_space2`;
+      
+      // Create federation with unidirectional lens config
+      const lensConfig = {
+        federate: ['quests', 'announcements'],
+        notify: ['quests']
+      };
+      
+      await holosphere.federate(space1, space2, null, null, false, lensConfig);
+      
+      // Verify lens configuration is only set for one direction
+      const fedInfo1 = await holosphere.getFederation(space1);
+      const fedInfo2 = await holosphere.getFederation(space2);
+      
+      expect(fedInfo1.lensConfig[space2].federate).toEqual(['quests', 'announcements']);
+      expect(fedInfo1.lensConfig[space2].notify).toEqual(['quests']);
+      expect(fedInfo2.lensConfig[space1].federate).toEqual([]);
+      expect(fedInfo2.lensConfig[space1].notify).toEqual([]);
+    });
   });
   
   describe('unfederate', () => {
@@ -162,9 +292,60 @@ describe('Federation Tests', () => {
       // Try to propagate to a space with no federation
       const result = await holosphere.propagate(space, 'items', data);
       
-      // Should have a message property but not fail
+      // Should have a messages property but not fail
       expect(result).toBeDefined();
-      expect(result.message).toBeDefined();
+      expect(result.messages).toBeDefined();
+      expect(Array.isArray(result.messages)).toBe(true);
+    });
+  });
+
+  describe('getFederatedConfig', () => {
+    test('should retrieve the correct lens configuration for a specific federation link', async () => {
+      const space1 = `${testPrefix}lens_config_space1`;
+      const space2 = `${testPrefix}lens_config_space2`;
+      const space3 = `${testPrefix}lens_config_space3`; // Another space for testing
+
+      const specificLensConfig = {
+        federate: ['books', 'movies'],
+        notify: ['books']
+      };
+
+      // Federate space1 with space2 with specific lens config
+      await holosphere.federate(space1, space2, null, null, true, specificLensConfig);
+      // Federate space1 with space3 with default (empty or wildcard) lens config
+      await holosphere.federate(space1, space3, null, null, true, {}); 
+
+      // Test 1: Get specific lens config for space1 -> space2
+      const retrievedConfig1to2 = await holosphere.getFederatedConfig(space1, space2);
+      expect(retrievedConfig1to2).toEqual(specificLensConfig);
+
+      // Test 2: Get lens config for space1 -> space3 (should be default/empty or null)
+      // Depending on implementation, it might return null or { federate: [], notify: [] }
+      // For now, let's check if it's not the specific one and is an object (or null)
+      const retrievedConfig1to3 = await holosphere.getFederatedConfig(space1, space3);
+      expect(retrievedConfig1to3).not.toEqual(specificLensConfig);
+      if (retrievedConfig1to3 !== null) {
+        expect(typeof retrievedConfig1to3).toBe('object');
+        expect(Array.isArray(retrievedConfig1to3.federate)).toBe(true);
+        expect(Array.isArray(retrievedConfig1to3.notify)).toBe(true);
+        // Check if it defaulted to empty arrays as per current federate logic for empty lensConfig input
+        expect(retrievedConfig1to3.federate).toEqual([]);
+        expect(retrievedConfig1to3.notify).toEqual([]);
+      } else {
+        expect(retrievedConfig1to3).toBeNull();
+      }
+
+      // Test 3: Try to get config for a non-federated link
+      const space4 = `${testPrefix}lens_config_space4`;
+      const retrievedConfig1to4 = await holosphere.getFederatedConfig(space1, space4);
+      expect(retrievedConfig1to4).toBeNull();
+    });
+
+    test('should return null if no federation info exists for the source space', async () => {
+      const nonExistentSpace = `${testPrefix}non_existent_space`;
+      const targetSpace = `${testPrefix}any_target_space`;
+      const config = await holosphere.getFederatedConfig(nonExistentSpace, targetSpace);
+      expect(config).toBeNull();
     });
   });
 });

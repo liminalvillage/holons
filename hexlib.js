@@ -330,3 +330,6 @@ class Tests {
 // Tests
 function complain(name) { console.log("FAIL", name); }
 Tests.testAll();
+
+// Export Hex as the default since it's the main class
+export default Hex;

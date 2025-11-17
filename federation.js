@@ -3,6 +3,7 @@
  * Provides methods for creating, managing, and using federated spaces
  */
 
+import * as h3 from 'h3-js';
 
 /**
  * Creates a federation relationship between two spaces
@@ -14,10 +15,12 @@
  * @param {string} [password1] - Optional password for the first space
  * @param {string} [password2] - Optional password for the second space
  * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications (default: true)
+ * @param {object} [lensConfig] - Optional lens-specific configuration
+ * @param {string[]} [lensConfig.federate] - List of lenses to federate (default: all)
+ * @param {string[]} [lensConfig.notify] - List of lenses to notify (default: all)
  * @returns {Promise<boolean>} - True if federation was created successfully
  */
-export async function federate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null, bidirectional = true) {
-    console.log('FEDERATING', spaceId1, spaceId2, password1, password2, bidirectional)
+export async function federate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null, bidirectional = true, lensConfig = {}) {
     if (!spaceId1 || !spaceId2) {
         throw new Error('federate: Missing required space IDs');
     }
@@ -27,40 +30,59 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
         throw new Error('Cannot federate a space with itself');
     }
 
+    // Validate lens configuration
+    const { federate = [], notify = [] } = lensConfig;
+    if (!Array.isArray(federate) || !Array.isArray(notify)) {
+        throw new Error('federate: lensConfig.federate and lensConfig.notify must be arrays');
+    }
+
+    // Use the provided lens configurations directly
+    const federateLenses = federate;
+    const notifyLenses = notify;
+
     try {
         // Get or create federation info for first space (A)
-        let fedInfo1  = null;
+        let fedInfo1 = null;
 
         try {
             fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1);
         } catch (error) {
-            console.warn(`Could not get federation info for ${spaceId1}: ${error.message}`);
-            // Create new federation info if it doesn't exist
-            
         }
+
         if (fedInfo1 == null) {
             fedInfo1 = {
                 id: spaceId1,
                 name: spaceId1,
                 federation: [],
                 notify: [],
+                lensConfig: {}, // New field for lens-specific settings
                 timestamp: Date.now()
             };
         }
-        
 
-        // Ensure arrays exist
+        // Ensure arrays and lensConfig exist
         if (!fedInfo1.federation) fedInfo1.federation = [];
         if (!fedInfo1.notify) fedInfo1.notify = [];
+        if (!fedInfo1.lensConfig) fedInfo1.lensConfig = {};
 
-        // Add space2 to space1's federation and notify lists if not already present
+        // Add space2 to space1's federation list if not already present
         if (!fedInfo1.federation.includes(spaceId2)) {
             fedInfo1.federation.push(spaceId2);
         }
-        // // Always add to notify list for the first space (primary direction)
-        // if (!fedInfo1.notify.includes(spaceId2)) {
-        //     fedInfo1.notify.push(spaceId2);
-        // }
+
+        // Add space2 to space1's notify list if not already present
+        if (!fedInfo1.notify.includes(spaceId2)) {
+            fedInfo1.notify.push(spaceId2);
+        }
+
+        // Store lens configuration for space2
+        const newLensConfigsForSpace1 = { ...(fedInfo1.lensConfig || {}) }; // Shallow copy existing lensConfigs for space1
+        newLensConfigsForSpace1[spaceId2] = { // Add/update config for the target spaceId2
+            federate: [...federateLenses], // federateLenses & notifyLenses are from the main lensConfig parameter
+            notify: [...notifyLenses], 
+            timestamp: Date.now()
+        };
+        fedInfo1.lensConfig = newLensConfigsForSpace1; // Assign the new/modified object back to fedInfo1.lensConfig
 
         // Update timestamp
         fedInfo1.timestamp = Date.now();
@@ -68,42 +90,50 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
         // Save updated federation info for space1
         try {
             await holosphere.putGlobal('federation', fedInfo1, password1);
-            console.log(`Updated federation info for ${spaceId1}`);
         } catch (error) {
-            console.warn(`Could not update federation info for ${spaceId1}: ${error.message}`);
             throw new Error(`Failed to create federation: ${error.message}`);
         }
-        
+
         // If bidirectional is true, handle space2 (B) as well
-        //if (bidirectional && password2) {
         {
             let fedInfo2 = null;
             try {
                 fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
             } catch (error) {
-                console.warn(`Could not get federation info for ${spaceId2}: ${error.message}`);
-                // Create new federation info if it doesn't exist
-                
             }
+
             if (fedInfo2 == null) {
                 fedInfo2 = {
                     id: spaceId2,
                     name: spaceId2,
                     federation: [],
                     notify: [],
+                    lensConfig: {}, // New field for lens-specific settings
                     timestamp: Date.now()
                 };
             }
-            
-            // Add nEnsure arrays exist
-    
-            if (!fedInfo2.notify) fedInfo2.notify = [];
 
-            // Add space1 to space2's federation list if not already present
+            // Ensure arrays and lensConfig exist
+            if (!fedInfo2.federation) fedInfo2.federation = [];
+            if (!fedInfo2.notify) fedInfo2.notify = [];
+            if (!fedInfo2.lensConfig) fedInfo2.lensConfig = {};
+
+            // Add space1 to space2's federation list if bidirectional
+            if (bidirectional && !fedInfo2.federation.includes(spaceId1)) {
+                fedInfo2.federation.push(spaceId1);
+            }
+
+            // Add space1 to space2's notify list if not already present
             if (!fedInfo2.notify.includes(spaceId1)) {
                 fedInfo2.notify.push(spaceId1);
             }
- 
+
+            // Store lens configuration for space1
+            fedInfo2.lensConfig[spaceId1] = {
+                federate: bidirectional ? [...federateLenses] : [], // Create a copy of the array
+                notify: bidirectional ? [...notifyLenses] : [], // Create a copy of the array
+                timestamp: Date.now()
+            };
 
             // Update timestamp
             fedInfo2.timestamp = Date.now();
@@ -111,10 +141,7 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
             // Save updated federation info for space2
             try {
                 await holosphere.putGlobal('federation', fedInfo2, password2);
-                console.log(`Updated federation info for ${spaceId2}`);
             } catch (error) {
-                console.warn(`Could not update federation info for ${spaceId2}: ${error.message}`);
-                // Don't throw here as the main federation was successful
             }
         }
 
@@ -125,19 +152,20 @@ export async function federate(holosphere, spaceId1, spaceId2, password1 = null,
             space2: spaceId2,
             created: Date.now(),
             status: 'active',
-            bidirectional: bidirectional
+            bidirectional: bidirectional,
+            lensConfig: {
+                federate: [...federateLenses], // Create a copy of the array
+                notify: [...notifyLenses] // Create a copy of the array
+            }
         };
-        
+
         try {
             await holosphere.putGlobal('federationMeta', federationMeta);
-            console.log(`Created federation metadata for ${spaceId1} and ${spaceId2}`);
         } catch (error) {
-            console.warn(`Could not create federation metadata: ${error.message}`);
         }
 
         return true;
     } catch (error) {
-        console.error(`Federation creation failed: ${error.message}`);
         throw error;
     }
 }
@@ -203,7 +231,6 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
                             // Execute callback with the data
                             await callback(data, federatedSpace, lens);
                         } catch (error) {
-                            console.warn('Federation notification error:', error);
                         }
                     });
                     
@@ -211,7 +238,6 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
                         subscriptions.push(sub);
                     }
                 } catch (error) {
-                    console.warn(`Error creating subscription for ${federatedSpace}/${lens}:`, error);
                 }
             }
         }
@@ -226,7 +252,6 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
                         sub.unsubscribe();
                     }
                 } catch (error) {
-                    console.warn('Error unsubscribing:', error);
                 }
             });
             // Clear the subscriptions array
@@ -253,6 +278,35 @@ export async function getFederation(holosphere, spaceId, password = null) {
 }
 
 /**
+ * Retrieves the lens-specific configuration for a federation link between two spaces.
+ * @param {object} holosphere - The HoloSphere instance
+ * @param {string} spaceId - The ID of the source space.
+ * @param {string} targetSpaceId - The ID of the target space in the federation link.
+ * @param {string} [password] - Optional password for the source space.
+ * @returns {Promise<object|null>} - An object with 'federate' and 'notify' arrays, or null if not found.
+ */
+export async function getFederatedConfig(holosphere, spaceId, targetSpaceId, password = null) {
+    if (!holosphere || !spaceId || !targetSpaceId) {
+        throw new Error('getFederatedConfig: Missing required parameters');
+    }
+
+    try {
+        const fedInfo = await getFederation(holosphere, spaceId, password);
+
+        if (fedInfo && fedInfo.lensConfig && fedInfo.lensConfig[targetSpaceId]) {
+            return {
+                federate: fedInfo.lensConfig[targetSpaceId].federate || [],
+                notify: fedInfo.lensConfig[targetSpaceId].notify || []
+            };
+        }
+        return null; // Or return an empty config: { federate: [], notify: [] }
+    } catch (error) {
+        console.error(`Error getting federated config for ${spaceId} -> ${targetSpaceId}: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
  * Removes a federation relationship between spaces
  * @param {object} holosphere - The HoloSphere instance
  * @param {string} spaceId1 - The first space ID
@@ -272,43 +326,59 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         try {
             fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1);
         } catch (error) {
-            console.warn(`Could not get federation info for ${spaceId1}: ${error.message}`);
+            console.error(`Error getting fedInfo1 for ${spaceId1} during unfederate: ${error.message}`);
+            // If we can't get fedInfo1, we can't modify it. Decide if this is a critical failure.
+            // For now, we'll let it proceed to attempt metadata cleanup, but a throw here might be valid.
         }
         
-        if (!fedInfo1 || !fedInfo1.federation) {
-            console.warn(`Federation not found for space ${spaceId1}`);
-            // Continue anyway to clean up any potential metadata
+        if (!fedInfo1) {
+            // If fedInfo1 doesn't exist, log and proceed to metadata cleanup.
+            console.warn(`No federation info found for ${spaceId1}. Skipping its update.`);
         } else {
-            // Update first space federation info
+            // Ensure arrays exist
+            if (!fedInfo1.federation) fedInfo1.federation = [];
+            if (!fedInfo1.notify) fedInfo1.notify = [];
+            
+            // Update first space federation info - remove from both federation and notify arrays
+            const originalFederationLength = fedInfo1.federation.length;
+            const originalNotifyLength = fedInfo1.notify.length;
+            
             fedInfo1.federation = fedInfo1.federation.filter(id => id !== spaceId2);
+            fedInfo1.notify = fedInfo1.notify.filter(id => id !== spaceId2);
             fedInfo1.timestamp = Date.now();
+            
+            console.log(`Unfederate: Removed ${spaceId2} from ${spaceId1}: federation ${originalFederationLength} -> ${fedInfo1.federation.length}, notify ${originalNotifyLength} -> ${fedInfo1.notify.length}`);
             
             try {
                 await holosphere.putGlobal('federation', fedInfo1, password1);
-                console.log(`Updated federation info for ${spaceId1}`);
             } catch (error) {
-                console.warn(`Could not update federation info for ${spaceId1}: ${error.message}`);
+                console.error(`Failed to update fedInfo1 for ${spaceId1} during unfederate: ${error.message}`);
+                throw error; // RE-THROW to signal failure
             }
         }
 
-        // Update second space federation info if password provided
-        if (password2) {
+        // Update second space federation info (remove spaceId1 from spaceId2's notify list)
+        // This part is usually for full bidirectional unfederation cleanup.
+        // The original code only did this if password2 was provided.
+        if (password2) { // Retaining original condition for this block
             let fedInfo2 = null;
             try {
                 fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
             } catch (error) {
-                console.warn(`Could not get federation info for ${spaceId2}: ${error.message}`);
+                console.error(`Error getting fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
             }
             
-            if (fedInfo2 && fedInfo2.notify) {
+            if (!fedInfo2 || !fedInfo2.notify) {
+                console.warn(`No notify array found for ${spaceId2} or fedInfo2 is null. Skipping its update.`);
+            } else {
                 fedInfo2.notify = fedInfo2.notify.filter(id => id !== spaceId1);
                 fedInfo2.timestamp = Date.now();
                 
                 try {
                     await holosphere.putGlobal('federation', fedInfo2, password2);
-                    console.log(`Updated federation info for ${spaceId2}`);
                 } catch (error) {
-                    console.warn(`Could not update federation info for ${spaceId2}: ${error.message}`);
+                    console.error(`Failed to update fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
+                    throw error; // RE-THROW to signal failure
                 }
             }
         }
@@ -324,17 +394,17 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
             if (meta) {
                 meta.status = 'inactive';
                 meta.endedAt = Date.now();
-                await holosphere.putGlobal('federationMeta', meta);
-                console.log(`Updated federation metadata for ${spaceId1} and ${spaceId2}`);
+                await holosphere.putGlobal('federationMeta', meta); // Not re-throwing here as it's metadata cleanup
             }
         } catch (error) {
-            console.warn(`Could not update federation metadata: ${error.message}`);
+            console.warn(`Failed to update federationMeta during unfederate: ${error.message}`);
         }
 
         return true;
     } catch (error) {
-        console.error(`Federation removal failed: ${error.message}`);
-        throw error;
+        // This will catch errors re-thrown from putGlobal or from getGlobal if they occur before specific catches.
+        console.error(`Critical error during unfederate operation for ${spaceId1}-${spaceId2}: ${error.message}`);
+        throw error; // Ensure the main operation failure is propagated
     }
 }
 
@@ -373,42 +443,42 @@ export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = n
             
             // Save updated federation info
             await holosphere.putGlobal('federation', fedInfo, password1);
-            console.log(`Removed ${spaceId2} from ${spaceId1}'s notify list`);
             return true;
         } else {
-            console.log(`${spaceId2} not found in ${spaceId1}'s notify list`);
             return false;
         }
     } catch (error) {
-        console.error(`Remove notification failed: ${error.message}`);
         throw error;
     }
 }
 
 /**
- * Get and combine data from local and federated sources
+ * Get and combine data from local and federated sources.
+ * If `options.queryIds` is provided, fetches only those specific IDs using `get()`.
+ * Otherwise, falls back to fetching all data using `getAll()` (potentially inefficient).
+ * 
  * @param {HoloSphere} holosphere The HoloSphere instance
- * @param {string} holon The local holon name
+ * @param {string} holon The local holon name (used as the space ID for federation info)
  * @param {string} lens The lens to query
  * @param {Object} options Options for data retrieval and aggregation
- * @param {boolean} options.aggregate Whether to aggregate results by ID (default: false)
- * @param {string} options.idField The field to use as ID (default: '_id')
- * @param {string[]} options.sumFields Fields to sum during aggregation (default: [])
- * @param {string[]} options.concatArrays Array fields to concatenate during aggregation (default: [])
- * @param {boolean} options.removeDuplicates Whether to remove duplicates in concatenated arrays (default: true)
- * @param {Function} options.mergeStrategy Custom merge function for aggregation (default: null)
- * @param {boolean} options.includeLocal Whether to include local data (default: true)
- * @param {boolean} options.includeFederated Whether to include federated data (default: true)
- * @param {boolean} options.resolveReferences Whether to resolve federation references (default: true)
- * @param {number} options.maxFederatedSpaces Maximum number of federated spaces to query (default: -1 for all)
- * @param {number} options.timeout Timeout in milliseconds for federated queries (default: 10000)
+ * @param {string[]} [options.queryIds] Optional array of specific item IDs to fetch.
+ * @param {boolean} [options.aggregate=false] Whether to aggregate results by ID
+ * @param {string} [options.idField='id'] The field to use as ID
+ * @param {string[]} [options.sumFields=[]] Fields to sum during aggregation
+ * @param {string[]} [options.concatArrays=[]] Array fields to concatenate during aggregation
+ * @param {boolean} [options.removeDuplicates=true] Whether to remove duplicates in concatenated arrays
+ * @param {Function} [options.mergeStrategy=null] Custom merge function for aggregation
+ * @param {boolean} [options.includeLocal=true] Whether to include local data
+ * @param {boolean} [options.includeFederated=true] Whether to include federated data
+ * @param {boolean} [options.resolveReferences=true] Whether to resolve federation references
+ * @param {number} [options.maxFederatedSpaces=-1] Maximum number of federated spaces to query (-1 for all)
+ * @param {number} [options.timeout=10000] Timeout in milliseconds for federated queries
  * @returns {Promise<Array>} Combined array of local and federated data
  */
 export async function getFederated(holosphere, holon, lens, options = {}) {
-    console.log(`getFederated called with options:`, JSON.stringify(options));
-    
-    // Set default options
+    // Set default options and extract queryIds
     const { 
+        queryIds = null, // New option
         aggregate = false,
         idField = 'id',
         sumFields = [],
@@ -417,91 +487,85 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
         mergeStrategy = null,
         includeLocal = true,
         includeFederated = true,
-        resolveReferences = true, // Default to true
+        resolveReferences = true, 
         maxFederatedSpaces = -1,
         timeout = 10000
     } = options;
     
     console.log(`resolveReferences option: ${resolveReferences}`);
-    
+    console.log(`Querying specific IDs:`, queryIds ? queryIds.join(', ') : 'No (fetching all)');
+
     // Validate required parameters
     if (!holosphere || !holon || !lens) {
         throw new Error('Missing required parameters: holosphere, holon, and lens are required');
     }
 
-    // Get federation info for current space
-    // Use holon as the space ID
+    // Get federation info for current space (using holon as spaceId)
     const spaceId = holon;
     const fedInfo = await getFederation(holosphere, spaceId);
     
-    console.log(`Federation info retrieved:`, JSON.stringify(fedInfo));
-    
-    // Initialize result array and track processed IDs to avoid duplicates
-    const result = [];
-    const processedIds = new Set();
-    const references = new Map(); // To keep track of references for resolution
-    
-    // Process each federated space first to prioritize federation data
-    if (includeFederated && fedInfo && fedInfo.federation && fedInfo.federation.length > 0) {
-        console.log(`Found ${fedInfo.federation.length} federated spaces`);
-        
-        // Limit number of federated spaces to query
-        const federatedSpaces = maxFederatedSpaces === -1 ? fedInfo.federation : fedInfo.federation.slice(0, maxFederatedSpaces);
-        console.log(`Will process ${federatedSpaces.length} federated spaces: ${JSON.stringify(federatedSpaces)}`);
-        
-        // Process federated spaces
-        for (const federatedSpace of federatedSpaces) {
-            try {
-                console.log(`=== PROCESSING FEDERATED SPACE: ${federatedSpace} ===`);
-                
-                // Get all data for this lens from the federated space
-                const federatedItems = await holosphere.getAll(federatedSpace, lens);
-                console.log(`Got ${federatedItems.length} items from federated space ${federatedSpace}`);
-                console.log(`Federated items:`, JSON.stringify(federatedItems));
-                
-                // Process each item
-                for (const item of federatedItems) {
-                    if (!item) {
-                        console.log('Item is null or undefined, skipping');
-                        continue;
-                    }
-                    
-                    console.log(`Checking item for ID field '${idField}':`, item);
-                    
-                    if (!item[idField]) {
-                        console.log(`Item missing ID field '${idField}', available fields:`, Object.keys(item));
-                        continue;
-                    }
-                    
-                    // For now, just add this item to results, we'll resolve references later
-                    result.push(item);
-                    processedIds.add(item[idField]);
-                }
-            } catch (error) {
-                console.warn(`Error processing federated space ${federatedSpace}: ${error.message}`);
-            }
-        }
-    }
-    
-    // Now get local data if requested
+    // Initialize result array and track processed IDs to avoid duplicates/redundant fetches
+    const fetchedItems = new Map(); // Use Map to store fetched items by ID
+    const processedIds = new Set(); // Track IDs added to the final result
+
+    const fetchPromises = [];
+
+    // Determine list of spaces to query (local + federated)
+    let spacesToQuery = [];
     if (includeLocal) {
-        const localData = await holosphere.getAll(holon, lens);
-        console.log(`Got ${localData.length} local items from holon ${holon}`);
-        
-        // Add each local item to results, but only if not already processed
-        for (const item of localData) {
-            if (item && item[idField] && !processedIds.has(item[idField])) {
-                result.push(item);
-                processedIds.add(item[idField]);
-            } else if (item && item[idField]) {
-                console.log(`Local item ${item[idField]} already in result from federation, skipping`);
+        spacesToQuery.push(holon); // Add local holon first
+    }
+    if (includeFederated && fedInfo && fedInfo.federation && fedInfo.federation.length > 0) {
+        const federatedSpaces = maxFederatedSpaces === -1 ? fedInfo.federation : fedInfo.federation.slice(0, maxFederatedSpaces);
+        spacesToQuery = spacesToQuery.concat(federatedSpaces);
+    }
+
+    // Fetch data from all relevant spaces
+    for (const currentSpace of spacesToQuery) {
+        if (queryIds && Array.isArray(queryIds)) {
+            // --- Fetch specific IDs using holosphere.get --- 
+            console.log(`Fetching specific IDs from ${currentSpace}: ${queryIds.join(', ')}`);
+            for (const itemId of queryIds) {
+                if (fetchedItems.has(itemId)) continue; // Skip if already fetched
+                fetchPromises.push(
+                    holosphere.get(currentSpace, lens, itemId)
+                        .then(item => {
+                            if (item) {
+                                fetchedItems.set(itemId, item);
+                            }
+                        })
+                        .catch(err => console.warn(`Error fetching item ${itemId} from ${currentSpace}: ${err.message}`))
+                );
             }
+        } else {
+            // --- Fetch all data using holosphere.getAll (Fallback - inefficient) ---
+            if(currentSpace === holon && includeLocal) { // Only warn once for local
+                 console.warn(`getFederated: No queryIds provided. Falling back to fetching ALL items from ${currentSpace} using getAll. This can be inefficient.`);
+            }
+            console.log(`Fetching ALL items from ${currentSpace}`);
+            fetchPromises.push(
+                holosphere.getAll(currentSpace, lens)
+                    .then(items => {
+                        for (const item of items) {
+                            if (item && item[idField] && !fetchedItems.has(item[idField])) {
+                                fetchedItems.set(item[idField], item);
+                            }
+                        }
+                    })
+                    .catch(err => console.warn(`Error fetching all items from ${currentSpace}: ${err.message}`))
+            );
         }
     }
-    
+
+    // Wait for all fetches to complete
+    await Promise.all(fetchPromises);
+
+    // Convert Map values to array for processing
+    const result = Array.from(fetchedItems.values());
+
     // Now resolve references if needed
-    if (resolveReferences) {
-        console.log(`Resolving references for ${result.length} items`);
+    if (resolveReferences && result.length > 0) {
+        console.log(`Resolving references for ${result.length} fetched items`);
         
         for (let i = 0; i < result.length; i++) {
             const item = result[i];
@@ -542,9 +606,7 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                                     timestamp: Date.now()
                                 }
                             };
-                            console.log(`Reference resolved successfully via soul path, processed item:`, JSON.stringify(result[i]));
                         } else {
-                            console.warn(`Could not resolve reference: original data not found at extracted path`);
                             // Instead of leaving the original reference, create an error object
                             result[i] = {
                                 id: item.id,
@@ -572,7 +634,6 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                         };
                     }
                 } catch (refError) {
-                    console.warn(`Error resolving reference by soul in getFederated: ${refError.message}`);
                     // Instead of leaving the original reference, create an error object
                     result[i] = {
                         id: item.id,
@@ -615,12 +676,10 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                                 timestamp: Date.now()
                             }
                         };
-                        console.log(`Legacy reference resolved successfully, processed item:`, JSON.stringify(result[i]));
                     } else {
                         console.warn(`Could not resolve legacy reference: original data not found`);
                     }
                 } catch (refError) {
-                    console.warn(`Error resolving legacy reference in getFederated: ${refError.message}`);
                 }
             }
         }
@@ -692,9 +751,11 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
  * @param {string} lens - The lens identifier
  * @param {object} data - The data to propagate
  * @param {object} [options] - Propagation options
- * @param {boolean} [options.useReferences=true] - Whether to use references instead of duplicating data
+ * @param {boolean} [options.useHolograms=true] - Use holograms for propagation (default: true)
  * @param {string[]} [options.targetSpaces] - Specific target spaces to propagate to (defaults to all federated spaces)
  * @param {string} [options.password] - Password for accessing the source holon (if needed)
+ * @param {boolean} [options.propagateToParents=true] - Whether to automatically propagate to parent hexagons (default: true)
+ * @param {number} [options.maxParentLevels=15] - Maximum number of parent levels to propagate to (default: 15)
  * @returns {Promise<object>} - Result with success count and errors
  */
 export async function propagate(holosphere, holon, lens, data, options = {}) {
@@ -702,127 +763,256 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         throw new Error('propagate: Missing required parameters');
     }
     // Default propagation options
-    const {
-        useReferences = true,
-        targetSpaces = null,
-        password = null
+    const { 
+        useHolograms = true, 
+        targetSpaces = null, 
+        password = null,
+        propagateToParents = true,
+        maxParentLevels = 15
     } = options;
 
     const result = {
         success: 0,
         errors: 0,
-        errorDetails: [],
-        propagated: false,
-        referencesUsed: useReferences
+        skipped: 0,
+        messages: [],
+        parentPropagation: {
+            success: 0,
+            errors: 0,
+            skipped: 0,
+            messages: []
+        }
     };
 
     try {
+        // ================================ FEDERATION PROPAGATION ================================
+        
         // Get federation info for this holon using getFederation
         const fedInfo = await getFederation(holosphere, holon, password);
         
-        // If no federation info or no federation list, return with message
-        if (!fedInfo || !fedInfo.federation || fedInfo.federation.length === 0) {
-            return {
-                ...result,
-                message: `No federation found for ${holon}`
-            };
+        // Only perform federation propagation if there's valid federation info
+        if (fedInfo && fedInfo.federation && fedInfo.federation.length > 0 && fedInfo.notify && fedInfo.notify.length > 0) {
+            // Filter federation spaces to those in notify list
+            let spaces = fedInfo.notify;
+            
+            // Further filter by targetSpaces if provided
+            if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
+                spaces = spaces.filter(space => targetSpaces.includes(space));
+            }
+            
+            if (spaces.length > 0) {
+                // Filter spaces based on lens configuration
+                spaces = spaces.filter(targetSpace => {
+                    const spaceConfig = fedInfo.lensConfig?.[targetSpace];
+                    if (!spaceConfig) {
+                        result.messages.push(`No lens configuration for target space ${targetSpace}. Skipping propagation of lens '${lens}'.`);
+                        result.skipped++;
+                        return false;
+                    }
+
+                    // Ensure .federate is an array before calling .includes
+                    const federateLenses = Array.isArray(spaceConfig.federate) ? spaceConfig.federate : [];
+
+                    const shouldFederate = federateLenses.includes('*') || federateLenses.includes(lens);
+                    
+                    // Propagation now only depends on the 'federate' list configuration for the lens
+                    const shouldPropagate = shouldFederate;
+                    
+                    if (!shouldPropagate) {
+                        result.messages.push(`Propagation of lens '${lens}' to target space ${targetSpace} skipped: lens not in 'federate' configuration.`);
+                        result.skipped++;
+                    }
+                    
+                    return shouldPropagate;
+                });
+
+                if (spaces.length > 0) {
+                    // Check if data is already a hologram
+                    const isAlreadyHologram = holosphere.isHologram(data);
+
+                    // For each target space, propagate the data
+                    const propagatePromises = spaces.map(async (targetSpace) => {
+                        try {
+                            let payloadToPut;
+                            const federationMeta = {
+                                origin: holon,       // The space from which this data is being propagated
+                                sourceLens: lens,    // The lens from which this data is being propagated
+                                propagatedAt: Date.now(),
+                                originalId: data.id
+                            };
+
+                            if (useHolograms && !isAlreadyHologram) {
+                                // Create a new hologram referencing the original data
+                                const newHologram = holosphere.createHologram(holon, lens, data);
+                                payloadToPut = {
+                                    ...newHologram, // This will be { id: data.id, soul: 'path/to/original' }
+                                    _federation: federationMeta
+                                };
+                            } else {
+                                // Propagate existing data (could be a full object or an existing hologram)
+                                // Make a shallow copy and update/add _federation metadata
+                                payloadToPut = {
+                                    ...data, 
+                                    _federation: {
+                                        ...(data._federation || {}), // Preserve existing _federation fields if any
+                                        ...federationMeta // Add/overwrite with current propagation info
+                                    }
+                                };
+                            }
+                            
+                            // Store in the target space with redirection disabled and no further auto-propagation
+                            await holosphere.put(targetSpace, lens, payloadToPut, null, { 
+                                disableHologramRedirection: true, 
+                                autoPropagate: false 
+                            });
+
+                            result.success++;
+                            return true;
+                        } catch (error) {
+                            result.errors++;
+                            result.messages.push(`Error propagating ${data.id} to ${targetSpace}: ${error.message}`);
+                            return false;
+                        }
+                    });
+                    
+                    await Promise.all(propagatePromises);
+                } else {
+                    result.messages.push('No valid target spaces for federation propagation after lens filtering.');
+                }
+            } else {
+                result.messages.push('No valid target spaces found for federation propagation.');
+            }
+        } else {
+            result.messages.push(`No federation found for ${holon} or no notification targets available.`);
         }
         
-        // If no notification list or it's empty, return with message
-        if (!fedInfo.notify || fedInfo.notify.length === 0) {
-            return {
-                ...result,
-                message: `No notification targets found for ${holon}`
-            };
-        }
+        // ================================ PARENT PROPAGATION ================================
         
-        // Filter federation spaces to those in notify list
-        let spaces = fedInfo.notify;
-        
-        // Further filter by targetSpaces if provided
-        if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
-            spaces = spaces.filter(space => targetSpaces.includes(space));
-        }
-        
-        if (spaces.length === 0) {
-            return {
-                ...result,
-                message: 'No valid target spaces found after filtering'
-            };
-        }
-        
-        // Check if data is already a reference
-        const isAlreadyReference = holosphere.isReference(data);
-        
-        // For each target space, propagate the data
-        const propagatePromises = spaces.map(async (targetSpace) => {
+        // Check if we should propagate to parent hexagons
+        if (propagateToParents) {
+            
             try {
-                // If using references and data isn't already a reference, create a reference
-                if (useReferences && !isAlreadyReference) {
-                    // Create a reference object using the dedicated utility
-                    const reference = holosphere.createReference(holon, lens, data);
-                    
-                    // Add federation metadata
-                    reference._federation = {
-                        origin: holon,
-                        lens: lens,
-                        timestamp: Date.now()
-                    };
-                    
-                    console.log(`Using reference: ${reference.soul} for data: ${data.id}`);
-                    
-                    // Store the reference in the target space without propagation
-                    await holosphere.put(targetSpace, lens, reference, null, { autoPropagate: false });
-                    
-                    result.success++;
-                    return true;
-                } 
-                // If already a reference, propagate it as is
-                else if (isAlreadyReference) {
-                    // Add federation metadata if needed
-                    const referenceToStore = {
-                        ...data,
-                        _federation: data._federation || {
-                            origin: holon,
-                            lens: lens,
-                            timestamp: Date.now()
+                // Validate if the holon is a proper H3 hexagon
+                // H3 hexagons should start with '8' and have a valid format
+                let holonResolution;
+                let isValidH3 = false;
+                
+                // First check: H3 hexagons should start with '8' and be at least 15 characters long
+                if (typeof holon === 'string' && /^[8][0-9A-Fa-f]+$/.test(holon) && holon.length >= 15) {
+                    try {
+                        holonResolution = h3.getResolution(holon);
+                        // Additional validation: resolution should be >= 0 and <= 15
+                        if (holonResolution >= 0 && holonResolution <= 15) {
+                            isValidH3 = true;
+                        } else {
+                            console.log(`[Federation] Holon ${holon} has invalid resolution: ${holonResolution}`);
                         }
-                    };
+                    } catch (error) {
+                        console.log(`[Federation] Holon ${holon} failed H3 validation: ${error.message}`);
+                    }
+                } else {
+                }
+                
+                if (!isValidH3) {
+                    result.parentPropagation.messages.push(`Holon ${holon} is not a valid H3 hexagon. Skipping parent propagation.`);
+                    result.parentPropagation.skipped++;
+                }
+                
+                if (isValidH3 && holonResolution !== undefined) {
+                    // Get all parent hexagons up to the specified max levels
+                    const parentHexagons = [];
+                    let currentHolon = holon;
+                    let currentRes = holonResolution;
+                    let levelsProcessed = 0;
                     
-                    await holosphere.put(targetSpace, lens, referenceToStore, null, { autoPropagate: false });
-                    result.success++;
-                    return true;
-                } 
-                // Otherwise, store a full copy without propagation
-                else {
-                    const dataToStore = {
-                        ...data,
-                        _federation: {
-                            origin: holon,
-                            lens: lens,
-                            timestamp: Date.now()
+                    while (currentRes > 0 && levelsProcessed < maxParentLevels) {
+                        try {
+                            const parent = h3.cellToParent(currentHolon, currentRes - 1);
+                            parentHexagons.push(parent);
+                            currentHolon = parent;
+                            currentRes--;
+                            levelsProcessed++;
+                        } catch (error) {
+                            console.error(`[Federation] Error getting parent for ${currentHolon}: ${error.message}`);
+                            result.parentPropagation.messages.push(`Error getting parent for ${currentHolon}: ${error.message}`);
+                            result.parentPropagation.errors++;
+                            break;
                         }
-                    };
-                    await holosphere.put(targetSpace, lens, dataToStore, null, { autoPropagate: false });
-                    result.success++;
-                    return true;
+                    }
+                    
+                    if (parentHexagons.length > 0) {
+                        result.parentPropagation.messages.push(`Found ${parentHexagons.length} parent hexagons to propagate to: ${parentHexagons.join(', ')}`);
+                        
+                        // Check if data is already a hologram (reuse from federation section)
+                        const isAlreadyHologram = holosphere.isHologram(data);
+                        
+                        // Propagate to each parent hexagon
+                        const parentPropagatePromises = parentHexagons.map(async (parentHexagon) => {
+                            try {
+                                let payloadToPut;
+                                const parentFederationMeta = {
+                                    origin: holon,           // The original holon from which this data is being propagated
+                                    sourceLens: lens,        // The lens from which this data is being propagated
+                                    propagatedAt: Date.now(),
+                                    originalId: data.id,
+                                    propagationType: 'parent', // Indicate this is parent propagation
+                                    parentLevel: holonResolution - h3.getResolution(parentHexagon) // How many levels up
+                                };
+
+                                if (useHolograms && !isAlreadyHologram) {
+                                    // Create a new hologram referencing the original data
+                                    const newHologram = holosphere.createHologram(holon, lens, data);
+                                    payloadToPut = {
+                                        ...newHologram, // This will be { id: data.id, soul: 'path/to/original' }
+                                        _federation: parentFederationMeta
+                                    };
+                                } else {
+                                    // Propagate existing data (could be a full object or an existing hologram)
+                                    // Make a shallow copy and update/add _federation metadata
+                                    payloadToPut = {
+                                        ...data, 
+                                        _federation: {
+                                            ...(data._federation || {}), // Preserve existing _federation fields if any
+                                            ...parentFederationMeta // Add/overwrite with current propagation info
+                                        }
+                                    };
+                                }
+                                
+                                // Store in the parent hexagon with redirection disabled and no further auto-propagation
+                                await holosphere.put(parentHexagon, lens, payloadToPut, null, { 
+                                    disableHologramRedirection: true, 
+                                    autoPropagate: false 
+                                });
+
+                                console.log(`[Federation] Successfully propagated to parent hexagon: ${parentHexagon}`);
+                                result.parentPropagation.success++;
+                                return true;
+                            } catch (error) {
+                                console.error(`[Federation] Error propagating ${data.id} to parent hexagon ${parentHexagon}: ${error.message}`);
+                                result.parentPropagation.errors++;
+                                result.parentPropagation.messages.push(`Error propagating ${data.id} to parent hexagon ${parentHexagon}: ${error.message}`);
+                                return false;
+                            }
+                        });
+                        
+                        await Promise.all(parentPropagatePromises);
+                    } else {
+                        result.parentPropagation.messages.push(`No parent hexagons found for ${holon} (already at resolution 0 or max levels reached)`);
+                        result.parentPropagation.skipped++;
+                    }
                 }
             } catch (error) {
-                result.errors++;
-                result.errorDetails.push({
-                    space: targetSpace,
-                    error: error.message
-                });
-                return false;
+                console.error(`[Federation] Error during parent propagation: ${error.message}`);
+                result.parentPropagation.errors++;
+                result.parentPropagation.messages.push(`Error during parent propagation: ${error.message}`);
             }
-        });
+        }
         
-        await Promise.all(propagatePromises);
+        // ================================ END PARENT PROPAGATION ================================
         
-        result.propagated = result.success > 0;
+        result.propagated = result.success > 0 || result.parentPropagation.success > 0;
         return result;
     } catch (error) {
-        console.error('Error in propagate:', error);
         return {
             ...result,
             error: error.message
@@ -894,7 +1084,6 @@ export async function updateFederatedMessages(holosphere, originalChatId, messag
         try {
             await updateCallback(msg.chatId, msg.messageId);
         } catch (error) {
-            console.warn(`Failed to update federated message in chat ${msg.chatId}:`, error);
         }
     }
 }
@@ -981,13 +1170,11 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
                         
                         // Save partner's updated federation info
                         await holosphere.putGlobal('federation', partnerFedInfo);
-                        console.log(`Updated federation info for partner ${partnerSpace}`);
                         result.partnersNotified++;
                         return true;
                     }
                     return false;
                 } catch (error) {
-                    console.warn(`Could not update federation info for partner ${partnerSpace}: ${error.message}`);
                     result.errors.push({
                         partner: partnerSpace,
                         error: error.message
@@ -1013,10 +1200,8 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
                         meta.status = 'inactive';
                         meta.endedAt = Date.now();
                         await holosphere.putGlobal('federationMeta', meta);
-                        console.log(`Updated federation metadata for ${spaceId} and ${partnerSpace}`);
                     }
                 } catch (error) {
-                    console.warn(`Could not update federation metadata for ${partnerSpace}: ${error.message}`);
                 }
             }
         }
@@ -1024,7 +1209,6 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
         result.success = true;
         return result;
     } catch (error) {
-        console.error(`Federation reset failed: ${error.message}`);
         return {
             ...result,
             success: false,
@@ -1032,3 +1216,19 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
         };
     }
 } 
+
+// Export all federation operations as default
+export default {
+    federate,
+    subscribeFederation,
+    getFederation,
+    getFederatedConfig,
+    unfederate,
+    removeNotify,
+    getFederated,
+    propagate,
+    federateMessage,
+    getFederatedMessages,
+    updateFederatedMessages,
+    resetFederation
+}; 
