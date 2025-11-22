@@ -25,7 +25,7 @@ class DB {
         this.holosphere = new HoloSphere({
             appName: appName,
             privateKey: privateKey,  // Use persistent key
-            logLevel: 'WARN',
+            logLevel: 'INFO',
             relays: getRelays('production') // Use Nostr relays for distributed sync
         });
         this.db = 'nostr'; // Using Nostr relays for distributed storage

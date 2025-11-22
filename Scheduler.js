@@ -4,6 +4,7 @@ import i18next from 'i18next';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js'; // Import UTC plugin
 import timezone from 'dayjs/plugin/timezone.js'; // Import timezone plugin
+import { log } from './utils/logger.js';
 
 // Extend dayjs with plugins
 dayjs.extend(utc);
@@ -38,7 +39,6 @@ class Scheduler {
         
         // Add bot actions for callbacks
         this.bot.action(/schedule_quest_(.+)/, async (ctx) => {
-            console.log("SCHEDULE ACTION - STARTING");
             return await this.schedule(ctx);
         });
         
@@ -598,7 +598,6 @@ class Scheduler {
             // Schedule reminder using the scheduler instead of setTimeout
             await this.scheduleOneTimeReminder(quest, ctx);
             
-            console.log(`Scheduled reminder for quest ${quest.id} at ${selectedDate.toISOString()} (UTC)`); // Log ISO string (UTC)
 
             // Get language
             const language = await this.settings.getLanguage(chatId);
@@ -621,14 +620,9 @@ class Scheduler {
     async scheduleOneTimeReminder(quest, ctx) {
         try {
             // Enhanced debug logging to help diagnose issues
-            console.log(`scheduleOneTimeReminder called for quest: ${quest.id} (${quest.title})`);
-            console.log(`Quest chat ID: ${quest.chat}, When date: ${quest.when}`);
-            console.log(`Quest status: ${quest.status}, Quest type: ${quest.type}`);
             
             if (ctx && ctx.callbackQuery) {
-                console.log(`Context chat ID: ${ctx.callbackQuery.message.chat.id}`);
-            } else {
-                console.log(`Context does not have callbackQuery, using quest.chat: ${quest.chat}`);
+                // Context available
             }
             
             if (!quest.when) {
@@ -639,7 +633,6 @@ class Scheduler {
             const reminderDate = new Date(quest.when);
             const now = new Date();
             
-            console.log(`Current time: ${now}, Reminder time: ${reminderDate}`);
             
             // If the date is in the past, don't schedule
             if (reminderDate <= now) {
@@ -653,7 +646,6 @@ class Scheduler {
                 console.log(`Cancelled existing reminder ${quest.reminderId} for quest ${quest.id}`);
             }
             
-            console.log(`Creating one-time reminder for quest ${quest.id} (${quest.title}) at ${reminderDate}`);
             
             // Create a unique ID for this reminder job
             const reminderId = `reminder_${quest.id}_${now.getTime()}`;
@@ -665,7 +657,6 @@ class Scheduler {
             const month = reminderDate.getUTCMonth() + 1; // Months are 1-indexed in JS, Cron months are 1-indexed
             const cronExpression = `${minute} ${hour} ${day} ${month} *`; // At specific UTC minute/hour/day/month
 
-            console.log(`Reminder cron expression (UTC): ${cronExpression}`);
 
             // Create the job, explicitly setting the timezone to UTC
             const job = new CronJob(cronExpression, async() => {
@@ -744,7 +735,6 @@ class Scheduler {
             // Start the job
             job.start();
             
-            console.log(`One-time reminder ${reminderId} scheduled for ${reminderDate}`);
             
             // Save the reminder ID with the quest for potential cancellation
             quest.reminderId = reminderId;
@@ -770,11 +760,6 @@ class Scheduler {
 
     async saveReminderRecord(reminder) {
         try {
-            console.log(`Saving reminder record: ${reminder.id} for quest ${reminder.questId}`);
-
-            // Debug: Log the reminder object to see what we're trying to save
-            console.log('Reminder object to save:', JSON.stringify(reminder, null, 2));
-
             // Store in the global reminders table
             await this.db.holosphere.putGlobal('reminders', reminder.id, reminder);
 
@@ -784,11 +769,9 @@ class Scheduler {
                 id: lookupKey,
                 reminderId: reminder.id
             };
-            console.log('Lookup data to save:', JSON.stringify(lookupData, null, 2));
 
             await this.db.holosphere.putGlobal('reminderslookup', lookupKey, lookupData);
 
-            console.log(`Reminder ${reminder.id} saved to global table`);
             return true;
         } catch (error) {
             console.error('Error saving reminder record:', error);
@@ -922,17 +905,9 @@ class Scheduler {
     }
 
     async schedule(ctx) {
-        console.log("SCHEDULE ACTION - STARTING");
         try {
             const chatId = ctx.callbackQuery.message.chat.id;
             const questId = ctx.callbackQuery.data.split('_')[3];
-
-            console.log('Schedule parameters:', {
-                chatId,
-                questId,
-                callbackData: ctx.callbackQuery.data,
-                messageId: ctx.callbackQuery.message.message_id
-            });
             
             // Verify quest exists
             const quest = await this.db.get(`${chatId}/quests`, questId);
@@ -948,26 +923,39 @@ class Scheduler {
 
             // Store quest ID for later retrieval
             this.calendar.questIds.set(chatId, questId);
-            console.log('Stored quest ID in calendar:', questId);
 
             // Generate calendar markup
             const now = new Date();
             now.setDate(1);
             const calendarMarkup = this.calendar.createNavigationKeyboard(now, chatId);
-            console.log('Calendar markup generated');
-            
-            // Get the original message text (without the UTC note)
-            const originalMessage = await this.quests.createMessage(quest, language);
-            
-            // Show calendar - edit text and markup
-            await ctx.editMessageText(
-                originalMessage,
-                { 
-                    parse_mode: 'Markdown', // Assuming createMessage uses Markdown
-                    reply_markup: calendarMarkup 
-                }
-            );
-            console.log('Calendar displayed');
+
+            // Check if quest is shown as image
+            const showImages = process.env.SHOW_QUESTS_AS_IMAGES === 'true';
+
+            if (showImages) {
+                // For image messages, only edit the reply markup
+                await ctx.editMessageReplyMarkup(calendarMarkup).catch((err) => {
+                    // Ignore "message is not modified" error
+                    if (!err.response?.description?.includes('message is not modified')) {
+                        throw err;
+                    }
+                });
+            } else {
+                // For text messages, edit both text and markup
+                const originalMessage = await this.quests.createMessage(quest, language);
+                await ctx.editMessageText(
+                    originalMessage,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: calendarMarkup
+                    }
+                ).catch((err) => {
+                    // Ignore "message is not modified" error
+                    if (!err.response?.description?.includes('message is not modified')) {
+                        throw err;
+                    }
+                });
+            }
 
             await ctx.answerCbQuery().catch()
         } catch (error) {
@@ -1220,7 +1208,6 @@ class Scheduler {
                             job.start();
                             
                             loadedReminders++;
-                            console.log(`Successfully loaded reminder ${reminder.id} for quest ${reminder.questId}`);
                             
                         } catch (error) {
                             console.error(`Error verifying quest for reminder ${reminder.id}:`, error);
@@ -1233,10 +1220,10 @@ class Scheduler {
                     }
                 }
             } else {
-                console.log('No saved reminders found');
+                log.debug('No saved reminders found');
             }
-            
-            console.log(`Successfully loaded ${loadedReminders} reminder(s)`);
+
+            log.info(`Loaded ${loadedReminders} reminder(s)`);
             
         } catch (error) {
             console.error('Error loading reminders:', error);

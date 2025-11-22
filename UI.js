@@ -150,7 +150,7 @@ class UI {
 
   async leaderboard(ctx) {
     let chatID = ctx.message.chat.id
-    let users = await this.db.holosphere.getAll(chatID, 'users')
+    let users = await this.db.holosphere.getAll(chatID.toString(), 'users')
     const language = await this.settings.getLanguage(chatID)
 
     // Assuming Expenses class instance is available via this.bot.expenses
@@ -300,8 +300,8 @@ class UI {
     const threadId = isTopic ? ctx.message.message_thread_id : null;
     
       // Wait for users and quests to be retrieved using holosphere.getAll with holograms
-    let users = await this.db.holosphere.getAll(chatID, 'users')
-    let quests = await this.db.holosphere.getAll(chatID, 'quests')
+    let users = await this.db.holosphere.getAll(chatID.toString(), 'users')
+    let quests = await this.db.holosphere.getAll(chatID.toString(), 'quests')
 
     // If in a topic, filter quests by message_thread_id
     if (isTopic && threadId) {
@@ -516,7 +516,7 @@ class UI {
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Get requests from quests collection using holosphere.getAll with holograms
-    let allQuests = await this.db.holosphere.getAll(chatID, 'quests') || []
+    let allQuests = await this.db.holosphere.getAll(chatID.toString(), 'quests') || []
     let requests = allQuests.filter(quest => quest.type === 'request')
 
     // If in a topic, filter further by message_thread_id
@@ -562,7 +562,7 @@ class UI {
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Get offers from quests collection using holosphere.getAll with holograms
-    let allQuests = await this.db.holosphere.getAll(chatID, 'quests') || []
+    let allQuests = await this.db.holosphere.getAll(chatID.toString(), 'quests') || []
     let offers = allQuests.filter(quest => quest.type === 'offer')
 
     // If in a topic, filter further by message_thread_id

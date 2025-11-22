@@ -98,7 +98,7 @@ export const serviceDefinitions = {
       await i18next.init({
         resources,
         fallbackLng: 'en',
-        debug: config.isDevelopment,
+        debug: process.env.LOG_LEVEL === 'debug' && process.env.I18N_DEBUG === 'true',
         interpolation: {
           escapeValue: false,
         },
@@ -374,11 +374,11 @@ export const serviceDefinitions = {
 
   // Web Server (should be last to avoid port conflicts during development)
   server: {
-    factory: ({ telebot, database }) => {
-      return new Server(telebot, database.holosphere.gun);
+    factory: ({ telebot }) => {
+      return new Server(telebot);
     },
     singleton: true,
-    dependencies: ['telebot', 'database'],
+    dependencies: ['telebot'],
   },
 };
 

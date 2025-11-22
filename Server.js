@@ -4,6 +4,7 @@ import path from 'path';
 import axios from 'axios';
 import https from 'https';
 import crypto from 'crypto';
+import { log } from './utils/logger.js';
 
 class Server {
   constructor(bot) {
@@ -57,7 +58,7 @@ class Server {
         // SSL certificate configuration with error handling
         const sslOptions = this.getSSLOptions();
         if (!sslOptions) {
-          console.error('Failed to load SSL certificates. Server will not start.');
+          log.warn('SSL certificates not found, server will not start in production mode');
           return;
         }
 
@@ -156,7 +157,7 @@ class Server {
       const certPath = process.env.SSL_CERT_PATH || 'certs/certificate.crt';
 
       if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
-        console.error('SSL certificate files not found');
+        // SSL certs not needed in development mode
         return null;
       }
 

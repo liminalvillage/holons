@@ -1075,7 +1075,14 @@ export default class Quests {
             if (showImages) {
                 log.info('Updating reply markup for image mode');
                 await ctx.telegram.editMessageReplyMarkup(chatId, messageId, null, markupConfig.reply_markup)
-                    .catch((err) => { log.error('Error editing reply markup', err); });
+                    .catch((err) => {
+                        // Ignore "message is not modified" error - it just means nothing changed
+                        if (err.response?.description?.includes('message is not modified')) {
+                            log.debug('Message markup unchanged, skipping update');
+                        } else {
+                            log.error('Error editing reply markup', err);
+                        }
+                    });
 
                 if (this.ui?.getQuestImage) {
                     this.queueImageUpdate(ctx, quest, chatId, messageId, markupConfig);
@@ -1084,7 +1091,14 @@ export default class Quests {
                 log.info('Updating message text for text mode');
                 const message = await this.createMessage(quest, language);
                 await ctx.telegram.editMessageText(chatId, messageId, null, message, markupConfig)
-                    .catch((err) => { log.error('Error editing message text', err); });
+                    .catch((err) => {
+                        // Ignore "message is not modified" error - it just means nothing changed
+                        if (err.response?.description?.includes('message is not modified')) {
+                            log.debug('Message text unchanged, skipping update');
+                        } else {
+                            log.error('Error editing message text', err);
+                        }
+                    });
             }
         } catch (err) {
             log.error('Error in updateQuestMessage', err);

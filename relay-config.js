@@ -8,21 +8,14 @@
  */
 
 export const RELAY_CONFIG = {
-  // Production relays - UPDATED to use open relays that accept events
-  // Previous relays (nos.lol, at.nostrworks.com, btc.klendazu.com) were rejecting events:
-  //   - nos.lol: requires 28-bit Proof of Work
-  //   - at.nostrworks.com: whitelist only
-  //   - btc.klendazu.com: connection timeout
+  // Production relays - Using holons.io relay
   production: [
-    'wss://relay.damus.io',           // Open relay - accepts events
-    'wss://relay.nostr.band',         // Open relay - accepts events
+    'wss://relay.holons.io',          // Primary holons relay
   ],
 
-  // Development relays - Use open relays for testing
+  // Development relays - Using holons.io relay
   development: [
-    'wss://relay.damus.io',
-    'wss://relay.nostr.band',
-    'wss://nostr.wine',               // Requires signup but still useful
+    'wss://relay.holons.io',          // Primary holons relay
   ],
 
   // Local only - No network sync (for offline testing)

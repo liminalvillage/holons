@@ -492,6 +492,11 @@ export class Calendar {
         for(j = 0; j < 7; j++) {
             cnk.inline_keyboard[1][j] = {text: lang.week[this.options.language][this.weekDaysButtons(j)], callback_data: ' '};
         }
+        // Get current date for highlighting
+        var today = new Date();
+        var isCurrentMonth = date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth();
+        var currentDay = today.getDate();
+
         var d = 1;
         for (i = 2; i <= cr - 2; i++) {
             cnk.inline_keyboard.push([{},{},{},{},{},{},{}]);
@@ -500,7 +505,9 @@ export class Calendar {
                     cnk.inline_keyboard[i][j] = {text: ' ', callback_data: ' '};
                 } else {
                     if ((!this.options.start_date || (this.options.start_date && dayjs(date).date(d).hour(0).diff(dayjs(this.options.start_date).hour(0), 'day') >= 0)) && (!this.options.stop_date || (this.options.stop_date && dayjs(this.options.stop_date).hour(0).diff(dayjs(date).date(d).hour(0), 'day') >= 0))) {
-                        cnk.inline_keyboard[i][j] = {text: d, callback_data: 'n_' + date.getFullYear() + '-' + this.twoDigits(date.getMonth() + 1) + '-' + this.twoDigits(d) + '_0'};
+                        // Add parentheses around current date
+                        var dayText = (isCurrentMonth && d === currentDay) ? '(' + d + ')' : d;
+                        cnk.inline_keyboard[i][j] = {text: dayText, callback_data: 'n_' + date.getFullYear() + '-' + this.twoDigits(date.getMonth() + 1) + '-' + this.twoDigits(d) + '_0'};
                     } else {
                         cnk.inline_keyboard[i][j] = {text: ' ', callback_data: ' '};
                     }

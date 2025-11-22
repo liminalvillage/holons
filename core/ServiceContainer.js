@@ -1,22 +1,5 @@
 import { config } from '../utils/config.js';
-
-// Simple logger for ServiceContainer to avoid circular dependency
-const simpleLog = {
-  debug: (message, meta = {}) => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[DEBUG] ${message}`, meta);
-    }
-  },
-  info: (message, meta = {}) => {
-    console.log(`[INFO] ${message}`, meta);
-  },
-  error: (message, meta = {}) => {
-    console.error(`[ERROR] ${message}`, meta);
-  },
-  warn: (message, meta = {}) => {
-    console.warn(`[WARN] ${message}`, meta);
-  }
-};
+import { log } from '../utils/logger.js';
 
 /**
  * Dependency Injection Container for HolonsBot
@@ -41,7 +24,7 @@ export class ServiceContainer {
       initialized: false,
     });
 
-    simpleLog.debug('Service registered', { name, dependencies: options.dependencies });
+    log.debug('Service registered', { name, dependencies: options.dependencies });
   }
 
   /**
@@ -83,12 +66,12 @@ export class ServiceContainer {
       this.services.set(name, instance);
       this.initialized.add(name);
 
-      simpleLog.debug('Service initialized', { name });
+      log.debug('Service initialized', { name });
       return instance;
 
     } catch (error) {
       this.services.delete(name);
-      simpleLog.error('Failed to initialize service', { name, error: error.message });
+      log.error('Failed to initialize service', { name, error: error.message });
       throw error;
     }
   }
@@ -112,7 +95,7 @@ export class ServiceContainer {
    */
   async initializeAll() {
     const serviceNames = this.getServiceNames();
-    simpleLog.info('Initializing all services', { count: serviceNames.length, services: serviceNames });
+    log.info('Initializing all services', { count: serviceNames.length, services: serviceNames });
 
     const startTime = Date.now();
     
@@ -123,10 +106,10 @@ export class ServiceContainer {
       }
       
       const duration = Date.now() - startTime;
-      simpleLog.info('All services initialized successfully', { duration, count: serviceNames.length });
+      log.info('All services initialized successfully', { duration, count: serviceNames.length });
       
     } catch (error) {
-      simpleLog.error('Failed to initialize all services', { error: error.message });
+      log.error('Failed to initialize all services', { error: error.message });
       throw error;
     }
   }
@@ -135,7 +118,7 @@ export class ServiceContainer {
    * Shutdown all services
    */
   async shutdown() {
-    simpleLog.info('Shutting down services');
+    log.info('Shutting down services');
     
     const shutdownPromises = [];
     
@@ -143,7 +126,7 @@ export class ServiceContainer {
       if (instance && typeof instance.shutdown === 'function') {
         shutdownPromises.push(
           instance.shutdown().catch(error => {
-            simpleLog.error('Error shutting down service', { name, error: error.message });
+            log.error('Error shutting down service', { name, error: error.message });
           })
         );
       }
@@ -155,7 +138,7 @@ export class ServiceContainer {
     this.singletons.clear();
     this.initialized.clear();
     
-    simpleLog.info('All services shut down');
+    log.info('All services shut down');
   }
 
   /**
@@ -193,7 +176,7 @@ export class ServiceContainer {
       throw new Error(`Dependency validation failed:\n${errors.join('\n')}`);
     }
     
-    simpleLog.debug('All dependencies validated successfully');
+    log.debug('All dependencies validated successfully', {});
   }
 
   /**

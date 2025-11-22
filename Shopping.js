@@ -5,18 +5,14 @@ import * as utils from './utilities.js';
 
 class Shopping {
     constructor(bot, db,settings) {
-        console.log('[Shopping] Constructor called - registering commands');
         this.bot = bot;
         this.db = db;
         this.settings = settings;
         this.bot.command(['buy','comprare','compra','bring'], (ctx) => this.buy(ctx));
-        console.log('[Shopping] Registered /buy command');
         this.bot.command(['shopping','shop','spesa','lista','listaspesa'], (ctx) => this.shopping(ctx));
-        console.log('[Shopping] Registered /shopping command (shopping-specific UI)');
         this.bot.action(/toggle_shopping_(.+)/, (ctx) => this.toggle(ctx));
         this.bot.action('done_shopping', (ctx) => this.done(ctx));
         this.bot.action('add_shopping_item', (ctx) => this.addItem(ctx));
-        console.log('[Shopping] All commands registered');
     }
 
     async buy(ctx) {
