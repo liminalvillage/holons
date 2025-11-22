@@ -18,3 +18,4 @@ radata*
 holosphere.db/*
 /node_modules
 holosphere/
+logs/*

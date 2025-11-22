@@ -10,15 +10,31 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import HoloSphere from 'holosphere';
+import { HoloSphere } from 'holosphere';
+import { getRelays } from '../relay-config.js';
+import { getOrCreateKey } from '../utils/key-storage.js';
+import { generateSecretKey } from 'nostr-tools';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const holosphere = new HoloSphere('HolonsBotSchemas', null, {
-    peers: ['https://gun.holons.io/gun']
+// Helper to generate hex private key
+function generatePrivateKey() {
+    const secretKey = generateSecretKey();
+    return Buffer.from(secretKey).toString('hex');
+}
+
+// Priority: 1) .env HOLOSPHERE_PRIVATE_KEY, 2) stored key, 3) generate new key
+const appName = process.env.APPNAME || 'Holons';
+const privateKey = process.env.HOLOSPHERE_PRIVATE_KEY || getOrCreateKey(appName, generatePrivateKey);
+
+const holosphere = new HoloSphere({
+    appName: appName,
+    privateKey: privateKey,
+    logLevel: 'WARN',
+    relays: getRelays('production')
 });
 
 const ajv = new Ajv({ allErrors: true });
@@ -266,12 +282,28 @@ async function createIntegrationExample() {
     const exampleCode = `
 // Example: Using schemas in HolonsBot code
 
-import HoloSphere from 'holosphere';
+import { HoloSphere } from 'holosphere';
+import { getRelays } from '../relay-config.js';
+import { getOrCreateKey } from '../utils/key-storage.js';
+import { generateSecretKey } from 'nostr-tools';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
-const holosphere = new HoloSphere('HolonsBotSchemas', null, {
-    peers: ['https://gun.holons.io/gun']
+// Helper to generate hex private key
+function generatePrivateKey() {
+    const secretKey = generateSecretKey();
+    return Buffer.from(secretKey).toString('hex');
+}
+
+// Priority: 1) .env HOLOSPHERE_PRIVATE_KEY, 2) stored key, 3) generate new key
+const appName = process.env.APPNAME || 'Holons';
+const privateKey = process.env.HOLOSPHERE_PRIVATE_KEY || getOrCreateKey(appName, generatePrivateKey);
+
+const holosphere = new HoloSphere({
+    appName: appName,
+    privateKey: privateKey,
+    logLevel: 'WARN',
+    relays: getRelays('production')
 });
 
 const ajv = new Ajv({ allErrors: true });

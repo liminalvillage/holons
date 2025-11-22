@@ -5,15 +5,31 @@
  * This script tests if we can authenticate and write to the holosphere
  */
 
-import HoloSphere from 'holosphere';
+import { HoloSphere } from 'holosphere';
+import { getRelays } from '../relay-config.js';
+import { getOrCreateKey } from '../utils/key-storage.js';
+import { generateSecretKey } from 'nostr-tools';
 import Gun from 'gun';
 import 'gun/sea.js';
 
 console.log('🧪 Testing holosphere authentication...');
 
+// Helper to generate hex private key
+function generatePrivateKey() {
+    const secretKey = generateSecretKey();
+    return Buffer.from(secretKey).toString('hex');
+}
+
 // Initialize HoloSphere connection
-const holosphere = new HoloSphere('HolonsBotSchemas', null, {
-    peers: ['https://gun.holons.io/gun']
+// Priority: 1) .env HOLOSPHERE_PRIVATE_KEY, 2) stored key, 3) generate new key
+const appName = process.env.APPNAME || 'Holons';
+const privateKey = process.env.HOLOSPHERE_PRIVATE_KEY || getOrCreateKey(appName, generatePrivateKey);
+
+const holosphere = new HoloSphere({
+    appName: appName,
+    privateKey: privateKey,
+    logLevel: 'WARN',
+    relays: getRelays('production')
 });
 
 // Authentication configuration

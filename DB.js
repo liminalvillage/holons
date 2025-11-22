@@ -18,10 +18,12 @@ class DB {
 
         // IMPORTANT: Use persistent private key so the same identity is maintained across restarts
         // This allows the bot to access its previous data from Nostr relays
-        const privateKey = getOrCreateKey(dbName, generatePrivateKey);
+        // Priority: 1) .env HOLOSPHERE_PRIVATE_KEY, 2) stored key, 3) generate new key
+        const appName = process.env.APPNAME || 'Holons';
+        const privateKey = process.env.HOLOSPHERE_PRIVATE_KEY || getOrCreateKey(appName, generatePrivateKey);
 
         this.holosphere = new HoloSphere({
-            appName: dbName,
+            appName: appName,
             privateKey: privateKey,  // Use persistent key
             logLevel: 'WARN',
             relays: getRelays('production') // Use Nostr relays for distributed sync
