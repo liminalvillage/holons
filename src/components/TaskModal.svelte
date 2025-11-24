@@ -848,11 +848,10 @@
             // Determine if this is an H3 holon by checking if it's a valid H3 cell
             let isH3Holon = false;
             try {
-                // Import h3-js to check if it's a valid H3 cell
-                const h3 = await import('h3-js');
-                isH3Holon = h3.isValidCell(holonId);
+                // Use holosphere's isValidH3 method (type assertion needed as types aren't available)
+                isH3Holon = (holosphere as any).isValidH3(holonId);
             } catch (e) {
-                // If h3-js is not available or check fails, assume it's not H3
+                // If check fails, assume it's not H3
                 isH3Holon = false;
             }
 

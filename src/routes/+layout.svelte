@@ -19,8 +19,7 @@
 		appName: environmentName,
 		privateKey: privateKey,
 		relays: [
-			'wss://relay.holons.io',     // Main Holons relay
-			'wss://relay.nostr.band'     // Backup for persistence
+			'wss://relay.holons.io'     // Main Holons relay
 		],
 		enablePing: false  // Disable ping to prevent connection closure issues
 	});
@@ -28,23 +27,17 @@
 	// Log the public key for verification
 	if (holosphere.client) {
 		console.log("HoloSphere Public Key:", holosphere.client.publicKey);
-		console.log("Expected:", "9c7d719e42af8e695f6a76cd12652eb5d93d76a2b1e5057aef88c6325b42678f");
+		console.log("Expected:", "fe256f089d7c007806418bcabfa87f5a760931ee2528e44a0654d18097ccf00c");
 	}
 
 	// Configure GunDB for better peer discovery after initialization
 	setTimeout(() => {
 		if (holosphere && holosphere.gun) {
-		
-			 
+
+
 		}
 	}, 1000); // Wait for HoloSphere to initialize
-	
-	// Add connection ready check - give holosphere time to initialize
-	let holosphereReady = false;
-	setTimeout(() => {
-		holosphereReady = true;
-	}, 500); // Give 500ms for initial connection
-	
+
 	// Periodically check for garbage collection opportunities
 	const gcInterval = setInterval(() => {
 		// Request browser to run garbage collection by forcing memory pressure

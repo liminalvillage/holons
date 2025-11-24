@@ -808,23 +808,7 @@
 			};
 
 			const initialData = await fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000);
-			
-			// Fetch participation data for federated items
-			const participationData = await fetchWithTimeout(holosphere.getAll(holonID, "participations"), 5000);
-			
-			// Create a map of item participations
-			const participationsMap = new Map();
-			if (Array.isArray(participationData)) {
-				participationData.forEach((participation: any) => {
-					if (participation && participation.itemId) {
-						if (!participationsMap.has(participation.itemId)) {
-							participationsMap.set(participation.itemId, []);
-						}
-						participationsMap.get(participation.itemId).push(participation.participant);
-					}
-				});
-			}
-			
+
 			// Process initial data
 			const newStore: Store = {};
 			if (Array.isArray(initialData)) {
@@ -832,29 +816,11 @@
 					if (quest && quest.id) {
 						// Use the quest ID as the key, or generate one if missing
 						const key = quest.id || `initial_${index}`;
-						
+
 						// Ensure required arrays are initialized
 						if (!quest.participants) quest.participants = [];
 						if (!quest.appreciation) quest.appreciation = [];
-						
-						// Check if this quest has participation data
-						const participations = participationsMap.get(quest.id);
-						if (participations && participations.length > 0) {
-							// Merge participation data with existing participants
-							const existingParticipants = quest.participants || [];
-							const mergedParticipants = [...existingParticipants];
-							
-							// Add participations that aren't already in the participants list
-							participations.forEach((participation: any) => {
-								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
-								if (!alreadyExists) {
-									mergedParticipants.push(participation);
-								}
-							});
-							
-							quest.participants = mergedParticipants;
-						}
-						
+
 						newStore[key] = quest as Quest;
 					}
 				});
@@ -862,24 +828,10 @@
 				// If it's already a keyed object, use it directly
 				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
 					if (quest && quest.id) {
-						// Check if this quest has participation data
-						const participations = participationsMap.get(quest.id);
-						if (participations && participations.length > 0) {
-							// Merge participation data with existing participants
-							const existingParticipants = quest.participants || [];
-							const mergedParticipants = [...existingParticipants];
-							
-							// Add participations that aren't already in the participants list
-							participations.forEach((participation: any) => {
-								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
-								if (!alreadyExists) {
-									mergedParticipants.push(participation);
-								}
-							});
-							
-							quest.participants = mergedParticipants;
-						}
-						
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+
 						newStore[key] = quest as Quest;
 					}
 				});
@@ -957,52 +909,18 @@
 			
 			// Fetch initial data first
 			const initialData = await holosphere.getAll(holonID, "quests");
-			
-			// Fetch participation data for federated items
-			const participationData = await holosphere.getAll(holonID, "participations");
-			
-			// Create a map of item participations
-			const participationsMap = new Map();
-			if (Array.isArray(participationData)) {
-				participationData.forEach((participation: any) => {
-					if (participation && participation.itemId) {
-						if (!participationsMap.has(participation.itemId)) {
-							participationsMap.set(participation.itemId, []);
-						}
-						participationsMap.get(participation.itemId).push(participation.participant);
-					}
-				});
-			}
-			
-							// Process initial data
+
+			// Process initial data
 			if (Array.isArray(initialData)) {
 				initialData.forEach((quest: any, index) => {
 					if (quest && quest.id) {
 						// Use the quest ID as the key, or generate one if missing
 						const key = quest.id || `initial_${index}`;
-						
+
 						// Ensure required arrays are initialized
 						if (!quest.participants) quest.participants = [];
 						if (!quest.appreciation) quest.appreciation = [];
-						
-						// Check if this quest has participation data
-						const participations = participationsMap.get(quest.id);
-						if (participations && participations.length > 0) {
-							// Merge participation data with existing participants
-							const existingParticipants = quest.participants || [];
-							const mergedParticipants = [...existingParticipants];
-							
-							// Add participations that aren't already in the participants list
-							participations.forEach((participation: any) => {
-								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
-								if (!alreadyExists) {
-									mergedParticipants.push(participation);
-								}
-							});
-							
-							quest.participants = mergedParticipants;
-						}
-						
+
 						store[key] = quest as Quest;
 					}
 				});
@@ -1010,24 +928,10 @@
 				// If it's already a keyed object, use it directly
 				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
 					if (quest && quest.id) {
-						// Check if this quest has participation data
-						const participations = participationsMap.get(quest.id);
-						if (participations && participations.length > 0) {
-							// Merge participation data with existing participants
-							const existingParticipants = quest.participants || [];
-							const mergedParticipants = [...existingParticipants];
-							
-							// Add participations that aren't already in the participants list
-							participations.forEach((participation: any) => {
-								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
-								if (!alreadyExists) {
-									mergedParticipants.push(participation);
-								}
-							});
-							
-							quest.participants = mergedParticipants;
-						}
-						
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+
 						store[key] = quest as Quest;
 					}
 				});
@@ -1068,63 +972,9 @@
 				}
 			});
 
-			// Also subscribe to participation updates
-			let participationOff: (() => void) | undefined;
-			try {
-				const participationSub = await holosphere.subscribe(holonID, "participations", (newParticipation: any, key?: string) => {
-					let storeUpdated = false;
-					
-					if (newParticipation && newParticipation.itemId) {
-						// Find the quest in the store and update its participants
-						const questKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
-						if (questKey) {
-							const quest = store[questKey];
-							const existingParticipants = quest.participants || [];
-							const alreadyExists = existingParticipants.some((p: any) => p.id === newParticipation.participant.id);
-							
-							if (!alreadyExists) {
-								const updatedQuest = {
-									...quest,
-									participants: [...existingParticipants, newParticipation.participant]
-								};
-								store = {
-									...store,
-									[questKey]: updatedQuest
-								};
-								storeUpdated = true;
-							}
-						}
-					} else if (key) {
-						// For deletions, just mark that we need to update
-						// We'll avoid triggering unnecessary reactive updates
-						const hasParticipants = Object.values(store).some(quest => 
-							quest.participants && quest.participants.length > 0
-						);
-						if (hasParticipants) {
-							store = { ...store };
-							storeUpdated = true;
-						}
-					}
-					
-					// Only update quests if store was actually changed
-					if (storeUpdated) {
-						quests = Object.entries(store);
-					}
-				});
-				participationOff = participationSub?.unsubscribe;
-			} catch (error) {
-				console.error('Error setting up participation subscription:', error);
-			}
-
 			// Ensure the unsubscribe handler is callable and typed correctly
 			if (typeof off === 'function') {
-				const offFn = off as unknown as () => void;
-				questsUnsubscribe = () => {
-					offFn();
-					if (typeof participationOff === 'function') {
-						participationOff();
-					}
-				};
+				questsUnsubscribe = off as unknown as () => void;
 			}
 		} catch (error) {
 			console.error('Error setting up quest subscription:', error);
