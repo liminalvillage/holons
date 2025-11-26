@@ -2,7 +2,7 @@
     import { createEventDispatcher, onMount, onDestroy, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import { goto } from "$app/navigation";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
     import { fetchHolonName } from "../utils/holonNames";
     import { addClickedHolon, addVisitedHolon, getWalletAddress } from "../utils/localStorage";

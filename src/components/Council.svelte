@@ -3,7 +3,7 @@
 		import { ID } from "../dashboard/store";
 		import { page } from "$app/stores";
 		import { goto } from "$app/navigation";
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 import { getAdvisor, getRandomHolonicEcosystemCouncilMembers, getHolonicEcosystemCouncilMembers } from '../data/advisor-library';
 	import { AdvisorService } from '../services/AdvisorService';
 	import { ensureHECAdvisorsMigrated, getHECAdvisorsFromHoloSphere } from '../utils/advisorMigration';

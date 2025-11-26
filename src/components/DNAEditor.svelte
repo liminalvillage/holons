@@ -3,7 +3,7 @@
   // Feature: 001-holon-dna-editor
 
   import { onMount, onDestroy } from 'svelte';
-  import type HoloSphere from 'holosphere';
+  import type { HoloSphere } from "holosphere";
   import type { Chromosome } from '$lib/dna/types';
   import {
     getDNASequence,

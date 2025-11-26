@@ -32,7 +32,8 @@
     }
     
     // Helper function to check if a lens is in a lens array (case-insensitive)
-    function isLensInArray(lens: string, lensArray: string[]): boolean {
+    function isLensInArray(lens: string, lensArray: string[] | undefined): boolean {
+        if (!lensArray || !Array.isArray(lensArray)) return false;
         const normalizedLens = normalizeLensName(lens);
         return lensArray.some(l => normalizeLensName(l) === normalizedLens);
     }
@@ -45,11 +46,12 @@
     interface FederationInfo {
         id: string;
         name: string;
-        federation: string[];
-        notify: string[];
+        federated: string[];
+        inbound: string[];
+        outbound: string[];
         lensConfig?: Record<string, {
-            federate: string[];
-            notify: string[];
+            inbound: string[];
+            outbound: string[];
             timestamp: number;
         }>;
         timestamp: number;
@@ -59,10 +61,9 @@
         id: string;
         name: string;
         status: 'connected' | 'pending' | 'error';
-        bidirectional: boolean;
         lensConfig: {
-            federate: string[];
-            notify: string[];
+            inbound: string[];
+            outbound: string[];
         };
     }
 
@@ -121,9 +122,10 @@
 
         try {
             // Subscribe to the global federation data for this holon
-            federationSubscription = await holosphere.subscribe(
-                currentHolonId,
+            // Use subscribeGlobal to subscribe to global table path: appname/federation/holonId
+            federationSubscription = await holosphere.subscribeGlobal(
                 'federation',
+                currentHolonId,
                 async (data, itemId) => {
                     console.log('Federation data changed:', data, itemId);
                     // Reload federation data when changes occur
@@ -151,11 +153,14 @@
                 // Build federated holons list using a temporary array
                 const tempHolons: FederatedHolon[] = [];
 
-                // Process federation list (holons we federate to)
-                for (const holonId of federationInfo.federation || []) {
-                    const lensConfig = federationInfo.lensConfig?.[holonId] || {
-                        federate: [],
-                        notify: []
+                // Process federated list (all federated holons)
+                const federatedList = federationInfo.federated || [];
+
+                for (const holonId of federatedList) {
+                    const rawLensConfig = federationInfo.lensConfig?.[holonId];
+                    const lensConfig = {
+                        inbound: Array.isArray(rawLensConfig?.inbound) ? rawLensConfig.inbound : [],
+                        outbound: Array.isArray(rawLensConfig?.outbound) ? rawLensConfig.outbound : []
                     };
 
                     console.log(`Lens config for ${holonId}:`, lensConfig);
@@ -167,42 +172,14 @@
                         id: holonId,
                         name: holonName,
                         status: 'connected',
-                        bidirectional: federationInfo.notify?.includes(holonId) || false,
                         lensConfig
                     });
-                }
-
-                // Process notify list (holons that notify us)
-                for (const holonId of federationInfo.notify || []) {
-                    if (!tempHolons.find(h => h.id === holonId)) {
-                        // Try to get the lens config for this holon too
-                        const lensConfig = federationInfo.lensConfig?.[holonId] || {
-                            federate: [],
-                            notify: []
-                        };
-
-                        console.log(`Lens config for notify-only holon ${holonId}:`, lensConfig);
-
-                        // Get actual holon name from settings
-                        const holonName = await getHolonName(holonId);
-
-                        tempHolons.push({
-                            id: holonId,
-                            name: holonName,
-                            status: 'connected',
-                            bidirectional: false,
-                            lensConfig
-                        });
-                    }
                 }
 
                 // Assign to trigger reactivity in Svelte 5
                 federatedHolons = tempHolons;
 
                 console.log('Final federated holons:', federatedHolons);
-
-                // Attempt to repair any missing lens configurations
-                setTimeout(() => repairLensConfigs(), 100);
             } else {
                 federatedHolons = [];
                 console.log('No federation info found');
@@ -227,8 +204,7 @@
                 currentHolonId,
                 newHolonId.trim(),
                 {
-                    lensConfig: { federate: [], notify: [] },
-                    direction: 'bidirectional'
+                    lensConfig: { inbound: [], outbound: [] }
                 }
             );
 
@@ -291,7 +267,7 @@
         }
     }
 
-    async function updateLensConfig(holonId: string, federateLenses: string[], notifyLenses: string[]) {
+    async function updateLensConfig(holonId: string, inboundLenses: string[], outboundLenses: string[]) {
         if (!holosphere || !currentHolonId) return;
 
         saving = true;
@@ -302,8 +278,7 @@
                 currentHolonId,
                 holonId,
                 {
-                    lensConfig: { federate: federateLenses, notify: notifyLenses },
-                    direction: 'bidirectional'
+                    lensConfig: { inbound: inboundLenses, outbound: outboundLenses }
                 }
             );
 
@@ -318,20 +293,6 @@
             console.error('Lens config update error:', err);
         } finally {
             saving = false;
-        }
-    }
-
-    async function refreshLensConfig(holonId: string) {
-        if (!holosphere || !currentHolonId) return null;
-        
-        try {
-            // Use the dedicated getFederatedConfig function as backup
-            const config = await holosphere.getFederatedConfig(currentHolonId, holonId);
-            console.log(`Refreshed lens config for ${holonId}:`, config);
-            return config;
-        } catch (err) {
-            console.error(`Failed to refresh lens config for ${holonId}:`, err);
-            return null;
         }
     }
 
@@ -350,40 +311,6 @@
         
         // Fallback to holon ID
         return holonId;
-    }
-
-    async function repairLensConfigs() {
-        if (!federatedHolons.length) return;
-        
-        console.log('Attempting to repair lens configurations and holon names...');
-        
-        for (let i = 0; i < federatedHolons.length; i++) {
-            const holon = federatedHolons[i];
-            let updated = false;
-            
-            // If lens config is empty, try to refresh it
-            if (!holon.lensConfig.federate.length && !holon.lensConfig.notify.length) {
-                const refreshedConfig = await refreshLensConfig(holon.id);
-                if (refreshedConfig) {
-                    federatedHolons[i].lensConfig = refreshedConfig;
-                    console.log(`Repaired lens config for ${holon.id}:`, refreshedConfig);
-                    updated = true;
-                }
-            }
-            
-            // If holon name is same as ID, try to get the actual name
-            if (holon.name === holon.id) {
-                const actualName = await getHolonName(holon.id);
-                if (actualName !== holon.id) {
-                    federatedHolons[i].name = actualName;
-                    console.log(`Updated holon name for ${holon.id}: ${actualName}`);
-                    updated = true;
-                }
-            }
-        }
-        
-        // Trigger reactivity
-        federatedHolons = [...federatedHolons];
     }
 
     function showSuccess(message: string) {
@@ -468,8 +395,8 @@
 
     $: totalFederations = federatedHolons.length;
     $: activeLenses = federatedHolons.reduce((acc, holon) => {
-        if (holon && holon.lensConfig && holon.lensConfig.federate) {
-            holon.lensConfig.federate.forEach(lens => acc.add(lens));
+        if (holon && holon.lensConfig && Array.isArray(holon.lensConfig.inbound)) {
+            holon.lensConfig.inbound.forEach(lens => acc.add(lens));
         }
         return acc;
     }, new Set<string>()).size;
@@ -689,8 +616,8 @@
                                         </thead>
                                         <tbody class="divide-y divide-gray-600/30">
                                             {#each availableLenses as lens}
-                                                {@const isInbound = isLensInArray(lens, holon.lensConfig.federate)}
-                                                {@const isOutbound = isLensInArray(lens, holon.lensConfig.notify)}
+                                                {@const isInbound = isLensInArray(lens, holon.lensConfig.inbound)}
+                                                {@const isOutbound = isLensInArray(lens, holon.lensConfig.outbound)}
                                                 <tr class="hover:bg-gray-700/20 transition-colors">
                                                     <td class="py-3 px-4">
                                                         <div class="flex items-center space-x-2">
@@ -707,14 +634,14 @@
                                                             on:click={async (e) => {
                                                                 e.preventDefault();
                                                                 if (saving) return;
-                                                                // Toggle inbound (federate)
-                                                                let newFederate = isInbound
-                                                                    ? holon.lensConfig.federate.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
-                                                                    : [...holon.lensConfig.federate, getCanonicalLensName(lens)];
+                                                                // Toggle inbound
+                                                                let newInbound = isInbound
+                                                                    ? holon.lensConfig.inbound.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
+                                                                    : [...holon.lensConfig.inbound, getCanonicalLensName(lens)];
                                                                 await updateLensConfig(
                                                                     holon.id,
-                                                                    newFederate,
-                                                                    holon.lensConfig.notify
+                                                                    newInbound,
+                                                                    holon.lensConfig.outbound
                                                                 );
                                                             }}
                                                         >
@@ -738,14 +665,14 @@
                                                             on:click={async (e) => {
                                                                 e.preventDefault();
                                                                 if (saving) return;
-                                                                // Toggle outbound (notify)
-                                                                let newNotify = isOutbound
-                                                                    ? holon.lensConfig.notify.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
-                                                                    : [...holon.lensConfig.notify, getCanonicalLensName(lens)];
+                                                                // Toggle outbound
+                                                                let newOutbound = isOutbound
+                                                                    ? holon.lensConfig.outbound.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
+                                                                    : [...holon.lensConfig.outbound, getCanonicalLensName(lens)];
                                                                 await updateLensConfig(
                                                                     holon.id,
-                                                                    holon.lensConfig.federate,
-                                                                    newNotify
+                                                                    holon.lensConfig.inbound,
+                                                                    newOutbound
                                                                 );
                                                             }}
                                                         >
@@ -820,9 +747,9 @@
                                     y1="300" 
                                     x2={x} 
                                     y2={y} 
-                                    stroke={holon.bidirectional ? '#10B981' : '#6B7280'}
-                                    stroke-width={holon.bidirectional ? '3' : '2'}
-                                    stroke-dasharray={holon.bidirectional ? 'none' : '5,5'}
+                                    stroke={(holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? '#10B981' : '#6B7280'}
+                                    stroke-width={(holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? '3' : '2'}
+                                    stroke-dasharray={(holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? 'none' : '5,5'}
                                     opacity="0.7"
                                     class="transition-all duration-300"
                                 />
@@ -880,7 +807,7 @@
                                 {@const radius = 200}
                                 {@const x = 400 + Math.cos(angle) * radius}
                                 {@const y = 300 + Math.sin(angle) * radius}
-                                {@const nodeColor = holon.bidirectional ? '#10B981' : '#6B7280'}
+                                {@const nodeColor = (holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? '#10B981' : '#6B7280'}
                                 
                                 <g class="federated-holon">
                                     <!-- Main Node -->
@@ -930,27 +857,27 @@
                                     />
                                     
                                     <!-- Lens Count Badge -->
-                                    {#if holon.lensConfig.federate.length > 0}
-                                        <circle 
-                                            cx={x - 20} 
-                                            cy={y + 20} 
-                                            r="8" 
-                                            fill="#3B82F6" 
+                                    {#if holon.lensConfig.inbound.length > 0}
+                                        <circle
+                                            cx={x - 20}
+                                            cy={y + 20}
+                                            r="8"
+                                            fill="#3B82F6"
                                             stroke="white"
                                             stroke-width="1"
                                             class="pointer-events-none"
                                         />
-                                        <text 
-                                            x={x - 20} 
-                                            y={y + 20} 
-                                            text-anchor="middle" 
-                                            dy="0.35em" 
-                                            fill="white" 
+                                        <text
+                                            x={x - 20}
+                                            y={y + 20}
+                                            text-anchor="middle"
+                                            dy="0.35em"
+                                            fill="white"
                                             font-size="10"
                                             font-weight="bold"
                                             class="pointer-events-none"
                                         >
-                                            {holon.lensConfig.federate.length}
+                                            {holon.lensConfig.inbound.length}
                                         </text>
                                     {/if}
                                 </g>
@@ -1084,7 +1011,7 @@
                         </svg>
                         <div class="text-sm text-blue-300">
                             <p class="font-medium mb-1">Federation Setup</p>
-                            <p>This will create a bidirectional federation. You can configure lens-specific settings after creation.</p>
+                            <p>This will create a federation link. You can configure inbound and outbound lens settings after creation.</p>
                         </div>
                     </div>
                 </div>

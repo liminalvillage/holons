@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy, getContext } from "svelte";
     import { ID } from "../dashboard/store";
-    import type HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import ProposalChart from './ProposalChart.svelte';
 
     interface Proposal {

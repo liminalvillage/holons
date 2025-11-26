@@ -1,6 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher,getContext, onMount, onDestroy } from 'svelte';
-    import HoloSphere from 'holosphere';
+    import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
     import CalendarSettings from './CalendarSettings.svelte';

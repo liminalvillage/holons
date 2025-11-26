@@ -1,6 +1,6 @@
 <script lang="ts">
     import { getContext, createEventDispatcher } from 'svelte';
-    import type HoloSphere from 'holosphere';
+    import type { HoloSphere } from "holosphere";
     import { ID } from '../dashboard/store';
     import { isValidICalUrl } from '$lib/services/icalParser';
 

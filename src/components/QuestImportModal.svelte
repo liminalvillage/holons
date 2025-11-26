@@ -32,9 +32,11 @@
 			lastName?: string;
 		};
 		created?: string;
-		_meta?: {
-			resolvedFromHologram?: boolean;
-			hologramSoul?: string;
+		_hologram?: {
+			isHologram: boolean;
+			soul: string;
+			sourceHolon: string;
+			localOverrides?: string[];
 		};
 	}
 

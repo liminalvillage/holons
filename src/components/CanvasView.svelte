@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount, afterUpdate } from 'svelte';
     import { formatDate, formatTime } from '../utils/date.js';
-    import HoloSphere from 'holosphere';
+    import type { HoloSphere } from 'holosphere';
     import DrawingTools from './DrawingTools.svelte';
 
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -353,7 +353,7 @@
             }
             
             // For holograms, check if we have a locally stored position
-            if (quest._meta?.resolvedFromHologram) {
+            if (quest._hologram?.isHologram) {
                 const hologramPosition = hologramPositions.get(key);
                 if (hologramPosition) {
                     positionAssignments.add(key);
@@ -637,7 +637,7 @@
                 generatedInboxPositions.delete(finalDraggedCardData.key);
                 
                 // Check if this is a hologram task (read-only from another holon)
-                if (finalDraggedCardData.quest._meta?.resolvedFromHologram) {
+                if (finalDraggedCardData.quest._hologram?.isHologram) {
                     // For holograms, we store the position locally in localStorage
                     hologramPositions.set(finalDraggedCardData.key, newPosition);
                     saveHologramPositions();
@@ -932,7 +932,7 @@
                     generatedInboxPositions.delete(draggedCard.key);
                     
                     // Check if this is a hologram task
-                    if (draggedCard.quest._meta?.resolvedFromHologram) {
+                    if (draggedCard.quest._hologram?.isHologram) {
                         hologramPositions.set(draggedCard.key, newPosition);
                         saveHologramPositions();
                         pendingPositionSaves.delete(draggedCard.key);
@@ -1308,7 +1308,7 @@
                                height: 4px;
                                background-color: {card.quest.status === 'completed' 
                                    ? '#10B981' 
-                                   : card.quest._meta?.resolvedFromHologram 
+                                   : card.quest._hologram?.isHologram 
                                        ? '#00BFFF' 
                                        : '#F59E0B'};"
                         title={card.quest.title}
@@ -1454,8 +1454,8 @@
                     style="background-color: {card.quest.status === 'completed'
                         ? '#374151'
                         : getColorFromCategory(card.quest.category, card.quest.type)}; 
-                           opacity: {card.quest.status === 'completed' ? '0.7' : card.quest._meta?.resolvedFromHologram ? '0.75' : '1'};
-                           {card.quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+                           opacity: {card.quest.status === 'completed' ? '0.7' : card.quest._hologram?.isHologram ? '0.75' : '1'};
+                           {card.quest._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
                 >
                     <!-- Header -->
                     <div class="flex items-center justify-between gap-3">
@@ -1471,14 +1471,13 @@
                                             Created: {formatDate(card.quest.created)}
                                         </div>
                                     {/if}
-                                    {#if card.quest._meta?.resolvedFromHologram}
-                                        <button 
-                                            class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-800 flex-shrink-0 hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+                                    {#if card.quest._hologram?.isHologram}
+                                        <button
+                                            class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-800 flex-shrink-0 hover:bg-blue-500 hover:bg-opacity-30 transition-colors"
                                             title="Navigate to source holon"
                                             on:click|stopPropagation={() => {
-                                                const match = card.quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
-                                                if (match) {
-                                                    window.location.href = `/${match[1]}/tasks`;
+                                                if (card.quest._hologram?.sourceHolon) {
+                                                    window.location.href = `/${card.quest._hologram.sourceHolon}/tasks`;
                                                 }
                                             }}
                                         >

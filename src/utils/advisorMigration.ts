@@ -1,6 +1,6 @@
 import { AdvisorService } from '../services/AdvisorService';
 import type { CouncilAdvisorExtended } from '../types/advisor-schema';
-import type HoloSphere from 'holosphere';
+import type { HoloSphere } from "holosphere";
 
 // Import all static HEC advisors for migration
 import { 

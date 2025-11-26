@@ -2,7 +2,7 @@
 	import TelegramAuth from '../../components/TelegramAuth.svelte';
 	import { QRActionService, type TelegramUser, type QRActionResult } from '../../utils/qr-action-service';
 	import { onMount, getContext } from 'svelte';
-	import HoloSphere from 'holosphere';
+	import type { HoloSphere } from "holosphere";
 	import { goto } from '$app/navigation';
 
 	export let data: any;

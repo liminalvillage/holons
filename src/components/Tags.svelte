@@ -5,7 +5,7 @@
 	import { browser } from '$app/environment';
 
 	import TreeView from "./TreeView.svelte";
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 

@@ -3,7 +3,7 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import { formatDate, formatTime } from "../utils/date";
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 	import * as d3 from "d3";
 
 	interface RecurringTask {

@@ -2,7 +2,7 @@
   import { getContext, onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import type HoloSphere from 'holosphere';
+  import type { HoloSphere } from "holosphere";
   import { getSdgByCode, getSdgHolonId } from '$lib/sdgs';
   import { fetchHolonName } from '../../../utils/holonNames';
 
@@ -55,8 +55,8 @@
       const info = await holosphere.getFederation(sdgHolonId);
       // Only include current federation relationships
       const ids: string[] = [
-        ...(info?.federation || []),
-        ...(info?.notify || [])
+        ...(info?.inbound || []),
+        ...(info?.outbound || [])
       ];
       const unique = Array.from(new Set(ids));
       // Rebuild list from source of truth each time to remove unfederated holons
@@ -79,7 +79,7 @@
         null,
         null,
         true,
-        { federate: [], notify: [] }
+        { inbound: [], outbound: [] }
       );
       showAddDialog = false;
       newHolonName = '';
@@ -102,7 +102,7 @@
     // optionally seed a settings name
     try {
       await holosphere.put(id, 'settings', { name: newHolonName.trim() });
-      await holosphere.federate(sdgHolonId, id, null, null, true, { federate: [], notify: [] });
+      await holosphere.federate(sdgHolonId, id, null, null, true, { inbound: [], outbound: [] });
       showAddDialog = false; newHolonId = ''; newHolonName = '';
       await loadFederated();
     } catch (e) {

@@ -3,7 +3,7 @@
     import { onMount, onDestroy, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import { ID } from "../dashboard/store";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import { goto } from "$app/navigation";
     import { fetchHolonName } from "../utils/holonNames";

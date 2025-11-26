@@ -4,7 +4,7 @@
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { formatDate, formatTime } from "../utils/date";
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
 	import { getHologramSourceName } from "../utils/holonNames";
 
@@ -311,14 +311,11 @@
 					if (item._federation) {
 						processedItem._federation = item._federation;
 					}
-					
-					// If this is a resolved hologram, mark it appropriately
-					if (item._federation && item._federation.isReference) {
-						processedItem._meta = {
-							...processedItem._meta,
-							resolvedFromHologram: true,
-							hologramSoul: item._federation.soul
-						};
+
+					// Hologram metadata is now automatically added by HoloSphere via _hologram
+					// No manual assignment needed - resolved holograms have _hologram.isHologram = true
+					if (item._hologram) {
+						processedItem._hologram = item._hologram;
 					}
 					
 					// Mark user-specific offers
@@ -504,12 +501,12 @@
 	}
 
 	// Function to get hologram source name using centralized service
-	function getHologramSource(hologramSoul: string | undefined): string {
-		if (!hologramSoul) return '';
-		
+	function getHologramSourceDisplay(soul: string | undefined): string {
+		if (!soul) return '';
+
 		// Use the centralized service to get hologram source name
 		// This will return cached name immediately or trigger async fetch with callback
-		return getHologramSourceName(holosphere, hologramSoul, () => {
+		return getHologramSourceName(holosphere, soul, () => {
 			// Trigger reactivity by updating store when name is fetched
 			console.log('[Offers] Hologram source name updated, triggering reactivity');
 			store = { ...store };
@@ -543,12 +540,12 @@
 			participants: updatedParticipants
 		};
 		
-		// If this is a federated item (has _federation metadata), we need to handle it differently
+		// If this is a federated item (has _hologram metadata), we need to handle it differently
 		// to avoid creating duplicates. Instead of putting it directly to the local holon,
 		// we should update the original source or use a different approach.
-		if (item._federation || item._meta?.resolvedFromHologram) {
+		if (item._federation || item._hologram?.isHologram) {
 			console.log("[Offers.svelte] Taking federated item:", item.id);
-			
+
 			// For federated items, we'll store the participation in a separate local tracking system
 			// to avoid duplicating the entire item
 			const participationKey = `participation_${item.id}`;
@@ -557,8 +554,8 @@
 				itemTitle: item.title,
 				participant: newParticipant,
 				participatedAt: new Date().toISOString(),
-				originalHolonId: item._federation?.sourceHolonId || item._meta?.hologramSoul?.match(/Holons\/([^\/]+)/)?.[1],
-				itemSoul: item._federation?.soul || item._meta?.hologramSoul
+				originalHolonId: item._federation?.sourceHolonId || item._hologram?.sourceHolon,
+				itemSoul: item._federation?.soul || item._hologram?.soul
 			};
 			
 			// Store participation locally
@@ -626,7 +623,7 @@
 			console.log("[Offers.svelte] Federation info:", fedInfo);
 			
 			// Check if we have either federated chats OR if this is a hex-based holon that can propagate to parents
-			const hasFederatedChats = fedInfo && fedInfo.notify && fedInfo.notify.length > 0;
+			const hasFederatedChats = fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0;
 			
 			// For hex-based holons, we can still propagate to parents even without federation
 			// Let's proceed with propagation regardless of federation status
@@ -710,7 +707,7 @@
 		}
 		
 		// If this is a federated item, remove from participations
-		if (item._federation || item._meta?.resolvedFromHologram) {
+		if (item._federation || item._hologram?.isHologram) {
 			console.log("[Offers.svelte] Removing participation from federated item:", item.id);
 			
 			// Find and remove the participation record
@@ -838,11 +835,11 @@
 					{#if offers.length > 0}
 						<div class="space-y-3">
 							{#each offers as offer (offer.key)}
-								<div 
+								<div
 									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-									style="background-color: {getItemBackgroundColor(offer.type)}; 
-										   opacity: {offer._meta?.resolvedFromHologram ? '0.75' : '1'};
-										   {offer._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+									style="background-color: {getItemBackgroundColor(offer.type)};
+										   opacity: {offer._hologram?.isHologram ? '0.75' : '1'};
+										   {offer._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
 								>
 									<div class="flex items-center justify-between gap-3">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
@@ -866,26 +863,26 @@
 													<h3 class="text-base font-bold text-gray-800 truncate">
 														{offer.title}
 													</h3>
-													{#if offer._meta?.resolvedFromHologram}
-				<button 
-															class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
-															title="Navigate to source holon: {getHologramSource(offer._meta.hologramSoul)}"
-															on:click|stopPropagation={() => {
-																const match = offer._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
-																if (match) {
-																	window.location.href = `/${match[1]}/offers`;
-																}
-															}}
-														>
-															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-															</svg>
-															{getHologramSource(offer._meta.hologramSoul)}
-															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-					</svg>
-				</button>
-													{/if}
+													{#if offer._hologram?.isHologram}
+													<button
+														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors"
+														title="Navigate to source holon: {getHologramSourceDisplay(offer._hologram.soul)}"
+														on:click|stopPropagation={() => {
+															const sourceHolon = offer._hologram?.sourceHolon;
+															if (sourceHolon) {
+																window.location.href = `/${sourceHolon}/offers`;
+															}
+														}}
+													>
+														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+														</svg>
+														{getHologramSourceDisplay(offer._hologram.soul)}
+														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+														</svg>
+													</button>
+												{/if}
 													{#if offer._federation?.origin && offer._federation.origin !== holonID}
 														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0">
 															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1041,11 +1038,11 @@
 					{#if needs.length > 0}
 						<div class="space-y-3">
 							{#each needs as need (need.key)}
-								<div 
+								<div
 									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-									style="background-color: {getItemBackgroundColor(need.type)}; 
-										   opacity: {need._meta?.resolvedFromHologram ? '0.75' : '1'};
-										   {need._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+									style="background-color: {getItemBackgroundColor(need.type)};
+										   opacity: {need._hologram?.isHologram ? '0.75' : '1'};
+										   {need._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
 								>
 									<div class="flex items-center justify-between gap-3">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
@@ -1069,26 +1066,26 @@
 													<h3 class="text-base font-bold text-gray-800 truncate">
 														{need.title}
 													</h3>
-													{#if need._meta?.resolvedFromHologram}
-				<button
-															class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
-															title="Navigate to source holon: {getHologramSource(need._meta.hologramSoul)}"
-															on:click|stopPropagation={() => {
-																const match = need._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
-																if (match) {
-																	window.location.href = `/${match[1]}/offers`;
-																}
-															}}
-														>
-															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-															</svg>
-															{getHologramSource(need._meta.hologramSoul)}
-															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-					</svg>
-				</button>
-													{/if}
+													{#if need._hologram?.isHologram}
+													<button
+														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors"
+														title="Navigate to source holon: {getHologramSourceDisplay(need._hologram.soul)}"
+														on:click|stopPropagation={() => {
+															const sourceHolon = need._hologram?.sourceHolon;
+															if (sourceHolon) {
+																window.location.href = `/${sourceHolon}/offers`;
+															}
+														}}
+													>
+														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+														</svg>
+														{getHologramSourceDisplay(need._hologram.soul)}
+														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+														</svg>
+													</button>
+												{/if}
 													{#if need._federation?.origin && need._federation.origin !== holonID}
 														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0">
 															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

@@ -1,4 +1,4 @@
-import type HoloSphere from "holosphere";
+import type { HoloSphere } from "holosphere";
 import type { QuestTree } from '../types/questTree';
 
 // Constants for repeated values

@@ -2,7 +2,7 @@
     import { onMount, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import { ID } from "../dashboard/store";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
 
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;

@@ -26,8 +26,8 @@ export interface FlowConfig {
   externalPercent: number;
   lensConfig: {
     [targetId: string]: {
-      federate: string[];
-      notify: string[];
+      inbound: string[];
+      outbound: string[];
       timestamp: number;
     };
   };

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";;
-	import HoloSphere from 'holosphere';
+	import type { HoloSphere } from "holosphere";
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 

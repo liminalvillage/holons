@@ -4,7 +4,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { generateICalFeed } from '$lib/services/icalGenerator';
-import HoloSphere from 'holosphere';
+import { HoloSphere } from 'holosphere';
 
 // Initialize HoloSphere instance for server-side data access
 // Default to production environment for iCal feed endpoint

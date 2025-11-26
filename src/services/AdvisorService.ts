@@ -1,5 +1,5 @@
 import type { CouncilAdvisorExtended, ArchetypeAdvisor, RealPersonAdvisor, MythicAdvisor } from '../types/advisor-schema';
-import type HoloSphere from 'holosphere';
+import type { HoloSphere } from "holosphere";
 
 /**
  * HOLONIC ADVISOR SERVICE

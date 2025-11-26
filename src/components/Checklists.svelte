@@ -4,7 +4,7 @@
     import { page } from "$app/stores";
     import { replaceState } from "$app/navigation";
     import Schedule from "./ScheduleWidget.svelte";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
 
     interface ChecklistItem {
         text: string;
@@ -169,7 +169,7 @@
             const [checklistsResult, rolesResult, questsResult] = await Promise.all([
                 fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "roles"), 5000),
-                fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000)
+                holosphere.getAll(holonID, "quests")
             ]);
             
             // Process results safely - store all checklists

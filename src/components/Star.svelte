@@ -3,7 +3,7 @@
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { formatDate, formatTime } from "../utils/date.js";
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import Announcements from "./Announcements.svelte";
 	import TaskModal from "./TaskModal.svelte";

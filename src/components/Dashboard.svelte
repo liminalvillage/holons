@@ -4,7 +4,7 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import Announcements from "./Announcements.svelte";
-    import HoloSphere from 'holosphere';
+    import type { HoloSphere } from "holosphere";
     import { fetchHolonName } from "../utils/holonNames";
 
 
@@ -137,7 +137,7 @@
             const [chats, users, quests, shoppingItems, checklists, roles] = await Promise.allSettled([
                 fetchWithTimeout(holosphere.getAll(holonID, "chats"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "users"), 5000),
-                fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000),
+                holosphere.getAll(holonID, "quests"),
                 fetchWithTimeout(holosphere.getAll(holonID, "shopping"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "roles"), 5000),

@@ -2,7 +2,7 @@
     import { createEventDispatcher, getContext, onMount } from "svelte";
     import { fade, scale } from "svelte/transition";
     import { goto } from '$app/navigation';
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import { getHologramSourceName } from "../utils/holonNames";
     import { formatDate } from "../utils/date";
 
@@ -68,24 +68,20 @@
     const CANVAS_HEIGHT = 1500;
 
     // Function to get hologram source name using centralized service
-    function getHologramSource(hologramSoul: string | undefined): string {
-        if (!hologramSoul) return '';
-        
+    function getHologramSource(soul: string | undefined): string {
+        if (!soul) return '';
+
         // Use the centralized service to get hologram source name
         // Don't use callback to avoid reactive loops - just return cached value
-        return getHologramSourceName(holosphere, hologramSoul);
+        return getHologramSourceName(holosphere, soul);
     }
 
     // Add function to navigate to hologram source
     function navigateToHologramSource() {
-        if (!quest._meta?.hologramSoul) return;
-        
-        const match = quest._meta.hologramSoul.match(/Holons\/([^\/]+)/);
-        if (match) {
-            const sourceHolonId = match[1];
-            // Navigate to the source holon
-            window.location.href = `/${sourceHolonId}`;
-        }
+        if (!quest._hologram?.sourceHolon) return;
+
+        // Navigate to the source holon using sourceHolon directly
+        window.location.href = `/${quest._hologram.sourceHolon}`;
     }
 
     onMount(() => {
@@ -828,7 +824,7 @@
             const fedInfo = await holosphere.getFederation(holonId);
 
             // Check if we have federated holons
-            const hasFederatedHolons = fedInfo && fedInfo.notify && fedInfo.notify.length > 0;
+            const hasFederatedHolons = fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0;
 
             // If we have neither federation nor settings hex, show error
             if (!hasFederatedHolons && !settingsHex) {
@@ -1039,11 +1035,11 @@
                             {quest.category}
                         </span>
                     {/if}
-                    {#if quest._meta?.resolvedFromHologram}
+                    {#if quest._hologram?.isHologram}
                         <button
                             class="flex items-center gap-1 px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs hover:bg-blue-500/30 transition-colors"
                             on:click={navigateToHologramSource}
-                            title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+                            title="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
                             type="button"
                         >
                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">

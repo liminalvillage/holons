@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, onMount, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
 
     export let userId: string;
     export let holonId: string;

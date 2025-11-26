@@ -2,7 +2,7 @@
   import { onMount, onDestroy, getContext } from 'svelte';
   import { HolonsManager } from '../lib/holons/HolonsManager.js';
   import type { FlowVisualizationData, FlowNode, FlowEdge, FlowMetrics } from '../lib/holons/FlowSettings.js';
-  import type HoloSphere from 'holosphere';
+  import type { HoloSphere } from "holosphere";
 
   export let holonId: string;
   export let width: number = 800;
@@ -119,7 +119,6 @@
         type: 'payment',
         weight: 60,
         lenses: [],
-        bidirectional: false,
         status: 'active'
       },
       {
@@ -129,7 +128,6 @@
         type: 'payment',
         weight: 40,
         lenses: [],
-        bidirectional: false,
         status: 'active'
       }
     ];

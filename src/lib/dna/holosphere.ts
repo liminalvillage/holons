@@ -1,7 +1,7 @@
 // Holosphere operations for Holon DNA Editor
 // Feature: 001-holon-dna-editor
 
-import type HoloSphere from 'holosphere';
+import type { HoloSphere } from "holosphere";
 import type { Chromosome, DNASequence } from './types';
 import { validateDNASequence, validateChromosome } from './validation';
 import { getAllDefaultChromosomes, type SeedChromosome } from './seed-data';

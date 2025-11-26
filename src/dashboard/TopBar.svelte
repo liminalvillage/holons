@@ -4,7 +4,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import HoloSphere from 'holosphere';
+	import type { HoloSphere } from "holosphere";
 	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';

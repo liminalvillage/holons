@@ -6,7 +6,7 @@
     import { buildActivationMessage, generateSeedQuests, expandQuestNode, buildAdvisorPersonaContext } from '../utils/backcasting';
     import { getAdvisorResponseFormatInstructions } from '../utils/council-context';
     import LLMService from '../utils/llm-service';
-    import HoloSphere from 'holosphere';
+    import type { HoloSphere } from "holosphere";
     import { ID } from '../dashboard/store';
     import { createTasksFromQuestTree, saveTasksToHolon } from '../utils/holonCreator';
     import type { CouncilAdvisorExtended } from '../types/advisor-schema';

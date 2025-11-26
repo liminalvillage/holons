@@ -4,7 +4,7 @@
 
   import { getContext } from 'svelte';
   import { page } from '$app/stores';
-  import type HoloSphere from 'holosphere';
+  import type { HoloSphere } from "holosphere";
   import DNAEditor from '../../../components/DNAEditor.svelte';
 
   const holosphere = getContext<HoloSphere>('holosphere');

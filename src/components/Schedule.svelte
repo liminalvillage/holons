@@ -8,7 +8,7 @@
 
 	import { formatDate, formatTime } from '../utils/date';
 
-	import HoloSphere from 'holosphere';
+	import type { HoloSphere } from "holosphere";
 	let holosphere = getContext('holosphere') as HoloSphere;
 
 	let holonID: string = '';

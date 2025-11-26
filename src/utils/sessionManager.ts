@@ -1,6 +1,6 @@
 import type { DesignStreamsSession } from '../types/previousRitual';
 import { createDesignStreamsSession, buildRitualSnapshot } from './ritualSnapshot';
-import HoloSphere from 'holosphere';
+import type { HoloSphere } from "holosphere";
 
 /**
  * Session Manager for Design Streams lifecycle

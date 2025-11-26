@@ -3,7 +3,7 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import User from "./User.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
     interface User {

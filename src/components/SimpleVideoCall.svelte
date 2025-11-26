@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, getContext } from 'svelte';
-  import type HoloSphere from 'holosphere';
+  import type { HoloSphere } from "holosphere";
 
   export let roomId: string;
 

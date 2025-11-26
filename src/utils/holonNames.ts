@@ -1,4 +1,4 @@
-import type HoloSphere from "holosphere";
+import type { HoloSphere } from "holosphere";
 
 // Global cache for holon names
 const holonNameCache = new Map<string, string>();

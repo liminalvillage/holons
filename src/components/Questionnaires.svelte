@@ -3,7 +3,7 @@
   import { ID } from '../dashboard/store';
   import { writable, get } from 'svelte/store';
   import { browser } from '$app/environment';
-  import HoloSphere from 'holosphere';
+  import type { HoloSphere } from "holosphere";
 
   // Access the global holosphere instance provided via context
   let holosphere = getContext('holosphere') as HoloSphere | undefined;

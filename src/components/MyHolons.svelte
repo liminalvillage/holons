@@ -5,7 +5,7 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import { browser } from "$app/environment";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
     import { 
         savePersonalHolons, 
@@ -45,10 +45,9 @@
     interface FederatedHolon {
         id: string;
         name: string;
-        bidirectional: boolean;
         lensConfig: {
-            federate: string[];
-            notify: string[];
+            inbound: string[];
+            outbound: string[];
         };
     }
 
@@ -381,19 +380,18 @@
             federatedHolons = [];
             
             if (federationInfo) {
-                // Process federation list
-                for (const holonId of (federationInfo as any).federation || []) {
+                // Process inbound list (holons we receive data from)
+                for (const holonId of (federationInfo as any).inbound || []) {
                     const lensConfig = (federationInfo as any).lensConfig?.[holonId] || {
-                        federate: [],
-                        notify: []
+                        inbound: [],
+                        outbound: []
                     };
-                    
+
                     const holonName = await fetchHolonName(holosphere, holonId);
-                    
+
                     federatedHolons.push({
                         id: holonId,
                         name: holonName,
-                        bidirectional: (federationInfo as any).notify?.includes(holonId) || false,
                         lensConfig
                     });
                 }

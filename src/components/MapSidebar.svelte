@@ -6,7 +6,7 @@
     import { ID } from "../dashboard/store";
     import SchemaForm from './SchemaForm.svelte';
     import { schemas, type SchemaName } from '../lib/schemas';
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import { createEventDispatcher } from 'svelte';
     import type { LensType, HexagonStats } from '../types/Map';
     import { goto } from '$app/navigation';

@@ -5,7 +5,7 @@
 
 	import { formatDate, formatTime } from "../utils/date";
 
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 	import type { Quest } from '../types/Quest';
 	
 

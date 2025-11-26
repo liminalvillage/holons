@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount, onDestroy } from 'svelte';
     import { goto } from '$app/navigation';
-    import HoloSphere from 'holosphere';
+    import type { HoloSphere } from "holosphere";
     import * as d3 from 'd3';
     import { ID } from "../dashboard/store";
     import { fetchHolonName } from "../utils/holonNames";
@@ -1080,14 +1080,14 @@
             // Process federation results and add federated children
             for (const { holonId, federationInfo } of federationResults) {
                 const holon = holonMap.get(holonId);
-                if (holon && federationInfo && federationInfo.federation) {
+                if (holon && federationInfo && federationInfo.inbound) {
                     // Ensure children array exists
                     if (!holon.children) {
                         holon.children = [];
                     }
-                    
-                    // Add federated holons as children
-                    for (const federatedHolonId of federationInfo.federation) {
+
+                    // Add federated holons as children (from inbound - holons we receive from)
+                    for (const federatedHolonId of federationInfo.inbound) {
                         if (federatedHolonId && federatedHolonId !== holonId) {
                             // Create a federated child holon
                             const federatedChildKey = `${holonId}_fed_${federatedHolonId}`;

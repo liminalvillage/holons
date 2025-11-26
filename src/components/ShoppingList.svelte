@@ -2,7 +2,7 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { formatDate, formatTime } from "../utils/date";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import { getHologramSourceName } from "../utils/holonNames";
 
     interface ShoppingItem {
@@ -11,9 +11,11 @@
         done: boolean;
         from: string;
         addedOn: string;
-        _meta?: {
-            resolvedFromHologram?: boolean;
-            hologramSoul?: string;
+        _hologram?: {
+            isHologram: boolean;
+            soul: string;
+            sourceHolon: string;
+            localOverrides?: string[];
         };
     }
 
@@ -25,7 +27,7 @@
     $: shoppingItems = Object.entries(store);
     $: filteredItems = shoppingItems.filter(([_, item]) => {
         // Filter holograms if showHolograms is false
-        if (!showHolograms && item._meta?.resolvedFromHologram) {
+        if (!showHolograms && item._hologram?.isHologram) {
             return false;
         }
         return true;
@@ -44,9 +46,9 @@
 		const hologramSouls = new Set<string>();
 		
 		items.forEach(item => {
-			if (item._meta?.resolvedFromHologram && item._meta.hologramSoul) {
-				if (!hologramSourceNames.has(item._meta.hologramSoul)) {
-					hologramSouls.add(item._meta.hologramSoul);
+			if (item._hologram?.isHologram && item._hologram.soul) {
+				if (!hologramSourceNames.has(item._hologram.soul)) {
+					hologramSouls.add(item._hologram.soul);
 				}
 			}
 		});
@@ -108,7 +110,7 @@
 					const { [key]: _, ...rest } = store;
 					store = rest;
 				}
-                if (newItem?._meta?.resolvedFromHologram) {
+                if (newItem?._hologram?.isHologram) {
                     preResolveHologramNames([newItem]);
                 }
 			});
@@ -341,13 +343,13 @@
                                 class:border-gray-700={item.done}
                                 class:opacity-70={item.done}
                                 class:bg-gray-700={!item.done}
-                                class:border-transparent={!item._meta?.resolvedFromHologram}
+                                class:border-transparent={!item._hologram?.isHologram}
                                 class:hover:bg-gray-600={!item.done}
                                 class:hover:border-gray-500={!item.done}
-                                class:opacity-75={!item.done && item._meta?.resolvedFromHologram}
-                                class:border-2={item._meta?.resolvedFromHologram}
-                                class:border-indigo-500={item._meta?.resolvedFromHologram}
-                                style="{item._meta?.resolvedFromHologram ? 'box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 20px rgba(99, 102, 241, 0.1);' : ''}"
+                                class:opacity-75={!item.done && item._hologram?.isHologram}
+                                class:border-2={item._hologram?.isHologram}
+                                class:border-indigo-500={item._hologram?.isHologram}
+                                style="{item._hologram?.isHologram ? 'box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 20px rgba(99, 102, 241, 0.1);' : ''}"
                             >
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -367,12 +369,12 @@
                                                 <h3 class="text-base font-bold truncate" class:text-gray-400={item.done} class:line-through={item.done} class:text-white={!item.done}>
                                                     {item.id}
                                                 </h3>
-                                                {#if item._meta?.resolvedFromHologram}
+                                                {#if item._hologram?.isHologram}
                                                     <div 
                                                         class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 flex-shrink-0 hover:bg-indigo-500/30 transition-colors cursor-pointer" 
-                                                        title="Navigate to source holon: {getHologramSource(item._meta.hologramSoul)}"
+                                                        title="Navigate to source holon: {getHologramSource(item._hologram.soul)}"
                                                         on:click|stopPropagation={() => {
-                                                            const match = item._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+                                                            const match = item._hologram?.soul?.match(/Holons\/([^\/]+)/);
                                                             if (match) {
                                                                 window.location.href = `/${match[1]}/shopping`;
                                                             }
@@ -381,7 +383,7 @@
                                                         tabindex="0"
                                                         on:keydown|stopPropagation={(e) => {
                                                             if (e.key === 'Enter' || e.key === ' ') {
-                                                                const match = item._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+                                                                const match = item._hologram?.soul?.match(/Holons\/([^\/]+)/);
                                                                 if (match) {
                                                                     window.location.href = `/${match[1]}/shopping`;
                                                                 }
@@ -391,7 +393,7 @@
                                                         <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
                                                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                                                         </svg>
-                                                        {getHologramSource(item._meta.hologramSoul)}
+                                                        {getHologramSource(item._hologram.soul)}
                                                         <svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
                                                         </svg>

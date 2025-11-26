@@ -5,7 +5,7 @@
 	import { ID } from "../dashboard/store";
 	import { browser } from "$app/environment";
 
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
 	import RoleModal from "./RoleModal.svelte";
 

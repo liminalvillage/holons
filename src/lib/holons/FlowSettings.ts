@@ -10,8 +10,8 @@ export interface FederationLink {
   targetName: string;
   relationship: 'federated' | 'notifies';
   lenses: {
-    federate: string[];
-    notify: string[];
+    inbound: string[];
+    outbound: string[];
   };
   timestamp: number;
 }
@@ -29,8 +29,8 @@ export interface HolonSettings {
   federation: FederationLink[];
   lensConfig: {
     [targetId: string]: {
-      federate: string[];
-      notify: string[];
+      inbound: string[];
+      outbound: string[];
       timestamp: number;
     };
   };
@@ -72,7 +72,6 @@ export interface FlowEdge {
   type: 'federation' | 'notification' | 'payment' | 'governance';
   weight: number;
   lenses: string[];
-  bidirectional: boolean;
   status: 'active' | 'inactive';
 }
 
@@ -233,8 +232,8 @@ export class FlowSettings {
         targetName,
         relationship,
         lenses: {
-          federate: [],
-          notify: []
+          inbound: [],
+          outbound: []
         },
         timestamp: Date.now()
       });
@@ -269,13 +268,15 @@ export class FlowSettings {
     
     if (!settings.lensConfig[targetId]) {
       settings.lensConfig[targetId] = {
-        federate: [],
-        notify: [],
+        inbound: [],
+        outbound: [],
         timestamp: Date.now()
       };
     }
-    
-    const lensArray = settings.lensConfig[targetId][relationship];
+
+    // Map old relationship names to new array names
+    const arrayName = relationship === 'federate' ? 'inbound' : 'outbound';
+    const lensArray = settings.lensConfig[targetId][arrayName];
     const lensIndex = lensArray.indexOf(lensType);
     
     if (lensIndex > -1) {
@@ -297,8 +298,10 @@ export class FlowSettings {
     if (!settings || !settings.lensConfig[targetId]) {
       return AVAILABLE_LENSES.map(name => ({ name, enabled: false }));
     }
-    
-    const activeLenses = settings.lensConfig[targetId][relationship];
+
+    // Map old relationship names to new array names
+    const arrayName = relationship === 'federate' ? 'inbound' : 'outbound';
+    const activeLenses = settings.lensConfig[targetId][arrayName];
     
     return AVAILABLE_LENSES.map(name => ({
       name,
@@ -382,22 +385,20 @@ export class FlowSettings {
         type: 'payment',
         weight: settings.flowManagement.internalPercent,
         lenses: [],
-        bidirectional: false,
         status: 'active'
       });
-      
+
       edges.push({
         id: 'splitter-external',
         source: 'splitter',
-        target: 'external', 
+        target: 'external',
         type: 'payment',
         weight: settings.flowManagement.externalPercent,
         lenses: [],
-        bidirectional: false,
         status: 'active'
       });
     }
-    
+
     // Add federation nodes and edges
     settings.federation.forEach((fed, index) => {
       nodes.push({
@@ -407,12 +408,12 @@ export class FlowSettings {
         position: { x: 100 + index * 150, y: 350 },
         status: 'active'
       });
-      
+
       const activeLenses = [
-        ...fed.lenses.federate.map(l => `federate:${l}`),
-        ...fed.lenses.notify.map(l => `notify:${l}`)
+        ...fed.lenses.inbound.map(l => `inbound:${l}`),
+        ...fed.lenses.outbound.map(l => `outbound:${l}`)
       ];
-      
+
       edges.push({
         id: `federation-${fed.targetId}`,
         source: 'external',
@@ -420,7 +421,6 @@ export class FlowSettings {
         type: 'federation',
         weight: activeLenses.length,
         lenses: activeLenses,
-        bidirectional: fed.relationship === 'federated',
         status: 'active'
       });
     });

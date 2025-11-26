@@ -563,11 +563,11 @@
                           <span class="fed-type">{fed.relationship}</span>
                         </div>
                         <div class="fed-lenses">
-                          {#if fed.lenses.federate.length > 0}
-                            <span class="lenses">Federate: {fed.lenses.federate.join(', ')}</span>
+                          {#if fed.lenses.inbound.length > 0}
+                            <span class="lenses">Inbound: {fed.lenses.inbound.join(', ')}</span>
                           {/if}
-                          {#if fed.lenses.notify.length > 0}
-                            <span class="lenses">Notify: {fed.lenses.notify.join(', ')}</span>
+                          {#if fed.lenses.outbound.length > 0}
+                            <span class="lenses">Outbound: {fed.lenses.outbound.join(', ')}</span>
                           {/if}
                         </div>
                       </div>

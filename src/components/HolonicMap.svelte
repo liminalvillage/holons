@@ -3,7 +3,7 @@
     import { ID } from "../dashboard/store";
     import Map from "./Map.svelte";
     import MapSidebar from "./MapSidebar.svelte";
-    import HoloSphere from 'holosphere';
+    import type { HoloSphere } from "holosphere";
 
     const dispatch = createEventDispatcher();
     const holosphere = getContext('holosphere') as HoloSphere;

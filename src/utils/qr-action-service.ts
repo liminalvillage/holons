@@ -1,4 +1,4 @@
-import type HoloSphere from 'holosphere';
+import type { HoloSphere } from "holosphere";
 
 export interface TelegramUser {
 	id: number;

@@ -10,7 +10,7 @@
 	import MapboxGeocoder from "@mapbox/mapbox-gl-geocoder";
 	import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
 	import { ID } from "../dashboard/store";
-	import HoloSphere from 'holosphere';
+	import type { HoloSphere } from "holosphere";
 	import MapSidebar from './MapSidebar.svelte';
 	import type { LensType, LensOption } from '../types/Map';
 

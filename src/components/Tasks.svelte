@@ -5,7 +5,7 @@
 	import { page } from "$app/stores";
 	import { replaceState } from "$app/navigation";
 	import { formatDate, formatTime } from "../utils/date";
-	import HoloSphere from "holosphere";
+	import type { HoloSphere } from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
@@ -48,9 +48,11 @@
 			lastName?: string;
 		};
 		created?: string;
-		_meta?: {
-			resolvedFromHologram?: boolean;
-			hologramSoul?: string;
+		_hologram?: {
+			isHologram: boolean;
+			soul: string;
+			sourceHolon: string;
+			localOverrides?: string[];
 		};
 	}
 
@@ -224,7 +226,7 @@
 			}
 
 			// Filter holograms if showHolograms is false
-			if (!showHolograms && quest._meta?.resolvedFromHologram) {
+			if (!showHolograms && quest._hologram?.isHologram) {
 				return false;
 			}
 
@@ -675,10 +677,10 @@
 		
 		// Collect all unique hologram souls that we don't already have cached
 		questsToProcess.forEach(([_, quest]) => {
-			if (quest._meta?.resolvedFromHologram && quest._meta.hologramSoul) {
+			if (quest._hologram?.isHologram && quest._hologram.soul) {
 				// Only add if we don't already have it cached
-				if (!hologramSourceNames.has(quest._meta.hologramSoul)) {
-					hologramSouls.add(quest._meta.hologramSoul);
+				if (!hologramSourceNames.has(quest._hologram.soul)) {
+					hologramSouls.add(quest._hologram.soul);
 				}
 			}
 		});
@@ -807,7 +809,7 @@
 				return Promise.race([promise, timeoutPromise]);
 			};
 
-			const initialData = await fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000);
+			const initialData = await holosphere.getAll(holonID, "quests");
 
 			// Process initial data
 			const newStore: Store = {};
@@ -966,8 +968,8 @@
 				quests = Object.entries(store);
 				
 				// Only resolve hologram names if this is a new hologram we haven't seen before
-				if (newquest && newquest._meta?.resolvedFromHologram && newquest._meta.hologramSoul && 
-					!hologramSourceNames.has(newquest._meta.hologramSoul)) {
+				if (newquest && newquest._hologram?.isHologram && newquest._hologram.soul && 
+					!hologramSourceNames.has(newquest._hologram.soul)) {
 					await preResolveHologramNames([[key!, newquest]]);
 				}
 			});
@@ -1512,8 +1514,8 @@
 							<div
 								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
 								style="background-color: {getColorFromCategory(quest.category, quest.type)};
-								   opacity: {quest._meta?.resolvedFromHologram ? '0.75' : '1'};
-								   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+								   opacity: {quest._hologram?.isHologram ? '0.75' : '1'};
+								   {quest._hologram?.isHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
 							>
 								<div class="flex items-center justify-between gap-2 sm:gap-3">
 									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
@@ -1533,32 +1535,30 @@
 														{quest.category}
 													</span>
 												{/if}
-												{#if quest._meta?.resolvedFromHologram}
+												{#if quest._hologram?.isHologram}
 													<span
 														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
-														title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+														title="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
 														on:click|stopPropagation={() => {
-															const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
-															if (match) {
-																window.location.href = `/${match[1]}/tasks`;
+															if (quest._hologram?.sourceHolon) {
+																window.location.href = `/${quest._hologram.sourceHolon}/tasks`;
 															}
 														}}
 														on:keydown|stopPropagation={(e) => {
 															if (e.key === 'Enter' || e.key === ' ') {
-																const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
-																if (match) {
-																	window.location.href = `/${match[1]}/tasks`;
+																if (quest._hologram?.sourceHolon) {
+																	window.location.href = `/${quest._hologram.sourceHolon}/tasks`;
 																}
 															}
 														}}
 														tabindex="0"
 														role="button"
-														aria-label="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+														aria-label="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
 													>
 														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
 															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
 														</svg>
-														{getHologramSource(quest._meta.hologramSoul)}
+														{getHologramSource(quest._hologram.soul)}
 														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
 														</svg>

@@ -2,7 +2,7 @@
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
     import { goto } from '$app/navigation';
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     // Allow either quest or role to be passed
     export let quest: any = undefined;
     export let role: any = undefined;
