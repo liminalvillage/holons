@@ -2857,8 +2857,8 @@ export default class Holons {
 
       // Add federated holons section
       try {
-        const fedInfo = await this.db.holosphere.getFederation(chatID);
-        const federatedWith = fedInfo && fedInfo.federation ? fedInfo.federation : [];
+        const fedInfo = await this.db.getFederation(chatID);
+        const federatedWith = fedInfo && fedInfo.federated ? fedInfo.federated : [];
         
         if (federatedWith.length > 0) {
           keyboard.push([{ text: `🔗 Federated Holons (${federatedWith.length})`, callback_data: ' ' }]);

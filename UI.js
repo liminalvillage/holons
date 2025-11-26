@@ -459,9 +459,11 @@ class UI {
       }
       
       // Initial filter for type and status - include tasks, holograms, and recurring tasks
-      quests = quests.filter(quest => 
-        (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') && 
-        (quest.status === 'ongoing' || quest.status === 'scheduled')
+      quests = quests.filter(quest =>
+        (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') &&
+        (quest.status === 'ongoing' || quest.status === 'scheduled') &&
+        // Only show quests that belong to this holon (not federated from elsewhere)
+        (!quest.chat || quest.chat.toString() === chatID.toString())
       )
 
     // If in a topic, filter further by message_thread_id
@@ -469,11 +471,9 @@ class UI {
       quests = quests.filter(quest => quest.message_thread_id === threadId);
     }
 
-      // Wait for the table image to be generated
-      const path = await this.getQuestsTable(quests, chatID, ctx);
-      
-      if (!path) {
-        ctx.reply(i18next.t('questboardgenerror', {lng: language}) || 'Could not generate quest board image.');
+      // Check if there are any quests to display
+      if (!quests || quests.length === 0) {
+        await ctx.reply(i18next.t('noquests', {lng: language}) || 'No tasks to display.');
         return;
       }
 
@@ -489,14 +489,34 @@ class UI {
           `https://dashboard.holons.io/${chatID}/tasks`)
       ]);
 
-      // Send the photo with buttons
-      await ctx.replyWithPhoto(
-        { source: fs.createReadStream(path) },
-        {
-          caption: createPaddedCaption(''),
-          ...Markup.inlineKeyboard(inline_keyboard_buttons)
+      // Try to generate the table image
+      try {
+        const path = await this.getQuestsTable(quests, chatID, ctx);
+
+        if (path) {
+          // Send the photo with buttons
+          await ctx.replyWithPhoto(
+            { source: fs.createReadStream(path) },
+            {
+              caption: createPaddedCaption(''),
+              ...Markup.inlineKeyboard(inline_keyboard_buttons)
+            }
+          );
+        } else {
+          // Image generation failed, send just the buttons
+          await ctx.reply(
+            i18next.t('questboard', {lng: language}) || 'Task Board:',
+            Markup.inlineKeyboard(inline_keyboard_buttons)
+          );
         }
-      );
+      } catch (imageError) {
+        console.error('Error generating quest board image:', imageError);
+        // Image generation failed, send just the buttons
+        await ctx.reply(
+          i18next.t('questboard', {lng: language}) || 'Task Board:',
+          Markup.inlineKeyboard(inline_keyboard_buttons)
+        );
+      }
       
     } catch (err) {
       console.error('Error in questboard:', err);
@@ -1523,11 +1543,22 @@ class UI {
               width: Math.max(initialViewport.width, Math.ceil(elementInfo.scrollWidth + 100)),
               height: Math.max(initialViewport.height, Math.ceil(elementInfo.scrollHeight + 100))
             };
+
+            // Check if viewport would exceed Telegram's photo dimension limits
+            const MAX_VIEWPORT_HEIGHT = 5000;
+            const MAX_VIEWPORT_WIDTH = 5000;
+
+            if (newViewport.height > MAX_VIEWPORT_HEIGHT || newViewport.width > MAX_VIEWPORT_WIDTH) {
+              console.log(`Viewport too large (${newViewport.width}x${newViewport.height}), skipping image generation`);
+              await page.close();
+              return null; // Return null to trigger fallback to buttons-only
+            }
+
             console.log(`Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height}`);
             await page.setViewport(newViewport);
-            
+
             // Wait a moment for reflow
-            await page.waitForTimeout(500);
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             // Re-evaluate element position after resize
             const updatedElementInfo = await page.evaluate((selector) => {

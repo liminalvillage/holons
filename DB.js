@@ -35,12 +35,6 @@ class DB {
         // Increased from 1000ms to 5000ms to handle slower Nostr relay responses
         this.defaultTimeout = 5000;
 
-        // Short-lived write cache for performance (handles race conditions)
-        // Nostr relays are the primary storage, cache just prevents immediate re-reads
-        // Format: { 'table/key': { data, timestamp, hash } }
-        this.writeCache = new Map();
-        this.writeCacheTTL = 60000; // Cache for 60 seconds for performance
-
         // Track pending writes to prevent duplicate Nostr writes
         this.pendingWrites = new Map();
     }
@@ -48,29 +42,11 @@ class DB {
     async init() {
         try {
             // HoloSphere is now initialized with Nostr relays
+            // Caching is handled internally by holosphere2's nostr-client
             console.log(`DB "${this.dbName}" initialized with ${this.holosphere.config.relays.length} Nostr relays`);
-
-            // Preload cache from Nostr on startup (run in background)
-            console.log(`DB "${this.dbName}" preloading data from Nostr relays...`);
-            this.preloadCache().catch(err => {
-                console.error("Error preloading cache:", err);
-            });
         } catch (error) {
             console.error("Error initializing database:", error);
         }
-    }
-
-    async preloadCache() {
-        // This runs in the background to populate the cache from Nostr
-        // Preloading common tables that are frequently accessed
-        const tablesToPreload = [
-            // Format: chatId/lens - but we don't know chatIds at init
-            // So we'll just rely on lazy loading
-        ];
-
-        // For now, just log that we're ready
-        // Cache will be populated on-demand as data is accessed
-        console.log(`DB "${this.dbName}" cache ready. Data will be loaded on-demand.`);
     }
 
     /**
@@ -90,17 +66,10 @@ class DB {
 
     async del(table, key) {
         try {
-            // Remove from cache if present
-            const cacheKey = `${table}/${key}`;
-            if (this.writeCache.has(cacheKey)) {
-                this.writeCache.delete(cacheKey);
-                console.log(`DB.del: Removed from cache: ${cacheKey}`);
-            }
-
             return this.deleteGunDB(table, key);
         } catch (error) {
             console.error("Error deleting data:", error);
-            throw error; // Rethrow to allow caller to handle
+            throw error;
         }
     }
 
@@ -113,13 +82,18 @@ class DB {
                 this.holosphere.deleteAll(hex, lens);
         } catch (error) {
             console.error("Error dropping table:", error);
-            throw error; // Rethrow to allow caller to handle
+            throw error;
         }
     }
 
-    // Simple hash function for dirty checking
-    _hashData(data) {
-        return JSON.stringify(data);
+    /**
+     * Clear cache entries for a specific chatID (delegates to holosphere2)
+     * @param {string} chatID - Chat ID to clear cache for
+     */
+    clearCacheForChatID(chatID) {
+        // Delegate to holosphere2's cache clearing
+        this.holosphere.clearCache(chatID);
+        console.log(`DB.clearCacheForChatID: Cleared cache for chatID ${chatID}`);
     }
 
     async put(table, data) {
@@ -128,14 +102,6 @@ class DB {
             if (!key) return data;
 
             const cacheKey = `${table}/${key}`;
-            const dataHash = this._hashData(data);
-
-            // Check if data has changed (dirty checking)
-            const cached = this.writeCache.get(cacheKey);
-            if (cached && cached.hash === dataHash) {
-                // Data unchanged, skip Nostr write
-                return data;
-            }
 
             // Check if a write is already pending for this key
             if (this.pendingWrites.has(cacheKey)) {
@@ -154,22 +120,6 @@ class DB {
                 this.pendingWrites.delete(cacheKey);
             }
 
-            // Update cache with new data and hash
-            const cacheEntry = {
-                data: JSON.parse(JSON.stringify(data)),
-                timestamp: Date.now(),
-                hash: dataHash
-            };
-            this.writeCache.set(cacheKey, cacheEntry);
-
-            // Auto-expire after TTL
-            setTimeout(() => {
-                const cached = this.writeCache.get(cacheKey);
-                if (cached && Date.now() - cached.timestamp >= this.writeCacheTTL) {
-                    this.writeCache.delete(cacheKey);
-                }
-            }, this.writeCacheTTL);
-
             return data;
         } catch (error) {
             console.error(`DB.put error: ${table}/${data.id}:`, error.message);
@@ -179,27 +129,8 @@ class DB {
 
     async get(table, key) {
         try {
-            // Check cache first for recently written data (performance optimization)
-            const cacheKey = `${table}/${key}`;
-            const cached = this.writeCache.get(cacheKey);
-            if (cached && Date.now() - cached.timestamp < this.writeCacheTTL) {
-                // Return a deep clone to prevent mutations
-                return JSON.parse(JSON.stringify(cached.data));
-            }
-
-            // Fetch from Nostr (primary storage)
-            const result = await this.withTimeout(this.getGunDB(table, key));
-
-            if (result) {
-                // Cache the result for performance (with hash for dirty checking)
-                this.writeCache.set(cacheKey, {
-                    data: result,
-                    timestamp: Date.now(),
-                    hash: this._hashData(result)
-                });
-            }
-
-            return result;
+            // holosphere2 handles caching internally via nostr-client
+            return await this.withTimeout(this.getGunDB(table, key));
         } catch (error) {
             console.error(`DB.get error: ${table}/${key}:`, error.message);
             throw error;
@@ -208,24 +139,8 @@ class DB {
 
     async getAll(table) {
         try {
-            // Get all items from Nostr relays
-            const items = await this.withTimeout(this.getAllGunDB(table));
-
-            // Cache all items for performance (with hash for dirty checking)
-            if (items && Array.isArray(items)) {
-                items.forEach(item => {
-                    if (item && item.id) {
-                        const cacheKey = `${table}/${item.id}`;
-                        this.writeCache.set(cacheKey, {
-                            data: item,
-                            timestamp: Date.now(),
-                            hash: this._hashData(item)
-                        });
-                    }
-                });
-            }
-
-            return items;
+            // holosphere2 handles caching internally via nostr-client
+            return await this.withTimeout(this.getAllGunDB(table));
         } catch (error) {
             console.error(`DB.getAll error for ${table}:`, error.message);
             throw error;
@@ -274,6 +189,109 @@ class DB {
         if (lens === undefined) // TODO: this is a hack to get the lens and key from the key. Refactor from scheduler
             [lens,key] = key.split('_')
         return this.holosphere.delete(hex, lens, key);
+    }
+
+    // ===========================      Federation Operations
+
+    /**
+     * Get federation data (caching handled by holosphere2)
+     * @param {string} holonId - Holon ID to get federation for
+     * @returns {Promise<Object|null>} Federation data or null
+     */
+    async getFederation(holonId) {
+        return await this.withTimeout(this.holosphere.getFederation(holonId));
+    }
+
+    /**
+     * Unfederate holons
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} targetHolon - Target holon ID
+     * @returns {Promise<boolean>} Success indicator
+     */
+    async unfederateHolon(sourceHolon, targetHolon) {
+        return await this.holosphere.unfederateHolon(sourceHolon, targetHolon);
+    }
+
+    /**
+     * Federate holons
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} targetHolon - Target holon ID
+     * @param {Object} options - Federation options
+     * @returns {Promise<boolean>} Success indicator
+     */
+    async federateHolon(sourceHolon, targetHolon, options = {}) {
+        return await this.holosphere.federateHolon(sourceHolon, targetHolon, options);
+    }
+
+    /**
+     * Get federated config
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} targetHolon - Target holon ID
+     * @returns {Promise<Object|null>} Lens config or null
+     */
+    async getFederatedConfig(sourceHolon, targetHolon) {
+        const fedData = await this.getFederation(sourceHolon);
+        if (!fedData || !fedData.lensConfig) {
+            return null;
+        }
+        return fedData.lensConfig[targetHolon] || null;
+    }
+
+    // ===========================      Hologram Operations
+
+    /**
+     * Propagate data to federated holons using holosphere2's propagateData
+     * This creates holograms (lightweight references) or copies data depending on mode
+     * @param {Object} data - Data to propagate
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} targetHolon - Target holon ID
+     * @param {string} lensName - Lens name
+     * @param {string} mode - 'reference' (creates hologram) or 'copy' (copies data)
+     * @returns {Promise<boolean>} Success indicator
+     */
+    async propagateData(data, sourceHolon, targetHolon, lensName, mode = 'reference') {
+        return await this.holosphere.propagateData(data, sourceHolon, targetHolon, lensName, { mode });
+    }
+
+    /**
+     * Delete a hologram and clean up activeHolograms on the source
+     * @param {string} holonId - Holon where the hologram lives
+     * @param {string} lensName - Lens name
+     * @param {string} dataId - Data ID of the hologram
+     * @returns {Promise<Object>} Result with deletion info
+     */
+    async deleteHologram(holonId, lensName, dataId) {
+        return await this.holosphere.deleteHologram(holonId, lensName, dataId);
+    }
+
+    /**
+     * Create a hologram (lightweight reference) for federation
+     * @param {string} sourceHolon - Source holon ID where the original data lives
+     * @param {string} lensName - Lens name (e.g., 'quests')
+     * @param {Object} data - Data object (must have an 'id' property)
+     * @param {string} [targetHolon] - Optional target holon ID (defaults to sourceHolon)
+     * @returns {Object} Hologram object ready to be written to a holon
+     */
+    createHologram(sourceHolon, lensName, data, targetHolon = null) {
+        return this.holosphere.createHologram(sourceHolon, lensName, data, targetHolon);
+    }
+
+    /**
+     * Resolve a hologram to its actual data, merging local overrides
+     * @param {Object} hologram - Hologram object to resolve
+     * @returns {Promise<Object|null>} Resolved data or null
+     */
+    async resolveHologram(hologram) {
+        return await this.holosphere.resolveHologram(hologram);
+    }
+
+    /**
+     * Check if data is a hologram (unresolved reference)
+     * @param {Object} data - Data to check
+     * @returns {boolean} True if data is a hologram
+     */
+    isHologram(data) {
+        return this.holosphere.isHologram(data);
     }
 }
 

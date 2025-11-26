@@ -384,7 +384,7 @@ export default class Roles {
     async resetroles(ctx) {
         let chatID = ctx.chat.id;
         if (!utils.isAdmin(ctx)) {
-            ctx.answerCbQuery('Only admins can reset all roles');
+            ctx.reply('Only admins can reset all roles');
             return;
         }
         

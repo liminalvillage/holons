@@ -532,9 +532,11 @@ export default class SettingsScenes {
                     return;
                 }
 
-                // Here is where the federation happens: Federate with the provided ID
+                // Here is where the federation happens: Federate with the provided ID using holon-level API
                 // console.log('Federation actually happens here, in the scenes!');
-                await this.db.holosphere.federate(chatID.toString(), federationID);
+                await this.db.federateHolon(chatID.toString(), federationID.toString(), {
+                    lensConfig: { inbound: [], outbound: [] }
+                });
                 const isGroup = federationID < 0;
                 console.log("Federation is happening with the individual, or with the group?", isGroup);
 
@@ -750,15 +752,24 @@ export default class SettingsScenes {
                 // Store message IDs for cleanup
                 ctx.scene.state.userMessageId = ctx.message.message_id;
                 ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
-                
+
                 // Clean up messages
                 await this.cleanupSceneMessages(ctx);
 
-                await ctx.reply(i18next.t('settings_federation_added', { lng: language, id: federationID }));
                 await ctx.scene.leave();
 
-                // Show updated federation menu
-                await this.showFederationMenu(ctx, false);
+                // Show updated federation menu - edit the original message if we have the ID
+                const shouldEdit = Boolean(ctx.scene.state.originalMessageId);
+                if (shouldEdit && ctx.scene.state.originalMessageId) {
+                    // Create a fake callback query context to allow editing
+                    ctx.callbackQuery = {
+                        message: {
+                            chat: { id: chatID },
+                            message_id: ctx.scene.state.originalMessageId
+                        }
+                    };
+                }
+                await this.showFederationMenu(ctx, shouldEdit);
             } catch (error) {
                 console.error('Federation error:', error);
                 await ctx.reply(i18next.t('settings_federation_error', { lng: language, error: error.message }));

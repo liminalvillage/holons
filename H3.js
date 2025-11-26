@@ -141,30 +141,30 @@ class H3 {
                     fedInfo = {
                         id: chatID,
                         name: chatID,
-                        federation: [],
-                        notify: [],
+                        inbound: [],
+                        outbound: [],
                         lensConfig: {},
                         timestamp: Date.now()
                     };
                 }
 
                 // Ensure arrays exist
-                if (!fedInfo.federation) fedInfo.federation = [];
-                if (!fedInfo.notify) fedInfo.notify = [];
+                if (!fedInfo.inbound) fedInfo.inbound = [];
+                if (!fedInfo.outbound) fedInfo.outbound = [];
                 if (!fedInfo.lensConfig) fedInfo.lensConfig = {};
 
                 // Add hex to federation if not already present
-                if (!fedInfo.federation.includes(hex)) {
-                    fedInfo.federation.push(hex);
+                if (!fedInfo.inbound.includes(hex)) {
+                    fedInfo.inbound.push(hex);
                 }
-                if (!fedInfo.notify.includes(hex)) {
-                    fedInfo.notify.push(hex);
+                if (!fedInfo.outbound.includes(hex)) {
+                    fedInfo.outbound.push(hex);
                 }
 
                 // Configure lens settings for the hex
                 fedInfo.lensConfig[hex] = {
-                    federate: ['quests', 'events', 'proposals'],
-                    notify: ['quests', 'events', 'proposals'],
+                    inbound: ['quests', 'events', 'proposals'],
+                    outbound: ['quests', 'events', 'proposals'],
                     timestamp: Date.now()
                 };
 

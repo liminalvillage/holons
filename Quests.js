@@ -921,19 +921,30 @@ export default class Quests {
     // Helper methods
     async personalHologram(userId, quest) {
         if (!userId || !quest?.id || !quest.chat) return;
-        
+
         try {
-            const hologramData = {
+            // Use holosphere's propagateData to create a proper hologram
+            // This handles:
+            // 1. Creating the hologram with correct structure
+            // 2. Adding to source's activeHolograms list
+            // 3. If quest is already a hologram, copies it instead of creating hologram of hologram
+            const questData = {
                 id: quest.id.toString(),
-                soul: `${this.db.holosphere.appname}/${quest.chat}/quests/${quest.id}`,
-                title: quest.title,
-                status: quest.status,
-                originalLens: 'quests',
-                lastInteracted: Date.now()
+                ...quest
             };
-            
-            await this.db.holosphere.put(userId.toString(), 'quests', hologramData).catch(() => {});
-        } catch {}
+
+            await this.db.propagateData(
+                questData,
+                quest.chat.toString(),    // sourceHolon - where the quest lives
+                userId.toString(),         // targetHolon - user's personal holon
+                'quests',
+                'reference'                // mode - create hologram reference
+            ).catch(err => {
+                console.warn(`[personalHologram] Failed to propagate quest ${quest.id} to user ${userId}:`, err.message);
+            });
+        } catch (err) {
+            console.warn(`[personalHologram] Error:`, err.message);
+        }
     }
 
     async checkUserAdmin(userId, chatId) {
@@ -2461,29 +2472,112 @@ export default class Quests {
         }
     }
     async handleFederatedMessages(ctx, quest, language) {
-        if (!quest?.published) return;
-
         try {
-            // Check if there are federated holons to share with
-            const federatedHolons = await this.db.getAll('federatedHolons').catch(() => []);
+            console.log(`[handleFederatedMessages] Starting for quest ${quest.id} in chat ${quest.chat}`);
 
-            if (!federatedHolons?.length) {
-                console.log('No federated holons configured');
+            const chatID = quest.chat;
+            const chatIDStr = chatID.toString();
+
+            // Get settings to check for hex
+            const settings = await this.settings.getSettings(chatID);
+            const settingsHex = settings?.hex;
+
+            // Get federation info
+            const fedInfo = await this.db.getFederation(chatID);
+            console.log(`[handleFederatedMessages] Federation info for chat ${chatID}:`, fedInfo);
+
+            const hasFederatedHolons = fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0;
+
+            // If we have neither federation nor settings hex, nothing to do
+            if (!hasFederatedHolons && !settingsHex) {
+                console.log(`[handleFederatedMessages] No federated holons or hex configured for quest ${quest.id}`);
                 return;
             }
 
-            // Share quest with federated holons
-            for (const holon of federatedHolons) {
+            // Create hologram for the quest (like Harvest does)
+            const hologram = this.db.createHologram(chatIDStr, 'quests', quest);
+            console.log(`[handleFederatedMessages] Created hologram:`, hologram);
+
+            let totalPublished = 0;
+
+            // First, publish to settings hex if configured (direct put, like Harvest)
+            if (settingsHex) {
                 try {
-                    if (holon.type === 'telegram' && holon.chatId) {
-                        // Create a federated quest message
+                    console.log(`[handleFederatedMessages] Publishing to settings hex: ${settingsHex}`);
+                    await this.db.put(settingsHex, 'quests', hologram);
+                    totalPublished++;
+                    console.log(`[handleFederatedMessages] Successfully published to settings hex`);
+                } catch (error) {
+                    console.error(`[handleFederatedMessages] Failed to publish to settings hex:`, error);
+                }
+            }
+
+            // Then use holosphere propagate for all federated holons (handles lens checks internally)
+            if (hasFederatedHolons) {
+                // Check if this is an H3 holon
+                let isH3Holon = false;
+                try {
+                    isH3Holon = this.db.isValidH3 ? this.db.isValidH3(chatIDStr) : false;
+                } catch (e) {
+                    isH3Holon = false;
+                }
+
+                const propagationResult = await this.db.propagate(chatIDStr, 'quests', hologram, {
+                    useHolograms: true,
+                    propagateToParents: isH3Holon,
+                    maxParentLevels: isH3Holon ? 1 : 0
+                });
+
+                console.log(`[handleFederatedMessages] Propagation result:`, propagationResult);
+                totalPublished += (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
+            }
+
+            // Now send Telegram messages to numeric federated chat IDs
+            if (fedInfo?.outbound?.length) {
+                for (const federatedChatId of fedInfo.outbound) {
+                    // Only send Telegram messages to numeric chat IDs
+                    const chatIdNum = Number(federatedChatId);
+                    if (isNaN(chatIdNum) || !Number.isFinite(chatIdNum)) {
+                        // Non-numeric IDs (like hex) are handled by propagate above
+                        continue;
+                    }
+
+                    // Skip if it's the same chat as the original
+                    if (federatedChatId.toString() === chatIDStr) {
+                        continue;
+                    }
+
+                    // Check if we already have a Telegram hologram for this chat
+                    const existingHologram = quest.activeHolograms?.find(
+                        h => h.chatId?.toString() === federatedChatId.toString() && h.type === 'federated'
+                    );
+                    if (existingHologram) {
+                        console.log(`[handleFederatedMessages] Quest ${quest.id} already has Telegram hologram in ${federatedChatId}, skipping`);
+                        continue;
+                    }
+
+                    // Check if the target holon has allowed the 'quests' lens in their inbound config
+                    try {
+                        const targetFedInfo = await this.db.getFederation(federatedChatId);
+                        const targetLensConfig = targetFedInfo?.lensConfig?.[chatIDStr];
+
+                        if (!targetLensConfig?.inbound?.includes('quests')) {
+                            console.log(`[handleFederatedMessages] Skipping Telegram message to ${federatedChatId} - 'quests' lens not in their inbound`);
+                            continue;
+                        }
+                    } catch (error) {
+                        console.error(`[handleFederatedMessages] Error checking federation settings for chat ${federatedChatId}:`, error);
+                        continue;
+                    }
+
+                    try {
+                        // Create a federated quest message for Telegram
                         const baseMessageText = await this.createMessage(quest, language);
                         const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
                         const federatedMessageText = `🌐 **${i18next.t('federated_quest', { lng: language, defaultValue: 'Federated Quest' })}**\n` +
                             `📡 ${i18next.t('from_holon', { lng: language, defaultValue: 'From holon' })}: ${originalHolonName}\n\n` +
                             baseMessageText;
 
-                        // Create simplified markup for federated quest
                         const federatedMarkup = Markup.inlineKeyboard([
                             [Markup.button.callback(
                                 i18next.t('view_original', { lng: language, defaultValue: 'View Original' }),
@@ -2493,12 +2587,11 @@ export default class Quests {
 
                         let federatedMessage;
 
-                        // Send to federated holon
                         if (this.shouldShowQuestsAsImages()) {
                             const questImagePath = await this.getCachedQuestImage(quest, quest.chat, true);
                             if (questImagePath) {
                                 try {
-                                    federatedMessage = await ctx.telegram.sendPhoto(holon.chatId,
+                                    federatedMessage = await ctx.telegram.sendPhoto(federatedChatId,
                                         { source: questImagePath },
                                         {
                                             caption: createPaddedCaption(''),
@@ -2507,61 +2600,41 @@ export default class Quests {
                                         }
                                     );
                                 } catch (imageError) {
-                                    federatedMessage = await ctx.telegram.sendMessage(holon.chatId, federatedMessageText, federatedMarkup);
+                                    federatedMessage = await ctx.telegram.sendMessage(federatedChatId, federatedMessageText, federatedMarkup);
                                 }
                             } else {
-                                federatedMessage = await ctx.telegram.sendMessage(holon.chatId, federatedMessageText, federatedMarkup);
+                                federatedMessage = await ctx.telegram.sendMessage(federatedChatId, federatedMessageText, federatedMarkup);
                             }
                         } else {
-                            federatedMessage = await ctx.telegram.sendMessage(holon.chatId, federatedMessageText, federatedMarkup);
+                            federatedMessage = await ctx.telegram.sendMessage(federatedChatId, federatedMessageText, federatedMarkup);
                         }
 
-                        // Track federated message
+                        // Track federated Telegram message
                         if (!quest.activeHolograms) quest.activeHolograms = [];
                         quest.activeHolograms.push({
                             platform: 'telegram',
-                            chatId: holon.chatId,
+                            chatId: federatedChatId,
                             messageId: federatedMessage.message_id,
                             type: 'federated'
                         });
 
-                        console.log(`Shared quest ${quest.id} with federated holon ${holon.chatId}`);
+                        console.log(`[handleFederatedMessages] Sent Telegram message to federated chat ${federatedChatId}`);
 
-                    } else if (holon.type === 'webhook' && holon.url) {
-                        // Send to webhook endpoint (for other platforms or services)
-                        const payload = {
-                            type: 'quest_published',
-                            quest: {
-                                id: quest.id,
-                                title: quest.title,
-                                type: quest.type,
-                                status: quest.status,
-                                initiator: quest.initiator,
-                                participants: quest.participants,
-                                appreciation: quest.appreciation,
-                                date: quest.date,
-                                chat: quest.chat
-                            },
-                            source_holon: await getHolonName(this.db, quest.chat, ctx)
-                        };
-
-                        // Make HTTP request to webhook (would need fetch or axios)
-                        // For now, just log the intent
-                        console.log(`Would send to webhook ${holon.url}:`, payload);
+                    } catch (holonError) {
+                        console.error(`[handleFederatedMessages] Error sending Telegram message to ${federatedChatId}:`, holonError);
                     }
+                }
 
-                } catch (holonError) {
-                    console.error(`Error sharing quest with federated holon ${holon.chatId || holon.url}:`, holonError);
+                // Save updated quest with federated hologram links
+                if (quest.activeHolograms?.length > 0) {
+                    await this.db.put(quest.chat + '/quests', quest);
                 }
             }
 
-            // Save updated quest with federated hologram links
-            if (quest.activeHolograms?.length > 0) {
-                await this.db.put(quest.chat + '/quests', quest);
-            }
+            console.log(`[handleFederatedMessages] Completed. Total published: ${totalPublished}`);
 
         } catch (error) {
-            console.error('Error handling federated messages:', error);
+            console.error('[handleFederatedMessages] Error handling federated messages:', error);
         }
     }
 

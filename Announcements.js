@@ -63,15 +63,15 @@ class Announcements {
             console.log(`[handleFederatedAnnouncements] Starting for announcement ${announcement.id} in chat ${announcement.chat}`);
             
             // Get federation info to find out which spaces to notify
-            const fedInfo = await this.db.holosphere.getFederation(announcement.chat);
+            const fedInfo = await this.db.getFederation(announcement.chat);
             console.log(`[handleFederatedAnnouncements] Federation info for chat ${announcement.chat}:`, fedInfo);
             
-            if (!fedInfo?.notify?.length) {
+            if (!fedInfo?.outbound?.length) {
                 console.log(`[handleFederatedAnnouncements] No federated chats to notify for announcement ${announcement.id}`);
                 return;
             }
-            
-            console.log(`[handleFederatedAnnouncements] Found ${fedInfo.notify.length} federated chats to notify:`, fedInfo.notify);
+
+            console.log(`[handleFederatedAnnouncements] Found ${fedInfo.outbound.length} federated chats to notify:`, fedInfo.outbound);
 
             // Get existing federation tracking info
             const federationKey = `${announcement.chat}_${announcement.id}_fedannouncements`;
@@ -82,7 +82,7 @@ class Announcements {
                 messages: []
             };
 
-            for (const federatedChatId of fedInfo.notify) {
+            for (const federatedChatId of fedInfo.outbound) {
                 // Skip if it's the same chat as the original
                 if (federatedChatId === announcement.chat) {
                     console.log(`[handleFederatedAnnouncements] Skipping same chat ${federatedChatId}`);
@@ -93,19 +93,20 @@ class Announcements {
 
                 // Check if the target holon has allowed the 'announcements' lens in their federation array
                 try {
-                    const targetFedInfo = await this.db.holosphere.getFederation(federatedChatId);
+                    const targetFedInfo = await this.db.getFederation(federatedChatId);
                     console.log(`[handleFederatedAnnouncements] Target federation info for ${federatedChatId}:`, targetFedInfo);
-                    
-                    // Check if the target chat has lensConfig and if it allows 'announcements' lens for this specific connection
+
+                    // Check if the target chat has lensConfig and if it allows 'announcements' lens in their inbound
+                    // (receiver's inbound = what they accept FROM us)
                     const sourceChatId = announcement.chat.toString();
                     const targetLensConfig = targetFedInfo?.lensConfig?.[sourceChatId];
-                    
-                    if (!targetLensConfig?.notify?.includes('announcements')) {
-                        console.log(`[handleFederatedAnnouncements] Skipping federated announcement to ${federatedChatId} - 'announcements' lens not allowed in their notify array for chat ${sourceChatId}`);
+
+                    if (!targetLensConfig?.inbound?.includes('announcements')) {
+                        console.log(`[handleFederatedAnnouncements] Skipping federated announcement to ${federatedChatId} - 'announcements' lens not in their inbound for chat ${sourceChatId}`);
                         continue;
                     }
-                    
-                    console.log(`[handleFederatedAnnouncements] Target chat ${federatedChatId} allows 'announcements' lens for chat ${sourceChatId}, proceeding with message`);
+
+                    console.log(`[handleFederatedAnnouncements] Target chat ${federatedChatId} accepts 'announcements' lens from chat ${sourceChatId}, proceeding with message`);
                 } catch (error) {
                     console.error(`[handleFederatedAnnouncements] Error checking federation settings for chat ${federatedChatId}:`, error);
                     continue; // Skip this chat if we can't verify federation settings
