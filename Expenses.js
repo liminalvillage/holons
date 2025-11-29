@@ -146,8 +146,8 @@ export default class Expenses {
                 ctx.replyWithPhoto({ source: fs.createReadStream(path) }, {
                     caption: createPaddedCaption(''),
                     ...Markup.inlineKeyboard([
-                        Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-                          `https://dashboard.holons.io/${chatID}/expenses`)
+                        Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+                          `${process.env.DASHBOARD_ADDRESS}/${chatID}/expenses`)
                       ])
                 }).catch(err => console.log(err));
             });

@@ -778,8 +778,8 @@ export default class Quests {
                 [
                     Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 
                                           `publish_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.url('📊 Dashboard', 
-                                     `https://dashboard.holons.io/${quest.chat}/tasks?task=${quest.id}`)
+                    Markup.button.url('📊 Dashboard',
+                                     `${process.env.DASHBOARD_ADDRESS}/${quest.chat}/tasks?task=${quest.id}`)
                 ]
             );
         } else if (quest.type === 'event') {

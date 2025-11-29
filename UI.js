@@ -41,7 +41,7 @@ class UI {
     this.bot.command('dashboard', async (ctx) => {
       let chatID = ctx.message.chat.id
       const language = await this.settings.getLanguage(chatID)
-      const dashboardUrl = `https://dashboard.holons.io/${chatID}/dashboard`
+      const dashboardUrl = `${process.env.DASHBOARD_ADDRESS}/${chatID}/dashboard`
       
       try {
         // Generate QR code
@@ -170,8 +170,8 @@ class UI {
           {
             caption: createPaddedCaption(''),
             ...Markup.inlineKeyboard([
-              Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-                `https://dashboard.holons.io/${chatID}/status`)
+              Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+                `${process.env.DASHBOARD_ADDRESS}/${chatID}/status`)
             ])
           }
         ).catch(err => console.error('Error sending leaderboard photo:', err));
@@ -322,8 +322,8 @@ class UI {
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open in Holons', { lng: language }), 
-              `https://dashboard.holons.io/${chatID}/offers`)
+            Markup.button.url(i18next.t('Open in Holons', { lng: language }),
+              `${process.env.DASHBOARD_ADDRESS}/${chatID}/offers`)
           ])
         }
       );
@@ -381,8 +381,8 @@ class UI {
       {
         caption: createPaddedCaption(''),
         ...Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-            `https://dashboard.holons.io/${chatID}/values/`)
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+            `${process.env.DASHBOARD_ADDRESS}/${chatID}/values/`)
         ])
       }
     )
@@ -431,8 +431,8 @@ class UI {
       {
         caption: createPaddedCaption(''),
         ...Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-            `https://dashboard.holons.io/${chatID}/needs/`)
+          Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+            `${process.env.DASHBOARD_ADDRESS}/${chatID}/needs/`)
         ])
       }
     )
@@ -486,7 +486,7 @@ class UI {
 
       inline_keyboard_buttons.push([
         Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-          `https://dashboard.holons.io/${chatID}/tasks`)
+          `${process.env.DASHBOARD_ADDRESS}/${chatID}/tasks`)
       ]);
 
       // Try to generate the table image
@@ -558,8 +558,8 @@ class UI {
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-              `https://dashboard.holons.io/${chatID}/offers`)
+            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+              `${process.env.DASHBOARD_ADDRESS}/${chatID}/offers`)
           ])
         }
       );
@@ -604,8 +604,8 @@ class UI {
         {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
-            Markup.button.url(i18next.t('Open Dashboard', { lng: language }), 
-              `https://dashboard.holons.io/${chatID}/offers/`)
+            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+              `${process.env.DASHBOARD_ADDRESS}/${chatID}/offers/`)
           ])
         }
       );

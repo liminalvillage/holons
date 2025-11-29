@@ -2157,7 +2157,7 @@ export default class Settings {
                     ],
                     // 9. Dashboard (full width)
                     [
-                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `https://dashboard.holons.io/${chatID}/dashboard` }
+                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `${process.env.DASHBOARD_ADDRESS}/${chatID}/dashboard` }
                     ]
                 ]
             }
