@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
-import { getChatId, getMessageId, capitalize, getDisplayName, isBotAdmin, getHolonName, createPaddedCaption } from './utilities.js';
+import { getChatId, getMessageId, capitalize, getDisplayName, getHolonName, createPaddedCaption } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
 import { log } from './utils/logger.js';
@@ -85,39 +85,7 @@ export default class Quests {
     }
 
     setupScenes() {
-        this.descriptionScene = new Scenes.BaseScene('description_scene');
-        this.descriptionScene.enter(async (ctx) => {
-            const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
-            const promptMessage = await ctx.reply('📝 Reply with a description for this task.');
-            ctx.scene.state.promptMessageId = promptMessage.message_id;
-        });
-        
-        this.descriptionScene.on('text', async (ctx) => {
-            try {
-                const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
-                if (!await this.questExists(quest, ctx, ctx.scene.state.questId)) {
-                    return ctx.scene.leave();
-                }
-                
-                quest.description = ctx.message.text;
-                await this.db.put(ctx.scene.state.chatId + '/quests', quest);
-                
-                const botHasAdminRights = await isBotAdmin(ctx);
-                if (botHasAdminRights) {
-                    if (ctx.scene.state.promptMessageId) {
-                        await ctx.deleteMessage(ctx.scene.state.promptMessageId).catch(() => {});
-                    }
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                }
-                
-                await this.updateMessage(ctx, quest);
-                return ctx.scene.leave();
-            } catch (error) {
-                return ctx.scene.leave();
-            }
-        });
-        
-        this.bot.stage.register(this.descriptionScene);
+        // Migrated to InputScene - no custom scenes needed
     }
 
     registerCommands() {
@@ -1562,13 +1530,26 @@ export default class Quests {
             const quest = await this.db.get(chatId + '/quests', messageId.toString());
             if (!await this.questExists(quest, ctx, messageId)) { return; }
 
-            // Enter scene for adding description
-            await ctx.scene.enter('description_scene', {
-                questId: messageId,
-                chatId: chatId
-            });
-
             await ctx.answerCbQuery().catch(() => {});
+
+            // Use InputScene for description collection
+            return ctx.scene.enter('input_scene', {
+                promptText: '📝 Reply with a description for this task.',
+                allowEmpty: false,
+                onComplete: async (ctx, description) => {
+                    const chatID = ctx.chat.id;
+                    const questId = messageId;
+
+                    const quest = await this.db.get(chatID + '/quests', questId.toString());
+                    if (!await this.questExists(quest, ctx, questId)) {
+                        return;
+                    }
+
+                    quest.description = description;
+                    await this.db.put(chatID + '/quests', quest);
+                    await this.updateMessage(ctx, quest);
+                }
+            });
         } catch (error) {
             console.error('Error handling description:', error);
             await ctx.answerCbQuery('Error accessing description');
@@ -2185,16 +2166,14 @@ export default class Quests {
                 return;
             }
 
-            // Simple implementation: ask for the item text directly
-            await ctx.answerCbQuery('Reply with the new checklist item text');
+            await ctx.answerCbQuery().catch(() => {});
 
-            // Send a prompt message
-            const promptMessage = await ctx.reply('📝 Reply with the text for the new checklist item:');
-
-            // Store the context for handling the response
-            const responseHandler = async (responseCtx) => {
-                if (responseCtx.message && responseCtx.message.text) {
-                    const itemText = responseCtx.message.text;
+            // Use InputScene for checklist item input
+            return ctx.scene.enter('input_scene', {
+                promptText: '📝 Reply with the text for the new checklist item:',
+                allowEmpty: false,
+                onComplete: async (ctx, itemText) => {
+                    const chatId = ctx.chat.id;
 
                     // Add the new item to the checklist
                     checklist.items.push({
@@ -2207,7 +2186,7 @@ export default class Quests {
                     // Update the main quest
                     const mainQuest = await this.db.get(chatId + '/quests', checklist.questId);
                     if (mainQuest) {
-                        await this.updateMessage(responseCtx, mainQuest, await this.getLanguage(chatId));
+                        await this.updateMessage(ctx, mainQuest, await this.getLanguage(chatId));
                     }
 
                     // Update the checklist display
@@ -2226,27 +2205,12 @@ export default class Quests {
                     }]);
 
                     // Find and update the checklist message
-                    await this.bot.telegram.editMessageReplyMarkup(chatId, ctx.callbackQuery.message.message_id, null, { inline_keyboard: keyboard });
-
-                    // Clean up prompt message
-                    const botHasAdminRights = await isBotAdmin(responseCtx);
-                    if (botHasAdminRights) {
-                        await responseCtx.deleteMessage(promptMessage.message_id).catch(() => {});
-                        await responseCtx.deleteMessage(responseCtx.message.message_id).catch(() => {});
+                    const originalMessageId = ctx.callbackQuery?.message?.message_id;
+                    if (originalMessageId) {
+                        await this.bot.telegram.editMessageReplyMarkup(chatId, originalMessageId, null, { inline_keyboard: keyboard });
                     }
-
-                    // Remove this handler
-                    this.bot.off('text', responseHandler);
                 }
-            };
-
-            // Set up temporary text handler
-            this.bot.on('text', responseHandler);
-
-            // Auto-remove handler after 60 seconds
-            setTimeout(() => {
-                this.bot.off('text', responseHandler);
-            }, 60000);
+            });
 
         } catch (error) {
             console.error('Error handling add item:', error);

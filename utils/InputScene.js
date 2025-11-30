@@ -48,22 +48,46 @@
  *   }
  * });
  *
+ * // With onConfirm callback for UI refresh after async operations
+ * ctx.scene.enter('input_scene', {
+ *   promptText: 'Enter role name:',
+ *   onComplete: async (ctx, input) => {
+ *     const chatID = ctx.chat.id;
+ *     await db.put(chatID + '/roles', { id: input, title: input });
+ *     // Return value will be passed to onConfirm
+ *     return { chatId: chatID, roleId: input };
+ *   },
+ *   onConfirm: async (ctx, result) => {
+ *     // Called after onComplete finishes - use this to refresh UI
+ *     // The result is whatever onComplete returned
+ *     await refreshRoleList(ctx, result.chatId);
+ *   }
+ * });
+ *
  * // With validation
  * ctx.scene.enter('input_scene', {
  *   promptText: 'Please enter your email:',
  *   inputType: 'email',
  *   validate: (input) => input.includes('@'),
  *   errorText: 'Invalid email format',
+ *   showCancelButton: true,  // Default: true (shown automatically)
  *   onComplete: async (ctx, input) => {
  *     const userID = ctx.from.id;  // Get fresh from callback ctx
  *     user.email = input;
  *     await db.put(userID + '/profile', user);
  *   }
  * });
+ *
+ * // To disable cancel button
+ * ctx.scene.enter('input_scene', {
+ *   promptText: 'Enter required data:',
+ *   showCancelButton: false,  // Explicitly disable
+ *   onComplete: async (ctx, input) => { }
+ * });
  * ```
  */
 
-import { Scenes } from 'telegraf';
+import { Scenes, Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from '../utilities.js';
 
@@ -84,6 +108,16 @@ export default class InputScene {
                     console.error('InputScene: onComplete callback is required');
                     await ctx.reply('Error: Invalid scene configuration');
                     return ctx.scene.leave();
+                }
+
+                // Store array configuration if provided
+                if (state.separator || state.customSeparator) {
+                    this.arrayConfig = {
+                        separator: state.separator,
+                        customSeparator: state.customSeparator,
+                        trimItems: state.trimItems,
+                        filterEmpty: state.filterEmpty
+                    };
                 }
 
                 // Determine the prompt message
@@ -111,8 +145,22 @@ export default class InputScene {
                     promptText += '\n\n' + i18next.t('input_scene_example', 'Example:') + ' ' + state.example;
                 }
 
+                // Build reply markup with cancel button (default: true)
+                let replyMarkup = {};
+
+                // Show cancel button by default unless explicitly disabled
+                if (state.showCancelButton !== false) {
+                    const cancelText = state.cancelButtonKey
+                        ? i18next.t(state.cancelButtonKey, state.cancelButtonParams || {})
+                        : (state.cancelButtonText || i18next.t('input_scene_cancel_button', 'Cancel'));
+
+                    replyMarkup = Markup.inlineKeyboard([
+                        Markup.button.callback(cancelText, 'input_scene_cancel')
+                    ]);
+                }
+
                 // Send the prompt and store message ID for cleanup
-                const promptMessage = await ctx.reply(promptText);
+                const promptMessage = await ctx.reply(promptText, replyMarkup);
                 ctx.scene.state.promptMessageId = promptMessage.message_id;
 
             } catch (error) {
@@ -130,16 +178,15 @@ export default class InputScene {
 
                 // Check for cancel command
                 if (input === '/cancel' || input.toLowerCase() === 'cancel') {
-                    await this.cleanup(ctx);
+                    return this.handleCancel(ctx);
+                }
 
-                    const cancelText = state.cancelText || i18next.t('input_scene_cancelled', 'Input cancelled.');
-                    await ctx.reply(cancelText);
-
-                    if (state.onCancel && typeof state.onCancel === 'function') {
-                        await state.onCancel(ctx);
-                    }
-
-                    return ctx.scene.leave();
+                // Check if media is required
+                if (state.requireMedia) {
+                    const errorText = state.requireMediaErrorText ||
+                        i18next.t('input_scene_media_required', 'Please send a file or media.');
+                    await ctx.reply(errorText);
+                    return;
                 }
 
                 // Validate empty input
@@ -189,7 +236,13 @@ export default class InputScene {
                 // NOTE: The ctx here is the fresh context from when the user sent their text,
                 // NOT the original context from when scene.enter() was called.
                 // Always use ctx.chat.id, ctx.from, etc. from this ctx parameter in your callback.
-                await state.onComplete(ctx, finalInput);
+                const result = await state.onComplete(ctx, finalInput);
+
+                // Call the onConfirm callback if provided (for UI refresh after async operations)
+                // This is called after onComplete finishes, ensuring data is saved before UI update
+                if (state.onConfirm && typeof state.onConfirm === 'function') {
+                    await state.onConfirm(ctx, result);
+                }
 
                 // Leave the scene
                 return ctx.scene.leave();
@@ -213,28 +266,215 @@ export default class InputScene {
 
         // Handle non-text messages
         this.scene.on('message', async (ctx) => {
-            const state = ctx.scene.state;
+            try {
+                const state = ctx.scene.state;
+                const message = ctx.message;
 
-            // Check if location is allowed and message is location
-            if (state.allowLocation && ctx.message.location) {
-                try {
+                // Check if location is allowed and message is location
+                if (state.allowLocation && message.location) {
                     await this.cleanup(ctx);
-                    await state.onComplete(ctx, ctx.message.location);
+                    const result = await state.onComplete(ctx, message.location);
+
+                    // Call the onConfirm callback if provided
+                    if (state.onConfirm && typeof state.onConfirm === 'function') {
+                        await state.onConfirm(ctx, result);
+                    }
                     return ctx.scene.leave();
-                } catch (error) {
-                    console.error('InputScene location handler error:', error);
                 }
+
+                // Check for media
+                const media = this.detectMedia(message);
+
+                if (media) {
+                    // Media found - check if allowed
+                    if (!state.allowMedia && !state.allowedMediaTypes) {
+                        const errorText = state.nonMediaErrorText ||
+                            i18next.t('input_scene_text_only', 'Please send text only.');
+                        return ctx.reply(errorText);
+                    }
+
+                    // Validate media
+                    const validation = await this.validateMediaInput(media, state, ctx);
+                    if (!validation.valid) {
+                        return ctx.reply(validation.error);
+                    }
+
+                    // Process media
+                    await this.cleanup(ctx);
+                    const result = await state.onComplete(ctx, media);
+
+                    // Call the onConfirm callback if provided
+                    if (state.onConfirm && typeof state.onConfirm === 'function') {
+                        await state.onConfirm(ctx, result);
+                    }
+                    return ctx.scene.leave();
+                }
+
+                // No recognized input
+                if (state.requireMedia) {
+                    const errorText = state.requireMediaErrorText ||
+                        i18next.t('input_scene_media_required', 'Please send a file or media.');
+                    return ctx.reply(errorText);
+                }
+
+                // Default: text only error
+                const errorText = state.nonTextErrorText ||
+                    i18next.t('input_scene_text_only', 'Please send text only.');
+                return ctx.reply(errorText);
+
+            } catch (error) {
+                console.error('InputScene message handler error:', error);
+                await ctx.reply('An error occurred processing your input.');
             }
+        });
 
-            // Otherwise, request text input
-            const errorText = state.nonTextErrorText ||
-                i18next.t('input_scene_text_only', 'Please send text only.');
-
-            await ctx.reply(errorText).catch(e => console.log('Error sending reply:', e));
+        // Handle cancel button action
+        this.scene.action('input_scene_cancel', async (ctx) => {
+            try {
+                await this.handleCancel(ctx);
+            } catch (error) {
+                console.error('InputScene cancel button error:', error);
+                await ctx.answerCbQuery('Error cancelling input').catch(() => {});
+            }
         });
 
         // Register the scene
         this.bot.stage.register(this.scene);
+    }
+
+    /**
+     * Detect media in a Telegram message
+     * @param {object} message - Telegram message object
+     * @returns {object|null} - Media object or null
+     */
+    detectMedia(message) {
+        const mediaTypes = [
+            { type: 'photo', getter: (msg) => msg.photo?.[msg.photo.length - 1] },
+            { type: 'document', getter: (msg) => msg.document },
+            { type: 'video', getter: (msg) => msg.video },
+            { type: 'audio', getter: (msg) => msg.audio },
+            { type: 'voice', getter: (msg) => msg.voice },
+            { type: 'sticker', getter: (msg) => msg.sticker },
+            { type: 'animation', getter: (msg) => msg.animation }
+        ];
+
+        for (const { type, getter } of mediaTypes) {
+            const file = getter(message);
+            if (file) {
+                return {
+                    type,
+                    fileId: file.file_id,
+                    file,
+                    caption: message.caption || null,
+                    message
+                };
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate media input
+     * @param {object} media - Media object from detectMedia
+     * @param {object} state - Scene state
+     * @param {object} ctx - Telegraf context
+     * @returns {object} - Validation result { valid: boolean, error?: string }
+     */
+    async validateMediaInput(media, state, ctx) {
+        // Check allowed types
+        if (state.allowedMediaTypes && !state.allowedMediaTypes.includes(media.type)) {
+            const allowed = state.allowedMediaTypes.join(', ');
+            return {
+                valid: false,
+                error: i18next.t('input_scene_media_type_error',
+                    `Please send one of: ${allowed}`, { allowed })
+            };
+        }
+
+        // Custom validation
+        if (state.validateMedia && typeof state.validateMedia === 'function') {
+            const result = await state.validateMedia(media, ctx);
+            if (result === false) {
+                return { valid: false, error: 'Invalid media input' };
+            }
+            if (typeof result === 'object' && !result.valid) {
+                return result;
+            }
+        }
+
+        return { valid: true };
+    }
+
+    /**
+     * Get file download link
+     * @param {string} fileId - Telegram file_id
+     * @param {object} ctx - Telegraf context
+     * @returns {string} - File download URL
+     */
+    async getFileLink(fileId, ctx) {
+        const fileLink = await ctx.telegram.getFileLink(fileId);
+        return fileLink.href;
+    }
+
+    /**
+     * Download file as Buffer
+     * @param {string} fileId - Telegram file_id
+     * @param {object} ctx - Telegraf context
+     * @returns {Buffer} - File content as Buffer
+     */
+    async downloadFile(fileId, ctx) {
+        try {
+            // Use node's built-in fetch if available (Node 18+), otherwise use https
+            const url = await this.getFileLink(fileId, ctx);
+
+            if (typeof fetch !== 'undefined') {
+                const response = await fetch(url);
+                const arrayBuffer = await response.arrayBuffer();
+                return Buffer.from(arrayBuffer);
+            } else {
+                // Fallback for older Node versions
+                const https = await import('https');
+                return new Promise((resolve, reject) => {
+                    https.get(url, (response) => {
+                        const chunks = [];
+                        response.on('data', (chunk) => chunks.push(chunk));
+                        response.on('end', () => resolve(Buffer.concat(chunks)));
+                        response.on('error', reject);
+                    });
+                });
+            }
+        } catch (error) {
+            console.error('InputScene downloadFile error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Handle cancellation (from button or text command)
+     * @param {object} ctx - Telegraf context
+     */
+    async handleCancel(ctx) {
+        const state = ctx.scene.state;
+
+        // Answer callback query if from button
+        if (ctx.callbackQuery) {
+            await ctx.answerCbQuery().catch(() => {});
+        }
+
+        // Cleanup messages
+        await this.cleanup(ctx);
+
+        // Send confirmation
+        const cancelText = state.cancelText || i18next.t('input_scene_cancelled', 'Input cancelled.');
+        await ctx.reply(cancelText);
+
+        // Call custom handler
+        if (state.onCancel && typeof state.onCancel === 'function') {
+            await state.onCancel(ctx);
+        }
+
+        return ctx.scene.leave();
     }
 
     /**
@@ -301,6 +541,64 @@ export default class InputScene {
     }
 
     /**
+     * Parse array input with flexible separator support
+     * @param {string} input - The input string to parse
+     * @param {object} config - Configuration object
+     * @returns {array} - Parsed array
+     */
+    parseArray(input, config = {}) {
+        const {
+            separator = 'comma,newline',  // Backward compatible default
+            customSeparator = null,
+            trimItems = true,
+            filterEmpty = true
+        } = config;
+
+        let regex;
+
+        if (customSeparator) {
+            // Escape special regex characters to prevent injection
+            const escaped = customSeparator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            regex = new RegExp(escaped);
+        } else if (separator === 'auto') {
+            // Auto-detect common separators
+            regex = /[,\n|\t;]/;
+        } else {
+            // Map separator names to regex patterns
+            const SEPARATORS = {
+                'comma': ',',
+                'newline': '\\n',
+                'pipe': '\\|',
+                'tab': '\\t',
+                'semicolon': ';'
+            };
+
+            const separators = separator.split(',').map(s => s.trim());
+            const patterns = separators.map(s => SEPARATORS[s] || s);
+            regex = new RegExp(`[${patterns.join('')}]`);
+        }
+
+        let items = input.split(regex);
+
+        if (trimItems) {
+            items = items.map(item => item.trim());
+        }
+
+        if (filterEmpty) {
+            items = items.filter(item => item !== '');
+        }
+
+        // Security: Limit max items to prevent DoS attacks
+        const MAX_ITEMS = 1000;
+        if (items.length > MAX_ITEMS) {
+            console.warn(`InputScene: Truncating array from ${items.length} to ${MAX_ITEMS} items`);
+            items = items.slice(0, MAX_ITEMS);
+        }
+
+        return items;
+    }
+
+    /**
      * Parse input based on type
      * @param {string} input - The input to parse
      * @param {string} type - The type to parse to
@@ -322,10 +620,14 @@ export default class InputScene {
 
             case 'array':
             case 'list':
-                return input
-                    .split(/[,\n]/)
-                    .map(item => item.trim())
-                    .filter(item => item !== '');
+                // Use new parseArray method with config from scene state
+                const arrayConfig = {
+                    separator: this.arrayConfig?.separator,
+                    customSeparator: this.arrayConfig?.customSeparator,
+                    trimItems: this.arrayConfig?.trimItems,
+                    filterEmpty: this.arrayConfig?.filterEmpty
+                };
+                return this.parseArray(input, arrayConfig);
 
             case 'boolean':
             case 'bool':
@@ -355,6 +657,9 @@ export default class InputScene {
                     await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
                 }
             }
+
+            // Clear array configuration to prevent state leakage
+            this.arrayConfig = null;
         } catch (error) {
             console.error('InputScene cleanup error:', error);
         }

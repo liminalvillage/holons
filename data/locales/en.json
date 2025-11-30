@@ -302,6 +302,9 @@
         "input_scene_email_error": "Please enter a valid email address.",
         "input_scene_url_error": "Please enter a valid URL.",
         "input_scene_text_only": "Please send text only.",
-        "input_scene_error": "An error occurred. Please try again."
+        "input_scene_error": "An error occurred. Please try again.",
+        "input_scene_cancel_button": "❌ Cancel",
+        "input_scene_media_required": "Please send a file or media.",
+        "input_scene_media_type_error": "Please send one of: {{allowed}}"
     }
 }

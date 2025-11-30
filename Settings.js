@@ -214,7 +214,10 @@ export default class Settings {
                 const fedInfo = await this.db.getFederation(chatID);
 
                 let message = 'Federation information:\n\n';
-                const federatedHolons = fedInfo && fedInfo.federated ? fedInfo.federated : [];
+                // Combine inbound and outbound arrays to get all federated holons (deduplicated)
+                const inbound = fedInfo?.inbound || [];
+                const outbound = fedInfo?.outbound || [];
+                const federatedHolons = [...new Set([...inbound, ...outbound])];
 
                 if (federatedHolons.length === 0) {
                     message += 'This chat is not federated with any other spaces.';
@@ -584,7 +587,30 @@ export default class Settings {
             // Add change handler for entering add scene
             this.bot.action(`settings_${type}_change`, async (ctx) => {
                 await ctx.answerCbQuery().catch()
-                await ctx.scene.enter('add_array_item_scene', { type });
+
+                // Use InputScene for array input
+                const chatID = ctx.chat.id;
+                const language = await this.getLanguage(chatID);
+
+                return ctx.scene.enter('input_scene', {
+                    promptKey: 'settings_enter_new_items',
+                    promptParams: { type: i18next.t(`settings_${type}`, { lng: language }).toLowerCase(), lng: language },
+                    inputType: 'array',
+                    allowEmpty: false,
+                    showCancelButton: true,
+                    onComplete: async (ctx, newItems) => {
+                        const chatId = ctx.chat.id;
+
+                        let settings = await this.getSettings(chatId);
+                        if (!settings[type]) {
+                            settings[type] = [];
+                        }
+
+                        settings[type].push(...newItems);
+                        await this.setSettings(settings);
+                        await this.showArraySettingMenu(ctx, type, false);
+                    }
+                });
             });
 
             this.bot.action(`enter_remove_mode_${type}`, async (ctx) => {
@@ -685,7 +711,28 @@ export default class Settings {
             console.log('PURPOSE ADD button clicked');
             await ctx.answerCbQuery().catch()
             try {
-                return await ctx.scene.enter('add_array_item_scene', { type: 'purpose' });
+                const chatID = ctx.chat.id;
+                const language = await this.getLanguage(chatID);
+
+                return ctx.scene.enter('input_scene', {
+                    promptKey: 'settings_enter_new_items',
+                    promptParams: { type: i18next.t('settings_purpose', { lng: language }).toLowerCase(), lng: language },
+                    inputType: 'array',
+                    allowEmpty: false,
+                    showCancelButton: true,
+                    onComplete: async (ctx, newItems) => {
+                        const chatId = ctx.chat.id;
+
+                        let settings = await this.getSettings(chatId);
+                        if (!settings.purpose) {
+                            settings.purpose = [];
+                        }
+
+                        settings.purpose.push(...newItems);
+                        await this.setSettings(settings);
+                        await this.showArraySettingMenu(ctx, 'purpose', false);
+                    }
+                });
             } catch (error) {
                 console.error('Error entering purpose add scene:', error);
                 return ctx.reply('Error adding purpose. Please try again later.');
@@ -907,7 +954,28 @@ export default class Settings {
                         case 'purpose':
                             return await ctx.scene.enter('purpose_scene');
                         case 'currencies':
-                            return await ctx.scene.enter('add_array_item_scene', { type: 'currencies' });
+                            const chatID = ctx.chat.id;
+                            const language = await this.getLanguage(chatID);
+
+                            return ctx.scene.enter('input_scene', {
+                                promptKey: 'settings_enter_new_items',
+                                promptParams: { type: i18next.t('settings_currencies', { lng: language }).toLowerCase(), lng: language },
+                                inputType: 'array',
+                                allowEmpty: false,
+                                showCancelButton: true,
+                                onComplete: async (ctx, newItems) => {
+                                    const chatId = ctx.chat.id;
+
+                                    let settings = await this.getSettings(chatId);
+                                    if (!settings.currencies) {
+                                        settings.currencies = [];
+                                    }
+
+                                    settings.currencies.push(...newItems);
+                                    await this.setSettings(settings);
+                                    await this.showArraySettingMenu(ctx, 'currencies', false);
+                                }
+                            });
                     }
                 } catch (error) {
                     console.error(`Error entering ${type} scene:`, error);
@@ -947,91 +1015,7 @@ export default class Settings {
         // Federation and hex back handlers have been removed and consolidated with unified settings_back handler
 
         // Setup add array item scene
-        this.addArrayItemScene = new Scenes.BaseScene('add_array_item_scene');
-        this.addArrayItemScene.enter(async (ctx) => {
-            try {
-                console.log('Enter add_array_item_scene');
-
-                // Get the type from ctx.scene.state.type or directly from state
-                const type = ctx.scene.state.type || (ctx.scene.state.state ? ctx.scene.state.state.type : null);
-                console.log('Scene type:', type);
-
-                if (!type) {
-                    console.error('Error: No type provided for add_array_item_scene');
-                    await ctx.reply('Error: Could not determine what to add. Please try again.');
-                    return ctx.scene.leave();
-                }
-
-                // Store the message ID and chat ID
-                ctx.scene.state.chatId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-                ctx.scene.state.originalMessageId = ctx.callbackQuery?.message?.message_id;
-
-                // Store the type
-                ctx.scene.state.type = type;
-
-                // Send prompt message
-                console.log('Sending prompt for type:', type);
-                const promptMessage = await ctx.reply(i18next.t('settings_enter_new_items', { type: i18next.t(`settings_${type}`).toLowerCase() }));
-
-                // Store prompt message ID for later deletion
-                ctx.scene.state.promptMessageId = promptMessage.message_id;
-            } catch (error) {
-                console.error('Error in addArrayItemScene.enter:', error);
-                await ctx.reply('An error occurred. Please try again.');
-                await ctx.scene.leave();
-            }
-        });
-
-        this.addArrayItemScene.on('text', async (ctx) => {
-            try {
-                console.log('Received text in add_array_item_scene');
-                const itemsText = ctx.message.text;
-                const chatId = ctx.scene.state.chatId || ctx.chat.id;
-                const type = ctx.scene.state.type;
-
-                console.log('Processing text for type:', type);
-
-                if (!type) {
-                    console.error('Error: No type stored in scene state');
-                    await ctx.reply('Error: Could not determine what to add. Please try again.');
-                    return ctx.scene.leave();
-                }
-
-                let settings = await this.getSettings(chatId);
-
-                // Initialize array if it doesn't exist
-                if (!settings[type]) {
-                    settings[type] = [];
-                }
-
-                // Add new items
-                const newItems = itemsText
-                    .split(/[,\n]/)
-                    .map(text => text.trim())
-                    .filter(text => text !== '');
-
-                console.log('Adding items:', newItems);
-
-                settings[type].push(...newItems);
-                await this.setSettings(settings);
-                
-                // Store message ID for cleanup
-                ctx.scene.state.userMessageId = ctx.message.message_id;
-                
-                // Clean up messages using helper method with built-in admin check
-                await this.cleanupSceneMessages(ctx);
-
-                // Show updated array setting menu
-                console.log('Showing updated menu for type:', type);
-                await this.showArraySettingMenu(ctx, type, false);
-                await ctx.scene.leave();
-
-            } catch (error) {
-                console.error(`Error adding items:`, error);
-                await ctx.reply(`Error adding items. Please try again.`);
-                await ctx.scene.leave();
-            }
-        });
+        // add_array_item_scene migrated to InputScene - removed
 
         // Simple action handler for viewing hex (just acknowledges the click)
         this.bot.action('hex_view', async (ctx) => {
@@ -1060,139 +1044,7 @@ export default class Settings {
         });
 
         // Create generalized scenes
-        this.textInputScene = new Scenes.BaseScene('text_input_scene');
-        this.textInputScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
-            const { field, title, command } = ctx.scene.state;
-            
-            // Get current value
-            let settings = await this.getSettings(chatID);
-            const currentValue = settings[field] || i18next.t('settings_not_set', { lng: language });
-            
-            // Store original message ID if coming from callback
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-            }
-
-            // Check bot admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            
-            if (botHasAdminRights) {
-                // Send interactive prompt
-                const promptMessage = await ctx.reply(
-                    i18next.t('settings_current', { lng: language, value: currentValue }) + '\n\n' +
-                    i18next.t('settings_send_new', { lng: language, type: title.toLowerCase() })
-                );
-                ctx.scene.state.promptMessageId = promptMessage.message_id;
-            } else {
-                // Send command instructions
-                await ctx.reply(
-                    i18next.t('settings_current', { lng: language, value: currentValue }) + '\n\n' +
-                    i18next.t('settings_use_command', { 
-                        lng: language, 
-                        command: command,
-                        example: `${command} new ${title.toLowerCase()}`
-                    })
-                );
-                await ctx.scene.leave();
-            }
-        });
-
-        this.textInputScene.on('text', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const { field } = ctx.scene.state;
-            
-            // Store message IDs for cleanup
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-            
-            // Save the input
-            let settings = await this.getSettings(chatID);
-            settings[field] = ctx.message.text;
-            await this.setSettings(settings);
-            
-            // Clean up messages if bot has admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            if (botHasAdminRights) {
-                await this.cleanupSceneMessages(ctx);
-            }
-
-            // Show updated menu
-            if (field === 'purpose') {
-                await this.showArraySettingMenu(ctx, 'purpose', false);
-            } else if (field === 'hex') {
-                await this.showHexMenu(ctx, false);
-            } else {
-                await this.showSettingsMenu(ctx, false);
-            }
-            
-            await ctx.scene.leave();
-        });
-
-        this.arrayInputScene = new Scenes.BaseScene('array_input_scene');
-        this.arrayInputScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
-            const { field, title, command } = ctx.scene.state;
-
-            // Store original message ID if coming from callback
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-            }
-
-            // Check bot admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            
-            if (botHasAdminRights) {
-                // Send interactive prompt
-                const promptMessage = await ctx.reply(
-                    i18next.t('settings_enter_new_items', { lng: language, type: title.toLowerCase() })
-                );
-                ctx.scene.state.promptMessageId = promptMessage.message_id;
-            } else {
-                // Send command instructions
-                await ctx.reply(
-                    i18next.t('settings_use_command_array', { 
-                        lng: language, 
-                        command: command,
-                        example: `${command} item1, item2, item3`
-                    })
-                );
-                await ctx.scene.leave();
-            }
-        });
-
-        this.arrayInputScene.on('text', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const { field } = ctx.scene.state;
-            
-            // Parse input into array
-            const newItems = ctx.message.text
-                .split(/[,\n]/)
-                .map(item => item.trim())
-                .filter(item => item !== '');
-
-            // Save to settings
-            let settings = await this.getSettings(chatID);
-            if (!settings[field]) {
-                settings[field] = [];
-            }
-            settings[field].push(...newItems);
-            await this.setSettings(settings);
-
-            // Store message IDs for cleanup
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-            
-            // Clean up messages if bot has admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            if (botHasAdminRights) {
-                await this.cleanupSceneMessages(ctx);
-            }
-
-            // Show updated menu
-            await this.showArraySettingMenu(ctx, field, false);
-            await ctx.scene.leave();
-        });
+        // Scenes migrated to InputScene - no custom text input scenes needed
 
         this.listPickerScene = new Scenes.BaseScene('list_picker_scene');
         this.listPickerScene.enter(async (ctx) => {
@@ -1217,18 +1069,35 @@ export default class Settings {
             });
         });
 
-        // Register the scenes
-        this.bot.stage.register(this.textInputScene);
-        this.bot.stage.register(this.arrayInputScene);
+        // Register only listPickerScene (textInputScene and arrayInputScene are registered in SettingsScenes.js)
         this.bot.stage.register(this.listPickerScene);
 
-        // Update action handlers to use new scenes
+        // Update action handlers to use InputScene
         this.bot.action('settings_name', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('text_input_scene', {
-                field: 'name',
-                title: i18next.t('settings_name', { lng: await this.getLanguage(ctx.chat.id) }),
-                command: '/setname'
+            await ctx.answerCbQuery().catch();
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const field = 'name';
+
+            // Get current value
+            let settings = await this.getSettings(chatID);
+            const currentValue = settings[field] || i18next.t('settings_not_set', { lng: language });
+
+            return ctx.scene.enter('input_scene', {
+                promptText: i18next.t('settings_current', { lng: language, value: currentValue }) + '\n\n' +
+                           i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_name', { lng: language }).toLowerCase() }),
+                allowEmpty: false,
+                onComplete: async (ctx, value) => {
+                    const chatId = ctx.chat.id;
+
+                    // Save the input
+                    let settings = await this.getSettings(chatId);
+                    settings[field] = value;
+                    await this.setSettings(settings);
+
+                    // Show updated menu
+                    await this.showSettingsMenu(ctx, false);
+                }
             });
         });
 
@@ -1237,11 +1106,32 @@ export default class Settings {
         // Also removed duplicate help_add_hex (registered around line 1065)
 
         this.bot.action('help_add_currencies', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            await ctx.scene.enter('array_input_scene', {
-                field: 'currencies',
-                title: i18next.t('settings_currencies', { lng: await this.getLanguage(ctx.chat.id), defaultValue: "Currencies" }),
-                command: '/addcurrencies'
+            await ctx.answerCbQuery().catch();
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const field = 'currencies';
+
+            return ctx.scene.enter('input_scene', {
+                promptText: i18next.t('settings_enter_new_items', {
+                    lng: language,
+                    type: i18next.t('settings_currencies', { lng: language, defaultValue: "Currencies" }).toLowerCase()
+                }),
+                inputType: 'array',
+                allowEmpty: false,
+                onComplete: async (ctx, newItems) => {
+                    const chatId = ctx.chat.id;
+
+                    // Save to settings
+                    let settings = await this.getSettings(chatId);
+                    if (!settings[field]) {
+                        settings[field] = [];
+                    }
+                    settings[field].push(...newItems);
+                    await this.setSettings(settings);
+
+                    // Show updated menu
+                    await this.showArraySettingMenu(ctx, field, false);
+                }
             });
         });
 
@@ -2107,7 +1997,10 @@ export default class Settings {
         
         // Fetch federation info for the button
         const fedInfo = await this.db.getFederation(chatID);
-        const federationCount = fedInfo && fedInfo.federated && Array.isArray(fedInfo.federated) ? fedInfo.federated.length : 0;
+        // Combine inbound and outbound arrays to get all federated holons (deduplicated)
+        const inbound = fedInfo?.inbound || [];
+        const outbound = fedInfo?.outbound || [];
+        const federationCount = [...new Set([...inbound, ...outbound])].length;
         
         // Create the message with Holon ID shown at the top
         let holonAddressLine = '';

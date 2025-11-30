@@ -1,4 +1,4 @@
-import { Markup, Scenes } from 'telegraf';
+import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import fs from 'fs';
@@ -11,12 +11,7 @@ export default class Roles {
         this.ui = ui;
         this.checklists = null; // Initialize checklists instance
 
-        // Create scenes for role management
-        this.addRoleScene = new Scenes.BaseScene('add_role_scene');
-        this.editRoleScene = new Scenes.BaseScene('edit_role_scene');
-        this.bot.stage.register(this.addRoleScene);
-        this.bot.stage.register(this.editRoleScene);
-        this.setupScenes();
+        // Scenes migrated to InputScene - no custom scenes needed
 
         this.bot.command('roles', async (ctx) => await this.roles(ctx));
         bot.action(/joinrole_(.+)/, async (ctx) => { this.joinrole(ctx) });
@@ -55,164 +50,6 @@ export default class Roles {
         console.log('Checklists instance set for Roles');
     }
 
-    setupScenes() {
-        // Setup add role scene
-        this.addRoleScene.enter(async (ctx) => {
-            // Store the original message ID and chat ID
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-                ctx.scene.state.chatId = ctx.callbackQuery.message.chat.id;
-            } else {
-                ctx.scene.state.chatId = ctx.chat.id;
-            }
-            
-            const canReadMessages = await utils.isBotAdmin(ctx);
-            let promptText;
-            
-            if (canReadMessages) {
-                promptText = 'Please enter role details in format:\nTitle | Description\n\nDescription is optional. Example:\nSpace Angel | Welcomes new members';
-            } else {
-                promptText = 'Holons needs rights to read user input.\n\nAlternatively, use: /addrole Title | Description';
-            }
-            
-            const promptMessage = await ctx.reply(promptText);
-            ctx.scene.state.promptMessageId = promptMessage.message_id;
-        });
-
-        this.addRoleScene.on('text', async (ctx) => {
-            const roleText = ctx.message.text.trim();
-            const chatId = ctx.scene.state.chatId;
-            const originalMessageId = ctx.scene.state.originalMessageId;
-            const promptMessageId = ctx.scene.state.promptMessageId;
-            
-            try {
-                // Parse title and description
-                let [title, description] = roleText.split('|').map(part => part.trim());
-                
-                if (!title) {
-                    await ctx.reply('Please provide at least a title for the role.');
-                    return;
-                }
-                
-                // Check if role already exists
-                const existingRoles = await this.db.getAll(chatId + '/roles');
-                if (existingRoles.find(role => role.title === title)) {
-                    await ctx.reply(`Role "${title}" already exists.`);
-                    return;
-                }
-                
-                // Create the new role
-                const role = {
-                    title: title,
-                    id: title,
-                    description: description || '',
-                    participants: [],
-                    checklistId: null,
-                    created: new Date()
-                };
-                
-                await this.db.put(chatId + '/roles', role);
-                
-                // Delete messages
-                if (promptMessageId) {
-                    await ctx.deleteMessage(promptMessageId).catch(() => {});
-                }
-                if (ctx.message) {
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                }
-                
-                // Update the original message if it exists
-                if (originalMessageId) {
-                    await this.showRoleManagement(ctx, { editMessageId: originalMessageId, chatId: chatId });
-                } else {
-                    let successMessage = `Role "${title}" created successfully!`;
-                    if (description) {
-                        successMessage += `\nDescription: ${description}`;
-                    }
-                    await ctx.reply(successMessage)
-                        .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 3000));
-                }
-                
-                await ctx.scene.leave();
-                
-            } catch (error) {
-                console.error('Error creating role:', error);
-                await ctx.reply('Error creating role');
-                await ctx.scene.leave();
-            }
-        });
-
-        // Setup edit role scene
-        this.editRoleScene.enter(async (ctx) => {
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-                ctx.scene.state.chatId = ctx.callbackQuery.message.chat.id;
-            } else {
-                ctx.scene.state.chatId = ctx.chat.id;
-            }
-            
-            // Get roleId from scene state (passed when entering the scene)
-            const roleId = ctx.scene.state.roleId;
-            const chatId = ctx.scene.state.chatId;
-            
-            const role = await this.db.get(chatId + '/roles', roleId);
-            if (!role) {
-                await ctx.reply('Role not found');
-                return ctx.scene.leave();
-            }
-            
-            const canReadMessages = await utils.isBotAdmin(ctx);
-            let promptText;
-            
-            if (canReadMessages) {
-                promptText = `Editing role: ${role.title}\nCurrent description: ${role.description || 'None'}\n\nEnter new description:`;
-            } else {
-                promptText = `Holons needs rights to read user input.\n\nAlternatively, use: /editrole "${role.title}" | New Description`;
-            }
-            
-            const promptMessage = await ctx.reply(promptText);
-            ctx.scene.state.promptMessageId = promptMessage.message_id;
-        });
-
-        this.editRoleScene.on('text', async (ctx) => {
-            const newDescription = ctx.message.text.trim();
-            const chatId = ctx.scene.state.chatId;
-            const roleId = ctx.scene.state.roleId;
-            const originalMessageId = ctx.scene.state.originalMessageId;
-            const promptMessageId = ctx.scene.state.promptMessageId;
-            
-            try {
-                const role = await this.db.get(chatId + '/roles', roleId);
-                if (!role) {
-                    await ctx.reply('Role not found');
-                    return ctx.scene.leave();
-                }
-                
-                role.description = newDescription;
-                await this.db.put(chatId + '/roles', role);
-                
-                // Delete messages
-                if (promptMessageId) {
-                    await ctx.deleteMessage(promptMessageId).catch(() => {});
-                }
-                if (ctx.message) {
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                }
-                
-                // Update the original message
-                if (originalMessageId) {
-                    await this.showRoleManagement(ctx, { editMessageId: originalMessageId, chatId: chatId });
-                }
-                
-                await ctx.scene.leave();
-                
-            } catch (error) {
-                console.error('Error editing role:', error);
-                await ctx.reply('Error editing role');
-                await ctx.scene.leave();
-            }
-        });
-    }
 
     async roles(ctx) {
         // Load all users
@@ -220,7 +57,8 @@ export default class Roles {
         let roles = await this.db.getAll(chatID + '/roles');
         //let users = await this.db.getAll(chatID + '/users');
         if (roles.length == 0) {
-            ctx.reply('No roles found, use /addrole to create one.');
+            // Show role management interface when there are no roles
+            await this.showRoleManagement(ctx, { chatId: chatID });
             return;
         }
         
@@ -591,24 +429,103 @@ export default class Roles {
     // Button handlers
     async handleNewRoleButton(ctx) {
         await ctx.answerCbQuery().catch();
-        await ctx.scene.enter('add_role_scene', {
-            originalMessageId: ctx.callbackQuery.message.message_id,
-            chatId: ctx.callbackQuery.message.chat.id
+        const originalMessageId = ctx.callbackQuery.message.message_id;
+        const chatId = ctx.callbackQuery.message.chat.id;
+
+        // Use InputScene with pipe separator for role input
+        return ctx.scene.enter('input_scene', {
+            promptText: 'Please enter role details in format:\nTitle | Description\n\nDescription is optional. Example:\nSpace Angel | Welcomes new members',
+            inputType: 'array',
+            separator: 'pipe',
+            allowEmpty: false,
+            validate: async (parts, ctx) => {
+                const [title] = parts;
+                const chatId = ctx.chat.id;
+
+                if (!title || title.trim() === '') {
+                    return { valid: false, error: 'Please provide at least a title for the role.' };
+                }
+
+                // Check if role already exists
+                const existingRoles = await this.db.getAll(chatId + '/roles');
+                if (existingRoles.find(role => role.title === title.trim())) {
+                    return { valid: false, error: `Role "${title.trim()}" already exists.` };
+                }
+
+                return { valid: true };
+            },
+            onComplete: async (ctx, parts) => {
+                const chatId = ctx.chat.id;
+                let [title, description] = parts.map(p => p.trim());
+
+                // Create the new role
+                const role = {
+                    title: title,
+                    id: title,
+                    description: description || '',
+                    participants: [],
+                    checklistId: null,
+                    created: new Date()
+                };
+
+                // Save role to database and wait for Nostr confirmation
+                await this.db.put(chatId + '/roles', role);
+
+                // Return chatId for the onConfirm callback
+                return { chatId };
+            },
+            // onConfirm is called after onComplete finishes (data is confirmed in Nostr)
+            onConfirm: async (ctx, result) => {
+                // Show updated role management after data is confirmed
+                await this.showRoleManagement(ctx, { chatId: result.chatId });
+            }
         });
     }
 
     async handleEditRoleButton(ctx) {
         await ctx.answerCbQuery().catch();
         const roleId = ctx.match[1];
-        
-        // Set the roleId in scene state before entering
-        ctx.scene.state = { roleId: roleId };
-        
-        await ctx.scene.enter('edit_role_scene', {
-            originalMessageId: ctx.callbackQuery.message.message_id,
-            chatId: ctx.callbackQuery.message.chat.id,
-            roleId: roleId
-        });
+        const originalMessageId = ctx.callbackQuery.message.message_id;
+        const chatId = ctx.callbackQuery.message.chat.id;
+
+        try {
+            const role = await this.db.get(chatId + '/roles', roleId);
+            if (!role) {
+                await ctx.answerCbQuery('Role not found');
+                return;
+            }
+
+            // Use InputScene for role description editing
+            return ctx.scene.enter('input_scene', {
+                promptText: `Editing role: ${role.title}\nCurrent description: ${role.description || 'None'}\n\nEnter new description:`,
+                allowEmpty: true,
+                onComplete: async (ctx, newDescription) => {
+                    const chatId = ctx.chat.id;
+
+                    const role = await this.db.get(chatId + '/roles', roleId);
+                    if (!role) {
+                        await ctx.reply('Role not found');
+                        return;
+                    }
+
+                    role.description = newDescription;
+                    // Save role to database and wait for Nostr confirmation
+                    await this.db.put(chatId + '/roles', role);
+
+                    // Return chatId for the onConfirm callback
+                    return { chatId };
+                },
+                // onConfirm is called after onComplete finishes (data is confirmed in Nostr)
+                onConfirm: async (ctx, result) => {
+                    // Show updated role management after data is confirmed
+                    await this.showRoleManagement(ctx, { chatId: result.chatId });
+                }
+            });
+
+        } catch (error) {
+            console.error('Error setting up role edit:', error);
+            await ctx.answerCbQuery('Error editing role');
+        }
     }
 
     async handleDeleteRoleButton(ctx) {

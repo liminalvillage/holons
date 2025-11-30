@@ -1,4 +1,4 @@
-import { Markup, Scenes } from 'telegraf';
+import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
 
@@ -18,12 +18,7 @@ class Checklists {
         this.questInstance = null; // Initialize questInstance
         this.rolesInstance = null; // Initialize rolesInstance
         
-        // Create scenes
-        this.addItemScene = new Scenes.BaseScene('add_item_scene');
-        this.newChecklistScene = new Scenes.BaseScene('new_checklist_scene');
-        this.bot.stage.register(this.addItemScene);
-        this.bot.stage.register(this.newChecklistScene);
-        this.setupScenes();
+        // Scenes migrated to InputScene - no custom scenes needed
         
         // Register commands and actions
         this.bot.command('checklist', (ctx) => this.showChecklist(ctx));
@@ -109,179 +104,42 @@ class Checklists {
         }
     }
 
-    setupScenes() {
-        // Setup add item scene
-        this.addItemScene.enter(async (ctx) => {
-            // Store the original message ID and chat ID
-            ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-            ctx.scene.state.chatId = ctx.callbackQuery.message.chat.id;
-            
-            const canReadMessages = await utils.isBotAdmin(ctx);
-            // Send different messages based on message reading rights
-            let promptText;  
-            
-            if (canReadMessages) {
-                promptText = 'Please enter the new items (comma-separated for multiple items):';
-            }
-            else {
-                promptText =   'Holons needs rights to read user input.\n\nAlternatively, you can use the /additem command followed by a comma-separated list: \n/additem item 1, item 2, item 3';
-            }
-           
-            
-            // Send prompt message
-            const promptMessage = await ctx.reply(promptText);
-            // Store prompt message ID for later deletion
-            ctx.scene.state.promptMessageId = promptMessage.message_id;
-        });
-
-        this.addItemScene.on('text', async (ctx) => {
-            const itemsText = ctx.message.text;
-            const chatId = ctx.scene.state.chatId;
-            const originalMessageId = ctx.scene.state.originalMessageId;
-            const promptMessageId = ctx.scene.state.promptMessageId;
-            
-            try {
-                // Get the checklist ID from the scene state
-                const checklistId = ctx.scene.state.checklistId;
-                if (!checklistId) {
-                    await ctx.reply('Error: Checklist ID not found');
-                    return ctx.scene.leave();
-                }
-
-                const checklist = await this.db.get(chatId + '/checklists', checklistId.toString()) || 
-                    this.createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
-
-                // Check if text starts with /additem command
-                let newItems = [];
-                if (itemsText.startsWith('/additem')) {
-                    // Extract everything after "/additem "
-                    const commandItems = itemsText.substring(9).trim();
-                    newItems = commandItems.split(',').map(text => ({
-                        text: text.trim(),
-                        checked: false
-                    })).filter(item => item.text);
-                } else {
-                    // Process as normal text input
-                    newItems = itemsText.split(',').map(text => ({
-                        text: text.trim(),
-                        checked: false
-                    })).filter(item => item.text);
-                }
-
-                // Add items only if we have valid ones
-                if (newItems.length > 0) {
-                    checklist.items.push(...newItems);
-                    await this.db.put(chatId + '/checklists', checklist);
-                }
-
-                // Delete the prompt message
-                if (promptMessageId) {
-                    await ctx.deleteMessage(promptMessageId).catch(() => {});
-                }
-                // Delete the user's input message
-                if (ctx.message) {
-                    await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-                }
-
-                // Update the original checklist message
-                const icon = this.getChecklistIcon(checklist);
-                await ctx.telegram.editMessageText(
-                    chatId,
-                    originalMessageId,
-                    null,
-                    `${icon} ${this.getChecklistDisplayTitle(checklist)}:`,
-                    this.getChecklistKeyboard(checklist)
-                );
-
-                await ctx.scene.leave();
-
-            } catch (error) {
-                console.error('Error adding items to checklist:', error);
-                await ctx.reply('Error adding items to checklist');
-                await ctx.scene.leave();
-            }
-        });
-
-        // Also handle '/additem' command directly in the scene
-        this.addItemScene.command('additem', async (ctx) => {
-            // Simply let the text handler process it
-            // The text handler already has logic to detect and process /additem commands
-        });
-
-        // Setup new checklist scene
-        this.newChecklistScene.enter(async (ctx) => {
-            // Store the original message ID and chat ID if available (from button press)
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-                ctx.scene.state.chatId = ctx.callbackQuery.message.chat.id;
-            } else {
-                // If entered via command, use current chat info
-                ctx.scene.state.chatId = ctx.chat.id;
-            }
-            
-            // Send prompt message
-            const promptMessage = await ctx.reply('Please enter a name for the new checklist (no underscores allowed):');
-            // Store prompt message ID for later deletion
-            ctx.scene.state.promptMessageId = promptMessage.message_id;
-        });
-
-        this.newChecklistScene.on('text', async (ctx) => {
-            const name = ctx.message.text.trim();
-            const chatId = ctx.scene.state.chatId;
-            const originalMessageId = ctx.scene.state.originalMessageId; // Used if entered via button
-            const promptMessageId = ctx.scene.state.promptMessageId;
-            
-            // Delete the prompt message
-            if (promptMessageId) {
-                await ctx.deleteMessage(promptMessageId).catch(() => {});
-            }
-            // Delete the user's input message
-            if (ctx.message) {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => {});
-            }
-            
-            // Validate name: no underscores
-            if (name.includes('_')) {
-                await ctx.reply('Checklist names cannot contain underscores (_). Please try again without it.')
-                         .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000)); // Delete after 5s
-                return ctx.scene.leave(); // Or ctx.scene.reenter() if you want to prompt again immediately
-            }
-            
-            // Check if checklist already exists
-            if (await this.db.get(chatId + '/checklists', name)) {
-                 await ctx.reply(`Checklist "${name}" already exists.`)
-                         .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000)); // Delete after 5s
-                return ctx.scene.leave();
-            }
-
-            // Create the new empty checklist with standardized type
-            const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
-
-            await this.db.put(chatId + '/checklists', checklist);
-            
-            // If the scene was triggered by a button (e.g., from showAllChecklists), update that message
-            if (originalMessageId) {
-                // Re-show the list of all checklists by calling showAllChecklists
-                // Pass the current ctx and the ID of the message to edit.
-                await this.showAllChecklists(ctx, { editMessageId: originalMessageId, chatId: chatId });
-            } else {
-                // If triggered by command, just confirm creation (will be deleted shortly)
-                await ctx.reply(`Created checklist "${name}".`)
-                         .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 3000)); // Delete after 3s
-                // Optionally, show the new empty checklist
-                // await ctx.reply(`📋 ${name.toUpperCase()} Checklist:`, this.getChecklistKeyboard(checklist));
-            }
-
-            return ctx.scene.leave();
-        });
-    }
 
     async handleNewChecklistButton(ctx) {
-        await ctx.answerCbQuery().catch()
-        // Enter the scene, passing necessary info
-        await ctx.scene.enter('new_checklist_scene', { 
-            originalMessageId: ctx.callbackQuery.message.message_id,
-            chatId: ctx.callbackQuery.message.chat.id
+        await ctx.answerCbQuery().catch();
+        const originalMessageId = ctx.callbackQuery.message.message_id;
+        const chatId = ctx.callbackQuery.message.chat.id;
+
+        // Use InputScene for checklist name input
+        return ctx.scene.enter('input_scene', {
+            promptText: 'Please enter a name for the new checklist (no underscores allowed):',
+            allowEmpty: false,
+            validate: async (name, ctx) => {
+                const chatId = ctx.chat.id;
+
+                // Validate name: no underscores
+                if (name.includes('_')) {
+                    return { valid: false, error: 'Checklist names cannot contain underscores (_). Please try again without it.' };
+                }
+
+                // Check if checklist already exists
+                if (await this.db.get(chatId + '/checklists', name)) {
+                    return { valid: false, error: `Checklist "${name}" already exists.` };
+                }
+
+                return { valid: true };
+            },
+            onComplete: async (ctx, name) => {
+                const chatId = ctx.chat.id;
+
+                // Create the new empty checklist with standardized type
+                const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
+
+                await this.db.put(chatId + '/checklists', checklist);
+
+                // Re-show the list of all checklists
+                await this.showAllChecklists(ctx, { editMessageId: originalMessageId, chatId: chatId });
+            }
         });
     }
 
@@ -828,12 +686,50 @@ class Checklists {
     }
 
     async handleAddItemButton(ctx) {
-        await ctx.answerCbQuery().catch()
+        await ctx.answerCbQuery().catch();
         const checklistId = ctx.match[1];
-        await ctx.scene.enter('add_item_scene', { 
-            checklistId: checklistId,
-            chatId: ctx.callbackQuery.message.chat.id,
-            messageId: ctx.callbackQuery.message.message_id
+        const originalMessageId = ctx.callbackQuery.message.message_id;
+        const chatId = ctx.callbackQuery.message.chat.id;
+
+        // Use InputScene for checklist item input
+        return ctx.scene.enter('input_scene', {
+            promptText: 'Please enter the new items (comma-separated for multiple items):',
+            inputType: 'array',
+            allowEmpty: false,
+            onComplete: async (ctx, newItemsArray) => {
+                const chatId = ctx.chat.id;
+
+                try {
+                    const checklist = await this.db.get(chatId + '/checklists', checklistId.toString()) ||
+                        this.createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
+
+                    // Convert array items to checklist item objects
+                    const newItems = newItemsArray.map(text => ({
+                        text: text,
+                        checked: false
+                    }));
+
+                    // Add items
+                    if (newItems.length > 0) {
+                        checklist.items.push(...newItems);
+                        await this.db.put(chatId + '/checklists', checklist);
+                    }
+
+                    // Update the original checklist message
+                    const icon = this.getChecklistIcon(checklist);
+                    await ctx.telegram.editMessageText(
+                        chatId,
+                        originalMessageId,
+                        null,
+                        `${icon} ${this.getChecklistDisplayTitle(checklist)}:`,
+                        this.getChecklistKeyboard(checklist)
+                    );
+
+                } catch (error) {
+                    console.error('Error adding items to checklist:', error);
+                    await ctx.reply('Error adding items to checklist');
+                }
+            }
         });
     }
 

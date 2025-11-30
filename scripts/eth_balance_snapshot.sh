@@ -4,14 +4,14 @@ RPC="http://127.0.0.1:8545"
 # ——— your deploy log pasted here ———
 read -r -d '' DEPLOY_LOG <<'EOF'
 Parent bundle contracts created successfully: {
-  splitter: 0x3F2b1451574200d25318bfFD2C7c68a10bAA4256
-  managed: '0xB9D512FAF432Ce6A0e09b1f2B195856F9E5EE822',
-  zoned: '0xA95b108827C8F8CF981e605Fb2A18730b9Dae41c'
+  splitter: 0x8Ac71F27F4f37a1b2CFC38dBFB8B4ad0a705212a
+  managed: '0x517fD2b05377E817b443E77EF610922aC9C8bF38',
+  zoned: '0x2BaB5000cd87db0FFcf59957Deeb7681391B29C4'
 }
 Child bundle contracts created successfully: {
-  splitter: 0xf8E857B7d8B1e368E965Fb8CbDaE2d90AbADdB23
-  managed: '0x88d58A1119745866c8B70144dB83d13D2ae23501',
-  zoned: '0x96fCfc4b217D0eA9340807AB842dd7fF0537dBaB'
+  splitter: 0x47fcDC32CbF1c1D3B52D61E0343f36C17B58F255
+  managed: '0x599a588594905d80a1F8662Efaed5fb1cDBA334c',
+  zoned: '0xf6BADdEcc0d9878FC6769431c1D24cA9eEBcbBb6'
 }
 EOF
 

@@ -22,22 +22,28 @@ class Announcements {
 
         if (!message || message.length === 0 || message === '') {
             // No message provided, use InputScene to collect it
+            // Store the original command message ID in scene state to preserve it
             return ctx.scene.enter('input_scene', {
                 promptText: utils.i18next.t('announcementprompt', { lng: language }),
                 allowEmpty: false,
+                originalCommandMessageId: messageID, // Preserve original command message ID
                 onComplete: async (callbackCtx, message) => {
-                    await this.createAndPublishAnnouncement(callbackCtx, message);
+                    // Retrieve the original command message ID from scene state
+                    const originalMessageId = callbackCtx.scene.state.originalCommandMessageId || callbackCtx.message.message_id;
+                    await this.createAndPublishAnnouncement(callbackCtx, message, originalMessageId);
                 }
             });
         }
 
         // Message provided in command, process directly
-        await this.createAndPublishAnnouncement(ctx, message);
+        await this.createAndPublishAnnouncement(ctx, message, messageID);
     }
 
-    async createAndPublishAnnouncement(ctx, message) {
+    async createAndPublishAnnouncement(ctx, message, originalMessageId = null) {
         let chatID = ctx.chat.id;
-        let messageID = ctx.message.message_id;
+        // Use provided originalMessageId if available, otherwise fall back to current message ID
+        // This ensures consistency: command message ID is used whether invoked directly or via InputScene
+        let messageID = originalMessageId !== null ? originalMessageId : ctx.message.message_id;
         const language = await this.settings.getLanguage(chatID);
 
         let announcement = {
