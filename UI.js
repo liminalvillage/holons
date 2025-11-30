@@ -480,8 +480,9 @@ class UI {
       // Create inline keyboard buttons
       const inline_keyboard_buttons = quests.map(quest => {
         const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
-        // Assuming quest.chat and quest.id are available and correct for the callback
-        return [Markup.button.callback(title, 'view_original_quest_' + quest.chat + '_' + quest.id)];
+        // Get the source holon: prefer _hologram.sourceHolon for resolved holograms, then quest.chat, fallback to chatID
+        const sourceHolon = quest._hologram?.sourceHolon || quest.chat || chatID;
+        return [Markup.button.callback(title, 'view_original_quest_' + sourceHolon + '_' + quest.id)];
       });
 
       inline_keyboard_buttons.push([

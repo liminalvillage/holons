@@ -933,12 +933,12 @@ export default class Quests {
                 ...quest
             };
 
-            await this.db.propagateData(
+            await this.db.holosphere.propagateData(
                 questData,
                 quest.chat.toString(),    // sourceHolon - where the quest lives
                 userId.toString(),         // targetHolon - user's personal holon
                 'quests',
-                'reference'                // mode - create hologram reference
+                { mode: 'reference' }      // options - create hologram reference
             ).catch(err => {
                 console.warn(`[personalHologram] Failed to propagate quest ${quest.id} to user ${userId}:`, err.message);
             });
@@ -2494,17 +2494,17 @@ export default class Quests {
                 return;
             }
 
-            // Create hologram for the quest (like Harvest does)
-            const hologram = this.db.createHologram(chatIDStr, 'quests', quest);
+            // Create hologram for the quest using holosphere API directly
+            const hologram = this.db.holosphere.createHologram(chatIDStr, 'quests', quest);
             console.log(`[handleFederatedMessages] Created hologram:`, hologram);
 
             let totalPublished = 0;
 
-            // First, publish to settings hex if configured (direct put, like Harvest)
+            // First, publish to settings hex if configured
             if (settingsHex) {
                 try {
                     console.log(`[handleFederatedMessages] Publishing to settings hex: ${settingsHex}`);
-                    await this.db.put(settingsHex, 'quests', hologram);
+                    await this.db.holosphere.put(settingsHex, 'quests', hologram);
                     totalPublished++;
                     console.log(`[handleFederatedMessages] Successfully published to settings hex`);
                 } catch (error) {
@@ -2517,12 +2517,12 @@ export default class Quests {
                 // Check if this is an H3 holon
                 let isH3Holon = false;
                 try {
-                    isH3Holon = this.db.isValidH3 ? this.db.isValidH3(chatIDStr) : false;
+                    isH3Holon = this.db.holosphere.isValidH3(chatIDStr);
                 } catch (e) {
                     isH3Holon = false;
                 }
 
-                const propagationResult = await this.db.propagate(chatIDStr, 'quests', hologram, {
+                const propagationResult = await this.db.holosphere.propagate(chatIDStr, 'quests', hologram, {
                     useHolograms: true,
                     propagateToParents: isH3Holon,
                     maxParentLevels: isH3Holon ? 1 : 0
