@@ -104,7 +104,7 @@ export default class Settings {
                 console.log('Clearing cache for chatID:', chatID);
                 this.db.clearCacheForChatID(chatID);
 
-                // Drop all local tables
+                // Drop all local tables (all lenses used in the holon)
                 console.log('Dropping local tables...');
                 await Promise.all([
                     this.db.drop(chatID + '/shopping'),
@@ -116,7 +116,11 @@ export default class Settings {
                     this.db.drop(chatID + '/announcements'),
                     this.db.drop(chatID + '/recurring'),
                     this.db.drop(chatID + '/checklists'),
-                    this.db.drop(chatID + '/roles')
+                    this.db.drop(chatID + '/roles'),
+                    this.db.drop(chatID + '/settings'),
+                    this.db.drop(chatID + '/library'),
+                    this.db.drop(chatID + '/deposits'),
+                    this.db.drop(chatID + '/appreciations')
                 ])
                 console.log('Local tables dropped successfully');
 
@@ -170,6 +174,16 @@ export default class Settings {
                     if (fed.id === chatID.toString()) {
                         const result = await this.db.holosphere.deleteGlobal('federation', fed.id);
                         console.log(`Deleted federation ${fed.id}: ${result}`);
+                        deletedCount++;
+                    }
+                }
+
+                // For federated announcements - delete entries that belong to this holon
+                const fedAnnouncements = await this.db.holosphere.getAllGlobal('fedannouncements') || [];
+                for (const ann of fedAnnouncements) {
+                    if (ann.id && ann.id.toString().startsWith(chatID.toString() + '_')) {
+                        const result = await this.db.holosphere.deleteGlobal('fedannouncements', ann.id);
+                        console.log(`Deleted fedannouncement ${ann.id}: ${result}`);
                         deletedCount++;
                     }
                 }
