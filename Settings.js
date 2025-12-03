@@ -386,9 +386,25 @@ export default class Settings {
                 return;
             }
 
+            const self = this; // Capture reference for callbacks in switch cases
             switch (action) {
                 case 'name':
-                    await ctx.scene.enter('name_scene');
+                    // Migrated to InputScene
+                    const nameLanguage = await this.getLanguage(chatID);
+                    const currentName = settings.name || i18next.t('settings_not_set', { lng: nameLanguage });
+                    await ctx.scene.enter('input_scene', {
+                        promptText: i18next.t('settings_current', { lng: nameLanguage, value: currentName }) + '\n\n' +
+                                   i18next.t('settings_send_new', { lng: nameLanguage, type: i18next.t('settings_name', { lng: nameLanguage, defaultValue: 'name' }).toLowerCase() }),
+                        allowEmpty: false,
+                        showCancelButton: true,
+                        onComplete: async (ctx, input) => {
+                            const chatId = ctx.chat.id;
+                            let settings = await self.getSettings(chatId);
+                            settings.name = input;
+                            await self.setSettings(settings);
+                            await self.showSettingsMenu(ctx);
+                        }
+                    });
                     break;
                 case 'menu':
                     await this.showSettingsMenu(ctx, true);
@@ -932,82 +948,104 @@ export default class Settings {
             await this.showArraySettingMenu(ctx, 'currencies', false);
         });
 
-        // Add help messages for adding items
-        this.bot.action(/help_add_(values|domains|roles|purpose|currencies)$/, async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            const type = ctx.match[1];
+        // Individual handlers for adding items - using InputScene pattern
+        // All handlers clear cache before reading, then pass settings directly to showArraySettingMenu
+        this.bot.action('help_add_purpose', async (ctx) => {
+            await ctx.answerCbQuery().catch();
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const self = this;
 
-            // Check if bot has admin rights using the utility function
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            console.log('Bot admin status:', botHasAdminRights);
+            let settings = await this.getSettings(chatID);
+            const currentPurpose = settings.purpose || i18next.t('settings_not_set', { lng: language });
 
-            if (botHasAdminRights) {
-                // Bot has admin rights - enter the appropriate scene
-                try {
-                    switch (type) {
-                        case 'values':
-                            return await ctx.scene.enter('values_scene');
-                        case 'domains':
-                            return await ctx.scene.enter('domains_scene');
-                        case 'roles':
-                            return await ctx.scene.enter('roles_scene');
-                        case 'purpose':
-                            return await ctx.scene.enter('purpose_scene');
-                        case 'currencies':
-                            const chatID = ctx.chat.id;
-                            const language = await this.getLanguage(chatID);
-
-                            return ctx.scene.enter('input_scene', {
-                                promptKey: 'settings_enter_new_items',
-                                promptParams: { type: i18next.t('settings_currencies', { lng: language }).toLowerCase(), lng: language },
-                                inputType: 'array',
-                                allowEmpty: false,
-                                showCancelButton: true,
-                                onComplete: async (ctx, newItems) => {
-                                    const chatId = ctx.chat.id;
-
-                                    let settings = await this.getSettings(chatId);
-                                    if (!settings.currencies) {
-                                        settings.currencies = [];
-                                    }
-
-                                    settings.currencies.push(...newItems);
-                                    await this.setSettings(settings);
-                                    await this.showArraySettingMenu(ctx, 'currencies', false);
-                                }
-                            });
-                    }
-                } catch (error) {
-                    console.error(`Error entering ${type} scene:`, error);
-                    // Fall back to command instructions if scene entry fails
+            return ctx.scene.enter('input_scene', {
+                promptText: i18next.t('settings_current', { lng: language, value: currentPurpose }) + '\n\n' +
+                           i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_purpose', { lng: language }).toLowerCase() }),
+                allowEmpty: false,
+                onComplete: async (ctx, input) => {
+                    const chatId = ctx.chat.id;
+                    let settings = await self.getSettings(chatId);
+                    settings.purpose = input;
+                    await self.setSettings(settings);
+                    await self.showArraySettingMenu(ctx, 'purpose');
                 }
-            }
+            });
+        });
 
-            // Bot doesn't have admin rights or scene entry failed - show command instructions
-            let message = '';
+        this.bot.action('help_add_values', async (ctx) => {
+            await ctx.answerCbQuery().catch();
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const field = 'values';
+            const self = this;
 
-            if (type === 'purpose') {
-                message = 'To set your purpose, use the command:\n\n/setpurpose To create a thriving community through collaboration';
-            } else {
-                // For array types
-                const commandMap = {
-                    'values': '/addvalues',
-                    'domains': '/adddomains',
-                    'roles': '/addroles',
-                    'currencies': '/addcurrencies'
-                };
+            return ctx.scene.enter('input_scene', {
+                promptText: i18next.t('settings_enter_new_items', {
+                    lng: language,
+                    type: i18next.t('settings_values', { lng: language }).toLowerCase()
+                }),
+                inputType: 'array',
+                allowEmpty: false,
+                onComplete: async (ctx, newItems) => {
+                    const chatId = ctx.chat.id;
+                    let settings = await self.getSettings(chatId);
+                    if (!settings[field]) settings[field] = [];
+                    settings[field].push(...newItems);
+                    await self.setSettings(settings);
+                    await self.showArraySettingMenu(ctx, field);
+                }
+            });
+        });
 
-                const exampleMap = {
-                    'values': 'Collaboration, Innovation, Sustainability',
-                    'domains': 'Community Management, Content Creation, Development',
-                    'roles': 'Facilitator, Developer, Designer',
-                    'currencies': 'euro, dollar, yen (use singular)'
-                };
+        this.bot.action('help_add_domains', async (ctx) => {
+            await ctx.answerCbQuery().catch();
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const field = 'domains';
+            const self = this;
 
-                message = `To add ${type}, use the command:\n\n${commandMap[type]} ${exampleMap[type]}\n\nYou can separate multiple items with commas. For currencies, please always use the singular form (e.g., euro not euros).`;
-            }
+            return ctx.scene.enter('input_scene', {
+                promptText: i18next.t('settings_enter_new_items', {
+                    lng: language,
+                    type: i18next.t('settings_domains', { lng: language }).toLowerCase()
+                }),
+                inputType: 'array',
+                allowEmpty: false,
+                onComplete: async (ctx, newItems) => {
+                    const chatId = ctx.chat.id;
+                    let settings = await self.getSettings(chatId);
+                    if (!settings[field]) settings[field] = [];
+                    settings[field].push(...newItems);
+                    await self.setSettings(settings);
+                    await self.showArraySettingMenu(ctx, field);
+                }
+            });
+        });
 
-            await ctx.reply(message);
+        this.bot.action('help_add_roles', async (ctx) => {
+            await ctx.answerCbQuery().catch();
+            const chatID = ctx.chat.id;
+            const language = await this.getLanguage(chatID);
+            const field = 'roles';
+            const self = this;
+
+            return ctx.scene.enter('input_scene', {
+                promptText: i18next.t('settings_enter_new_items', {
+                    lng: language,
+                    type: i18next.t('settings_roles', { lng: language }).toLowerCase()
+                }),
+                inputType: 'array',
+                allowEmpty: false,
+                onComplete: async (ctx, newItems) => {
+                    const chatId = ctx.chat.id;
+                    let settings = await self.getSettings(chatId);
+                    if (!settings[field]) settings[field] = [];
+                    settings[field].push(...newItems);
+                    await self.setSettings(settings);
+                    await self.showArraySettingMenu(ctx, field);
+                }
+            });
         });
 
         // Duplicate removed - add_federation handler already registered above around line 673
@@ -1033,14 +1071,26 @@ export default class Settings {
             }));
         });
 
-        // Action handler for editing hex (from hex menu)
+        // Action handler for editing hex (from hex menu) - Migrated to InputScene
         this.bot.action('help_add_hex', async (ctx) => {
-            await ctx.answerCbQuery().catch()
-            // Store the original message ID in scene state
-            ctx.scene.state = { 
-                originalMessageId: ctx.callbackQuery.message.message_id 
-            };
-            await ctx.scene.enter('hex_scene');
+            await ctx.answerCbQuery().catch();
+            const chatID = ctx.callbackQuery.message.chat.id;
+            const language = await this.getLanguage(chatID);
+            const self = this; // Capture reference for callbacks
+
+            await ctx.scene.enter('input_scene', {
+                promptText: i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_hex', { lng: language }).toLowerCase() }) ||
+                           'Please enter the new hex value:',
+                allowEmpty: false,
+                showCancelButton: true,
+                onComplete: async (ctx, input) => {
+                    const chatId = ctx.chat.id;
+                    let settings = await self.getSettings(chatId);
+                    settings.hex = input.trim();
+                    await self.setSettings(settings);
+                    await self.showHexMenu(ctx);
+                }
+            });
         });
 
         // Create generalized scenes
@@ -1078,6 +1128,7 @@ export default class Settings {
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
             const field = 'name';
+            const self = this; // Capture reference for callbacks
 
             // Get current value
             let settings = await this.getSettings(chatID);
@@ -1089,14 +1140,10 @@ export default class Settings {
                 allowEmpty: false,
                 onComplete: async (ctx, value) => {
                     const chatId = ctx.chat.id;
-
-                    // Save the input
-                    let settings = await this.getSettings(chatId);
+                    let settings = await self.getSettings(chatId);
                     settings[field] = value;
-                    await this.setSettings(settings);
-
-                    // Show updated menu
-                    await this.showSettingsMenu(ctx, false);
+                    await self.setSettings(settings);
+                    await self.showSettingsMenu(ctx);
                 }
             });
         });
@@ -1110,6 +1157,7 @@ export default class Settings {
             const chatID = ctx.chat.id;
             const language = await this.getLanguage(chatID);
             const field = 'currencies';
+            const self = this;
 
             return ctx.scene.enter('input_scene', {
                 promptText: i18next.t('settings_enter_new_items', {
@@ -1120,17 +1168,11 @@ export default class Settings {
                 allowEmpty: false,
                 onComplete: async (ctx, newItems) => {
                     const chatId = ctx.chat.id;
-
-                    // Save to settings
-                    let settings = await this.getSettings(chatId);
-                    if (!settings[field]) {
-                        settings[field] = [];
-                    }
+                    let settings = await self.getSettings(chatId);
+                    if (!settings[field]) settings[field] = [];
                     settings[field].push(...newItems);
-                    await this.setSettings(settings);
-
-                    // Show updated menu
-                    await this.showArraySettingMenu(ctx, field, false);
+                    await self.setSettings(settings);
+                    await self.showArraySettingMenu(ctx, field);
                 }
             });
         });
@@ -1892,14 +1934,19 @@ export default class Settings {
                         }
                     });
                 }
-            // Save the updated settings with any missing fields
-            await this.db.put(chatID + '/settings', settings)
+            // NOTE: Removed auto-save here - it was causing race conditions
+            // Settings should only be saved explicitly via setSettings()
         }
         return settings
     }
 
     async setSettings(settings) {
-        await this.db.put(settings.id + '/settings', settings)
+        if (!settings.id) {
+            console.error('[setSettings] ERROR: settings.id is missing!');
+            return;
+        }
+        await this.db.put(settings.id + '/settings', settings);
+        this.db.clearCacheForChatID(settings.id);
     }
 
     async setValueEquation(chatID, equation) {

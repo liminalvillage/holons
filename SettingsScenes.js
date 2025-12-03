@@ -56,242 +56,31 @@ export default class SettingsScenes {
         this.holons = null;
         // this.holons.setHolons(this.holons);
 
-        //  more spagheti
-        // Create scenes for text input
-        this.purposeScene = new Scenes.BaseScene('purpose_scene');
-        this.nameScene = new Scenes.BaseScene('name_scene');
-        this.domainsScene = new Scenes.BaseScene('domains_scene');
-        this.valuesScene = new Scenes.BaseScene('values_scene');
-        this.rolesScene = new Scenes.BaseScene('roles_scene');
+        // Scenes migrated to InputScene:
+        // - purpose_scene, name_scene, domains_scene, values_scene, roles_scene, hex_scene
+        // - text_input_scene, array_input_scene
+        // These are now handled via ctx.scene.enter('input_scene', {...}) in Settings.js
+
+        // Remaining scenes that cannot be migrated to InputScene
         this.adminScene = new Scenes.BaseScene('admin_scene');
-        this.hexScene = new Scenes.BaseScene('hex_scene');
-        this.addArrayItemScene = new Scenes.BaseScene('add_array_item_scene');
-        this.testScene = new Scenes.BaseScene('test_scene');
-        this.addTestScene = new Scenes.BaseScene('add_test_scene');
         this.federationScene = new Scenes.BaseScene('federation_scene');
         this.usersScene = new Scenes.BaseScene('users_scene');
         this.addUserScene = new Scenes.BaseScene('add_user_scene');
-        this.textInputScene = new Scenes.BaseScene('text_input_scene');
-        this.arrayInputScene = new Scenes.BaseScene('array_input_scene');
         this.listPickerScene = new Scenes.BaseScene('list_picker_scene');
-        
+
         this.setupScenes();
     }
     
     setupScenes() {
-        this.setupPurposeScene();
-        this.setupNameScene();
-        this.setupDomainsScene();
-        this.setupValuesScene();
-        this.setupRolesScene();
+        // Migrated to InputScene: purpose, name, domains, values, roles, hex, text_input, array_input
+        // Remaining scenes that require custom logic:
         this.setupAdminScene();
-        this.setupHexScene();
-        this.setupAddArrayItemScene();
-        this.setupTestScene();
-        this.setupAddTestScene();
         this.setupFederationScene();
         this.setupUsersScene();
         this.setupAddUserScene();
-        this.setupTextInputScene();
-        this.setupArrayInputScene();
         this.setupListPickerScene();
     }
-    
-    setupPurposeScene() {
-        this.purposeScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            let settings = await this.getSettings(chatID);
-            const currentPurpose = settings.purpose || i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: currentPurpose }) + '\n\n' +
-                i18next.t('settings_send_new', { type: i18next.t('settings_purpose').toLowerCase() }))
-                .catch(e => console.log('Error in purpose scene enter:', e));
-        });
-        
-        this.purposeScene.on('text', async (ctx) => {
-            const chatID = ctx.message.chat.id;
-            let settings = await this.getSettings(chatID);
-            settings.purpose = ctx.message.text;
-            await this.setSettings(settings);
 
-            // Store message IDs for cleanup
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-            ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
-            
-            // Clean up messages
-            await this.cleanupSceneMessages(ctx);
-
-            // Show purpose with new UI
-            await this.showArraySettingMenu(ctx, 'purpose', false);
-            await ctx.scene.leave();
-        });
-        
-        this.purposeScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in purpose scene message:', e)));
-    }
-    
-    setupNameScene() {
-        this.nameScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            let settings = await this.getSettings(chatID);
-            const currentName = settings.name || i18next.t('settings_not_set');
-            await ctx.reply(i18next.t('settings_current', { value: currentName }) + '\n\n' +
-                i18next.t('settings_send_new', { type: i18next.t('settings_name', { defaultValue: 'name' }).toLowerCase() }))
-                .catch(e => console.log('Error in name scene enter:', e));
-        });
-
-        this.nameScene.on('text', async (ctx) => {
-            const chatID = ctx.message.chat.id;
-            let settings = await this.getSettings(chatID);
-            settings.name = ctx.message.text;
-            await this.setSettings(settings);
-
-            // Store message IDs for cleanup
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-            ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
-            
-            // Clean up messages
-            await this.cleanupSceneMessages(ctx);
-
-            // Show settings menu with updated name
-            await this.showSettingsMenu(ctx, false);
-            await ctx.scene.leave();
-        });
-
-        this.nameScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in name scene message:', e)));
-    }
-    
-    setupDomainsScene() {
-        this.domainsScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            let settings = await this.getSettings(chatID);
-            const currentDomains = settings.domains && settings.domains.length > 0 ?
-                '• ' + settings.domains.join('\n• ') :
-                i18next.t('settings_not_set');
-            await ctx.reply(
-                i18next.t('settings_send_new', { type: i18next.t('settings_domains').toLowerCase() }))
-                .catch(e => console.log('Error in domains scene enter:', e));
-        });
-        
-        this.domainsScene.on('text', async (ctx) => {
-            const chatID = ctx.message.chat.id;
-            const newDomains = ctx.message.text
-                .split(/[,\n]/)
-                .map(d => d.trim())
-                .filter(d => d !== '');
-
-            let settings = await this.getSettings(chatID);
-
-            // Initialize the array if it doesn't exist
-            if (!settings.domains) {
-                settings.domains = [];
-            }
-
-            // Append new domains instead of replacing existing ones
-            settings.domains.push(...newDomains);
-            await this.setSettings(settings);
-
-            // Delete the scene messages and user input
-            try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
-            } catch (e) {
-                console.log('Error deleting messages:', e);
-            }
-
-            // Show domains with new UI
-            await this.showArraySettingMenu(ctx, 'domains', false);
-            await ctx.scene.leave();
-        });
-        
-        this.domainsScene.on('message', ctx => ctx.reply('Please send text only').catch(e => console.log('Error in domains scene message:', e)));
-    }
-    
-    setupValuesScene() {
-        this.valuesScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            let settings = await this.getSettings(chatID);
-            const currentValues = settings.values && settings.values.length > 0 ?
-                '• ' + settings.values.join('\n• ') :
-                i18next.t('settings_not_set');
-            await ctx.reply(
-                i18next.t('settings_send_new', { type: i18next.t('settings_values').toLowerCase() }))
-                .catch(e => console.log('Error in values scene enter:', e));
-        });
-        
-        this.valuesScene.on('text', async (ctx) => {
-            const chatID = ctx.message.chat.id;
-            const newValues = ctx.message.text
-                .split(/[,\n]/)
-                .map(v => v.trim())
-                .filter(v => v !== '');
-
-            let settings = await this.getSettings(chatID);
-
-            // Initialize the array if it doesn't exist
-            if (!settings.values) {
-                settings.values = [];
-            }
-
-            // Append new values instead of replacing existing ones
-            settings.values.push(...newValues);
-            await this.setSettings(settings);
-
-            // Delete the scene messages and user input
-            try {
-                await ctx.deleteMessage(ctx.message.message_id).catch(() => { });
-                await ctx.deleteMessage(ctx.message.message_id - 1).catch(() => { });
-            } catch (e) {
-                console.log('Error deleting messages:', e);
-            }
-
-            // Show values with new UI
-            await this.showArraySettingMenu(ctx, 'values', false);
-            await ctx.scene.leave();
-        });
-        
-        this.valuesScene.on('message', ctx => ctx.reply('Please send text only'));
-    }
-    
-    setupRolesScene() {
-        this.rolesScene.enter(async (ctx) => {
-            i18next.t('settings_not_set');
-            await ctx.reply(
-                i18next.t('settings_send_new', { type: i18next.t('settings_roles').toLowerCase() }))
-                .catch(e => console.log('Error in roles scene enter:', e));
-        });
-        
-        this.rolesScene.on('text', async (ctx) => {
-            const chatID = ctx.message.chat.id;
-            const newRoles = ctx.message.text
-                .split(/[,\n]/)
-                .map(r => r.trim())
-                .filter(r => r !== '');
-
-            let settings = await this.getSettings(chatID);
-
-            // Initialize the array if it doesn't exist
-            if (!settings.roles) {
-                settings.roles = [];
-            }
-
-            // Append new roles instead of replacing
-            settings.roles.push(...newRoles);
-            await this.setSettings(settings);
-
-            // Store message IDs for cleanup
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-            ctx.scene.state.promptMessageId = ctx.message.message_id - 1;
-            
-            // Clean up messages
-            await this.cleanupSceneMessages(ctx);
-
-            // Show roles with new UI
-            await this.showArraySettingMenu(ctx, 'roles', false);
-            await ctx.scene.leave();
-        });
-        
-        this.rolesScene.on('message', ctx => ctx.reply('Please send text only'));
-    }
-    
     setupAdminScene() {
         this.adminScene.enter(async (ctx) => {
             // Store original message ID if coming from a callback query
@@ -335,164 +124,10 @@ export default class SettingsScenes {
             });
         });
     }
-    
-    setupHexScene() {
-        this.hexScene.enter(async (ctx) => {
-            // Store original message ID if coming from a callback query
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-            }
-            
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
 
-            // Send prompt with instructions
-            const promptMessage = await ctx.reply(
-                i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_hex', { lng: language }).toLowerCase() }) ||
-                'Please enter the new hex value:'
-            );
-            
-            // Store the prompt message ID for later deletion
-            ctx.scene.state.promptMessageId = promptMessage.message_id;
-        });
-        
-        this.hexScene.on('text', async (ctx) => {
-            const chatID = ctx.message.chat.id;
-            const hex = ctx.message.text.trim();
-            let settings = await this.getSettings(chatID);
-            const language = settings.language;
+    // Migrated scenes removed: hex_scene, add_array_item_scene, test_scene, add_test_scene
+    // These are now handled via InputScene in Settings.js
 
-            // Store this message ID for later deletion
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-
-            settings.hex = hex;
-            await this.setSettings(settings);
-            
-            // Clean up prompts before leaving
-            await this.cleanupSceneMessages(ctx);
-            await ctx.scene.leave();
-
-            // Show hex menu (consistent with purpose pattern)
-            await this.showHexMenu(ctx, false);
-        });
-        
-        this.hexScene.on('message', ctx => {
-            const chatId = ctx.message.chat.id;
-            this.getLanguage(chatId).then(language => {
-                ctx.reply(i18next.t('settings_send_text_only', { lng: language }));
-            });
-        });
-    }
-    
-    setupAddArrayItemScene() {
-        this.addArrayItemScene.enter(async (ctx) => {
-            try {
-                console.log('Enter add_array_item_scene');
-
-                // Get the type from ctx.scene.state.type or directly from state
-                const type = ctx.scene.state.type || (ctx.scene.state.state ? ctx.scene.state.state.type : null);
-                console.log('Scene type:', type);
-
-                if (!type) {
-                    console.error('Error: No type provided for add_array_item_scene');
-                    await ctx.reply('Error: Could not determine what to add. Please try again.');
-                    return ctx.scene.leave();
-                }
-
-                // Store the message ID and chat ID
-                ctx.scene.state.chatId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-                ctx.scene.state.originalMessageId = ctx.callbackQuery?.message?.message_id;
-
-                // Store the type
-                ctx.scene.state.type = type;
-
-                // Send prompt message
-                console.log('Sending prompt for type:', type);
-                const promptMessage = await ctx.reply(i18next.t('settings_enter_new_items', { type: i18next.t(`settings_${type}`).toLowerCase() }));
-
-                // Store prompt message ID for later deletion
-                ctx.scene.state.promptMessageId = promptMessage.message_id;
-            } catch (error) {
-                console.error('Error in addArrayItemScene.enter:', error);
-                await ctx.reply('An error occurred. Please try again.');
-                await ctx.scene.leave();
-            }
-        });
-
-        this.addArrayItemScene.on('text', async (ctx) => {
-            try {
-                console.log('Received text in add_array_item_scene');
-                const itemsText = ctx.message.text;
-                const chatId = ctx.scene.state.chatId || ctx.chat.id;
-                const type = ctx.scene.state.type;
-
-                console.log('Processing text for type:', type);
-
-                if (!type) {
-                    console.error('Error: No type stored in scene state');
-                    await ctx.reply('Error: Could not determine what to add. Please try again.');
-                    return ctx.scene.leave();
-                }
-
-                let settings = await this.getSettings(chatId);
-
-                // Initialize array if it doesn't exist
-                if (!settings[type]) {
-                    settings[type] = [];
-                }
-
-                // Add new items
-                const newItems = itemsText
-                    .split(/[,\n]/)
-                    .map(text => text.trim())
-                    .filter(text => text !== '');
-
-                console.log('Adding items:', newItems);
-
-                settings[type].push(...newItems);
-                await this.setSettings(settings);
-                
-                // Store message ID for cleanup
-                ctx.scene.state.userMessageId = ctx.message.message_id;
-                
-                // Clean up messages using helper method with built-in admin check
-                await this.cleanupSceneMessages(ctx);
-
-                // Show updated array setting menu
-                console.log('Showing updated menu for type:', type);
-                await this.showArraySettingMenu(ctx, type, false);
-                await ctx.scene.leave();
-
-            } catch (error) {
-                console.error(`Error adding items:`, error);
-                await ctx.reply(`Error adding items. Please try again.`);
-                await ctx.scene.leave();
-            }
-        });
-    }
-    
-    setupTestScene() {
-        this.testScene.enter(async (ctx) => {
-            await ctx.reply('You entered the test scene. Type something to continue.');
-        });
-
-        this.testScene.on('text', async (ctx) => {
-            await ctx.reply(`You typed: ${ctx.message.text}`);
-            await ctx.scene.leave();
-        });
-    }
-    
-    setupAddTestScene() {
-        this.addTestScene.enter(async (ctx) => {
-            await ctx.reply('Please enter items to add (comma separated):');
-        });
-        
-        this.addTestScene.on('text', async (ctx) => {
-            await ctx.reply(`You would add: ${ctx.message.text}`);
-            await ctx.scene.leave();
-        });
-    }
-    
     setupFederationScene() {
         this.federationScene.enter(async (ctx) => {
             // Store original message ID if coming from a callback query
@@ -962,143 +597,10 @@ export default class SettingsScenes {
             await this.showUsersManagementMenu(ctx, true);
         });
     }
-    
-    setupTextInputScene() {
-        this.textInputScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
-            const { field, title, command } = ctx.scene.state;
-            
-            // Get current value
-            let settings = await this.getSettings(chatID);
-            const currentValue = settings[field] || i18next.t('settings_not_set', { lng: language });   
-            
-            // Store original message ID if coming from callback    
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-            }
 
-            // Check bot admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            
-            if (botHasAdminRights) {
-                // Send interactive prompt
-                const promptMessage = await ctx.reply(
-                    i18next.t('settings_current', { lng: language, value: currentValue }) + '\n\n' +
-                    i18next.t('settings_send_new', { lng: language, type: title.toLowerCase() })
-                );
-                ctx.scene.state.promptMessageId = promptMessage.message_id;
-            } else {
-                // Send command instructions
-                await ctx.reply(
-                    i18next.t('settings_current', { lng: language, value: currentValue }) + '\n\n' +
-                    i18next.t('settings_use_command', { 
-                        lng: language, 
-                        command: command,
-                        example: `${command} new ${title.toLowerCase()}`
-                    })
-                );
-                await ctx.scene.leave();
-            }
-        });
+    // Migrated to InputScene: textInputScene, arrayInputScene
+    // These are now handled via ctx.scene.enter('input_scene', {...}) in Settings.js
 
-        this.textInputScene.on('text', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const { field } = ctx.scene.state;
-            
-            // Store message IDs for cleanup
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-            
-            // Save the input
-            let settings = await this.getSettings(chatID);
-            settings[field] = ctx.message.text;
-            await this.setSettings(settings);
-            
-            // Clean up messages if bot has admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            if (botHasAdminRights) {
-                await this.cleanupSceneMessages(ctx);
-            }
-
-            // Show updated menu
-            if (field === 'purpose') {
-                await this.showArraySettingMenu(ctx, 'purpose', false);
-            } else if (field === 'hex') {
-                await this.showHexMenu(ctx, false);
-            } else {
-                await this.showSettingsMenu(ctx, false);
-            }
-            
-            await ctx.scene.leave();
-        });
-    }
-    
-    setupArrayInputScene() {
-        this.arrayInputScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
-            const { field, title, command } = ctx.scene.state;
-
-            // Store original message ID if coming from callback
-            if (ctx.callbackQuery) {
-                ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
-            }
-
-            // Check bot admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            
-            if (botHasAdminRights) {
-                // Send interactive prompt
-                const promptMessage = await ctx.reply(
-                    i18next.t('settings_enter_new_items', { lng: language, type: title.toLowerCase() })
-                );
-                ctx.scene.state.promptMessageId = promptMessage.message_id;
-            } else {
-                // Send command instructions
-                await ctx.reply(
-                    i18next.t('settings_use_command_array', { 
-                        lng: language, 
-                        command: command,
-                        example: `${command} item1, item2, item3`
-                    })
-                );
-                await ctx.scene.leave();
-            }
-        });
-
-        this.arrayInputScene.on('text', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const { field } = ctx.scene.state;
-            
-            // Parse input into array
-            const newItems = ctx.message.text
-                .split(/[,\n]/)
-                .map(item => item.trim())
-                .filter(item => item !== '');
-
-            // Save to settings
-            let settings = await this.getSettings(chatID);
-            if (!settings[field]) {
-                settings[field] = [];
-            }
-            settings[field].push(...newItems);
-            await this.setSettings(settings);
-
-            // Store message IDs for cleanup
-            ctx.scene.state.userMessageId = ctx.message.message_id;
-            
-            // Clean up messages if bot has admin rights
-            const botHasAdminRights = await utils.isBotAdmin(ctx);
-            if (botHasAdminRights) {
-                await this.cleanupSceneMessages(ctx);
-            }
-
-            // Show updated menu
-            await this.showArraySettingMenu(ctx, field, false);
-            await ctx.scene.leave();
-        });
-    }
-    
     setupListPickerScene() {
         this.listPickerScene.enter(async (ctx) => {
             const chatID = ctx.chat.id;
@@ -1177,22 +679,13 @@ export default class SettingsScenes {
     }
     
     // Register all scenes with the bot
+    // Migrated scenes (now using InputScene): purpose, name, domains, values, roles, hex,
+    // text_input, array_input, add_array_item, test, add_test
     registerScenes(stage) {
-        stage.register(this.purposeScene);
-        stage.register(this.nameScene);
-        stage.register(this.domainsScene);
-        stage.register(this.valuesScene);
-        stage.register(this.rolesScene);
         stage.register(this.adminScene);
-        stage.register(this.hexScene);
-        stage.register(this.addArrayItemScene);
-        stage.register(this.testScene);
-        stage.register(this.addTestScene);
         stage.register(this.federationScene);
         stage.register(this.usersScene);
         stage.register(this.addUserScene);
-        stage.register(this.textInputScene);
-        stage.register(this.arrayInputScene);
         stage.register(this.listPickerScene);
     }
 

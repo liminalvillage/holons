@@ -152,7 +152,7 @@ export default class InputScene {
                 if (state.showCancelButton !== false) {
                     const cancelText = state.cancelButtonKey
                         ? i18next.t(state.cancelButtonKey, state.cancelButtonParams || {})
-                        : (state.cancelButtonText || i18next.t('input_scene_cancel_button', 'Cancel'));
+                        : (state.cancelButtonText || i18next.t('input_scene_cancel_button'));
 
                     replyMarkup = Markup.inlineKeyboard([
                         Markup.button.callback(cancelText, 'input_scene_cancel')
