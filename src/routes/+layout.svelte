@@ -1,8 +1,14 @@
 <script lang="ts">
-	import { setContext, onDestroy } from 'svelte';
+	import { setContext, onDestroy, onMount } from 'svelte';
 	import { HoloSphere } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
+	import TelegramSplash from '../components/TelegramSplash.svelte';
+	import { telegramStore, isAuthenticated } from '$lib/stores/telegram';
 	// Removed debug components to avoid interference
+
+	// Track if user has passed the splash screen
+	let showSplash = true;
+	let splashComplete = false;
 
     let environmentName: string =
         import.meta.env.VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
@@ -61,14 +67,53 @@
 	onDestroy(() => {
 		clearInterval(gcInterval);
 	});
+
+	// Handle splash screen completion
+	function handleAuthenticated(event: CustomEvent) {
+		console.log('User authenticated:', event.detail.user);
+		// Small delay for smooth transition
+		setTimeout(() => {
+			showSplash = false;
+			splashComplete = true;
+		}, 500);
+	}
+
+	function handleSkip() {
+		// Dev-only skip
+		showSplash = false;
+		splashComplete = true;
+	}
+
+	// Check if already authenticated on mount
+	onMount(() => {
+		const unsubscribe = telegramStore.subscribe((state) => {
+			if (!state.isLoading && state.isAuthenticated && !splashComplete) {
+				// Already authenticated, skip splash after brief display
+				setTimeout(() => {
+					showSplash = false;
+					splashComplete = true;
+				}, 800);
+			}
+		});
+
+		return unsubscribe;
+	});
 </script>
 
 <svelte:head>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </svelte:head>
 
-<Layout>
-<slot />
-</Layout>
+<!-- Show splash screen for Telegram authentication -->
+{#if showSplash}
+	<TelegramSplash on:authenticated={handleAuthenticated} on:skip={handleSkip} />
+{/if}
+
+<!-- Main app content (hidden while splash is showing) -->
+{#if !showSplash}
+	<Layout>
+		<slot />
+	</Layout>
+{/if}
 
 <!-- Debug components removed to avoid interference -->
