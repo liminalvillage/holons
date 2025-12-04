@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { setContext, onDestroy } from 'svelte';
-	import HoloSphere from "holosphere"
+	import { HoloSphere } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
 	// Removed debug components to avoid interference
 
@@ -9,24 +9,35 @@
 
 	console.log(import.meta.env.VITE_LOCAL_MODE)
     console.log("Environment:", environmentName)
-	
-	// Create holosphere instance with default configuration
-	const holosphere = new HoloSphere(environmentName);
+
+	// Get the shared private key from environment (shared with HolonsBot)
+	const privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
+
+	// Create holosphere instance with shared private key
+	// This allows harvest to access the same data as HolonsBot
+	const holosphere = new HoloSphere({
+		appName: environmentName,
+		privateKey: privateKey,
+		relays: [
+			'wss://relay.holons.io'     // Main Holons relay
+		],
+		enablePing: false  // Disable ping to prevent connection closure issues
+	});
+
+	// Log the public key for verification
+	if (holosphere.client) {
+		console.log("HoloSphere Public Key:", holosphere.client.publicKey);
+		console.log("Expected:", "fe256f089d7c007806418bcabfa87f5a760931ee2528e44a0654d18097ccf00c");
+	}
 
 	// Configure GunDB for better peer discovery after initialization
 	setTimeout(() => {
 		if (holosphere && holosphere.gun) {
-		
-			 
+
+
 		}
 	}, 1000); // Wait for HoloSphere to initialize
-	
-	// Add connection ready check - give holosphere time to initialize
-	let holosphereReady = false;
-	setTimeout(() => {
-		holosphereReady = true;
-	}, 500); // Give 500ms for initial connection
-	
+
 	// Periodically check for garbage collection opportunities
 	const gcInterval = setInterval(() => {
 		// Request browser to run garbage collection by forcing memory pressure

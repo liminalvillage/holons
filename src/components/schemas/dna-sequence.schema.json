@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://harvest.network/schemas/dna-sequence.json",
+  "title": "DNA Sequence",
+  "description": "The ordered collection of unique chromosomes that define a holon's governance structure",
+  "type": "object",
+  "required": ["holonId", "chromosomeIds", "createdAt", "updatedAt", "version"],
+  "properties": {
+    "holonId": {
+      "type": "string",
+      "description": "ID of the holon this DNA belongs to (primary key, one DNA per holon)"
+    },
+    "chromosomeIds": {
+      "type": "array",
+      "description": "Ordered list of chromosome IDs in the sequence",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "minItems": 0,
+      "maxItems": 20,
+      "uniqueItems": true
+    },
+    "createdAt": {
+      "type": "number",
+      "description": "Unix timestamp when DNA sequence was first created"
+    },
+    "updatedAt": {
+      "type": "number",
+      "description": "Unix timestamp of last modification"
+    },
+    "version": {
+      "type": "integer",
+      "description": "Optimistic locking version number (incremented on each save)",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false
+}

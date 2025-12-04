@@ -14,6 +14,9 @@ import quests from '../components/schemas/quests_schema_v0.0.1.json';
 import socialGraph from '../components/schemas/small_social_graph_people-v0.0.1.json';
 import solidarity from '../components/schemas/solidarity_economy_initiatives-v0.2.0.json';
 import systemsChange from '../components/schemas/systems_change_map-v2.0.0.json';
+// DNA Editor schemas
+import chromosome from '../components/schemas/chromosome.schema.json';
+import dnaSequence from '../components/schemas/dna-sequence.schema.json';
 
 // Map schema names to their definitions
 export const schemas = {
@@ -31,7 +34,10 @@ export const schemas = {
     'quests_schema_v0.0.1': quests,
     'small_social_graph_people-v0.0.1': socialGraph,
     'solidarity_economy_initiatives-v0.2.0': solidarity,
-    'systems_change_map-v2.0.0': systemsChange
+    'systems_change_map-v2.0.0': systemsChange,
+    // DNA Editor schemas
+    'chromosome': chromosome,
+    'dna-sequence': dnaSequence
 };
 
 export type SchemaName = keyof typeof schemas; 

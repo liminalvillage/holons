@@ -234,8 +234,8 @@ import ItemModal from "./ItemModal.svelte";
             
             // Process and normalize roles from store
             const updateRolesFromStore = () => {
-                roles = Object.values(rolesStore).map((role: any) => ({
-                    id: role.id || role.title || Math.random().toString(),
+                roles = Object.entries(rolesStore).map(([storeKey, role]: [string, any]) => ({
+                    id: role.id || storeKey,
                     title: role.title || 'Untitled Role',
                     description: role.description,
                     participants: role.participants || [],
@@ -362,21 +362,21 @@ import ItemModal from "./ItemModal.svelte";
             
             // Process events to filter for upcoming scheduled items (from today onwards)
             const updateEventsFromStore = () => {
-                const quests = Object.values(questsStore);
+                const quests = Object.entries(questsStore);
                 const today = new Date();
                 const todayStr = today.toISOString().split('T')[0];
-                
-                upcomingEvents = quests.filter((quest: any) => {
+
+                upcomingEvents = quests.filter(([storeKey, quest]: [string, any]) => {
                     // Include any item that has a 'when' field (is scheduled), regardless of type
                     if (!quest.when || quest.status === 'completed' || quest.status === 'cancelled') return false;
                     const whenDate = new Date(quest.when);
                     const eventDateStr = whenDate.toISOString().split('T')[0];
                     // Include events from today onwards (not just today)
                     return eventDateStr >= todayStr;
-                }).map((quest: any) => {
+                }).map(([storeKey, quest]: [string, any]) => {
                     const whenDate = new Date(quest.when);
                     return {
-                        id: quest.id || Math.random().toString(),
+                        id: quest.id || storeKey,
                         title: quest.title || quest.name || 'Untitled Event',
                         time: whenDate.toLocaleTimeString('en-US', {
                             hour: 'numeric',
@@ -396,15 +396,15 @@ import ItemModal from "./ItemModal.svelte";
                     };
                 }).sort((a, b) => a.sortTime - b.sortTime);
             };
-            
+
             // Process tasks to filter active ones
             const updateTasksFromStore = () => {
-                const quests = Object.values(questsStore);
-                
-                topTasks = quests.filter((quest: any) => 
+                const quests = Object.entries(questsStore);
+
+                topTasks = quests.filter(([storeKey, quest]: [string, any]) =>
                     quest.status !== 'completed' && quest.status !== 'cancelled'
-                ).map((quest: any) => ({
-                    id: quest.id || Math.random().toString(),
+                ).map(([storeKey, quest]: [string, any]) => ({
+                    id: quest.id || storeKey,
                     title: quest.title || quest.name || 'Untitled Task',
                     priority: quest.priority,
                     dueDate: quest.dueDate,
@@ -503,8 +503,8 @@ import ItemModal from "./ItemModal.svelte";
             
             // Process badges from store
             const updateBadgesFromStore = () => {
-                badges = Object.values(badgesStore).map((badge: any) => ({
-                    id: badge.id || Math.random().toString(),
+                badges = Object.entries(badgesStore).map(([storeKey, badge]: [string, any]) => ({
+                    id: badge.id || storeKey,
                     title: badge.title || badge.name || 'Untitled Badge',
                     description: badge.description || badge.details,
                     recipients: badge.recipients || badge.owners || []
@@ -662,20 +662,20 @@ import ItemModal from "./ItemModal.svelte";
                 // Refresh events for the new day if we have quest data
                 if (questsStore && Object.keys(questsStore).length > 0) {
                     const updateEventsFromStore = () => {
-                        const quests = Object.values(questsStore);
+                        const quests = Object.entries(questsStore);
                         const today = new Date();
                         const todayStr = today.toISOString().split('T')[0];
-                        
-                        upcomingEvents = quests.filter((quest: any) => {
+
+                        upcomingEvents = quests.filter(([storeKey, quest]: [string, any]) => {
                             if (!quest.when || quest.status === 'completed' || quest.status === 'cancelled') return false;
                             const whenDate = new Date(quest.when);
                             const eventDateStr = whenDate.toISOString().split('T')[0];
                             // Include events from today onwards (not just today)
                             return eventDateStr >= todayStr;
-                        }).map((quest: any) => {
+                        }).map(([storeKey, quest]: [string, any]) => {
                             const whenDate = new Date(quest.when);
                             return {
-                                id: quest.id || Math.random().toString(),
+                                id: quest.id || storeKey,
                                 title: quest.title || quest.name || 'Untitled Event',
                                 time: whenDate.toLocaleTimeString('en-US', {
                                     hour: 'numeric',

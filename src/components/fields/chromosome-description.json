@@ -1,0 +1,18 @@
+{
+  "title": "Chromosome Description",
+  "description": "A detailed explanation of what this chromosome represents",
+  "type": "string",
+  "minLength": 10,
+  "maxLength": 500,
+  "metadata": {
+    "creator": {
+      "name": "Harvest Project",
+      "url": "https://harvest.network"
+    },
+    "field": {
+      "name": "chromosome-description",
+      "version": "0.0.1"
+    },
+    "purpose": "Provides context and explanation for a governance chromosome's purpose and application within a holon"
+  }
+}

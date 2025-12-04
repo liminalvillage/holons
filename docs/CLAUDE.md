@@ -78,3 +78,10 @@ The application uses a comprehensive schema system for different entity types:
 - **Ethers.js** for blockchain connectivity
 - **SIWE** (Sign-In with Ethereum) for authentication
 - **HTML5 QR Code** for QR code functionality
+
+## Active Technologies
+- TypeScript 5.7+ with Svelte 5.0 (001-holon-dna-editor)
+- Holosphere/GunDB (decentralized peer-to-peer synchronization) (001-holon-dna-editor)
+
+## Recent Changes
+- 001-holon-dna-editor: Added TypeScript 5.7+ with Svelte 5.0

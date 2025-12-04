@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://harvest.network/schemas/chromosome.json",
+  "title": "Chromosome",
+  "description": "A governance element (value, tool, or practice) that can be added to a holon's DNA sequence",
+  "type": "object",
+  "required": ["id", "holonId", "name", "type", "description", "createdAt", "updatedAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the chromosome (UUID)",
+      "format": "uuid"
+    },
+    "holonId": {
+      "type": "string",
+      "description": "ID of the holon that owns this chromosome"
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name of the chromosome",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "type": {
+      "type": "string",
+      "description": "Category of chromosome",
+      "enum": ["value", "tool", "practice"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Explanation of what this chromosome represents",
+      "minLength": 10,
+      "maxLength": 500
+    },
+    "createdAt": {
+      "type": "number",
+      "description": "Unix timestamp when chromosome was created"
+    },
+    "updatedAt": {
+      "type": "number",
+      "description": "Unix timestamp of last modification"
+    },
+    "icon": {
+      "type": "string",
+      "description": "Optional icon identifier (icon name from svelte-feather-icons or emoji)"
+    },
+    "color": {
+      "type": "string",
+      "description": "Optional custom color (hex color code or TailwindCSS class)"
+    }
+  },
+  "additionalProperties": false
+}

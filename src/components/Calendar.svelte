@@ -3,8 +3,10 @@
     import HoloSphere from 'holosphere';
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
+    import CalendarSettings from './CalendarSettings.svelte';
     import { formatDate } from "../utils/date";
     import * as d3 from "d3";
+    import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -44,6 +46,13 @@
     let users: Record<string, User> = {};
     let profiles: Record<string, Profile> = {};
     let unsubscribe: (() => void) | undefined;
+
+    // Imported calendar state
+    let showCalendarSettings = false;
+    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
+    let externalEvents: ExternalCalendarEvent[] = [];
+    let syncInterval: NodeJS.Timeout | number | null = null;
+    const SYNC_INTERVAL_MS = 10 * 60 * 1000; // Sync every 10 minutes
 
     // Orbital visualization variables
     interface RecurringTask {
@@ -146,10 +155,16 @@
     onMount(() => {
         loadProfiles();
         loadTasks();
-        
+        loadImportedCalendars();
+
+        // Set up periodic sync for imported calendars
+        syncInterval = setInterval(() => {
+            syncAllCalendars();
+        }, SYNC_INTERVAL_MS);
+
         // Add resize listener for orbital view
         window.addEventListener('resize', handleResize);
-        
+
         return () => {
             clearInterval(currentTimeInterval);
         };
@@ -158,7 +173,12 @@
     onDestroy(() => {
         // Remove resize listener
         window.removeEventListener('resize', handleResize);
-        
+
+        // Clear sync interval
+        if (syncInterval) {
+            clearInterval(syncInterval);
+        }
+
         // Clean up HoloSphere subscriptions
         if (questsUnsubscribe) {
             questsUnsubscribe();
@@ -357,9 +377,31 @@
             .map(task => ({
                 ...task,
                 color: '#6366f1',
+                isHolonEvent: true
             }));
-        
-        return [...(events[dateStr] || []), ...dayTasks];
+
+        // Get external events for this day
+        const dayExternalEvents = externalEvents
+            .filter(event => {
+                const eventStart = new Date(event.start);
+                const eventEnd = new Date(event.end);
+                const checkDate = new Date(dateStr);
+                return eventStart.toDateString() === dateStr ||
+                       (eventStart <= checkDate && eventEnd >= checkDate);
+            })
+            .map(event => ({
+                id: event.id,
+                title: event.title,
+                description: event.description,
+                location: event.location,
+                when: event.start.toISOString(),
+                ends: event.end.toISOString(),
+                color: '#10b981', // Green color for external events
+                isExternalEvent: true,
+                calendarName: event.calendarName
+            }));
+
+        return [...(events[dateStr] || []), ...dayTasks, ...dayExternalEvents];
     }
 
     function handleTimelineDateSelect(event: CustomEvent<{date: Date, dayOfYear: number}>) {
@@ -446,7 +488,7 @@
 
     function loadTasks() {
         if (!holosphere || !$ID) return;
-        
+
         holosphere.subscribe($ID, 'quests', (newTask: any, key?: string) => {
             if (!key) return; // Skip if no key
             if (newTask) {
@@ -464,6 +506,51 @@
                 tasks = tasks;
             }
         });
+    }
+
+    // Load imported calendars configuration
+    async function loadImportedCalendars() {
+        if (!holosphere || !$ID) return;
+
+        try {
+            const calendarData = await holosphere.get($ID, 'settings', 'imported_calendars');
+            if (calendarData && Array.isArray(calendarData.calendars)) {
+                importedCalendars = calendarData.calendars;
+                // Sync calendars after loading
+                await syncAllCalendars();
+            }
+        } catch (err) {
+            console.error('Error loading imported calendars:', err);
+        }
+    }
+
+    // Sync all enabled imported calendars
+    async function syncAllCalendars() {
+        if (importedCalendars.length === 0) return;
+
+        const enabledCalendars = importedCalendars.filter(cal => cal.enabled);
+        const allEvents: ExternalCalendarEvent[] = [];
+
+        for (const calendar of enabledCalendars) {
+            try {
+                const parsed = await fetchAndParseICalFeed(calendar.url, calendar.name);
+                // Add calendar info to each event
+                const eventsWithCal = parsed.events.map(event => ({
+                    ...event,
+                    calendarName: calendar.name
+                }));
+                allEvents.push(...eventsWithCal);
+            } catch (error) {
+                console.error(`Error syncing calendar ${calendar.name}:`, error);
+            }
+        }
+
+        externalEvents = allEvents;
+    }
+
+    // Handle calendar settings update
+    function handleCalendarsUpdated() {
+        loadImportedCalendars();
     }
 
     // Make monthTasks reactive to changes in tasks
@@ -1427,7 +1514,7 @@
         <div class="flex items-center gap-4">
             <div class="flex gap-2">
                 <!-- svelte-ignore a11y_consider_explicit_label -->
-                <button 
+                <button
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
                     on:click={() => handleNavigation(-1)}
                 >
@@ -1435,7 +1522,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                     </svg>
                 </button>
-                <button 
+                <button
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
                     on:click={() => handleNavigation(1)}
                     aria-label="Next period"
@@ -1449,14 +1536,25 @@
                 {#if viewMode === 'month'}
                     {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
                 {:else if viewMode === 'week'}
-                    {weekData[0].toLocaleDateString(undefined, { month: 'long', day: 'numeric' })} - 
+                    {weekData[0].toLocaleDateString(undefined, { month: 'long', day: 'numeric' })} -
                     {weekData[6].toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
                 {:else}
                     {currentDate.toLocaleString('default', { month: 'long', day: 'numeric', year: 'numeric' })}
                 {/if}
             </h2>
         </div>
-        <div class="flex gap-2 flex-wrap">
+        <div class="flex gap-2 flex-wrap items-center">
+            <button
+                class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                on:click={() => showCalendarSettings = true}
+                aria-label="Calendar settings"
+                title="Calendar Settings - Import/Export"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
             <button 
                 class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
                 on:click={() => handleViewModeChange('day')}
@@ -2017,6 +2115,12 @@
         </div>
     </dialog>
 {/if}
+
+<!-- Calendar Settings Modal -->
+<CalendarSettings
+    bind:show={showCalendarSettings}
+    on:calendarsUpdated={handleCalendarsUpdated}
+/>
 
 <style>
     button {

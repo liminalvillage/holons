@@ -3,7 +3,7 @@
     import { fade, slide, fly } from "svelte/transition";
     import { flip } from "svelte/animate";
     import { goto } from "$app/navigation";
-    import HoloSphere from "holosphere";
+    import type { HoloSphere } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
     import { fetchHolonName } from "../utils/holonNames";
     import { addVisitedHolon } from "../utils/localStorage";
@@ -82,13 +82,22 @@
 
     // Subscribe to current holon ID
     let idStoreUnsubscribe: (() => void) | undefined;
+    let federationSubscription: any = null;
 
     onMount(() => {
         idStoreUnsubscribe = ID.subscribe(async (newId) => {
             if (newId !== currentHolonId) {
+                // Unsubscribe from previous federation data
+                if (federationSubscription) {
+                    federationSubscription.unsubscribe();
+                    federationSubscription = null;
+                }
+
                 currentHolonId = newId || '';
                 if (currentHolonId) {
                     await loadFederationData();
+                    // Subscribe to federation data changes
+                    await subscribeFederationChanges();
                 } else {
                     federationInfo = null;
                     federatedHolons = [];
@@ -102,7 +111,30 @@
         if (idStoreUnsubscribe) {
             idStoreUnsubscribe();
         }
+        if (federationSubscription) {
+            federationSubscription.unsubscribe();
+        }
     });
+
+    async function subscribeFederationChanges() {
+        if (!holosphere || !currentHolonId) return;
+
+        try {
+            // Subscribe to the global federation data for this holon
+            federationSubscription = await holosphere.subscribe(
+                currentHolonId,
+                'federation',
+                async (data, itemId) => {
+                    console.log('Federation data changed:', data, itemId);
+                    // Reload federation data when changes occur
+                    await loadFederationData();
+                },
+                { realtimeOnly: true }
+            );
+        } catch (err) {
+            console.warn('Failed to subscribe to federation changes:', err);
+        }
+    }
 
     async function loadFederationData() {
         if (!holosphere || !currentHolonId) return;
@@ -116,22 +148,22 @@
             console.log('Federation info loaded:', federationInfo);
             
             if (federationInfo) {
-                // Build federated holons list
-                federatedHolons = [];
-                
+                // Build federated holons list using a temporary array
+                const tempHolons: FederatedHolon[] = [];
+
                 // Process federation list (holons we federate to)
                 for (const holonId of federationInfo.federation || []) {
                     const lensConfig = federationInfo.lensConfig?.[holonId] || {
                         federate: [],
                         notify: []
                     };
-                    
+
                     console.log(`Lens config for ${holonId}:`, lensConfig);
-                    
+
                     // Get actual holon name from settings
                     const holonName = await getHolonName(holonId);
-                    
-                    federatedHolons.push({
+
+                    tempHolons.push({
                         id: holonId,
                         name: holonName,
                         status: 'connected',
@@ -139,22 +171,22 @@
                         lensConfig
                     });
                 }
-                
+
                 // Process notify list (holons that notify us)
                 for (const holonId of federationInfo.notify || []) {
-                    if (!federatedHolons.find(h => h.id === holonId)) {
+                    if (!tempHolons.find(h => h.id === holonId)) {
                         // Try to get the lens config for this holon too
                         const lensConfig = federationInfo.lensConfig?.[holonId] || {
                             federate: [],
                             notify: []
                         };
-                        
+
                         console.log(`Lens config for notify-only holon ${holonId}:`, lensConfig);
-                        
+
                         // Get actual holon name from settings
                         const holonName = await getHolonName(holonId);
-                        
-                        federatedHolons.push({
+
+                        tempHolons.push({
                             id: holonId,
                             name: holonName,
                             status: 'connected',
@@ -163,9 +195,12 @@
                         });
                     }
                 }
-                
+
+                // Assign to trigger reactivity in Svelte 5
+                federatedHolons = tempHolons;
+
                 console.log('Final federated holons:', federatedHolons);
-                
+
                 // Attempt to repair any missing lens configurations
                 setTimeout(() => repairLensConfigs(), 100);
             } else {
@@ -182,25 +217,30 @@
 
     async function addFederation() {
         if (!newHolonId.trim() || !holosphere || !currentHolonId) return;
-        
+
         saving = true;
         error = '';
-        
+
         try {
             // Create federation with default lens config (empty arrays)
-            const success = await holosphere.federate(
-                currentHolonId, 
+            const success = await holosphere.federateHolon(
+                currentHolonId,
                 newHolonId.trim(),
-                null, // password1
-                null, // password2
-                true, // bidirectional
-                { federate: [], notify: [] } // empty lens config initially
+                {
+                    lensConfig: { federate: [], notify: [] },
+                    direction: 'bidirectional'
+                }
             );
-            
+
             if (success) {
                 showAddDialog = false;
                 newHolonId = '';
                 newHolonName = '';
+
+                // Wait a bit for GunDB to propagate the changes
+                await new Promise(resolve => setTimeout(resolve, 300));
+
+                // Force reload of federation data
                 await loadFederationData();
                 showSuccess('Federation created successfully');
             } else {
@@ -216,26 +256,31 @@
 
     async function removeFederation(holonId: string) {
         console.log('removeFederation called with holonId:', holonId);
-        
+
         if (!holosphere || !currentHolonId) {
             console.log('Early return: missing holosphere or currentHolonId', { holosphere: !!holosphere, currentHolonId });
             return;
         }
-        
+
         saving = true;
         error = '';
-        
+
         try {
-            console.log('Calling holosphere.unfederate...', { currentHolonId, holonId });
-            const success = await holosphere.unfederate(currentHolonId, holonId);
-            console.log('unfederate result:', success);
-            
+            console.log('Calling holosphere.unfederateHolon...', { currentHolonId, holonId });
+            const success = await holosphere.unfederateHolon(currentHolonId, holonId);
+            console.log('unfederateHolon result:', success);
+
             if (success) {
                 console.log('Federation removed successfully, reloading data...');
+
+                // Wait a bit for GunDB to propagate the changes
+                await new Promise(resolve => setTimeout(resolve, 300));
+
+                // Force reload of federation data
                 await loadFederationData();
                 showSuccess('Federation removed successfully');
             } else {
-                console.error('unfederate returned false');
+                console.error('unfederateHolon returned false');
                 error = 'Failed to remove federation';
             }
         } catch (err) {
@@ -248,21 +293,25 @@
 
     async function updateLensConfig(holonId: string, federateLenses: string[], notifyLenses: string[]) {
         if (!holosphere || !currentHolonId) return;
-        
+
         saving = true;
-        
+
         try {
             // Re-federate with updated lens config
-            const success = await holosphere.federate(
+            const success = await holosphere.federateHolon(
                 currentHolonId,
                 holonId,
-                null, // password1
-                null, // password2
-                true, // bidirectional
-                { federate: federateLenses, notify: notifyLenses }
+                {
+                    lensConfig: { federate: federateLenses, notify: notifyLenses },
+                    direction: 'bidirectional'
+                }
             );
-            
+
             if (success) {
+                // Wait a bit for GunDB to propagate the changes
+                await new Promise(resolve => setTimeout(resolve, 300));
+
+                // Force reload of federation data
                 await loadFederationData();
             }
         } catch (err) {

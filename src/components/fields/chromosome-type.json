@@ -1,0 +1,17 @@
+{
+  "title": "Chromosome Type",
+  "description": "The category of chromosome (value, tool, or practice)",
+  "type": "string",
+  "enum": ["value", "tool", "practice"],
+  "metadata": {
+    "creator": {
+      "name": "Harvest Project",
+      "url": "https://harvest.network"
+    },
+    "field": {
+      "name": "chromosome-type",
+      "version": "0.0.1"
+    },
+    "purpose": "Categorizes chromosomes into values (principles), tools (methodologies), or practices (behaviors) for organizing a holon's DNA"
+  }
+}
