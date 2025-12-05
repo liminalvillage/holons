@@ -1,14 +1,21 @@
 <script lang="ts">
-	import { setContext, onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { HoloSphere } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
 	import TelegramSplash from '../components/TelegramSplash.svelte';
+	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import { nostrStore, nostrPrivateKey } from '$lib/stores/nostr';
+	import { holosphereStore } from '$lib/stores/holosphere';
+	import { ID } from '../dashboard/store';
 
 	// Track if user has passed the splash screen
 	let showSplash = true;
 	let splashComplete = false;
 	let holosphere: any = null;
+
+	// Subscribe to holosphere store for reactive updates
+	$: holosphere = $holosphereStore;
 
 	let environmentName: string =
 		import.meta.env.VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
@@ -18,6 +25,96 @@
 
 	// GC interval reference
 	let gcInterval: ReturnType<typeof setInterval>;
+
+	// Initialize user's personal holon with their public key as ID
+	async function initializeUserHolon() {
+		if (!holosphere || !holosphere.client?.publicKey) return;
+
+		const userPublicKey = holosphere.client.publicKey;
+		console.log('Initializing user holon with ID:', userPublicKey);
+
+		try {
+			// Check if holon settings already exist
+			const existingSettings = await holosphere.get(userPublicKey, 'settings');
+
+			if (!existingSettings || !existingSettings.name) {
+				// First time login - create the holon with default settings
+				console.log('First time user - creating personal holon');
+				await holosphere.write(userPublicKey, 'settings', {
+					id: userPublicKey,
+					name: 'My Holon',
+					purpose: 'Personal holon',
+					createdAt: Date.now(),
+					createdBy: userPublicKey
+				});
+			} else {
+				console.log('Existing holon found:', existingSettings.name);
+			}
+
+			// Set the ID store to the user's public key (their personal holon)
+			ID.set(userPublicKey);
+			console.log('User holon initialized and ID set to:', userPublicKey);
+
+			// Navigate directly to the user's holon dashboard
+			goto(`/${userPublicKey}/dashboard`);
+		} catch (error) {
+			console.error('Failed to initialize user holon:', error);
+			// Still set the ID and navigate even if settings fail
+			ID.set(userPublicKey);
+			goto(`/${userPublicKey}/dashboard`);
+		}
+	}
+
+	// Grant capability token to the holosphere service key for federation
+	async function grantFederationCapability(privateKey: string) {
+		if (!holosphere) return;
+
+		const holospherePrivateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
+		if (!holospherePrivateKey) {
+			console.log('No holosphere service key configured, skipping federation capability grant');
+			return;
+		}
+
+		try {
+			// Get the holosphere service public key
+			const holospherePublicKey = await holosphere.getPublicKey(holospherePrivateKey);
+			const userPublicKey = holosphere.client.publicKey;
+
+			console.log('Granting federation capability to service key:', holospherePublicKey);
+
+			// Store the holosphere service public key in global table
+			await holosphere.writeGlobal('federation_keys', {
+				id: 'holosphere_service',
+				publicKey: holospherePublicKey,
+				description: 'Main holosphere service key for federated community access',
+				updatedAt: Date.now()
+			});
+
+			// Issue capability token with full permissions for all holons/lenses
+			const capabilityToken = await holosphere.issueCapability(
+				['read', 'write', 'delete'],
+				{ holonId: '*', lensName: '*' },
+				holospherePublicKey,
+				{ issuerKey: privateKey, expiresIn: 365 * 24 * 60 * 60 * 1000 }
+			);
+
+			// Store the capability token in federation_capabilities global table
+			await holosphere.writeGlobal('federation_capabilities', {
+				id: userPublicKey,
+				grantorPublicKey: userPublicKey,
+				recipientPublicKey: holospherePublicKey,
+				token: capabilityToken,
+				permissions: ['read', 'write', 'delete'],
+				scope: { holonId: '*', lensName: '*' },
+				grantedAt: Date.now(),
+				expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000
+			});
+
+			console.log('Federation capability granted and stored successfully');
+		} catch (error) {
+			console.error('Failed to grant federation capability:', error);
+		}
+	}
 
 	// Initialize HoloSphere with the given private key
 	function initHoloSphere(privateKey: string) {
@@ -42,8 +139,14 @@
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
 		}
 
-		// Set the context for child components
-		setContext('holosphere', holosphere);
+		// Update the global store (this can be called from async callbacks)
+		holosphereStore.set(holosphere);
+
+		// Initialize the user's personal holon with their public key as ID
+		initializeUserHolon();
+
+		// Grant capability token to the holosphere service key for federation
+		grantFederationCapability(privateKey);
 
 		// Periodically check for garbage collection opportunities
 		gcInterval = setInterval(() => {
@@ -91,9 +194,6 @@
 		showSplash = false;
 		splashComplete = true;
 	}
-
-	// Set context placeholder immediately for SSR
-	setContext('holosphere', null);
 </script>
 
 <svelte:head>
@@ -107,7 +207,9 @@
 
 <!-- Main app content (hidden while splash is showing) -->
 {#if !showSplash && holosphere}
-	<Layout>
-		<slot />
-	</Layout>
+	<HolosphereProvider>
+		<Layout>
+			<slot />
+		</Layout>
+	</HolosphereProvider>
 {/if}
