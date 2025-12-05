@@ -24,6 +24,53 @@
 		(window as any).onTelegramAuth = handleTelegramAuth;
 	}
 
+	let widgetContainer: HTMLDivElement;
+	let widgetLoaded = false;
+	let widgetError = '';
+
+	// Svelte action: runs when element is mounted to DOM
+	function initTelegramWidget(node: HTMLElement) {
+		// Only load if not already loaded
+		if (document.getElementById('telegram-login-script')) return;
+
+		console.log('Initializing Telegram widget on element:', node);
+
+		// Create the Telegram Login Widget script
+		const script = document.createElement('script');
+		script.id = 'telegram-login-script';
+		script.async = true;
+		script.src = 'https://telegram.org/js/telegram-widget.js?22';
+		script.setAttribute('data-telegram-login', TELEGRAM_BOT_USERNAME);
+		script.setAttribute('data-size', 'large');
+		script.setAttribute('data-radius', '12');
+		script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+		script.setAttribute('data-request-access', 'write');
+
+		script.onload = () => {
+			widgetLoaded = true;
+			console.log('Telegram widget script loaded');
+		};
+
+		script.onerror = () => {
+			widgetError = 'Failed to load Telegram widget. The bot domain may not be configured for this URL.';
+			console.error('Failed to load Telegram widget');
+		};
+
+		node.appendChild(script);
+
+		return {
+			destroy() {
+				// Cleanup if needed
+			}
+		};
+	}
+
+	// Check if running on localhost (for dev skip)
+	function isLocalhost(): boolean {
+		if (typeof window === 'undefined') return false;
+		return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+	}
+
 	onMount(() => {
 		// Initialize Telegram store
 		telegramStore.init();
@@ -43,7 +90,6 @@
 			} else if (!state.isLoading && !state.isAuthenticated && !state.isTelegramWebApp) {
 				// Not in Telegram WebApp and not authenticated, show login widget
 				showLoginWidget = true;
-				loadTelegramLoginWidget();
 			}
 		});
 
@@ -51,27 +97,6 @@
 			unsubscribe();
 		};
 	});
-
-	function loadTelegramLoginWidget() {
-		// Only load if not already loaded
-		if (document.getElementById('telegram-login-script')) return;
-
-		const container = document.getElementById('telegram-login-container');
-		if (!container) return;
-
-		// Create the Telegram Login Widget script
-		const script = document.createElement('script');
-		script.id = 'telegram-login-script';
-		script.async = true;
-		script.src = 'https://telegram.org/js/telegram-widget.js?22';
-		script.setAttribute('data-telegram-login', TELEGRAM_BOT_USERNAME);
-		script.setAttribute('data-size', 'large');
-		script.setAttribute('data-radius', '12');
-		script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-		script.setAttribute('data-request-access', 'write');
-
-		container.appendChild(script);
-	}
 
 	function skipLogin() {
 		// Allow skipping for demo/development
@@ -110,17 +135,22 @@
 				<p class="login-prompt">Sign in with Telegram to continue</p>
 
 				<!-- Telegram Login Widget Container -->
-				<div id="telegram-login-container" class="widget-container"></div>
+				<div id="telegram-login-container" class="widget-container" use:initTelegramWidget></div>
+
+				{#if widgetError}
+					<p class="error-message">{widgetError}</p>
+				{/if}
 
 				{#if loginError}
 					<p class="error-message">{loginError}</p>
 				{/if}
 
-				<!-- Skip option for development -->
-				{#if import.meta.env.DEV}
+				<!-- Skip option for localhost development -->
+				{#if isLocalhost()}
 					<button class="skip-button" on:click={skipLogin}>
-						Skip for now (Dev only)
+						Skip for now (Localhost)
 					</button>
+					<p class="localhost-note">Telegram Login Widget doesn't work on localhost. Use Skip to continue.</p>
 				{/if}
 			</div>
 		{:else if $telegramStore.isAuthenticated}
@@ -307,6 +337,13 @@
 	.skip-button:hover {
 		color: #9ca3af;
 		background: rgba(255, 255, 255, 0.05);
+	}
+
+	.localhost-note {
+		color: #9ca3af;
+		font-size: 0.7rem;
+		margin-top: 0.5rem;
+		text-align: center;
 	}
 
 	.welcome-container {
