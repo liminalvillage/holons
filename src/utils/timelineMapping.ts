@@ -37,15 +37,44 @@ export function createQuestTreeFromRitual(
   headAdvisor: string,
   config: GenerationConfig
 ): QuestTree {
-  return {
-    id: `tree-${Date.now()}`,
+  const treeId = `tree-${Date.now()}`;
+  const visionNodeId = `vision-${treeId}`;
+  
+  // Create the vision as Generation 0 quest node
+  const visionNode: QuestTreeNode = {
+    id: visionNodeId,
+    title: ritualSession.wish_statement,
+    description: `Vision: ${ritualSession.wish_statement}`,
+    parentId: null, // True root of the quest tree
+    childIds: [], // Will be populated with seed quest IDs
+    generation: 0, // Vision is Generation 0
+    generationIndex: 0,
+    status: 'pending',
+    dependencies: [], // Vision has no dependencies
+    skillsRequired: [],
+    resourcesRequired: [],
+    impactCategory: 'social',
+    participants: [],
+    assumptions: [],
+    questions: [],
+    actions: [],
+    successMetrics: ritualSession.declared_values || [],
+    futureState: ritualSession.wish_statement,
+    created: new Date().toISOString(),
+    createdBy: 'council_ritual',
+    lastModified: new Date().toISOString(),
+    facilitatingAdvisor: headAdvisor
+  };
+
+  const questTree: QuestTree = {
+    id: treeId,
     vision: {
       statement: ritualSession.wish_statement,
       principles: ritualSession.declared_values || [],
       successIndicators: []
     },
-    nodes: {},
-    rootNodeIds: [],
+    nodes: { [visionNodeId]: visionNode },
+    rootNodeIds: [visionNodeId], // Vision node is the true root
     maxGenerations: config.number,
     branchingFactor: config.branchingFactor,
     impactDimensions: [],
@@ -55,19 +84,22 @@ export function createQuestTreeFromRitual(
     sourceRitualId: ritualSession.session_id,
     headAdvisor
   };
+
+  return questTree;
 }
 
-// Unified quest creation - works for seeds (parentId=null) and children
+// Unified quest creation - works for all generations (seeds and children)
 export function createQuests(
   questTree: QuestTree,
   titles: string[],
   parentId: string | null = null
 ): QuestTreeNode[] {
   const parent = parentId ? questTree.nodes[parentId] : null;
-  const generation = parent ? parent.generation + 1 : 1;
+  const generation = parent ? parent.generation + 1 : 1; // Seeds are now Generation 1
   
   return titles.map((title, index) => {
-    const nodeId = parentId ? `${parentId}-child-${index}-${Date.now()}` : `seed-${index}-${Date.now()}`;
+    const timestamp = Date.now();
+    const nodeId = `gen${generation}-${index}-${timestamp}`;
     
     const node: QuestTreeNode = {
       id: nodeId,
@@ -86,16 +118,17 @@ export function createQuests(
       questions: [],
       actions: [],
       created: new Date().toISOString(),
-      createdBy: 'timeline_mapping',
+      createdBy: 'holonic_quest_creation',
       lastModified: new Date().toISOString(),
-      facilitatingAdvisor: parent?.facilitatingAdvisor
+      facilitatingAdvisor: parent?.facilitatingAdvisor || questTree.headAdvisor
     };
 
     // Add to quest tree
     questTree.nodes[nodeId] = node;
-    if (parentId) {
-      parent!.childIds.push(nodeId);
-    } else {
+    if (parentId && parent) {
+      parent.childIds.push(nodeId);
+    } else if (!parentId) {
+      // This is for backward compatibility - should not happen with proper vision node
       questTree.rootNodeIds.push(nodeId);
     }
 

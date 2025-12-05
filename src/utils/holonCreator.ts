@@ -196,7 +196,17 @@ export function createTasksFromQuestTree(
     const parentTaskId = node.parentId ? makeTaskId(node.parentId) : undefined;
 
     const dependsOn: string[] = [];
-    if (parentTaskId) dependsOn.push(parentTaskId);
+    
+    // RECURSIVE DEPENDENCY LOGIC: Parent always depends on child
+    // Find all child quests for this node
+    const childQuestIds = Object.values(questTree.nodes)
+      .filter(n => n.parentId === node.id)
+      .map(n => makeTaskId(n.id));
+    
+    // This quest depends on all its children
+    dependsOn.push(...childQuestIds);
+    
+    // Additional dependencies (if any)
     if (node.dependencies && node.dependencies.length > 0) {
       for (const depNodeId of node.dependencies) {
         dependsOn.push(makeTaskId(depNodeId));

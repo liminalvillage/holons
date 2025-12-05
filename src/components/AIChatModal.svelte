@@ -111,13 +111,44 @@
   const currentTheme = themeClasses[theme];
 </script>
 
+<style>
+  /* Custom scrollbar styling */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #374151;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #4B5563;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #6B7280;
+  }
+
+  /* Firefox scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #4B5563 #374151;
+  }
+</style>
+
 {#if isOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div 
     class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+    on:click={() => onClose()}
     on:keydown={(e) => e.key === 'Escape' && onClose()}
   >
-    <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] relative border border-gray-700 flex flex-col">
+    <div 
+      class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] relative border border-gray-700 flex flex-col"
+      on:click|stopPropagation={() => {}}
+    >
       <!-- Header -->
       <div class="flex items-center justify-between p-6 border-b border-gray-700 {currentTheme.header} rounded-t-2xl">
         <div class="flex items-center gap-3">
@@ -154,7 +185,7 @@
       <!-- Chat Messages -->
       <div 
         bind:this={chatContainer}
-        class="flex-1 overflow-y-auto p-6 space-y-4"
+        class="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
       >
         {#each messages as message (message.timestamp)}
           <div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">

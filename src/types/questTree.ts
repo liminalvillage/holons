@@ -69,7 +69,7 @@ export interface QuestTree {
   
   // Tree structure
   nodes: Record<string, QuestTreeNode>; // Map of node ID to node
-  rootNodeIds: string[]; // IDs of generation 1 nodes (seed quests)
+  rootNodeIds: string[]; // IDs of the root node (vision quest - generation 0)
   
   // Configuration
   maxGenerations: number; // 6-7 as per user settings, default 6

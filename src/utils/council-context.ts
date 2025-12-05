@@ -92,6 +92,31 @@ export function getAdvisorResponseFormatInstructions(): string {
   return THEATRICAL_PRESENTATION_INSTRUCTIONS;
 }
 
+// Helper function to safely stringify character specifications
+function safeStringifyCharacterSpec(characterSpec: any): string {
+  console.log('🔍 safeStringifyCharacterSpec input:', {
+    characterSpec,
+    type: typeof characterSpec,
+    isNull: characterSpec === null,
+    isUndefined: characterSpec === undefined,
+    keys: characterSpec && typeof characterSpec === 'object' ? Object.keys(characterSpec) : 'no keys'
+  });
+  
+  try {
+    if (characterSpec && typeof characterSpec === 'object') {
+      const result = JSON.stringify(characterSpec, null, 2);
+      console.log('🔍 safeStringifyCharacterSpec result:', result);
+      return result;
+    } else {
+      console.log('🔍 safeStringifyCharacterSpec - not an object, using fallback');
+      return 'Basic character specification available';
+    }
+  } catch (error) {
+    console.warn('Error stringifying character specification:', error);
+    return 'Character specification available but not fully detailed';
+  }
+}
+
 // Lens 5: Conversation Flow Context
 export interface ConversationFlowContext {
   present_members: string[];
@@ -221,11 +246,23 @@ export function createIndividualAdvisorContext(
   advisor: CouncilAdvisorExtended,
   userMessage: string
 ): string {
+  // Debug: Log the advisor data being processed
+  console.log('🔍 createIndividualAdvisorContext - Raw advisor data:', {
+    name: advisor.name,
+    type: advisor.type,
+    lens: advisor.lens,
+    characterSpec: advisor.characterSpec,
+    characterSpecType: typeof advisor.characterSpec
+  });
+  
+  const characterSpecString = safeStringifyCharacterSpec(advisor.characterSpec);
+  console.log('🔍 createIndividualAdvisorContext - Processed character spec:', characterSpecString);
+  
   return `
 You are ${advisor.name}, a ${advisor.type} advisor with expertise in ${advisor.lens}.
 
 CHARACTER SPECIFICATION:
-${JSON.stringify(advisor.characterSpec, null, 2)}
+${characterSpecString}
 
 ${getAdvisorResponseFormatInstructions()}
 
@@ -273,7 +310,7 @@ IMPORTANT: You must acknowledge the previous speaker by name and build upon thei
 You are ${advisor.name}, a ${advisor.type} advisor with expertise in ${advisor.lens}.
 
 CHARACTER SPECIFICATION:
-${JSON.stringify(advisor.characterSpec, null, 2)}
+${safeStringifyCharacterSpec(advisor.characterSpec)}
 
 HOLONIC ECOSYSTEM COUNCIL GENESIS LENS:
 ${HOLONIC_ECOSYSTEM_COUNCIL_GENESIS_LENS}
@@ -328,7 +365,7 @@ IMPORTANT: You must acknowledge the previous speaker by name and build upon thei
 You are ${advisor.name}, a ${advisor.type} advisor with expertise in ${advisor.lens}.
 
 CHARACTER SPECIFICATION:
-${JSON.stringify(advisor.characterSpec, null, 2)}
+${safeStringifyCharacterSpec(advisor.characterSpec)}
 
 HOLONIC ECOSYSTEM COUNCIL GENESIS LENS:
 ${HOLONIC_ECOSYSTEM_COUNCIL_GENESIS_LENS}

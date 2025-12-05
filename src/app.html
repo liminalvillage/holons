@@ -5,22 +5,29 @@
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+		<!-- Telegram WebApp SDK - Must be loaded first -->
+		<script src="https://telegram.org/js/telegram-web-app.js"></script>
 		
 		<!-- Google Translate Script -->
 		<script type="text/javascript">
 			// Global variable to store current language setting
 			window.harvestLanguageSetting = 'en';
-			
+
+			// Track retry attempts to avoid infinite loops
+			window.googleTranslateRetryCount = 0;
+			window.googleTranslateMaxRetries = 30; // Wait up to 30 seconds for element
+
 			function googleTranslateElementInit() {
 				console.log('Google Translate initialization started');
-				
+
 				// Wait for DOM to be ready
 				if (document.readyState !== 'complete') {
 					console.log('DOM not ready, waiting...');
 					window.addEventListener('load', googleTranslateElementInit);
 					return;
 				}
-				
+
 				// Check if google translate is available
 				if (typeof google === 'undefined' || !google.translate) {
 					console.error('Google Translate library not loaded');
@@ -34,15 +41,23 @@
 					}, 2000);
 					return;
 				}
-				
+
 				// Check if target element exists in TopBar, create if needed
 				let targetElement = document.getElementById('google_translate_element');
 				if (!targetElement) {
-					console.log('Google Translate target element not found in TopBar, waiting...');
-					// Wait for TopBar to mount and try again
-					setTimeout(googleTranslateElementInit, 1000);
+					window.googleTranslateRetryCount++;
+					if (window.googleTranslateRetryCount < window.googleTranslateMaxRetries) {
+						// Element not found - likely splash screen is still showing
+						// Silently wait and retry
+						setTimeout(googleTranslateElementInit, 1000);
+					} else {
+						console.log('Google Translate: max retries reached, element not found');
+					}
 					return;
 				}
+
+				// Reset retry count on success
+				window.googleTranslateRetryCount = 0;
 				
 				try {
 					new google.translate.TranslateElement({

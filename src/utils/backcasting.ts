@@ -80,6 +80,14 @@ export async function generateSeedQuests(
     throw new Error(`Facilitator ${headAdvisorName} not found in advisor list`);
   }
 
+  // Get the vision node (Generation 0)
+  const visionNodeId = questTree.rootNodeIds[0]; // Vision node is the root
+  const visionNode = questTree.nodes[visionNodeId];
+  
+  if (!visionNode || visionNode.generation !== 0) {
+    throw new Error('Quest tree missing vision node (Generation 0)');
+  }
+
   // Build holonic input for seed generation
   const holonicInput: HolonicLLMInput = {
     vision: questTree.vision,
@@ -91,9 +99,9 @@ export async function generateSeedQuests(
       maxGenerations: questTree.maxGenerations,
       currentGeneration: 0, // Starting from vision
       fullTree: questTree,
-      focusNodeId: 'vision', // No actual node for vision
-      ancestryChain: [], // No ancestry for seed generation
-      siblingContext: [] // No siblings for seed generation
+      focusNodeId: visionNodeId, // Actual vision node ID
+      ancestryChain: [], // No ancestry for vision node
+      siblingContext: [] // No siblings for vision node
     },
     targetGeneration: 1, // Generating first generation (seed quests)
     requestType: 'seed_generation'
@@ -102,6 +110,7 @@ export async function generateSeedQuests(
   console.log('🔮 Creating holonic seed generation prompt...');
   const prompt = createHolonicLLMPrompt(holonicInput);
   console.log('🔮 Seed prompt preview (first 300 chars):', prompt.substring(0, 300));
+  console.log('🔮 FULL SEED GENERATION PROMPT:', prompt);
 
   console.log('🔮 Sending holonic seed generation request...');
   let response;
@@ -140,44 +149,14 @@ export async function generateSeedQuests(
   }
 
   console.log('🔮 Creating rich seed quest nodes from holonic data...');
-  const seedQuests: QuestTreeNode[] = parseResult.questNodes.map((questData, index) => {
-    const nodeId = `seed-${index}-${Date.now()}`;
-    
-    return {
-      id: nodeId,
-      title: questData.title,
-      description: questData.description,
-      parentId: null, // Seeds have no parent
-      childIds: [],
-      generation: 1, // First generation
-      generationIndex: index,
-      status: 'pending',
-      dependencies: questData.dependencies,
-      skillsRequired: questData.skillsRequired,
-      resourcesRequired: questData.resourcesRequired,
-      impactCategory: questData.impactCategory,
-      estimatedDuration: questData.estimatedDuration,
-      estimatedStartDate: undefined,
-      estimatedEndDate: undefined,
-      participants: [],
-      futureState: questData.futureState,
-      assumptions: questData.assumptions,
-      questions: questData.questions,
-      actions: questData.actions,
-      successMetrics: questData.successMetrics,
-      feedbackLoopFrequency: undefined,
-      created: new Date().toISOString(),
-      createdBy: 'holonic_llm_seeds',
-      lastModified: new Date().toISOString(),
-      facilitatingAdvisor: questTree.headAdvisor,
-      advisorInsights: []
-    };
-  });
+  const seedQuests: QuestTreeNode[] = parseResult.questNodes.map((questData, index) => 
+    createQuestNodeFromHolonicData(questData, visionNodeId, 1, index, questTree)
+  );
 
-  // Add seed quests to quest tree
+  // Add seed quests to quest tree and link to vision node
   seedQuests.forEach(seed => {
     questTree.nodes[seed.id] = seed;
-    questTree.rootNodeIds.push(seed.id);
+    visionNode.childIds.push(seed.id); // Link seeds as children of vision
   });
 
   console.log('🔮 Holonic seed quests created:', seedQuests.length);
@@ -235,7 +214,7 @@ export async function expandQuestNode(
 
   console.log('🔮 Creating holonic prompt...');
   const prompt = createHolonicLLMPrompt(holonicInput);
-  console.log('🔮 Prompt preview (first 300 chars):', prompt.substring(0, 300));
+  console.log('🔮 FULL LLM PROMPT:', prompt);
 
   console.log('🔮 Sending holonic LLM request...');
   let response;

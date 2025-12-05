@@ -99,28 +99,14 @@ export function getSiblingContext(questTree: QuestTree, nodeId: string): Sibling
  * Holonic principle: Present the whole system while focusing on one part
  */
 export function buildQuestTreeHierarchy(questTree: QuestTree, focusNodeId: string): QuestTreeHierarchy {
-  // Special handling for seed generation (no actual focus node)
-  if (focusNodeId === 'vision') {
-    return {
-      ancestry: [],
-      siblings: [],
-      focusNode: {
-        id: 'vision',
-        title: questTree.vision.statement,
-        description: `Vision: ${questTree.vision.statement}`,
-        generation: 0,
-        existingChildren: questTree.rootNodeIds || []
-      }
-    };
+  // Check if focus node exists
+  const focusNode = questTree.nodes[focusNodeId];
+  if (!focusNode) {
+    throw new Error(`Focus node ${focusNodeId} not found in quest tree`);
   }
   
   const ancestry = getAncestryChain(questTree, focusNodeId);
   const siblings = getSiblingContext(questTree, focusNodeId);
-  const focusNode = questTree.nodes[focusNodeId];
-  
-  if (!focusNode) {
-    throw new Error(`Focus node ${focusNodeId} not found in quest tree`);
-  }
   
   return {
     ancestry: ancestry.map(node => ({
@@ -182,12 +168,24 @@ export function createHolonicLLMPrompt(input: HolonicLLMInput): string {
   const hierarchy = buildQuestTreeHierarchy(input.questTreeContext.fullTree, input.questTreeContext.focusNodeId);
   const wisdom = getGenerationWisdom(input.targetGeneration);
   
+  // Get parent quest for action-driven child generation
+  const parentQuest = input.questTreeContext.fullTree.nodes[input.questTreeContext.focusNodeId];
+  
   // Build holonic JSON context
   const holonicContext = {
     vision: input.vision,
     designStreamsContext: input.designStreamsContext,
     questTreeHierarchy: hierarchy,
     generationWisdom: wisdom,
+    parentQuest: {
+      title: parentQuest.title,
+      description: parentQuest.description,
+      actions: parentQuest.actions || [],
+      assumptions: parentQuest.assumptions || [],
+      questions: parentQuest.questions || [],
+      successMetrics: parentQuest.successMetrics || [],
+      futureState: parentQuest.futureState
+    },
     facilitatingAdvisor: {
       name: input.facilitatingAdvisor.name,
       type: input.facilitatingAdvisor.type,
@@ -235,11 +233,17 @@ ${JSON.stringify(holonicContext, null, 2)}
 **HOLONIC TASK**: 
 Generate exactly 3 complementary child quests for "${hierarchy.focusNode.title}" that:
 
-1. **Are appropriately scaled** for Generation ${input.targetGeneration}: ${wisdom.guidance}
-2. **Complement existing siblings** - avoid duplication with: ${hierarchy.siblings.map(s => s.siblings.map(sib => sib.title).join(', ')).join('; ')}
-3. **Support the parent quest** and overall regenerative vision
-4. **Follow holonic principles**: Each quest is both a complete whole and essential part of the larger system
-5. **Are generation-appropriate**: ${wisdom.actionabilityLevel}
+1. **Are driven by parent quest actions**: Each child quest should directly address one or more actions from the parent quest: ${parentQuest.actions?.join(', ') || 'No parent actions specified'}
+2. **Are appropriately scaled** for Generation ${input.targetGeneration}: ${wisdom.guidance}
+3. **Complement existing siblings** - avoid duplication with: ${hierarchy.siblings.map(s => s.siblings.map(sib => sib.title).join(', ')).join('; ')}
+4. **Support the parent quest** and overall regenerative vision
+5. **Follow holonic principles**: Each quest is both a complete whole and essential part of the larger system
+6. **Are generation-appropriate**: ${wisdom.actionabilityLevel}
+
+**ACTION-DRIVEN APPROACH**: 
+- Look at the parent quest actions: ${JSON.stringify(parentQuest.actions || [])}
+- Each child quest should make one or more of these actions achievable
+- Break down complex actions into concrete, executable steps
 
 **SCALE EXAMPLES for Gen ${input.targetGeneration}**: ${wisdom.examples}
 
@@ -248,7 +252,7 @@ Generate exactly 3 complementary child quests for "${hierarchy.focusNode.title}"
 ${JSON.stringify(exampleResponse, null, 2)}
 \`\`\`
 
-Focus on creating quests that are perfectly scaled for Generation ${input.targetGeneration} while maintaining awareness of the complete quest tree context shown above.`;
+Focus on creating quests that are perfectly scaled for Generation ${input.targetGeneration} while being directly driven by the parent quest's actions shown above.`;
 }
 
 // ============================================================================
@@ -357,12 +361,13 @@ export function parseHolonicLLMResponse(response: string): {
 
 export function createQuestNodeFromHolonicData(
   data: HolonicQuestNodeData,
-  parentId: string,
+  parentId: string | null,
   generation: number,
   generationIndex: number,
   questTree: QuestTree
 ): QuestTreeNode {
-  const nodeId = `${parentId}-child-${generationIndex}-${Date.now()}`;
+  const timestamp = Date.now();
+  const nodeId = `gen${generation}-${generationIndex}-${timestamp}`;
   
   return {
     id: nodeId,
@@ -395,124 +400,4 @@ export function createQuestNodeFromHolonicData(
   };
 }
 
-// ============================================================================
-// TESTING UTILITIES
-// ============================================================================
 
-/**
- * Create a sample quest tree for testing holonic context building
- */
-export function createTestQuestTree(): QuestTree {
-  const testTree: QuestTree = {
-    id: 'test-tree-123',
-    vision: {
-      statement: 'Create sustainable compost toilets for our community',
-      principles: ['Regenerative design', 'Local materials', 'Community ownership'],
-      successIndicators: ['10 toilets installed', 'Community trained', 'Zero waste achieved']
-    },
-    nodes: {},
-    rootNodeIds: [],
-    maxGenerations: 6,
-    branchingFactor: 3,
-    impactDimensions: ['ecological', 'social'],
-    created: new Date().toISOString(),
-    createdBy: 'test',
-    lastModified: new Date().toISOString(),
-    headAdvisor: 'Dr. Joanna Macy'
-  };
-  
-  // Create sample nodes for testing
-  const seedNode1: QuestTreeNode = {
-    id: 'seed-1-123',
-    title: 'Material Sourcing',
-    description: 'Source sustainable materials for toilet construction',
-    parentId: null,
-    childIds: ['child-1-1', 'child-1-2'],
-    generation: 1,
-    generationIndex: 0,
-    status: 'in_progress',
-    dependencies: [],
-    skillsRequired: ['sourcing', 'negotiation'],
-    resourcesRequired: ['contact list', 'budget'],
-    impactCategory: 'ecological',
-    estimatedDuration: '2 months',
-    participants: [],
-    futureState: 'All materials sourced sustainably',
-    assumptions: ['Local suppliers exist', 'Budget is sufficient'],
-    questions: ['What about quality standards?', 'Delivery timelines?'],
-    actions: ['Research suppliers', 'Get quotes', 'Negotiate contracts'],
-    successMetrics: ['All materials contracted', 'Within budget'],
-    created: new Date().toISOString(),
-    createdBy: 'test',
-    lastModified: new Date().toISOString(),
-    facilitatingAdvisor: 'Dr. Joanna Macy'
-  };
-  
-  const childNode1: QuestTreeNode = {
-    id: 'child-1-1',
-    title: 'Research Local Wood Suppliers',
-    description: 'Find sustainable wood suppliers within 50 miles',
-    parentId: 'seed-1-123',
-    childIds: ['grandchild-1-1-1'],
-    generation: 2,
-    generationIndex: 0,
-    status: 'pending',
-    dependencies: ['seed-1-123'],
-    skillsRequired: ['research', 'phone communication'],
-    resourcesRequired: ['internet', 'phone'],
-    impactCategory: 'ecological',
-    estimatedDuration: '1 week',
-    participants: [],
-    futureState: 'List of 5 qualified wood suppliers',
-    assumptions: ['Local suppliers exist', 'They supply sustainably'],
-    questions: ['What certifications do they have?', 'Minimum order quantities?'],
-    actions: ['Search online directories', 'Call suppliers', 'Visit facilities'],
-    successMetrics: ['5 suppliers identified', 'Contact info collected'],
-    created: new Date().toISOString(),
-    createdBy: 'test',
-    lastModified: new Date().toISOString(),
-    facilitatingAdvisor: 'Dr. Joanna Macy'
-  };
-  
-  const grandchildNode1: QuestTreeNode = {
-    id: 'grandchild-1-1-1',
-    title: 'Call Johnson Lumber Company',
-    description: 'Contact Johnson Lumber to discuss FSC-certified wood availability',
-    parentId: 'child-1-1',
-    childIds: [],
-    generation: 3,
-    generationIndex: 0,
-    status: 'pending',
-    dependencies: ['child-1-1'],
-    skillsRequired: ['phone communication'],
-    resourcesRequired: ['phone', 'note-taking materials'],
-    impactCategory: 'ecological',
-    estimatedDuration: '2 hours',
-    participants: [],
-    futureState: 'Johnson Lumber relationship established',
-    assumptions: ['They respond to calls', 'They have FSC wood'],
-    questions: ['What are their prices?', 'Delivery schedule?'],
-    actions: ['Find phone number', 'Prepare questions', 'Make call'],
-    successMetrics: ['Call completed', 'Pricing info obtained'],
-    created: new Date().toISOString(),
-    createdBy: 'test',
-    lastModified: new Date().toISOString(),
-    facilitatingAdvisor: 'Dr. Joanna Macy'
-  };
-  
-  // Add nodes to tree
-  testTree.nodes['seed-1-123'] = seedNode1;
-  testTree.nodes['child-1-1'] = childNode1;
-  testTree.nodes['grandchild-1-1-1'] = grandchildNode1;
-  testTree.rootNodeIds = ['seed-1-123'];
-  
-  return testTree;
-}
-
-/**
- * Test the holonic context builder with a sample tree
- */
-export function testHolonicContextBuilder(): QuestTreeHierarchy {
-  const testTree = createTestQuestTree();
-  return buildQuestTreeHierarchy(testTree, 'grandchild-1-1-1');
-}

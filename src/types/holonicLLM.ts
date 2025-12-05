@@ -16,9 +16,14 @@ export interface HolonicLLMInput {
     successIndicators: string[];
   };
   
-  // Design Streams context (placeholder for rich context)
+  // Design Streams context (rich context from council interactions)
   designStreamsContext: {
-    additionalContext: string; // Will expand to elemental insights, advisor conversations, etc.
+    additionalContext: string; // Elemental insights, advisor conversations, etc.
+    enhancedVision?: {
+      smartObjective: any; // SMARTObjective from vision clarification
+      councilInsights: string[]; // Key insights from council discussion
+      synthesisNotes: string; // Facilitator synthesis
+    };
   };
   
   // Facilitating advisor with full schema
