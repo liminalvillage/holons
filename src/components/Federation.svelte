@@ -5,8 +5,27 @@
     import { goto } from "$app/navigation";
     import type { HoloSphere } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
+    import { nostrPrivateKey } from "../lib/stores/nostr";
     import { fetchHolonName } from "../utils/holonNames";
     import { addVisitedHolon } from "../utils/localStorage";
+    import QRScanner from "./QRScanner.svelte";
+    import ExpirationPicker from "./ExpirationPicker.svelte";
+    import {
+        type LensCapabilityToken,
+        type ExpirationPreset,
+        type Direction,
+        parseNpubOrHex,
+        hexToNpub,
+        shortenNpub,
+        getExpirationTimestamp,
+        formatExpiration,
+        getExpirationDescription,
+        isCapabilityValid,
+        generateCapabilityId,
+        generateNonce,
+        getPermissionsForDirection,
+        createCapabilityRecord
+    } from "../lib/capabilities/lensCapability";
 
     const dispatch = createEventDispatcher();
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -60,11 +79,17 @@
     interface FederatedHolon {
         id: string;
         name: string;
+        pubKey?: string;  // Nostr public key (hex format)
+        npub?: string;    // Nostr public key (npub format)
         status: 'connected' | 'pending' | 'error';
         lensConfig: {
             inbound: string[];
             outbound: string[];
         };
+        capabilities?: Record<string, {
+            inbound?: LensCapabilityToken;
+            outbound?: LensCapabilityToken;
+        }>;
     }
 
     let currentHolonId: string = '';
@@ -80,6 +105,28 @@
     let error = '';
     let success = '';
     let showNetworkView = false;
+
+    // Nostr pubkey input for federation
+    let newPartnerNpub = '';
+    let newPartnerHexPubKey = '';
+    let npubValidationError = '';
+
+    // QR Scanner
+    let showQRScanner = false;
+
+    // Expiration selection
+    let selectedExpiration: ExpirationPreset = 'permanent';
+    let customExpirationDate = '';
+    let showExpirationPicker = false;
+    let pendingLensGrant: {
+        holonId: string;
+        pubKey: string;
+        lensName: string;
+        direction: Direction;
+    } | null = null;
+
+    // Capability tracking per partner
+    let partnerCapabilities: Map<string, Record<string, { inbound?: LensCapabilityToken; outbound?: LensCapabilityToken }>> = new Map();
 
     // Subscribe to current holon ID
     let idStoreUnsubscribe: (() => void) | undefined;
@@ -168,12 +215,29 @@
                     // Get actual holon name from settings
                     const holonName = await getHolonName(holonId);
 
-                    tempHolons.push({
+                    // Check if holonId is a valid Nostr public key (hex format)
+                    let pubKey: string | undefined;
+                    let npub: string | undefined;
+                    if (/^[0-9a-fA-F]{64}$/.test(holonId)) {
+                        pubKey = holonId;
+                        npub = hexToNpub(holonId);
+                    }
+
+                    const federatedHolon: FederatedHolon = {
                         id: holonId,
                         name: holonName,
+                        pubKey,
+                        npub,
                         status: 'connected',
                         lensConfig
-                    });
+                    };
+
+                    tempHolons.push(federatedHolon);
+
+                    // Load capabilities for this partner if they have a pubKey
+                    if (pubKey) {
+                        loadPartnerCapabilities(pubKey);
+                    }
                 }
 
                 // Assign to trigger reactivity in Svelte 5
@@ -193,7 +257,18 @@
     }
 
     async function addFederation() {
-        if (!newHolonId.trim() || !holosphere || !currentHolonId) return;
+        // Determine the federation target: prefer npub/hex pubkey, fallback to holon ID
+        let federationTarget = '';
+
+        if (newPartnerHexPubKey) {
+            // Use the validated hex public key as the federation target
+            federationTarget = newPartnerHexPubKey;
+        } else if (newHolonId.trim()) {
+            // Fallback to holon ID for backward compatibility
+            federationTarget = newHolonId.trim();
+        }
+
+        if (!federationTarget || !holosphere || !currentHolonId) return;
 
         saving = true;
         error = '';
@@ -202,7 +277,7 @@
             // Create federation with default lens config (empty arrays)
             const success = await holosphere.federateHolon(
                 currentHolonId,
-                newHolonId.trim(),
+                federationTarget,
                 {
                     lensConfig: { inbound: [], outbound: [] }
                 }
@@ -212,6 +287,11 @@
                 showAddDialog = false;
                 newHolonId = '';
                 newHolonName = '';
+                newPartnerNpub = '';
+                newPartnerHexPubKey = '';
+                npubValidationError = '';
+                selectedExpiration = 'permanent';
+                customExpirationDate = '';
 
                 // Wait a bit for GunDB to propagate the changes
                 await new Promise(resolve => setTimeout(resolve, 300));
@@ -348,6 +428,11 @@
         showAddDialog = false;
         newHolonId = '';
         newHolonName = '';
+        newPartnerNpub = '';
+        newPartnerHexPubKey = '';
+        npubValidationError = '';
+        selectedExpiration = 'permanent';
+        customExpirationDate = '';
         error = '';
     }
 
@@ -391,7 +476,313 @@
         availableLenses = availableLenses.filter(l => l !== lens);
     }
 
+    // ============================================================================
+    // Nostr Public Key Validation
+    // ============================================================================
 
+    function validateNpub() {
+        if (!newPartnerNpub.trim()) {
+            npubValidationError = '';
+            newPartnerHexPubKey = '';
+            return;
+        }
+
+        const result = parseNpubOrHex(newPartnerNpub);
+        if (result.valid && result.hexPubKey) {
+            npubValidationError = '';
+            newPartnerHexPubKey = result.hexPubKey;
+        } else {
+            npubValidationError = result.error || 'Invalid public key';
+            newPartnerHexPubKey = '';
+        }
+    }
+
+    function handleQRScan(event: CustomEvent<{ decodedText: string }>) {
+        const scannedText = event.detail.decodedText;
+
+        // Check if it's a Nostr URI
+        if (scannedText.startsWith('nostr:')) {
+            newPartnerNpub = scannedText.replace('nostr:', '');
+        } else if (scannedText.startsWith('npub1') || /^[0-9a-fA-F]{64}$/.test(scannedText)) {
+            newPartnerNpub = scannedText;
+        } else {
+            // Try to parse as JSON (might be a Harvest federation invite)
+            try {
+                const parsed = JSON.parse(scannedText);
+                if (parsed.npub) newPartnerNpub = parsed.npub;
+                if (parsed.pubKey) newPartnerNpub = parsed.pubKey;
+                if (parsed.holonId) newHolonId = parsed.holonId;
+            } catch {
+                error = 'QR code does not contain a valid Nostr public key';
+            }
+        }
+
+        validateNpub();
+        showQRScanner = false;
+    }
+
+    // ============================================================================
+    // Capability Grant/Revoke Functions
+    // ============================================================================
+
+    async function grantLensCapability(
+        recipientPubKey: string,
+        holonId: string,
+        lensName: string,
+        direction: Direction,
+        expiration: ExpirationPreset,
+        customExpiration?: string
+    ): Promise<boolean> {
+        if (!holosphere || !currentHolonId) return false;
+
+        const permissions = getPermissionsForDirection(direction);
+        const expiresAt = getExpirationTimestamp(expiration, customExpiration);
+        const expiresIn = expiresAt ? expiresAt - Date.now() : 365 * 24 * 60 * 60 * 1000;
+
+        try {
+            // Get issuer's public key
+            const issuerPubKey = holosphere.client?.publicKey;
+            if (!issuerPubKey) {
+                error = 'No public key available';
+                return false;
+            }
+
+            // Issue the capability token using holosphere
+            const token = await holosphere.issueCapability(
+                permissions,
+                { holonId, lensName },
+                recipientPubKey,
+                {
+                    issuerKey: $nostrPrivateKey,
+                    expiresIn
+                }
+            );
+
+            // Create capability record
+            const capabilityRecord: LensCapabilityToken = {
+                id: generateCapabilityId(issuerPubKey, recipientPubKey, holonId, lensName, direction),
+                type: 'lens_capability',
+                issuerPubKey,
+                recipientPubKey,
+                holonId,
+                lensName,
+                permissions,
+                direction,
+                issuedAt: Date.now(),
+                expiresAt,
+                expirationPreset: expiration,
+                nonce: generateNonce(),
+                signature: typeof token === 'string' ? token : ''
+            };
+
+            // Store in global lens_capabilities table
+            await holosphere.writeGlobal('lens_capabilities', capabilityRecord);
+
+            // Update local tracking
+            updatePartnerCapabilities(recipientPubKey, lensName, direction, capabilityRecord);
+
+            showSuccess(`${direction === 'inbound' ? 'Read' : 'Write'} capability granted for ${lensName}`);
+            return true;
+        } catch (err) {
+            error = `Failed to grant capability: ${err instanceof Error ? err.message : 'Unknown error'}`;
+            console.error('Grant capability error:', err);
+            return false;
+        }
+    }
+
+    async function revokeLensCapability(
+        recipientPubKey: string,
+        holonId: string,
+        lensName: string,
+        direction: Direction
+    ): Promise<boolean> {
+        if (!holosphere) return false;
+
+        const issuerPubKey = holosphere.client?.publicKey;
+        if (!issuerPubKey) return false;
+
+        const capabilityId = generateCapabilityId(issuerPubKey, recipientPubKey, holonId, lensName, direction);
+
+        try {
+            // Mark as revoked in global table
+            const existing = await holosphere.getGlobal('lens_capabilities', capabilityId);
+            if (existing) {
+                existing.revokedAt = Date.now();
+                await holosphere.writeGlobal('lens_capabilities', existing);
+            }
+
+            // Remove from local tracking
+            removePartnerCapability(recipientPubKey, lensName, direction);
+
+            showSuccess(`${direction === 'inbound' ? 'Read' : 'Write'} capability revoked for ${lensName}`);
+            return true;
+        } catch (err) {
+            error = `Failed to revoke capability: ${err instanceof Error ? err.message : 'Unknown error'}`;
+            console.error('Revoke capability error:', err);
+            return false;
+        }
+    }
+
+    function updatePartnerCapabilities(
+        pubKey: string,
+        lensName: string,
+        direction: Direction,
+        capability: LensCapabilityToken
+    ) {
+        const existing = partnerCapabilities.get(pubKey) || {};
+        if (!existing[lensName]) {
+            existing[lensName] = {};
+        }
+        existing[lensName][direction] = capability;
+        partnerCapabilities.set(pubKey, existing);
+        partnerCapabilities = new Map(partnerCapabilities); // Trigger reactivity
+    }
+
+    function removePartnerCapability(pubKey: string, lensName: string, direction: Direction) {
+        const existing = partnerCapabilities.get(pubKey);
+        if (existing && existing[lensName]) {
+            delete existing[lensName][direction];
+            partnerCapabilities.set(pubKey, existing);
+            partnerCapabilities = new Map(partnerCapabilities);
+        }
+    }
+
+    function getCapabilityForLens(
+        pubKey: string | undefined,
+        lensName: string,
+        direction: Direction
+    ): LensCapabilityToken | null {
+        if (!pubKey) return null;
+        const partnerCaps = partnerCapabilities.get(pubKey);
+        if (!partnerCaps || !partnerCaps[lensName]) return null;
+        const cap = partnerCaps[lensName][direction];
+        return cap && isCapabilityValid(cap) ? cap : null;
+    }
+
+    async function loadPartnerCapabilities(pubKey: string) {
+        if (!holosphere || !pubKey) return;
+
+        try {
+            // Load capabilities from global table
+            const allCaps = await holosphere.getAllGlobal('lens_capabilities');
+            if (!allCaps) return;
+
+            const issuerPubKey = holosphere.client?.publicKey;
+            const caps: Record<string, { inbound?: LensCapabilityToken; outbound?: LensCapabilityToken }> = {};
+
+            for (const cap of Object.values(allCaps) as LensCapabilityToken[]) {
+                if (cap.issuerPubKey === issuerPubKey &&
+                    cap.recipientPubKey === pubKey &&
+                    !cap.revokedAt &&
+                    isCapabilityValid(cap)) {
+                    if (!caps[cap.lensName]) {
+                        caps[cap.lensName] = {};
+                    }
+                    caps[cap.lensName][cap.direction] = cap;
+                }
+            }
+
+            partnerCapabilities.set(pubKey, caps);
+            partnerCapabilities = new Map(partnerCapabilities);
+        } catch (err) {
+            console.warn('Failed to load partner capabilities:', err);
+        }
+    }
+
+    // ============================================================================
+    // Lens Toggle with Capability Support
+    // ============================================================================
+
+    async function toggleLensCapability(
+        federatedHolonId: string,
+        lensName: string,
+        direction: Direction,
+        currentlyEnabled: boolean
+    ) {
+        // Get the partner's public key
+        const partner = federatedHolons.find(h => h.id === federatedHolonId);
+
+        if (currentlyEnabled) {
+            // Revoke capability if partner has pubKey
+            if (partner?.pubKey) {
+                await revokeLensCapability(partner.pubKey, currentHolonId, lensName, direction);
+            }
+
+            // Update lens config
+            const newInbound = direction === 'inbound'
+                ? partner?.lensConfig.inbound.filter(l => normalizeLensName(l) !== normalizeLensName(lensName)) || []
+                : partner?.lensConfig.inbound || [];
+            const newOutbound = direction === 'outbound'
+                ? partner?.lensConfig.outbound.filter(l => normalizeLensName(l) !== normalizeLensName(lensName)) || []
+                : partner?.lensConfig.outbound || [];
+
+            await updateLensConfig(federatedHolonId, newInbound, newOutbound);
+        } else {
+            // If partner has pubKey, show expiration picker
+            if (partner?.pubKey) {
+                pendingLensGrant = {
+                    holonId: federatedHolonId,
+                    pubKey: partner.pubKey,
+                    lensName,
+                    direction
+                };
+                showExpirationPicker = true;
+            } else {
+                // No pubKey, just update lens config without capability token
+                const newInbound = direction === 'inbound'
+                    ? [...(partner?.lensConfig.inbound || []), getCanonicalLensName(lensName)]
+                    : partner?.lensConfig.inbound || [];
+                const newOutbound = direction === 'outbound'
+                    ? [...(partner?.lensConfig.outbound || []), getCanonicalLensName(lensName)]
+                    : partner?.lensConfig.outbound || [];
+
+                await updateLensConfig(federatedHolonId, newInbound, newOutbound);
+            }
+        }
+    }
+
+    async function confirmLensGrant(event: CustomEvent<{ preset: ExpirationPreset; customDate?: string }>) {
+        if (!pendingLensGrant) return;
+
+        const { holonId, pubKey, lensName, direction } = pendingLensGrant;
+        const { preset, customDate } = event.detail;
+
+        const success = await grantLensCapability(
+            pubKey,
+            currentHolonId,
+            lensName,
+            direction,
+            preset,
+            customDate
+        );
+
+        if (success) {
+            // Update lens config
+            const partner = federatedHolons.find(h => h.id === holonId);
+            if (partner) {
+                const newInbound = direction === 'inbound'
+                    ? [...partner.lensConfig.inbound, getCanonicalLensName(lensName)]
+                    : partner.lensConfig.inbound;
+                const newOutbound = direction === 'outbound'
+                    ? [...partner.lensConfig.outbound, getCanonicalLensName(lensName)]
+                    : partner.lensConfig.outbound;
+
+                await updateLensConfig(holonId, newInbound, newOutbound);
+            }
+        }
+
+        showExpirationPicker = false;
+        pendingLensGrant = null;
+        selectedExpiration = 'permanent';
+        customExpirationDate = '';
+    }
+
+    function cancelLensGrant() {
+        showExpirationPicker = false;
+        pendingLensGrant = null;
+        selectedExpiration = 'permanent';
+        customExpirationDate = '';
+    }
 
     $: totalFederations = federatedHolons.length;
     $: activeLenses = federatedHolons.reduce((acc, holon) => {
@@ -542,17 +933,36 @@
                                     {(holon.name && typeof holon.name === 'string') ? holon.name.charAt(0).toUpperCase() : '?'}
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <button 
+                                    <button
                                         on:click={() => navigateToHolon(holon.id)}
                                         class="font-semibold text-white truncate hover:text-blue-400 transition-colors text-left block w-full"
                                         title="Navigate to {holon.name || holon.id}"
                                     >
                                         {holon.name || holon.id}
                                     </button>
-                                    <div class="flex items-center space-x-2 mt-1">
-                                        <div class={`w-2 h-2 rounded-full ${getStatusColor(holon.status).replace('text-', 'bg-')} shadow-sm`}></div>
-                                        <span class="text-xs text-gray-400 capitalize font-medium">{holon.status}</span>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <div class={`w-2 h-2 rounded-full ${getStatusColor(holon.status).replace('text-', 'bg-')} shadow-sm flex-shrink-0`}></div>
+                                        <span class="text-xs text-gray-400 capitalize font-medium flex-shrink-0">{holon.status}</span>
                                     </div>
+                                    {#if holon.npub}
+                                        <div class="flex items-center gap-2 mt-1">
+                                            <span class="text-xs text-purple-400 font-mono" title="Click to copy full npub">
+                                                {shortenNpub(holon.npub)}
+                                            </span>
+                                            <button
+                                                class="text-gray-500 hover:text-purple-400 transition-colors"
+                                                title="Copy npub"
+                                                on:click|stopPropagation={() => {
+                                                    navigator.clipboard.writeText(holon.npub || '');
+                                                    showSuccess('Copied npub to clipboard');
+                                                }}
+                                            >
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    {/if}
                                 </div>
                             </div>
                             <div class="flex items-center space-x-1">
@@ -618,6 +1028,8 @@
                                             {#each availableLenses as lens}
                                                 {@const isInbound = isLensInArray(lens, holon.lensConfig.inbound)}
                                                 {@const isOutbound = isLensInArray(lens, holon.lensConfig.outbound)}
+                                                {@const inboundCap = getCapabilityForLens(holon.pubKey, lens, 'inbound')}
+                                                {@const outboundCap = getCapabilityForLens(holon.pubKey, lens, 'outbound')}
                                                 <tr class="hover:bg-gray-700/20 transition-colors">
                                                     <td class="py-3 px-4">
                                                         <div class="flex items-center space-x-2">
@@ -626,66 +1038,80 @@
                                                         </div>
                                                     </td>
                                                     <td class="py-3 px-4 text-center">
-                                                        <button
-                                                            class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                                                            disabled={saving}
-                                                            aria-pressed={isInbound}
-                                                            title={isInbound ? 'Remove inbound' : 'Add inbound'}
-                                                            on:click={async (e) => {
-                                                                e.preventDefault();
-                                                                if (saving) return;
-                                                                // Toggle inbound
-                                                                let newInbound = isInbound
-                                                                    ? holon.lensConfig.inbound.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
-                                                                    : [...holon.lensConfig.inbound, getCanonicalLensName(lens)];
-                                                                await updateLensConfig(
-                                                                    holon.id,
-                                                                    newInbound,
-                                                                    holon.lensConfig.outbound
-                                                                );
-                                                            }}
-                                                        >
-                                                            {#if isInbound}
-                                                                <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                                                                    <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                                    </svg>
-                                                                </div>
-                                                            {:else}
-                                                                <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
+                                                        <div class="flex items-center justify-center space-x-2">
+                                                            <button
+                                                                class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                                                                disabled={saving}
+                                                                aria-pressed={isInbound}
+                                                                title={isInbound ? 'Revoke read access' : 'Grant read access'}
+                                                                on:click={async (e) => {
+                                                                    e.preventDefault();
+                                                                    if (saving) return;
+                                                                    await toggleLensCapability(holon.id, lens, 'inbound', isInbound);
+                                                                }}
+                                                            >
+                                                                {#if isInbound}
+                                                                    <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                                                                        <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                {:else}
+                                                                    <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
+                                                                {/if}
+                                                            </button>
+                                                            <!-- Capability status indicator for inbound -->
+                                                            {#if inboundCap}
+                                                                <span
+                                                                    class="text-xs px-1.5 py-0.5 rounded bg-green-900/50 text-green-400"
+                                                                    title={getExpirationDescription(inboundCap.expiresAt)}
+                                                                >
+                                                                    {inboundCap.expiresAt ? formatExpiration(inboundCap.expiresAt) : '∞'}
+                                                                </span>
+                                                            {:else if isInbound && holon.pubKey}
+                                                                <span class="text-xs px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-400" title="No capability token">
+                                                                    !
+                                                                </span>
                                                             {/if}
-                                                        </button>
+                                                        </div>
                                                     </td>
                                                     <td class="py-3 px-4 text-center">
-                                                        <button
-                                                            class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 transition"
-                                                            disabled={saving}
-                                                            aria-pressed={isOutbound}
-                                                            title={isOutbound ? 'Remove outbound' : 'Add outbound'}
-                                                            on:click={async (e) => {
-                                                                e.preventDefault();
-                                                                if (saving) return;
-                                                                // Toggle outbound
-                                                                let newOutbound = isOutbound
-                                                                    ? holon.lensConfig.outbound.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
-                                                                    : [...holon.lensConfig.outbound, getCanonicalLensName(lens)];
-                                                                await updateLensConfig(
-                                                                    holon.id,
-                                                                    holon.lensConfig.inbound,
-                                                                    newOutbound
-                                                                );
-                                                            }}
-                                                        >
-                                                            {#if isOutbound}
-                                                                <div class="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                                                                    <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                                    </svg>
-                                                                </div>
-                                                            {:else}
-                                                                <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
+                                                        <div class="flex items-center justify-center space-x-2">
+                                                            <button
+                                                                class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 transition"
+                                                                disabled={saving}
+                                                                aria-pressed={isOutbound}
+                                                                title={isOutbound ? 'Revoke write access' : 'Grant write access'}
+                                                                on:click={async (e) => {
+                                                                    e.preventDefault();
+                                                                    if (saving) return;
+                                                                    await toggleLensCapability(holon.id, lens, 'outbound', isOutbound);
+                                                                }}
+                                                            >
+                                                                {#if isOutbound}
+                                                                    <div class="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                                                        <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                        </svg>
+                                                                    </div>
+                                                                {:else}
+                                                                    <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
+                                                                {/if}
+                                                            </button>
+                                                            <!-- Capability status indicator for outbound -->
+                                                            {#if outboundCap}
+                                                                <span
+                                                                    class="text-xs px-1.5 py-0.5 rounded bg-green-900/50 text-green-400"
+                                                                    title={getExpirationDescription(outboundCap.expiresAt)}
+                                                                >
+                                                                    {outboundCap.expiresAt ? formatExpiration(outboundCap.expiresAt) : '∞'}
+                                                                </span>
+                                                            {:else if isOutbound && holon.pubKey}
+                                                                <span class="text-xs px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-400" title="No capability token">
+                                                                    !
+                                                                </span>
                                                             {/if}
-                                                        </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             {/each}
@@ -977,30 +1403,81 @@
             </div>
 
             <form on:submit|preventDefault={addFederation} class="space-y-4">
+                <!-- Nostr Public Key Input -->
+                <div>
+                    <label for="partnerNpub" class="block text-sm font-medium text-gray-300 mb-2">
+                        Partner's Nostr Public Key *
+                    </label>
+                    <div class="flex space-x-2">
+                        <input
+                            id="partnerNpub"
+                            type="text"
+                            bind:value={newPartnerNpub}
+                            on:input={validateNpub}
+                            placeholder="npub1... or hex public key"
+                            class="flex-1 bg-gray-700 border rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            class:border-gray-600={!npubValidationError}
+                            class:border-red-500={npubValidationError}
+                        />
+                        <button
+                            type="button"
+                            on:click={() => showQRScanner = true}
+                            class="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-lg transition-colors flex items-center justify-center"
+                            title="Scan QR Code"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    {#if npubValidationError}
+                        <p class="text-red-400 text-sm mt-1">{npubValidationError}</p>
+                    {/if}
+                    {#if newPartnerHexPubKey && !npubValidationError}
+                        <p class="text-green-400 text-sm mt-1 flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                            </svg>
+                            Valid public key detected
+                        </p>
+                    {/if}
+                </div>
+
+                <!-- OR divider -->
+                <div class="relative">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-600"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-2 bg-gray-800 text-gray-400">OR use Holon ID</span>
+                    </div>
+                </div>
+
+                <!-- Holon ID Input (fallback) -->
                 <div>
                     <label for="holonId" class="block text-sm font-medium text-gray-300 mb-2">
-                        Holon ID *
+                        Holon ID (legacy)
                     </label>
-                    <input 
+                    <input
                         id="holonId"
-                        type="text" 
+                        type="text"
                         bind:value={newHolonId}
                         placeholder="Enter holon ID..."
                         class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
+                        disabled={!!newPartnerHexPubKey}
                     />
+                    <p class="text-gray-500 text-xs mt-1">Use this for backward compatibility with non-Nostr holons</p>
                 </div>
 
+                <!-- Default Expiration Selection -->
                 <div>
-                    <label for="holonName" class="block text-sm font-medium text-gray-300 mb-2">
-                        Display Name (Optional)
+                    <label class="block text-sm font-medium text-gray-300 mb-2">
+                        Default Capability Expiration
                     </label>
-                    <input 
-                        id="holonName"
-                        type="text" 
-                        bind:value={newHolonName}
-                        placeholder="Enter display name..."
-                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    <ExpirationPicker
+                        bind:selectedPreset={selectedExpiration}
+                        bind:customDate={customExpirationDate}
+                        showModal={false}
                     />
                 </div>
 
@@ -1010,14 +1487,14 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
                         <div class="text-sm text-blue-300">
-                            <p class="font-medium mb-1">Federation Setup</p>
-                            <p>This will create a federation link. You can configure inbound and outbound lens settings after creation.</p>
+                            <p class="font-medium mb-1">Federation with Capability Tokens</p>
+                            <p>Using a Nostr public key enables per-lens capability tokens with configurable expiration. You can grant or revoke read/write access for each lens independently.</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="flex space-x-3 pt-4">
-                    <button 
+                    <button
                         type="button"
                         on:click={closeDialog}
                         class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 rounded-lg transition-colors"
@@ -1025,10 +1502,10 @@
                     >
                         Cancel
                     </button>
-                    <button 
+                    <button
                         type="submit"
                         class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-                        disabled={saving || !newHolonId.trim()}
+                        disabled={saving || (!newPartnerHexPubKey && !newHolonId.trim())}
                     >
                         {#if saving}
                             <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
@@ -1129,14 +1606,14 @@
                 {/if}
 
                 <div class="flex space-x-3 pt-4">
-                    <button 
+                    <button
                         type="button"
                         on:click={() => showAddCustomLens = false}
                         class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 rounded-lg transition-colors"
                     >
                         Cancel
                     </button>
-                    <button 
+                    <button
                         type="submit"
                         class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={!newCustomLens.trim()}
@@ -1148,3 +1625,19 @@
         </div>
     </div>
 {/if}
+
+<!-- QR Scanner Modal -->
+<QRScanner
+    bind:showScanner={showQRScanner}
+    on:scan={handleQRScan}
+    on:close={() => showQRScanner = false}
+/>
+
+<!-- Expiration Picker Modal for Lens Grant -->
+<ExpirationPicker
+    bind:selectedPreset={selectedExpiration}
+    bind:customDate={customExpirationDate}
+    showModal={showExpirationPicker}
+    on:select={confirmLensGrant}
+    on:cancel={cancelLensGrant}
+/>

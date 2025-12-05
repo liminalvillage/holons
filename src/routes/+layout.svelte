@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { HoloSphere } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
 	import TelegramSplash from '../components/TelegramSplash.svelte';
@@ -55,13 +56,28 @@
 			ID.set(userPublicKey);
 			console.log('User holon initialized and ID set to:', userPublicKey);
 
-			// Navigate directly to the user's holon dashboard
-			goto(`/${userPublicKey}/dashboard`);
+			// Only navigate to dashboard if not already on a holon-specific route
+			const currentPath = $page.url.pathname;
+			const hasHolonInPath = currentPath.split('/').filter(Boolean).length > 0 &&
+				currentPath !== '/' &&
+				!currentPath.startsWith('/federated') &&
+				!currentPath.startsWith('/navigator') &&
+				!currentPath.startsWith('/sdgs') &&
+				!currentPath.startsWith('/qr');
+
+			if (!hasHolonInPath) {
+				goto(`/${userPublicKey}/dashboard`);
+			}
 		} catch (error) {
 			console.error('Failed to initialize user holon:', error);
-			// Still set the ID and navigate even if settings fail
+			// Still set the ID even if settings fail
 			ID.set(userPublicKey);
-			goto(`/${userPublicKey}/dashboard`);
+
+			// Only navigate if not already on a holon-specific route
+			const currentPath = $page.url.pathname;
+			if (currentPath === '/' || currentPath === '') {
+				goto(`/${userPublicKey}/dashboard`);
+			}
 		}
 	}
 

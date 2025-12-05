@@ -6,13 +6,21 @@ export default defineConfig({
 	test: {
 		include: ['src/**/*.{test,spec}.{js,ts}']
 	},
+	define: {
+		// Provide global Buffer for libraries that expect Node.js environment
+		global: 'globalThis'
+	},
 	optimizeDeps: {
-		include: ['svelte', 'ajv', 'h3-js'],
+		include: ['svelte', 'ajv', 'h3-js', 'buffer'],
 		exclude: ['@sveltejs/kit', 'holosphere']
 	},
 	resolve: {
 		dedupe: ['svelte', 'ajv', 'h3-js'],
-		preserveSymlinks: false
+		preserveSymlinks: false,
+		alias: {
+			// Polyfill Buffer for browser
+			buffer: 'buffer/'
+		}
 	},
 	server: {
 		fs: {

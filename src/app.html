@@ -6,6 +6,35 @@
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
+		<!-- Buffer polyfill for browser compatibility with nostr-tools -->
+		<script>
+			// Polyfill Buffer for browser environment
+			if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
+				window.Buffer = {
+					from: function(data, encoding) {
+						if (typeof data === 'string') {
+							if (encoding === 'hex') {
+								const bytes = new Uint8Array(data.length / 2);
+								for (let i = 0; i < data.length; i += 2) {
+									bytes[i / 2] = parseInt(data.substr(i, 2), 16);
+								}
+								return bytes;
+							}
+							return new TextEncoder().encode(data);
+						}
+						return new Uint8Array(data);
+					},
+					alloc: function(size) {
+						return new Uint8Array(size);
+					},
+					isBuffer: function(obj) {
+						return obj instanceof Uint8Array;
+					}
+				};
+				window.global = window;
+			}
+		</script>
+
 		<!-- Telegram WebApp SDK - Must be loaded first -->
 		<script src="https://telegram.org/js/telegram-web-app.js"></script>
 		
