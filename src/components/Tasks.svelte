@@ -1,9 +1,10 @@
 <script lang="ts">
-	
+
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import { replaceState } from "$app/navigation";
+	import { fade, slide } from "svelte/transition";
 	import { formatDate, formatTime } from "../utils/date";
 	import type { HoloSphere } from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
@@ -16,6 +17,7 @@
 	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/store";
 	// Add new imports for quest library
 	import QuestImportModal from "./QuestImportModal.svelte";
+	import { fetchHolonName } from "../utils/holonNames";
 
 	// Add filterType prop to allow filtering by quest type
 	export let filterType: 'task' | 'event' | 'all' = 'all';
@@ -88,6 +90,15 @@
 	};
 
 	let questsUnsubscribe: (() => void) | undefined;
+
+	// Share to federation state
+	let showShareDialog = false;
+	let questToShare: { key: string; quest: Quest } | null = null;
+	let selectedHolonsToShare: string[] = [];
+	let federatedHolons: Array<{ id: string; name: string }> = [];
+	let sharingInProgress = false;
+	let shareSuccess = '';
+	let shareError = '';
 
 	// Add initialization state tracking
 	let isInitialized = false;
@@ -1153,6 +1164,91 @@
 	// Add state for import modal
 	let showImportModal = false;
 
+	// ============================================================================
+	// Share to Federation Functions
+	// ============================================================================
+
+	async function openShareDialog(key: string, quest: Quest) {
+		questToShare = { key, quest };
+		selectedHolonsToShare = [];
+		shareError = '';
+		shareSuccess = '';
+		showShareDialog = true;
+		await loadFederatedHolons();
+	}
+
+	async function loadFederatedHolons() {
+		if (!holosphere || !holonID) return;
+
+		try {
+			const federationInfo = await holosphere.getFederation(holonID);
+			if (federationInfo?.federated && Array.isArray(federationInfo.federated)) {
+				const holons: Array<{ id: string; name: string }> = [];
+				for (const id of federationInfo.federated) {
+					const name = await fetchHolonName(holosphere, id);
+					holons.push({ id, name });
+				}
+				federatedHolons = holons;
+			} else {
+				federatedHolons = [];
+			}
+		} catch (err) {
+			console.error('Failed to load federated holons:', err);
+			federatedHolons = [];
+		}
+	}
+
+	async function shareQuestToSelected() {
+		if (!questToShare || !holosphere || !holonID) return;
+
+		sharingInProgress = true;
+		shareError = '';
+		shareSuccess = '';
+
+		try {
+			for (const targetHolonId of selectedHolonsToShare) {
+				// Create hologram reference in target holon using propagateData
+				if (holosphere.propagateData) {
+					await holosphere.propagateData(
+						questToShare.quest,
+						holonID,
+						targetHolonId,
+						'quests',
+						{ mode: 'reference' }
+					);
+				} else if (holosphere.propagate) {
+					// Alternative method if propagateData doesn't exist
+					await holosphere.propagate(holonID, 'quests', questToShare.quest, {
+						targets: [targetHolonId],
+						mode: 'reference'
+					});
+				} else {
+					console.warn('No propagation method available on holosphere');
+				}
+			}
+
+			shareSuccess = `Shared to ${selectedHolonsToShare.length} holon(s)`;
+			setTimeout(() => {
+				showShareDialog = false;
+				questToShare = null;
+				shareSuccess = '';
+			}, 1500);
+		} catch (err) {
+			shareError = err instanceof Error ? err.message : 'Failed to share quest';
+			console.error('Share quest error:', err);
+		} finally {
+			sharingInProgress = false;
+		}
+	}
+
+	function closeShareDialog() {
+		showShareDialog = false;
+		questToShare = null;
+		selectedHolonsToShare = [];
+		shareError = '';
+		shareSuccess = '';
+	}
+
 </script>
 
 <div class="space-y-8">
@@ -1645,6 +1741,19 @@
 												<span class="text-xs sm:text-sm">{quest.appreciation.length}</span>
 											</div>
 										{/if}
+
+										<!-- Share to Federation Button (only for non-hologram quests) -->
+										{#if !quest._hologram?.isHologram}
+											<button
+												class="text-gray-500 hover:text-blue-400 p-1 rounded transition-colors hidden sm:block"
+												title="Share to federated holons"
+												on:click|stopPropagation={() => openShareDialog(key, quest)}
+											>
+												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+												</svg>
+											</button>
+										{/if}
 									</div>
 								</div>
 							</div>
@@ -1800,6 +1909,103 @@
 		on:close={() => showImportModal = false}
 		on:import={handleQuestImport}
 	/>
+{/if}
+
+<!-- Share to Federation Dialog -->
+{#if showShareDialog && questToShare}
+	<div
+		class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click|self={closeShareDialog}
+		on:keydown={(e) => e.key === 'Escape' && closeShareDialog()}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+		transition:fade={{ duration: 150 }}
+	>
+		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700" transition:slide={{ duration: 200 }}>
+			<div class="p-6">
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-white text-xl font-bold">Share Quest</h3>
+					<button
+						on:click={closeShareDialog}
+						class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+
+				<p class="text-gray-300 mb-2 font-medium truncate">"{questToShare.quest.title}"</p>
+				<p class="text-gray-400 text-sm mb-4">Select federated holons to share with:</p>
+
+				{#if federatedHolons.length === 0}
+					<div class="text-center py-8">
+						<div class="w-12 h-12 mx-auto mb-3 bg-gray-700 rounded-full flex items-center justify-center">
+							<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+							</svg>
+						</div>
+						<p class="text-gray-400">No federated holons found</p>
+						<p class="text-gray-500 text-sm mt-1">Add federations in the Federation settings</p>
+					</div>
+				{:else}
+					<div class="max-h-60 overflow-y-auto space-y-2 mb-4">
+						{#each federatedHolons as holon (holon.id)}
+							<label class="flex items-center p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors">
+								<input
+									type="checkbox"
+									bind:group={selectedHolonsToShare}
+									value={holon.id}
+									class="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500 mr-3"
+								/>
+								<span class="text-white">{holon.name}</span>
+							</label>
+						{/each}
+					</div>
+				{/if}
+
+				{#if shareError}
+					<div class="bg-red-900/50 border border-red-600 text-red-200 px-4 py-2 rounded-lg mb-4 text-sm">
+						{shareError}
+					</div>
+				{/if}
+
+				{#if shareSuccess}
+					<div class="bg-green-900/50 border border-green-600 text-green-200 px-4 py-2 rounded-lg mb-4 text-sm flex items-center">
+						<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+						</svg>
+						{shareSuccess}
+					</div>
+				{/if}
+
+				<div class="flex gap-3">
+					<button
+						on:click={closeShareDialog}
+						class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+					>
+						Cancel
+					</button>
+					<button
+						on:click={shareQuestToSelected}
+						disabled={selectedHolonsToShare.length === 0 || sharingInProgress}
+						class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+					>
+						{#if sharingInProgress}
+							<svg class="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+							</svg>
+							Sharing...
+						{:else}
+							Share
+						{/if}
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
 {/if}
 
 <style>

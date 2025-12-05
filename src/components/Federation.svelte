@@ -5,7 +5,7 @@
     import { goto } from "$app/navigation";
     import type { HoloSphere } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
-    import { nostrPrivateKey } from "../lib/stores/nostr";
+    import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
     import { fetchHolonName } from "../utils/holonNames";
     import { addVisitedHolon } from "../utils/localStorage";
     import QRScanner from "./QRScanner.svelte";
@@ -26,6 +26,23 @@
         getPermissionsForDirection,
         createCapabilityRecord
     } from "../lib/capabilities/lensCapability";
+    import {
+        type FederationRequestDM,
+        type FederationResponseDM,
+        sendFederationRequest,
+        sendFederationResponse,
+        subscribeToFederationDMs,
+        createFederationRequest,
+        createFederationResponse
+    } from "../lib/federation/nostrDM";
+    import {
+        pendingFederationRequests,
+        federationNotifications,
+        incomingRequests,
+        createIncomingRequest,
+        createOutgoingRequest,
+        type PendingRequest
+    } from "../lib/stores/federationRequests";
 
     const dispatch = createEventDispatcher();
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -81,7 +98,8 @@
         name: string;
         pubKey?: string;  // Nostr public key (hex format)
         npub?: string;    // Nostr public key (npub format)
-        status: 'connected' | 'pending' | 'error';
+        status: 'connected' | 'pending' | 'rejected' | 'error';
+        pendingRequestId?: string;  // Track which federation request this corresponds to
         lensConfig: {
             inbound: string[];
             outbound: string[];
@@ -131,8 +149,12 @@
     // Subscribe to current holon ID
     let idStoreUnsubscribe: (() => void) | undefined;
     let federationSubscription: any = null;
+    let dmUnsubscribe: (() => void) | undefined;
 
     onMount(() => {
+        // Initialize pending federation requests store
+        pendingFederationRequests.init();
+
         idStoreUnsubscribe = ID.subscribe(async (newId) => {
             if (newId !== currentHolonId) {
                 // Unsubscribe from previous federation data
@@ -153,6 +175,11 @@
                 }
             }
         });
+
+        // Subscribe to federation DMs if we have a private key
+        if ($nostrPrivateKey && $nostrPublicKey) {
+            subscribeToDMs();
+        }
     });
 
     onDestroy(() => {
@@ -161,6 +188,9 @@
         }
         if (federationSubscription) {
             federationSubscription.unsubscribe();
+        }
+        if (dmUnsubscribe) {
+            dmUnsubscribe();
         }
     });
 
@@ -233,15 +263,16 @@
                     };
 
                     tempHolons.push(federatedHolon);
-
-                    // Load capabilities for this partner if they have a pubKey
-                    if (pubKey) {
-                        loadPartnerCapabilities(pubKey);
-                    }
                 }
 
                 // Assign to trigger reactivity in Svelte 5
                 federatedHolons = tempHolons;
+
+                // Load capabilities for all partners with pubKeys (in parallel)
+                const capabilityLoads = tempHolons
+                    .filter(h => h.pubKey)
+                    .map(h => loadPartnerCapabilities(h.pubKey!));
+                await Promise.all(capabilityLoads);
 
                 console.log('Final federated holons:', federatedHolons);
             } else {
@@ -275,6 +306,7 @@
 
         try {
             // Create federation with default lens config (empty arrays)
+            // Status will be 'pending' until partner accepts
             const success = await holosphere.federateHolon(
                 currentHolonId,
                 federationTarget,
@@ -284,6 +316,53 @@
             );
 
             if (success) {
+                // If federating with a Nostr pubkey, send a DM to the partner
+                if (newPartnerHexPubKey && $nostrPrivateKey && $nostrPublicKey) {
+                    const ourHolonName = await getHolonName(currentHolonId);
+                    const ourNpub = hexToNpub($nostrPublicKey);
+
+                    // Create federation request DM
+                    const request = createFederationRequest(
+                        currentHolonId,
+                        ourHolonName,
+                        ourNpub,
+                        { inbound: [], outbound: [] },
+                        [],  // No capabilities yet - will be granted after acceptance
+                        undefined  // No message
+                    );
+
+                    // Send the DM
+                    const dmSent = await sendFederationRequest(
+                        holosphere,
+                        $nostrPrivateKey,
+                        newPartnerHexPubKey,
+                        request
+                    );
+
+                    if (dmSent) {
+                        // Track as outgoing request
+                        const outgoingRequest = createOutgoingRequest(
+                            request.requestId,
+                            $nostrPublicKey,
+                            ourNpub,
+                            currentHolonId,
+                            ourHolonName,
+                            newPartnerHexPubKey,
+                            newPartnerNpub || hexToNpub(newPartnerHexPubKey),
+                            { inbound: [], outbound: [] },
+                            []
+                        );
+                        pendingFederationRequests.add(outgoingRequest);
+
+                        showSuccess('Federation request sent - waiting for partner to accept');
+                    } else {
+                        console.warn('Failed to send federation DM, but local record created');
+                        showSuccess('Federation created (DM notification failed)');
+                    }
+                } else {
+                    showSuccess('Federation created successfully');
+                }
+
                 showAddDialog = false;
                 newHolonId = '';
                 newHolonName = '';
@@ -298,7 +377,6 @@
 
                 // Force reload of federation data
                 await loadFederationData();
-                showSuccess('Federation created successfully');
             } else {
                 error = 'Failed to create federation';
             }
@@ -576,7 +654,17 @@
             };
 
             // Store in global lens_capabilities table
-            await holosphere.writeGlobal('lens_capabilities', capabilityRecord);
+            try {
+                await holosphere.writeGlobal('lens_capabilities', capabilityRecord);
+                console.log('Capability stored in global table:', capabilityRecord.id);
+            } catch (storeErr) {
+                console.warn('Failed to store capability in global table, using local storage:', storeErr);
+                // Fallback to localStorage
+                const stored = localStorage.getItem('lens_capabilities') || '{}';
+                const caps = JSON.parse(stored);
+                caps[capabilityRecord.id] = capabilityRecord;
+                localStorage.setItem('lens_capabilities', JSON.stringify(caps));
+            }
 
             // Update local tracking
             updatePartnerCapabilities(recipientPubKey, lensName, direction, capabilityRecord);
@@ -605,10 +693,26 @@
 
         try {
             // Mark as revoked in global table
-            const existing = await holosphere.getGlobal('lens_capabilities', capabilityId);
-            if (existing) {
-                existing.revokedAt = Date.now();
-                await holosphere.writeGlobal('lens_capabilities', existing);
+            try {
+                const existing = await holosphere.getGlobal('lens_capabilities', capabilityId);
+                if (existing) {
+                    existing.revokedAt = Date.now();
+                    await holosphere.writeGlobal('lens_capabilities', existing);
+                }
+            } catch (globalErr) {
+                console.warn('Failed to revoke in global table:', globalErr);
+            }
+
+            // Also update localStorage
+            try {
+                const stored = localStorage.getItem('lens_capabilities') || '{}';
+                const caps = JSON.parse(stored);
+                if (caps[capabilityId]) {
+                    caps[capabilityId].revokedAt = Date.now();
+                    localStorage.setItem('lens_capabilities', JSON.stringify(caps));
+                }
+            } catch (localErr) {
+                console.warn('Failed to revoke in localStorage:', localErr);
             }
 
             // Remove from local tracking
@@ -660,17 +764,47 @@
     }
 
     async function loadPartnerCapabilities(pubKey: string) {
-        if (!holosphere || !pubKey) return;
+        if (!pubKey) return;
+
+        const issuerPubKey = holosphere?.client?.publicKey;
+        if (!issuerPubKey) {
+            console.warn('No issuer public key available');
+            return;
+        }
+
+        const caps: Record<string, { inbound?: LensCapabilityToken; outbound?: LensCapabilityToken }> = {};
 
         try {
-            // Load capabilities from global table
-            const allCaps = await holosphere.getAllGlobal('lens_capabilities');
-            if (!allCaps) return;
+            // Try to load from holosphere global table first
+            let allCaps: Record<string, any> | any[] | null = null;
 
-            const issuerPubKey = holosphere.client?.publicKey;
-            const caps: Record<string, { inbound?: LensCapabilityToken; outbound?: LensCapabilityToken }> = {};
+            if (holosphere && typeof holosphere.getAllGlobal === 'function') {
+                allCaps = await holosphere.getAllGlobal('lens_capabilities');
+            }
 
-            for (const cap of Object.values(allCaps) as LensCapabilityToken[]) {
+            // Also check localStorage as fallback/supplement
+            const localStored = localStorage.getItem('lens_capabilities');
+            if (localStored) {
+                const localCaps = JSON.parse(localStored);
+                if (!allCaps) {
+                    allCaps = localCaps;
+                } else if (typeof allCaps === 'object' && !Array.isArray(allCaps)) {
+                    // Merge local with global
+                    allCaps = { ...allCaps, ...localCaps };
+                }
+            }
+
+            if (!allCaps || typeof allCaps !== 'object') {
+                console.log('No capabilities found');
+                return;
+            }
+
+            const capValues = Array.isArray(allCaps) ? allCaps : Object.values(allCaps);
+
+            for (const cap of capValues as LensCapabilityToken[]) {
+                if (!cap || typeof cap !== 'object') continue;
+                if (cap.type !== 'lens_capability') continue;
+
                 if (cap.issuerPubKey === issuerPubKey &&
                     cap.recipientPubKey === pubKey &&
                     !cap.revokedAt &&
@@ -679,11 +813,13 @@
                         caps[cap.lensName] = {};
                     }
                     caps[cap.lensName][cap.direction] = cap;
+                    console.log(`Loaded capability for ${cap.lensName} (${cap.direction}):`, cap.expiresAt ? new Date(cap.expiresAt).toLocaleDateString() : 'permanent');
                 }
             }
 
             partnerCapabilities.set(pubKey, caps);
             partnerCapabilities = new Map(partnerCapabilities);
+            console.log('Partner capabilities loaded for', pubKey.slice(0, 8), ':', Object.keys(caps));
         } catch (err) {
             console.warn('Failed to load partner capabilities:', err);
         }
@@ -784,6 +920,188 @@
         customExpirationDate = '';
     }
 
+    // ============================================================================
+    // Nostr DM Federation Protocol
+    // ============================================================================
+
+    function subscribeToDMs() {
+        if (!holosphere || !$nostrPrivateKey || !$nostrPublicKey) return;
+
+        try {
+            dmUnsubscribe = subscribeToFederationDMs(
+                holosphere,
+                $nostrPrivateKey,
+                $nostrPublicKey,
+                handleIncomingFederationRequest,
+                handleFederationResponse
+            );
+            console.log('Subscribed to federation DMs');
+        } catch (err) {
+            console.error('Failed to subscribe to federation DMs:', err);
+        }
+    }
+
+    async function handleIncomingFederationRequest(
+        request: FederationRequestDM,
+        senderPubKey: string
+    ) {
+        console.log('Received federation request from:', senderPubKey.substring(0, 8) + '...');
+
+        // Check if we already have this request
+        if (pendingFederationRequests.hasPendingForPubKey(senderPubKey)) {
+            console.log('Already have pending request from this pubkey');
+            return;
+        }
+
+        // Create incoming request record
+        const pendingRequest = createIncomingRequest(
+            request.requestId,
+            senderPubKey,
+            request.senderNpub,
+            request.senderHolonId,
+            request.senderHolonName,
+            request.lensConfig,
+            request.capabilities,
+            request.message
+        );
+
+        // Add to store
+        pendingFederationRequests.add(pendingRequest);
+        showSuccess(`Federation request received from ${request.senderHolonName}`);
+    }
+
+    async function handleFederationResponse(
+        response: FederationResponseDM,
+        senderPubKey: string
+    ) {
+        console.log('Received federation response:', response.status, 'from:', senderPubKey.substring(0, 8) + '...');
+
+        // Find the outgoing request this response is for
+        const request = pendingFederationRequests.getById(response.requestId);
+        if (!request) {
+            console.warn('Received response for unknown request:', response.requestId);
+            return;
+        }
+
+        if (response.status === 'accepted') {
+            // Update request status
+            pendingFederationRequests.updateStatus(response.requestId, 'accepted');
+
+            // Update the federation status to connected
+            federatedHolons = federatedHolons.map(h =>
+                h.pendingRequestId === response.requestId
+                    ? { ...h, status: 'connected' as const, pendingRequestId: undefined }
+                    : h
+            );
+
+            showSuccess(`Federation accepted by ${response.responderHolonName || 'partner'}`);
+            await loadFederationData();
+        } else {
+            // Update request status
+            pendingFederationRequests.updateStatus(response.requestId, 'rejected');
+
+            // Update the federation status
+            federatedHolons = federatedHolons.map(h =>
+                h.pendingRequestId === response.requestId
+                    ? { ...h, status: 'rejected' as const }
+                    : h
+            );
+
+            showSuccess(`Federation rejected by ${response.responderHolonName || 'partner'}`);
+        }
+    }
+
+    async function acceptFederationRequest(requestId: string) {
+        const request = pendingFederationRequests.getById(requestId);
+        if (!request) return;
+
+        saving = true;
+        try {
+            // Create local federation record
+            const success = await holosphere.federateHolon(
+                currentHolonId,
+                request.senderPubKey,
+                { lensConfig: { inbound: [], outbound: [] } }
+            );
+
+            if (!success) {
+                error = 'Failed to create federation';
+                return;
+            }
+
+            // Get our holon name
+            const ourHolonName = await getHolonName(currentHolonId);
+            const ourNpub = $nostrPublicKey ? hexToNpub($nostrPublicKey) : '';
+
+            // Send acceptance response DM
+            const response = createFederationResponse(
+                requestId,
+                'accepted',
+                currentHolonId,
+                ourHolonName,
+                ourNpub,
+                { inbound: [], outbound: [] },  // Can be configured later
+                []  // Capabilities can be granted later
+            );
+
+            if ($nostrPrivateKey) {
+                await sendFederationResponse(
+                    holosphere,
+                    $nostrPrivateKey,
+                    request.senderPubKey,
+                    response
+                );
+            }
+
+            // Update request status
+            pendingFederationRequests.updateStatus(requestId, 'accepted');
+
+            // Reload federation data
+            await loadFederationData();
+            showSuccess('Federation accepted');
+        } catch (err) {
+            error = err instanceof Error ? err.message : 'Failed to accept federation';
+            console.error('Accept federation error:', err);
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function rejectFederationRequest(requestId: string) {
+        const request = pendingFederationRequests.getById(requestId);
+        if (!request) return;
+
+        saving = true;
+        try {
+            // Send rejection response DM
+            const response = createFederationResponse(
+                requestId,
+                'rejected',
+                currentHolonId,
+                await getHolonName(currentHolonId),
+                $nostrPublicKey ? hexToNpub($nostrPublicKey) : ''
+            );
+
+            if ($nostrPrivateKey) {
+                await sendFederationResponse(
+                    holosphere,
+                    $nostrPrivateKey,
+                    request.senderPubKey,
+                    response
+                );
+            }
+
+            // Update request status and remove
+            pendingFederationRequests.updateStatus(requestId, 'rejected');
+            showSuccess('Federation request rejected');
+        } catch (err) {
+            error = err instanceof Error ? err.message : 'Failed to reject federation';
+            console.error('Reject federation error:', err);
+        } finally {
+            saving = false;
+        }
+    }
+
     $: totalFederations = federatedHolons.length;
     $: activeLenses = federatedHolons.reduce((acc, holon) => {
         if (holon && holon.lensConfig && Array.isArray(holon.lensConfig.inbound)) {
@@ -873,6 +1191,61 @@
                     <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
                         <div class="text-2xl font-bold text-white mb-1">{activeLenses}</div>
                         <div class="text-sm text-gray-400">Active Lenses</div>
+                    </div>
+                </div>
+            {/if}
+
+            <!-- Incoming Federation Requests -->
+            {#if $incomingRequests.length > 0}
+                <div class="bg-amber-900/30 border border-amber-600 rounded-xl p-6 mb-6" transition:slide>
+                    <h3 class="text-lg font-semibold text-amber-300 mb-4 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                        </svg>
+                        Incoming Federation Requests
+                        <span class="ml-2 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full">
+                            {$incomingRequests.length}
+                        </span>
+                    </h3>
+
+                    <div class="space-y-3">
+                        {#each $incomingRequests as request (request.id)}
+                            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700" transition:slide>
+                                <div class="flex justify-between items-start">
+                                    <div class="flex-1">
+                                        <p class="text-white font-medium">{request.senderHolonName}</p>
+                                        <p class="text-gray-400 text-sm font-mono">{shortenNpub(request.senderNpub)}</p>
+                                        {#if request.lensConfig.outbound.length > 0}
+                                            <p class="text-gray-500 text-xs mt-1">
+                                                Wants to share: {request.lensConfig.outbound.join(', ')}
+                                            </p>
+                                        {/if}
+                                        {#if request.message}
+                                            <p class="text-gray-400 text-sm mt-2 italic">"{request.message}"</p>
+                                        {/if}
+                                        <p class="text-gray-600 text-xs mt-2">
+                                            {new Date(request.timestamp).toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <div class="flex gap-2 ml-4">
+                                        <button
+                                            on:click={() => acceptFederationRequest(request.id)}
+                                            disabled={saving}
+                                            class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition-colors text-white text-sm font-medium disabled:opacity-50"
+                                        >
+                                            Accept
+                                        </button>
+                                        <button
+                                            on:click={() => rejectFederationRequest(request.id)}
+                                            disabled={saving}
+                                            class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition-colors text-white text-sm font-medium disabled:opacity-50"
+                                        >
+                                            Reject
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        {/each}
                     </div>
                 </div>
             {/if}
