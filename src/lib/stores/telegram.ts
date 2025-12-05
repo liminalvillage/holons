@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 
 // Telegram WebApp types
@@ -202,6 +202,11 @@ function createTelegramStore() {
 			if (!browser) return null;
 			const win = window as any;
 			return win.Telegram?.WebApp || null;
+		},
+
+		// Get current state synchronously
+		getState: (): TelegramAuthState => {
+			return get({ subscribe });
 		}
 	};
 }
