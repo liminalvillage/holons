@@ -2460,8 +2460,8 @@ export default class Quests {
                 return;
             }
 
-            // Create hologram for the quest using holosphere API directly
-            const hologram = this.db.holosphere.createHologram(chatIDStr, 'quests', quest);
+            // Create hologram for the quest using DB wrapper
+            const hologram = this.db.createHologram(chatIDStr, 'quests', quest);
             console.log(`[handleFederatedMessages] Created hologram:`, hologram);
 
             let totalPublished = 0;
