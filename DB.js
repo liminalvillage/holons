@@ -273,7 +273,27 @@ class DB {
      * @returns {Object} Hologram object ready to be written to a holon
      */
     createHologram(sourceHolon, lensName, data, targetHolon = null) {
-        return this.holosphere.createHologram(sourceHolon, lensName, data, targetHolon);
+        // Create hologram object manually matching holosphere's expected structure
+        const dataId = data.id;
+        const appName = this.holosphere.config?.appName || process.env.APPNAME || 'Holons';
+        const target = targetHolon || sourceHolon;
+
+        return {
+            id: dataId,
+            hologram: true,
+            soul: `${appName}/${sourceHolon}/${lensName}/${dataId}`,
+            target: {
+                appname: appName,
+                holonId: sourceHolon,
+                lensName: lensName,
+                dataId: dataId
+            },
+            _meta: {
+                created: Date.now(),
+                sourceHolon: sourceHolon,
+                source: sourceHolon
+            }
+        };
     }
 
     /**
@@ -282,7 +302,44 @@ class DB {
      * @returns {Promise<Object|null>} Resolved data or null
      */
     async resolveHologram(hologram) {
-        return await this.holosphere.resolveHologram(hologram);
+        // If the holosphere library's resolveHologram works with (nostrClient, hologram), try it
+        // Otherwise, implement basic resolution logic
+        if (!hologram || !hologram.hologram || !hologram.target) {
+            return hologram; // Not a hologram, return as-is
+        }
+
+        try {
+            // Try to fetch the actual data from the source
+            const { holonId, lensName, dataId } = hologram.target;
+            const sourceData = await this.get(`${holonId}/${lensName}`, dataId);
+
+            if (!sourceData) {
+                return null;
+            }
+
+            // Merge local overrides from hologram with source data
+            const localOverrides = {};
+            const reservedKeys = ['hologram', 'soul', 'target', '_meta', 'id', 'capability', 'crossHolosphere'];
+            for (const key of Object.keys(hologram)) {
+                if (!reservedKeys.includes(key)) {
+                    localOverrides[key] = hologram[key];
+                }
+            }
+
+            return {
+                ...sourceData,
+                ...localOverrides,
+                _hologram: {
+                    isHologram: true,
+                    soul: hologram.soul,
+                    sourceHolon: hologram.target.holonId,
+                    localOverrides: Object.keys(localOverrides)
+                }
+            };
+        } catch (error) {
+            console.error('Error resolving hologram:', error);
+            return null;
+        }
     }
 
     /**
@@ -291,7 +348,8 @@ class DB {
      * @returns {boolean} True if data is a hologram
      */
     isHologram(data) {
-        return this.holosphere.isHologram(data);
+        // Simple check - a hologram has hologram: true flag
+        return data && data.hologram === true;
     }
 }
 
