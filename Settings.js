@@ -4,6 +4,7 @@ import * as utils from './utilities.js'
 import { Scenes } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
 
+const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 const ALL_AVAILABLE_LENSES = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
 
 export default class Settings {
@@ -2111,7 +2112,7 @@ export default class Settings {
                     ],
                     // 9. Dashboard (full width)
                     [
-                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `${process.env.DASHBOARD_ADDRESS}/${chatID}/dashboard` }
+                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `${DASHBOARD_ADDRESS}/${chatID}/dashboard` }
                     ]
                 ]
             }

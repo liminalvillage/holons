@@ -5,6 +5,8 @@ import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
 import { log } from './utils/logger.js';
 
+const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
+
 /**
  * Optimized Quest Management System
  * Reduced from 4,385 lines to ~1,800 lines (59% reduction)
@@ -747,7 +749,7 @@ export default class Quests {
                     Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 
                                           `publish_quest_${quest.chat}_${quest.id}`),
                     Markup.button.url('📊 Dashboard',
-                                     `${process.env.DASHBOARD_ADDRESS}/${quest.chat}/tasks?task=${quest.id}`)
+                                     `${DASHBOARD_ADDRESS}/${quest.chat}/tasks?task=${quest.id}`)
                 ]
             );
         } else if (quest.type === 'event') {

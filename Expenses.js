@@ -5,6 +5,7 @@ import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 
+const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 export default class Expenses {
     constructor(bot, db, ui, settings) {
@@ -147,7 +148,7 @@ export default class Expenses {
                     caption: createPaddedCaption(''),
                     ...Markup.inlineKeyboard([
                         Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-                          `${process.env.DASHBOARD_ADDRESS}/${chatID}/expenses`)
+                          `${DASHBOARD_ADDRESS}/${chatID}/expenses`)
                       ])
                 }).catch(err => console.log(err));
             });
