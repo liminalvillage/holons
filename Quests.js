@@ -903,7 +903,7 @@ export default class Quests {
                 ...quest
             };
 
-            await this.db.holosphere.propagateData(
+            await this.db.propagateData(
                 questData,
                 quest.chat.toString(),    // sourceHolon - where the quest lives
                 userId.toString(),         // targetHolon - user's personal holon
@@ -2483,12 +2483,12 @@ export default class Quests {
                 // Check if this is an H3 holon
                 let isH3Holon = false;
                 try {
-                    isH3Holon = this.db.holosphere.isValidH3(chatIDStr);
+                    isH3Holon = this.db.isValidH3(chatIDStr);
                 } catch (e) {
                     isH3Holon = false;
                 }
 
-                const propagationResult = await this.db.holosphere.propagate(chatIDStr, 'quests', hologram, {
+                const propagationResult = await this.db.propagate(chatIDStr, 'quests', hologram, {
                     useHolograms: true,
                     propagateToParents: isH3Holon,
                     maxParentLevels: isH3Holon ? 1 : 0

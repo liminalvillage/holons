@@ -1,5 +1,5 @@
 // Description: This file contains the DB class which is used to interact with the database.
-import {HoloSphere} from 'holosphere';
+import {HoloSphere, createHologram as hsCreateHologram} from 'holosphere';
 import { getRelays } from './relay-config.js';
 import { getOrCreateKey } from './utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
@@ -240,20 +240,6 @@ class DB {
     // ===========================      Hologram Operations
 
     /**
-     * Propagate data to federated holons using holosphere2's propagateData
-     * This creates holograms (lightweight references) or copies data depending on mode
-     * @param {Object} data - Data to propagate
-     * @param {string} sourceHolon - Source holon ID
-     * @param {string} targetHolon - Target holon ID
-     * @param {string} lensName - Lens name
-     * @param {string} mode - 'reference' (creates hologram) or 'copy' (copies data)
-     * @returns {Promise<boolean>} Success indicator
-     */
-    async propagateData(data, sourceHolon, targetHolon, lensName, mode = 'reference') {
-        return await this.holosphere.propagateData(data, sourceHolon, targetHolon, lensName, { mode });
-    }
-
-    /**
      * Delete a hologram and clean up activeHolograms on the source
      * @param {string} holonId - Holon where the hologram lives
      * @param {string} lensName - Lens name
@@ -273,27 +259,33 @@ class DB {
      * @returns {Object} Hologram object ready to be written to a holon
      */
     createHologram(sourceHolon, lensName, data, targetHolon = null) {
-        // Create hologram object manually matching holosphere's expected structure
         const dataId = data.id;
         const appName = this.holosphere.config?.appName || process.env.APPNAME || 'Holons';
-        const target = targetHolon || sourceHolon;
 
-        return {
-            id: dataId,
-            hologram: true,
-            soul: `${appName}/${sourceHolon}/${lensName}/${dataId}`,
-            target: {
-                appname: appName,
-                holonId: sourceHolon,
-                lensName: lensName,
-                dataId: dataId
-            },
-            _meta: {
-                created: Date.now(),
-                sourceHolon: sourceHolon,
-                source: sourceHolon
-            }
-        };
+        try {
+            // Try using holosphere's createHologram function
+            // Signature: createHologram(sourceHolon, targetHolon, lensName, dataId, appname, options)
+            return hsCreateHologram(sourceHolon, targetHolon || 0, lensName, dataId, appName, {});
+        } catch (error) {
+            // Fallback: Create hologram object manually matching holosphere's expected structure
+            console.warn('Using fallback hologram creation:', error.message);
+            return {
+                id: dataId,
+                hologram: true,
+                soul: `${appName}/${sourceHolon}/${lensName}/${dataId}`,
+                target: {
+                    appname: appName,
+                    holonId: sourceHolon,
+                    lensName: lensName,
+                    dataId: dataId
+                },
+                _meta: {
+                    created: Date.now(),
+                    sourceHolon: sourceHolon,
+                    source: sourceHolon
+                }
+            };
+        }
     }
 
     /**
@@ -350,6 +342,57 @@ class DB {
     isHologram(data) {
         // Simple check - a hologram has hologram: true flag
         return data && data.hologram === true;
+    }
+
+    /**
+     * Propagate data to federated holons
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} lensName - Lens name
+     * @param {Object} data - Data to propagate (usually a hologram)
+     * @param {Object} options - Propagation options
+     * @returns {Promise<Object>} Propagation result
+     */
+    async propagate(sourceHolon, lensName, data, options = {}) {
+        try {
+            // Use HoloSphere's propagate method which handles federation correctly
+            return await this.holosphere.propagate(sourceHolon, lensName, data, options);
+        } catch (error) {
+            console.error('Error in propagate:', error);
+            return { success: 0, failed: 0, error: error.message };
+        }
+    }
+
+    /**
+     * Check if a string is a valid H3 hex index
+     * @param {string} str - String to check
+     * @returns {boolean} True if valid H3 index
+     */
+    isValidH3(str) {
+        // H3 indexes are 15-character hex strings starting with '8'
+        if (!str || typeof str !== 'string') return false;
+        // H3 indexes are typically 15 chars for resolution 0-15
+        if (!/^[0-9a-fA-F]{15}$/.test(str)) return false;
+        // First character indicates resolution, valid H3 starts with 8
+        return str.charAt(0) === '8';
+    }
+
+    /**
+     * Propagate data from source to target holon using holosphere's propagateData
+     * @param {Object} data - Data to propagate
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} targetHolon - Target holon ID
+     * @param {string} lensName - Lens name
+     * @param {Object} options - Propagation options (mode: 'reference' | 'copy')
+     * @returns {Promise<boolean>} Propagation result
+     */
+    async propagateData(data, sourceHolon, targetHolon, lensName, options = {}) {
+        try {
+            // Use HoloSphere's propagateData method which passes the correct client
+            return await this.holosphere.propagateData(data, sourceHolon, targetHolon, lensName, options);
+        } catch (error) {
+            console.error('Error in propagateData:', error);
+            return false;
+        }
     }
 }
 
