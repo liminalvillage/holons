@@ -1,0 +1,8 @@
+{
+    "name": "Liminal Convergence",
+    "image":"https://www.holons.io/images/holons.png",
+    "holons" : [
+    {"id": "235114395", "label":"Holons","lense":"holons"},
+    { "id": "http://github.com/robertovalenti/personal/holon", "label": "Roberto Valenti"}
+    ]
+}

@@ -1,0 +1,405 @@
+/* Zircle CSS - Reimplemented for Svelte */
+
+:root {
+  /* Theme Colors */
+  --z-primary: #3498db;
+  --z-secondary: #2c3e50;
+  --z-accent: #e74c3c;
+  --z-background: #1a1a2e;
+  --z-surface: rgba(255, 255, 255, 0.1);
+  --z-text: #ffffff;
+  --z-text-secondary: rgba(255, 255, 255, 0.7);
+
+  /* Sizes */
+  --z-spot-size-xs: 50px;
+  --z-spot-size-s: 70px;
+  --z-spot-size-m: 100px;
+  --z-spot-size-l: 140px;
+  --z-spot-size-xl: 180px;
+
+  /* Animation */
+  --z-transition-duration: 0.3s;
+  --z-transition-timing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Theme: Black */
+.theme-black {
+  --z-primary: #333333;
+  --z-secondary: #1a1a1a;
+  --z-accent: #ffffff;
+  --z-background: #0d0d0d;
+  --z-surface: rgba(255, 255, 255, 0.08);
+  --z-text: #ffffff;
+}
+
+/* Theme: Blue */
+.theme-blue {
+  --z-primary: #3498db;
+  --z-secondary: #2980b9;
+  --z-accent: #74b9ff;
+  --z-background: #0a1628;
+  --z-surface: rgba(52, 152, 219, 0.15);
+  --z-text: #ffffff;
+}
+
+/* Theme: Green */
+.theme-green {
+  --z-primary: #27ae60;
+  --z-secondary: #1e8449;
+  --z-accent: #58d68d;
+  --z-background: #0a1f0d;
+  --z-surface: rgba(39, 174, 96, 0.15);
+  --z-text: #ffffff;
+}
+
+/* Theme: Red */
+.theme-red {
+  --z-primary: #e74c3c;
+  --z-secondary: #c0392b;
+  --z-accent: #ff7675;
+  --z-background: #1f0a0a;
+  --z-surface: rgba(231, 76, 60, 0.15);
+  --z-text: #ffffff;
+}
+
+/* Theme: Light Blue */
+.theme-light-blue {
+  --z-primary: #00bcd4;
+  --z-secondary: #0097a7;
+  --z-accent: #4dd0e1;
+  --z-background: #0a1a1f;
+  --z-surface: rgba(0, 188, 212, 0.15);
+  --z-text: #ffffff;
+}
+
+/* Theme: Gray */
+.theme-gray {
+  --z-primary: #7f8c8d;
+  --z-secondary: #5d6d7e;
+  --z-accent: #bdc3c7;
+  --z-background: #1a1a1a;
+  --z-surface: rgba(127, 140, 141, 0.15);
+  --z-text: #ffffff;
+}
+
+/* Mode: Dark */
+.mode-dark {
+  --z-bg-opacity: 0.9;
+  --z-spot-bg: transparent;
+  --z-spot-border: 2px solid var(--z-primary);
+}
+
+/* Mode: Dark Filled */
+.mode-dark-filled {
+  --z-bg-opacity: 0.95;
+  --z-spot-bg: var(--z-surface);
+  --z-spot-border: 2px solid var(--z-primary);
+}
+
+/* Mode: Light */
+.mode-light {
+  --z-primary: #2c3e50;
+  --z-background: #ecf0f1;
+  --z-surface: rgba(0, 0, 0, 0.05);
+  --z-text: #2c3e50;
+  --z-text-secondary: rgba(44, 62, 80, 0.7);
+  --z-bg-opacity: 0.95;
+  --z-spot-bg: transparent;
+  --z-spot-border: 2px solid var(--z-primary);
+}
+
+/* Mode: Light Filled */
+.mode-light-filled {
+  --z-primary: #2c3e50;
+  --z-background: #ffffff;
+  --z-surface: rgba(0, 0, 0, 0.05);
+  --z-text: #2c3e50;
+  --z-text-secondary: rgba(44, 62, 80, 0.7);
+  --z-bg-opacity: 1;
+  --z-spot-bg: var(--z-surface);
+  --z-spot-border: 2px solid var(--z-primary);
+}
+
+/* Z-Canvas */
+.z-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--z-background);
+  overflow: hidden;
+  font-family: 'Source Sans Pro', sans-serif;
+  color: var(--z-text);
+}
+
+/* Z-Container (center point) */
+.z-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+}
+
+/* Z-View */
+.z-view {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--z-surface);
+  border: var(--z-spot-border);
+  transition: all var(--z-transition-duration) var(--z-transition-timing);
+  overflow: hidden;
+}
+
+.z-view-inner {
+  position: absolute;
+  width: 70%;
+  height: 70%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: auto;
+}
+
+.z-view-label {
+  position: absolute;
+  bottom: 15%;
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--z-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.z-view-extension {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.z-view-extension > * {
+  pointer-events: auto;
+}
+
+/* Z-Spot */
+.z-spot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--z-spot-bg, transparent);
+  border: var(--z-spot-border);
+  cursor: pointer;
+  transition: all var(--z-transition-duration) var(--z-transition-timing);
+  overflow: hidden;
+}
+
+.z-spot:hover {
+  transform: scale(1.1);
+  border-color: var(--z-accent);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+}
+
+.z-spot.button {
+  background: var(--z-surface);
+}
+
+.z-spot.button:hover {
+  background: var(--z-primary);
+}
+
+.z-spot-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 80%;
+  height: 80%;
+  text-align: center;
+}
+
+.z-spot-label {
+  position: absolute;
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--z-text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.z-spot-label.left {
+  right: calc(100% + 10px);
+}
+
+.z-spot-label.right {
+  left: calc(100% + 10px);
+}
+
+.z-spot-label.top {
+  bottom: calc(100% + 10px);
+}
+
+.z-spot-label.bottom {
+  top: calc(100% + 10px);
+}
+
+.z-spot-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: var(--z-accent);
+  border-radius: 0 0 50% 50%;
+  transition: width 0.3s ease;
+}
+
+.z-spot-knob {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  cursor: grab;
+}
+
+.z-spot-knob:active {
+  cursor: grabbing;
+}
+
+.z-spot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  opacity: 0.4;
+}
+
+/* Z-Dialog */
+.z-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+.z-dialog {
+  position: relative;
+  background: var(--z-surface);
+  border: var(--z-spot-border);
+  border-radius: 20px;
+  padding: 30px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  animation: scaleIn 0.3s ease;
+}
+
+.z-dialog-title {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin-bottom: 15px;
+  color: var(--z-text);
+}
+
+.z-dialog-content {
+  color: var(--z-text-secondary);
+  line-height: 1.6;
+}
+
+.z-dialog-extension {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.z-dialog-extension > * {
+  pointer-events: auto;
+}
+
+/* Accent class for highlighting */
+.accent {
+  border-color: var(--z-accent) !important;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes viewEnter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.z-view.entering {
+  animation: viewEnter 0.4s var(--z-transition-timing) forwards;
+}
+
+/* Z-Content - inner content styling */
+.z-content {
+  background: radial-gradient(40% 40% at 50% 50%, hsla(0, 0%, 100%, 0.1) 0, rgba(0, 0, 0, 0.1) 100%);
+}
+
+/* Scrollbar styling */
+.z-view-inner::-webkit-scrollbar {
+  width: 4px;
+}
+
+.z-view-inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.z-view-inner::-webkit-scrollbar-thumb {
+  background: var(--z-primary);
+  border-radius: 2px;
+}
+
+/* Global link styling */
+a {
+  color: var(--z-primary);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--z-accent);
+}
