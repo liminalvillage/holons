@@ -5,6 +5,7 @@
     import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
     import User from "./User.svelte";
+    import PieChart3D from "./PieChart3D.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
     interface User {
         id?: string;
@@ -489,6 +490,43 @@
 
     $: maxScore = sortedUsers.length > 0 ? calculateScore(sortedUsers[0][1]) : 0;
     $: totalScore = sortedUsers.reduce((sum, [, user]) => sum + calculateScore(user), 0);
+
+    // Prepare data for the 3D pie chart
+    $: pieChartData = sortedUsers.map(([userId, user]) => {
+        const score = calculateScore(user);
+        const percentage = totalScore > 0 ? (score / totalScore) * 100 : 0;
+
+        // Build the breakdown object
+        const breakdown = {
+            initiated: (user.initiated && Array.isArray(user.initiated)) ? user.initiated.length : 0,
+            completed: (user.completed && Array.isArray(user.completed)) ? user.completed.length : 0,
+            sent: user.sent || 0,
+            received: user.received || 0,
+            hours: user.hours || 0,
+            collaboration: user.collaboration || 0,
+            wants: (user.wants && Array.isArray(user.wants)) ? user.wants.length : 0,
+            offers: (user.offers && Array.isArray(user.offers)) ? user.offers.length : 0,
+            currencies: {} as Record<string, number>
+        };
+
+        // Add currency balances to breakdown
+        for (const currency of availableCurrencies) {
+            const balance = getCurrencyBalance(user.id || userId, currency);
+            if (balance !== 0) {
+                breakdown.currencies[currency] = balance;
+            }
+        }
+
+        return {
+            id: userId,
+            name: `${user.first_name} ${user.last_name || ''}`.trim(),
+            score,
+            percentage,
+            color: '',  // Will be assigned by the chart component
+            breakdown,
+            avatarUrl: user.id ? `https://telegram.holons.io/getavatar?user_id=${user.id}` : undefined
+        };
+    }).filter(user => user.percentage > 0); // Only include users with a non-zero percentage
     
     // Simple cache invalidation when data changes
     $: if (availableCurrencies || expenseStore) {
@@ -594,6 +632,17 @@
                         <div class="text-sm text-gray-400">Currencies</div>
                     </div>
                 </div>
+
+                <!-- 3D Pie Chart Section -->
+                {#if pieChartData.length > 0}
+                    <div class="bg-gray-700/30 rounded-2xl p-6 mb-8">
+                        <div class="mb-4">
+                            <h3 class="text-xl font-bold text-white">Share Distribution</h3>
+                            <p class="text-gray-400 text-sm">Hover over slices to see detailed breakdowns</p>
+                        </div>
+                        <PieChart3D users={pieChartData} />
+                    </div>
+                {/if}
 
                 <!-- Rankings Table -->
                 <div class="bg-gray-700/30 rounded-2xl overflow-hidden">
