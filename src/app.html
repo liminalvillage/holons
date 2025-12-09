@@ -48,21 +48,16 @@
 			window.googleTranslateMaxRetries = 30; // Wait up to 30 seconds for element
 
 			function googleTranslateElementInit() {
-				console.log('Google Translate initialization started');
-
 				// Wait for DOM to be ready
 				if (document.readyState !== 'complete') {
-					console.log('DOM not ready, waiting...');
 					window.addEventListener('load', googleTranslateElementInit);
 					return;
 				}
 
 				// Check if google translate is available
 				if (typeof google === 'undefined' || !google.translate) {
-					console.error('Google Translate library not loaded');
-					// Try to reload the script
+					// Try to reload the script silently
 					setTimeout(() => {
-						console.log('Retrying Google Translate initialization...');
 						const script = document.createElement('script');
 						script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
 						script.async = true;
@@ -71,16 +66,13 @@
 					return;
 				}
 
-				// Check if target element exists in TopBar, create if needed
+				// Check if target element exists in TopBar
 				let targetElement = document.getElementById('google_translate_element');
 				if (!targetElement) {
 					window.googleTranslateRetryCount++;
 					if (window.googleTranslateRetryCount < window.googleTranslateMaxRetries) {
-						// Element not found - likely splash screen is still showing
-						// Silently wait and retry
+						// Element not found - silently retry
 						setTimeout(googleTranslateElementInit, 1000);
-					} else {
-						console.log('Google Translate: max retries reached, element not found');
 					}
 					return;
 				}
@@ -95,9 +87,7 @@
 						autoDisplay: false,
 						layout: google.translate.TranslateElement.InlineLayout.SIMPLE
 					}, 'google_translate_element');
-					
-					console.log('Google Translate element created successfully');
-					
+
 					// Mark as initialized
 					window.googleTranslateInitialized = true;
 					
@@ -105,7 +95,6 @@
 					const observer = new MutationObserver(() => {
 						const currentElement = document.getElementById('google_translate_element');
 						if (currentElement && !currentElement.closest('.top-bar-container')) {
-							console.log('Google Translate widget moved, repositioning to TopBar...');
 							// Find the TopBar right side controls container
 							const topBarRightControls = document.querySelector('.top-bar-container .hidden.sm\\:flex');
 							if (topBarRightControls) {
@@ -136,16 +125,12 @@
 					
 					// Function to trigger translation to a specific language
 					window.triggerTranslation = function(targetLang) {
-						console.log('Triggering translation to:', targetLang);
-						
 						// Look for the Google Translate combo
-						const selectElement = document.querySelector('.goog-te-combo') || 
+						const selectElement = document.querySelector('.goog-te-combo') ||
 											document.querySelector('select[class*="goog-te"]') ||
 											document.querySelector('#google_translate_element select');
-						
+
 						if (selectElement) {
-							console.log('Found Google Translate select element');
-							
 							// Map language codes to Google Translate codes
 							const langMap = {
 								'zh': 'zh-CN', // Chinese (Simplified)
@@ -153,28 +138,20 @@
 								'en': ''       // English (original)
 							};
 							const googleLang = targetLang === 'en' ? '' : (langMap[targetLang] || targetLang);
-							
-							console.log('Setting Google Translate language to:', googleLang);
-							
+
 							// Only trigger if language is different from current
 							if (selectElement.value !== googleLang) {
 								selectElement.value = googleLang;
 								selectElement.dispatchEvent(new Event('change', { bubbles: true }));
-								console.log('Language change event dispatched');
-							} else {
-								console.log('Language already set to:', googleLang);
 							}
-						} else {
-							console.warn('Google Translate select element not found');
 						}
 					};
 					
 					// Listen for settings language changes
 					window.addEventListener('settingsLanguageChanged', (event) => {
 						const newLanguage = event.detail.language;
-						console.log('Settings language changed to:', newLanguage);
 						window.harvestLanguageSetting = newLanguage;
-						
+
 						if (newLanguage && newLanguage !== 'en') {
 							window.triggerTranslation(newLanguage);
 						} else if (newLanguage === 'en') {
@@ -183,16 +160,14 @@
 							if (selectElement && selectElement.value !== '') {
 								selectElement.value = '';
 								selectElement.dispatchEvent(new Event('change'));
-								console.log('Reset to original language (English)');
 							}
 						}
 					});
-					
+
 					// Also listen for direct flag selector changes
 					window.addEventListener('flagLanguageChanged', (event) => {
 						const newLanguage = event.detail.language;
-						console.log('Flag selector language changed to:', newLanguage);
-						
+
 						if (newLanguage && newLanguage !== 'en') {
 							window.triggerTranslation(newLanguage);
 						} else if (newLanguage === 'en') {
@@ -200,89 +175,46 @@
 							if (selectElement && selectElement.value !== '') {
 								selectElement.value = '';
 								selectElement.dispatchEvent(new Event('change'));
-								console.log('Flag selector reset to English');
 							}
 						}
 					});
 					
-					// Enhanced automatic browser language detection and translation
-					console.log('=== AUTOMATIC LANGUAGE DETECTION ===');
-					
-					// Get browser language with fallbacks
+					// Automatic browser language detection and translation
 					const browserLang = (navigator.language || navigator.userLanguage || navigator.browserLanguage || 'en').split('-')[0].toLowerCase();
 					const browserLanguages = navigator.languages || [navigator.language];
-					
-					console.log('Primary browser language:', browserLang);
-					console.log('All browser languages:', browserLanguages);
-					
+
 					// Extended supported languages list
 					const supportedLangs = {
-						'es': 'es',     // Spanish
-						'fr': 'fr',     // French
-						'de': 'de',     // German
-						'it': 'it',     // Italian
-						'pt': 'pt',     // Portuguese
-						'ru': 'ru',     // Russian
-						'ja': 'ja',     // Japanese
-						'ko': 'ko',     // Korean
-						'zh': 'zh-CN',  // Chinese
-						'ar': 'ar',     // Arabic
-						'nl': 'nl',     // Dutch
-						'pl': 'pl',     // Polish
-						'sv': 'sv',     // Swedish
-						'da': 'da',     // Danish
-						'no': 'no',     // Norwegian
-						'fi': 'fi',     // Finnish
-						'hu': 'hu',     // Hungarian
-						'cs': 'cs',     // Czech
-						'sk': 'sk',     // Slovak
-						'hi': 'hi',     // Hindi
-						'th': 'th',     // Thai
-						'vi': 'vi',     // Vietnamese
-						'tr': 'tr',     // Turkish
-						'he': 'he',     // Hebrew
-						'el': 'el',     // Greek
-						'bg': 'bg',     // Bulgarian
-						'ro': 'ro',     // Romanian
-						'hr': 'hr',     // Croatian
-						'sl': 'sl',     // Slovenian
-						'id': 'id',     // Indonesian
-						'ms': 'ms',     // Malay
-						'tl': 'tl',     // Filipino/Tagalog
-						'fil': 'tl'     // Filipino -> Tagalog
+						'es': 'es', 'fr': 'fr', 'de': 'de', 'it': 'it', 'pt': 'pt',
+						'ru': 'ru', 'ja': 'ja', 'ko': 'ko', 'zh': 'zh-CN', 'ar': 'ar',
+						'nl': 'nl', 'pl': 'pl', 'sv': 'sv', 'da': 'da', 'no': 'no',
+						'fi': 'fi', 'hu': 'hu', 'cs': 'cs', 'sk': 'sk', 'hi': 'hi',
+						'th': 'th', 'vi': 'vi', 'tr': 'tr', 'he': 'he', 'el': 'el',
+						'bg': 'bg', 'ro': 'ro', 'hr': 'hr', 'sl': 'sl', 'id': 'id',
+						'ms': 'ms', 'tl': 'tl', 'fil': 'tl'
 					};
-					
+
 					let targetLang = null;
-					
-					// First try to get language from settings
+
+					// First try saved setting, then browser language
 					if (window.harvestLanguageSetting && window.harvestLanguageSetting !== 'en') {
 						targetLang = window.harvestLanguageSetting;
-						console.log('Using saved language setting:', targetLang);
-					}
-					// Then try primary browser language
-					else if (supportedLangs[browserLang]) {
+					} else if (supportedLangs[browserLang]) {
 						targetLang = supportedLangs[browserLang];
-						console.log('Using primary browser language:', browserLang, '->', targetLang);
-					}
-					// Try other browser languages as fallback
-					else {
+					} else {
 						for (let lang of browserLanguages) {
 							const langCode = lang.split('-')[0].toLowerCase();
 							if (supportedLangs[langCode]) {
 								targetLang = supportedLangs[langCode];
-								console.log('Using fallback browser language:', langCode, '->', targetLang);
 								break;
 							}
 						}
 					}
-					
+
 					// Trigger translation if we found a supported language
 					if (targetLang && targetLang !== 'en') {
-						console.log('🌐 Auto-translating to:', targetLang);
 						window.harvestLanguageSetting = targetLang;
 						window.triggerTranslation(targetLang);
-					} else {
-						console.log('🇺🇸 No translation needed - using English');
 					}
 					
 				} catch (error) {

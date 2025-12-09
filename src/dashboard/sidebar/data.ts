@@ -5,6 +5,7 @@ import CreditsIcon from './icons/CreditsIcon.svelte';
 import ArchivesIcon from './icons/ArchivesIcon.svelte';
 import TagsIcon from './icons/TagsIcon.svelte';
 import SettingsIcon from './icons/SettingsIcon.svelte';
+import DatabaseIcon from './icons/DatabaseIcon.svelte';
 import DocumentationIcon from './icons/DocumentationIcon.svelte';
 import RolesIcon from './icons/RolesIcon.svelte';
 import OffersIcon from './icons/OffersIcon.svelte';
@@ -89,6 +90,11 @@ export const data = [
 		title: 'Settings',
 		icon: SettingsIcon,
 		link: '/settings'
+	},
+	{
+		title: 'Database',
+		icon: DatabaseIcon,
+		link: '/db'
 	}
 	// {
 	// 	title: 'Documentation',

@@ -3,14 +3,29 @@
 	import { fade, fly, slide } from 'svelte/transition';
 	import { nostrStore, hasNostrKey, isNewNostrKey, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
 	import { telegramStore, type TelegramUser } from '$lib/stores/telegram';
+	import { schnorr } from '@noble/curves/secp256k1';
+	import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
 
 	const dispatch = createEventDispatcher();
+
+	// Holosphere public key from .env (for public space)
+	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
+	function getHolospherePublicKey(): string | null {
+		if (!HOLOSPHERE_PRIVATE_KEY) return null;
+		try {
+			const pubKeyBytes = schnorr.getPublicKey(HOLOSPHERE_PRIVATE_KEY);
+			return bytesToHex(pubKeyBytes);
+		} catch {
+			return null;
+		}
+	}
 
 	// Telegram Bot username for sending key backup
 	const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'HolonsBot';
 
 	// UI State
-	type Step = 'loading' | 'nostr-setup' | 'import-key' | 'key-ready' | 'telegram-backup' | 'complete';
+	type Step = 'loading' | 'choose-mode' | 'telegram-login' | 'nostr-setup' | 'import-key' | 'key-ready' | 'telegram-backup' | 'complete';
 	let currentStep: Step = 'loading';
 
 	let importKeyInput = '';
@@ -25,6 +40,21 @@
 	function handleTelegramAuth(user: TelegramUser) {
 		console.log('Telegram auth callback:', user);
 		telegramStore.loginWithWidget(user);
+		// After Telegram auth, generate a key and proceed
+		handleTelegramLoginComplete();
+	}
+
+	async function handleTelegramLoginComplete() {
+		isProcessing = true;
+		try {
+			// Generate a new key for this Telegram user
+			await nostrStore.generateKey();
+			currentStep = 'telegram-backup';
+		} catch (error) {
+			console.error('Error generating key after Telegram login:', error);
+		} finally {
+			isProcessing = false;
+		}
 	}
 
 	// Expose callback globally for Telegram widget
@@ -37,20 +67,30 @@
 		await nostrStore.init();
 		telegramStore.init();
 
-		// Check if we have a key
+		// Check if we have a saved private key
 		const state = nostrStore.getState();
 		if (state.privateKey) {
 			if (state.isNewKey) {
+				// New key needs backup prompt
 				currentStep = 'key-ready';
 			} else {
-				// Key exists and is backed up, proceed
+				// Key exists and is backed up, proceed with private mode
 				currentStep = 'complete';
-				setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey }), 500);
+				setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey }), 300);
 			}
 		} else {
-			currentStep = 'nostr-setup';
+			// No key saved - go directly to public mode (user can login via KeyManager in TopBar)
+			currentStep = 'complete';
+			const holospherePublicKey = getHolospherePublicKey();
+			setTimeout(() => dispatch('authenticated', { publicKey: holospherePublicKey, mode: 'public' }), 300);
 		}
 	});
+
+	function enterPublicSpace() {
+		// Use public space with the holosphere key from .env
+		const holospherePublicKey = getHolospherePublicKey();
+		dispatch('authenticated', { publicKey: holospherePublicKey, mode: 'public' });
+	}
 
 	async function generateNewKey() {
 		isProcessing = true;
@@ -190,7 +230,9 @@
 	<div class="splash-content" in:fly={{ y: 30, duration: 500, delay: 100 }}>
 		<!-- Logo/Branding -->
 		<div class="logo-container">
-			<img src="/favicon.svg" alt="Harvest Logo" class="logo" />
+			<div class="logo-icon">
+				<MyHolonsIcon />
+			</div>
 			<h1 class="title">Harvest</h1>
 			<p class="subtitle">Holonic Network Explorer</p>
 		</div>
@@ -202,11 +244,89 @@
 				<p class="loading-text">Initializing...</p>
 			</div>
 
+		<!-- Choose Mode: Telegram, Private Key, or Public -->
+		{:else if currentStep === 'choose-mode'}
+			<div class="setup-container" in:fade={{ delay: 100 }}>
+				<h2 class="setup-title">Welcome to Harvest</h2>
+				<p class="setup-description">
+					Choose how you'd like to use the network
+				</p>
+
+				<div class="mode-cards">
+					<!-- Telegram Login -->
+					<button class="mode-card telegram" on:click={() => currentStep = 'telegram-login'}>
+						<div class="mode-icon telegram-bg">
+							<i class="fab fa-telegram text-2xl"></i>
+						</div>
+						<div class="mode-info">
+							<h3>Login with Telegram</h3>
+							<p>Quick & secure. Your key is backed up automatically.</p>
+						</div>
+						<i class="fas fa-chevron-right mode-arrow"></i>
+					</button>
+
+					<!-- Private Key Setup -->
+					<button class="mode-card private" on:click={() => currentStep = 'nostr-setup'}>
+						<div class="mode-icon private-bg">
+							<i class="fas fa-key text-2xl"></i>
+						</div>
+						<div class="mode-info">
+							<h3>Setup Private Key</h3>
+							<p>Create your personal holon with full control.</p>
+						</div>
+						<i class="fas fa-chevron-right mode-arrow"></i>
+					</button>
+
+					<!-- Public Space -->
+					<button class="mode-card public" on:click={enterPublicSpace}>
+						<div class="mode-icon public-bg">
+							<i class="fas fa-globe text-2xl"></i>
+						</div>
+						<div class="mode-info">
+							<h3>Explore Public Space</h3>
+							<p>Browse without an account. Limited features.</p>
+						</div>
+						<i class="fas fa-chevron-right mode-arrow"></i>
+					</button>
+				</div>
+			</div>
+
+		<!-- Telegram Login Screen -->
+		{:else if currentStep === 'telegram-login'}
+			<div class="setup-container" in:fade={{ delay: 100 }}>
+				<button class="back-button" on:click={() => currentStep = 'choose-mode'}>
+					<i class="fas fa-arrow-left mr-2"></i> Back
+				</button>
+
+				<div class="mode-icon telegram-bg large">
+					<i class="fab fa-telegram text-4xl"></i>
+				</div>
+				<h2 class="setup-title">Login with Telegram</h2>
+				<p class="setup-description">
+					Authenticate with Telegram to create your secure identity
+				</p>
+
+				<div class="telegram-widget-container" use:initTelegramWidget></div>
+
+				{#if isLocalhost()}
+					<p class="localhost-note">
+						Telegram widget doesn't work on localhost.
+						<button class="link-button" on:click={() => currentStep = 'nostr-setup'}>
+							Use private key instead
+						</button>
+					</p>
+				{/if}
+			</div>
+
 		<!-- Nostr Setup: Generate or Import -->
 		{:else if currentStep === 'nostr-setup'}
 			<div class="setup-container" in:fade={{ delay: 100 }}>
-				<div class="key-icon">
-					<i class="fas fa-key text-4xl text-amber-400"></i>
+				<button class="back-button" on:click={() => currentStep = 'choose-mode'}>
+					<i class="fas fa-arrow-left mr-2"></i> Back
+				</button>
+
+				<div class="mode-icon private-bg large">
+					<i class="fas fa-key text-4xl"></i>
 				</div>
 				<h2 class="setup-title">Setup Your Identity</h2>
 				<p class="setup-description">
@@ -293,7 +413,7 @@
 				<div class="key-display">
 					<div class="key-header">
 						<span class="key-label">Private Key</span>
-						<button class="toggle-visibility" on:click={() => showPrivateKey = !showPrivateKey}>
+						<button class="toggle-visibility" on:click={() => showPrivateKey = !showPrivateKey} aria-label={showPrivateKey ? 'Hide private key' : 'Show private key'}>
 							<i class="fas {showPrivateKey ? 'fa-eye-slash' : 'fa-eye'}"></i>
 						</button>
 					</div>
@@ -414,13 +534,19 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 1rem;
 	}
 
-	.logo {
-		width: 64px;
-		height: 64px;
-		filter: drop-shadow(0 0 20px rgba(66, 153, 225, 0.3));
+	.logo-icon {
+		width: 200px;
+		height: 200px;
+		filter: drop-shadow(0 0 40px rgba(66, 153, 225, 0.4));
+		animation: pulse-glow 3s ease-in-out infinite;
+	}
+
+	@keyframes pulse-glow {
+		0%, 100% { filter: drop-shadow(0 0 40px rgba(66, 153, 225, 0.4)); }
+		50% { filter: drop-shadow(0 0 60px rgba(66, 153, 225, 0.6)); }
 	}
 
 	.title {
@@ -482,7 +608,108 @@
 		width: 100%;
 	}
 
-	.key-icon, .success-icon {
+	/* Mode selection cards */
+	.mode-cards {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		width: 100%;
+		margin-top: 0.5rem;
+	}
+
+	.mode-card {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		width: 100%;
+		padding: 1rem;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 0.75rem;
+		cursor: pointer;
+		transition: all 0.2s;
+		text-align: left;
+	}
+
+	.mode-card:hover {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(255, 255, 255, 0.2);
+		transform: translateX(4px);
+	}
+
+	.mode-card.telegram:hover {
+		border-color: rgba(0, 136, 204, 0.4);
+		background: rgba(0, 136, 204, 0.1);
+	}
+
+	.mode-card.private:hover {
+		border-color: rgba(251, 191, 36, 0.4);
+		background: rgba(251, 191, 36, 0.1);
+	}
+
+	.mode-card.public:hover {
+		border-color: rgba(52, 211, 153, 0.4);
+		background: rgba(52, 211, 153, 0.1);
+	}
+
+	.mode-icon {
+		width: 48px;
+		height: 48px;
+		border-radius: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		color: white;
+	}
+
+	.mode-icon.large {
+		width: 70px;
+		height: 70px;
+		border-radius: 50%;
+	}
+
+	.telegram-bg {
+		background: linear-gradient(135deg, #0088cc 0%, #0077b3 100%);
+	}
+
+	.private-bg {
+		background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+	}
+
+	.public-bg {
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+	}
+
+	.mode-info {
+		flex: 1;
+	}
+
+	.mode-info h3 {
+		font-size: 1rem;
+		font-weight: 600;
+		color: #fff;
+		margin: 0 0 0.25rem 0;
+	}
+
+	.mode-info p {
+		font-size: 0.75rem;
+		color: #9ca3af;
+		margin: 0;
+		line-height: 1.4;
+	}
+
+	.mode-arrow {
+		color: #6b7280;
+		transition: transform 0.2s;
+	}
+
+	.mode-card:hover .mode-arrow {
+		transform: translateX(4px);
+		color: #9ca3af;
+	}
+
+	.success-icon {
 		width: 70px;
 		height: 70px;
 		background: rgba(251, 191, 36, 0.1);

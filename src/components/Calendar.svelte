@@ -258,16 +258,18 @@
                     }
                     users = users; // Trigger reactivity
                    
-                    // Load profile for this user
-                    try {
-                        const profile = await holosphere.get(userData.id, 'profile', userData.id );
-                        console.log("profile found:",profile)
-                        if (profile) {
-                            profiles[canonicalKey] = profile;
-                            profiles = profiles; // Trigger reactivity
+                    // Load profile for this user from the current holon's profiles lens
+                    // Only attempt if we have a valid holon ID
+                    if ($ID && typeof $ID === 'string' && $ID.length > 0) {
+                        try {
+                            const profile = await holosphere.get($ID, 'profiles', String(canonicalKey));
+                            if (profile) {
+                                profiles[canonicalKey] = profile;
+                                profiles = profiles; // Trigger reactivity
+                            }
+                        } catch (error) {
+                            // Silent - profile may not exist
                         }
-                    } catch (error) {
-                        console.error(`Error loading profile for user ${canonicalKey}:`, error);
                     }
                 } else {
                     delete users[key];
