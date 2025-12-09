@@ -22,6 +22,18 @@ export default defineConfig({
 			buffer: 'buffer/'
 		}
 	},
+	ssr: {
+		// Don't bundle Node.js-only packages for SSR
+		external: ['ws'],
+		// Ensure nostr-tools is bundled (not externalized)
+		noExternal: ['nostr-tools']
+	},
+	build: {
+		rollupOptions: {
+			// Externalize Node.js-only packages from client bundle
+			external: ['ws']
+		}
+	},
 	server: {
 		fs: {
 			strict: false,

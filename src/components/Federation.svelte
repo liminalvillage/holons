@@ -4,6 +4,7 @@
     import { flip } from "svelte/animate";
     import { goto } from "$app/navigation";
     import type { HoloSphere } from "holosphere";
+    import { handshake, nostrUtils } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
     import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
     import { fetchHolonName } from "../utils/holonNames";
@@ -14,8 +15,6 @@
         type LensCapabilityToken,
         type ExpirationPreset,
         type Direction,
-        parseNpubOrHex,
-        hexToNpub,
         shortenNpub,
         getExpirationTimestamp,
         formatExpiration,
@@ -28,12 +27,7 @@
     } from "../lib/capabilities/lensCapability";
     import {
         type FederationRequestDM,
-        type FederationResponseDM,
-        sendFederationRequest,
-        sendFederationResponse,
-        subscribeToFederationDMs,
-        createFederationRequest,
-        createFederationResponse
+        type FederationResponseDM
     } from "../lib/federation/nostrDM";
     import {
         pendingFederationRequests,
@@ -250,7 +244,7 @@
                     let npub: string | undefined;
                     if (/^[0-9a-fA-F]{64}$/.test(holonId)) {
                         pubKey = holonId;
-                        npub = hexToNpub(holonId);
+                        npub = nostrUtils.hexToNpub(holonId);
                     }
 
                     const federatedHolon: FederatedHolon = {
@@ -305,81 +299,68 @@
         error = '';
 
         try {
-            // Create federation with default lens config (empty arrays)
-            // Status will be 'pending' until partner accepts
-            const success = await holosphere.federateHolon(
-                currentHolonId,
-                federationTarget,
-                {
+            const ourHolonName = await getHolonName(currentHolonId);
+
+            // If federating with a Nostr pubkey, use the handshake protocol
+            if (newPartnerHexPubKey && $nostrPrivateKey && $nostrPublicKey) {
+                const ourNpub = nostrUtils.hexToNpub($nostrPublicKey);
+
+                // Use holosphere2's handshake - creates local record AND sends DM in one atomic operation
+                const result = await handshake.initiateFederationHandshake(holosphere, $nostrPrivateKey, {
+                    partnerPubKey: newPartnerHexPubKey,
+                    holonId: currentHolonId,
+                    holonName: ourHolonName,
                     lensConfig: { inbound: [], outbound: [] }
-                }
-            );
+                });
 
-            if (success) {
-                // If federating with a Nostr pubkey, send a DM to the partner
-                if (newPartnerHexPubKey && $nostrPrivateKey && $nostrPublicKey) {
-                    const ourHolonName = await getHolonName(currentHolonId);
-                    const ourNpub = hexToNpub($nostrPublicKey);
-
-                    // Create federation request DM
-                    const request = createFederationRequest(
+                if (result.success && result.requestId) {
+                    // Track as outgoing request
+                    const outgoingRequest = createOutgoingRequest(
+                        result.requestId,
+                        $nostrPublicKey,
+                        ourNpub,
                         currentHolonId,
                         ourHolonName,
-                        ourNpub,
-                        { inbound: [], outbound: [] },
-                        [],  // No capabilities yet - will be granted after acceptance
-                        undefined  // No message
-                    );
-
-                    // Send the DM
-                    const dmSent = await sendFederationRequest(
-                        holosphere,
-                        $nostrPrivateKey,
                         newPartnerHexPubKey,
-                        request
+                        newPartnerNpub || nostrUtils.hexToNpub(newPartnerHexPubKey),
+                        { inbound: [], outbound: [] },
+                        []
                     );
-
-                    if (dmSent) {
-                        // Track as outgoing request
-                        const outgoingRequest = createOutgoingRequest(
-                            request.requestId,
-                            $nostrPublicKey,
-                            ourNpub,
-                            currentHolonId,
-                            ourHolonName,
-                            newPartnerHexPubKey,
-                            newPartnerNpub || hexToNpub(newPartnerHexPubKey),
-                            { inbound: [], outbound: [] },
-                            []
-                        );
-                        pendingFederationRequests.add(outgoingRequest);
-
-                        showSuccess('Federation request sent - waiting for partner to accept');
-                    } else {
-                        console.warn('Failed to send federation DM, but local record created');
-                        showSuccess('Federation created (DM notification failed)');
-                    }
+                    pendingFederationRequests.add(outgoingRequest);
+                    showSuccess('Federation request sent - waiting for partner to accept');
                 } else {
-                    showSuccess('Federation created successfully');
+                    error = result.error || 'Failed to initiate federation handshake';
+                    return;
                 }
-
-                showAddDialog = false;
-                newHolonId = '';
-                newHolonName = '';
-                newPartnerNpub = '';
-                newPartnerHexPubKey = '';
-                npubValidationError = '';
-                selectedExpiration = 'permanent';
-                customExpirationDate = '';
-
-                // Wait a bit for GunDB to propagate the changes
-                await new Promise(resolve => setTimeout(resolve, 300));
-
-                // Force reload of federation data
-                await loadFederationData();
             } else {
-                error = 'Failed to create federation';
+                // Fallback: just create local federation record (no DM for non-Nostr targets)
+                const success = await holosphere.federateHolon(
+                    currentHolonId,
+                    federationTarget,
+                    { lensConfig: { inbound: [], outbound: [] } }
+                );
+
+                if (!success) {
+                    error = 'Failed to create federation';
+                    return;
+                }
+                showSuccess('Federation created successfully');
             }
+
+            showAddDialog = false;
+            newHolonId = '';
+            newHolonName = '';
+            newPartnerNpub = '';
+            newPartnerHexPubKey = '';
+            npubValidationError = '';
+            selectedExpiration = 'permanent';
+            customExpirationDate = '';
+
+            // Wait a bit for changes to propagate
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Force reload of federation data
+            await loadFederationData();
         } catch (err) {
             error = err instanceof Error ? err.message : 'Failed to create federation';
             console.error('Federation creation error:', err);
@@ -565,7 +546,7 @@
             return;
         }
 
-        const result = parseNpubOrHex(newPartnerNpub);
+        const result = nostrUtils.parseNpubOrHex(newPartnerNpub);
         if (result.valid && result.hexPubKey) {
             npubValidationError = '';
             newPartnerHexPubKey = result.hexPubKey;
@@ -928,12 +909,15 @@
         if (!holosphere || !$nostrPrivateKey || !$nostrPublicKey) return;
 
         try {
-            dmUnsubscribe = subscribeToFederationDMs(
+            // Use holosphere2's handshake subscription
+            dmUnsubscribe = handshake.subscribeToFederationDMs(
                 holosphere,
                 $nostrPrivateKey,
                 $nostrPublicKey,
-                handleIncomingFederationRequest,
-                handleFederationResponse
+                {
+                    onRequest: handleIncomingFederationRequest,
+                    onResponse: handleFederationResponse
+                }
             );
             console.log('Subscribed to federation DMs');
         } catch (err) {
@@ -1012,53 +996,31 @@
     }
 
     async function acceptFederationRequest(requestId: string) {
-        const request = pendingFederationRequests.getById(requestId);
-        if (!request) return;
+        const pendingRequest = pendingFederationRequests.getById(requestId);
+        if (!pendingRequest || !$nostrPrivateKey) return;
 
         saving = true;
         try {
-            // Create local federation record
-            const success = await holosphere.federateHolon(
-                currentHolonId,
-                request.senderPubKey,
-                { lensConfig: { inbound: [], outbound: [] } }
-            );
-
-            if (!success) {
-                error = 'Failed to create federation';
-                return;
-            }
-
-            // Get our holon name
             const ourHolonName = await getHolonName(currentHolonId);
-            const ourNpub = $nostrPublicKey ? hexToNpub($nostrPublicKey) : '';
 
-            // Send acceptance response DM
-            const response = createFederationResponse(
-                requestId,
-                'accepted',
-                currentHolonId,
-                ourHolonName,
-                ourNpub,
-                { inbound: [], outbound: [] },  // Can be configured later
-                []  // Capabilities can be granted later
-            );
+            // Use holosphere2's handshake - creates local record AND sends response in one atomic operation
+            const result = await handshake.acceptFederationRequest(holosphere, $nostrPrivateKey, {
+                request: { requestId: pendingRequest.id },
+                senderPubKey: pendingRequest.senderPubKey,
+                holonId: currentHolonId,
+                holonName: ourHolonName,
+                lensConfig: { inbound: [], outbound: [] }
+            });
 
-            if ($nostrPrivateKey) {
-                await sendFederationResponse(
-                    holosphere,
-                    $nostrPrivateKey,
-                    request.senderPubKey,
-                    response
-                );
+            if (result.success) {
+                // Update request status
+                pendingFederationRequests.updateStatus(requestId, 'accepted');
+                // Reload federation data
+                await loadFederationData();
+                showSuccess('Federation accepted');
+            } else {
+                error = result.error || 'Failed to accept federation';
             }
-
-            // Update request status
-            pendingFederationRequests.updateStatus(requestId, 'accepted');
-
-            // Reload federation data
-            await loadFederationData();
-            showSuccess('Federation accepted');
         } catch (err) {
             error = err instanceof Error ? err.message : 'Failed to accept federation';
             console.error('Accept federation error:', err);
@@ -1068,32 +1030,24 @@
     }
 
     async function rejectFederationRequest(requestId: string) {
-        const request = pendingFederationRequests.getById(requestId);
-        if (!request) return;
+        const pendingRequest = pendingFederationRequests.getById(requestId);
+        if (!pendingRequest || !$nostrPrivateKey) return;
 
         saving = true;
         try {
-            // Send rejection response DM
-            const response = createFederationResponse(
-                requestId,
-                'rejected',
-                currentHolonId,
-                await getHolonName(currentHolonId),
-                $nostrPublicKey ? hexToNpub($nostrPublicKey) : ''
-            );
+            // Use holosphere2's handshake to send rejection
+            const result = await handshake.rejectFederationRequest(holosphere, $nostrPrivateKey, {
+                requestId: pendingRequest.id,
+                senderPubKey: pendingRequest.senderPubKey
+            });
 
-            if ($nostrPrivateKey) {
-                await sendFederationResponse(
-                    holosphere,
-                    $nostrPrivateKey,
-                    request.senderPubKey,
-                    response
-                );
+            if (result.success) {
+                // Update request status and remove
+                pendingFederationRequests.updateStatus(requestId, 'rejected');
+                showSuccess('Federation request rejected');
+            } else {
+                error = result.error || 'Failed to reject federation';
             }
-
-            // Update request status and remove
-            pendingFederationRequests.updateStatus(requestId, 'rejected');
-            showSuccess('Federation request rejected');
         } catch (err) {
             error = err instanceof Error ? err.message : 'Failed to reject federation';
             console.error('Reject federation error:', err);

@@ -652,7 +652,13 @@
 
 	function initializeMap() {
 		if (mapInitialized || !browser) return;
-		
+
+		// Guard: ensure container exists before initializing
+		if (!mapContainer) {
+			setTimeout(initializeMap, 100);
+			return;
+		}
+
 		// Validate Mapbox access token
 		const accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
 		if (!accessToken || accessToken.length < 50) {

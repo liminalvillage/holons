@@ -6,6 +6,13 @@
  * with configurable expiration.
  */
 
+import { bech32 } from '@scure/base';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import { nostrUtils } from 'holosphere';
+
+// Re-export utility functions for local use
+const { generateNonce, hexToNpub, parseNpubOrHex, shortenNpub, shortenPubKey } = nostrUtils;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -67,206 +74,6 @@ export interface ParsedNpubResult {
   valid: boolean;
   hexPubKey?: string;
   error?: string;
-}
-
-// ============================================================================
-// Bech32 Implementation (browser-compatible, no Buffer dependency)
-// ============================================================================
-
-const BECH32_ALPHABET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
-
-function bech32Polymod(values: number[]): number {
-  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
-  let chk = 1;
-  for (const v of values) {
-    const b = chk >> 25;
-    chk = ((chk & 0x1ffffff) << 5) ^ v;
-    for (let i = 0; i < 5; i++) {
-      if ((b >> i) & 1) {
-        chk ^= GEN[i];
-      }
-    }
-  }
-  return chk;
-}
-
-function bech32HrpExpand(hrp: string): number[] {
-  const ret: number[] = [];
-  for (let i = 0; i < hrp.length; i++) {
-    ret.push(hrp.charCodeAt(i) >> 5);
-  }
-  ret.push(0);
-  for (let i = 0; i < hrp.length; i++) {
-    ret.push(hrp.charCodeAt(i) & 31);
-  }
-  return ret;
-}
-
-function bech32VerifyChecksum(hrp: string, data: number[]): boolean {
-  return bech32Polymod(bech32HrpExpand(hrp).concat(data)) === 1;
-}
-
-function bech32CreateChecksum(hrp: string, data: number[]): number[] {
-  const values = bech32HrpExpand(hrp).concat(data).concat([0, 0, 0, 0, 0, 0]);
-  const polymod = bech32Polymod(values) ^ 1;
-  const ret: number[] = [];
-  for (let i = 0; i < 6; i++) {
-    ret.push((polymod >> (5 * (5 - i))) & 31);
-  }
-  return ret;
-}
-
-function bech32Decode(str: string): { hrp: string; data: number[] } | null {
-  if (str.length < 8 || str.length > 90) return null;
-
-  const lowered = str.toLowerCase();
-  const uppered = str.toUpperCase();
-  if (str !== lowered && str !== uppered) return null;
-
-  str = lowered;
-  const pos = str.lastIndexOf('1');
-  if (pos < 1 || pos + 7 > str.length) return null;
-
-  const hrp = str.substring(0, pos);
-  const data: number[] = [];
-
-  for (let i = pos + 1; i < str.length; i++) {
-    const idx = BECH32_ALPHABET.indexOf(str[i]);
-    if (idx === -1) return null;
-    data.push(idx);
-  }
-
-  if (!bech32VerifyChecksum(hrp, data)) return null;
-
-  return { hrp, data: data.slice(0, -6) };
-}
-
-function bech32Encode(hrp: string, data: number[]): string {
-  const checksum = bech32CreateChecksum(hrp, data);
-  const combined = data.concat(checksum);
-  let result = hrp + '1';
-  for (const d of combined) {
-    result += BECH32_ALPHABET[d];
-  }
-  return result;
-}
-
-function convertBits(data: number[], fromBits: number, toBits: number, pad: boolean): number[] | null {
-  let acc = 0;
-  let bits = 0;
-  const ret: number[] = [];
-  const maxv = (1 << toBits) - 1;
-
-  for (const value of data) {
-    if (value < 0 || value >> fromBits !== 0) return null;
-    acc = (acc << fromBits) | value;
-    bits += fromBits;
-    while (bits >= toBits) {
-      bits -= toBits;
-      ret.push((acc >> bits) & maxv);
-    }
-  }
-
-  if (pad) {
-    if (bits > 0) {
-      ret.push((acc << (toBits - bits)) & maxv);
-    }
-  } else if (bits >= fromBits || ((acc << (toBits - bits)) & maxv)) {
-    return null;
-  }
-
-  return ret;
-}
-
-function hexToBytes(hex: string): number[] {
-  const bytes: number[] = [];
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes.push(parseInt(hex.substr(i, 2), 16));
-  }
-  return bytes;
-}
-
-function bytesToHex(bytes: number[]): string {
-  return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// ============================================================================
-// Nostr Key Utilities
-// ============================================================================
-
-/**
- * Parse an npub or hex public key string into hex format
- */
-export function parseNpubOrHex(input: string): ParsedNpubResult {
-  const trimmed = input.trim();
-
-  if (!trimmed) {
-    return { valid: false, error: 'Public key is required' };
-  }
-
-  // Check if it's already hex (64 characters)
-  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
-    return { valid: true, hexPubKey: trimmed.toLowerCase() };
-  }
-
-  // Handle nostr: URI prefix
-  let npubString = trimmed;
-  if (npubString.startsWith('nostr:')) {
-    npubString = npubString.slice(6);
-  }
-
-  // Try to decode as npub
-  if (npubString.startsWith('npub1')) {
-    try {
-      const decoded = bech32Decode(npubString);
-      if (!decoded || decoded.hrp !== 'npub') {
-        return { valid: false, error: 'Invalid npub format' };
-      }
-      const bytes = convertBits(decoded.data, 5, 8, false);
-      if (!bytes || bytes.length !== 32) {
-        return { valid: false, error: 'Invalid npub: wrong length' };
-      }
-      return { valid: true, hexPubKey: bytesToHex(bytes) };
-    } catch (e) {
-      return { valid: false, error: 'Invalid npub: unable to decode' };
-    }
-  }
-
-  return { valid: false, error: 'Enter a valid npub (npub1...) or 64-character hex public key' };
-}
-
-/**
- * Convert a hex public key to npub format
- */
-export function hexToNpub(hexPubKey: string): string {
-  try {
-    const bytes = hexToBytes(hexPubKey);
-    const words = convertBits(bytes, 8, 5, true);
-    if (!words) {
-      console.error('Failed to convert bits for npub encoding');
-      return hexPubKey;
-    }
-    return bech32Encode('npub', words);
-  } catch (e) {
-    console.error('Failed to encode hex to npub:', e);
-    return hexPubKey; // Return original on error
-  }
-}
-
-/**
- * Shorten a public key for display (first 8 and last 8 chars)
- */
-export function shortenPubKey(pubKey: string): string {
-  if (pubKey.length <= 20) return pubKey;
-  return `${pubKey.slice(0, 8)}...${pubKey.slice(-8)}`;
-}
-
-/**
- * Shorten an npub for display
- */
-export function shortenNpub(npub: string): string {
-  if (npub.length <= 20) return npub;
-  return `${npub.slice(0, 12)}...${npub.slice(-8)}`;
 }
 
 // ============================================================================
@@ -383,12 +190,8 @@ export function generateCapabilityId(
   return `${issuerPubKey}_${recipientPubKey}_${holonId}_${lensName}_${direction}`;
 }
 
-/**
- * Generate a random nonce for capability token
- */
-export function generateNonce(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 15);
-}
+// Re-export utilities from holosphere
+export { generateNonce, hexToNpub, parseNpubOrHex, shortenNpub, shortenPubKey };
 
 /**
  * Get permissions based on direction

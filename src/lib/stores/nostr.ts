@@ -1,5 +1,13 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
+import { schnorr } from '@noble/curves/secp256k1';
+import { bytesToHex } from '@noble/hashes/utils';
+
+// Get Nostr public key (x-only schnorr format, 64 hex chars)
+function getPublicKey(privateKey: string): string {
+	const pubKeyBytes = schnorr.getPublicKey(privateKey);
+	return bytesToHex(pubKeyBytes);
+}
 
 const STORAGE_KEY = 'nostr_private_key';
 
@@ -32,7 +40,7 @@ function createNostrStore() {
 			try {
 				const storedKey = localStorage.getItem(STORAGE_KEY);
 				if (storedKey) {
-					const publicKey = await derivePublicKey(storedKey);
+					const publicKey = getPublicKey(storedKey);
 					update((state) => ({
 						...state,
 						privateKey: storedKey,
@@ -68,8 +76,8 @@ function createNostrStore() {
 				crypto.getRandomValues(privateKeyBytes);
 				const privateKey = bytesToHex(privateKeyBytes);
 
-				// Derive public key
-				const publicKey = await derivePublicKey(privateKey);
+				// Derive public key using holosphere
+				const publicKey = getPublicKey(privateKey);
 
 				// Store in localStorage
 				localStorage.setItem(STORAGE_KEY, privateKey);
@@ -106,8 +114,8 @@ function createNostrStore() {
 			update((state) => ({ ...state, isLoading: true }));
 
 			try {
-				// Derive public key to validate
-				const publicKey = await derivePublicKey(privateKey);
+				// Derive public key using holosphere
+				const publicKey = getPublicKey(privateKey);
 
 				// Store in localStorage
 				localStorage.setItem(STORAGE_KEY, privateKey.toLowerCase());
@@ -158,36 +166,6 @@ function createNostrStore() {
 	};
 }
 
-// Helper: Convert bytes to hex string
-function bytesToHex(bytes: Uint8Array): string {
-	return Array.from(bytes)
-		.map((b) => b.toString(16).padStart(2, '0'))
-		.join('');
-}
-
-// Helper: Convert hex string to bytes
-function hexToBytes(hex: string): Uint8Array {
-	const bytes = new Uint8Array(hex.length / 2);
-	for (let i = 0; i < hex.length; i += 2) {
-		bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-	}
-	return bytes;
-}
-
-// Derive public key from private key using nostr-tools or secp256k1
-async function derivePublicKey(privateKeyHex: string): Promise<string> {
-	try {
-		// Try to use nostr-tools if available
-		const nostrTools = await import('nostr-tools');
-		const publicKey = nostrTools.getPublicKey(hexToBytes(privateKeyHex));
-		return publicKey;
-	} catch (error) {
-		console.warn('nostr-tools not available, using fallback');
-		// Fallback: just return a placeholder (in production, nostr-tools should be available)
-		// The actual public key derivation requires secp256k1
-		throw new Error('Could not derive public key. nostr-tools not available.');
-	}
-}
 
 export const nostrStore = createNostrStore();
 

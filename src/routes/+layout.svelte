@@ -186,12 +186,25 @@
 
 	// Handle splash screen completion
 	function handleAuthenticated(event: CustomEvent) {
-		console.log('User authenticated with public key:', event.detail.publicKey);
+		console.log('User authenticated with public key:', event.detail.publicKey, 'mode:', event.detail.mode);
 
-		// Get the private key from the store
-		const state = nostrStore.getState();
-		if (state.privateKey) {
-			initHoloSphere(state.privateKey);
+		// Determine which private key to use
+		let privateKey: string | null = null;
+
+		if (event.detail.mode === 'public') {
+			// Public space mode - use the holosphere key from .env
+			privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
+			console.log('Using holosphere env key for public space');
+		} else {
+			// Private mode - get the private key from the store
+			const state = nostrStore.getState();
+			privateKey = state.privateKey;
+		}
+
+		if (privateKey) {
+			initHoloSphere(privateKey);
+		} else {
+			console.error('No private key available for initialization');
 		}
 
 		// Small delay for smooth transition

@@ -350,12 +350,19 @@
 
 	// Add this helper function after the existing functions
 	function generateId() {
-		return ''+ Date.now();
+		// Use timestamp + random suffix to prevent ID collisions on rapid creates
+		return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 	}
 
 	// Modify handleAddTask to use a default 'Dashboard User' initiator if user data fetch fails or returns no data, instead of throwing an error.
 	async function handleAddTask() {
-		if (!holosphere || !holonID || !newTask.title.trim()) return;
+		// DEBUG: Log state at the start of handleAddTask
+		console.log('[ADD_TASK] START - newTask state:', { id: newTask.id, title: newTask.title, description: newTask.description });
+
+		if (!holosphere || !holonID || !newTask.title.trim()) {
+			console.log('[ADD_TASK] EARLY RETURN - validation failed:', { holosphere: !!holosphere, holonID, titleTrimmed: newTask.title.trim() });
+			return;
+		}
 
 		try {
 			let initiatorInfo;
@@ -404,9 +411,13 @@
 				// No position assigned - let CanvasView handle positioning in inbox
 			};
 
+			// DEBUG: Log what we're about to write
+			console.log('[ADD_TASK] Writing task:', { id: task.id, title: task.title, newTaskTitle: newTask.title });
+
 			// Add the task to holosphere
 			if (holonID) {
 				await holosphere.put(holonID, 'quests', task);
+				console.log('[ADD_TASK] Task written successfully:', task.id);
 			} else {
 				console.error("Cannot add task: holonID is null");
 				return;
@@ -507,10 +518,12 @@
 			let tempQuestsUnsub = questsUnsubscribe;
 			questsUnsubscribe = undefined;
 
+			// Build updates for store immutably
+			const storeUpdates: Record<string, Quest> = {};
 			const updatedQuestsPromises = currentQuestsArray.map(async ([key, questToUpdate], index) => {
 				if (questToUpdate.orderIndex !== index) {
 					const updatedQuest = { ...questToUpdate, id: key, orderIndex: index };
-					store[key] = updatedQuest;
+					storeUpdates[key] = updatedQuest;
 					console.log(`[Tasks] Updating orderIndex for quest ${key}: ${questToUpdate.orderIndex || 'undefined'} -> ${index}`);
 					return holosphere.put(currentHolonID, 'quests', updatedQuest);
 				}
@@ -522,6 +535,8 @@
 				console.log(`[Tasks] Successfully updated orderIndex for changed quests after drop`);
 				// Re-enable subscription after save
 				questsUnsubscribe = tempQuestsUnsub;
+				// Immutable store update for Svelte reactivity
+				store = { ...store, ...storeUpdates };
 				quests = Object.entries(store);
 			} catch (error) {
 				console.error('Error updating quest orderIndex after drop:', error);
@@ -582,10 +597,11 @@
 			draggedQuest.position = newPosition;
 
 			draggedQuest.id = sourceKey; // Ensure ID is set
-			store[sourceKey] = draggedQuest;
 			try {
 				await holosphere.put(currentHolonID, 'quests', draggedQuest);
-				quests = Object.entries(store); 
+				// Immutable store update for Svelte reactivity
+				store = { ...store, [sourceKey]: draggedQuest };
+				quests = Object.entries(store);
 				console.log(`[Tasks] Successfully saved position update for quest ${sourceKey}`);
 			} catch (error) {
 				console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
@@ -627,15 +643,19 @@
 
 		try {
 			console.log(`Importing ${importedQuests.length} quests...`);
-			
-			// Import quests one by one
-			for (const quest of importedQuests) {
+
+			// Calculate base orderIndex once, then increment for each import
+			const baseOrderIndex = filteredQuests.length;
+
+			// Import quests one by one with incrementing orderIndex
+			for (let i = 0; i < importedQuests.length; i++) {
+				const quest = importedQuests[i];
 				// Generate new ID and timestamp
 				const newQuest = {
 					...quest,
 					id: generateId(),
 					created: new Date().toISOString(),
-					orderIndex: filteredQuests.length + (quest.orderIndex || 0)
+					orderIndex: baseOrderIndex + i
 				};
 
 				// Add to holosphere
@@ -644,10 +664,10 @@
 
 			// Show success notification
 			alert(`Successfully imported ${importedQuests.length} quests!`);
-			
+
 			// Refresh the quest list
 			await fetchData();
-			
+
 			// Close import modal
 			showImportModal = false;
 		} catch (error) {
@@ -685,7 +705,7 @@
 		// Function to pre-resolve hologram names for all quests
 	async function preResolveHologramNames(questsToProcess: [string, Quest][]) {
 		const hologramSouls = new Set<string>();
-		
+
 		// Collect all unique hologram souls that we don't already have cached
 		questsToProcess.forEach(([_, quest]) => {
 			if (quest._hologram?.isHologram && quest._hologram.soul) {
@@ -695,18 +715,17 @@
 				}
 			}
 		});
-		
+
 		// Only resolve names we don't already have
 		if (hologramSouls.size === 0) return;
-		
+
 		// Resolve names for all new hologram souls using the async version to get real names
+		// fetchHolonName is already imported at the top - no dynamic import needed
 		const promises = Array.from(hologramSouls).map(async (hologramSoul) => {
 			try {
 				const match = hologramSoul.match(/Holons\/([^\/]+)/);
 				if (match) {
 					const holonId = match[1];
-					// Use the async version to get the actual name directly
-					const { fetchHolonName } = await import('../utils/holonNames');
 					const realName = await fetchHolonName(holosphere, holonId);
 					hologramSourceNames.set(hologramSoul, realName);
 				}
@@ -718,9 +737,9 @@
 				}
 			}
 		});
-		
+
 		await Promise.allSettled(promises);
-		
+
 		// Trigger reactivity only if we actually resolved new names
 		if (hologramSouls.size > 0) {
 			hologramSourceNames = new Map(hologramSourceNames);
@@ -811,14 +830,6 @@
 		
 		try {
 			console.log(`Fetching tasks for holon: ${holonID}`);
-			
-			// Fetch tasks data with timeout
-			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 10000) => {
-				const timeoutPromise = new Promise((_, reject) => 
-					setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-				);
-				return Promise.race([promise, timeoutPromise]);
-			};
 
 			const initialData = await holosphere.getAll(holonID, "quests");
 
@@ -850,17 +861,17 @@
 				});
 			}
 			
-			// Update store and quests
+			// Update store and quests immediately - don't wait for hologram name resolution
 			store = newStore;
 			quests = Object.entries(store);
-			
-			// Pre-resolve hologram names to avoid repeated resolution in templates
-			await preResolveHologramNames(quests);
-			
+
 			console.log(`Successfully fetched tasks for holon ${holonID}:`, Object.keys(newStore).length, 'tasks');
 
-			// Set up subscription after successful fetch
-			await subscribe();
+			// Pre-resolve hologram names in background (don't block rendering)
+			preResolveHologramNames(quests);
+
+			// Set up subscription in background (don't block rendering)
+			subscribe();
 
 			// Open task modal if we have a selectedTaskId from URL
 			if (selectedTaskId && store[selectedTaskId]) {
@@ -899,89 +910,64 @@
 		quests = Object.entries(store);
 	}
 
-	// Modify the subscribe function to use immediate updates
+	// Set up real-time subscription for future updates (does NOT fetch initial data)
 	async function subscribe() {
 		if (!holosphere || !holonID) return;
-		
+
 		// Don't resubscribe if already subscribed to this holon
-		if (subscriptionState.currentHolonID === holonID && questsUnsubscribe) return; // check questsUnsubscribe too
-		
-		// Clear existing store and subscription
+		if (subscriptionState.currentHolonID === holonID && questsUnsubscribe) return;
+
+		// Clear existing subscription
 		if (questsUnsubscribe) {
 			questsUnsubscribe();
 			questsUnsubscribe = undefined;
 		}
-		
-		store = {}; // Reset store
-		quests = []; // Reset quests array
-		filteredQuests = []; // Reset filteredQuests
-		
+
 		try {
 			// Update subscription state
 			subscriptionState.currentHolonID = holonID;
-			
-			// Fetch initial data first
-			const initialData = await holosphere.getAll(holonID, "quests");
 
-			// Process initial data
-			if (Array.isArray(initialData)) {
-				initialData.forEach((quest: any, index) => {
-					if (quest && quest.id) {
-						// Use the quest ID as the key, or generate one if missing
-						const key = quest.id || `initial_${index}`;
-
-						// Ensure required arrays are initialized
-						if (!quest.participants) quest.participants = [];
-						if (!quest.appreciation) quest.appreciation = [];
-
-						store[key] = quest as Quest;
-					}
-				});
-			} else if (typeof initialData === 'object' && initialData !== null) {
-				// If it's already a keyed object, use it directly
-				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
-					if (quest && quest.id) {
-						// Ensure required arrays are initialized
-						if (!quest.participants) quest.participants = [];
-						if (!quest.appreciation) quest.appreciation = [];
-
-						store[key] = quest as Quest;
-					}
-				});
-			}
-			
-			// Update quests array to trigger reactivity
-			quests = Object.entries(store);
-			
-			// Pre-resolve hologram names to avoid repeated resolution in templates
-			await preResolveHologramNames(quests);
-			
-			// Set up subscription for future updates  
+			// Set up subscription for future updates (initial data already loaded by fetchData)
 			const off = holosphere.subscribe(holonID, "quests", async (newquest: Quest | null, key?: string) => {
 				// Check if this is the circular hologram that's causing issues
 				if (newquest && newquest.id === '1750286259429') {
 					console.warn('Blocking circular hologram quest:', newquest.id);
 					return;
 				}
-				
-				// Update store immediately
-				const newStore = { ...store };
-				if (newquest && key) {
+
+				// Use the key from the callback, or fall back to quest.id
+				const questKey = key || newquest?.id;
+				if (!questKey) {
+					console.warn('Subscription received quest without key or id:', newquest);
+					return;
+				}
+
+				// DEBUG: Log what the subscription receives
+				console.log('[SUBSCRIPTION] Received update:', { key, questKey, id: newquest?.id, title: newquest?.title, _deleted: newquest?._deleted });
+
+				// Update store atomically - read current store at update time to avoid race conditions
+				// Check if this is a deletion: either null, _deleted flag, or empty object (no id)
+				const isDeleted = !newquest || newquest._deleted || !newquest.id;
+
+				if (!isDeleted) {
 					// Ensure required arrays are initialized
 					if (!newquest.participants) newquest.participants = [];
 					if (!newquest.appreciation) newquest.appreciation = [];
-					newStore[key] = newquest;
-				} else if (key) {
-					delete newStore[key];
+					// Atomic update: spread current store and add/update this quest
+					console.log('[SUBSCRIPTION] Updating store with:', { questKey, title: newquest.title });
+					store = { ...store, [questKey]: newquest };
+				} else {
+					// Delete: create new store without this key
+					console.log('[SUBSCRIPTION] Deleting from store:', questKey);
+					const { [questKey]: _, ...rest } = store;
+					store = rest;
 				}
-				// Directly update store and quests, which will trigger reactive updates
-				store = newStore; 
 				quests = Object.entries(store);
-				
+
 				// Only resolve hologram names if this is a new hologram we haven't seen before
-				if (newquest && newquest._hologram?.isHologram && newquest._hologram.soul && 
+				if (newquest && newquest._hologram?.isHologram && newquest._hologram.soul &&
 					!hologramSourceNames.has(newquest._hologram.soul)) {
-					await preResolveHologramNames([[key!, newquest]]);
+					await preResolveHologramNames([[questKey, newquest]]);
 				}
 			});
 
@@ -1022,9 +1008,7 @@
 				setTimeout(checkConnection, 100);
 				return;
 			}
-			
-			// Add a small delay to ensure the connection is stable
-			await new Promise(resolve => setTimeout(resolve, 200));
+
 			connectionReady = true;
 			
 			// Set up subscription to ID store with debouncing

@@ -87,9 +87,7 @@
                 setTimeout(checkConnection, 100);
                 return;
             }
-            
-            // Add a small delay to ensure the connection is stable
-            await new Promise(resolve => setTimeout(resolve, 200));
+
             connectionReady = true;
             
             // Initial fetch

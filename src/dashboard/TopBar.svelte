@@ -11,460 +11,502 @@
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 	import VideoCall from '../components/VideoCall.svelte';
 	import WidgetDashboard from '../components/WidgetDashboard.svelte';
+	import KeyManager from '../components/KeyManager.svelte';
 
 	export let toggleMyHolons: () => void;
 
-	// Add a function to refresh ALL holon names comprehensively
-	async function refreshAllHolonNames() {
-		if (browser) {
-			try {
-				// Dispatch a custom event to trigger comprehensive refresh in MyHolons component
-				const refreshEvent = new CustomEvent('refreshAllHolonNames', {
-					detail: { timestamp: Date.now() }
-				});
-				window.dispatchEvent(refreshEvent);
-				
-				// Also refresh the current holon name if we have one
-				if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
-					await updateCurrentHolonName($ID);
-				}
-			} catch (err) {
-				console.error('Error dispatching comprehensive refresh event:', err);
-			}
-		}
-	}
+	// Helper to validate holon ID
+	const isValidHolonId = (id: string | undefined | null): id is string => {
+		return !!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
+	};
 
-	// Enhanced toggle function that refreshes names comprehensively
+	let holosphere = getContext("holosphere") as HoloSphere;
+	let currentHolonName: string | undefined;
+	let holonID = '';
+	let processedHolonId = '';
+	let isInitialized = false;
+	let showVideoCall = false;
+	let showWidgetDashboard = false;
+
+	// Refresh holon names when opening MyHolons
 	function handleToggleMyHolons() {
-		// First refresh ALL types of holon names comprehensively
-		refreshAllHolonNames();
-		// Then call the original toggle function
+		if (browser) {
+			window.dispatchEvent(new CustomEvent('refreshAllHolonNames', { detail: { timestamp: Date.now() } }));
+		}
+		if (isValidHolonId($ID)) {
+			updateCurrentHolonName($ID);
+		}
 		toggleMyHolons();
 	}
 
-	// Handle holon name update event from Settings
+	// Handle holon name update from Settings
 	function handleHolonNameUpdated(event: CustomEvent) {
 		const { holonId, newName } = event.detail;
 		if (holonId === $ID && newName) {
-			// Update the current holon name immediately
 			currentHolonName = newName;
-			// Also trigger a refresh to ensure consistency
-			setTimeout(() => updateCurrentHolonName(holonId), 100);
 		}
 	}
 
-	// Handle holon navigation event from MyHolons component
+	// Handle holon navigation from MyHolons
 	function handleHolonNavigated(event: CustomEvent) {
 		const { holonId, holonName } = event.detail;
-		console.log('[TopBar] Holon navigated event:', { holonId, holonName });
 		if (holonId && holonName) {
-			// Update the current holon name immediately
 			currentHolonName = holonName;
-			// Update the processed ID to match
 			processedHolonId = holonId;
-			// Also save to visited holons with the name
-			if (browser && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
+			if (browser && isValidHolonId(holonId)) {
 				saveVisitedHolon(holonId, holonName);
 			}
 		}
 	}
 
-	let holosphere = getContext("holosphere") as HoloSphere;
-
-	let currentHolonName: string | undefined;
-	let holonID: string = '';
-	let showToast = false;
-	let isTranslating = false;
-	let showVideoCall = false;
-	let showWidgetDashboard = false;
-
-	// Function to save visited holon
+	// Save visited holon to localStorage
 	async function saveVisitedHolon(holonId: string, holonName: string) {
-		const walletAddr = getWalletAddress();
-		if (holonId && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
-			try {
-				await addVisitedHolon(walletAddr, holonId, holonName, 'personal');
-				console.log(`Saved visited holon from TopBar: ${holonId}`);
-			} catch (err) {
-				console.warn('Failed to save visited holon from TopBar:', err);
-			}
+		if (!isValidHolonId(holonId)) return;
+		try {
+			await addVisitedHolon(getWalletAddress(), holonId, holonName, 'personal');
+		} catch (err) {
+			console.warn('Failed to save visited holon:', err);
 		}
 	}
 
-	// Track if we've already processed the current ID to prevent loops
-	let processedHolonId = '';
-	let isInitialized = false;
-
-	// Initialize on mount
-	onMount(async () => {
-		// Set up initial state
-		isInitialized = true;
-
-		// Process initial ID immediately if available
-		const initialId = $page.params.id;
-		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
-			ID.set(initialId);
-			processedHolonId = initialId;
-			// Start fetching the name immediately (don't wait for holosphere)
-			updateCurrentHolonName(initialId);
-		}
-
-		// Also retry after holosphere is ready
-		await new Promise(resolve => setTimeout(resolve, 1000));
-		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
-			// Retry the name fetch in case it failed the first time
-			updateCurrentHolonName(initialId);
-		}
-		
-			// Monitor for Google Translate activity
-		const observer = new MutationObserver(() => {
-			// Check if Google Translate is active by looking for translated elements
-			const hasTranslatedElements = document.querySelector('font[style*="vertical-align"]') ||
-										   document.querySelector('.goog-te-combo')?.value !== '';
-			isTranslating = !!hasTranslatedElements;
-		});
-
-		observer.observe(document.body, {
-			childList: true,
-			subtree: true,
-			attributes: true
-		});
-
-		// Listen for widget dashboard toggle events from Layout
-		window.addEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
-
-		// Listen for holon name update events from Settings
-		window.addEventListener('holonNameUpdated', handleHolonNameUpdated);
-
-		// Listen for holon navigation events from MyHolons
-		window.addEventListener('holonNavigated', handleHolonNavigated);
-		
-		// Listen for translation events
-		window.addEventListener('flagLanguageChanged', () => {
-			setTimeout(() => {
-				const selectElement = document.querySelector('.goog-te-combo') as HTMLSelectElement;
-				isTranslating = selectElement && selectElement.value !== '';
-			}, 100);
-		});
-	});
-
-	// Use centralized holon name service with proper reactivity
-	async function updateCurrentHolonName(id: string, retryCount = 0) {
-		if (!id || id === '') {
+	// Fetch holon name with simple retry
+	async function updateCurrentHolonName(id: string, attempt = 0) {
+		if (!isValidHolonId(id)) {
 			currentHolonName = undefined;
 			return;
 		}
 
-		// Check if holosphere is available
 		if (!holosphere) {
 			currentHolonName = `Holon ${id}`;
-			// Retry when holosphere becomes available
-			if (retryCount < 5) {
-				setTimeout(() => {
-					updateCurrentHolonName(id, retryCount + 1);
-				}, 500);
+			if (attempt < 3) {
+				setTimeout(() => updateCurrentHolonName(id, attempt + 1), 500);
 			}
 			return;
-		}
-
-		// On retries, wait a bit for connection to be ready
-		if (retryCount > 0) {
-			await new Promise(resolve => setTimeout(resolve, 300));
 		}
 
 		try {
-			// Clear cache on retries to force a fresh fetch
-			if (retryCount > 1) {
-				clearHolonNameCache(id);
-			}
-
-			// Use centralized fetchHolonName function like MyHolons does
+			if (attempt > 0) clearHolonNameCache(id);
 			const name = await fetchHolonName(holosphere, id);
-
-			// Update the name and trigger reactivity
-			if (name && name !== `Holon ${id}`) {
-				currentHolonName = name;
-				console.log(`[TopBar] Updated holon name: ${name}`);
+			currentHolonName = name && name !== `Holon ${id}` ? name : `Holon ${id}`;
+		} catch (error) {
+			if (attempt < 2) {
+				setTimeout(() => updateCurrentHolonName(id, attempt + 1), 500 * (attempt + 1));
 			} else {
 				currentHolonName = `Holon ${id}`;
 			}
-		} catch (error) {
-			console.warn(`[TopBar] Error fetching holon name (attempt ${retryCount + 1}):`, error);
-			// Retry logic - try up to 3 times with exponential backoff
-			if (retryCount < 3) {
-				const delay = Math.pow(2, retryCount) * 500; // 500ms, 1s, 2s
-				setTimeout(() => {
-					updateCurrentHolonName(id, retryCount + 1);
-				}, delay);
-			} else {
-				currentHolonName = `Holon ${id}`; // Fallback to ID on error
-			}
 		}
 	}
 
-	// Handle URL parameter changes - only process once
-	$: {
-		const storedHolonID = $page.params.id;
-		if (storedHolonID && storedHolonID !== 'undefined' && storedHolonID !== 'null' && storedHolonID.trim() !== '' && isInitialized) {
-			// Only update if the ID actually changed
-			if (processedHolonId !== storedHolonID) {
-				ID.set(storedHolonID);
-				processedHolonId = storedHolonID;
-				updateCurrentHolonName(storedHolonID);
-			}
-		}
-	}
-
-	// Handle ID store changes - only process once and save visited holon
-	$: if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '' && isInitialized) {
-		showToast = false;
-		
-		// Only process if this is a new ID
-		if (processedHolonId !== $ID) {
-			processedHolonId = $ID;
-			
-			// Always try to resolve the holon name when we have a valid ID
-			updateCurrentHolonName($ID);
-			
-			// Save visited holon when we have a valid ID and we're not on a primary page
-			if (browser && $page.url.pathname !== '/') {
-				// Save the visited holon with the resolved name or fallback
-				const holonName = currentHolonName || `Holon ${$ID}`;
-				saveVisitedHolon($ID, holonName);
-			}
-			
-			// Only update route if we're not on a primary page AND not on video route
-			if ($page.url.pathname !== '/' && !$page.url.pathname.includes('/video')) {
-				// Check if we're already on a valid path for this holon
-				const currentPath = $page.url.pathname;
-				const expectedPath = `/${$ID}`;
-				
-				// Only update if we're not already on the correct path
-				if (!currentPath.startsWith(expectedPath)) {
-					holonID = $ID;
-					// Add a small delay to avoid interfering with initial navigation
-					setTimeout(() => {
-						updateRoute($ID);
-					}, 100);
-				} else {
-					// Just update the holonID without changing the route
-					holonID = $ID;
-				}
-			} else {
-				// Just update the holonID without changing the route for video
-				holonID = $ID;
-			}
-		}
-	}
-
+	// Route management
 	function updateRoute(id: string) {
-		if (!id || id === '' || id === 'undefined' || id === 'null' || id.trim() === '') {
-			// If no valid ID, redirect to splash screen only if not already there
-			if (browser && $page.url.pathname !== '/') {
-				goto('/');
-			}
+		if (!isValidHolonId(id)) {
+			if (browser && $page.url.pathname !== '/') goto('/');
 			return;
 		}
-		
-		// Check if we're already on the correct path for this holon
+
 		const currentPath = $page.url.pathname;
-		const expectedPath = `/${id}`;
-		
-		console.log('TopBar updateRoute called:', { id, currentPath, expectedPath });
-		
-		// Only navigate if we're not already on the correct path
-		if (browser && !currentPath.startsWith(expectedPath)) {
-			// Extract the sub-path more carefully
+		if (browser && !currentPath.startsWith(`/${id}`)) {
 			const pathParts = currentPath.split('/');
-			let subPath = pathParts[pathParts.length - 1]; // Get the last part
-			
-			console.log('TopBar: pathParts =', pathParts, 'subPath =', subPath);
-			
-			// Don't interfere with specific routes like video
-			const protectedRoutes = ['video', 'map', 'settings', 'roles', 'offers', 'tasks', 'calendar', 'tags', 'proposals', 'shopping', 'checklists', 'status', 'federation', 'dashboard'];
-			
-			// Only default to dashboard if we're currently on a path that's just the holon ID
-			// or if the subPath is the old holon ID (meaning we're switching holons)
-			// BUT not if we're on a protected route
+			let subPath = pathParts[pathParts.length - 1];
+			const protectedRoutes = ['video', 'map', 'settings', 'roles', 'offers', 'tasks', 'calendar', 'tags', 'proposals', 'shopping', 'checklists', 'status', 'federation', 'dashboard', 'db'];
+
 			if ((pathParts.length === 2 || subPath === holonID) && !protectedRoutes.includes(subPath)) {
-				console.log('TopBar: Defaulting to dashboard because conditions met');
 				subPath = 'dashboard';
 			}
-			
-			const newPath = `/${id}/${subPath || 'dashboard'}`;
-			console.log('TopBar: Navigating to', newPath);
-			goto(newPath);
-		} else {
-			console.log('TopBar: Not navigating, already on correct path or path starts with expected');
+			goto(`/${id}/${subPath || 'dashboard'}`);
 		}
 	}
 
-	// Check if we're on a primary page (standalone routes)
+	// Reactive statements
 	$: isPrimaryPage = $page.url.pathname === '/';
 
-	function startVideoCall() {
-		if ($ID) {
-			showVideoCall = true;
+	// Handle URL parameter changes
+	$: {
+		const storedHolonID = $page.params.id;
+		if (isValidHolonId(storedHolonID) && isInitialized && processedHolonId !== storedHolonID) {
+			ID.set(storedHolonID);
+			processedHolonId = storedHolonID;
+			updateCurrentHolonName(storedHolonID);
 		}
+	}
+
+	// Handle ID store changes
+	$: if (isValidHolonId($ID) && isInitialized && processedHolonId !== $ID) {
+		processedHolonId = $ID;
+		updateCurrentHolonName($ID);
+
+		if (browser && $page.url.pathname !== '/') {
+			saveVisitedHolon($ID, currentHolonName || `Holon ${$ID}`);
+		}
+
+		if ($page.url.pathname !== '/' && !$page.url.pathname.includes('/video')) {
+			if (!$page.url.pathname.startsWith(`/${$ID}`)) {
+				holonID = $ID;
+				setTimeout(() => updateRoute($ID), 100);
+			} else {
+				holonID = $ID;
+			}
+		} else {
+			holonID = $ID;
+		}
+	}
+
+	// Actions
+	function startVideoCall() {
+		if ($ID) showVideoCall = true;
 	}
 
 	function toggleWidgetDashboard() {
-		if ($ID) {
-			showWidgetDashboard = !showWidgetDashboard;
+		if ($ID) showWidgetDashboard = !showWidgetDashboard;
+	}
+
+	// Copy holon ID to clipboard
+	async function copyHolonId() {
+		if (isValidHolonId($ID)) {
+			await navigator.clipboard.writeText($ID);
 		}
 	}
 
-	onDestroy(() => {
-		// Clean up event listeners
-		if (browser) {
-			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
-			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated);
-			window.removeEventListener('holonNavigated', handleHolonNavigated);
+	onMount(async () => {
+		isInitialized = true;
+		const initialId = $page.params.id;
+
+		if (isValidHolonId(initialId)) {
+			ID.set(initialId);
+			processedHolonId = initialId;
+			updateCurrentHolonName(initialId);
 		}
+
+		// Event listeners
+		window.addEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
+		window.addEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
+		window.addEventListener('holonNavigated', handleHolonNavigated as EventListener);
 	});
 
-
-
+	onDestroy(() => {
+		if (browser) {
+			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
+			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
+			window.removeEventListener('holonNavigated', handleHolonNavigated as EventListener);
+		}
+	});
 </script>
 
-<style>
-	.toast {
-		position: fixed;
-		bottom: 20px;
-		right: 20px;
-		background-color: rgba(0, 0, 0, 0.7);
-		color: white;
-		padding: 10px 20px;
-		border-radius: 5px;
-		transition: opacity 0.5s ease;
-		opacity: 0;
-	}
-	.toast.show {
-		opacity: 1;
-	}
+<div class="topbar">
+	<!-- Mobile menu button -->
+	<button class="menu-btn lg:hidden" on:click={openSidebar} aria-label="Open menu">
+		<Menu size="22" />
+	</button>
 
-	/* Add styles for the holon name in the top bar */
-	.flex-shrink-0 {
-		z-index: 102;
-		background-color: #1f2937;
-		padding: 0.5rem;
-		border-radius: 0.5rem;
-		margin-right: 1rem;
-	}
+	{#if !isPrimaryPage}
+		<!-- Holon info section -->
+		<button class="holon-btn" on:click={handleToggleMyHolons} title="Open My Holons">
+			<div class="holon-icon">
+				<MyHolonsIcon />
+			</div>
+			<div class="holon-info">
+				<span class="holon-name">
+					{currentHolonName || ($ID ? `Holon ${$ID}` : 'Loading...')}
+				</span>
+				{#if $ID}
+					<span class="holon-id">{$ID.length > 16 ? `${$ID.slice(0, 8)}...${$ID.slice(-6)}` : $ID}</span>
+				{/if}
+			</div>
+			<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M6 9l6 6 6-6"/>
+			</svg>
+		</button>
 
-</style>
+		<!-- Copy ID button -->
+		{#if $ID}
+			<button class="icon-btn copy-btn" on:click|stopPropagation={copyHolonId} title="Copy Holon ID">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+					<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+				</svg>
+			</button>
+		{/if}
+	{:else}
+		<!-- Root page - centered logo -->
+		<button class="logo-btn" on:click={handleToggleMyHolons} title="Open My Holons">
+			<div class="logo-icon">
+				<MyHolonsIcon />
+			</div>
+		</button>
+	{/if}
 
-<div class="top-bar-container w-full px-4 py-2 flex items-center gap-4 relative">
-    <!-- Mobile menu button (outside bar) -->
-    <div class="lg:hidden z-10">
-        <button on:click={openSidebar} class="text-white p-2 hover:bg-gray-700 rounded-lg transition-colors">
-            <Menu size="24" />
-        </button>
-    </div>
+	<!-- Spacer -->
+	<div class="spacer"></div>
 
-    <!-- Dashboard-style bar - full width -->
-    {#if !isPrimaryPage}
-        <div class="flex-1 flex flex-col gap-3">
-            <!-- Title section - takes full width -->
-            <button 
-                on:click={handleToggleMyHolons} 
-                class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden w-full"
-                title="Open My Holons"
-            >
-                <!-- Gradient overlay -->
-                <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                
-                <!-- Bar content - responsive layout -->
-                <div class="relative z-10 flex flex-row items-center gap-3">
-                    <!-- Holons Logo -->
-                    <div class="flex-shrink-0">
-                        <div class="w-12 h-12 sm:w-20 sm:h-20 group-hover:scale-105 transition-transform">
-                            <MyHolonsIcon />
-                        </div>
-                    </div>
-                    
-                    <!-- Title and ID -->
-                    <div class="text-left">
-                        <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
-                            {#if currentHolonName && !isTranslating}
-                                {currentHolonName}
-                            {:else if isTranslating && currentHolonName}
-                                <span class="notranslate">{currentHolonName}</span>
-                            {:else if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
-                                <span class="notranslate">Holon {$ID}</span>
-                            {:else}
-                                <span class="notranslate">Loading...</span>
-                            {/if}
-                        </div>
-                        <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
-                            {$ID || '...'}
-                        </div>
-                    </div>
-                </div>
-            </button>
-            
-        </div>
-    {:else}
-        <!-- Root page - centered logo -->
-        <div class="flex-1 flex items-center justify-center">
-            <button on:click={handleToggleMyHolons} class="p-2 rounded-full hover:ring-4 hover:ring-blue-400 ring-offset-2 transition-all cursor-pointer animate-pulse hover:animate-none" title="Open My Holons">
-                <div class="w-20 h-20">
-                    <MyHolonsIcon />
-                </div>
-            </button>
-        </div>
-        
-    {/if}
+	<!-- Right controls -->
+	<div class="controls">
+		{#if !isPrimaryPage && $ID}
+			<!-- Action buttons -->
+			<button class="icon-btn" on:click={toggleWidgetDashboard} title="Widget Dashboard">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<rect x="3" y="3" width="7" height="7" rx="1"/>
+					<rect x="14" y="3" width="7" height="7" rx="1"/>
+					<rect x="3" y="14" width="7" height="7" rx="1"/>
+					<rect x="14" y="14" width="7" height="7" rx="1"/>
+				</svg>
+			</button>
 
-    <!-- Right side controls - single column layout -->
-    <div class="z-10 ml-auto hidden sm:flex flex-col items-center gap-1">
-        <!-- Google Translate Widget -->
-        <div id="google_translate_element" class="scale-75"></div>
+			<button class="icon-btn" on:click={startVideoCall} title="Video Call">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+				</svg>
+			</button>
 
-        <!-- Action Buttons (only on dashboard pages) -->
-        {#if !isPrimaryPage && $ID}
-            <!-- Widget Dashboard Button -->
-            <button
-                on:click={toggleWidgetDashboard}
-                class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
-                title="Toggle Widget Dashboard"
-                aria-label="Toggle Widget Dashboard"
-            >
-                <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-            </button>
+			<div class="divider"></div>
+		{/if}
 
-            <!-- Video Call Button -->
-            <button
-                on:click={startVideoCall}
-                class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
-                title="Start Video Call"
-                aria-label="Start Video Call"
-            >
-                <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-            </button>
-        {/if}
+		<!-- Key Manager -->
+		<KeyManager />
 
-    </div>
+		<!-- Google Translate -->
+		<div id="google_translate_element" class="translate-widget"></div>
+	</div>
 </div>
 
-{#if showToast}
-	<button
-		class="toast show"
-		on:click={() => showToast = false}
-		on:keydown={(e) => e.key === 'Enter' && (showToast = false)}
-	>
-		To begin using the dashboard, please type the Holon ID in the search bar.<br/> You can get the Holon ID using the command /id on any chat containing the Telegram bot @HolonsBot.
-	</button>
-{/if}
-
-<!-- Floating Video Call Component -->
+<!-- Floating components -->
 <VideoCall roomId={$ID} bind:show={showVideoCall} floating={true} />
-
-<!-- Widget Dashboard Component -->
 <WidgetDashboard bind:isVisible={showWidgetDashboard} />
 
-<!-- API Key Configuration Modal - MOVED TO COUNCIL COMPONENT -->
+<style>
+	.topbar {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 1rem;
+		background: linear-gradient(to bottom, rgba(17, 24, 39, 0.98), rgba(17, 24, 39, 0.95));
+		backdrop-filter: blur(12px);
+		border-bottom: 1px solid rgba(75, 85, 99, 0.3);
+		min-height: 56px;
+		position: sticky;
+		top: 0;
+		z-index: 50;
+	}
+
+	.menu-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.5rem;
+		color: #9ca3af;
+		background: transparent;
+		border: none;
+		border-radius: 0.5rem;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.menu-btn:hover {
+		color: white;
+		background: rgba(55, 65, 81, 0.5);
+	}
+
+	.holon-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.375rem 0.75rem;
+		background: rgba(31, 41, 55, 0.8);
+		border: 1px solid rgba(75, 85, 99, 0.4);
+		border-radius: 0.75rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		max-width: 320px;
+	}
+
+	.holon-btn:hover {
+		background: rgba(55, 65, 81, 0.8);
+		border-color: rgba(96, 165, 250, 0.4);
+		transform: translateY(-1px);
+	}
+
+	.holon-icon {
+		width: 36px;
+		height: 36px;
+		flex-shrink: 0;
+	}
+
+	.holon-info {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.holon-name {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: white;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 180px;
+	}
+
+	.holon-id {
+		font-size: 0.625rem;
+		font-family: ui-monospace, monospace;
+		color: #6b7280;
+		letter-spacing: 0.02em;
+	}
+
+	.chevron {
+		width: 16px;
+		height: 16px;
+		color: #6b7280;
+		flex-shrink: 0;
+		transition: transform 0.2s ease;
+	}
+
+	.holon-btn:hover .chevron {
+		color: #9ca3af;
+	}
+
+	.logo-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.5rem;
+		background: transparent;
+		border: 2px solid transparent;
+		border-radius: 50%;
+		cursor: pointer;
+		transition: all 0.3s ease;
+		margin: 0 auto;
+	}
+
+	.logo-btn:hover {
+		border-color: rgba(96, 165, 250, 0.5);
+		box-shadow: 0 0 20px rgba(96, 165, 250, 0.2);
+	}
+
+	.logo-icon {
+		width: 48px;
+		height: 48px;
+	}
+
+	.spacer {
+		flex: 1;
+	}
+
+	.controls {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.icon-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		padding: 0;
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: 0.5rem;
+		color: #9ca3af;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.icon-btn svg {
+		width: 18px;
+		height: 18px;
+	}
+
+	.icon-btn:hover {
+		color: white;
+		background: rgba(55, 65, 81, 0.6);
+		border-color: rgba(75, 85, 99, 0.5);
+	}
+
+	.copy-btn {
+		margin-left: -0.25rem;
+	}
+
+	.copy-btn:hover {
+		color: #60a5fa;
+	}
+
+	.divider {
+		width: 1px;
+		height: 24px;
+		background: rgba(75, 85, 99, 0.5);
+		margin: 0 0.25rem;
+	}
+
+	.translate-widget {
+		transform: scale(0.75);
+		transform-origin: right center;
+	}
+
+	/* Mobile adjustments */
+	@media (max-width: 640px) {
+		.topbar {
+			padding: 0.5rem 0.75rem;
+			gap: 0.5rem;
+		}
+
+		.holon-btn {
+			padding: 0.25rem 0.5rem;
+			max-width: 200px;
+		}
+
+		.holon-icon {
+			width: 28px;
+			height: 28px;
+		}
+
+		.holon-name {
+			font-size: 0.8125rem;
+			max-width: 120px;
+		}
+
+		.holon-id {
+			display: none;
+		}
+
+		.chevron {
+			display: none;
+		}
+
+		.icon-btn {
+			width: 32px;
+			height: 32px;
+		}
+
+		.icon-btn svg {
+			width: 16px;
+			height: 16px;
+		}
+
+		.divider {
+			display: none;
+		}
+
+		.translate-widget {
+			display: none;
+		}
+
+		.copy-btn {
+			display: none;
+		}
+	}
+
+	/* Large screens */
+	@media (min-width: 1024px) {
+		.holon-btn {
+			max-width: 400px;
+		}
+
+		.holon-name {
+			max-width: 280px;
+		}
+	}
+</style>
