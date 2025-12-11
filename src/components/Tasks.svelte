@@ -465,9 +465,13 @@
 				// No position assigned - let CanvasView handle positioning in inbox
 			};
 
+			// DEBUG: Log what we're about to write
+			console.log('[ADD_TASK] Writing task:', { id: task.id, title: task.title, newTaskTitle: newTask.title });
+
 			// Add the task to holosphere
 			if (holonID) {
 				await holosphere.put(holonID, 'quests', task);
+				console.log('[ADD_TASK] Task written successfully:', task.id);
 			} else {
 				return;
 			}
