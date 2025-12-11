@@ -157,15 +157,14 @@
 		holosphere = new HoloSphere({
 			appName: environmentName,
 			privateKey: privateKey,
-			backend: 'gundb',
-			gundb: {
-				peers: ['https://gun.holons.io/gun'],  // GunDB relay server
-				radisk: true,
-				localStorage: true
+			backend: 'nostr',
+			nostr: {
+				relays: ['wss://relay.holons.io'],  // Nostr relay server
+				persistence: true
 			}
 		});
 
-		// Wait for GunDB backend to be ready (async initialization)
+		// Wait for Nostr backend to be ready (async initialization)
 		await holosphere.ready();
 
 		// Log the public key for verification

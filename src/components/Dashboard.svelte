@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, getContext } from "svelte";
+	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import Announcements from "./Announcements.svelte";
@@ -13,39 +13,45 @@
 
 	let holonID = $page.params.id;
 	let isLoading = true;
-	let connectionReady = false;
 
-	// Stats - using individual variables for better Svelte 5 reactivity
-	let statsUsers = 0;
-	let statsCompletedTasks = 0;
-	let statsTotalTasks = 0;
-	let statsEvents = 0;
-	let statsShopping = 0;
-	let statsProposals = 0;
-	let statsOffers = 0;
-	let statsChecklists = 0;
-	let statsCompletedChecklists = 0;
-	let statsRoles = 0;
-	let statsUnassignedRoles = 0;
+	// Data stores - accumulate items from subscriptions
+	let questsMap = new Map<string, any>();
+	let usersMap = new Map<string, any>();
+	let shoppingMap = new Map<string, any>();
+	let checklistsMap = new Map<string, any>();
+	let rolesMap = new Map<string, any>();
 
-	// Card definitions for cleaner rendering
-	const primaryCards = [
-		{ key: 'users', label: 'Users', sublabel: 'Active Users', icon: 'fa-users', color: 'green', href: 'status', showProgress: false },
-		{ key: 'tasks', label: 'Tasks', sublabel: 'Completed', icon: 'fa-tasks', color: 'blue', href: 'tasks', showProgress: true },
-		{ key: 'events', label: 'Events', sublabel: 'This Week', icon: 'fa-calendar-alt', color: 'purple', href: 'schedule', showProgress: false },
-		{ key: 'shopping', label: 'Shopping', sublabel: 'Items', icon: 'fa-shopping-cart', color: 'rose', href: 'shopping', showProgress: false }
-	];
+	// Subscriptions cleanup
+	let subscriptions: Array<{ unsubscribe: () => void }> = [];
 
-	const secondaryCards = [
-		{ key: 'proposals', label: 'Proposals', icon: 'fa-lightbulb', color: 'amber', href: 'proposals' },
-		{ key: 'offers', label: 'Offers & Needs', icon: 'fa-gift', color: 'indigo', href: 'offers' },
-		{ key: 'checklists', label: 'Checklists', icon: 'fa-clipboard-check', color: 'teal', href: 'checklists', showProgress: true },
-		{ key: 'roles', label: 'Roles', icon: 'fa-user-tag', color: 'cyan', href: 'roles', showSublabel: true },
-		{ key: 'federation', label: 'Federation', icon: 'fa-network-wired', color: 'orange', href: 'federation', sublabel: 'Data sharing' },
-		{ key: 'settings', label: 'Settings', icon: 'fa-cog', color: 'emerald', href: 'settings', sublabel: 'Configure' }
-	];
+	// Helper to check if item is valid
+	const isValidItem = (item: any) => {
+		if (!item || !item.id) return false;
+		if (item._deleted) return false;
+		if (item.hologram === true) return false;
+		return true;
+	};
 
-	// Reactive getters using $derived-like pattern for Svelte 5
+	// Computed stats from maps
+	$: questsArray = Array.from(questsMap.values());
+	$: tasks = questsArray.filter((q: any) => !q.type || q.type === 'task' || q.type === 'recurring' || q.type === 'quest');
+	$: oneWeekAgo = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d; })();
+
+	$: statsUsers = usersMap.size;
+	$: statsCompletedTasks = tasks.filter((t: any) => t.status === 'completed').length;
+	$: statsTotalTasks = tasks.length;
+	$: statsEvents = questsArray.filter((q: any) => q.type === 'event' && q.when && new Date(q.when) >= oneWeekAgo).length;
+	$: statsShopping = shoppingMap.size;
+	$: statsProposals = questsArray.filter((q: any) => q.type === 'proposal').length;
+	$: statsOffers = questsArray.filter((q: any) => ['offer', 'request', 'need'].includes(q.type)).length;
+	$: checklistsArray = Array.from(checklistsMap.values());
+	$: statsChecklists = checklistsArray.length;
+	$: statsCompletedChecklists = checklistsArray.filter((c: any) => c.completed).length;
+	$: rolesArray = Array.from(rolesMap.values());
+	$: statsRoles = rolesArray.length;
+	$: statsUnassignedRoles = rolesArray.filter((r: any) => !r.participants?.length).length;
+
+	// Display values
 	$: statValueUsers = statsUsers;
 	$: statValueTasks = `${statsCompletedTasks}/${statsTotalTasks}`;
 	$: statValueEvents = statsEvents;
@@ -57,107 +63,118 @@
 	$: progressTasks = statsTotalTasks > 0 ? (statsCompletedTasks / statsTotalTasks) * 100 : 0;
 	$: progressChecklists = statsChecklists > 0 ? (statsCompletedChecklists / statsChecklists) * 100 : 0;
 
-	async function fetchData(retryCount = 0) {
-		if (!isValidId(holonID) || !holosphere || !connectionReady) return;
+	async function loadData() {
+		if (!isValidId(holonID) || !holosphere) return;
 
-		// Reset stats
-		statsUsers = 0;
-		statsCompletedTasks = 0;
-		statsTotalTasks = 0;
-		statsEvents = 0;
-		statsShopping = 0;
-		statsProposals = 0;
-		statsOffers = 0;
-		statsChecklists = 0;
-		statsCompletedChecklists = 0;
-		statsRoles = 0;
-		statsUnassignedRoles = 0;
-		isLoading = true;
+		// Clean up previous subscriptions
+		subscriptions.forEach(s => s.unsubscribe());
+		subscriptions = [];
 
-		try {
-			const [chats, users, quests, shoppingItems, checklists, roles] = await Promise.allSettled([
-				holosphere.getAll(holonID, "chats"),
-				holosphere.getAll(holonID, "users"),
-				holosphere.getAll(holonID, "quests"),
-				holosphere.getAll(holonID, "shopping"),
-				holosphere.getAll(holonID, "checklists"),
-				holosphere.getAll(holonID, "roles")
-			]);
+		// Clear maps for new holon
+		questsMap = new Map();
+		usersMap = new Map();
+		shoppingMap = new Map();
+		checklistsMap = new Map();
+		rolesMap = new Map();
 
-			const getData = (result: PromiseSettledResult<any>) =>
-				result.status === 'fulfilled' ? (result.value || []) : [];
-
-			const usersData = getData(users);
-			const questsData = getData(quests);
-			const shoppingData = getData(shoppingItems);
-			const checklistsData = getData(checklists);
-			const rolesData = getData(roles);
-
-			// Helper to convert data to array regardless of format
-			// Filters out deleted items and hologram/federation metadata
-			const toArray = (data: any): any[] => {
-				const isValidItem = (item: any) =>
-					item &&
-					item.id &&
-					!item._deleted &&
-					!item.hologram && // Filter out hologram metadata
-					!item.sourceHolon; // Filter out federation metadata
-
-				if (Array.isArray(data)) return data.filter(isValidItem);
-				if (data && typeof data === 'object') return Object.values(data).filter(isValidItem);
-				return [];
-			};
-
-			const usersArray = toArray(usersData);
-			const questsArray = toArray(questsData);
-			const shoppingArray = toArray(shoppingData);
-			const checklistsArray = toArray(checklistsData);
-			const rolesArray = toArray(rolesData);
-
-			// Handle both array and object data formats
-			const questValues = questsArray;
-			const tasks = questValues.filter((q: any) => !q.type || q.type === 'task' || q.type === 'recurring' || q.type === 'quest');
-			const oneWeekAgo = new Date();
-			oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-			// Update individual stats variables for Svelte 5 reactivity
-			statsUsers = usersArray.length;
-			statsCompletedTasks = tasks.filter((t: any) => t.status === 'completed').length;
-			statsTotalTasks = tasks.length;
-			statsEvents = questValues.filter((q: any) => q.type === 'event' && q.when && new Date(q.when) >= oneWeekAgo).length;
-			statsShopping = shoppingArray.length;
-			statsProposals = questValues.filter((q: any) => q.type === 'proposal').length;
-			statsOffers = questValues.filter((q: any) => ['offer', 'request', 'need'].includes(q.type)).length;
-			statsChecklists = checklistsArray.length;
-			statsCompletedChecklists = checklistsArray.filter((c: any) => c.completed).length;
-			statsRoles = rolesArray.length;
-			statsUnassignedRoles = rolesArray.filter((r: any) => !r.participants?.length).length;
-		} catch (error) {
-			console.error('Error fetching dashboard data:', error);
-			if (retryCount < 2) {
-				setTimeout(() => fetchData(retryCount + 1), 1000 * (retryCount + 1));
-				return;
+		// Helper to convert data to map
+		const toMap = (data: any): Map<string, any> => {
+			const map = new Map<string, any>();
+			const items = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data) : []);
+			for (const item of items) {
+				if (isValidItem(item)) {
+					map.set(item.id, item);
+				}
 			}
-		} finally {
-			isLoading = false;
-		}
+			return map;
+		};
+
+		// Load initial data with getAll
+		const [questsData, usersData, shoppingData, checklistsData, rolesData] = await Promise.all([
+			holosphere.getAll(holonID, "quests").catch(() => []),
+			holosphere.getAll(holonID, "users").catch(() => []),
+			holosphere.getAll(holonID, "shopping").catch(() => []),
+			holosphere.getAll(holonID, "checklists").catch(() => []),
+			holosphere.getAll(holonID, "roles").catch(() => [])
+		]);
+
+		// Populate maps
+		questsMap = toMap(questsData);
+		usersMap = toMap(usersData);
+		shoppingMap = toMap(shoppingData);
+		checklistsMap = toMap(checklistsData);
+		rolesMap = toMap(rolesData);
+
+		// Hide loading now that we have data
+		isLoading = false;
+
+		// Set up subscriptions for live updates
+		const questsSub = holosphere.subscribe(holonID, "quests", (item: any) => {
+			if (isValidItem(item)) {
+				questsMap.set(item.id, item);
+				questsMap = questsMap;
+			}
+		});
+		subscriptions.push(questsSub);
+
+		const usersSub = holosphere.subscribe(holonID, "users", (item: any) => {
+			if (isValidItem(item)) {
+				usersMap.set(item.id, item);
+				usersMap = usersMap;
+			}
+		});
+		subscriptions.push(usersSub);
+
+		const shoppingSub = holosphere.subscribe(holonID, "shopping", (item: any) => {
+			if (isValidItem(item)) {
+				shoppingMap.set(item.id, item);
+				shoppingMap = shoppingMap;
+			}
+		});
+		subscriptions.push(shoppingSub);
+
+		const checklistsSub = holosphere.subscribe(holonID, "checklists", (item: any) => {
+			if (isValidItem(item)) {
+				checklistsMap.set(item.id, item);
+				checklistsMap = checklistsMap;
+			}
+		});
+		subscriptions.push(checklistsSub);
+
+		const rolesSub = holosphere.subscribe(holonID, "roles", (item: any) => {
+			if (isValidItem(item)) {
+				rolesMap.set(item.id, item);
+				rolesMap = rolesMap;
+			}
+		});
+		subscriptions.push(rolesSub);
 	}
 
-	// Single reactive block: when page ID changes and holosphere is ready, fetch data
-	let currentHolonId: string | null = null;
-	$: {
+	// React to holon ID changes (different holon)
+	$: if ($page.params.id && $page.params.id !== holonID && isValidId($page.params.id) && holosphere) {
+		holonID = $page.params.id;
+		ID.set(holonID);
+		isLoading = true;
+		loadData();
+	}
+
+	onMount(() => {
 		const newId = $page.params.id;
-		if (isValidId(newId) && holosphere && newId !== currentHolonId) {
-			currentHolonId = newId;
+		if (isValidId(newId) && holosphere) {
 			holonID = newId;
 			ID.set(newId);
-			connectionReady = true;
-			fetchData();
+			isLoading = true;
+			loadData();
 		}
-	}
+	});
+
+	onDestroy(() => {
+		subscriptions.forEach(s => s.unsubscribe());
+		subscriptions = [];
+	});
 </script>
 
-{#if isLoading && !connectionReady}
+{#if isLoading}
 	<div class="loading">
 		<div class="spinner"></div>
 		<p>Connecting to holosphere...</p>

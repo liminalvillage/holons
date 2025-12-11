@@ -93,8 +93,10 @@
             const newStore: Record<string, ShoppingItem> = {};
             if (typeof initialData === 'object' && initialData !== null) {
                 Object.entries(initialData).forEach(([key, item]: [string, any]) => {
-                    // Only include valid shopping items (not federation metadata)
-                    if (item && item.id && !item.sourceHolon && !item.hologram) {
+                    // Only include valid shopping items
+                    // Filter out deleted items and unresolved holograms (hologram === true)
+                    // Resolved holograms have _hologram metadata but hologram !== true
+                    if (item && item.id && !item._deleted && item.hologram !== true) {
                         newStore[key] = item as ShoppingItem;
                     }
                 });
@@ -105,8 +107,9 @@
 
             // Set up subscription for real-time updates
             const off = holosphere.subscribe(holonID, "shopping", (newItem: any, key?: string) => {
-                // Filter out federation metadata
-                if (newItem && key && !newItem.sourceHolon && !newItem.hologram) {
+                // Filter out deleted items and unresolved holograms
+                // Resolved holograms have _hologram metadata but hologram !== true
+                if (newItem && key && !newItem._deleted && newItem.hologram !== true) {
                     store = { ...store, [key]: newItem as ShoppingItem };
                     if (newItem._hologram?.isHologram) {
                         preResolveHologramNames([newItem]);

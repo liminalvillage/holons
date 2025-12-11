@@ -247,6 +247,80 @@
 		return value;
 	}
 
+	// Try to parse a string value as JSON for display purposes
+	function tryParseJson(value: any): { isParsed: boolean; parsed: any } {
+		if (typeof value !== 'string') return { isParsed: false, parsed: value };
+		const trimmed = value.trim();
+		if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+			try {
+				return { isParsed: true, parsed: JSON.parse(value) };
+			} catch (e) {
+				return { isParsed: false, parsed: value };
+			}
+		}
+		return { isParsed: false, parsed: value };
+	}
+
+	// Deserialize Gun data - handles JSON string (primary) and _json wrapper (legacy)
+	function deserializeGunData(data: any): any {
+		if (!data) return data;
+
+		// Primary format: JSON string (like old holosphere)
+		if (typeof data === 'string') {
+			try {
+				return JSON.parse(data);
+			} catch (e) {
+				return data; // Return as-is if not valid JSON
+			}
+		}
+
+		if (typeof data !== 'object') return data;
+
+		// Legacy: holosphere2's _json wrapper format
+		if (data._json && typeof data._json === 'string') {
+			try {
+				return JSON.parse(data._json);
+			} catch (e) {
+				return data;
+			}
+		}
+
+		// Handle Gun node data with timestamps (has _ with > metadata)
+		if (data._ && data._['>']) {
+			const cleaned: Record<string, any> = {};
+			for (const [k, v] of Object.entries(data)) {
+				if (k === '_') continue;
+				// Check if value is a JSON string
+				if (typeof v === 'string') {
+					try {
+						cleaned[k] = JSON.parse(v);
+					} catch {
+						cleaned[k] = v;
+					}
+				// Check if the value is a _json wrapper (legacy)
+				} else if (typeof v === 'object' && v !== null && (v as any)._json) {
+					try {
+						cleaned[k] = JSON.parse((v as any)._json);
+					} catch {
+						cleaned[k] = v;
+					}
+				} else {
+					cleaned[k] = v;
+				}
+			}
+			return Object.keys(cleaned).length > 0 ? cleaned : data;
+		}
+
+		// Clean Gun metadata from plain objects
+		if (data._) {
+			const cleaned = { ...data };
+			delete cleaned['_'];
+			return cleaned;
+		}
+
+		return data;
+	}
+
 	async function saveEdit(key: string, field: string) {
 		try {
 			const dataSource = isRootMode ? rootData : store;
@@ -429,7 +503,8 @@
 			for (const testKey of knownKeys) {
 				gun.get(testKey).once((data: any) => {
 					if (data !== null && data !== undefined) {
-						rootData[testKey] = (typeof data === 'object' && data !== null) ? data : { value: data, type: typeof data };
+						const deserialized = deserializeGunData(data);
+						rootData[testKey] = (typeof deserialized === 'object' && deserialized !== null) ? deserialized : { value: deserialized, type: typeof deserialized };
 						rootData = { ...rootData };
 					}
 				});
@@ -437,7 +512,8 @@
 
 			currentRef.map().on((data: any, key: string) => {
 				if (data !== null && data !== undefined && key && !key.startsWith('_')) {
-					rootData[key] = (typeof data === 'object' && data !== null) ? data : { value: data, type: typeof data };
+					const deserialized = deserializeGunData(data);
+					rootData[key] = (typeof deserialized === 'object' && deserialized !== null) ? deserialized : { value: deserialized, type: typeof deserialized };
 					rootData = { ...rootData };
 				}
 			});
@@ -448,7 +524,8 @@
 
 			currentRef.map().on((data: any, key: string) => {
 				if (data !== null && data !== undefined && key && !key.startsWith('_')) {
-					rootData[key] = (typeof data === 'object' && data !== null) ? data : { value: data, type: typeof data };
+					const deserialized = deserializeGunData(data);
+					rootData[key] = (typeof deserialized === 'object' && deserialized !== null) ? deserialized : { value: deserialized, type: typeof deserialized };
 					rootData = { ...rootData };
 				}
 			});

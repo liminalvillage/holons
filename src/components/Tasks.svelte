@@ -20,7 +20,7 @@
 	import { fetchHolonName } from "../utils/holonNames";
 
 	// Add filterType prop to allow filtering by quest type
-	export let filterType: 'task' | 'event' | 'all' = 'all';
+	let { filterType = 'all' }: { filterType?: 'task' | 'event' | 'all' } = $props();
 
 	interface Quest {
 		id: string;
@@ -66,9 +66,9 @@
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
-	let holonID: string = '';
-	let store: Store = {};
-	$: quests = Object.entries(store);
+	let holonID = $state(''); // Start empty so reactive block triggers on first valid ID
+	let store: Store = $state({});
+	let quests = $derived(Object.entries(store));
 
 	// Helper function to check if a quest matches the current filterType
 	function matchesFilterType(quest: Quest, currentFilterType: string): boolean {
@@ -87,55 +87,81 @@
 		return !quest.type || type === "task" || type === "recurring" || type === "quest" || type === "event";
 	}
 
-	// Stats - updated directly in fetchData
-	let statsUnassigned = 0;
-	let statsOpenItems = 0;
-	let statsRecurring = 0;
-	let statsCompleted = 0;
-	let statsFilterSpecific = 0;
+	// Stats - computed reactively from store
+	let statsUnassigned = $derived.by(() => {
+		let count = 0;
+		for (const quest of Object.values(store)) {
+			if (quest._deleted) continue;
+			if (!matchesFilterType(quest, filterType)) continue;
+			if (!quest.participants?.length && quest.status !== "completed") count++;
+		}
+		return count;
+	});
 
-	// Compute stats from store
-	function updateStats() {
-		let unassigned = 0;
-		let openItems = 0;
-		let recurring = 0;
-		let completed = 0;
-		let filterSpecific = 0;
+	let statsOpenItems = $derived.by(() => {
+		let count = 0;
+		for (const quest of Object.values(store)) {
+			if (quest._deleted) continue;
+			if (!matchesFilterType(quest, filterType)) continue;
+			if (quest.status !== "completed") count++;
+		}
+		return count;
+	});
 
+	let statsRecurring = $derived.by(() => {
+		let count = 0;
+		for (const quest of Object.values(store)) {
+			if (quest._deleted) continue;
+			if (!matchesFilterType(quest, filterType)) continue;
+			if (quest.status === "recurring" || quest.status === "repeating") count++;
+		}
+		return count;
+	});
+
+	let statsCompleted = $derived.by(() => {
+		let count = 0;
+		for (const quest of Object.values(store)) {
+			if (quest._deleted) continue;
+			if (!matchesFilterType(quest, filterType)) continue;
+			if (quest.status === "completed") count++;
+		}
+		return count;
+	});
+
+	let statsFilterSpecific = $derived.by(() => {
+		let count = 0;
 		for (const quest of Object.values(store)) {
 			if (quest._deleted) continue;
 			if (!matchesFilterType(quest, filterType)) continue;
 
-			if (!quest.participants?.length && quest.status !== "completed") unassigned++;
-			if (quest.status !== "completed") openItems++;
-			if (quest.status === "recurring" || quest.status === "repeating") recurring++;
-			if (quest.status === "completed") completed++;
-
 			// Count items matching current filter type
 			const type = quest.type || 'task';
-			if (filterType === 'event' && type === 'event') filterSpecific++;
-			else if (filterType === 'task' && type === 'task') filterSpecific++;
-			else if (filterType === 'quest' && type === 'quest') filterSpecific++;
-			else if (filterType === 'all') filterSpecific++;
+			if (filterType === 'event') {
+				// For events, count type='event' or scheduled items
+				const isScheduled = !!(quest.when && quest.when.trim() !== '');
+				if (type === 'event' || isScheduled) count++;
+			} else if (filterType === 'task' && type === 'task') count++;
+			else if (filterType === 'all') count++;
 		}
+		return count;
+	});
 
-		statsUnassigned = unassigned;
-		statsOpenItems = openItems;
-		statsRecurring = recurring;
-		statsCompleted = completed;
-		statsFilterSpecific = filterSpecific;
+	// Legacy updateStats function for backwards compatibility (called after fetch/subscribe)
+	function updateStats() {
+		// Stats are now computed reactively via $derived, this function is a no-op
+		// but kept for backwards compatibility with existing calls
 	}
 
 	// Initialize with safe defaults
-	let viewMode: 'list' | 'canvas' = 'list';
-	let showCompleted = false;
-	let showHolograms = true;
+	let viewMode: 'list' | 'canvas' = $state('list');
+	let showCompleted = $state(false);
+	let showHolograms = $state(true);
 	let sortedQuests: [string, Quest][] = [];
-	let filteredQuests: [string, Quest][] = [];
+	// filteredQuests is now defined as a $derived value below
 
 	// Initialize preferences with default values
-	let showTaskInput = false;
-	let newTask: Quest = {
+	let showTaskInput = $state(false);
+	let newTask: Quest = $state({
 		id: generateId(),
 		title: '',
 		description: '',
@@ -144,24 +170,25 @@
 		type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
 		participants: [],
 		appreciation: []
-	};
+	});
 
 	let questsUnsubscribe: (() => void) | undefined;
 
 	// Share to federation state
-	let showShareDialog = false;
-	let questToShare: { key: string; quest: Quest } | null = null;
-	let selectedHolonsToShare: string[] = [];
-	let federatedHolons: Array<{ id: string; name: string }> = [];
-	let sharingInProgress = false;
-	let shareSuccess = '';
-	let shareError = '';
+	let showShareDialog = $state(false);
+	let questToShare: { key: string; quest: Quest } | null = $state(null);
+	let selectedHolonsToShare: string[] = $state([]);
+	let federatedHolons: Array<{ id: string; name: string }> = $state([]);
+	let sharingInProgress = $state(false);
+	let shareSuccess = $state('');
+	let shareError = $state('');
 
 	// Add initialization state tracking
 	let isInitialized = false;
 	let isSubscribed = false;
-	let isLoading = true;
+	let isLoading = $state(true);
 	let connectionReady = false;
+	let currentHolonId: string | null = null;
 
 	// Add subscription state tracking
 	let subscriptionState = {
@@ -171,48 +198,48 @@
 	};
 
 	// Add state for animations
-	let showFireworks = false;
-	let showConfetti = false;
+	let showFireworks = $state(false);
+	let showConfetti = $state(false);
 
 	// Sort state variables - now using shared store
-	let sortButtonIconRotation = 0; // No rotation for calendar icon
-	
+	let sortButtonIconRotation = $state(0); // No rotation for calendar icon
+
 	// Subscribe to the shared sort state
-	$: sortCriteria = $taskSortStore.criteria;
-	$: sortDirection = $taskSortStore.direction;
+	let sortCriteria = $derived($taskSortStore.criteria);
+	let sortDirection = $derived($taskSortStore.direction);
 
 	// SVG Paths for sort icons
 	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z"; // Calendar icon
 	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
 	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
-	let currentIconPath = calendarIconPath; // Initial icon
+	let currentIconPath = $state(calendarIconPath); // Initial icon
 
 	// Add these variables after the existing let declarations
-	let selectedCategory = "all";
-	let selectedUserId = "all";
+	let selectedCategory = $state("all");
+	let selectedUserId = $state("all");
 	
 	// Compute unique categories from quests
-	$: categories = [
+	let categories = $derived([
 		"all",
 		...new Set(
 			Object.values(store)
 				.filter((quest: any) => quest.category)
 				.map((quest: any) => quest.category)
 		),
-	];
+	]);
 
 	// Compute unique users from quests
-	$: allUsers = (() => {
+	let allUsers = $derived.by(() => {
 		const users = new Map<string, { id: string; name: string }>();
-		
+
 		Object.values(store).forEach(quest => {
 			if (quest.participants) {
 				quest.participants.forEach(p => {
 					if (p.id && !users.has(p.id)) {
 						const name = (p.firstName ? `${p.firstName} ${p.lastName || ''}` : p.username).trim();
 						if (name) { // Only add users with a name
-							users.set(p.id, { 
-								id: p.id, 
+							users.set(p.id, {
+								id: p.id,
 								name: name
 							});
 						}
@@ -220,7 +247,7 @@
 				});
 			}
 		});
-		
+
 		const userArray = Array.from(users.values()).sort((a, b) => a.name.localeCompare(b.name));
 
 		return [
@@ -228,10 +255,10 @@
 			{ id: 'unassigned', name: 'Unassigned' },
 			...userArray
 		];
-	})();
+	});
 		
 	// Add this variable to track the selected task
-	let selectedTask: any = null;
+	let selectedTask: any = $state(null);
 	let selectedTaskId: string | null = null; // For URL parameter support
 
 	// Add cache for hologram source names to avoid repeated resolution
@@ -241,11 +268,8 @@
 	// let sortField: 'x' | 'y' = 'x'; // Removed
 	// let sortDirection: 'asc' | 'desc' = 'desc'; // Removed
 
-	// Add a store to track updates
-	// const updateTrigger = writable(0); // Removed
-
-	// Modify the reactive statement for sorting
-	$: {
+	// Compute filtered and sorted quests
+	let filteredQuests = $derived.by(() => {
 		let currentFilteredQuests = quests.filter(([_, quest]) => {
 			// Skip deleted items
 			if (quest._deleted) return false;
@@ -284,7 +308,7 @@
 				}
 			} else {
 				// Show all quest types when filterType is 'all' (default to 'task' if type is missing)
-				const type = quest.type || 'task'; 
+				const type = quest.type || 'task';
 				if (type !== 'task' && type !== 'recurring' && type !== 'quest' && type !== 'event') {
 					return false;
 				}
@@ -309,28 +333,9 @@
 			// Use the shared sorting logic
 			currentFilteredQuests = sortTasks(currentFilteredQuests, $taskSortStore);
 		}
-		filteredQuests = currentFilteredQuests;
 
-		// Original sorting and normalization logic removed.
-		// sortedQuests = filtered.sort(([_, a], [__, b]) => {
-		// 	const posA = a.position?.[sortField] ?? 0;
-		// 	const posB = b.position?.[sortField] ?? 0;
-		// 	return sortDirection === 'desc' ? posB - posA : posA - posB;
-		// });
-
-		// // Normalize positions if needed
-		// if (sortedQuests.some(([_, quest]) => !quest.position)) {
-		// 	sortedQuests = normalizePositions(sortedQuests);
-		// 	// Update positions in holosphere
-		// 	sortedQuests.forEach(([key, quest]) => {
-		// 		if (holosphere && holonID) {
-		// 			holosphere.put(holonID, `quests/${key}`, quest).catch(console.error);
-		// 		}
-		// 	});
-		// }
-
-		// filteredQuests = sortedQuests; // Now filteredQuests is directly assigned above
-	}
+		return currentFilteredQuests;
+	});
 
 	// Updated sort button handler to use shared store
 	function handleSortButtonClick() {
@@ -870,9 +875,19 @@
 		if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
 			return;
 		}
-		
+
 		isLoading = true;
-		
+
+		// Clean up previous subscription before fetching new data
+		if (questsUnsubscribe) {
+			questsUnsubscribe();
+			questsUnsubscribe = undefined;
+		}
+		subscriptionState.currentHolonID = null;
+
+		// Clear store for fresh data
+		store = {};
+
 		try {
 			const initialData = await holosphere.getAll(holonID, "quests");
 
@@ -956,12 +971,21 @@
 			questsUnsubscribe = undefined;
 		}
 
+		// Capture the holon ID at subscription time to verify in callbacks
+		const subscribedHolonID = holonID;
+
 		try {
 			// Update subscription state
 			subscriptionState.currentHolonID = holonID;
 
 			// Set up subscription for future updates (initial data already loaded by fetchData)
 			const off = holosphere.subscribe(holonID, "quests", async (newquest: Quest | null, key?: string) => {
+				// IMPORTANT: Verify this callback is still for the current holon
+				// Old subscriptions may fire after we've switched holons
+				if (holonID !== subscribedHolonID) {
+					return; // Ignore updates from old subscription
+				}
+
 				// Check if this is the circular hologram that's causing issues
 				if (newquest && newquest.id === '1750286259429') {
 					console.warn('Blocking circular hologram quest:', newquest.id);
@@ -1043,36 +1067,44 @@
 		};
 		window.addEventListener('openDependencyTask', handleDependencyTask as EventListener);
 
+		// Note: Data fetching is handled by the reactive block below
+		// which triggers when $page.params.id !== holonID
+
 		// Cleanup
 		return () => {
 			if (questsUnsubscribe) questsUnsubscribe();
+			questsUnsubscribe = undefined;
 			if (subscriptionState.batchTimeout) {
 				clearTimeout(subscriptionState.batchTimeout);
 			}
+			subscriptionState.currentHolonID = null;
+			currentHolonId = null; // Reset so next mount triggers fetch
 			window.removeEventListener('openDependencyTask', handleDependencyTask as EventListener);
 		};
 	});
 
-	// Single reactive block: when page ID changes and holosphere is ready, fetch data
-	let currentHolonId: string | null = null;
-	$: {
-		const newId = $page.params.id;
-		const isValidId = newId && newId !== 'undefined' && newId !== 'null' && newId.trim() !== '';
+	// Helper to validate holon ID
+	const isValidHolonId = (id: string | undefined | null): id is string =>
+		!!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
 
-		if (isValidId && holosphere && newId !== currentHolonId) {
-			currentHolonId = newId;
-			holonID = newId;
-			ID.set(newId);
+	// Reactive block: when page ID changes (different holon), fetch new data
+	$effect(() => {
+		if ($page.params.id && $page.params.id !== holonID && isValidHolonId($page.params.id) && holosphere) {
+			holonID = $page.params.id;
+			currentHolonId = $page.params.id;
+			ID.set(holonID);
 			connectionReady = true;
+			isLoading = true;
 			fetchData();
 		}
-	}
-
+	});
 
 	// Save showHolograms preference to localStorage
-	$: if (typeof localStorage !== 'undefined') {
-		localStorage.setItem("taskShowHolograms", showHolograms.toString());
-	}
+	$effect(() => {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem("taskShowHolograms", showHolograms.toString());
+		}
+	});
 
 	// Handler for optimistic position updates from CanvasView
 	function handleCanvasQuestPositionChange(event: CustomEvent) {
@@ -1092,7 +1124,7 @@
 	}
 
 	// Add state for import modal
-	let showImportModal = false;
+	let showImportModal = $state(false);
 
 	// ============================================================================
 	// Share to Federation Functions

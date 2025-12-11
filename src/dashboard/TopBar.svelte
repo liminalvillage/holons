@@ -187,11 +187,18 @@
 		}
 	}
 
-	// Navigate to a holon
+	// Navigate to a holon while preserving the current component
 	function navigateToHolon(holonId: string) {
 		if (!isValidHolonId(holonId)) return;
 		ID.set(holonId);
-		goto(`/${holonId}/dashboard`);
+
+		// Get current path component (tasks, shopping, etc.)
+		const currentPath = $page.url.pathname;
+		const pathParts = currentPath.split('/').filter(Boolean);
+		// pathParts[0] is the holon ID, pathParts[1] is the component
+		const currentComponent = pathParts.length > 1 ? pathParts[1] : 'dashboard';
+
+		goto(`/${holonId}/${currentComponent}`);
 	}
 
 	// Remove a holon from the visited list

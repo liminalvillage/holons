@@ -8,7 +8,14 @@ import { HoloSphere } from 'holosphere';
 
 // Initialize HoloSphere instance for server-side data access
 // Default to production environment for iCal feed endpoint
-const holosphere = new HoloSphere('Holons');
+const holosphere = new HoloSphere({
+    appName: 'Holons',
+    backend: 'nostr',
+    nostr: {
+        relays: ['wss://relay.holons.io'],
+        persistence: true
+    }
+});
 
 export const GET: RequestHandler = async ({ params }) => {
     const holonId = params.id;

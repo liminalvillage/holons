@@ -8,6 +8,18 @@
 
 		<!-- Buffer polyfill for browser compatibility with nostr-tools -->
 		<script>
+			// Suppress Google Translate logging errors (blocked by ad blockers)
+			(function() {
+				const originalError = console.error;
+				console.error = function(...args) {
+					const str = args.join(' ');
+					if (str.includes('translate.google') || str.includes('ERR_BLOCKED_BY_CLIENT')) {
+						return;
+					}
+					originalError.apply(console, args);
+				};
+			})();
+
 			// Polyfill Buffer for browser environment
 			if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
 				window.Buffer = {

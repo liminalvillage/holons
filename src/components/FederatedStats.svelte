@@ -54,8 +54,11 @@
 			serviceHolosphere = new HoloSphere({
 				appName: environmentName,
 				privateKey: servicePrivateKey,
-				relays: ['wss://relay.holons.io'],
-				enablePing: false
+				backend: 'nostr',
+				nostr: {
+					relays: ['wss://relay.holons.io'],
+					persistence: true
+				}
 			});
 
 			await loadFederatedStats();
