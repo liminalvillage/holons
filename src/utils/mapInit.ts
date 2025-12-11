@@ -1,4 +1,5 @@
-import { Map, GeolocateControl, Popup } from "mapbox-gl";
+import mapboxgl from "mapbox-gl";
+const { Map, GeolocateControl, Popup } = mapboxgl;
 import { MapboxSearchBox } from "@mapbox/search-js-web";
 
 export function initializeMap(container, accessToken, config, onLoadCallback) {

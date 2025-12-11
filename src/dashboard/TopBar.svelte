@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { openSidebar, ID } from './store';
+	import { toggleSidebarExpanded, ID, walletAddress } from './store';
 	import { onMount, onDestroy, getContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
+	import { fade, scale } from 'svelte/transition';
 	import type { HoloSphere } from "holosphere";
-	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
+	import { addVisitedHolon, getWalletAddress, loadVisitedHolons, saveVisitedHolons, type VisitedHolon } from "../utils/localStorage";
 	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
@@ -14,6 +15,16 @@
 	import KeyManager from '../components/KeyManager.svelte';
 
 	export let toggleMyHolons: () => void;
+
+	// Visited holons for tabs
+	let visitedHolons: VisitedHolon[] = [];
+
+	// Add holon modal state
+	let showAddHolonModal = false;
+	let newHolonId = '';
+	let newHolonName = '';
+	let addHolonError = '';
+	let addHolonLoading = false;
 
 	// Helper to validate holon ID
 	const isValidHolonId = (id: string | undefined | null): id is string => {
@@ -167,6 +178,102 @@
 		}
 	}
 
+	// Load visited holons for tabs
+	function loadVisitedHolonsForTabs() {
+		if (browser) {
+			const loaded = loadVisitedHolons($walletAddress);
+			// Keep original order (by when they were first added), limit to 10
+			visitedHolons = loaded.slice(0, 10);
+		}
+	}
+
+	// Navigate to a holon
+	function navigateToHolon(holonId: string) {
+		if (!isValidHolonId(holonId)) return;
+		ID.set(holonId);
+		goto(`/${holonId}/dashboard`);
+	}
+
+	// Remove a holon from the visited list
+	function removeHolonFromTabs(holonId: string) {
+		if (browser) {
+			import('../utils/localStorage').then(({ loadVisitedHolons, saveVisitedHolons }) => {
+				const loaded = loadVisitedHolons($walletAddress);
+				const filtered = loaded.filter(h => h.id !== holonId);
+				saveVisitedHolons($walletAddress, filtered);
+				loadVisitedHolonsForTabs();
+			});
+		}
+	}
+
+	// Truncate name for display
+	function truncateName(name: string, maxLength: number = 14): string {
+		if (name.length <= maxLength) return name;
+		return name.slice(0, maxLength) + '...';
+	}
+
+	// Add new holon to the topbar
+	async function addNewHolon() {
+		if (!newHolonId.trim()) {
+			addHolonError = 'Please enter a holon ID';
+			return;
+		}
+
+		// Check if already exists
+		if (visitedHolons.find(h => h.id === newHolonId.trim())) {
+			addHolonError = 'Holon already exists in your list';
+			return;
+		}
+
+		addHolonLoading = true;
+		addHolonError = '';
+
+		try {
+			const holonId = newHolonId.trim();
+			const name = newHolonName.trim() || await fetchHolonName(holosphere, holonId);
+
+			// Add to visited holons
+			const newHolon: VisitedHolon = {
+				id: holonId,
+				name: name || `Holon ${holonId}`,
+				lastVisited: Date.now(),
+				visitCount: 1
+			};
+
+			visitedHolons = [...visitedHolons, newHolon];
+			saveVisitedHolons($walletAddress, visitedHolons);
+
+			// Close modal and reset
+			showAddHolonModal = false;
+			newHolonId = '';
+			newHolonName = '';
+
+			// Navigate to the new holon
+			navigateToHolon(holonId);
+		} catch (err) {
+			console.error('Error adding holon:', err);
+			addHolonError = err instanceof Error ? err.message : 'Failed to add holon';
+		} finally {
+			addHolonLoading = false;
+		}
+	}
+
+	// Open add holon modal
+	function openAddHolonModal() {
+		showAddHolonModal = true;
+		addHolonError = '';
+		newHolonId = '';
+		newHolonName = '';
+	}
+
+	// Close add holon modal
+	function closeAddHolonModal() {
+		showAddHolonModal = false;
+		addHolonError = '';
+		newHolonId = '';
+		newHolonName = '';
+	}
+
 	onMount(async () => {
 		isInitialized = true;
 		const initialId = $page.params.id;
@@ -177,10 +284,14 @@
 			updateCurrentHolonName(initialId);
 		}
 
+		// Load visited holons for tabs
+		loadVisitedHolonsForTabs();
+
 		// Event listeners
 		window.addEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
 		window.addEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
 		window.addEventListener('holonNavigated', handleHolonNavigated as EventListener);
+		window.addEventListener('storage', loadVisitedHolonsForTabs);
 	});
 
 	onDestroy(() => {
@@ -188,59 +299,72 @@
 			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
 			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
 			window.removeEventListener('holonNavigated', handleHolonNavigated as EventListener);
+			window.removeEventListener('storage', loadVisitedHolonsForTabs);
 		}
 	});
+
+	// Reload visited holons when ID changes (so tabs stay in sync)
+	$: if ($ID && browser) {
+		// Give a small delay to let localStorage update
+		setTimeout(loadVisitedHolonsForTabs, 100);
+	}
 </script>
 
 <div class="topbar">
-	<!-- Mobile menu button -->
-	<button class="menu-btn lg:hidden" on:click={openSidebar} aria-label="Open menu">
+	<!-- Menu button to toggle sidebar -->
+	<button class="menu-btn" on:click={toggleSidebarExpanded} aria-label="Toggle menu">
 		<Menu size="22" />
 	</button>
 
-	{#if !isPrimaryPage}
-		<!-- Holon info section -->
-		<button class="holon-btn" on:click={handleToggleMyHolons} title="Open My Holons">
-			<div class="holon-icon">
-				<MyHolonsIcon />
+	<!-- Holon cards section (scrollable, full width) -->
+	<div class="holon-cards">
+		{#each visitedHolons as holon (holon.id)}
+			<div
+				class="holon-card"
+				class:active={$ID === holon.id}
+				role="button"
+				tabindex="0"
+				on:click={() => navigateToHolon(holon.id)}
+				on:keydown={(e) => e.key === 'Enter' && navigateToHolon(holon.id)}
+			>
+				<div class="card-icon">
+					<MyHolonsIcon />
+				</div>
+				<div class="card-info">
+					<span class="card-name">{truncateName(holon.name || holon.id)}</span>
+					<span class="card-id">{holon.id.length > 12 ? `${holon.id.slice(0, 6)}...${holon.id.slice(-4)}` : holon.id}</span>
+				</div>
+				<button
+					class="card-delete"
+					on:click|stopPropagation={() => removeHolonFromTabs(holon.id)}
+					title="Remove from tabs"
+				>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M18 6L6 18M6 6l12 12"/>
+					</svg>
+				</button>
 			</div>
-			<div class="holon-info">
-				<span class="holon-name">
-					{currentHolonName || ($ID ? `Holon ${$ID}` : 'Loading...')}
-				</span>
-				{#if $ID}
-					<span class="holon-id">{$ID.length > 16 ? `${$ID.slice(0, 8)}...${$ID.slice(-6)}` : $ID}</span>
-				{/if}
-			</div>
-			<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<path d="M6 9l6 6 6-6"/>
+		{/each}
+
+		<!-- Add/Create new holon button (inside scrollable area) -->
+		<button class="add-holon-btn" on:click={openAddHolonModal} title="Add or Create Holon">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M12 4v16m8-8H4"/>
 			</svg>
 		</button>
+	</div>
 
-		<!-- Copy ID button -->
-		{#if $ID}
-			<button class="icon-btn copy-btn" on:click|stopPropagation={copyHolonId} title="Copy Holon ID">
+	<!-- Right controls -->
+	<div class="controls">
+		{#if !isPrimaryPage && $ID}
+			<!-- Copy ID button -->
+			<button class="icon-btn" on:click={copyHolonId} title="Copy Holon ID">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
 					<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
 				</svg>
 			</button>
-		{/if}
-	{:else}
-		<!-- Root page - centered logo -->
-		<button class="logo-btn" on:click={handleToggleMyHolons} title="Open My Holons">
-			<div class="logo-icon">
-				<MyHolonsIcon />
-			</div>
-		</button>
-	{/if}
 
-	<!-- Spacer -->
-	<div class="spacer"></div>
-
-	<!-- Right controls -->
-	<div class="controls">
-		{#if !isPrimaryPage && $ID}
 			<!-- Action buttons -->
 			<button class="icon-btn" on:click={toggleWidgetDashboard} title="Widget Dashboard">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -269,8 +393,67 @@
 </div>
 
 <!-- Floating components -->
-<VideoCall roomId={$ID} bind:show={showVideoCall} floating={true} />
+<VideoCall roomId={$ID || ''} bind:show={showVideoCall} floating={true} />
 <WidgetDashboard bind:isVisible={showWidgetDashboard} />
+
+<!-- Add Holon Modal -->
+{#if showAddHolonModal}
+	<div
+		class="modal-overlay"
+		transition:fade={{ duration: 150 }}
+		on:click|self={closeAddHolonModal}
+		on:keydown={(e) => e.key === 'Escape' && closeAddHolonModal()}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<div class="modal-content" transition:scale={{ duration: 150, start: 0.95 }}>
+			<h3 class="modal-title">Add New Holon</h3>
+
+			{#if addHolonError}
+				<div class="modal-error">{addHolonError}</div>
+			{/if}
+
+			<div class="modal-fields">
+				<div class="modal-field">
+					<label for="new-holon-id">Holon ID *</label>
+					<input
+						id="new-holon-id"
+						type="text"
+						bind:value={newHolonId}
+						placeholder="Enter holon ID"
+						on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
+					/>
+					<p class="modal-hint">Get your holon ID from @HolonsBot on Telegram using /id or /dashboard</p>
+				</div>
+
+				<div class="modal-field">
+					<label for="new-holon-name">Display Name (optional)</label>
+					<input
+						id="new-holon-name"
+						type="text"
+						bind:value={newHolonName}
+						placeholder="Custom name for display"
+						on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
+					/>
+				</div>
+			</div>
+
+			<div class="modal-actions">
+				<button class="modal-btn modal-btn-primary" on:click={addNewHolon} disabled={addHolonLoading}>
+					{#if addHolonLoading}
+						Adding...
+					{:else}
+						Add Holon
+					{/if}
+				</button>
+				<button class="modal-btn modal-btn-secondary" on:click={closeAddHolonModal}>
+					Cancel
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.topbar {
@@ -285,6 +468,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 50;
+		width: 100%;
 	}
 
 	.menu-btn {
@@ -298,6 +482,7 @@
 		border-radius: 0.5rem;
 		cursor: pointer;
 		transition: all 0.15s ease;
+		flex-shrink: 0;
 	}
 
 	.menu-btn:hover {
@@ -305,99 +490,153 @@
 		background: rgba(55, 65, 81, 0.5);
 	}
 
-	.holon-btn {
+	/* Hide on large screens where sidebar is always visible */
+	@media (min-width: 1024px) {
+		.menu-btn {
+			display: flex;
+		}
+	}
+
+	/* Holon cards container (scrollable, full width) */
+	.holon-cards {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		padding: 0.375rem 0.75rem;
+		gap: 0.5rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+		padding: 0.25rem 0;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.holon-cards::-webkit-scrollbar {
+		display: none;
+	}
+
+	/* Individual holon card - nice style */
+	.holon-card {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.375rem 0.5rem;
 		background: rgba(31, 41, 55, 0.8);
 		border: 1px solid rgba(75, 85, 99, 0.4);
 		border-radius: 0.75rem;
 		cursor: pointer;
 		transition: all 0.2s ease;
-		max-width: 320px;
+		flex-shrink: 0;
+		position: relative;
 	}
 
-	.holon-btn:hover {
+	.holon-card:hover {
 		background: rgba(55, 65, 81, 0.8);
 		border-color: rgba(96, 165, 250, 0.4);
 		transform: translateY(-1px);
 	}
 
-	.holon-icon {
-		width: 36px;
-		height: 36px;
+	.holon-card.active {
+		background: rgba(79, 70, 229, 0.3);
+		border-color: rgba(129, 140, 248, 0.6);
+		box-shadow: 0 0 12px rgba(129, 140, 248, 0.3);
+	}
+
+	.card-icon {
+		width: 28px;
+		height: 28px;
 		flex-shrink: 0;
 	}
 
-	.holon-info {
+	.card-info {
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
 		min-width: 0;
-		flex: 1;
 	}
 
-	.holon-name {
-		font-size: 0.875rem;
+	.card-name {
+		font-size: 0.8125rem;
 		font-weight: 600;
 		color: white;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		max-width: 180px;
+		max-width: 120px;
+		line-height: 1.2;
 	}
 
-	.holon-id {
-		font-size: 0.625rem;
+	.card-id {
+		font-size: 0.5625rem;
 		font-family: ui-monospace, monospace;
 		color: #6b7280;
 		letter-spacing: 0.02em;
 	}
 
-	.chevron {
-		width: 16px;
-		height: 16px;
-		color: #6b7280;
-		flex-shrink: 0;
-		transition: transform 0.2s ease;
-	}
-
-	.holon-btn:hover .chevron {
-		color: #9ca3af;
-	}
-
-	.logo-btn {
+	.card-delete {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		padding: 0.5rem;
+		width: 18px;
+		height: 18px;
+		padding: 0;
 		background: transparent;
-		border: 2px solid transparent;
-		border-radius: 50%;
+		border: none;
+		color: #6b7280;
 		cursor: pointer;
-		transition: all 0.3s ease;
-		margin: 0 auto;
+		transition: all 0.15s ease;
+		border-radius: 0.25rem;
+		opacity: 0;
+		margin-left: 0.25rem;
 	}
 
-	.logo-btn:hover {
-		border-color: rgba(96, 165, 250, 0.5);
-		box-shadow: 0 0 20px rgba(96, 165, 250, 0.2);
+	.holon-card:hover .card-delete {
+		opacity: 1;
 	}
 
-	.logo-icon {
-		width: 48px;
-		height: 48px;
+	.card-delete svg {
+		width: 12px;
+		height: 12px;
 	}
 
-	.spacer {
-		flex: 1;
+	.card-delete:hover {
+		color: #ef4444;
+		background: rgba(239, 68, 68, 0.1);
+	}
+
+	/* Add holon button (on the right of cards) */
+	.add-holon-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		padding: 0;
+		background: rgba(16, 185, 129, 0.2);
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		border-radius: 0.75rem;
+		color: #10b981;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		flex-shrink: 0;
+	}
+
+	.add-holon-btn:hover {
+		background: rgba(16, 185, 129, 0.4);
+		border-color: rgba(16, 185, 129, 0.6);
+		color: #34d399;
+		transform: translateY(-1px);
+	}
+
+	.add-holon-btn svg {
+		width: 20px;
+		height: 20px;
 	}
 
 	.controls {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
+		flex-shrink: 0;
 	}
 
 	.icon-btn {
@@ -426,14 +665,6 @@
 		border-color: rgba(75, 85, 99, 0.5);
 	}
 
-	.copy-btn {
-		margin-left: -0.25rem;
-	}
-
-	.copy-btn:hover {
-		color: #60a5fa;
-	}
-
 	.divider {
 		width: 1px;
 		height: 24px;
@@ -453,27 +684,42 @@
 			gap: 0.5rem;
 		}
 
-		.holon-btn {
-			padding: 0.25rem 0.5rem;
-			max-width: 200px;
+		.holon-cards {
+			gap: 0.375rem;
 		}
 
-		.holon-icon {
-			width: 28px;
-			height: 28px;
+		.holon-card {
+			padding: 0.25rem 0.375rem;
 		}
 
-		.holon-name {
-			font-size: 0.8125rem;
-			max-width: 120px;
+		.card-icon {
+			width: 24px;
+			height: 24px;
 		}
 
-		.holon-id {
+		.card-name {
+			font-size: 0.75rem;
+			max-width: 80px;
+		}
+
+		.card-id {
 			display: none;
 		}
 
-		.chevron {
-			display: none;
+		.card-delete {
+			width: 16px;
+			height: 16px;
+			opacity: 1;
+		}
+
+		.add-holon-btn {
+			width: 32px;
+			height: 32px;
+		}
+
+		.add-holon-btn svg {
+			width: 16px;
+			height: 16px;
 		}
 
 		.icon-btn {
@@ -493,20 +739,141 @@
 		.translate-widget {
 			display: none;
 		}
+	}
 
-		.copy-btn {
-			display: none;
+	/* Tablet adjustments */
+	@media (min-width: 641px) and (max-width: 1023px) {
+		.card-name {
+			max-width: 100px;
 		}
 	}
 
 	/* Large screens */
 	@media (min-width: 1024px) {
-		.holon-btn {
-			max-width: 400px;
+		.card-name {
+			max-width: 140px;
 		}
+	}
 
-		.holon-name {
-			max-width: 280px;
-		}
+	/* Modal styles */
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+		padding: 1rem;
+	}
+
+	.modal-content {
+		background: rgb(31, 41, 55);
+		border-radius: 0.75rem;
+		padding: 1.5rem;
+		width: 100%;
+		max-width: 400px;
+		border: 1px solid rgba(75, 85, 99, 0.5);
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+	}
+
+	.modal-title {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: white;
+		margin-bottom: 1rem;
+	}
+
+	.modal-error {
+		padding: 0.75rem;
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid rgba(239, 68, 68, 0.3);
+		border-radius: 0.5rem;
+		color: #f87171;
+		font-size: 0.875rem;
+		margin-bottom: 1rem;
+	}
+
+	.modal-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	.modal-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.modal-field label {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: #d1d5db;
+	}
+
+	.modal-field input {
+		padding: 0.625rem 0.75rem;
+		background: rgb(55, 65, 81);
+		border: 1px solid rgba(75, 85, 99, 0.5);
+		border-radius: 0.5rem;
+		color: white;
+		font-size: 0.875rem;
+	}
+
+	.modal-field input::placeholder {
+		color: #9ca3af;
+	}
+
+	.modal-field input:focus {
+		outline: none;
+		border-color: #6366f1;
+		box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+	}
+
+	.modal-hint {
+		font-size: 0.75rem;
+		color: #9ca3af;
+		margin-top: 0.25rem;
+	}
+
+	.modal-actions {
+		display: flex;
+		gap: 0.75rem;
+		margin-top: 1.5rem;
+	}
+
+	.modal-btn {
+		flex: 1;
+		padding: 0.625rem 1rem;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		border: none;
+	}
+
+	.modal-btn-primary {
+		background: #6366f1;
+		color: white;
+	}
+
+	.modal-btn-primary:hover:not(:disabled) {
+		background: #4f46e5;
+	}
+
+	.modal-btn-primary:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.modal-btn-secondary {
+		background: rgb(75, 85, 99);
+		color: white;
+	}
+
+	.modal-btn-secondary:hover {
+		background: rgb(107, 114, 128);
 	}
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
+    import { page } from "$app/stores";
     import { formatDate, formatTime } from "../utils/date";
     import type { HoloSphere } from "holosphere";
     import { getHologramSourceName } from "../utils/holonNames";
@@ -11,6 +12,7 @@
         done: boolean;
         from: string;
         addedOn: string;
+        _deleted?: boolean;
         _hologram?: {
             isHologram: boolean;
             soul: string;
@@ -21,15 +23,13 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
-    $: holonID = $ID;
+    let holonID: string = '';
     let store: Record<string, ShoppingItem> = {};
-    let newItemText = "";
     $: shoppingItems = Object.entries(store);
-    $: filteredItems = shoppingItems.filter(([_, item]) => {
-        // Filter holograms if showHolograms is false
-        if (!showHolograms && item._hologram?.isHologram) {
-            return false;
-        }
+    $: filteredItems = shoppingItems.filter(([_, item]: [string, any]) => {
+        // Filter out deleted items and holograms if showHolograms is false
+        if (item._deleted) return false;
+        if (!showHolograms && item._hologram?.isHologram) return false;
         return true;
     });
 
@@ -37,9 +37,6 @@
     let inputText = "";
     let showHolograms = true;
     let shoppingItemsUnsubscribe: (() => void) | undefined;
-	let subscriptionState = {
-		currentHolonID: null as string | null
-	};
     let hologramSourceNames = new Map<string, string>();
 
     async function preResolveHologramNames(items: ShoppingItem[]) {
@@ -80,61 +77,55 @@
 		}
 	}
 
-    async function subscribe() {
-		if (!holosphere || !holonID) return;
-		
-		if (subscriptionState.currentHolonID === holonID && shoppingItemsUnsubscribe) return;
-		
-		if (shoppingItemsUnsubscribe) {
-			shoppingItemsUnsubscribe();
-			shoppingItemsUnsubscribe = undefined;
-		}
-		
-		store = {};
-		
-		try {
-			subscriptionState.currentHolonID = holonID;
-			
-			const initialData = await holosphere.getAll(holonID, "shopping");
-			
-			if (typeof initialData === 'object' && initialData !== null && !Array.isArray(initialData)) {
-				store = initialData as Record<string, ShoppingItem>;
-			}
-			
-			await preResolveHologramNames(Object.values(store));
+    async function fetchData() {
+        if (!holosphere || !holonID) return;
 
-			const off = holosphere.subscribe(holonID, "shopping", (newItem: ShoppingItem | null, key?: string) => {
-				if (newItem && key) {
-					store = { ...store, [key]: newItem };
-				} else if (key) {
-					const { [key]: _, ...rest } = store;
-					store = rest;
-				}
-                if (newItem?._hologram?.isHologram) {
-                    preResolveHologramNames([newItem]);
+        // Clean up previous subscription
+        if (shoppingItemsUnsubscribe) {
+            shoppingItemsUnsubscribe();
+            shoppingItemsUnsubscribe = undefined;
+        }
+
+        try {
+            const initialData = await holosphere.getAll(holonID, "shopping");
+
+            // Filter out metadata objects
+            const newStore: Record<string, ShoppingItem> = {};
+            if (typeof initialData === 'object' && initialData !== null) {
+                Object.entries(initialData).forEach(([key, item]: [string, any]) => {
+                    // Only include valid shopping items (not federation metadata)
+                    if (item && item.id && !item.sourceHolon && !item.hologram) {
+                        newStore[key] = item as ShoppingItem;
+                    }
+                });
+            }
+            store = newStore;
+
+            await preResolveHologramNames(Object.values(store));
+
+            // Set up subscription for real-time updates
+            const off = holosphere.subscribe(holonID, "shopping", (newItem: any, key?: string) => {
+                // Filter out federation metadata
+                if (newItem && key && !newItem.sourceHolon && !newItem.hologram) {
+                    store = { ...store, [key]: newItem as ShoppingItem };
+                    if (newItem._hologram?.isHologram) {
+                        preResolveHologramNames([newItem]);
+                    }
+                } else if (!newItem && key) {
+                    const { [key]: _, ...rest } = store;
+                    store = rest;
                 }
-			});
+            });
 
-			if (typeof off === 'function') {
-				shoppingItemsUnsubscribe = off as unknown as () => void;
-			}
-
-		} catch (error) {
-			console.error('Error setting up shopping list subscription:', error);
-			subscriptionState.currentHolonID = null;
-			shoppingItemsUnsubscribe = undefined;
-		}
-	}
+            if (typeof off === 'function') {
+                shoppingItemsUnsubscribe = off as unknown as () => void;
+            }
+        } catch (error) {
+            console.error('Error fetching shopping list:', error);
+        }
+    }
 
     onMount(() => {
-		let mounted = true;
-		
-		const idSubscription = ID.subscribe(async (value) => {
-			if (!mounted || !value ) return;
-			holonID = value;
-			await subscribe();
-		});
-
         // Load preferences
         try {
             const storedShowHolograms = localStorage.getItem("shoppingShowHolograms");
@@ -146,11 +137,22 @@
         }
 
         return () => {
-			mounted = false;
-			if (idSubscription) idSubscription();
-			if (shoppingItemsUnsubscribe) shoppingItemsUnsubscribe();
-		};
+            if (shoppingItemsUnsubscribe) shoppingItemsUnsubscribe();
+        };
     });
+
+    // Single reactive block: when page ID changes and holosphere is ready, fetch data
+    let currentHolonId: string | null = null;
+    $: {
+        const newId = $page.params.id;
+        if (newId && newId !== 'undefined' && newId !== 'null' && newId.trim() !== '' &&
+            holosphere && newId !== currentHolonId) {
+            currentHolonId = newId;
+            holonID = newId;
+            ID.set(newId);
+            fetchData();
+        }
+    }
 
     // Save showHolograms preference to localStorage
     $: if (typeof localStorage !== 'undefined') {

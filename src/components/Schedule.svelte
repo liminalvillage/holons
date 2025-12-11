@@ -9,6 +9,7 @@
 	import { formatDate, formatTime } from '../utils/date';
 
 	import type { HoloSphere } from "holosphere";
+	import type { Quest } from '../types/Quest';
 	let holosphere = getContext('holosphere') as HoloSphere;
 
 	let holonID: string = '';
@@ -86,37 +87,42 @@
 		}
 	}
 
-	onMount(async () => {
-		// Wait for holosphere to be ready
-		const holosphereAvailable = await waitForHolosphere();
-		if (!holosphereAvailable) {
-			error = 'Connection not available. Please refresh the page.';
-			isLoading = false;
-			return;
-		}
+	let idUnsubscribe: (() => void) | undefined;
 
-		// Set up ID subscription
-		const idUnsubscribe = ID.subscribe(async (value) => {
-			if (value && value !== holonID) {
-				holonID = value;
-				// Clean up previous subscription
-				if (unsubscribe) {
-					unsubscribe();
-					unsubscribe = null;
+	onMount(() => {
+		// Initialize asynchronously
+		(async () => {
+			// Wait for holosphere to be ready
+			const holosphereAvailable = await waitForHolosphere();
+			if (!holosphereAvailable) {
+				error = 'Connection not available. Please refresh the page.';
+				isLoading = false;
+				return;
+			}
+
+			// Set up ID subscription
+			idUnsubscribe = ID.subscribe(async (value) => {
+				if (value && value !== holonID) {
+					holonID = value;
+					// Clean up previous subscription
+					if (unsubscribe) {
+						unsubscribe();
+						unsubscribe = null;
+					}
+					await loadScheduleData();
 				}
+			});
+
+			// Initial load if we have an ID
+			if ($ID) {
+				holonID = $ID;
 				await loadScheduleData();
 			}
-		});
-
-		// Initial load if we have an ID
-		if ($ID) {
-			holonID = $ID;
-			await loadScheduleData();
-		}
+		})();
 
 		// Cleanup on unmount
 		return () => {
-			idUnsubscribe();
+			if (idUnsubscribe) idUnsubscribe();
 			if (unsubscribe) {
 				unsubscribe();
 			}

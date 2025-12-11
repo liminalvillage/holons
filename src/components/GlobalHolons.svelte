@@ -2,6 +2,7 @@
     import { createEventDispatcher, onMount, onDestroy, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import { goto } from "$app/navigation";
+    import { browser } from "$app/environment";
     import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
     import { fetchHolonName } from "../utils/holonNames";

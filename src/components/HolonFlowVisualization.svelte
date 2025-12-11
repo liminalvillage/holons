@@ -10,7 +10,7 @@
 
   let canvas: HTMLCanvasElement;
   let ctx: CanvasRenderingContext2D;
-  let holonsManager: HolonsManager;
+  let holonsManager: HolonsManager | undefined;
   let holosphere: HoloSphere;
   let visualizationData: FlowVisualizationData | null = null;
   let loading = true;

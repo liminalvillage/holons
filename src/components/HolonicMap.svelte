@@ -22,7 +22,7 @@
 
     // Listen to ID store changes
     $: if ($ID !== hexId) {
-        hexId = $ID;
+        hexId = $ID ?? undefined;
         console.log(`[HolonicMap] ID changed to: ${hexId}`);
     }
 

@@ -117,7 +117,7 @@
       loading = true;
       error = '';
       
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      await window.ethereum?.request({ method: 'eth_requestAccounts' });
       const signer = await (provider as ethers.BrowserProvider).getSigner();
       await holonsManager.connectWallet(signer);
       

@@ -56,6 +56,7 @@
 			sourceHolon: string;
 			localOverrides?: string[];
 		};
+		_deleted?: boolean;
 	}
 
 	interface Store {
@@ -65,9 +66,65 @@
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
-	$: holonID = $ID;
+	let holonID: string = '';
 	let store: Store = {};
 	$: quests = Object.entries(store);
+
+	// Helper function to check if a quest matches the current filterType
+	function matchesFilterType(quest: Quest, currentFilterType: string): boolean {
+		if (currentFilterType !== 'all') {
+			if (currentFilterType === 'event') {
+				const type = quest.type || 'task';
+				const isScheduled = !!(quest.when && quest.when.trim() !== '');
+				return type === 'event' || isScheduled;
+			} else {
+				const type = quest.type || 'task';
+				return type === currentFilterType;
+			}
+		}
+		// filterType === 'all': accept task, recurring, quest, event types
+		const type = quest.type || 'task';
+		return !quest.type || type === "task" || type === "recurring" || type === "quest" || type === "event";
+	}
+
+	// Stats - updated directly in fetchData
+	let statsUnassigned = 0;
+	let statsOpenItems = 0;
+	let statsRecurring = 0;
+	let statsCompleted = 0;
+	let statsFilterSpecific = 0;
+
+	// Compute stats from store
+	function updateStats() {
+		let unassigned = 0;
+		let openItems = 0;
+		let recurring = 0;
+		let completed = 0;
+		let filterSpecific = 0;
+
+		for (const quest of Object.values(store)) {
+			if (quest._deleted) continue;
+			if (!matchesFilterType(quest, filterType)) continue;
+
+			if (!quest.participants?.length && quest.status !== "completed") unassigned++;
+			if (quest.status !== "completed") openItems++;
+			if (quest.status === "recurring" || quest.status === "repeating") recurring++;
+			if (quest.status === "completed") completed++;
+
+			// Count items matching current filter type
+			const type = quest.type || 'task';
+			if (filterType === 'event' && type === 'event') filterSpecific++;
+			else if (filterType === 'task' && type === 'task') filterSpecific++;
+			else if (filterType === 'quest' && type === 'quest') filterSpecific++;
+			else if (filterType === 'all') filterSpecific++;
+		}
+
+		statsUnassigned = unassigned;
+		statsOpenItems = openItems;
+		statsRecurring = recurring;
+		statsCompleted = completed;
+		statsFilterSpecific = filterSpecific;
+	}
 
 	// Initialize with safe defaults
 	let viewMode: 'list' | 'canvas' = 'list';
@@ -190,6 +247,9 @@
 	// Modify the reactive statement for sorting
 	$: {
 		let currentFilteredQuests = quests.filter(([_, quest]) => {
+			// Skip deleted items
+			if (quest._deleted) return false;
+
 			if (selectedCategory !== "all" && quest.category !== selectedCategory) {
 				return false;
 			}
@@ -316,8 +376,6 @@
 		
 		// Update the shared store
 		updateTaskSort(newCriteria, newDirection);
-		
-		console.log(`Sorting by: ${newCriteria}` + (newCriteria !== 'orderIndex' ? `, Direction: ${newDirection}` : ' (Ascending)') + `, Icon: ${sortButtonIconRotation}°`);
 	}
 
 	// Fix handleTaskClick type
@@ -356,11 +414,7 @@
 
 	// Modify handleAddTask to use a default 'Dashboard User' initiator if user data fetch fails or returns no data, instead of throwing an error.
 	async function handleAddTask() {
-		// DEBUG: Log state at the start of handleAddTask
-		console.log('[ADD_TASK] START - newTask state:', { id: newTask.id, title: newTask.title, description: newTask.description });
-
 		if (!holosphere || !holonID || !newTask.title.trim()) {
-			console.log('[ADD_TASK] EARLY RETURN - validation failed:', { holosphere: !!holosphere, holonID, titleTrimmed: newTask.title.trim() });
 			return;
 		}
 
@@ -411,15 +465,10 @@
 				// No position assigned - let CanvasView handle positioning in inbox
 			};
 
-			// DEBUG: Log what we're about to write
-			console.log('[ADD_TASK] Writing task:', { id: task.id, title: task.title, newTaskTitle: newTask.title });
-
 			// Add the task to holosphere
 			if (holonID) {
 				await holosphere.put(holonID, 'quests', task);
-				console.log('[ADD_TASK] Task written successfully:', task.id);
 			} else {
-				console.error("Cannot add task: holonID is null");
 				return;
 			}
 
@@ -524,7 +573,6 @@
 				if (questToUpdate.orderIndex !== index) {
 					const updatedQuest = { ...questToUpdate, id: key, orderIndex: index };
 					storeUpdates[key] = updatedQuest;
-					console.log(`[Tasks] Updating orderIndex for quest ${key}: ${questToUpdate.orderIndex || 'undefined'} -> ${index}`);
 					return holosphere.put(currentHolonID, 'quests', updatedQuest);
 				}
 				return Promise.resolve();
@@ -532,12 +580,10 @@
 
 			try {
 				await Promise.all(updatedQuestsPromises);
-				console.log(`[Tasks] Successfully updated orderIndex for changed quests after drop`);
 				// Re-enable subscription after save
 				questsUnsubscribe = tempQuestsUnsub;
 				// Immutable store update for Svelte reactivity
 				store = { ...store, ...storeUpdates };
-				quests = Object.entries(store);
 			} catch (error) {
 				console.error('Error updating quest orderIndex after drop:', error);
 				// Re-enable subscription even on error
@@ -601,8 +647,6 @@
 				await holosphere.put(currentHolonID, 'quests', draggedQuest);
 				// Immutable store update for Svelte reactivity
 				store = { ...store, [sourceKey]: draggedQuest };
-				quests = Object.entries(store);
-				console.log(`[Tasks] Successfully saved position update for quest ${sourceKey}`);
 			} catch (error) {
 				console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
 			}
@@ -642,8 +686,6 @@
 		}
 
 		try {
-			console.log(`Importing ${importedQuests.length} quests...`);
-
 			// Calculate base orderIndex once, then increment for each import
 			const baseOrderIndex = filteredQuests.length;
 
@@ -785,7 +827,6 @@
 			// Update local store immediately
 			const { [event.detail.questId]: _, ...rest } = store;
 			store = rest;
-			quests = Object.entries(store);
 		}
 		// Always set selectedTask to null when modal closes
 		selectedTask = null;
@@ -829,8 +870,6 @@
 		isLoading = true;
 		
 		try {
-			console.log(`Fetching tasks for holon: ${holonID}`);
-
 			const initialData = await holosphere.getAll(holonID, "quests");
 
 			// Process initial data
@@ -861,14 +900,12 @@
 				});
 			}
 			
-			// Update store and quests immediately - don't wait for hologram name resolution
+			// Update store and stats
 			store = newStore;
-			quests = Object.entries(store);
-
-			console.log(`Successfully fetched tasks for holon ${holonID}:`, Object.keys(newStore).length, 'tasks');
+			updateStats();
 
 			// Pre-resolve hologram names in background (don't block rendering)
-			preResolveHologramNames(quests);
+			preResolveHologramNames(Object.entries(store));
 
 			// Set up subscription in background (don't block rendering)
 			subscribe();
@@ -884,12 +921,9 @@
 			}
 
 		} catch (error: any) {
-			console.error('Error fetching tasks data:', error);
-			
 			// Retry on network errors up to 3 times with exponential backoff
 			if (retryCount < 3) {
 				const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-				console.log(`Retrying tasks fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
 				setTimeout(() => fetchData(retryCount + 1), delay);
 				return;
 			}
@@ -904,11 +938,6 @@
 		}
 	}
 
-	// Remove debounce helper and throttled store updates
-	function updateStore(newStore: Store) {
-		store = newStore;
-		quests = Object.entries(store);
-	}
 
 	// Set up real-time subscription for future updates (does NOT fetch initial data)
 	async function subscribe() {
@@ -938,12 +967,8 @@
 				// Use the key from the callback, or fall back to quest.id
 				const questKey = key || newquest?.id;
 				if (!questKey) {
-					console.warn('Subscription received quest without key or id:', newquest);
 					return;
 				}
-
-				// DEBUG: Log what the subscription receives
-				console.log('[SUBSCRIPTION] Received update:', { key, questKey, id: newquest?.id, title: newquest?.title, _deleted: newquest?._deleted });
 
 				// Update store atomically - read current store at update time to avoid race conditions
 				// Check if this is a deletion: either null, _deleted flag, or empty object (no id)
@@ -954,15 +979,13 @@
 					if (!newquest.participants) newquest.participants = [];
 					if (!newquest.appreciation) newquest.appreciation = [];
 					// Atomic update: spread current store and add/update this quest
-					console.log('[SUBSCRIPTION] Updating store with:', { questKey, title: newquest.title });
 					store = { ...store, [questKey]: newquest };
 				} else {
 					// Delete: create new store without this key
-					console.log('[SUBSCRIPTION] Deleting from store:', questKey);
 					const { [questKey]: _, ...rest } = store;
 					store = rest;
 				}
-				quests = Object.entries(store);
+				updateStats();
 
 				// Only resolve hologram names if this is a new hologram we haven't seen before
 				if (newquest && newquest._hologram?.isHologram && newquest._hologram.soul &&
@@ -982,144 +1005,64 @@
 		}
 	}
 
-	// Modify onMount to handle subscription cleanup
+	// Simple onMount - one fetch, one subscription
 	onMount(() => {
-		let mounted = true;
-		
-		// Initialize with URL parameter first
-		const urlId = $page.params.id;
-		if (urlId && urlId !== 'undefined' && urlId !== 'null' && urlId.trim() !== '') {
-			holonID = urlId;
-			// Update the ID store to keep them in sync
-			ID.set(urlId);
-		}
-
 		// Check for task parameter in URL
 		const urlParams = new URLSearchParams(window.location.search);
 		const taskParam = urlParams.get('task');
 		if (taskParam) {
-			// Store the task ID to open after data is loaded
 			selectedTaskId = taskParam;
 		}
 
-		// Wait for holosphere to be ready before proceeding
-		const checkConnection = async () => {
-			if (!holosphere) {
-				setTimeout(checkConnection, 100);
-				return;
+		// Load preferences
+		try {
+			const storedViewMode = localStorage.getItem('taskViewMode');
+			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
+				viewMode = storedViewMode as 'list' | 'canvas';
 			}
-
-			connectionReady = true;
-			
-			// Set up subscription to ID store with debouncing
-			let updateTimeout: NodeJS.Timeout;
-			const idSubscription = ID.subscribe((value) => {
-				if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
-					// Clear any pending update
-					if (updateTimeout) clearTimeout(updateTimeout);
-					
-					// Debounce the update to avoid rapid changes
-					updateTimeout = setTimeout(async () => {
-						if (value !== holonID && mounted) {
-							holonID = value;
-							await fetchData();
-						}
-					}, 100);
-				}
-			});
-
-			// Initial fetch if we have an ID
-			if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
-				await fetchData();
+			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+			const storedShowHolograms = localStorage.getItem("taskShowHolograms");
+			if (storedShowHolograms !== null) {
+				showHolograms = storedShowHolograms === "true";
 			}
-
-			// Load preferences
-			try {
-				const storedViewMode = localStorage.getItem('taskViewMode');
-				if (storedViewMode === 'list' || storedViewMode === 'canvas') {
-					viewMode = storedViewMode as 'list' | 'canvas';
-				}
-				showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
-				const storedShowHolograms = localStorage.getItem("taskShowHolograms");
-				if (storedShowHolograms !== null) {
-					showHolograms = storedShowHolograms === "true";
-				}
-			} catch (error) {
-				console.error('Error loading preferences:', error);
-				// Defaults are already set, so just log error
-			}
-
-			return () => {
-				mounted = false;
-				if (idSubscription) idSubscription();
-				if (questsUnsubscribe) questsUnsubscribe();
-				if (subscriptionState.batchTimeout) { // Clear timeout if it exists
-					clearTimeout(subscriptionState.batchTimeout);
-					subscriptionState.batchTimeout = null;
-				}
-				subscriptionState.pendingUpdates.clear();
-				// Don't nullify currentHolonID here, as it might be needed if component remounts quickly
-			};
-		};
-		
-		checkConnection();
-
-		// Cleanup subscription on unmount
-		return () => {
-			mounted = false;
-			if (questsUnsubscribe) questsUnsubscribe();
-			if (subscriptionState.batchTimeout) { // Clear timeout if it exists
-				clearTimeout(subscriptionState.batchTimeout);
-				subscriptionState.batchTimeout = null;
-			}
-			subscriptionState.pendingUpdates.clear();
-		};
-	});
-
-	// Watch for page ID changes with debouncing
-	let pageUpdateTimeout: NodeJS.Timeout;
-	$: {
-		const newId = $page.params.id;
-		if (newId && newId !== holonID && connectionReady) {
-			// Check if the new ID is valid
-			if (newId !== 'undefined' && newId !== 'null' && newId.trim() !== '') {
-				// Clear any pending update
-				if (pageUpdateTimeout) clearTimeout(pageUpdateTimeout);
-				
-				// Debounce the update to avoid rapid changes
-				pageUpdateTimeout = setTimeout(async () => {
-					holonID = newId;
-					// Update the ID store to keep them in sync
-					ID.set(newId);
-					if (holosphere) {
-						await fetchData();
-					}
-				}, 100);
-			}
+		} catch (error) {
+			console.error('Error loading preferences:', error);
 		}
-	}
 
-	// Listen for dependency task modal requests
-	onMount(() => {
+		// Listen for dependency task modal requests
 		const handleDependencyTask = (event: CustomEvent) => {
 			const { taskId } = event.detail;
 			if (taskId && store[taskId]) {
-				// Close current modal if open
 				selectedTask = null;
-				
-				// Open the new task modal
 				selectedTask = { key: taskId, quest: store[taskId] };
 			}
 		};
-		
 		window.addEventListener('openDependencyTask', handleDependencyTask as EventListener);
-		
+
+		// Cleanup
 		return () => {
+			if (questsUnsubscribe) questsUnsubscribe();
+			if (subscriptionState.batchTimeout) {
+				clearTimeout(subscriptionState.batchTimeout);
+			}
 			window.removeEventListener('openDependencyTask', handleDependencyTask as EventListener);
 		};
 	});
 
-	// Modify the reactive statements to be more efficient and avoid triggering excessive re-processing
+	// Single reactive block: when page ID changes and holosphere is ready, fetch data
+	let currentHolonId: string | null = null;
+	$: {
+		const newId = $page.params.id;
+		const isValidId = newId && newId !== 'undefined' && newId !== 'null' && newId.trim() !== '';
+
+		if (isValidId && holosphere && newId !== currentHolonId) {
+			currentHolonId = newId;
+			holonID = newId;
+			ID.set(newId);
+			connectionReady = true;
+			fetchData();
+		}
+	}
 
 
 	// Save showHolograms preference to localStorage
@@ -1138,7 +1081,6 @@
 					position: position
 				}
 			};
-			quests = Object.entries(store); // Trigger reactivity
 			// console.log('[Tasks.svelte] Optimistically updated position for key:', key, 'to', position);
 		} else {
 			// console.warn('[Tasks.svelte] Could not optimistically update position for event:', event.detail);
@@ -1258,127 +1200,31 @@
 				<div class="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-8">
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
-							{quests.filter(
-								([_, quest]) => {
-									// Apply type filtering
-																	if (filterType !== 'all') {
-									if (filterType === 'event') {
-										const type = quest.type || 'task';
-										const isScheduled = quest.when && quest.when.trim() !== '';
-										if (type !== 'event' && !isScheduled) return false;
-									} else {
-										const type = quest.type || 'task';
-										if (type !== filterType) return false;
-									}
-									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
-											// Continue with other filters
-										} else {
-											return false;
-										}
-									}
-									return !quest.participants?.length && quest.status !== "completed";
-								}
-							).length}
+							{statsUnassigned}
 						</div>
 						<div class="text-sm text-gray-400">Unassigned</div>
 					</div>
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
-							{quests.filter(
-								([_, quest]) => {
-									// Apply type filtering
-																	if (filterType !== 'all') {
-									if (filterType === 'event') {
-										const type = quest.type || 'task';
-										const isScheduled = quest.when && quest.when.trim() !== '';
-										if (type !== 'event' && !isScheduled) return false;
-									} else {
-										const type = quest.type || 'task';
-										if (type !== filterType) return false;
-									}
-									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
-											// Continue with other filters
-										} else {
-											return false;
-										}
-									}
-									return quest.status !== "completed";
-								}
-							).length}
+							{statsOpenItems}
 						</div>
 						<div class="text-sm text-gray-400">Open Items</div>
 					</div>
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
-							{quests.filter(
-								([_, quest]) => {
-									// Apply type filtering
-																	if (filterType !== 'all') {
-									if (filterType === 'event') {
-										const type = quest.type || 'task';
-										const isScheduled = quest.when && quest.when.trim() !== '';
-										if (type !== 'event' && !isScheduled) return false;
-									} else {
-										const type = quest.type || 'task';
-										if (type !== filterType) return false;
-									}
-									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
-											// Continue with other filters
-										} else {
-											return false;
-										}
-									}
-									return (quest.status === "recurring" || quest.status === "repeating");
-								}
-							).length}
+							{statsRecurring}
 						</div>
 						<div class="text-sm text-gray-400">Recurring</div>
 					</div>
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
-							{quests.filter(
-								([_, quest]) => {
-									// Apply type filtering
-																	if (filterType !== 'all') {
-									if (filterType === 'event') {
-										const type = quest.type || 'task';
-										const isScheduled = quest.when && quest.when.trim() !== '';
-										if (type !== 'event' && !isScheduled) return false;
-									} else {
-										const type = quest.type || 'task';
-										if (type !== filterType) return false;
-									}
-									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
-											// Continue with other filters
-										} else {
-											return false;
-										}
-									}
-									return quest.status === "completed";
-								}
-							).length}
+							{statsCompleted}
 						</div>
 						<div class="text-sm text-gray-400">Completed</div>
 					</div>
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
-							{quests.filter(([_, quest]) => {
-								if (filterType !== 'all') {
-									if (filterType === 'event') {
-										const type = quest.type || 'task';
-										const isScheduled = quest.when && quest.when.trim() !== '';
-										return type === 'event' || isScheduled;
-									} else {
-										const type = quest.type || 'task';
-										return type === filterType;
-									}
-								}
-								return quest.type === "quest";
-							}).length}
+							{statsFilterSpecific}
 						</div>
 						<div class="text-sm text-gray-400">{filterType === 'event' ? 'Scheduled' : filterType === 'task' ? 'Tasks' : 'Quests'}</div>
 					</div>

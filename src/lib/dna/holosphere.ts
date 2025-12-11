@@ -95,17 +95,20 @@ export async function getChromosomeLibrary(
       if (key.startsWith('_')) continue;
       if (!value || typeof value !== 'object') continue;
 
+      // Cast to Record for property access
+      const v = value as Record<string, any>;
+
       // Access properties directly from Gun object (they should load synchronously if already cached)
       const chromosome: Chromosome = {
-        id: value.id || key,
-        holonId: value.holonId || holonId,
-        name: value.name || '',
-        type: value.type || 'value',
-        description: value.description || '',
-        icon: value.icon,
-        color: value.color,
-        createdAt: value.createdAt || Date.now(),
-        updatedAt: value.updatedAt || Date.now()
+        id: v.id || key,
+        holonId: v.holonId || holonId,
+        name: v.name || '',
+        type: v.type || 'value',
+        description: v.description || '',
+        icon: v.icon,
+        color: v.color,
+        createdAt: v.createdAt || Date.now(),
+        updatedAt: v.updatedAt || Date.now()
       };
 
       console.log('[getChromosomeLibrary] Parsed chromosome:', {

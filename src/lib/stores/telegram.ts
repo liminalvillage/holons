@@ -129,7 +129,7 @@ function createTelegramStore() {
 			} else {
 				// Check if we're actually inside Telegram WebApp (initData is non-empty)
 				// The SDK loads on regular web too, but initData is empty outside Telegram
-				const isActuallyInTelegram = telegram && telegram.initData && telegram.initData.length > 0;
+				const isActuallyInTelegram = Boolean(telegram && telegram.initData && telegram.initData.length > 0);
 
 				// Check if we have a stored user from previous login
 				const storedUser = localStorage.getItem('telegram_user');

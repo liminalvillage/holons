@@ -23,7 +23,7 @@
 
 	const dispatch = createEventDispatcher();
 
-	onMount(async () => {
+	onMount(() => {
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 		ID.subscribe((value) => {
 			holonID = value;
@@ -37,7 +37,7 @@
 				selectedQuest = null;
 			}
 		};
-		
+
 		document.addEventListener('keydown', handleEscape);
 
 		return () => {
@@ -170,6 +170,7 @@
 		
 		// Then update in holosphere
 		try {
+			if (!holonID) return;
 			holosphere.put(holonID, 'quests', updatedQuest)
 				.then((success) => {
 					if (!success) {

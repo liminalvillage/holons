@@ -12,24 +12,21 @@
 		!!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
 
 	let holonID = $page.params.id;
-	let unsubscribe: () => void;
 	let isLoading = true;
 	let connectionReady = false;
 
-	// Stats
-	let stats = {
-		users: 0,
-		completedTasks: 0,
-		totalTasks: 0,
-		events: 0,
-		shopping: 0,
-		proposals: 0,
-		offers: 0,
-		checklists: 0,
-		completedChecklists: 0,
-		roles: 0,
-		unassignedRoles: 0
-	};
+	// Stats - using individual variables for better Svelte 5 reactivity
+	let statsUsers = 0;
+	let statsCompletedTasks = 0;
+	let statsTotalTasks = 0;
+	let statsEvents = 0;
+	let statsShopping = 0;
+	let statsProposals = 0;
+	let statsOffers = 0;
+	let statsChecklists = 0;
+	let statsCompletedChecklists = 0;
+	let statsRoles = 0;
+	let statsUnassignedRoles = 0;
 
 	// Card definitions for cleaner rendering
 	const primaryCards = [
@@ -48,33 +45,33 @@
 		{ key: 'settings', label: 'Settings', icon: 'fa-cog', color: 'emerald', href: 'settings', sublabel: 'Configure' }
 	];
 
-	function getStatValue(key: string): number | string {
-		switch (key) {
-			case 'users': return stats.users;
-			case 'tasks': return `${stats.completedTasks}/${stats.totalTasks}`;
-			case 'events': return stats.events;
-			case 'shopping': return stats.shopping;
-			case 'proposals': return stats.proposals;
-			case 'offers': return stats.offers;
-			case 'checklists': return `${stats.completedChecklists}/${stats.checklists}`;
-			case 'roles': return stats.roles;
-			default: return 0;
-		}
-	}
-
-	function getProgress(key: string): number {
-		switch (key) {
-			case 'tasks': return stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0;
-			case 'checklists': return stats.checklists > 0 ? (stats.completedChecklists / stats.checklists) * 100 : 0;
-			default: return 0;
-		}
-	}
+	// Reactive getters using $derived-like pattern for Svelte 5
+	$: statValueUsers = statsUsers;
+	$: statValueTasks = `${statsCompletedTasks}/${statsTotalTasks}`;
+	$: statValueEvents = statsEvents;
+	$: statValueShopping = statsShopping;
+	$: statValueProposals = statsProposals;
+	$: statValueOffers = statsOffers;
+	$: statValueChecklists = `${statsCompletedChecklists}/${statsChecklists}`;
+	$: statValueRoles = statsRoles;
+	$: progressTasks = statsTotalTasks > 0 ? (statsCompletedTasks / statsTotalTasks) * 100 : 0;
+	$: progressChecklists = statsChecklists > 0 ? (statsCompletedChecklists / statsChecklists) * 100 : 0;
 
 	async function fetchData(retryCount = 0) {
 		if (!isValidId(holonID) || !holosphere || !connectionReady) return;
 
 		// Reset stats
-		stats = { users: 0, completedTasks: 0, totalTasks: 0, events: 0, shopping: 0, proposals: 0, offers: 0, checklists: 0, completedChecklists: 0, roles: 0, unassignedRoles: 0 };
+		statsUsers = 0;
+		statsCompletedTasks = 0;
+		statsTotalTasks = 0;
+		statsEvents = 0;
+		statsShopping = 0;
+		statsProposals = 0;
+		statsOffers = 0;
+		statsChecklists = 0;
+		statsCompletedChecklists = 0;
+		statsRoles = 0;
+		statsUnassignedRoles = 0;
 		isLoading = true;
 
 		try {
@@ -88,7 +85,7 @@
 			]);
 
 			const getData = (result: PromiseSettledResult<any>) =>
-				result.status === 'fulfilled' ? (result.value || {}) : {};
+				result.status === 'fulfilled' ? (result.value || []) : [];
 
 			const usersData = getData(users);
 			const questsData = getData(quests);
@@ -96,24 +93,45 @@
 			const checklistsData = getData(checklists);
 			const rolesData = getData(roles);
 
-			const questValues = Object.values(questsData) as any[];
-			const tasks = questValues.filter((q: any) => !q.type || q.type === 'task' || q.type === 'recurring');
+			// Helper to convert data to array regardless of format
+			// Filters out deleted items and hologram/federation metadata
+			const toArray = (data: any): any[] => {
+				const isValidItem = (item: any) =>
+					item &&
+					item.id &&
+					!item._deleted &&
+					!item.hologram && // Filter out hologram metadata
+					!item.sourceHolon; // Filter out federation metadata
+
+				if (Array.isArray(data)) return data.filter(isValidItem);
+				if (data && typeof data === 'object') return Object.values(data).filter(isValidItem);
+				return [];
+			};
+
+			const usersArray = toArray(usersData);
+			const questsArray = toArray(questsData);
+			const shoppingArray = toArray(shoppingData);
+			const checklistsArray = toArray(checklistsData);
+			const rolesArray = toArray(rolesData);
+
+			// Handle both array and object data formats
+			const questValues = questsArray;
+			const tasks = questValues.filter((q: any) => !q.type || q.type === 'task' || q.type === 'recurring' || q.type === 'quest');
 			const oneWeekAgo = new Date();
 			oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-			stats = {
-				users: Object.keys(usersData).length,
-				completedTasks: tasks.filter((t: any) => t.status === 'completed').length,
-				totalTasks: tasks.length,
-				events: questValues.filter((q: any) => q.type === 'event' && q.when && new Date(q.when) >= oneWeekAgo).length,
-				shopping: Object.keys(shoppingData).length,
-				proposals: questValues.filter((q: any) => q.type === 'proposal').length,
-				offers: questValues.filter((q: any) => ['offer', 'request', 'need'].includes(q.type)).length,
-				checklists: Object.keys(checklistsData).length,
-				completedChecklists: Object.values(checklistsData).filter((c: any) => c.completed).length,
-				roles: Object.keys(rolesData).length,
-				unassignedRoles: Object.values(rolesData).filter((r: any) => !r.participants?.length).length
-			};
+			// Update individual stats variables for Svelte 5 reactivity
+			statsUsers = usersArray.length;
+			statsCompletedTasks = tasks.filter((t: any) => t.status === 'completed').length;
+			statsTotalTasks = tasks.length;
+			statsEvents = questValues.filter((q: any) => q.type === 'event' && q.when && new Date(q.when) >= oneWeekAgo).length;
+			statsShopping = shoppingArray.length;
+			statsProposals = questValues.filter((q: any) => q.type === 'proposal').length;
+			statsOffers = questValues.filter((q: any) => ['offer', 'request', 'need'].includes(q.type)).length;
+			statsChecklists = checklistsArray.length;
+			statsCompletedChecklists = checklistsArray.filter((c: any) => c.completed).length;
+			statsRoles = rolesArray.length;
+			statsUnassignedRoles = rolesArray.filter((r: any) => !r.participants?.length).length;
 		} catch (error) {
 			console.error('Error fetching dashboard data:', error);
 			if (retryCount < 2) {
@@ -125,51 +143,16 @@
 		}
 	}
 
-	onMount(() => {
-		const urlId = $page.params.id;
-		if (isValidId(urlId)) {
-			holonID = urlId;
-			ID.set(urlId);
-		}
-
-		const checkConnection = async () => {
-			if (!holosphere) {
-				setTimeout(checkConnection, 100);
-				return;
-			}
-
-			connectionReady = true;
-
-			let updateTimeout: NodeJS.Timeout;
-			unsubscribe = ID.subscribe((value) => {
-				if (isValidId(value)) {
-					if (updateTimeout) clearTimeout(updateTimeout);
-					updateTimeout = setTimeout(() => {
-						if (value !== holonID) {
-							holonID = value;
-							fetchData();
-						}
-					}, 100);
-				}
-			});
-
-			if (isValidId(holonID)) fetchData();
-		};
-
-		checkConnection();
-		return () => { if (unsubscribe) unsubscribe(); };
-	});
-
-	let pageUpdateTimeout: NodeJS.Timeout;
+	// Single reactive block: when page ID changes and holosphere is ready, fetch data
+	let currentHolonId: string | null = null;
 	$: {
 		const newId = $page.params.id;
-		if (isValidId(newId) && newId !== holonID && connectionReady) {
-			if (pageUpdateTimeout) clearTimeout(pageUpdateTimeout);
-			pageUpdateTimeout = setTimeout(() => {
-				holonID = newId;
-				ID.set(newId);
-				if (holosphere) fetchData();
-			}, 100);
+		if (isValidId(newId) && holosphere && newId !== currentHolonId) {
+			currentHolonId = newId;
+			holonID = newId;
+			ID.set(newId);
+			connectionReady = true;
+			fetchData();
 		}
 	}
 </script>
@@ -183,60 +166,146 @@
 	<div class="dashboard">
 		<!-- Primary Stats -->
 		<div class="primary-grid">
-			{#each primaryCards as card}
-				<a href={`/${holonID}/${card.href}`} class="card card-{card.color}">
-					<div class="card-header">
-						<div class="card-icon icon-{card.color}">
-							<i class="fas {card.icon}"></i>
-						</div>
-						<div class="card-stat">
-							<span class="stat-value">{getStatValue(card.key)}</span>
-							<span class="stat-label">{card.sublabel}</span>
-						</div>
+			<!-- Users Card -->
+			<a href={`/${holonID}/status`} class="card card-green">
+				<div class="card-header">
+					<div class="card-icon icon-green">
+						<i class="fas fa-users"></i>
 					</div>
-					<h3 class="card-title">{card.label}</h3>
-					{#if card.showProgress}
-						<div class="progress-container">
-							<div class="progress-header">
-								<span>Progress</span>
-								<span>{Math.round(getProgress(card.key))}%</span>
-							</div>
-							<div class="progress-bar">
-								<div class="progress-fill fill-{card.color}" style="width: {getProgress(card.key)}%"></div>
-							</div>
-						</div>
-					{:else}
-						<p class="card-sublabel">View details →</p>
-					{/if}
-				</a>
-			{/each}
+					<div class="card-stat">
+						<span class="stat-value">{statValueUsers}</span>
+						<span class="stat-label">Active Users</span>
+					</div>
+				</div>
+				<h3 class="card-title">Users</h3>
+				<p class="card-sublabel">View details →</p>
+			</a>
+
+			<!-- Tasks Card -->
+			<a href={`/${holonID}/tasks`} class="card card-blue">
+				<div class="card-header">
+					<div class="card-icon icon-blue">
+						<i class="fas fa-tasks"></i>
+					</div>
+					<div class="card-stat">
+						<span class="stat-value">{statValueTasks}</span>
+						<span class="stat-label">Completed</span>
+					</div>
+				</div>
+				<h3 class="card-title">Tasks</h3>
+				<div class="progress-container">
+					<div class="progress-header">
+						<span>Progress</span>
+						<span>{Math.round(progressTasks)}%</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill fill-blue" style="width: {progressTasks}%"></div>
+					</div>
+				</div>
+			</a>
+
+			<!-- Events Card -->
+			<a href={`/${holonID}/schedule`} class="card card-purple">
+				<div class="card-header">
+					<div class="card-icon icon-purple">
+						<i class="fas fa-calendar-alt"></i>
+					</div>
+					<div class="card-stat">
+						<span class="stat-value">{statValueEvents}</span>
+						<span class="stat-label">This Week</span>
+					</div>
+				</div>
+				<h3 class="card-title">Events</h3>
+				<p class="card-sublabel">View details →</p>
+			</a>
+
+			<!-- Shopping Card -->
+			<a href={`/${holonID}/shopping`} class="card card-rose">
+				<div class="card-header">
+					<div class="card-icon icon-rose">
+						<i class="fas fa-shopping-cart"></i>
+					</div>
+					<div class="card-stat">
+						<span class="stat-value">{statValueShopping}</span>
+						<span class="stat-label">Items</span>
+					</div>
+				</div>
+				<h3 class="card-title">Shopping</h3>
+				<p class="card-sublabel">View details →</p>
+			</a>
 		</div>
 
 		<!-- Secondary Stats -->
 		<div class="secondary-grid">
-			{#each secondaryCards as card}
-				<a href={`/${holonID}/${card.href}`} class="card-sm card-{card.color}">
-					<div class="card-sm-icon icon-{card.color}">
-						<i class="fas {card.icon}"></i>
+			<!-- Proposals -->
+			<a href={`/${holonID}/proposals`} class="card-sm card-amber">
+				<div class="card-sm-icon icon-amber">
+					<i class="fas fa-lightbulb"></i>
+				</div>
+				<div class="card-sm-content">
+					<h3 class="card-sm-title">Proposals</h3>
+					<span class="card-sm-stat">{statValueProposals}</span>
+				</div>
+			</a>
+
+			<!-- Offers & Needs -->
+			<a href={`/${holonID}/offers`} class="card-sm card-indigo">
+				<div class="card-sm-icon icon-indigo">
+					<i class="fas fa-gift"></i>
+				</div>
+				<div class="card-sm-content">
+					<h3 class="card-sm-title">Offers & Needs</h3>
+					<span class="card-sm-stat">{statValueOffers}</span>
+				</div>
+			</a>
+
+			<!-- Checklists -->
+			<a href={`/${holonID}/checklists`} class="card-sm card-teal">
+				<div class="card-sm-icon icon-teal">
+					<i class="fas fa-clipboard-check"></i>
+				</div>
+				<div class="card-sm-content">
+					<h3 class="card-sm-title">Checklists</h3>
+					<span class="card-sm-stat">{statValueChecklists}</span>
+					<div class="progress-bar-sm">
+						<div class="progress-fill fill-teal" style="width: {progressChecklists}%"></div>
 					</div>
-					<div class="card-sm-content">
-						<h3 class="card-sm-title">{card.label}</h3>
-						{#if card.showProgress}
-							<span class="card-sm-stat">{getStatValue(card.key)}</span>
-							<div class="progress-bar-sm">
-								<div class="progress-fill fill-{card.color}" style="width: {getProgress(card.key)}%"></div>
-							</div>
-						{:else if card.showSublabel}
-							<span class="card-sm-stat">{getStatValue(card.key)}</span>
-							<span class="card-sm-sublabel">{stats.unassignedRoles} unassigned</span>
-						{:else if card.sublabel}
-							<span class="card-sm-sublabel">{card.sublabel}</span>
-						{:else}
-							<span class="card-sm-stat">{getStatValue(card.key)}</span>
-						{/if}
-					</div>
-				</a>
-			{/each}
+				</div>
+			</a>
+
+			<!-- Roles -->
+			<a href={`/${holonID}/roles`} class="card-sm card-cyan">
+				<div class="card-sm-icon icon-cyan">
+					<i class="fas fa-user-tag"></i>
+				</div>
+				<div class="card-sm-content">
+					<h3 class="card-sm-title">Roles</h3>
+					<span class="card-sm-stat">{statValueRoles}</span>
+					<span class="card-sm-sublabel">{statsUnassignedRoles} unassigned</span>
+				</div>
+			</a>
+
+			<!-- Federation -->
+			<a href={`/${holonID}/federation`} class="card-sm card-orange">
+				<div class="card-sm-icon icon-orange">
+					<i class="fas fa-network-wired"></i>
+				</div>
+				<div class="card-sm-content">
+					<h3 class="card-sm-title">Federation</h3>
+					<span class="card-sm-sublabel">Data sharing</span>
+				</div>
+			</a>
+
+			<!-- Settings -->
+			<a href={`/${holonID}/settings`} class="card-sm card-emerald">
+				<div class="card-sm-icon icon-emerald">
+					<i class="fas fa-cog"></i>
+				</div>
+				<div class="card-sm-content">
+					<h3 class="card-sm-title">Settings</h3>
+					<span class="card-sm-sublabel">Configure</span>
+				</div>
+			</a>
 		</div>
 
 		<!-- Announcements -->

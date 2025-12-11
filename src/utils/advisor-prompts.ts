@@ -63,12 +63,12 @@ function generateRealPersonPrompt(person: RealPersonAdvisor): string {
     ? person.speaking_style 
     : person.speaking_style.one_sentence_summary;
     
-  const hasEnhancedStyle = typeof person.speaking_style === 'object';
-  
+  const hasEnhancedStyle = typeof person.speaking_style === 'object' && person.speaking_style !== null;
+
   // Build enhanced speaking instructions if available
   let enhancedSpeakingInstructions = '';
   if (hasEnhancedStyle) {
-    const style = person.speaking_style;
+    const style = person.speaking_style as Record<string, any>;
     enhancedSpeakingInstructions = `
 ENHANCED SPEAKING PROFILE:
 - Register: ${style.register || 'neutral'}

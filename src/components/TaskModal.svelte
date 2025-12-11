@@ -444,12 +444,16 @@
             // Update quest with new participants
     await updateQuest({ participants: newParticipantsArray });
     
-    // Create a hologram of the task in the participant's personal holon
-    try {
-        const hologram = holosphere.createHologram(holonId, 'quests', quest);
-        await holosphere.put(user.id, 'quests', hologram);
-    } catch (error) {
-        console.error(`[TaskModal.svelte] Error creating hologram in participant's holon (${user.id}):`, error);
+    // Create a hologram of the task in the participant's personal holon (if they have one)
+    // Only attempt if user.id is a valid holon ID (non-empty string)
+    if (user.id && typeof user.id === 'string' && user.id.trim() !== '' && user.id !== holonId) {
+        try {
+            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            await holosphere.put(user.id, 'quests', hologram);
+        } catch (error) {
+            // Silently ignore - user may not have a personal holon
+            console.debug(`[TaskModal.svelte] Could not create hologram in participant's holon (${user.id}):`, error);
+        }
     }
     
     showDropdown = false;

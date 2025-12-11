@@ -15,9 +15,9 @@
 	import RouteTransition from '../components/RouteTransition.svelte';
 
 	const style = {
-		container: `bg-gray-900 h-screen overflow-hidden relative`,
-		mainContainer: `flex flex-col h-screen pl-0 w-full lg:pl-20 lg:space-y-4`,
-		main: `h-screen overflow-auto pb-8 pt-4 px-2 md:pb-8 md:pt-4 lg:pt-0 lg:px-4`,
+		container: `bg-gray-900 h-screen overflow-hidden relative flex flex-col`,
+		mainContainer: `flex flex-col flex-1 pl-0 w-full lg:pl-20 lg:space-y-4 overflow-hidden`,
+		main: `flex-1 overflow-auto pb-8 pt-2 px-2 md:pb-8 md:pt-2 lg:pt-2 lg:px-4`,
 		rootContainer: `bg-gray-900 h-screen overflow-hidden relative`,
 		rootMain: `h-screen overflow-auto p-4`
 	};
@@ -40,6 +40,11 @@
 	// Handle mouse movement
 	function handleMouseMove() {
 		lastMouseMove = Date.now();
+	}
+
+	// Toggle overlay dashboard
+	function toggleOverlayDashboard() {
+		window.dispatchEvent(new CustomEvent('toggleWidgetDashboard'));
 	}
 
 	// Handle global keyboard shortcuts
@@ -109,11 +114,12 @@
 {:else}
 	<!-- Normal dashboard layout -->
 	<div class={style.container} on:mousemove={handleMouseMove} role="presentation">
-		<div class="flex items-start">
+		<!-- TopBar spans full width above everything -->
+		<TopBar {toggleMyHolons} />
+		<div class="flex items-stretch dashboard-content">
 			<Overlay />
 			<Sidebar mobileOrientation="start" />
 			<div class={style.mainContainer}>
-				<TopBar {toggleMyHolons} />
 				<main class={style.main}>
 					<RouteTransition pathname={$page.url.pathname}>
 						<slot />
@@ -124,13 +130,13 @@
 
 		{#if showMyHolons}
 			<div
-				class="absolute inset-0 z-40"
+				class="absolute inset-0 z-40 pt-14"
 				on:click|self={() => showMyHolons = false}
 				role="presentation"
 				transition:fade
 			>
-				<div class="absolute top-0 left-4 right-4" transition:slide>
-					<div class="bg-gray-900/90 backdrop-blur-sm max-h-[80vh] overflow-y-auto rounded-b-xl">
+				<div class="absolute top-14 left-4 right-4" transition:slide>
+					<div class="bg-gray-900/90 backdrop-blur-sm max-h-[70vh] overflow-y-auto rounded-xl border border-gray-700">
 						<MyHolons />
 					</div>
 				</div>
@@ -141,6 +147,13 @@
 {/if}
 
 <style>
+	/* Dashboard content takes remaining height */
+	.dashboard-content {
+		flex: 1;
+		overflow: hidden;
+		min-height: 0; /* Important for flex scroll containers */
+	}
+
 	/* Hide scrollbars while keeping scroll functionality */
 	:global(html) {
 		/* Firefox */

@@ -52,6 +52,18 @@
     let isLoadingEvents = false;
     let isLoadingTasks = false;
 
+    // Weather data state
+    let isLoadingWeather = false;
+    let weatherData: {
+        temperature: number;
+        weatherCode: number;
+        windSpeed: number;
+        unit: string;
+        city: string;
+        country: string;
+        lastUpdated: Date;
+    } | null = null;
+
     // Time formatting
     function formatTime(date: Date) {
         return date.toLocaleTimeString('en-US', {

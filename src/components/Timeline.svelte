@@ -1,7 +1,19 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
     import { phase } from 'lune';
-    
+
+    // Type definitions
+    interface Profile {
+        arrival?: string;
+        departure?: string;
+        [key: string]: any;
+    }
+
+    interface User {
+        name?: string;
+        [key: string]: any;
+    }
+
     const dispatch = createEventDispatcher();
 
     // Add the getUserColor function

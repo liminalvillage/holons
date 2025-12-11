@@ -35,8 +35,23 @@
 		console.log('Initializing user holon with ID:', userPublicKey);
 
 		try {
-			// Check if holon settings already exist
-			const existingSettings = await holosphere.get(userPublicKey, 'settings');
+			// Check if holon settings already exist with retry logic
+			// Relay data may take time to sync on first connection
+			let existingSettings = null;
+			const maxRetries = 3;
+			const retryDelay = 500; // ms
+
+			for (let attempt = 0; attempt < maxRetries; attempt++) {
+				existingSettings = await holosphere.get(userPublicKey, 'settings');
+				if (existingSettings && existingSettings.name) {
+					console.log('Existing holon found on attempt', attempt + 1, ':', existingSettings.name);
+					break;
+				}
+				if (attempt < maxRetries - 1) {
+					console.log('Settings not found, retrying in', retryDelay, 'ms (attempt', attempt + 1, ')');
+					await new Promise(resolve => setTimeout(resolve, retryDelay));
+				}
+			}
 
 			if (!existingSettings || !existingSettings.name) {
 				// First time login - create the holon with default settings
@@ -48,8 +63,6 @@
 					createdAt: Date.now(),
 					createdBy: userPublicKey
 				});
-			} else {
-				console.log('Existing holon found:', existingSettings.name);
 			}
 
 			// Set the ID store to the user's public key (their personal holon)
@@ -133,7 +146,7 @@
 	}
 
 	// Initialize HoloSphere with the given private key
-	function initHoloSphere(privateKey: string) {
+	async function initHoloSphere(privateKey: string) {
 		if (holosphere) {
 			console.log('HoloSphere already initialized');
 			return;
@@ -144,11 +157,16 @@
 		holosphere = new HoloSphere({
 			appName: environmentName,
 			privateKey: privateKey,
-			relays: [
-				'wss://relay.holons.io'     // Main Holons relay
-			],
-			enablePing: false  // Disable ping to prevent connection closure issues
+			backend: 'gundb',
+			gundb: {
+				peers: ['https://gun.holons.io/gun'],  // GunDB relay server
+				radisk: true,
+				localStorage: true
+			}
 		});
+
+		// Wait for GunDB backend to be ready (async initialization)
+		await holosphere.ready();
 
 		// Log the public key for verification
 		if (holosphere.client) {
@@ -185,7 +203,7 @@
 	});
 
 	// Handle splash screen completion
-	function handleAuthenticated(event: CustomEvent) {
+	async function handleAuthenticated(event: CustomEvent) {
 		console.log('User authenticated with public key:', event.detail.publicKey, 'mode:', event.detail.mode);
 
 		// Determine which private key to use
@@ -202,7 +220,7 @@
 		}
 
 		if (privateKey) {
-			initHoloSphere(privateKey);
+			await initHoloSphere(privateKey);
 		} else {
 			console.error('No private key available for initialization');
 		}
@@ -214,11 +232,11 @@
 		}, 500);
 	}
 
-	function handleSkip() {
+	async function handleSkip() {
 		// Dev-only skip - use env key as fallback
 		const fallbackKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
 		if (fallbackKey) {
-			initHoloSphere(fallbackKey);
+			await initHoloSphere(fallbackKey);
 		}
 		showSplash = false;
 		splashComplete = true;

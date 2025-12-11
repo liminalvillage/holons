@@ -275,6 +275,9 @@
   }
 </script>
 
+<!-- Settings Container with proper scroll -->
+<div class="min-h-0 pb-8">
+
 <!-- Header Section - Simple header aligned with main content -->
 <div class="bg-gray-800 rounded-2xl shadow-xl p-6 mb-8">
 	<div class="flex items-center gap-4">
@@ -635,6 +638,7 @@
 					</section>
 				</div>
 			{/if}
+</div>
 
 <style>
 	/* Responsive design */

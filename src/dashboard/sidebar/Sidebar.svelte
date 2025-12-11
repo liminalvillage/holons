@@ -1,19 +1,16 @@
 <script>
 	import { sidebarExpanded } from '../store';
 	import SidebarItems from './SidebarItems.svelte';
-	import { toggleSidebarExpanded } from '../store';
-	import ChevronLeft from 'svelte-feather-icons/src/icons/ChevronLeftIcon.svelte';
-	import ChevronRight from 'svelte-feather-icons/src/icons/ChevronRightIcon.svelte';
 
 	const style = {
 		mobileOrientation: {
 			start: 'left-0 ',
 			end: 'right-0 lg:left-0'
 		},
-		container: `pb-32 lg:pb-12`,
+		container: `pb-32 lg:pb-12 pt-16`,
 		close: `duration-700 ease-out hidden transition-all lg:w-20`,
 		open: `absolute duration-500 ease-in transition-all w-8/12 z-40 sm:w-5/12 md:w-64`,
-		default: `h-screen overflow-y-auto overflow-x-hidden text-white top-0 lg:absolute bg-gray-900 lg:block lg:z-40`
+		default: `sidebar-height overflow-y-auto overflow-x-hidden text-white top-0 lg:absolute sidebar-fade lg:block lg:z-40`
 	};
 
 	export let mobileOrientation = 'end';
@@ -25,21 +22,22 @@
 	class:lg:w-64={$sidebarExpanded}
 >
 	<div class={style.container}>
-		<!-- Expand button on desktop -->
-		<div class="hidden lg:flex justify-end pr-2 pt-2">
-			<button on:click={toggleSidebarExpanded} class="text-gray-400 hover:text-white transition-colors p-1 rounded">
-				{#if $sidebarExpanded}
-					<ChevronLeft size="20" />
-				{:else}
-					<ChevronRight size="20" />
-				{/if}
-			</button>
-		</div>
 		<SidebarItems />
 	</div>
 </aside>
 
 <style>
+	/* Sidebar height - accounts for topbar (56px) plus some margin */
+	:global(.sidebar-height) {
+		height: calc(100vh - 56px);
+		margin-top: 0;
+	}
+
+	/* Sidebar fade to transparent on right edge */
+	:global(.sidebar-fade) {
+		background: linear-gradient(to right, rgb(17, 24, 39) 0%, rgb(17, 24, 39) 85%, transparent 100%);
+	}
+
 	.scrollbar::-webkit-scrollbar {
 		width: 0;
 		background: transparent; /* hide Sidebar scrollbar on Chrome, Opera and other webkit Browsers*/
