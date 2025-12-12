@@ -64,7 +64,7 @@
       "type": "string",
       "description": "Title of parent quest/role"
     },
-    "chatId": {
+    "holonId": {
       "type": ["string", "number"],
       "description": "Chat ID where checklist belongs"
     }

@@ -263,13 +263,18 @@ export const serviceDefinitions = {
   quests: {
     factory: ({ telebot, database, users, settings, checklists, ui, expenses, signalManager }) => {
       const quests = new Quests(telebot, database, users, settings);
-      
+
       // Set cross-references
       quests.setChecklists(checklists);
       checklists.setQuestInstance(quests);
       quests.expenses = expenses;
       quests.checklists = checklists;
-      
+
+      // Allow Settings to invalidate Quests language cache
+      if (typeof settings.setQuestsInstance === 'function') {
+        settings.setQuestsInstance(quests);
+      }
+
       if (typeof quests.setUIInstance === 'function') {
         quests.setUIInstance(ui);
         log.debug('UI instance passed to Quests');

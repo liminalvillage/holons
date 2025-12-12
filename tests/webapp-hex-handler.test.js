@@ -4,22 +4,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 class MockSettings {
     constructor() {
         this.setHexCalled = false;
-        this.setHexChatID = null;
+        this.setHexholonId = null;
         this.setHexValue = null;
         this.getLanguageCalled = false;
-        this.getLanguageChatID = null;
+        this.getLanguageholonId = null;
     }
 
-    async setHex(chatID, hex) {
+    async setHex(holonId, hex) {
         this.setHexCalled = true;
-        this.setHexChatID = chatID;
+        this.setHexholonId = holonId;
         this.setHexValue = hex;
         return true;
     }
 
-    async getLanguage(chatID) {
+    async getLanguage(holonId) {
         this.getLanguageCalled = true;
-        this.getLanguageChatID = chatID;
+        this.getLanguageholonId = holonId;
         return 'en';
     }
 }
@@ -35,14 +35,14 @@ const mockI18next = {
 };
 
 // Mock Telegraf context
-function createMockContext(hex, chatID = 'test-chat-123') {
+function createMockContext(hex, holonId = 'test-chat-123') {
     return {
         message: {
             web_app_data: {
                 data: hex
             },
             chat: {
-                id: chatID
+                id: holonId
             }
         },
         reply: vi.fn()
@@ -68,7 +68,7 @@ describe('WebApp Hex Data Handler', () => {
 
         // Simulate the webapp data handler
         const hex = mockContext.message.web_app_data.data;
-        const chatID = mockContext.message.chat.id;
+        const holonId = mockContext.message.chat.id;
 
         // Validate hex format
         expect(hex).toBe(validHex);
@@ -76,17 +76,17 @@ describe('WebApp Hex Data Handler', () => {
         expect(hex.length).toBeGreaterThanOrEqual(10);
 
         // Save the hex
-        await settings.setHex(chatID, hex);
+        await settings.setHex(holonId, hex);
 
         // Verify settings were called correctly
         expect(settings.setHexCalled).toBe(true);
-        expect(settings.setHexChatID).toBe(chatID);
+        expect(settings.setHexholonId).toBe(holonId);
         expect(settings.setHexValue).toBe(validHex);
 
         // Get language for response
-        const language = await settings.getLanguage(chatID);
+        const language = await settings.getLanguage(holonId);
         expect(settings.getLanguageCalled).toBe(true);
-        expect(settings.getLanguageChatID).toBe(chatID);
+        expect(settings.getLanguageholonId).toBe(holonId);
         expect(language).toBe('en');
 
         // Verify i18next was called
@@ -101,7 +101,7 @@ describe('WebApp Hex Data Handler', () => {
         mockContext = createMockContext(invalidHex);
 
         const hex = mockContext.message.web_app_data.data;
-        const chatID = mockContext.message.chat.id;
+        const holonId = mockContext.message.chat.id;
 
         // Validate hex format
         expect(hex).toBe(invalidHex);
@@ -117,7 +117,7 @@ describe('WebApp Hex Data Handler', () => {
         mockContext = createMockContext(emptyHex);
 
         const hex = mockContext.message.web_app_data.data;
-        const chatID = mockContext.message.chat.id;
+        const holonId = mockContext.message.chat.id;
 
         // Validate hex format
         expect(hex).toBe(emptyHex);
@@ -132,7 +132,7 @@ describe('WebApp Hex Data Handler', () => {
         mockContext = createMockContext(nullHex);
 
         const hex = mockContext.message.web_app_data.data;
-        const chatID = mockContext.message.chat.id;
+        const holonId = mockContext.message.chat.id;
 
         // Validate hex format
         expect(hex).toBe(null);
@@ -144,19 +144,19 @@ describe('WebApp Hex Data Handler', () => {
 
     it('should handle different chat IDs', async () => {
         const validHex = '891e850d50fffff';
-        const customChatID = 'custom-chat-456';
-        mockContext = createMockContext(validHex, customChatID);
+        const customholonId = 'custom-chat-456';
+        mockContext = createMockContext(validHex, customholonId);
 
         const hex = mockContext.message.web_app_data.data;
-        const chatID = mockContext.message.chat.id;
+        const holonId = mockContext.message.chat.id;
 
-        expect(chatID).toBe(customChatID);
+        expect(holonId).toBe(customholonId);
 
         // Save the hex
-        await settings.setHex(chatID, hex);
+        await settings.setHex(holonId, hex);
 
         // Verify correct chat ID was used
-        expect(settings.setHexChatID).toBe(customChatID);
+        expect(settings.setHexholonId).toBe(customholonId);
         expect(settings.setHexValue).toBe(validHex);
     });
 }); 

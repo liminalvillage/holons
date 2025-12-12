@@ -87,20 +87,20 @@ setupScenes() {
     this.descriptionScene = new Scenes.BaseScene('description_scene');
 
     this.descriptionScene.enter(async (ctx) => {
-        const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
+        const quest = await this.db.get(ctx.scene.state.holonId + '/quests', ctx.scene.state.questId.toString());
         const promptMessage = await ctx.reply('📝 Reply with a description for this task.');
         ctx.scene.state.promptMessageId = promptMessage.message_id;
     });
 
     this.descriptionScene.on('text', async (ctx) => {
         try {
-            const quest = await this.db.get(ctx.scene.state.chatId + '/quests', ctx.scene.state.questId.toString());
+            const quest = await this.db.get(ctx.scene.state.holonId + '/quests', ctx.scene.state.questId.toString());
             if (!await this.questExists(quest, ctx, ctx.scene.state.questId)) {
                 return ctx.scene.leave();
             }
 
             quest.description = ctx.message.text;
-            await this.db.put(ctx.scene.state.chatId + '/quests', quest);
+            await this.db.put(ctx.scene.state.holonId + '/quests', quest);
 
             const botHasAdminRights = await isBotAdmin(ctx);
             if (botHasAdminRights) {
@@ -136,7 +136,7 @@ registerActions() {
 
     this.bot.action(/descriptions_quest_(.+)/, async (ctx) => {
         const questId = ctx.match[1];
-        const chatId = getChatId(ctx);
+        const holonId = getholonId(ctx);
 
         return ctx.scene.enter('input_scene', {
             promptKey: 'quest_description_prompt', // Translation key
@@ -145,16 +145,16 @@ registerActions() {
             allowEmpty: false,
             validate: async (description, ctx) => {
                 // Check if quest still exists
-                const quest = await this.db.get(chatId + '/quests', questId);
+                const quest = await this.db.get(holonId + '/quests', questId);
                 if (!await this.questExists(quest, ctx, questId)) {
                     return { valid: false, error: 'Quest no longer exists.' };
                 }
                 return { valid: true };
             },
             onComplete: async (ctx, description) => {
-                const quest = await this.db.get(chatId + '/quests', questId);
+                const quest = await this.db.get(holonId + '/quests', questId);
                 quest.description = description;
-                await this.db.put(chatId + '/quests', quest);
+                await this.db.put(holonId + '/quests', quest);
                 await this.updateMessage(ctx, quest);
             },
             onError: async (ctx, error) => {
@@ -202,7 +202,7 @@ this.addItemScene.enter(async (ctx) => {
 
 this.addItemScene.on('text', async (ctx) => {
     try {
-        const chatId = getChatId(ctx);
+        const holonId = getholonId(ctx);
         const checklistId = ctx.scene.state.checklistId;
 
         // Handle /additem command prefix
@@ -226,7 +226,7 @@ this.addItemScene.on('text', async (ctx) => {
                 text: itemText,
                 completed: false
             };
-            await this.db.push(chatId + '/checklists/' + checklistId + '/items', item);
+            await this.db.push(holonId + '/checklists/' + checklistId + '/items', item);
         }
 
         // Cleanup messages
@@ -276,7 +276,7 @@ this.bot.action(/add_checklist_items_(.+)/, async (ctx) => {
             return { valid: true };
         },
         onComplete: async (ctx, items) => {
-            const chatId = getChatId(ctx);
+            const holonId = getholonId(ctx);
 
             for (const itemText of items) {
                 const item = {
@@ -285,7 +285,7 @@ this.bot.action(/add_checklist_items_(.+)/, async (ctx) => {
                     completed: false,
                     createdAt: Date.now()
                 };
-                await this.db.push(chatId + '/checklists/' + checklistId + '/items', item);
+                await this.db.push(holonId + '/checklists/' + checklistId + '/items', item);
             }
 
             await this.displayChecklist(ctx, checklistId);

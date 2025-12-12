@@ -20,14 +20,14 @@
  *
  * ✅ CORRECT:
  *   onComplete: async (ctx, input) => {
- *     const chatID = ctx.chat.id;  // Get fresh from callback ctx
- *     await db.put(chatID + '/data', input);
+ *     const holonId = ctx.chat.id;  // Get fresh from callback ctx
+ *     await db.put(holonId + '/data', input);
  *   }
  *
  * ❌ WRONG:
- *   const chatID = ctx.chat.id;  // From original command ctx
+ *   const holonId = ctx.chat.id;  // From original command ctx
  *   onComplete: async (ctx, input) => {
- *     await db.put(chatID + '/data', input);  // Uses stale closure variable
+ *     await db.put(holonId + '/data', input);  // Uses stale closure variable
  *   }
  *
  * Usage:
@@ -42,9 +42,9 @@
  *   promptText: 'Please enter a description:',  // OR direct text
  *   onComplete: async (ctx, input) => {
  *     // ALWAYS get values from ctx parameter, not closure
- *     const chatID = ctx.chat.id;
+ *     const holonId = ctx.chat.id;
  *     quest.description = input;
- *     await db.put(chatID + '/quests', quest);
+ *     await db.put(holonId + '/quests', quest);
  *   }
  * });
  *
@@ -52,15 +52,15 @@
  * ctx.scene.enter('input_scene', {
  *   promptText: 'Enter role name:',
  *   onComplete: async (ctx, input) => {
- *     const chatID = ctx.chat.id;
- *     await db.put(chatID + '/roles', { id: input, title: input });
+ *     const holonId = ctx.chat.id;
+ *     await db.put(holonId + '/roles', { id: input, title: input });
  *     // Return value will be passed to onConfirm
- *     return { chatId: chatID, roleId: input };
+ *     return { holonId: holonId, roleId: input };
  *   },
  *   onConfirm: async (ctx, result) => {
  *     // Called after onComplete finishes - use this to refresh UI
  *     // The result is whatever onComplete returned
- *     await refreshRoleList(ctx, result.chatId);
+ *     await refreshRoleList(ctx, result.holonId);
  *   }
  * });
  *

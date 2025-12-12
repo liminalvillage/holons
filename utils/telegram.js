@@ -28,7 +28,7 @@ export const getUser = (ctx) => {
 /**
  * Get chat ID from Telegram context
  */
-export const getChatId = (ctx) => {
+export const getholonId = (ctx) => {
   return ctx?.chat?.id || 
          ctx?.update?.message?.chat?.id || 
          ctx?.update?.callback_query?.message?.chat?.id || 
@@ -120,9 +120,9 @@ export const getDisplayName = (user) => {
 /**
  * Get chat name with error handling
  */
-export const getChatName = async (ctx, chatID) => {
+export const getChatName = async (ctx, holonId) => {
   try {
-    const chatInfo = await ctx.telegram.getChat(chatID);
+    const chatInfo = await ctx.telegram.getChat(holonId);
 
     if (chatInfo.type === 'private') {
       return `${chatInfo.first_name} ${chatInfo.last_name || ''}`.trim();
@@ -133,10 +133,10 @@ export const getChatName = async (ctx, chatID) => {
     // Handle specific "chat not found" error more gracefully
     if (err.response?.error_code === 400 && 
         err.response?.description?.includes('chat not found')) {
-      log.warn('Chat not found', { chatID, error: err.response.description });
+      log.warn('Chat not found', { holonId, error: err.response.description });
       return null; // Return null to indicate chat not accessible
     } else {
-      log.error('Error getting chat name', { chatID, error: err.message });
+      log.error('Error getting chat name', { holonId, error: err.message });
       return 'unknown';
     }
   }
@@ -145,10 +145,10 @@ export const getChatName = async (ctx, chatID) => {
 /**
  * Check if user is admin in the current chat
  */
-export const isAdmin = async (ctxOrUserId, chatID) => {
-  // Handle case where first parameter is userId and second is chatID
-  if (typeof ctxOrUserId === 'number' && chatID) {
-    log.warn('isAdmin called with userId and chatID - this needs telegram instance');
+export const isAdmin = async (ctxOrUserId, holonId) => {
+  // Handle case where first parameter is userId and second is holonId
+  if (typeof ctxOrUserId === 'number' && holonId) {
+    log.warn('isAdmin called with userId and holonId - this needs telegram instance');
     return false; // Default to false for this case until we can properly handle it
   }
 
@@ -164,7 +164,7 @@ export const isAdmin = async (ctxOrUserId, chatID) => {
     } catch (error) {
       log.error('Error checking admin status', { 
         userId: ctx.from.id, 
-        chatId: ctx.chat.id, 
+        holonId: ctx.chat.id, 
         error: error.message 
       });
       return false;
@@ -178,7 +178,7 @@ export const isAdmin = async (ctxOrUserId, chatID) => {
  */
 export const isBotAdmin = async (ctx) => {
   try {
-    const chatId = getChatId(ctx);
+    const holonId = getholonId(ctx);
 
     // Private chats don't require admin permissions
     if (ctx.chat?.type === 'private') {
@@ -186,9 +186,9 @@ export const isBotAdmin = async (ctx) => {
     }
 
     // Group chats - check if the bot is an admin
-    if (chatId < 0) {
+    if (holonId < 0) {
       const botId = ctx.botInfo.id;
-      const botMember = await ctx.telegram.getChatMember(chatId, botId);
+      const botMember = await ctx.telegram.getChatMember(holonId, botId);
 
       // Check if bot is admin/creator and has necessary permissions
       const hasAdminStatus = botMember && 
@@ -201,7 +201,7 @@ export const isBotAdmin = async (ctx) => {
     return false;
   } catch (error) {
     log.error('Error checking bot admin status', { 
-      chatId: getChatId(ctx), 
+      holonId: getholonId(ctx), 
       error: error.message 
     });
     return false;
@@ -245,23 +245,23 @@ export const validateTelegramContext = (ctx) => {
   }
 
   const userId = getUserId(ctx);
-  const chatId = getChatId(ctx);
+  const holonId = getholonId(ctx);
 
   if (!userId) {
     throw new ValidationError('User ID not found in context');
   }
 
-  if (!chatId) {
+  if (!holonId) {
     throw new ValidationError('Chat ID not found in context');
   }
 
-  return { userId, chatId };
+  return { userId, holonId };
 };
 
 export default {
   getUserId,
   getUser,
-  getChatId,
+  getholonId,
   getMessageId,
   getUserInput,
   getParameters,

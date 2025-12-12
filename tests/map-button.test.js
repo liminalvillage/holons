@@ -11,7 +11,7 @@ class MockSettings {
         };
     }
 
-    async getLanguage(chatID) {
+    async getLanguage(holonId) {
         return 'en';
     }
 
@@ -23,8 +23,8 @@ class MockSettings {
     }
 
     async showHexMenu(ctx, edit = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id || 'test-chat-123';
-        const settings = await this.db.getSettings(chatID);
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id || 'test-chat-123';
+        const settings = await this.db.getSettings(holonId);
         const language = settings.language;
         const currentHex = settings.hex || '';
 
@@ -60,7 +60,7 @@ class MockSettings {
         // Add map hexamap webapp button
         keyboard.inline_keyboard.push([{
             text: `🗺️ View on Map`,
-            web_app: { url: `https://hexamap.holons.io/index.html?id=${chatID}` }
+            web_app: { url: `https://hexamap.holons.io/index.html?id=${holonId}` }
         }]);
 
         // Back button

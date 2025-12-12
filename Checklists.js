@@ -66,14 +66,14 @@ class Checklists {
                     ...baseChecklist,
                     questId: options.questId,
                     parentTitle: options.parentTitle,
-                    chatId: options.chatId
+                    holonId: options.holonId
                 };
             case CHECKLIST_TYPES.ROLE:
                 return {
                     ...baseChecklist,
                     roleId: options.roleId,
                     parentTitle: options.parentTitle,
-                    chatId: options.chatId
+                    holonId: options.holonId
                 };
             case CHECKLIST_TYPES.AGENDA:
             case CHECKLIST_TYPES.SHOPPING:
@@ -108,14 +108,14 @@ class Checklists {
     async handleNewChecklistButton(ctx) {
         await ctx.answerCbQuery().catch();
         const originalMessageId = ctx.callbackQuery.message.message_id;
-        const chatId = ctx.callbackQuery.message.chat.id;
+        const holonId = ctx.callbackQuery.message.chat.id;
 
         // Use InputScene for checklist name input
         return ctx.scene.enter('input_scene', {
             promptText: 'Please enter a name for the new checklist (no underscores allowed):',
             allowEmpty: false,
             validate: async (name, ctx) => {
-                const chatId = ctx.chat.id;
+                const holonId = ctx.chat.id;
 
                 // Validate name: no underscores
                 if (name.includes('_')) {
@@ -123,22 +123,22 @@ class Checklists {
                 }
 
                 // Check if checklist already exists
-                if (await this.db.get(chatId + '/checklists', name)) {
+                if (await this.db.get(holonId + '/checklists', name)) {
                     return { valid: false, error: `Checklist "${name}" already exists.` };
                 }
 
                 return { valid: true };
             },
             onComplete: async (ctx, name) => {
-                const chatId = ctx.chat.id;
+                const holonId = ctx.chat.id;
 
                 // Create the new empty checklist with standardized type
                 const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
 
-                await this.db.put(chatId + '/checklists', checklist);
+                await this.db.put(holonId + '/checklists', checklist);
 
                 // Re-show the list of all checklists
-                await this.showAllChecklists(ctx, { editMessageId: originalMessageId, chatId: chatId });
+                await this.showAllChecklists(ctx, { editMessageId: originalMessageId, holonId: holonId });
             }
         });
     }
@@ -148,16 +148,16 @@ class Checklists {
         // Determine the message ID to edit: prioritize options, then callbackQuery
         const editMessageId = options.editMessageId || (ctx.callbackQuery ? ctx.callbackQuery.message.message_id : null);
         // Determine chat ID reliably: prioritize options, then ctx.chat, then callbackQuery
-        const chatId = options.chatId || ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+        const holonId = options.holonId || ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
     
-        if (!chatId) {
+        if (!holonId) {
             console.error("Could not determine chat ID in showAllChecklists");
             // Try answering callback query if possible before returning
             if (ctx.callbackQuery) await ctx.answerCbQuery("Error: Could not find chat.").catch(() => {});
             return;
         }
 
-        let lists = await this.db.getAll(chatId + '/checklists');
+        let lists = await this.db.getAll(holonId + '/checklists');
         
         // Ensure all lists have a type, defaulting to 'checklist' for backward compatibility
         lists = lists.map(list => {
@@ -217,7 +217,7 @@ class Checklists {
         try {
             if (editMessageId) {
                  // Edit the specified message or the callback query message
-                await ctx.telegram.editMessageText(chatId, editMessageId, null, message, keyboard);
+                await ctx.telegram.editMessageText(holonId, editMessageId, null, message, keyboard);
             } else {
                 // Reply if no specific message to edit (e.g., called by command)
                 await ctx.reply(message, keyboard);
@@ -227,7 +227,7 @@ class Checklists {
                  await ctx.answerCbQuery().catch(() => {}); // Safely answer
             }
         } catch (error) {
-            console.error(`Error in showAllChecklists (chatId: ${chatId}, editMessageId: ${editMessageId}, deleteMode: ${deleteMode}):`, error);
+            console.error(`Error in showAllChecklists (holonId: ${holonId}, editMessageId: ${editMessageId}, deleteMode: ${deleteMode}):`, error);
             // Ignore common "message is not modified" error, otherwise notify user if editing failed
             if (editMessageId && !(error.description && error.description.includes("message is not modified"))) {
                  // Check if we can reply in the context before doing so
@@ -235,7 +235,7 @@ class Checklists {
                     await ctx.reply("Failed to update the checklist list.").catch(() => {});
                  } else {
                     // Fallback if ctx.reply isn't available (e.g., from scene with minimal context)
-                    await this.bot.telegram.sendMessage(chatId, "Failed to update the checklist list.").catch(() => {});
+                    await this.bot.telegram.sendMessage(holonId, "Failed to update the checklist list.").catch(() => {});
                  }
             }
              // Still attempt to answer callback query on error if applicable
@@ -264,8 +264,8 @@ class Checklists {
             return;
         }
 
-        let chatID = ctx.chat.id;
-        if (await this.db.get(chatID + '/checklists', name)) {
+        let holonId = ctx.chat.id;
+        if (await this.db.get(holonId + '/checklists', name)) {
              await ctx.reply(`Checklist "${name}" already exists.`)
                          .then(msg => setTimeout(() => ctx.deleteMessage(msg.message_id).catch(() => {}), 5000)); // Delete after 5s
             return;
@@ -274,7 +274,7 @@ class Checklists {
         // Create the new empty checklist with standardized type
         const checklist = this.createChecklistObject(name, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
 
-        await this.db.put(chatID + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
         
         // Confirm creation and delete the confirmation after a few seconds
          await ctx.reply(`Created checklist "${name}".`)
@@ -323,24 +323,24 @@ class Checklists {
             return;
         }
         
-        const chatId = ctx.chat.id;
+        const holonId = ctx.chat.id;
         
         try {
             // Get or create the checklist
-            const checklist = await this.db.get(chatId + '/checklists', checklistId);
+            const checklist = await this.db.get(holonId + '/checklists', checklistId);
             
             if (!checklist) {
                 // Check if this might be a quest ID instead, by looking for a quest with this ID
-                const quest = await this.db.get(chatId + '/quests', checklistId);
+                const quest = await this.db.get(holonId + '/quests', checklistId);
                 
                 if (quest) {
                     // This might be a quest's task list - check if it has a checklistId
                     if (quest.checklistId) {
                         // Try to get the actual checklist
-                        const questChecklist = await this.db.get(chatId + '/checklists', quest.checklistId.toString());
+                        const questChecklist = await this.db.get(holonId + '/checklists', quest.checklistId.toString());
                         if (questChecklist) {
                             // Process items for the quest's checklist
-                            return await this.processChecklistItems(questChecklist, itemsText, chatId, ctx);
+                            return await this.processChecklistItems(questChecklist, itemsText, holonId, ctx);
                         }
                     }
                     
@@ -350,23 +350,23 @@ class Checklists {
                         creator: ctx.from.id,
                         questId: quest.id,
                         parentTitle: quest.title,
-                        chatId: chatId
+                        holonId: holonId
                     });
                     
-                    return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
+                    return await this.processChecklistItems(newChecklist, itemsText, holonId, ctx);
                 }
                 
                 // Check if this might be a role ID instead
-                const role = await this.db.get(chatId + '/roles', checklistId);
+                const role = await this.db.get(holonId + '/roles', checklistId);
                 
                 if (role) {
                     // This might be a role's task list - check if it has a checklistId
                     if (role.checklistId) {
                         // Try to get the actual checklist
-                        const roleChecklist = await this.db.get(chatId + '/checklists', role.checklistId.toString());
+                        const roleChecklist = await this.db.get(holonId + '/checklists', role.checklistId.toString());
                         if (roleChecklist) {
                             // Process items for the role's checklist
-                            return await this.processChecklistItems(roleChecklist, itemsText, chatId, ctx);
+                            return await this.processChecklistItems(roleChecklist, itemsText, holonId, ctx);
                         }
                     }
                     
@@ -376,10 +376,10 @@ class Checklists {
                         creator: ctx.from.id,
                         roleId: role.id,
                         parentTitle: role.title,
-                        chatId: chatId
+                        holonId: holonId
                     });
                     
-                    return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
+                    return await this.processChecklistItems(newChecklist, itemsText, holonId, ctx);
                 }
                 
                 // Create a new regular checklist
@@ -387,7 +387,7 @@ class Checklists {
                     creator: ctx.from.id
                 });
                 
-                return await this.processChecklistItems(newChecklist, itemsText, chatId, ctx);
+                return await this.processChecklistItems(newChecklist, itemsText, holonId, ctx);
             }
             
             // Existing checklist found - Migrate legacy type if needed
@@ -402,7 +402,7 @@ class Checklists {
                     checklist.type = CHECKLIST_TYPES.CHECKLIST;
                 }
             }
-            return await this.processChecklistItems(checklist, itemsText, chatId, ctx);
+            return await this.processChecklistItems(checklist, itemsText, holonId, ctx);
             
         } catch (error) {
             console.error('Error adding items with /additem command:', error);
@@ -411,7 +411,7 @@ class Checklists {
     }
     
     // Helper method to process items for a checklist
-    async processChecklistItems(checklist, itemsText, chatId, ctx) {
+    async processChecklistItems(checklist, itemsText, holonId, ctx) {
         // Parse and add items
         const newItems = itemsText.split(',').map(text => ({
             text: text.trim(),
@@ -425,7 +425,7 @@ class Checklists {
         
         // Add the items to the checklist
         checklist.items.push(...newItems);
-        await this.db.put(chatId + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
         
         // Show success message with added items
         const addedItemsText = newItems.map(item => `"${item.text}"`).join(', ');
@@ -450,8 +450,8 @@ class Checklists {
         }
 
         const itemText = itemWords.join(' ');
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist) {
             ctx.reply(`Checklist "${listName}" not found.`);
@@ -466,7 +466,7 @@ class Checklists {
             return;
         }
 
-        await this.db.put(chatID + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
         ctx.reply(`Removed "${itemText}" from checklist "${listName}".`);
     }
 
@@ -477,19 +477,19 @@ class Checklists {
             return;
         }
 
-        let chatID = ctx.chat.id;
-        await this.db.del(chatID + '/checklists', name);
+        let holonId = ctx.chat.id;
+        await this.db.del(holonId + '/checklists', name);
         ctx.reply(`Removed checklist "${name}".`);
     }
 
     async showChecklist(ctx, checklistId) {
-        const chatId = ctx.callbackQuery.message.chat.id;
+        const holonId = ctx.callbackQuery.message.chat.id;
         if (!checklistId) {
             await ctx.answerCbQuery('No checklist ID provided');
             return;
         }
         try {
-            const checklist = await this.db.get(chatId + '/checklists', checklistId);
+            const checklist = await this.db.get(holonId + '/checklists', checklistId);
             if (!checklist) {
                 await ctx.answerCbQuery('Checklist not found');
                 return;
@@ -510,8 +510,8 @@ class Checklists {
 
     async toggleCheckItem(ctx) {
         const [listName, itemIndex] = ctx.match[1].split('_');
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist || !checklist.items[itemIndex]) {
             await ctx.answerCbQuery('Item not found');
@@ -519,7 +519,7 @@ class Checklists {
         }
 
         checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
-        await this.db.put(chatID + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
 
         const icon = this.getChecklistIcon(checklist);
         const title = `${icon} ${this.getChecklistDisplayTitle(checklist)}:`;
@@ -533,11 +533,11 @@ class Checklists {
     async handleChecklistButton(ctx) {
         await ctx.answerCbQuery().catch()
         const listName = ctx.match[1];
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist) {
-            console.log(`Checklist "${listName}" not found for chat ${chatID}.`);
+            console.log(`Checklist "${listName}" not found for chat ${holonId}.`);
             return;
         }
 
@@ -580,8 +580,8 @@ class Checklists {
 
     async clearChecklist(ctx) {
         const listName = ctx.match[1];
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist) {
             await ctx.answerCbQuery('Checklist not found');
@@ -606,7 +606,7 @@ class Checklists {
             await ctx.answerCbQuery('Cleared all items');
         }
 
-        await this.db.put(chatID + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
         
         const icon = this.getChecklistIcon(checklist);
         const title = `${icon} ${this.getChecklistDisplayTitle(checklist)}:`;
@@ -666,7 +666,7 @@ class Checklists {
                 buttons.push([
                     Markup.button.callback(
                         i18next.t('back_to_task'),
-                        `back_to_quest_${checklist.chatId}_${checklist.questId}`
+                        `back_to_quest_${checklist.holonId}_${checklist.questId}`
                     )
                 ]);
             }
@@ -689,7 +689,7 @@ class Checklists {
         await ctx.answerCbQuery().catch();
         const checklistId = ctx.match[1];
         const originalMessageId = ctx.callbackQuery.message.message_id;
-        const chatId = ctx.callbackQuery.message.chat.id;
+        const holonId = ctx.callbackQuery.message.chat.id;
 
         // Use InputScene for checklist item input
         return ctx.scene.enter('input_scene', {
@@ -697,10 +697,10 @@ class Checklists {
             inputType: 'array',
             allowEmpty: false,
             onComplete: async (ctx, newItemsArray) => {
-                const chatId = ctx.chat.id;
+                const holonId = ctx.chat.id;
 
                 try {
-                    const checklist = await this.db.get(chatId + '/checklists', checklistId.toString()) ||
+                    const checklist = await this.db.get(holonId + '/checklists', checklistId.toString()) ||
                         this.createChecklistObject(checklistId, CHECKLIST_TYPES.CHECKLIST, { creator: ctx.from.id });
 
                     // Convert array items to checklist item objects
@@ -712,13 +712,13 @@ class Checklists {
                     // Add items
                     if (newItems.length > 0) {
                         checklist.items.push(...newItems);
-                        await this.db.put(chatId + '/checklists', checklist);
+                        await this.db.put(holonId + '/checklists', checklist);
                     }
 
                     // Update the original checklist message
                     const icon = this.getChecklistIcon(checklist);
                     await ctx.telegram.editMessageText(
-                        chatId,
+                        holonId,
                         originalMessageId,
                         null,
                         `${icon} ${this.getChecklistDisplayTitle(checklist)}:`,
@@ -741,8 +741,8 @@ class Checklists {
     async enterRemoveMode(ctx) {
         await ctx.answerCbQuery().catch()
         const listName = ctx.match[1];
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist) {
             // Use reply or editMessageText based on context
@@ -775,8 +775,8 @@ class Checklists {
     async removeItem(ctx) {
         await ctx.answerCbQuery().catch()
         const [listName, itemIndex] = ctx.match[1].split('_');
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist || !checklist.items[itemIndex]) {
             ctx.reply('Item not found.');
@@ -788,7 +788,7 @@ class Checklists {
 
         // Remove the item
         checklist.items = checklist.items.filter((_, index) => index !== parseInt(itemIndex));
-        await this.db.put(chatID + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
 
         // Update the message with the new keyboard, staying in remove mode
         await ctx.editMessageText(
@@ -804,8 +804,8 @@ class Checklists {
             return;
         }
 
-        let chatID = ctx.chat.id;
-        let checklist = await this.db.get(chatID + '/checklists', listName);
+        let holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist) {
             ctx.reply(`Checklist "${listName}" not found.`);
@@ -822,7 +822,7 @@ class Checklists {
 
         // Remove checked items
         checklist.items = checklist.items.filter(item => !item.checked);
-        await this.db.put(chatID + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
 
         const removedCount = initialLength - checklist.items.length;
         const removedItems = checkedItems.map(item => `"${item.text}"`).join(', ');
@@ -836,8 +836,8 @@ class Checklists {
         );
     }
 
-    async addItemsToChecklist(listName, itemsText, chatId, ctx) {
-        let checklist = await this.db.get(chatId + '/checklists', listName);
+    async addItemsToChecklist(listName, itemsText, holonId, ctx) {
+        let checklist = await this.db.get(holonId + '/checklists', listName);
         
         if (!checklist) {
             await ctx.reply(`Checklist "${listName}" not found.`);
@@ -858,7 +858,7 @@ class Checklists {
         }
 
         checklist.items.push(...newItems);
-        await this.db.put(chatId + '/checklists', checklist);
+        await this.db.put(holonId + '/checklists', checklist);
 
         const itemsAdded = newItems.map(item => `"${item.text}"`).join(', ');
         await ctx.reply(`Added ${newItems.length} items to checklist "${listName}": ${itemsAdded}`);
@@ -873,10 +873,10 @@ class Checklists {
     }
 
     async handleBackToQuest(ctx) {
-        const [chatId, questId] = ctx.match[1].split('_');
+        const [holonId, questId] = ctx.match[1].split('_');
         
         try {
-            const quest = await this.db.get(chatId + '/quests', questId);
+            const quest = await this.db.get(holonId + '/quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -915,8 +915,8 @@ class Checklists {
     }
 
     async showSpecialChecklist(ctx, type, icon) {
-        const chatId = ctx.chat.id;
-        let checklist = await this.db.get(chatId + '/checklists', type) || {
+        const holonId = ctx.chat.id;
+        let checklist = await this.db.get(holonId + '/checklists', type) || {
             id: type,
             items: [],
             created: new Date()
@@ -998,10 +998,10 @@ class Checklists {
 
     async deleteChecklist(ctx) {
         const listName = ctx.match[1];
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         
         // Get the checklist to check its type
-        const checklist = await this.db.get(chatID + '/checklists', listName);
+        const checklist = await this.db.get(holonId + '/checklists', listName);
         
         // Don't allow deletion of special checklists
         if (checklist && this.isSpecialChecklist(checklist)) {
@@ -1009,7 +1009,7 @@ class Checklists {
             return;
         }
 
-        await this.db.del(chatID + '/checklists', listName);
+        await this.db.del(holonId + '/checklists', listName);
         await ctx.answerCbQuery(`Deleted checklist "${listName}"`);
         
         // Refresh the delete mode view using options

@@ -15,9 +15,9 @@ class Announcements {
     }
 
     async announce(ctx) {
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         let messageID = ctx.message.message_id;
-        const language = await this.settings.getLanguage(chatID)
+        const language = await this.settings.getLanguage(holonId)
         const message = ctx.message.text.split(' ').slice(1).join(' ')
 
         if (!message || message.length === 0 || message === '') {
@@ -40,21 +40,21 @@ class Announcements {
     }
 
     async createAndPublishAnnouncement(ctx, message, originalMessageId = null) {
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         // Use provided originalMessageId if available, otherwise fall back to current message ID
         // This ensures consistency: command message ID is used whether invoked directly or via InputScene
         let messageID = originalMessageId !== null ? originalMessageId : ctx.message.message_id;
-        const language = await this.settings.getLanguage(chatID);
+        const language = await this.settings.getLanguage(holonId);
 
         let announcement = {
             id: messageID,
             user: ctx.from,
             date: new Date(),
             content: message,
-            chat: chatID
+            chat: holonId
         }
 
-        await this.db.put(chatID + '/announcements', announcement);
+        await this.db.put(holonId + '/announcements', announcement);
 
         // Send formatted announcement in local chat
         const formattedMessage = this.createAnnouncementMessage(announcement, language);
@@ -83,82 +83,82 @@ class Announcements {
             const federationKey = `${announcement.chat}_${announcement.id}_fedannouncements`;
             let federatedMessages = await this.db.get('federation_messages', federationKey) || {
                 id: federationKey,
-                chatId: announcement.chat,
+                holonId: announcement.chat,
                 announcementId: announcement.id,
                 messages: []
             };
 
-            for (const federatedChatId of fedInfo.outbound) {
+            for (const federatedholonId of fedInfo.outbound) {
                 // Skip if it's the same chat as the original
-                if (federatedChatId === announcement.chat) {
-                    console.log(`[handleFederatedAnnouncements] Skipping same chat ${federatedChatId}`);
+                if (federatedholonId === announcement.chat) {
+                    console.log(`[handleFederatedAnnouncements] Skipping same chat ${federatedholonId}`);
                     continue;
                 }
 
-                console.log(`[handleFederatedAnnouncements] Processing federated chat ${federatedChatId}`);
+                console.log(`[handleFederatedAnnouncements] Processing federated chat ${federatedholonId}`);
 
                 // Check if the target holon has allowed the 'announcements' lens in their federation array
                 try {
-                    const targetFedInfo = await this.db.getFederation(federatedChatId);
-                    console.log(`[handleFederatedAnnouncements] Target federation info for ${federatedChatId}:`, targetFedInfo);
+                    const targetFedInfo = await this.db.getFederation(federatedholonId);
+                    console.log(`[handleFederatedAnnouncements] Target federation info for ${federatedholonId}:`, targetFedInfo);
 
                     // Check if the target chat has lensConfig and if it allows 'announcements' lens in their inbound
                     // (receiver's inbound = what they accept FROM us)
-                    const sourceChatId = announcement.chat.toString();
-                    const targetLensConfig = targetFedInfo?.lensConfig?.[sourceChatId];
+                    const sourceholonId = announcement.chat.toString();
+                    const targetLensConfig = targetFedInfo?.lensConfig?.[sourceholonId];
 
                     if (!targetLensConfig?.inbound?.includes('announcements')) {
-                        console.log(`[handleFederatedAnnouncements] Skipping federated announcement to ${federatedChatId} - 'announcements' lens not in their inbound for chat ${sourceChatId}`);
+                        console.log(`[handleFederatedAnnouncements] Skipping federated announcement to ${federatedholonId} - 'announcements' lens not in their inbound for chat ${sourceholonId}`);
                         continue;
                     }
 
-                    console.log(`[handleFederatedAnnouncements] Target chat ${federatedChatId} accepts 'announcements' lens from chat ${sourceChatId}, proceeding with message`);
+                    console.log(`[handleFederatedAnnouncements] Target chat ${federatedholonId} accepts 'announcements' lens from chat ${sourceholonId}, proceeding with message`);
                 } catch (error) {
-                    console.error(`[handleFederatedAnnouncements] Error checking federation settings for chat ${federatedChatId}:`, error);
+                    console.error(`[handleFederatedAnnouncements] Error checking federation settings for chat ${federatedholonId}:`, error);
                     continue; // Skip this chat if we can't verify federation settings
                 }
 
                 // Find existing message for this federated chat
-                const existingMsgIndex = federatedMessages.messages.findIndex(m => m.chatId === federatedChatId);
+                const existingMsgIndex = federatedMessages.messages.findIndex(m => m.holonId === federatedholonId);
                 const existingMsg = existingMsgIndex > -1 ? federatedMessages.messages[existingMsgIndex] : null;
 
                 try {
                     if (existingMsg) {
-                        console.log(`[handleFederatedAnnouncements] Updating existing announcement ${existingMsg.messageId} in chat ${federatedChatId}`);
+                        console.log(`[handleFederatedAnnouncements] Updating existing announcement ${existingMsg.messageId} in chat ${federatedholonId}`);
                         // Update existing message
                         const originalHolonName = await utils.getHolonName(this.db, announcement.chat, ctx);
                         const hologramMessageText = this.createAnnouncementMessage(announcement, language, originalHolonName);
                         
                         await ctx.telegram.editMessageText(
-                            federatedChatId,
+                            federatedholonId,
                             existingMsg.messageId,
                             null,
                             hologramMessageText,
                             { parse_mode: 'Markdown' }
-                        ).catch(err => console.error(`Error updating federated announcement in ${federatedChatId}:`, err));
+                        ).catch(err => console.error(`Error updating federated announcement in ${federatedholonId}:`, err));
                     } else {
-                        console.log(`[handleFederatedAnnouncements] Creating new federated announcement in chat ${federatedChatId}`);
+                        console.log(`[handleFederatedAnnouncements] Creating new federated announcement in chat ${federatedholonId}`);
                         // Create new announcement message
                         const originalHolonName = await utils.getHolonName(this.db, announcement.chat, ctx);
                         const hologramMessageText = this.createAnnouncementMessage(announcement, language, originalHolonName);
                         
                         const newMessage = await ctx.telegram.sendMessage(
-                            federatedChatId,
+                            federatedholonId,
                             hologramMessageText,
                             { parse_mode: 'Markdown' }
                         );
 
-                        console.log(`[handleFederatedAnnouncements] Created new federated announcement ${newMessage.message_id} in chat ${federatedChatId}`);
+                        console.log(`[handleFederatedAnnouncements] Created new federated announcement ${newMessage.message_id} in chat ${federatedholonId}`);
 
                         // Store the new message information
                         federatedMessages.messages.push({
-                            chatId: federatedChatId,
+                            holonId: federatedholonId,
                             messageId: newMessage.message_id,
                             timestamp: Date.now()
                         });
                     }
                 } catch (error) {
-                    console.error(`[handleFederatedAnnouncements] Failed to handle announcement in federated chat ${federatedChatId}:`, error);
+                    console.error(`[handleFederatedAnnouncements] Failed to handle announcement in federated chat ${federatedholonId}:`, error);
                     // If we've failed to update an existing message, remove it from tracking
                     if (existingMsgIndex > -1) {
                         federatedMessages.messages.splice(existingMsgIndex, 1);

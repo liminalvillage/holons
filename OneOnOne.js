@@ -10,8 +10,8 @@ class OneOnOne {
     this.pairings = new Set(); // To track unique pairings
 
     bot.command(['round'], async (ctx) => {
-      let chatID = ctx.chat.id;
-      let participants = await this.db.getAll(chatID + '/users');
+      let holonId = ctx.chat.id;
+      let participants = await this.db.getAll(holonId + '/users');
       if (participants.length < 2) {
         ctx.reply('Not enough participants for this. Please invite more people to join.');
         return;
@@ -19,7 +19,7 @@ class OneOnOne {
 
       // Schedule the round at regular intervals
       schedule.scheduleJob('*/1 * * * *', async () => {
-        await this.startRound(participants, chatID);
+        await this.startRound(participants, holonId);
       });
 
       ctx.reply('Scheduled speed dating rounds.');
@@ -29,9 +29,9 @@ class OneOnOne {
       const user = ctx.from.username;
       const summary = ctx.message.text.split('/summary ')[1];
       if (this.conversations[user]) {
-        const { partner, chatID } = this.conversations[user];
+        const { partner, holonId } = this.conversations[user];
         // Store the summary in the database
-        await this.db.save(`${chatID}/summaries`, { user, partner, summary });
+        await this.db.save(`${holonId}/summaries`, { user, partner, summary });
         ctx.reply('Thank you for your summary!');
         delete this.conversations[user]; // Remove the conversation after reporting
       } else {
@@ -40,7 +40,7 @@ class OneOnOne {
     });
   }
 
-  async startRound(participants, chatID) {
+  async startRound(participants, holonId) {
     if (participants.length >= 2) {
       const newPairings = [];
 
@@ -61,21 +61,21 @@ class OneOnOne {
       }
 
       if (newPairings.length === 0) {
-        this.bot.telegram.sendMessage(chatID, 'All participants have been paired. Resetting pairs.');
+        this.bot.telegram.sendMessage(holonId, 'All participants have been paired. Resetting pairs.');
         this.pairings.clear();
-        await this.startRound(participants, chatID); // Start a new round with cleared pairs
+        await this.startRound(participants, holonId); // Start a new round with cleared pairs
       } else {
         for (const [user1, user2] of newPairings) {
-          await this.createConversation(user1, user2, chatID);
+          await this.createConversation(user1, user2, holonId);
         }
       }
     } else {
-      this.bot.telegram.sendMessage(chatID, 'Not enough participants for this session. Please wait for the next round.');
+      this.bot.telegram.sendMessage(holonId, 'Not enough participants for this session. Please wait for the next round.');
     }
   }
 
   // Function to create a conversation for pairs
-  async createConversation(user1, user2, chatID) {
+  async createConversation(user1, user2, holonId) {
     try {
       const message1 = `You have been paired with @${user2.username} for a 15-minute conversation. Please discuss and use /summary to report the conversation summary.`;
       const message2 = `You have been paired with @${user1.username} for a 15-minute conversation. Please discuss and use /summary to report the conversation summary.`;
@@ -84,14 +84,14 @@ class OneOnOne {
       await this.bot.telegram.sendMessage(user2.id, message2);
 
       // Track the ongoing conversation
-      this.conversations[user1.username] = { partner: user2.username, chatID };
-      this.conversations[user2.username] = { partner: user1.username, chatID };
+      this.conversations[user1.username] = { partner: user2.username, holonId };
+      this.conversations[user2.username] = { partner: user1.username, holonId };
 
       // Notify users in the main chat
-      this.bot.telegram.sendMessage(chatID, `@${user1.username} and @${user2.username}, you have been paired for a private conversation! Please check your direct messages.`);
+      this.bot.telegram.sendMessage(holonId, `@${user1.username} and @${user2.username}, you have been paired for a private conversation! Please check your direct messages.`);
     } catch (error) {
       console.error('Error creating conversation:', error);
-      this.bot.telegram.sendMessage(chatID, `An error occurred while pairing @${user1.username} and @${user2.username}.`);
+      this.bot.telegram.sendMessage(holonId, `An error occurred while pairing @${user1.username} and @${user2.username}.`);
     }
   }
 }

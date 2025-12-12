@@ -211,8 +211,8 @@ class MultiBot extends Telegraf {
         let chats = await this.settings.getChats(ctx);
         let k = 0;
 
-        for (const chatID of chats) {
-            let users = await this.db.holosphere.getAll(chatID.toString(), 'users');
+        for (const holonId of chats) {
+            let users = await this.db.holosphere.getAll(holonId.toString(), 'users');
             for (const user of users) {
                 for (let j = 0; j < user.offers.length; j++) {
                     offers.push({ id: k++, title: user.offers[j], description: user.username, price: '$10' });

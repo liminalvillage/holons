@@ -16,8 +16,8 @@ class Shopping {
     }
 
     async buy(ctx) {
-        let chatID = ctx.chat.id;
-        const language = await this.settings.getLanguage(chatID)
+        let holonId = ctx.chat.id;
+        const language = await this.settings.getLanguage(holonId)
         const type = ctx.message.text.split(' ')[0].replace('/', '');
         let items = utils.parseList(ctx.message.text)
 
@@ -32,15 +32,15 @@ class Shopping {
                 inputType: 'array',  // Auto-splits by comma/newline
                 allowEmpty: false,
                 onComplete: async (ctx, items) => {
-                    // Get chatID fresh from the callback context
-                    const callbackChatID = ctx.chat.id;
-                    const callbackLanguage = await this.settings.getLanguage(callbackChatID);
+                    // Get holonId fresh from the callback context
+                    const callbackholonId = ctx.chat.id;
+                    const callbackLanguage = await this.settings.getLanguage(callbackholonId);
 
                     console.log('[Shopping InputScene] Adding items:', items);
-                    console.log('[Shopping InputScene] Chat ID:', callbackChatID);
+                    console.log('[Shopping InputScene] Chat ID:', callbackholonId);
 
                     // Get or create the shopping checklist
-                    let shoppingList = await this.db.get(callbackChatID + '/checklists', 'shopping');
+                    let shoppingList = await this.db.get(callbackholonId + '/checklists', 'shopping');
 
                     if (!shoppingList) {
                         console.log('[Shopping InputScene] Creating new shopping checklist');
@@ -65,7 +65,7 @@ class Shopping {
                     console.log('[Shopping InputScene] Updated shopping list:', shoppingList);
 
                     // Save to checklists
-                    await this.db.put(callbackChatID + '/checklists', shoppingList);
+                    await this.db.put(callbackholonId + '/checklists', shoppingList);
                     console.log('[Shopping InputScene] Saved to database');
 
                     await ctx.reply(utils.i18next.t('shoppingadded', {
@@ -80,7 +80,7 @@ class Shopping {
         console.log('[Shopping buy] Items provided directly, adding to DB');
 
         // Get or create the shopping checklist
-        let shoppingList = await this.db.get(chatID + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
 
         if (!shoppingList) {
             console.log('[Shopping buy direct] Creating new shopping checklist');
@@ -105,7 +105,7 @@ class Shopping {
         console.log('[Shopping buy direct] Updated shopping list:', shoppingList);
 
         // Save to checklists
-        await this.db.put(chatID + '/checklists', shoppingList);
+        await this.db.put(holonId + '/checklists', shoppingList);
         console.log('[Shopping buy direct] Saved to database');
 
         ctx.reply(utils.i18next.t('shoppingadded', { items: items.join(", "), lng: language }));
@@ -113,11 +113,11 @@ class Shopping {
 
     async shopping(ctx) {
         console.log('[Shopping shopping] Command called');
-        let chatID = ctx.chat.id;
-        const language = await this.settings.getLanguage(chatID);
+        let holonId = ctx.chat.id;
+        const language = await this.settings.getLanguage(holonId);
 
         // Get the shopping checklist
-        let shoppingList = await this.db.get(chatID + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
 
         if (!shoppingList || !shoppingList.items || shoppingList.items.length === 0) {
             console.log('[Shopping shopping] List is empty');
@@ -131,12 +131,12 @@ class Shopping {
     }
 
     async toggle(ctx) {
-        let chatID = ctx.chat.id;
-        const language = await this.settings.getLanguage(chatID);
+        let holonId = ctx.chat.id;
+        const language = await this.settings.getLanguage(holonId);
         const itemId = ctx.match[1];
 
         // Get the shopping checklist
-        let shoppingList = await this.db.get(chatID + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
 
         if (!shoppingList || !shoppingList.items) {
             console.log('[Shopping toggle] Shopping list not found');
@@ -147,7 +147,7 @@ class Shopping {
         const item = shoppingList.items.find(i => i.id == itemId);
         if (item) {
             item.checked = !item.checked;
-            await this.db.put(chatID + '/checklists', shoppingList);
+            await this.db.put(holonId + '/checklists', shoppingList);
 
             ctx.editMessageText(
                 utils.i18next.t("shoppinglist", { lng: language }),
@@ -157,11 +157,11 @@ class Shopping {
     }
 
     async done(ctx) {
-        let chatID = ctx.chat.id;
-        const language = await this.settings.getLanguage(chatID);
+        let holonId = ctx.chat.id;
+        const language = await this.settings.getLanguage(holonId);
 
         // Get the shopping checklist
-        let shoppingList = await this.db.get(chatID + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
 
         if (!shoppingList || !shoppingList.items) {
             console.log('[Shopping done] Shopping list not found');
@@ -173,7 +173,7 @@ class Shopping {
         shoppingList.items = shoppingList.items.filter(item => !item.checked);
         const removedCount = beforeCount - shoppingList.items.length;
 
-        await this.db.put(chatID + '/checklists', shoppingList);
+        await this.db.put(holonId + '/checklists', shoppingList);
 
         console.log('[Shopping done] Removed', removedCount, 'items, remaining:', shoppingList.items.length);
 
@@ -184,8 +184,8 @@ class Shopping {
 
     async addItem(ctx) {
         await ctx.answerCbQuery().catch(() => {});
-        let chatID = ctx.chat.id;
-        const language = await this.settings.getLanguage(chatID);
+        let holonId = ctx.chat.id;
+        const language = await this.settings.getLanguage(holonId);
 
         // Enter InputScene to collect new items
         return ctx.scene.enter('input_scene', {
@@ -193,14 +193,14 @@ class Shopping {
             inputType: 'array',  // Auto-splits by comma/newline
             allowEmpty: false,
             onComplete: async (ctx, items) => {
-                // Get chatID fresh from the callback context
-                const callbackChatID = ctx.chat.id;
-                const callbackLanguage = await this.settings.getLanguage(callbackChatID);
+                // Get holonId fresh from the callback context
+                const callbackholonId = ctx.chat.id;
+                const callbackLanguage = await this.settings.getLanguage(callbackholonId);
 
                 console.log('[Shopping addItem] Adding items:', items);
 
                 // Get or create the shopping checklist
-                let shoppingList = await this.db.get(callbackChatID + '/checklists', 'shopping');
+                let shoppingList = await this.db.get(callbackholonId + '/checklists', 'shopping');
 
                 if (!shoppingList) {
                     console.log('[Shopping addItem] Creating new shopping checklist');
@@ -225,7 +225,7 @@ class Shopping {
                 console.log('[Shopping addItem] Updated shopping list:', shoppingList);
 
                 // Save to checklists
-                await this.db.put(callbackChatID + '/checklists', shoppingList);
+                await this.db.put(callbackholonId + '/checklists', shoppingList);
 
                 await ctx.reply(utils.i18next.t('shoppingadded', {
                     items: items.join(", "),

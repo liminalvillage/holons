@@ -216,8 +216,8 @@ Here's the complete code change for the Shopping.js `/buy` command:
 ### BEFORE (Shopping.js:17-30):
 ```javascript
 async buy(ctx) {
-    let chatID = ctx.chat.id;
-    const language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.chat.id;
+    const language = await this.settings.getLanguage(holonId)
     const type = ctx.message.text.split(' ')[0].replace('/', '');
     let items = utils.parseList(ctx.message.text)
     if (!items || items.length === 0) {
@@ -225,7 +225,7 @@ async buy(ctx) {
         return;
     }
     for (let item of items)
-        await this.db.put(chatID + '/shopping', { id: item, done: false, from: ctx.from.username });
+        await this.db.put(holonId + '/shopping', { id: item, done: false, from: ctx.from.username });
 
     ctx.reply(utils.i18next.t('shoppingadded', { items: items.join(", "), lng: language }));
 }
@@ -234,8 +234,8 @@ async buy(ctx) {
 ### AFTER:
 ```javascript
 async buy(ctx) {
-    let chatID = ctx.chat.id;
-    const language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.chat.id;
+    const language = await this.settings.getLanguage(holonId)
     const type = ctx.message.text.split(' ')[0].replace('/', '');
     let items = utils.parseList(ctx.message.text)
 
@@ -250,7 +250,7 @@ async buy(ctx) {
             onComplete: async (ctx, items) => {
                 // Add items to shopping list
                 for (let item of items) {
-                    await this.db.put(chatID + '/shopping', {
+                    await this.db.put(holonId + '/shopping', {
                         id: item,
                         done: false,
                         from: ctx.from.username
@@ -266,7 +266,7 @@ async buy(ctx) {
 
     // Items provided in command, process directly
     for (let item of items) {
-        await this.db.put(chatID + '/shopping', {
+        await this.db.put(holonId + '/shopping', {
             id: item,
             done: false,
             from: ctx.from.username
@@ -286,9 +286,9 @@ async buy(ctx) {
 ### BEFORE (Announcements.js:17-43):
 ```javascript
 async announce(ctx) {
-    let chatID = ctx.chat.id;
+    let holonId = ctx.chat.id;
     let messageID = ctx.message.message_id;
-    const language = await this.settings.getLanguage(chatID)
+    const language = await this.settings.getLanguage(holonId)
     const message = ctx.message.text.split(' ').slice(1).join(' ')
     if (!message || message.length === 0 || message === '') {
         ctx.reply(utils.i18next.t('announcementusage', { lng: language }));
@@ -300,10 +300,10 @@ async announce(ctx) {
         user: ctx.from,
         date: new Date(),
         content: message,
-        chat: chatID
+        chat: holonId
     }
 
-    await this.db.put(chatID + '/announcements', announcement);
+    await this.db.put(holonId + '/announcements', announcement);
 
     // Send formatted announcement in local chat
     const formattedMessage = this.createAnnouncementMessage(announcement, language);
@@ -317,9 +317,9 @@ async announce(ctx) {
 ### AFTER:
 ```javascript
 async announce(ctx) {
-    let chatID = ctx.chat.id;
+    let holonId = ctx.chat.id;
     let messageID = ctx.message.message_id;
-    const language = await this.settings.getLanguage(chatID)
+    const language = await this.settings.getLanguage(holonId)
     const message = ctx.message.text.split(' ').slice(1).join(' ')
 
     if (!message || message.length === 0 || message === '') {
@@ -340,19 +340,19 @@ async announce(ctx) {
 }
 
 async createAndPublishAnnouncement(ctx, message) {
-    let chatID = ctx.chat.id;
+    let holonId = ctx.chat.id;
     let messageID = ctx.message.message_id;
-    const language = await this.settings.getLanguage(chatID);
+    const language = await this.settings.getLanguage(holonId);
 
     let announcement = {
         id: messageID,
         user: ctx.from,
         date: new Date(),
         content: message,
-        chat: chatID
+        chat: holonId
     }
 
-    await this.db.put(chatID + '/announcements', announcement);
+    await this.db.put(holonId + '/announcements', announcement);
 
     // Send formatted announcement in local chat
     const formattedMessage = this.createAnnouncementMessage(announcement, language);

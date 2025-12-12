@@ -21,9 +21,9 @@ export const getUserId = (ctx) =>
 export const getUser = (ctx) =>
   ctx?.update?.message?.from || ctx?.update?.callback_query?.from || 0;
 
-export const getChatName = async (ctx, chatID) => {
+export const getChatName = async (ctx, holonId) => {
   try {
-    const chatInfo = await ctx.telegram.getChat(chatID);
+    const chatInfo = await ctx.telegram.getChat(holonId);
     
     if (chatInfo.type === 'private') {
       return `${chatInfo.first_name} ${chatInfo.last_name || ''}`.trim();
@@ -33,7 +33,7 @@ export const getChatName = async (ctx, chatID) => {
   } catch (err) {
     // Handle specific "chat not found" error more gracefully
     if (err.response && err.response.error_code === 400 && err.response.description && err.response.description.includes('chat not found')) {
-      // console.warn(`Chat not found for ID ${chatID}: ${err.response.description}`);
+      // console.warn(`Chat not found for ID ${holonId}: ${err.response.description}`);
       return null; // Return null to indicate chat not accessible
     } else {
     console.error('Error getting chat name:', err);
@@ -73,7 +73,7 @@ export const underline = (text) => `<u>${text}</u>`;
 export const getUserInput = (ctx) => ctx?.update?.message?.text;
 export const getParameters = (ctx) => ctx?.update?.message?.text.split(" ").slice(1).join(" ");
 
-export const getChatId = (ctx) => ctx?.chat?.id || ctx?.update?.message?.chat?.id || ctx?.update?.callback_query?.message?.chat?.id || 0;
+export const getholonId = (ctx) => ctx?.chat?.id || ctx?.update?.message?.chat?.id || ctx?.update?.callback_query?.message?.chat?.id || 0;
 export const getMessageId = (ctx) => ctx?.message?.message_id || ctx?.update?.message?.message_id || ctx?.update?.callback_query?.message?.message_id || 0;
 
 export const parseList = (text) => {
@@ -88,13 +88,13 @@ export const capitalize = (string) => {
   return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
-export const isAdmin = async (ctxOrUserId, chatID) => {
-  // Handle case where first parameter is userId and second is chatID
-  if (typeof ctxOrUserId === 'number' && chatID) {
-    // This is the case where it's called as isAdmin(userId, chatID)
+export const isAdmin = async (ctxOrUserId, holonId) => {
+  // Handle case where first parameter is userId and second is holonId
+  if (typeof ctxOrUserId === 'number' && holonId) {
+    // This is the case where it's called as isAdmin(userId, holonId)
     // We need to construct a mock ctx object or handle this differently
     // For now, we'll need to pass the telegram instance somehow
-    console.warn('isAdmin called with userId and chatID - this needs telegram instance');
+    console.warn('isAdmin called with userId and holonId - this needs telegram instance');
     return false; // Default to false for this case until we can properly handle it
   }
   
@@ -122,7 +122,7 @@ export const isAdmin = async (ctxOrUserId, chatID) => {
  */
 export const isBotAdmin = async (ctx) => {
   try {
-    const chatId = getChatId(ctx);
+    const holonId = getholonId(ctx);
     
     // Private chats don't require admin permissions
     if (ctx.chat?.type === 'private') {
@@ -130,9 +130,9 @@ export const isBotAdmin = async (ctx) => {
     }
     
     // Group chats - check if the bot is an admin
-    if (chatId < 0) {
+    if (holonId < 0) {
       const botId = ctx.botInfo.id;
-      const botMember = await ctx.telegram.getChatMember(chatId, botId);
+      const botMember = await ctx.telegram.getChatMember(holonId, botId);
       
       // Check if bot is admin/creator and has necessary permissions
       return botMember && 
@@ -190,7 +190,7 @@ export const getHolonName = async (db, holonId, ctx = null) => {
 
   try {
     // Attempt to get settings for this holonId
-    // Settings are stored at chatID + '/settings'
+    // Settings are stored at holonId + '/settings'
     const settings = await db.get(normalizedHolonId.toString() + '/settings', normalizedHolonId.toString());
     if (settings && settings.name) {
       return settings.name;

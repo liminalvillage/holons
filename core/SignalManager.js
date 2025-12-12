@@ -323,12 +323,12 @@ export default class SignalManager {
     logSignalsForContext(ctx) {
         if (!this.debugMode) return;
         
-        const chatId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+        const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
         const userId = ctx.from?.id || ctx.callbackQuery?.from?.id;
         const callbackData = ctx.callbackQuery?.data;
         
         log.debug('Signal context:', {
-            chatId,
+            holonId,
             userId,
             callbackData,
             matchingPatterns: this.findMatchingPatterns(callbackData)

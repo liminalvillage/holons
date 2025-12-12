@@ -83,8 +83,8 @@ export function validateUserId(userId) {
 /**
  * Validate chat ID (can be negative for groups)
  */
-export function validateChatId(chatId) {
-  const id = parseInt(chatId, 10);
+export function validateholonId(holonId) {
+  const id = parseInt(holonId, 10);
   if (isNaN(id)) {
     throw new Error('Invalid chat ID');
   }
@@ -236,7 +236,7 @@ export function validateDate(dateInput) {
 export const validators = {
   telegramMessage: (text) => validateTelegramInput(text),
   userId: (id) => validateUserId(id),
-  chatId: (id) => validateChatId(id),
+  holonId: (id) => validateholonId(id),
   url: (url) => validateUrl(url),
   email: (email) => validateEmail(email),
   filePath: (path, extensions) => validateFilePath(path, extensions),

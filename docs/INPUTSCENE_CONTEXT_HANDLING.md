@@ -9,16 +9,16 @@ When using InputScene, the `ctx` parameter passed to your `onComplete` callback 
 ```javascript
 // ❌ WRONG - This will cause issues
 async buy(ctx) {
-    const chatID = ctx.chat.id;  // From command context
-    const language = await this.settings.getLanguage(chatID);
+    const holonId = ctx.chat.id;  // From command context
+    const language = await this.settings.getLanguage(holonId);
 
     if (!items || items.length === 0) {
         return ctx.scene.enter('input_scene', {
             promptText: 'Enter items:',
             onComplete: async (ctx, items) => {
-                // chatID and language here are from CLOSURE, not fresh ctx
+                // holonId and language here are from CLOSURE, not fresh ctx
                 // This may work in some cases but is unreliable
-                await this.db.put(chatID + '/shopping', items);  // ❌ BAD
+                await this.db.put(holonId + '/shopping', items);  // ❌ BAD
             }
         });
     }
@@ -26,7 +26,7 @@ async buy(ctx) {
 ```
 
 **Why this is wrong:**
-- The `chatID` variable is captured from the original command context
+- The `holonId` variable is captured from the original command context
 - When `onComplete` executes, it's in a different context (the user's text response)
 - Using closure variables can lead to incorrect chat IDs, especially in group chats or with concurrent users
 
@@ -42,13 +42,13 @@ async buy(ctx) {
             promptText: utils.i18next.t('shoppingprompt', { lng: language }),
             inputType: 'array',
             onComplete: async (ctx, items) => {
-                // Get chatID FRESH from the callback ctx parameter
-                const chatID = ctx.chat.id;  // ✅ GOOD
-                const lang = await this.settings.getLanguage(chatID);
+                // Get holonId FRESH from the callback ctx parameter
+                const holonId = ctx.chat.id;  // ✅ GOOD
+                const lang = await this.settings.getLanguage(holonId);
 
                 // Now use the fresh values
                 for (let item of items) {
-                    await this.db.put(chatID + '/shopping', {
+                    await this.db.put(holonId + '/shopping', {
                         id: item,
                         done: false,
                         from: ctx.from.username  // Also fresh from callback ctx
@@ -100,13 +100,13 @@ Callback executes with NEW ctx (from "milk, bread" message)
 ```javascript
 // ✅ CORRECT
 onComplete: async (ctx, input) => {
-    const chatID = ctx.chat.id;           // Get from callback ctx
+    const holonId = ctx.chat.id;           // Get from callback ctx
     const userID = ctx.from.id;           // Get from callback ctx
     const username = ctx.from.username;   // Get from callback ctx
-    const language = await this.settings.getLanguage(chatID);
+    const language = await this.settings.getLanguage(holonId);
 
     // Use these fresh values
-    await this.db.put(chatID + '/data', {
+    await this.db.put(holonId + '/data', {
         value: input,
         user: userID
     });
@@ -117,17 +117,17 @@ onComplete: async (ctx, input) => {
 
 ```javascript
 // ❌ WRONG
-const chatID = ctx.chat.id;
+const holonId = ctx.chat.id;
 const userID = ctx.from.id;
 
 onComplete: async (ctx, input) => {
-    await this.db.put(chatID + '/data', input);  // BAD - uses closure variable
+    await this.db.put(holonId + '/data', input);  // BAD - uses closure variable
 }
 
 // ✅ CORRECT
 onComplete: async (ctx, input) => {
-    const chatID = ctx.chat.id;  // Get fresh
-    await this.db.put(chatID + '/data', input);  // GOOD - uses fresh value
+    const holonId = ctx.chat.id;  // Get fresh
+    await this.db.put(holonId + '/data', input);  // GOOD - uses fresh value
 }
 ```
 
@@ -154,8 +154,8 @@ return ctx.scene.enter('input_scene', {
 return ctx.scene.enter('input_scene', {
     promptText: 'Enter data:',
     onComplete: async (ctx, input) => {
-        const chatID = ctx.chat.id;
-        await this.processData(ctx, chatID, input);  // this.processData works
+        const holonId = ctx.chat.id;
+        await this.processData(ctx, holonId, input);  // this.processData works
     }.bind(this)  // Bind if you're not using arrow functions
 });
 
@@ -163,8 +163,8 @@ return ctx.scene.enter('input_scene', {
 return ctx.scene.enter('input_scene', {
     promptText: 'Enter data:',
     onComplete: async (ctx, input) => {
-        const chatID = ctx.chat.id;
-        await this.processData(ctx, chatID, input);  // this.processData works
+        const holonId = ctx.chat.id;
+        await this.processData(ctx, holonId, input);  // this.processData works
     }  // Arrow function automatically binds this
 });
 ```
@@ -178,11 +178,11 @@ return ctx.scene.enter('input_scene', {
 ```javascript
 // ❌ WRONG
 async myCommand(ctx) {
-    const chatID = ctx.chat.id;
+    const holonId = ctx.chat.id;
 
     return ctx.scene.enter('input_scene', {
         onComplete: async (ctx, input) => {
-            await this.db.put(chatID + '/data', input);  // BAD
+            await this.db.put(holonId + '/data', input);  // BAD
         }
     });
 }
@@ -191,8 +191,8 @@ async myCommand(ctx) {
 async myCommand(ctx) {
     return ctx.scene.enter('input_scene', {
         onComplete: async (ctx, input) => {
-            const chatID = ctx.chat.id;  // GOOD
-            await this.db.put(chatID + '/data', input);
+            const holonId = ctx.chat.id;  // GOOD
+            await this.db.put(holonId + '/data', input);
         }
     });
 }
@@ -207,8 +207,8 @@ async myCommand(ctx) {
 
     return ctx.scene.enter('input_scene', {
         onComplete: async (ctx, input) => {
-            const chatID = ctx.chat.id;  // From callback (GOOD)
-            await this.db.put(chatID + '/users/' + userID + '/data', input);  // BAD - mixed contexts
+            const holonId = ctx.chat.id;  // From callback (GOOD)
+            await this.db.put(holonId + '/users/' + userID + '/data', input);  // BAD - mixed contexts
         }
     });
 }
@@ -217,9 +217,9 @@ async myCommand(ctx) {
 async myCommand(ctx) {
     return ctx.scene.enter('input_scene', {
         onComplete: async (ctx, input) => {
-            const chatID = ctx.chat.id;    // From callback
+            const holonId = ctx.chat.id;    // From callback
             const userID = ctx.from.id;    // From callback
-            await this.db.put(chatID + '/users/' + userID + '/data', input);  // GOOD
+            await this.db.put(holonId + '/users/' + userID + '/data', input);  // GOOD
         }
     });
 }
@@ -261,8 +261,8 @@ async myCommand(ctx) {
 
 ```javascript
 async buy(ctx) {
-    let chatID = ctx.chat.id;
-    const language = await this.settings.getLanguage(chatID);
+    let holonId = ctx.chat.id;
+    const language = await this.settings.getLanguage(holonId);
     const type = ctx.message.text.split(' ')[0].replace('/', '');
     let items = utils.parseList(ctx.message.text);
 
@@ -274,12 +274,12 @@ async buy(ctx) {
             allowEmpty: false,
             onComplete: async (ctx, items) => {
                 // ✅ Get fresh values from callback ctx
-                const callbackChatID = ctx.chat.id;
-                const callbackLanguage = await this.settings.getLanguage(callbackChatID);
+                const callbackholonId = ctx.chat.id;
+                const callbackLanguage = await this.settings.getLanguage(callbackholonId);
 
                 // Use fresh values
                 for (let item of items) {
-                    await this.db.put(callbackChatID + '/shopping', {
+                    await this.db.put(callbackholonId + '/shopping', {
                         id: item,
                         done: false,
                         from: ctx.from.username  // Also from callback ctx
@@ -296,7 +296,7 @@ async buy(ctx) {
 
     // Direct command execution
     for (let item of items) {
-        await this.db.put(chatID + '/shopping', { id: item, done: false, from: ctx.from.username });
+        await this.db.put(holonId + '/shopping', { id: item, done: false, from: ctx.from.username });
     }
     ctx.reply(utils.i18next.t('shoppingadded', { items: items.join(", "), lng: language }));
 }
@@ -306,9 +306,9 @@ async buy(ctx) {
 
 ```javascript
 async announce(ctx) {
-    let chatID = ctx.chat.id;
+    let holonId = ctx.chat.id;
     let messageID = ctx.message.message_id;
-    const language = await this.settings.getLanguage(chatID);
+    const language = await this.settings.getLanguage(holonId);
     const message = ctx.message.text.split(' ').slice(1).join(' ');
 
     if (!message || message.length === 0 || message === '') {
@@ -333,7 +333,7 @@ async announce(ctx) {
 
 Before committing code that uses InputScene:
 
-- [ ] Are you getting `chatID` from the callback `ctx` parameter?
+- [ ] Are you getting `holonId` from the callback `ctx` parameter?
 - [ ] Are you getting `userID` from the callback `ctx.from.id`?
 - [ ] Are you getting any user info from the callback `ctx`?
 - [ ] Are you re-fetching language settings in the callback?
@@ -366,7 +366,7 @@ Always use fresh context from callback parameters to ensure correct behavior in 
 - Pass fresh context to helper methods
 
 ### ❌ DON'T:
-- Use closure variables for `chatID`, `userID`, etc.
+- Use closure variables for `holonId`, `userID`, etc.
 - Pre-fetch database objects before entering scene
 - Mix command context and callback context
 

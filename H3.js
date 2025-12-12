@@ -45,12 +45,12 @@ class H3 {
         this.bot = bot
 
         this.bot.command('get', async (ctx) => {
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
             const tag = ctx.message.text.split(' ')[1];
             if (!tag) {
                 return ctx.reply('Please specify a tag.');
             }
-            let hex = (await this.settings.getSettings(chatID)).hex
+            let hex = (await this.settings.getSettings(holonId)).hex
 
             let data = await this.holosphere.get(hex, tag)
             ctx.reply(JSON.stringify(data, null, 2))
@@ -58,7 +58,7 @@ class H3 {
         })
 
         this.bot.command('compute', async (ctx) => {
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
             let operation = ctx.message.text.split(' ')[1];
             if (operation != 'sum') {
                 ctx.reply('Operation not implemented')
@@ -69,7 +69,7 @@ class H3 {
                 ctx.reply('Please specify a lense where to perform the operation ')
                 return
             }
-            let hex = (await this.settings.getSettings(chatID)).hex
+            let hex = (await this.settings.getSettings(holonId)).hex
             await this.holosphere.compute(hex, lense, operation)
         })
 
@@ -83,17 +83,17 @@ class H3 {
             }
 
             const messageID = ctx.message.reply_to_message.message_id;
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
             const messageContent = ctx.message.reply_to_message.text;
-            let settings = await this.settings.getSettings(chatID)
+            let settings = await this.settings.getSettings(holonId)
             let id = settings.hex ? settings.hex : 'Hex not set, use /setHex'
             // fetch the stored node
 
-            let node = await this.holosphere.getNode(chatID, 'quests', messageID)
+            let node = await this.holosphere.getNode(holonId, 'quests', messageID)
             console.log(node)
 
             // if (!node) {
-            //     node = await this.holosphere.gun.get(chatID + '/' + messageID).put({ id: chatID + '/' + messageID, content: messageContent })
+            //     node = await this.holosphere.gun.get(holonId + '/' + messageID).put({ id: holonId + '/' + messageID, content: messageContent })
             // }
 
             //for (let tag of tags) {
@@ -112,9 +112,9 @@ class H3 {
             }
 
             const messageID = ctx.message.reply_to_message.message_id;
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
 
-            let settings = await this.settings.getSettings(chatID)
+            let settings = await this.settings.getSettings(holonId)
             let hex = settings.hex
 
             if (!hex) {
@@ -123,7 +123,7 @@ class H3 {
 
             try {
                 // Get the node from holosphere
-                let node = await this.holosphere.getNode(chatID, 'quests', messageID)
+                let node = await this.holosphere.getNode(holonId, 'quests', messageID)
                 
                 if (!node) {
                     return ctx.reply('No quest found for this message.');
@@ -132,15 +132,15 @@ class H3 {
                 // Setup federation with the hex target
                 let fedInfo = null;
                 try {
-                    fedInfo = await this.holosphere.getGlobal('federation', chatID);
+                    fedInfo = await this.holosphere.getGlobal('federation', holonId);
                 } catch (error) {
                     // Federation info doesn't exist, create new one
                 }
 
                 if (!fedInfo) {
                     fedInfo = {
-                        id: chatID,
-                        name: chatID,
+                        id: holonId,
+                        name: holonId,
                         inbound: [],
                         outbound: [],
                         lensConfig: {},
@@ -173,10 +173,10 @@ class H3 {
 
                 // Create hologram for the quest
                 const questReference = { id: messageID };
-                const hologram = this.holosphere.createHologram(chatID, 'quests', questReference);
+                const hologram = this.holosphere.createHologram(holonId, 'quests', questReference);
 
                 // Use federation propagation to publish to the hex
-                const propagationResult = await this.holosphere.propagate(chatID, 'quests', hologram, {
+                const propagationResult = await this.holosphere.propagate(holonId, 'quests', hologram, {
                     useHolograms: true,
                     targetSpaces: [hex]
                 });

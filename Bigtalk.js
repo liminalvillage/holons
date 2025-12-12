@@ -20,8 +20,8 @@ class Bigtalk {
     }
 
     async pickQuestion(ctx){
-        let chatID = ctx.message.chat.id;
-        const language = await this.settings.getLanguage(chatID)
+        let holonId = ctx.message.chat.id;
+        const language = await this.settings.getLanguage(holonId)
         let questions = language === 'it' ? domande : questions
         //pick a random number
         let number = Math.floor(Math.random()*questions.length)

@@ -12,13 +12,13 @@ export default class RSVP {
 
     async rsvp (ctx) {
         // Load all users
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         let topic = ctx.message.text.split(' ').slice(1).join(' '); // TODO: Save topic in db (under chat/usermessage) so it can be retrieved later
         if (!topic) {
             ctx.reply('Please provide a title for the RSVP.');
             return;
         }
-        let users = await this.db.getAll( chatID + '/users');
+        let users = await this.db.getAll( holonId + '/users');
         if (users.lenght == 0) {
             ctx.reply('No users found.');
             return;
@@ -32,7 +32,7 @@ export default class RSVP {
 
     async participate(ctx) {
         let topic = ctx.match[1];
-        let chatID = ctx.callbackQuery.message.chat.id 
+        let holonId = ctx.callbackQuery.message.chat.id 
         let userID = ctx.callbackQuery.from.id;
         let messageID = ctx.callbackQuery.message.message_id;
         let targetuser = ctx.match[1];
@@ -42,7 +42,7 @@ export default class RSVP {
         }
 
     
-        let user = await this.db.get(chatID + '/users',targetuser);
+        let user = await this.db.get(holonId + '/users',targetuser);
 
         if (!user) {
             ctx.answerCbQuery('User not active, please complete a task to activate.');
@@ -60,11 +60,11 @@ export default class RSVP {
 
         user.participated[messageID] = !user.participated[messageID];
 
-        await this.db.put(chatID + '/users', user);
-        let users = await this.db.getAll(chatID + '/users');
+        await this.db.put(holonId + '/users', user);
+        let users = await this.db.getAll(holonId + '/users');
   
         ctx.editMessageReplyMarkup({
-            chat_id: chatID,
+            chat_id: holonId,
             message_id: messageID,
             inline_keyboard: createList(users, messageID)
             

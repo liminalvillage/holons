@@ -4,7 +4,7 @@ class CapitalGame {
     constructor(bot, settings) {
         this.bot = bot;
         this.settings = settings;
-        this.games = new Map(); // Store active games by chatID
+        this.games = new Map(); // Store active games by holonId
         
         // Register commands
         this.bot.command('capital', (ctx) => this.startGame(ctx));
@@ -40,9 +40,9 @@ class CapitalGame {
     }
 
     async startGame(ctx) {
-        const chatId = ctx.chat.id;
+        const holonId = ctx.chat.id;
         
-        if (this.games.has(chatId)) {
+        if (this.games.has(holonId)) {
             return ctx.reply('A game is already in progress in this chat!');
         }
 
@@ -55,7 +55,7 @@ class CapitalGame {
             status: 'waiting' // waiting, active, completed
         };
 
-        this.games.set(chatId, game);
+        this.games.set(holonId, game);
 
         const markup = Markup.inlineKeyboard([
             Markup.button.callback('Join Game', 'join_game'),
@@ -66,9 +66,9 @@ class CapitalGame {
     }
 
     async joinGame(ctx) {
-        const chatId = ctx.chat.id;
+        const holonId = ctx.chat.id;
         const userId = ctx.from.id;
-        const game = this.games.get(chatId);
+        const game = this.games.get(holonId);
 
         if (!game) {
             return ctx.reply('No game is currently active. Start a new game with /capital.');
@@ -87,8 +87,8 @@ class CapitalGame {
     }
 
     async startRound(ctx) {
-        const chatId = ctx.chat.id;
-        const game = this.games.get(chatId);
+        const holonId = ctx.chat.id;
+        const game = this.games.get(holonId);
 
         if (!game || game.status !== 'waiting') {
             return ctx.reply('Cannot start a new round. Either no game is active or the game is already in progress.');
@@ -102,7 +102,7 @@ class CapitalGame {
         game.currentPlayer = Array.from(game.players.keys())[0]; // Set the first player as the current player
 
         ctx.reply('The round has started! It\'s time for the first player to take action.');
-        this.showPlayerTurnOptions(chatId);
+        this.showPlayerTurnOptions(holonId);
     }
 
     generateInitialCapital() {
@@ -150,9 +150,9 @@ class CapitalGame {
     }
 
     async handleTransformation(ctx) {
-        const chatId = ctx.chat.id;
+        const holonId = ctx.chat.id;
         const userId = ctx.from.id;
-        const game = this.games.get(chatId);
+        const game = this.games.get(holonId);
         const [fromCapital, toCapital] = ctx.match[1].split('_');
 
         if (!game || game.status !== 'active') {
@@ -185,7 +185,7 @@ class CapitalGame {
         );
 
         // Move to next player
-        this.moveToNextPlayer(chatId);
+        this.moveToNextPlayer(holonId);
     }
 
     getTransformationRules(from, to) {
@@ -220,9 +220,9 @@ class CapitalGame {
     }
 
     async handleTrade(ctx) {
-        const chatId = ctx.chat.id;
+        const holonId = ctx.chat.id;
         const userId = ctx.from.id;
-        const game = this.games.get(chatId);
+        const game = this.games.get(holonId);
         const [offerCapital, requestCapital, targetUserId] = ctx.match[1].split('_');
 
         if (!game || game.status !== 'active') {
@@ -260,13 +260,13 @@ class CapitalGame {
             `📥 You received: ${tradeGain} ${requestCapital}`
         );
 
-        this.moveToNextPlayer(chatId);
+        this.moveToNextPlayer(holonId);
     }
 
     async handleGoalContribution(ctx) {
-        const chatId = ctx.chat.id;
+        const holonId = ctx.chat.id;
         const userId = ctx.from.id;
-        const game = this.games.get(chatId);
+        const game = this.games.get(holonId);
         const [goalIndex, capitalType, amount] = ctx.match[1].split('_');
 
         if (!game || game.status !== 'active') {
@@ -304,11 +304,11 @@ class CapitalGame {
             `🎯 Goal progress: ${goal.progress[capitalType]}/${goal.requirements[capitalType]}`
         );
 
-        this.moveToNextPlayer(chatId);
+        this.moveToNextPlayer(holonId);
     }
 
-    moveToNextPlayer(chatId) {
-        const game = this.games.get(chatId);
+    moveToNextPlayer(holonId) {
+        const game = this.games.get(holonId);
         if (!game) return;
 
         const players = Array.from(game.players.keys());
@@ -318,14 +318,14 @@ class CapitalGame {
 
         // Check if round is complete
         if (nextIndex === 0) {
-            this.updateGameStatus(chatId);
+            this.updateGameStatus(holonId);
         } else {
-            this.showPlayerTurnOptions(chatId);
+            this.showPlayerTurnOptions(holonId);
         }
     }
 
-    async showPlayerTurnOptions(chatId) {
-        const game = this.games.get(chatId);
+    async showPlayerTurnOptions(holonId) {
+        const game = this.games.get(holonId);
         if (!game) return;
 
         const player = game.players.get(game.currentPlayer);
@@ -408,7 +408,7 @@ class CapitalGame {
         const markup = Markup.inlineKeyboard(keyboard.flat());
 
         await this.bot.telegram.sendMessage(
-            chatId,
+            holonId,
             `🎮 Turn Summary for ${player.username}\n\n` +
             `Round: ${game.round}\n` +
             `Current Capitals:\n` +
@@ -430,8 +430,8 @@ class CapitalGame {
     }
 
     async handleShowStatus(ctx) {
-        const chatId = ctx.chat.id;
-        const game = this.games.get(chatId);
+        const holonId = ctx.chat.id;
+        const game = this.games.get(holonId);
         
         if (!game) return;
 
@@ -488,43 +488,43 @@ class CapitalGame {
         });
     }
 
-    updateGameStatus(chatId) {
-        const game = this.games.get(chatId);
+    updateGameStatus(holonId) {
+        const game = this.games.get(holonId);
         if (!game) return;
 
         // Check if the game should progress to the next round or end
         const winCondition = this.checkWinConditions(game, game.players.get(game.currentPlayer));
         if (winCondition) {
             game.status = 'completed';
-            this.announceWinners(chatId, game);
+            this.announceWinners(holonId, game);
         } else {
             game.round += 1;
             game.status = 'active';
-            this.startNextRound(chatId);
+            this.startNextRound(holonId);
         }
     }
 
-    announceWinners(chatId, game) {
+    announceWinners(holonId, game) {
         const winCondition = this.checkWinConditions(game, game.players.get(game.currentPlayer));
         if (winCondition) {
             if (winCondition.type === 'individual') {
-                this.bot.telegram.sendMessage(chatId, `🎉 Congratulations ${winCondition.winner.username}! You have won the game with an individual victory!`);
+                this.bot.telegram.sendMessage(holonId, `🎉 Congratulations ${winCondition.winner.username}! You have won the game with an individual victory!`);
             } else if (winCondition.type === 'balanced') {
-                this.bot.telegram.sendMessage(chatId, '🎉 Congratulations to all players! You have achieved a balanced victory!');
+                this.bot.telegram.sendMessage(holonId, '🎉 Congratulations to all players! You have achieved a balanced victory!');
             } else if (winCondition.type === 'community') {
-                this.bot.telegram.sendMessage(chatId, '🎉 Congratulations to the community! All goals have been completed!');
+                this.bot.telegram.sendMessage(holonId, '🎉 Congratulations to the community! All goals have been completed!');
             }
         }
     }
 
-    startNextRound(chatId) {
-        const game = this.games.get(chatId);
+    startNextRound(holonId) {
+        const game = this.games.get(holonId);
         if (!game) return;
 
         // Logic to start the next round
         // e.g., reset player actions, shuffle events, etc.
-        this.bot.telegram.sendMessage(chatId, `Round ${game.round} has started!`);
-        this.showPlayerTurnOptions(chatId);
+        this.bot.telegram.sendMessage(holonId, `Round ${game.round} has started!`);
+        this.showPlayerTurnOptions(holonId);
     }
 }
 

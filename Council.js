@@ -42,7 +42,7 @@ class Council {
         })
 
         this.bot.command("summary", async (ctx) => {
-            chatID = ctx.message.chat.id
+            holonId = ctx.message.chat.id
             let hex = ctx.message.text.split('/summary ')[1];
             let summary = await this.db.get('cells').get(hex).get('summary')
             if (!summary) {

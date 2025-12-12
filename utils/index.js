@@ -16,7 +16,7 @@ export * as holon from './holon.js';
 export * as fileOps from './fileOperations.js';
 
 // Re-export commonly used functions at the top level
-export { getUserId, getChatId, getUserName } from './telegram.js';
+export { getUserId, getholonId, getUserName } from './telegram.js';
 export { normalizeHolonId, getHolonName } from './holon.js';
 export { safeReadFile, safeWriteFile, fileExists } from './fileOperations.js';
 
@@ -40,7 +40,7 @@ export const getAvatarUrl = (user) => {
 // Compatibility exports (for gradual migration)
 export { 
   getUserId as getUser,  // Note: original getUser returned object, this returns ID
-  getChatId,
+  getholonId,
   getUserName,
   getAvatarUrl,
   capitalize,

@@ -125,7 +125,7 @@ export class ErrorHandler {
   static handleTelegramError(error, ctx) {
     const context = {
       userId: ctx?.from?.id,
-      chatId: ctx?.chat?.id,
+      holonId: ctx?.chat?.id,
       messageId: ctx?.message?.message_id,
       command: ctx?.message?.text?.split(' ')[0],
     };

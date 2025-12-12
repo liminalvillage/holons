@@ -107,7 +107,7 @@ async function syncScore(users, equation, contract) {
   console.log(`✅ setAppreciation() complete`);
 }
 
-async function runTest(contract, chatID, testCase) {
+async function runTest(contract, holonId, testCase) {
   console.log(`\n🧪 Running test case: ${testCase.name}`);
 
   const users = testUsers.map(u => ({
@@ -159,13 +159,13 @@ async function runTest(contract, chatID, testCase) {
 }
 
 // Entry point
-const chatID = -4829278292;
+const holonId = -4829278292;
 
 const runAll = async () => {
-  const holonAddress = await holonsContract.toAddress(chatID.toString());
-  if (holonAddress === ethers.ZeroAddress) throw new Error(`No holon for ${chatID}`);
+  const holonAddress = await holonsContract.toAddress(holonId.toString());
+  if (holonAddress === ethers.ZeroAddress) throw new Error(`No holon for ${holonId}`);
   const contract = await getHolonContract(holonAddress);
-  for (const test of testCases) await runTest(contract, chatID, test);
+  for (const test of testCases) await runTest(contract, holonId, test);
 };
 
 runAll().catch(console.error);

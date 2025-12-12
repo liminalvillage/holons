@@ -24,15 +24,15 @@ class Users {
   }
 
   async leave(ctx) {
-    const chatID = ctx.message.chat.id;
+    const holonId = ctx.message.chat.id;
     const user = ctx.message.from;
-    await this.db.del(chatID + '/users', user.id)
+    await this.db.del(holonId + '/users', user.id)
     ctx.reply('Goodbye ' + user.first_name + '!');
   }
 
 
   async addValue(ctx) {
-    const chatID = ctx.message.chat.id;
+    const holonId = ctx.message.chat.id;
     const user = ctx.message.from;
     const values = utils.parseList(ctx.message.text);
     if (!values) {
@@ -40,16 +40,16 @@ class Users {
       return;
     }
 
-    let userinfo = await this.getUserInfo(user, chatID)
+    let userinfo = await this.getUserInfo(user, holonId)
     if (!userinfo.values) userinfo.values = []
     userinfo.values = Array.from(new Set(userinfo.values.concat(values)))
 
-    await this.db.put(chatID + '/users', userinfo)
+    await this.db.put(holonId + '/users', userinfo)
     ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
 
   async addNeed(ctx) {
-    const chatID = ctx.message.chat.id;
+    const holonId = ctx.message.chat.id;
     const user = ctx.message.from;
     const needs = utils.parseList(ctx.message.text);
     if (!needs) {
@@ -57,19 +57,19 @@ class Users {
       return;
     }
 
-    let userinfo = await this.getUserInfo(user, chatID)
+    let userinfo = await this.getUserInfo(user, holonId)
     if (!userinfo.needs) userinfo.needs = []
     userinfo.needs = Array.from(new Set(userinfo.needs.concat(needs)))
 
-    await this.db.put(chatID + '/users', userinfo)
+    await this.db.put(holonId + '/users', userinfo)
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);
   }
 
 
 
   async listUsersActions(ctx) {
-    const chatID = ctx.message.chat.id;
-    let users = await this.db.getAll(chatID + '/users')
+    const holonId = ctx.message.chat.id;
+    let users = await this.db.getAll(holonId + '/users')
 
     let message = ''
     for (let i = 0; i < users.length; i++) {
@@ -83,8 +83,8 @@ class Users {
 
 
   // save user action
-  async saveUserAction(user, type, action, amount, chatID) {
-    let userinfo = await this.getUserInfo(user, chatID)
+  async saveUserAction(user, type, action, amount, holonId) {
+    let userinfo = await this.getUserInfo(user, holonId)
     switch (type) {
       case 'offers':
         userinfo.offers.push(action);
@@ -116,16 +116,16 @@ class Users {
     if (userinfo.actions == undefined) userinfo.actions = []
     userinfo.actions.push({ type: type, action: action, amount: amount, timestamp: new Date() });
 
-    await this.db.put(chatID + '/users', userinfo)
+    await this.db.put(holonId + '/users', userinfo)
   }
 
-  async getUsers(chatID) {
-    return this.db.getAll(chatID + '/users')
+  async getUsers(holonId) {
+    return this.db.getAll(holonId + '/users')
   }
 
   //gets an existing user or  creates a new one
-  async getUserInfo(user, chatID) {
-    let userinfo = await this.db.get(chatID + '/users', user.id)
+  async getUserInfo(user, holonId) {
+    let userinfo = await this.db.get(holonId + '/users', user.id)
     // Initialize the receiver's points if they do not exist yet
     if (!userinfo || userinfo == '') {
       userinfo = {
@@ -150,7 +150,7 @@ class Users {
         money: 0,
         voice: 0
       }
-      await this.db.put(chatID + '/users', userinfo)
+      await this.db.put(holonId + '/users', userinfo)
     }
     return userinfo
   }

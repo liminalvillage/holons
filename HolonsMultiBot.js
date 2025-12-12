@@ -93,7 +93,8 @@ class HolonsBot {
     this.council = new Council(this.bot, this.db);
     this.roles = new Roles(this.bot, this.db, this.ui, this.settings);
     this.quests = new Quests(this.bot, this.db, this.users, this.settings);
-    
+    this.settings.setQuestsInstance(this.quests);
+
   }
 
   handleProcessEvents() {

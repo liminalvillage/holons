@@ -189,8 +189,8 @@ const testData = {
     hologram: {
         id: "hologram-123",
         sourceQuestId: "quest-456",
-        sourceChatId: "123456789",
-        targetChatId: "987654321",
+        sourceholonId: "123456789",
+        targetholonId: "987654321",
         targetMessageId: 12345,
         userId: "789012345",
         type: "telegram",
@@ -350,7 +350,7 @@ export default class Quests {
         }
 
         // Save to database
-        await this.db.put(\`\${chatID}/quests\`, questData);
+        await this.db.put(\`\${holonId}/quests\`, questData);
 
         return questData;
     }

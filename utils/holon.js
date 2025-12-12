@@ -24,7 +24,7 @@ export const normalizeHolonId = (holonId) => {
 /**
  * Convert a normalized holon ID back to chat_ format for contract interactions
  */
-export const toChatId = (holonId) => {
+export const toholonId = (holonId) => {
   if (typeof holonId === 'string' && holonId.startsWith('-')) {
     return `chat_${holonId.slice(1)}`;
   }
@@ -44,7 +44,7 @@ export const getHolonName = async (db, holonId, ctx = null) => {
 
   try {
     // Attempt to get settings for this holonId
-    // Settings are stored at chatID + '/settings'
+    // Settings are stored at holonId + '/settings'
     const settings = await db.get(
       normalizedHolonId.toString() + '/settings', 
       normalizedHolonId.toString()
@@ -150,7 +150,7 @@ export const getHolonMetadata = async (db, holonId) => {
     
     return {
       id: normalizedId,
-      chatId: toChatId(normalizedId),
+      holonId: toholonId(normalizedId),
       name: settings?.name || 'External Holon',
       settings: settings || {},
     };
@@ -163,7 +163,7 @@ export const getHolonMetadata = async (db, holonId) => {
     
     return {
       id: normalizedId,
-      chatId: toChatId(normalizedId),
+      holonId: toholonId(normalizedId),
       name: 'External Holon',
       settings: {},
     };
@@ -206,7 +206,7 @@ export const isGroupHolon = (holonId) => {
 
 export default {
   normalizeHolonId,
-  toChatId,
+  toholonId,
   getHolonName,
   validateHolonId,
   getHolonNumericId,

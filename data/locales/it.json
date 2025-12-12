@@ -181,7 +181,7 @@
         "settings_specify_admin": "Specifica l'amministratore. Esempio: /setAdmin @admin",
         "settings_select_admin": "Seleziona un amministratore cliccando su un utente:",
         "settings_no_users": "Nessun utente trovato in questa chat. Gli utenti appariranno qui dopo aver interagito con il bot.",
-        "settings_specify_federation": "Specifica l'ID con cui vuoi federarti. Esempio: /federate 123456. L'ID di questa chat è {{chatID}}",
+        "settings_specify_federation": "Specifica l'ID con cui vuoi federarti. Esempio: /federate 123456. L'ID di questa chat è {{holonId}}",
         "settings_specify_separation": "Specifica con chi vuoi revocare la federazione. Esempio: /separate 123456.",
         "settings_specify_roles": "Specifica i ruoli. Esempio: /setRoles role1 role2",
         "settings_specify_values": "Specifica i valori, separati da virgole o nuove righe. Esempi:\n\n1. Usando le virgole:\n/setValues Collaborazione, Comunicazione, Proattività\n\n2. Usando nuove righe:\n/setValues\nCollaborazione\nComunicazione\nProattività",

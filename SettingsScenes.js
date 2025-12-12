@@ -88,16 +88,16 @@ export default class SettingsScenes {
                 ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
             }
             
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             await ctx.reply(i18next.t('settings_enter_admin_username', { lng: language }));
         });
 
         this.adminScene.on('text', async (ctx) => {
             // For backward compatibility, also handle text input
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
             const admin = ctx.message.text.trim();
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             const language = settings.language;
 
             settings.admin = admin;
@@ -117,8 +117,8 @@ export default class SettingsScenes {
         });
         
         this.adminScene.on('message', ctx => {
-            const chatId = ctx.message.chat.id;
-            this.getLanguage(chatId).then(language => {
+            const holonId = ctx.message.chat.id;
+            this.getLanguage(holonId).then(language => {
                 ctx.reply(i18next.t('settings_send_text_only', { lng: language }))
                     .catch(e => console.log('Error in admin scene message:', e));
             });
@@ -135,16 +135,16 @@ export default class SettingsScenes {
                 ctx.scene.state.originalMessageId = ctx.callbackQuery.message.message_id;
             }
             
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
 
             await ctx.reply(i18next.t('settings_enter_federation_id', { lng: language }));
         });
 
         this.federationScene.on('text', async (ctx) => {
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
             const federationID = ctx.message.text.trim();
-            const language = await this.getLanguage(chatID);
+            const language = await this.getLanguage(holonId);
 
             try {
                 // Validate input - accept completely numeric or hex holon IDs
@@ -169,7 +169,7 @@ export default class SettingsScenes {
 
                 // Here is where the federation happens: Federate with the provided ID using holon-level API
                 // console.log('Federation actually happens here, in the scenes!');
-                await this.db.federateHolon(chatID.toString(), federationID.toString(), {
+                await this.db.federateHolon(holonId.toString(), federationID.toString(), {
                     lensConfig: { inbound: [], outbound: [] }
                 });
                 const isGroup = federationID < 0;
@@ -185,7 +185,7 @@ export default class SettingsScenes {
                     console.log("Child bundle: ", childGroupInfo);
                     
                     // Check if the parent group (current group) has a bundle
-                    const parentGroupInfo = await this.holons.checkGroupAddress(chatID);
+                    const parentGroupInfo = await this.holons.checkGroupAddress(holonId);
                     console.log("Parent bundle: ", parentGroupInfo);
                     
                     let childZonedAddress;
@@ -250,8 +250,8 @@ export default class SettingsScenes {
                         // Create bundle for parent group
                         const parentBundleResult = await this.holons.createHolonBundle(
                             this.holonsContract,
-                            chatID.toString(),
-                            `chat_${Math.abs(chatID)}`,
+                            holonId.toString(),
+                            `chat_${Math.abs(holonId)}`,
                             0 // parameterValue set to 0 for now
                         );
                     
@@ -266,7 +266,7 @@ export default class SettingsScenes {
                         const parentSplitterContract = new ethers.Contract(parentSplitterAddress, splitterABI, this.wallet);
                         
                         // Use the same format as in the Splitter contract: name + "_zoned"
-                        const parentZonedContractKey = `chat_${Math.abs(chatID)}_zoned`;
+                        const parentZonedContractKey = `chat_${Math.abs(holonId)}_zoned`;
                         
                         console.log("Parent Splitter address:", parentSplitterAddress);
                         console.log("Parent Zoned contract key:", parentZonedContractKey);
@@ -287,8 +287,8 @@ export default class SettingsScenes {
                             console.log("Parent Zoned contract not found, creating it now...");
                             const parentContractsResult = await this.holons.createBundleContracts(
                                 parentSplitterContract,
-                                chatID.toString(),
-                                `chat_${Math.abs(chatID)}`,
+                                holonId.toString(),
+                                `chat_${Math.abs(holonId)}`,
                                 0 // parameterValue set to 0 for now
                             );
 
@@ -311,7 +311,7 @@ export default class SettingsScenes {
                         const parentSplitterContract = new ethers.Contract(parentSplitterAddress, splitterABI, this.wallet);
                         
                         // Use the same format as in the Splitter contract: name + "_zoned"
-                        const parentZonedContractKey = `chat_${Math.abs(chatID)}_zoned`;
+                        const parentZonedContractKey = `chat_${Math.abs(holonId)}_zoned`;
                         
                         console.log("Parent Splitter address:", parentSplitterAddress);
                         console.log("Parent Zoned contract key:", parentZonedContractKey);
@@ -399,7 +399,7 @@ export default class SettingsScenes {
                     // Create a fake callback query context to allow editing
                     ctx.callbackQuery = {
                         message: {
-                            chat: { id: chatID },
+                            chat: { id: holonId },
                             message_id: ctx.scene.state.originalMessageId
                         }
                     };
@@ -413,8 +413,8 @@ export default class SettingsScenes {
         });
 
         this.federationScene.on('message', ctx => {
-            const chatId = ctx.message.chat.id;
-            this.getLanguage(chatId).then(language => {
+            const holonId = ctx.message.chat.id;
+            this.getLanguage(holonId).then(language => {
                 ctx.reply(i18next.t('settings_send_text_only', { lng: language }));
             });
         });
@@ -422,7 +422,7 @@ export default class SettingsScenes {
     
     setupUsersScene() {
         this.usersScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
+            const holonId = ctx.chat.id;
             
             // Check if we're coming from a callback query (from settings menu)
             const edit = Boolean(ctx.callbackQuery);
@@ -434,7 +434,7 @@ export default class SettingsScenes {
         this.usersScene.action(/user_info_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const userId = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
 
             // Show user info
             await this.showUserInfo(ctx, userId);
@@ -459,11 +459,11 @@ export default class SettingsScenes {
         this.usersScene.action(/remove_user_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const userId = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
 
             try {
                 // Get current users
-                let users = await this.db.getAll(chatID + '/users');
+                let users = await this.db.getAll(holonId + '/users');
 
                 // Find user index
                 const userIndex = users.findIndex(u => u.id.toString() === userId);
@@ -474,7 +474,7 @@ export default class SettingsScenes {
                 }
 
                 // Check if user is admin
-                let settings = await this.getSettings(chatID);
+                let settings = await this.getSettings(holonId);
                 const user = users[userIndex];
                 const isAdmin = settings.admin === user.id.toString() ||
                     settings.admin === user.username ||
@@ -485,7 +485,7 @@ export default class SettingsScenes {
                     return;
                 }
 
-                await this.db.del(chatID + '/users', user.id.toString());
+                await this.db.del(holonId + '/users', user.id.toString());
 
                 await ctx.reply('User removed successfully');
 
@@ -501,8 +501,8 @@ export default class SettingsScenes {
     
     setupAddUserScene() {
         this.addUserScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
 
             // Store the context for later cleanup
             ctx.scene.state.originalCtx = ctx;
@@ -518,8 +518,8 @@ export default class SettingsScenes {
         });
 
         this.addUserScene.on('text', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const messageText = ctx.message.text.trim();
 
             try {
@@ -570,7 +570,7 @@ export default class SettingsScenes {
                     last_name: parts.length > 3 ? parts[3] : ''
                 };
 
-                await this.addUserToDatabase(chatID, user);
+                await this.addUserToDatabase(holonId, user);
 
                 // Clean up prompts before leaving
                 await this.cleanupSceneMessages(ctx);
@@ -603,8 +603,8 @@ export default class SettingsScenes {
 
     setupListPickerScene() {
         this.listPickerScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const { field, title, options, displayField } = ctx.scene.state;
 
             // Create keyboard with options
@@ -626,7 +626,7 @@ export default class SettingsScenes {
     }
     
     // Helper methods that need to be passed from Settings
-    async getSettings(chatID) {
+    async getSettings(holonId) {
         // This would be delegated to Settings class
     }
     
@@ -634,7 +634,7 @@ export default class SettingsScenes {
         // This would be delegated to Settings class
     }
     
-    async getLanguage(chatID) {
+    async getLanguage(holonId) {
         // This would be delegated to Settings class
     }
     
@@ -670,7 +670,7 @@ export default class SettingsScenes {
         // This would be delegated to Settings class
     }
     
-    async addUserToDatabase(chatID, user) {
+    async addUserToDatabase(holonId, user) {
         // This would be delegated to Settings class
     }
     

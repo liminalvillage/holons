@@ -22,17 +22,17 @@ export default class Tags {
       }
 
       const messageId = ctx.message.reply_to_message.message_id;
-      const chatID = ctx.message.chat.id;
+      const holonId = ctx.message.chat.id;
       const messageContent = ctx.message.reply_to_message.text;
 
       for (let i = 0; i < tags.length; i++) {
-        let tagobject = await this.db.get(chatID + '/tags', tags[i])
+        let tagobject = await this.db.get(holonId + '/tags', tags[i])
         if (tagobject?.content) {
-          tagobject.content.push({ chatID, messageId, messageContent });
+          tagobject.content.push({ holonId, messageId, messageContent });
         } else {
-          tagobject = { 'id': tags[i], 'content': [{ chatID, messageId, messageContent }] };
+          tagobject = { 'id': tags[i], 'content': [{ holonId, messageId, messageContent }] };
         }
-        await this.db.put(chatID + '/tags', tagobject)
+        await this.db.put(holonId + '/tags', tagobject)
 
       };
 
@@ -42,13 +42,13 @@ export default class Tags {
 
     // Query tagged messages
     this.bot.command('gettag', async (ctx) => {
-      const chatID = ctx.message.chat.id;
+      const holonId = ctx.message.chat.id;
       const tag = ctx.message.text.split(' ')[1];
       if (!tag) {
         return ctx.reply('Please specify a tag.');
       }
 
-      let tagobject = await this.db.get(chatID + '/tags', tag)
+      let tagobject = await this.db.get(holonId + '/tags', tag)
 
       if (!tagobject || !tagobject.content) {
         return ctx.reply('No messages found for this tag.');

@@ -162,8 +162,8 @@ export class Calendar {
         //     now.setSeconds(0);
         //     this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now)), msg);
         // },
-        startTimeSelector(msg, chatId = null) {
-            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector(undefined, false, chatId)), msg);
+        startTimeSelector(msg, holonId = null) {
+            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector(undefined, false, holonId)), msg);
         }
     };
     Telegraf = {
@@ -282,16 +282,16 @@ export class Calendar {
             now.setSeconds(0);
             this.sendMessageCalendar(this.replyMarkupObject(this.createNavigationKeyboard(now, ctx.chat ? ctx.chat.id : ctx.callbackQuery.message.chat.id)), ctx, language);
         },
-        startTimeSelector(ctx, chatId = null) {
-            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector(undefined, false, chatId || ctx.chat.id)), ctx);
+        startTimeSelector(ctx, holonId = null) {
+            this.sendMessageTime(this.replyMarkupObject(this.createTimeSelector(undefined, false, holonId || ctx.chat.id)), ctx);
         }
     };
     Telebot = {
         editMessageReplyMarkupCalendar(date, query) {
-            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createNavigationKeyboard(date, query.message.chat.id)));
+            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, holonId: query.message.chat.id}, this.replyMarkupObject(this.createNavigationKeyboard(date, query.message.chat.id)));
         },
         editMessageReplyMarkupTime(date, query, from_calendar) {
-            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, chatID: query.message.chat.id}, this.replyMarkupObject(this.createTimeSelector(date, from_calendar, query.message.chat.id)));
+            this.bot.editMessageReplyMarkup({messageId: query.message.message_id, holonId: query.message.chat.id}, this.replyMarkupObject(this.createTimeSelector(date, from_calendar, query.message.chat.id)));
         },
         sendMessageCalendar(menu, msg) {
             var l = (this.options.time_selector_mod === true) ? lang.selectdatetime[this.options.language] : lang.select[this.options.language];
@@ -402,7 +402,7 @@ export class Calendar {
         var date2 = new Date(year, month, 1);
         return Math.round((date2 - date1) / 1000 / 3600 / 24); 
     }
-    createTimeSelector(date = 'undefined', from_calendar = false, chatId = null) {
+    createTimeSelector(date = 'undefined', from_calendar = false, holonId = null) {
         var i, j;
         var start, stop;
         var time_range = this.options.time_range.split('-');
@@ -451,7 +451,7 @@ export class Calendar {
         cnk.inline_keyboard[d][0] = (flag_start === 1) ? {text: ' ', callback_data: ' '} : {text: '<', callback_data: 't_' + dayjs(start).format("YYYY-MM-DD HH:mm") + '_' + fc + '-'};
         
         // Add back button in the middle if we have a quest to go back to
-        var hasQuestToReturn = chatId && this.questIds && this.questIds.has(chatId);
+        var hasQuestToReturn = holonId && this.questIds && this.questIds.has(holonId);
         if (hasQuestToReturn) {
             cnk.inline_keyboard[d][1] = {text: lang.back[this.options.language], callback_data: 'calendar_back_to_quest'};
         } else {
@@ -461,7 +461,7 @@ export class Calendar {
         cnk.inline_keyboard[d][2] = (flag_stop === 1) ? {text: ' ', callback_data: ' '} :{text: '>', callback_data: 't_' + dayjs(datetime).format("YYYY-MM-DD HH:mm") + '_' + fc + '+'};
         return cnk;
     }
-    createNavigationKeyboard(date, chatId = null) {
+    createNavigationKeyboard(date, holonId = null) {
         var i, j;
         var cnk = {};
         var cd = this.howMuchDays(date.getFullYear(), date.getMonth() + 1);
@@ -523,7 +523,7 @@ export class Calendar {
         }
         
         // Add back button in the middle if we have a quest to go back to
-        var hasQuestToReturn = chatId && this.questIds && this.questIds.has(chatId);
+        var hasQuestToReturn = holonId && this.questIds && this.questIds.has(holonId);
         if (hasQuestToReturn) {
             cnk.inline_keyboard[cr - 1][1] = {text: lang.back[this.options.language], callback_data: 'calendar_back_to_quest'};
         } else {

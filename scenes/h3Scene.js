@@ -3,7 +3,7 @@ import {
   Markup
 } from 'telegraf';
 import categoryTypes from "../data/guilds.json" with { type: "json" };
-import  {getChatId } from '../utilities.js';
+import  {getholonId } from '../utilities.js';
 
 import fs from 'fs';
 
@@ -19,7 +19,7 @@ h3Scene.enter(async (ctx) => {
    Markup.keyboard([
           Markup.button.webApp(
             "Select Hexagon",
-            "https://hexamap.holons.io/index.html?id=" + getChatId(ctx)
+            "https://hexamap.holons.io/index.html?id=" + getholonId(ctx)
           ),
         ])
         ).catch((err) => console.log(err)); 

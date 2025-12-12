@@ -237,7 +237,7 @@ export class SecurityMiddleware {
       .isInt({ min: 1 })
       .withMessage('User ID must be a positive integer'),
     
-    telegramChatId: body('chatId')
+    telegramholonId: body('holonId')
       .isInt()
       .withMessage('Chat ID must be an integer'),
     

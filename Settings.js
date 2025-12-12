@@ -12,9 +12,10 @@ export default class Settings {
         this.db = db;
         this.bot = bot;
         this.holons = null; // Re-add Holons instance placeholder
+        this.quests = null; // Reference to Quests for cache invalidation
 
         // Settings cache to avoid repeated DB queries
-        // Key: chatID, Value: { settings, timestamp }
+        // Key: holonId, Value: { settings, timestamp }
         this._settingsCache = new Map();
         this._cacheTTL = 60 * 1000; // 1 minute cache TTL
 
@@ -40,11 +41,11 @@ export default class Settings {
         this.bot.action(/admin_select_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const userId = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            const language = await this.getLanguage(holonId);
             
             // Get user details
-            const users = await this.db.getAll(chatID + '/users');
+            const users = await this.db.getAll(holonId + '/users');
             const user = users.find(u => u.id.toString() === userId);
             
             if (!user) {
@@ -53,7 +54,7 @@ export default class Settings {
             }
             
             // Set as admin
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             settings.admin = user.id.toString();
             await this.setSettings(settings);
             
@@ -81,7 +82,7 @@ export default class Settings {
         // ================= ADMIN ===========================
 
         this.bot.command('getsettings', async (ctx) => {
-            let settings = await this.getSettings(utils.getChatId(ctx))
+            let settings = await this.getSettings(utils.getholonId(ctx))
 
             ctx.reply(JSON.stringify(settings))
         })
@@ -101,10 +102,10 @@ export default class Settings {
 
         this.bot.command(['restart', 'reset'], async (ctx) => {
             if (utils.isAdmin(ctx)) {
-                let chatID = utils.getChatId(ctx)
-                let chatName = await utils.getChatName(ctx, chatID)
+                let holonId = utils.getholonId(ctx)
+                let chatName = await utils.getChatName(ctx, holonId)
 
-                console.log(`\n=== Starting reset for holon ${chatID} ===`);
+                console.log(`\n=== Starting reset for holon ${holonId} ===`);
                 console.log('(Relay deletions will be processed asynchronously)');
 
                 const lenses = [
@@ -119,11 +120,11 @@ export default class Settings {
                 ];
 
                 // Clear locally first, then async sync to relay with 200ms delay between deletions
-                const { localCleared, relayQueueSize } = await this.db.clearWithAsyncRelaySync(chatID, lenses, globalTables, 200);
+                const { localCleared, relayQueueSize } = await this.db.clearWithAsyncRelaySync(holonId, lenses, globalTables, 200);
 
                 console.log('=== Local reset complete, relay sync in progress ===\n');
 
-                await this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
+                await this.db.put(holonId + '/settings', await this.getDefaultSettings(holonId, chatName))
                 ctx.reply(`Holon reset complete! ${relayQueueSize} items queued for relay deletion (processing in background).`)
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -131,7 +132,7 @@ export default class Settings {
         })
 
         this.bot.command('id', async (ctx) => {
-            ctx.reply('This holon ID is ' + utils.getChatId(ctx))
+            ctx.reply('This holon ID is ' + utils.getholonId(ctx))
         })
 
         this.bot.command(['federate', 'spoon'], async (ctx) => {
@@ -142,8 +143,8 @@ export default class Settings {
 
         this.bot.command('federation', async (ctx) => {
             try {
-                const chatID = utils.getChatId(ctx);
-                const fedInfo = await this.db.getFederation(chatID);
+                const holonId = utils.getholonId(ctx);
+                const fedInfo = await this.db.getFederation(holonId);
 
                 let message = 'Federation information:\n\n';
                 // Combine inbound and outbound arrays to get all federated holons (deduplicated)
@@ -154,7 +155,7 @@ export default class Settings {
                 if (federatedHolons.length === 0) {
                     message += 'This chat is not federated with any other spaces.';
                 } else {
-                    message += `This chat (${chatID}) is federated with:\n`;
+                    message += `This chat (${holonId}) is federated with:\n`;
                     for (const space of federatedHolons) {
                         const lensConfig = fedInfo.lensConfig?.[space] || {};
                         const inbound = lensConfig.inbound || [];
@@ -203,8 +204,8 @@ export default class Settings {
 
         this.bot.command(['valueweights', 'weights', 'weight', 'equation'], async (ctx) => {
             if (utils.isAdmin(ctx)) {
-                let chatID = utils.getChatId(ctx)
-                let settings = await this.getSettings(chatID) // Fetch full settings
+                let holonId = utils.getholonId(ctx)
+                let settings = await this.getSettings(holonId) // Fetch full settings
                 let weights = settings.valueEquation
                 let currencies = settings.currencies || []
                 ctx.reply(i18next.t('settings_value_equation_weights'), this.equationInlineKeyboard(weights, currencies));
@@ -218,7 +219,7 @@ export default class Settings {
         this.bot.command('gethexcontent', async (ctx) => ctx.reply(await this.getHexContent(ctx)))
 
         this.bot.command('setroles', async (ctx) => ctx.reply("New roles: " + await this.setRoles(ctx)))
-        this.bot.command('getroles', async (ctx) => { let roles = await this.getRoles(utils.getChatId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
+        this.bot.command('getroles', async (ctx) => { let roles = await this.getRoles(utils.getholonId(ctx)); ctx.reply(roles ? roles : 'No roles specified') })
 
         this.bot.command('setvalues', async (ctx) => {
             if (utils.isAdmin(ctx)) {
@@ -240,7 +241,7 @@ export default class Settings {
 
         this.bot.command('setdomains', async (ctx) => {
             if (utils.isAdmin(ctx)) {
-                const chatID = ctx.message.chat.id;
+                const holonId = ctx.message.chat.id;
                 const text = ctx.message.text.substring('/setDomains'.length).trim();
 
                 if (!text) {
@@ -254,7 +255,7 @@ export default class Settings {
                     .map(d => d.trim())                // Trim whitespace
                     .filter(d => d !== '');            // Remove empty entries
 
-                let settings = await this.getSettings(chatID);
+                let settings = await this.getSettings(holonId);
 
                 // Initialize domains array if it doesn't exist
                 if (!settings.domains) {
@@ -275,9 +276,9 @@ export default class Settings {
         this.bot.action(/timezone_region_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const region = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
             await ctx.editMessageText('Select timezone:', {
-                reply_markup: await this.getTimezoneKeyboard(chatID, region)
+                reply_markup: await this.getTimezoneKeyboard(holonId, region)
             }).catch((err) => { console.log(err) });
         });
 
@@ -285,12 +286,12 @@ export default class Settings {
         this.bot.action(/timezone_set_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const timezone = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(holonId);
             settings.timezone = timezone;
             await this.setSettings(settings);
             await ctx.editMessageText('Timezone set to: ' + timezone.split('/')[1].replace('_', ' '), {
-                reply_markup: await this.getTimezoneKeyboard(chatID)
+                reply_markup: await this.getTimezoneKeyboard(holonId)
             }).catch((err) => { console.log(err) });
         });
 
@@ -307,10 +308,10 @@ export default class Settings {
 
         // Dashboard command - opens dashboard as Telegram webapp
         this.bot.command('dashboard', async (ctx) => {
-            const chatID = utils.getChatId(ctx);
+            const holonId = utils.getholonId(ctx);
             const userId = ctx.from?.id;
-            const language = await this.getLanguage(chatID);
-            const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${chatID}&user=${userId}`;
+            const language = await this.getLanguage(holonId);
+            const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${holonId}&user=${userId}`;
 
             await ctx.reply(
                 i18next.t('dashboard_open', { lng: language, defaultValue: 'Open your Holonic Dashboard:' }),
@@ -327,8 +328,8 @@ export default class Settings {
         this.bot.action(/settings_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const action = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(holonId);
 
             // Handle array settings - always use the new UI
             if (['values', 'domains', 'roles', 'purpose', 'currencies'].includes(action)) {
@@ -340,7 +341,7 @@ export default class Settings {
             switch (action) {
                 case 'name':
                     // Migrated to InputScene
-                    const nameLanguage = await this.getLanguage(chatID);
+                    const nameLanguage = await this.getLanguage(holonId);
                     const currentName = settings.name || i18next.t('settings_not_set', { lng: nameLanguage });
                     await ctx.scene.enter('input_scene', {
                         promptText: i18next.t('settings_current', { lng: nameLanguage, value: currentName }) + '\n\n' +
@@ -348,8 +349,8 @@ export default class Settings {
                         allowEmpty: false,
                         showCancelButton: true,
                         onComplete: async (ctx, input) => {
-                            const chatId = ctx.chat.id;
-                            let settings = await self.getSettings(chatId);
+                            const holonId = ctx.chat.id;
+                            let settings = await self.getSettings(holonId);
                             settings.name = input;
                             await self.setSettings(settings);
                             await self.showSettingsMenu(ctx);
@@ -361,17 +362,17 @@ export default class Settings {
                     break;
                 case 'language':
                     await ctx.editMessageText(i18next.t('settings_select_language'), {
-                        reply_markup: await this.getLanguageKeyboard(chatID)
+                        reply_markup: await this.getLanguageKeyboard(holonId)
                     }).catch(e => console.log('Error in language menu:', e));
                     break;
                 case 'theme':
                     await ctx.editMessageText(i18next.t('settings_select_theme'), {
-                        reply_markup: await this.getThemeKeyboard(chatID)
+                        reply_markup: await this.getThemeKeyboard(holonId)
                     }).catch(e => console.log('Error in theme menu:', e));
                     break;
                 case 'level':
                     await ctx.editMessageText(i18next.t('settings_select_level'), {
-                        reply_markup: await this.getLevelKeyboard(chatID)
+                        reply_markup: await this.getLevelKeyboard(holonId)
                     }).catch(e => console.log('Error in level menu:', e));
                     break;
                 case 'admin':
@@ -390,17 +391,17 @@ export default class Settings {
                         // Show hex menu instead of entering scene directly
                         await this.showHexMenu(ctx, true);
                     } else {
-                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(holonId) }));
                     }
                     break;
                 case 'timezone':
                     await ctx.editMessageText(i18next.t('settings_select_timezone_region'), {
-                        reply_markup: await this.getTimezoneKeyboard(chatID)
+                        reply_markup: await this.getTimezoneKeyboard(holonId)
                     }).catch(e => console.log('Error in timezone menu:', e));
                     break;
                 case 'equation':
-                    let chatIDForEq = ctx.callbackQuery.message.chat.id;
-                    let settingsForEq = await this.getSettings(chatIDForEq); // Fetch full settings
+                    let holonIdForEq = ctx.callbackQuery.message.chat.id;
+                    let settingsForEq = await this.getSettings(holonIdForEq); // Fetch full settings
                     let weightsForEq = settingsForEq.valueEquation;
                     let currenciesForEq = settingsForEq.currencies || [];
                     await ctx.editMessageText(i18next.t('settings_equation_title'), {
@@ -414,7 +415,7 @@ export default class Settings {
                     if (utils.isAdmin(ctx)) {
                         await this.showFederationMenu(ctx, true);
                     } else {
-                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+                        ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(holonId) }));
                     }
                     break;
                 case 'back':
@@ -454,7 +455,7 @@ export default class Settings {
                         await this.holons.showHolonsMenu(ctx, true); // Assuming true for edit
                     } else {
                         console.error('Holons instance or showHolonsMenu method is not available in Settings.');
-                        const lang = await this.getLanguage(chatID);
+                        const lang = await this.getLanguage(holonId);
                         await ctx.reply(i18next.t('error_rewards_unavailable', { lng: lang, defaultValue: 'Error: Reward management is currently unavailable.'})).catch(()=>{});
                     }
                     break;
@@ -468,12 +469,16 @@ export default class Settings {
         this.bot.action(/language_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const language = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(holonId);
 
             if (['en', 'it', 'es', 'fr', 'ru', 'de'].includes(language)) {
                 settings.language = language;
                 await this.setSettings(settings);
+                // Invalidate language cache in Quests module
+                if (this.quests && typeof this.quests.invalidateLanguageCache === 'function') {
+                    this.quests.invalidateLanguageCache(holonId);
+                }
                 await i18next.changeLanguage(language);
                 await ctx.reply(i18next.t('settings_language_updated', { language: language }));
                 await this.showSettingsMenu(ctx, true);
@@ -484,8 +489,8 @@ export default class Settings {
         this.bot.action(/theme_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const theme = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(holonId);
 
             if (['light', 'dark'].includes(theme)) {
                 settings.theme = theme;
@@ -499,8 +504,8 @@ export default class Settings {
         this.bot.action(/level_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const level = ctx.match[1];
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(holonId);
 
             if (['1', '2', '3'].includes(level)) {
                 settings.level = parseInt(level);
@@ -514,8 +519,8 @@ export default class Settings {
 
         this.bot.action(/settings_equation_change/, async (ctx) => {
             await ctx.answerCbQuery().catch()
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID); // Fetch full settings
+            const holonId = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(holonId); // Fetch full settings
             let weights = settings.valueEquation;
             let currencies = settings.currencies || [];
             await ctx.editMessageText(i18next.t('settings_equation_title'), {
@@ -526,11 +531,11 @@ export default class Settings {
         // Handle increment/decrement actions for value equation weights
         this.bot.action(/^(increment|decrement)_(\w+)$/, async (ctx) => {
             await ctx.answerCbQuery().catch()
-            const chatID = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
             const action = ctx.match[1];
             const field = ctx.match[2];
 
-            let weights = await this.getValueEquation(chatID);
+            let weights = await this.getValueEquation(holonId);
 
             if (action === 'increment') {
                 weights[field]++;
@@ -538,10 +543,10 @@ export default class Settings {
                 weights[field]--;
             }
 
-            await this.setValueEquation(chatID, weights);
+            await this.setValueEquation(holonId, weights);
 
             // Need to pass currencies to equationInlineKeyboard
-            let updatedSettings = await this.getSettings(chatID);
+            let updatedSettings = await this.getSettings(holonId);
             let updatedCurrencies = updatedSettings.currencies || [];
             await ctx.editMessageText(i18next.t('settings_value_equation_weights'), {
                 reply_markup: this.equationInlineKeyboard(weights, updatedCurrencies)
@@ -555,8 +560,8 @@ export default class Settings {
                 await ctx.answerCbQuery().catch()
 
                 // Use InputScene for array input
-                const chatID = ctx.chat.id;
-                const language = await this.getLanguage(chatID);
+                const holonId = ctx.chat.id;
+                const language = await this.getLanguage(holonId);
 
                 return ctx.scene.enter('input_scene', {
                     promptKey: 'settings_enter_new_items',
@@ -565,9 +570,9 @@ export default class Settings {
                     allowEmpty: false,
                     showCancelButton: true,
                     onComplete: async (ctx, newItems) => {
-                        const chatId = ctx.chat.id;
+                        const holonId = ctx.chat.id;
 
-                        let settings = await this.getSettings(chatId);
+                        let settings = await this.getSettings(holonId);
                         if (!settings[type]) {
                             settings[type] = [];
                         }
@@ -592,8 +597,8 @@ export default class Settings {
             this.bot.action(new RegExp(`remove_${type}_(\\d+)`), async (ctx) => {
                 await ctx.answerCbQuery().catch()
                 const index = parseInt(ctx.match[1]);
-                const chatID = ctx.chat.id;
-                let settings = await this.getSettings(chatID);
+                const holonId = ctx.chat.id;
+                let settings = await this.getSettings(holonId);
 
                 if (!settings[type] || !settings[type][index]) {
                     await ctx.reply(`Item not found in ${type}`);
@@ -650,16 +655,16 @@ export default class Settings {
             await ctx.answerCbQuery().catch()
             const type = ctx.match[1];
             const index = parseInt(ctx.match[2]);
-            const chatID = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
 
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             if (!settings[type]) settings[type] = [];
 
             // Special protection for currencies - prevent removing 'hour' as it's connected with tasks
             if (type === 'currencies') {
                 const itemToRemove = settings[type][index];
                 if (itemToRemove === 'hour') {
-                    const language = await this.getLanguage(chatID);
+                    const language = await this.getLanguage(holonId);
                     await ctx.reply('⏰ Hour currency cannot be removed as it is the default currency for all groups.');
                     return this.showArraySettingMenu(ctx, type, true);
                 }
@@ -677,8 +682,8 @@ export default class Settings {
             console.log('PURPOSE ADD button clicked');
             await ctx.answerCbQuery().catch()
             try {
-                const chatID = ctx.chat.id;
-                const language = await this.getLanguage(chatID);
+                const holonId = ctx.chat.id;
+                const language = await this.getLanguage(holonId);
 
                 return ctx.scene.enter('input_scene', {
                     promptKey: 'settings_enter_new_items',
@@ -687,9 +692,9 @@ export default class Settings {
                     allowEmpty: false,
                     showCancelButton: true,
                     onComplete: async (ctx, newItems) => {
-                        const chatId = ctx.chat.id;
+                        const holonId = ctx.chat.id;
 
-                        let settings = await this.getSettings(chatId);
+                        let settings = await this.getSettings(holonId);
                         if (!settings.purpose) {
                             settings.purpose = [];
                         }
@@ -711,22 +716,22 @@ export default class Settings {
             if (utils.isAdmin(ctx)) {
                 await ctx.scene.enter('federation_scene');
             } else {
-                const chatID = ctx.callbackQuery.message.chat.id;
-                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+                const holonId = ctx.callbackQuery.message.chat.id;
+                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(holonId) }));
             }
         });
 
         this.bot.action(/unfederate_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             if (utils.isAdmin(ctx)) {
-                const chatID = ctx.callbackQuery.message.chat.id;
+                const holonId = ctx.callbackQuery.message.chat.id;
                 const federationID = ctx.match[1];
-                const language = await this.getLanguage(chatID);
+                const language = await this.getLanguage(holonId);
 
                 try {
                     // Use HoloSphere2 API to unfederate holons
-                    console.log(`[unfederate] Unfederating ${chatID} from ${federationID}`);
-                    const success = await this.db.unfederateHolon(chatID.toString(), federationID.toString());
+                    console.log(`[unfederate] Unfederating ${holonId} from ${federationID}`);
+                    const success = await this.db.unfederateHolon(holonId.toString(), federationID.toString());
 
                     if (success) {
                         // Update the federation menu to reflect the removal
@@ -744,22 +749,22 @@ export default class Settings {
                     await ctx.answerCbQuery(`Error: ${error.message}`);
                 }
             } else {
-                const chatID = ctx.callbackQuery.message.chat.id;
-                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+                const holonId = ctx.callbackQuery.message.chat.id;
+                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(holonId) }));
             }
         });
 
         this.bot.action(/unnotify_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             if (utils.isAdmin(ctx)) {
-                const chatID = ctx.callbackQuery.message.chat.id;
+                const holonId = ctx.callbackQuery.message.chat.id;
                 const notifyID = ctx.match[1];
-                const language = await this.getLanguage(chatID);
+                const language = await this.getLanguage(holonId);
 
                 try {
                     // Use HoloSphere2 API to unfederate holons
-                    console.log(`[removeNotify] Removing inbound connection from ${notifyID} to ${chatID}`);
-                    const success = await this.db.unfederateHolon(chatID.toString(), notifyID.toString());
+                    console.log(`[removeNotify] Removing inbound connection from ${notifyID} to ${holonId}`);
+                    const success = await this.db.unfederateHolon(holonId.toString(), notifyID.toString());
 
                     if (success) {
                         // Update the federation menu to reflect the removal
@@ -772,8 +777,8 @@ export default class Settings {
                     await ctx.answerCbQuery(`Error: ${error.message}`);
                 }
             } else {
-                const chatID = ctx.callbackQuery.message.chat.id;
-                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(chatID) }));
+                const holonId = ctx.callbackQuery.message.chat.id;
+                ctx.reply(i18next.t('adminonly', { lng: await this.getLanguage(holonId) }));
             }
         });
 
@@ -785,12 +790,12 @@ export default class Settings {
                 return;
             }
 
-            const chatID = ctx.chat.id;
+            const holonId = ctx.chat.id;
             const values = text.split(/[,\n]/)
                 .map(v => v.trim())
                 .filter(v => v !== '');
 
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
 
             if (!settings.values) {
                 settings.values = [];
@@ -811,12 +816,12 @@ export default class Settings {
                 return;
             }
 
-            const chatID = ctx.chat.id;
+            const holonId = ctx.chat.id;
             const domains = text.split(/[,\n]/)
                 .map(d => d.trim())
                 .filter(d => d !== '');
 
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
 
             if (!settings.domains) {
                 settings.domains = [];
@@ -830,8 +835,8 @@ export default class Settings {
         });
 
         this.bot.command('addroles', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -850,7 +855,7 @@ export default class Settings {
             }
 
             const newRoles = args.join(' ').split(/[\n,]+/).map(r => r.trim()).filter(r => r);
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             if (!settings.roles) settings.roles = [];
             
             let addedCount = 0;
@@ -877,10 +882,10 @@ export default class Settings {
                 return;
             }
 
-            const chatID = ctx.chat.id;
+            const holonId = ctx.chat.id;
             const newCurrencies = text.split(/[\n,]+/).map(c => c.trim().toLowerCase()).filter(c => c !== '');
 
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
 
             if (!settings.currencies) {
                 settings.currencies = [];
@@ -902,11 +907,11 @@ export default class Settings {
         // All handlers clear cache before reading, then pass settings directly to showArraySettingMenu
         this.bot.action('help_add_purpose', async (ctx) => {
             await ctx.answerCbQuery().catch();
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const self = this;
 
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             const currentPurpose = settings.purpose || i18next.t('settings_not_set', { lng: language });
 
             return ctx.scene.enter('input_scene', {
@@ -914,8 +919,8 @@ export default class Settings {
                            i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_purpose', { lng: language }).toLowerCase() }),
                 allowEmpty: false,
                 onComplete: async (ctx, input) => {
-                    const chatId = ctx.chat.id;
-                    let settings = await self.getSettings(chatId);
+                    const holonId = ctx.chat.id;
+                    let settings = await self.getSettings(holonId);
                     settings.purpose = input;
                     await self.setSettings(settings);
                     await self.showArraySettingMenu(ctx, 'purpose');
@@ -925,8 +930,8 @@ export default class Settings {
 
         this.bot.action('help_add_values', async (ctx) => {
             await ctx.answerCbQuery().catch();
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const field = 'values';
             const self = this;
 
@@ -938,8 +943,8 @@ export default class Settings {
                 inputType: 'array',
                 allowEmpty: false,
                 onComplete: async (ctx, newItems) => {
-                    const chatId = ctx.chat.id;
-                    let settings = await self.getSettings(chatId);
+                    const holonId = ctx.chat.id;
+                    let settings = await self.getSettings(holonId);
                     if (!settings[field]) settings[field] = [];
                     settings[field].push(...newItems);
                     await self.setSettings(settings);
@@ -950,8 +955,8 @@ export default class Settings {
 
         this.bot.action('help_add_domains', async (ctx) => {
             await ctx.answerCbQuery().catch();
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const field = 'domains';
             const self = this;
 
@@ -963,8 +968,8 @@ export default class Settings {
                 inputType: 'array',
                 allowEmpty: false,
                 onComplete: async (ctx, newItems) => {
-                    const chatId = ctx.chat.id;
-                    let settings = await self.getSettings(chatId);
+                    const holonId = ctx.chat.id;
+                    let settings = await self.getSettings(holonId);
                     if (!settings[field]) settings[field] = [];
                     settings[field].push(...newItems);
                     await self.setSettings(settings);
@@ -975,8 +980,8 @@ export default class Settings {
 
         this.bot.action('help_add_roles', async (ctx) => {
             await ctx.answerCbQuery().catch();
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const field = 'roles';
             const self = this;
 
@@ -988,8 +993,8 @@ export default class Settings {
                 inputType: 'array',
                 allowEmpty: false,
                 onComplete: async (ctx, newItems) => {
-                    const chatId = ctx.chat.id;
-                    let settings = await self.getSettings(chatId);
+                    const holonId = ctx.chat.id;
+                    let settings = await self.getSettings(holonId);
                     if (!settings[field]) settings[field] = [];
                     settings[field].push(...newItems);
                     await self.setSettings(settings);
@@ -1013,19 +1018,19 @@ export default class Settings {
         // Action handler for viewing hex map (temporary replacement for web app button)
         this.bot.action('hex_view_map', async (ctx) => {
             await ctx.answerCbQuery().catch()
-            const chatID = ctx.callbackQuery.message.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            const language = await this.getLanguage(holonId);
             await ctx.reply(i18next.t('settings_map_redirect', { 
                 lng: language, 
-                defaultValue: 'View the hex map at: https://hexamap.holons.io/index.html?id=' + chatID 
+                defaultValue: 'View the hex map at: https://hexamap.holons.io/index.html?id=' + holonId 
             }));
         });
 
         // Action handler for editing hex (from hex menu) - Migrated to InputScene
         this.bot.action('help_add_hex', async (ctx) => {
             await ctx.answerCbQuery().catch();
-            const chatID = ctx.callbackQuery.message.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            const language = await this.getLanguage(holonId);
             const self = this; // Capture reference for callbacks
 
             await ctx.scene.enter('input_scene', {
@@ -1034,8 +1039,8 @@ export default class Settings {
                 allowEmpty: false,
                 showCancelButton: true,
                 onComplete: async (ctx, input) => {
-                    const chatId = ctx.chat.id;
-                    let settings = await self.getSettings(chatId);
+                    const holonId = ctx.chat.id;
+                    let settings = await self.getSettings(holonId);
                     settings.hex = input.trim();
                     await self.setSettings(settings);
                     await self.showHexMenu(ctx);
@@ -1048,8 +1053,8 @@ export default class Settings {
 
         this.listPickerScene = new Scenes.BaseScene('list_picker_scene');
         this.listPickerScene.enter(async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const { field, title, options, displayField } = ctx.scene.state;
 
             // Create keyboard with options
@@ -1075,13 +1080,13 @@ export default class Settings {
         // Update action handlers to use InputScene
         this.bot.action('settings_name', async (ctx) => {
             await ctx.answerCbQuery().catch();
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const field = 'name';
             const self = this; // Capture reference for callbacks
 
             // Get current value
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             const currentValue = settings[field] || i18next.t('settings_not_set', { lng: language });
 
             return ctx.scene.enter('input_scene', {
@@ -1089,8 +1094,8 @@ export default class Settings {
                            i18next.t('settings_send_new', { lng: language, type: i18next.t('settings_name', { lng: language }).toLowerCase() }),
                 allowEmpty: false,
                 onComplete: async (ctx, value) => {
-                    const chatId = ctx.chat.id;
-                    let settings = await self.getSettings(chatId);
+                    const holonId = ctx.chat.id;
+                    let settings = await self.getSettings(holonId);
                     settings[field] = value;
                     await self.setSettings(settings);
                     await self.showSettingsMenu(ctx);
@@ -1104,8 +1109,8 @@ export default class Settings {
 
         this.bot.action('help_add_currencies', async (ctx) => {
             await ctx.answerCbQuery().catch();
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const field = 'currencies';
             const self = this;
 
@@ -1117,8 +1122,8 @@ export default class Settings {
                 inputType: 'array',
                 allowEmpty: false,
                 onComplete: async (ctx, newItems) => {
-                    const chatId = ctx.chat.id;
-                    let settings = await self.getSettings(chatId);
+                    const holonId = ctx.chat.id;
+                    let settings = await self.getSettings(holonId);
                     if (!settings[field]) settings[field] = [];
                     settings[field].push(...newItems);
                     await self.setSettings(settings);
@@ -1135,8 +1140,8 @@ export default class Settings {
 
         // Command handlers for non-admin scenarios
         this.bot.command('setname', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -1155,7 +1160,7 @@ export default class Settings {
             }
 
             const newName = args.slice(1).join(' ');
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             settings.name = newName;
             await this.setSettings(settings);
             
@@ -1167,8 +1172,8 @@ export default class Settings {
         });
 
         this.bot.command('setpurpose', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -1187,7 +1192,7 @@ export default class Settings {
             }
 
             const newPurpose = args.slice(1).join(' ');
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             settings.purpose = newPurpose;
             await this.setSettings(settings);
             
@@ -1199,8 +1204,8 @@ export default class Settings {
         });
 
         this.bot.command('sethex', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -1219,7 +1224,7 @@ export default class Settings {
             }
 
             const newHex = args.slice(1).join(' ');
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             settings.hex = newHex;
             await this.setSettings(settings);
             
@@ -1231,8 +1236,8 @@ export default class Settings {
         });
 
         this.bot.command('addvalues', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -1251,7 +1256,7 @@ export default class Settings {
             }
 
             const newValues = args.slice(1).join(' ').split(/[,\n]/).map(v => v.trim()).filter(v => v);
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             if (!settings.values) settings.values = [];
             settings.values.push(...newValues);
             await this.setSettings(settings);
@@ -1264,8 +1269,8 @@ export default class Settings {
         });
 
         this.bot.command('adddomains', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -1284,7 +1289,7 @@ export default class Settings {
             }
 
             const newDomains = args.slice(1).join(' ').split(/[,\n]/).map(d => d.trim()).filter(d => d);
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             if (!settings.domains) settings.domains = [];
             settings.domains.push(...newDomains);
             await this.setSettings(settings);
@@ -1297,8 +1302,8 @@ export default class Settings {
         });
 
         this.bot.command('addroles', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -1317,7 +1322,7 @@ export default class Settings {
             }
 
             const newRoles = args.join(' ').split(/[\n,]+/).map(r => r.trim()).filter(r => r);
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             if (!settings.roles) settings.roles = [];
             
             let addedCount = 0;
@@ -1337,8 +1342,8 @@ export default class Settings {
         });
 
         this.bot.command('addcurrencies', async (ctx) => {
-            const chatID = ctx.chat.id;
-            const language = await this.getLanguage(chatID);
+            const holonId = ctx.chat.id;
+            const language = await this.getLanguage(holonId);
             const isAdmin = await utils.isAdmin(ctx);
             
             if (!isAdmin) {
@@ -1357,7 +1362,7 @@ export default class Settings {
             }
 
             const newCurrencies = args.join(' ').split(/[\n,]+/).map(c => c.trim().toLowerCase()).filter(c => c); // Store in lowercase singular
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
             if (!settings.currencies) settings.currencies = [];
             
             let addedCount = 0;
@@ -1379,8 +1384,8 @@ export default class Settings {
         // Action handler for viewing federation lens configuration for a specific holon
         this.bot.action(/federation_config_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
-            const targetChatID = ctx.match[1];
-            await this.showFederationLensConfig(ctx, targetChatID, true);
+            const targetholonId = ctx.match[1];
+            await this.showFederationLensConfig(ctx, targetholonId, true);
         });
 
         // Action handler for toggling a specific direction (inbound/outbound) for a lens
@@ -1388,15 +1393,15 @@ export default class Settings {
             // Answer callback query IMMEDIATELY to prevent duplicate clicks
             await ctx.answerCbQuery().catch(() => {});
 
-            const targetChatID = ctx.match[1];
+            const targetholonId = ctx.match[1];
             const direction = ctx.match[2]; // 'outbound' or 'inbound'
             const lensNameToToggle = ctx.match[3];
-            const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-            const chatIDStr = chatID.toString();
-            const targetChatIDStr = targetChatID.toString();
+            const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+            const holonIdStr = holonId.toString();
+            const targetholonIdStr = targetholonId.toString();
 
             // Create a unique lock key for this operation
-            const lockKey = `${chatIDStr}_${targetChatIDStr}_${direction}_${lensNameToToggle}`;
+            const lockKey = `${holonIdStr}_${targetholonIdStr}_${direction}_${lensNameToToggle}`;
 
             // Prevent concurrent toggles of the same lens (simple debounce)
             if (!this.toggleLocks) this.toggleLocks = new Set();
@@ -1408,7 +1413,7 @@ export default class Settings {
 
             try {
                 // Get current federation config
-                let lensConfig = await this.db.getFederatedConfig(chatIDStr, targetChatIDStr);
+                let lensConfig = await this.db.getFederatedConfig(holonIdStr, targetholonIdStr);
 
                 // If no config exists, create default
                 if (!lensConfig) {
@@ -1428,14 +1433,14 @@ export default class Settings {
                 const lensIndex = targetArray.indexOf(lensNameToToggle);
                 if (lensIndex > -1) {
                     targetArray.splice(lensIndex, 1); // Disable: remove from array
-                    console.log(`[toggle_lens] Disabled ${direction} lens ${lensNameToToggle} for ${targetChatIDStr}`);
+                    console.log(`[toggle_lens] Disabled ${direction} lens ${lensNameToToggle} for ${targetholonIdStr}`);
                 } else {
                     targetArray.push(lensNameToToggle); // Enable: add to array
-                    console.log(`[toggle_lens] Enabled ${direction} lens ${lensNameToToggle} for ${targetChatIDStr}`);
+                    console.log(`[toggle_lens] Enabled ${direction} lens ${lensNameToToggle} for ${targetholonIdStr}`);
                 }
 
                 // UPDATE UI IMMEDIATELY (optimistic update with cached config)
-                await this.showFederationLensConfig(ctx, targetChatID, true, lensConfig);
+                await this.showFederationLensConfig(ctx, targetholonId, true, lensConfig);
 
                 // Check if federation should be removed (no lenses in either direction)
                 const hasAnyLenses = lensConfig.inbound.length > 0 || lensConfig.outbound.length > 0;
@@ -1443,22 +1448,22 @@ export default class Settings {
                 // NOW perform database operations in background
                 if (!hasAnyLenses) {
                     // No lenses enabled, remove the federation
-                    this.db.unfederateHolon(chatIDStr, targetChatIDStr).catch(err => {
+                    this.db.unfederateHolon(holonIdStr, targetholonIdStr).catch(err => {
                         console.error('Error unfederating holon:', err);
                     });
                 } else {
                     // Update federation with new lens config (direction derived from lensConfig)
-                    this.db.federateHolon(chatIDStr, targetChatIDStr, {
+                    this.db.federateHolon(holonIdStr, targetholonIdStr, {
                         lensConfig: lensConfig
                     }).then(() => {
-                        console.log(`[toggle_lens] Updated federation for ${chatIDStr} -> ${targetChatIDStr}`);
+                        console.log(`[toggle_lens] Updated federation for ${holonIdStr} -> ${targetholonIdStr}`);
                     }).catch(err => {
                         console.error(`[toggle_lens] Error updating federation:`, err);
                     });
                 }
 
             } catch (error) {
-                console.error(`Error toggling ${direction} lens ${lensNameToToggle} for ${targetChatID}:`, error);
+                console.error(`Error toggling ${direction} lens ${lensNameToToggle} for ${targetholonId}:`, error);
                 await ctx.reply('An error occurred while updating lens settings. Please try again.').catch(()=>{});
             } finally {
                 // Always release the lock after a short delay
@@ -1471,11 +1476,11 @@ export default class Settings {
         this.bot.action(/set_max_tasks_(\d+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const value = parseInt(ctx.match[1]);
-            const chatID = ctx.callbackQuery.message.chat.id;
-            let settings = await this.getSettings(chatID);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            let settings = await this.getSettings(holonId);
             settings.maxTasks = value;
             await this.setSettings(settings);
-            const language = await this.getLanguage(chatID);
+            const language = await this.getLanguage(holonId);
             await ctx.reply(
                 i18next.t('settings_max_tasks_updated', { lng: language, value: value === 0 ? i18next.t('settings_max_tasks_unlimited', { lng: language }) : value })
             );
@@ -1492,16 +1497,20 @@ export default class Settings {
         }
     }
 
+    setQuestsInstance(questsInstance) {
+        this.quests = questsInstance;
+    }
+
     async getHex(ctx) {
-        let settings = await this.getSettings(utils.getChatId(ctx))
+        let settings = await this.getSettings(utils.getholonId(ctx))
         return settings.hex
     }
 
     async setHex(ctx) {
         if (utils.isAdmin(ctx)) {
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
             const hex = ctx.message.text.split(' ')[1];
-            let settings = await this.getSettings(chatID)
+            let settings = await this.getSettings(holonId)
             settings.hex = hex
             await this.setSettings(settings)
             return hex
@@ -1512,8 +1521,8 @@ export default class Settings {
     }
 
     async getHexContent(ctx) {
-        const chatID = ctx.message.chat.id;
-        let settings = await this.getSettings(chatID)
+        const holonId = ctx.message.chat.id;
+        let settings = await this.getSettings(holonId)
         let hex = settings.hex
         let content = await this.db.getAll(hex + '/tags')
         //console.log(content)
@@ -1576,9 +1585,9 @@ export default class Settings {
         };
     }
 
-    getDefaultSettings(chatID, chatName) {
+    getDefaultSettings(holonId, chatName) {
         return {
-            id: chatID,
+            id: holonId,
             hex: '',
             version: 0.1,
             name: chatName || 'unknown',
@@ -1607,13 +1616,13 @@ export default class Settings {
     }
 
     // get language from the database
-    async getLanguage(chatID) {
-        let settings = await this.getSettings(chatID)
+    async getLanguage(holonId) {
+        let settings = await this.getSettings(holonId)
         return settings.language
     }
 
     async setLanguage(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const language = ctx.message.text.split(' ')[1];
 
         if (language === undefined || language === null) {
@@ -1625,15 +1634,15 @@ export default class Settings {
             return
         }
 
-        let settings = await this.getSettings(chatID)
+        let settings = await this.getSettings(holonId)
         settings.language = language
-        this.db.put(chatID + '/settings', settings)
+        this.db.put(holonId + '/settings', settings)
         await i18next.changeLanguage(language); // Ensure i18next instance is updated
         ctx.reply('Language changed to ' + language)
     }
 
-    async getTheme(chatID) {
-        let settings = await this.getSettings(chatID)
+    async getTheme(holonId) {
+        let settings = await this.getSettings(holonId)
 
         if (settings.theme === 'light') {
             //return themelight
@@ -1646,7 +1655,7 @@ export default class Settings {
 
 
     async setTheme(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const theme = ctx.message.text.split(' ')[1];
 
         if (theme === undefined || theme === null) {
@@ -1657,14 +1666,14 @@ export default class Settings {
             ctx.reply('Please specify "light" or "dark". Example: /setTheme light')
             return
         }
-        let settings = await this.getSettings(chatID)
+        let settings = await this.getSettings(holonId)
         settings.theme = theme
-        this.db.put(chatID + '/settings', settings)
+        this.db.put(holonId + '/settings', settings)
         ctx.reply('Theme changed to ' + theme)
     }
 
     async setLevel(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const level = ctx.message.text.split(' ')[1];
 
         if (level === undefined || level === null) {
@@ -1676,34 +1685,34 @@ export default class Settings {
             return
         }
 
-        let settings = await this.getSettings(chatID)
+        let settings = await this.getSettings(holonId)
         settings.level = level
-        this.db.put(chatID + '/settings', settings)
+        this.db.put(holonId + '/settings', settings)
         ctx.reply('Level changed to ' + level)
 
     }
 
     async setAdmin(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const admin = ctx.message.text.split(' ')[1];
         if (admin === undefined || admin === null) {
             ctx.reply('Please specify the admin. Example: /setAdmin @admin')
             return
         }
-        let settings = await this.getSettings(chatID)
+        let settings = await this.getSettings(holonId)
         settings.admin = admin
-        this.db.put(chatID + '/settings', settings)
+        this.db.put(holonId + '/settings', settings)
         ctx.reply('Admin changed to ' + admin)
     }
 
 
 
     async federate(ctx) {
-        const chatID = ctx.message.chat.id.toString();
+        const holonId = ctx.message.chat.id.toString();
         const federationID = ctx.message.text.split(' ')[1];
 
         if (federationID === undefined || federationID === null) {
-            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456 or /federate 0x1234abcd. This chat ID is ' + chatID);
+            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456 or /federate 0x1234abcd. This chat ID is ' + holonId);
             return;
         }
 
@@ -1718,9 +1727,9 @@ export default class Settings {
 
         try {
             // Use holosphere federateHolon method with empty lens config (user will configure lenses via menu)
-            console.log('FEDERATING', chatID, federationID)
+            console.log('FEDERATING', holonId, federationID)
 
-            await this.db.federateHolon(chatID.toString(), federationID.toString(), {
+            await this.db.federateHolon(holonId.toString(), federationID.toString(), {
                 lensConfig: { inbound: [], outbound: [] }
             });
 
@@ -1734,7 +1743,7 @@ export default class Settings {
     }
 
     async separate(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const federationID = ctx.message.text.split(' ')[1];
 
         if (federationID === undefined || federationID === null) {
@@ -1753,8 +1762,8 @@ export default class Settings {
 
         try {
             // Use HoloSphere2 API to unfederate holons
-            console.log(`[separate] Unfederating ${chatID} from ${federationID}`);
-            const success = await this.db.unfederateHolon(chatID.toString(), federationID.toString());
+            console.log(`[separate] Unfederating ${holonId} from ${federationID}`);
+            const success = await this.db.unfederateHolon(holonId.toString(), federationID.toString());
 
             if (success) {
                 const federationName = await this.getHolonDisplayName(federationID, ctx);
@@ -1768,10 +1777,10 @@ export default class Settings {
         }
     }
 
-    async getFederation(chatID) {
+    async getFederation(holonId) {
         try {
             // Use holosphere getFederation method
-            return await this.db.getFederation(chatID);
+            return await this.db.getFederation(holonId);
         } catch (error) {
             console.error('Get federation error:', error);
             return [];
@@ -1781,14 +1790,14 @@ export default class Settings {
 
 
     async setRoles(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const newRoles = utils.parseList(ctx.message.text);
 
         if (newRoles === undefined || newRoles === null || newRoles.length === 0) {
             return ('Please specify the roles. Example: /setRoles role1 role2');
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
 
         // Initialize roles array if it doesn't exist
         if (!settings.roles) {
@@ -1802,14 +1811,14 @@ export default class Settings {
         return `Added roles: ${newRoles.join(', ')}`;
     }
 
-    async getRoles(chatID) {
-        let settings = await this.getSettings(chatID)
+    async getRoles(holonId) {
+        let settings = await this.getSettings(holonId)
         return settings.roles
     }
 
     async setValues(ctx) {
         if (utils.isAdmin(ctx)) {
-            const chatID = ctx.message.chat.id;
+            const holonId = ctx.message.chat.id;
             const text = ctx.message.text.substring('/setValues'.length).trim();
 
             if (!text) {
@@ -1823,7 +1832,7 @@ export default class Settings {
                 .map(v => v.trim())                // Trim whitespace
                 .filter(v => v !== '');            // Remove empty entries
 
-            let settings = await this.getSettings(chatID);
+            let settings = await this.getSettings(holonId);
 
             // Initialize the array if it doesn't exist
             if (!settings.values) {
@@ -1840,26 +1849,26 @@ export default class Settings {
         }
     }
 
-    async getValues(chatID) {
-        let settings = await this.getSettings(chatID);
+    async getValues(holonId) {
+        let settings = await this.getSettings(holonId);
         return settings.values;
     }
 
-    async getSettings(chatID) {
+    async getSettings(holonId) {
         // Check cache first
-        const cached = this._settingsCache.get(chatID);
+        const cached = this._settingsCache.get(holonId);
         if (cached && Date.now() - cached.timestamp < this._cacheTTL) {
             return cached.settings;
         }
 
-        let settings = await this.db.get(chatID + '/settings', chatID)
+        let settings = await this.db.get(holonId + '/settings', holonId)
         if (!settings || settings == '') {
-            let chatName = await utils.getChatName(this.bot, chatID)
-            settings = this.getDefaultSettings(chatID, chatName)
-            await this.db.put(chatID + '/settings', settings)
+            let chatName = await utils.getChatName(this.bot, holonId)
+            settings = this.getDefaultSettings(holonId, chatName)
+            await this.db.put(holonId + '/settings', settings)
         } else {
             // Ensure all required fields exist by merging with default settings
-            const defaultSettings = this.getDefaultSettings(chatID, settings.name || 'unknown')
+            const defaultSettings = this.getDefaultSettings(holonId, settings.name || 'unknown')
             settings = {
                 ...defaultSettings,  // Start with all default values
                 ...settings,         // Override with existing settings
@@ -1895,7 +1904,7 @@ export default class Settings {
         }
 
         // Cache the result
-        this._settingsCache.set(chatID, {
+        this._settingsCache.set(holonId, {
             settings,
             timestamp: Date.now()
         });
@@ -1911,27 +1920,27 @@ export default class Settings {
         await this.db.put(settings.id + '/settings', settings);
 
         // Invalidate local cache - delete both numeric and string keys to handle type mismatches
-        const chatID = settings.id;
-        this._settingsCache.delete(chatID);
-        this._settingsCache.delete(Number(chatID));
-        this._settingsCache.delete(String(chatID));
+        const holonId = settings.id;
+        this._settingsCache.delete(holonId);
+        this._settingsCache.delete(Number(holonId));
+        this._settingsCache.delete(String(holonId));
 
-        this.db.clearCacheForChatID(chatID);
+        this.db.clearCacheForholonId(holonId);
     }
 
-    async setValueEquation(chatID, equation) {
-        let settings = await this.getSettings(chatID)
+    async setValueEquation(holonId, equation) {
+        let settings = await this.getSettings(holonId)
         settings.valueEquation = equation
-        await this.db.put(chatID + '/settings', settings)
+        await this.db.put(holonId + '/settings', settings)
     }
 
-    async getValueEquation(chatID) {
-        let settings = await this.getSettings(chatID)
+    async getValueEquation(holonId) {
+        let settings = await this.getSettings(holonId)
         return settings.valueEquation
     }
 
-    async calculateUserScores(users, chatID, expensesInstance) {
-        const settings = await this.getSettings(chatID);
+    async calculateUserScores(users, holonId, expensesInstance) {
+        const settings = await this.getSettings(holonId);
         const equation = settings.valueEquation;
         const currencies = settings.currencies || [];
         
@@ -1961,7 +1970,7 @@ export default class Settings {
                     
                     if (currencyKey && equation[currencyKey] !== undefined) {
                         try {
-                            const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currencyKey);
+                            const balance = await expensesInstance.getUserCurrencyBalance(holonId, user.id, currencyKey);
                             const weight = equation[currencyKey] || 0;
                             const contribution = balance * weight;
                             currencyScoreContribution += contribution;
@@ -1986,15 +1995,15 @@ export default class Settings {
     }
 
     async whitelisted(ctx) {
-        let settings = await settings.getSettings(utils.getChatId(ctx))
+        let settings = await settings.getSettings(utils.getholonId(ctx))
         if (settings.whitelisted) return ''
         else return ("This bot is still in development, and this chat is not whitelisted to use this function.")
     }
 
 
-    // async getSettingsButtons(chatID) {
+    // async getSettingsButtons(holonId) {
     //     return [
-    //         [{ text: 'Language:'}], [{ text: 'IT', setLanguage(chatID, 'it') }],[{ text: 'EN', setLanguage(ctx, 'en') }]
+    //         [{ text: 'Language:'}], [{ text: 'IT', setLanguage(holonId, 'it') }],[{ text: 'EN', setLanguage(ctx, 'en') }]
     //         [{ text: 'Theme' }],
     //         [{ text: 'Level', callback_data: 'level' }],
     //         [{ text: 'Admin', callback_data: 'admin' }],
@@ -2003,19 +2012,19 @@ export default class Settings {
     // }
 
     async showSettingsMenu(ctx, edit = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         const userId = ctx.callbackQuery?.from?.id || ctx.from?.id;
-        if (!chatID) {
+        if (!holonId) {
             console.error('Could not determine chat ID');
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
-        const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${chatID}&user=${userId}`;
+        const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${holonId}&user=${userId}`;
         
         // Fetch federation info for the button
-        const fedInfo = await this.db.getFederation(chatID);
+        const fedInfo = await this.db.getFederation(holonId);
         // Combine inbound and outbound arrays to get all federated holons (deduplicated)
         const inbound = fedInfo?.inbound || [];
         const outbound = fedInfo?.outbound || [];
@@ -2026,8 +2035,8 @@ export default class Settings {
         let holonNetworkLine = '';
         if (this.holons && typeof this.holons.getSplitterContract === 'function') {
             try {
-                const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-                const splitterContract = await this.holons.getSplitterContract(chatIdNormalized);
+                const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+                const splitterContract = await this.holons.getSplitterContract(holonIdNormalized);
                 if (splitterContract && splitterContract.target && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
                     holonAddressLine = `\n🔷 Holon Address: \`${splitterContract.target}\``;
                     if (this.holons.network) {
@@ -2038,7 +2047,7 @@ export default class Settings {
                 // Ignore errors, just don't show address/network
             }
         }
-        const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${chatID}${holonAddressLine}${holonNetworkLine}`;
+        const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${holonId}${holonAddressLine}${holonNetworkLine}`;
 
         const menuMarkup = {
             reply_markup: {
@@ -2103,8 +2112,8 @@ export default class Settings {
         }
     }
 
-    async getLanguageKeyboard(chatID) {
-        let settings = await this.getSettings(chatID);
+    async getLanguageKeyboard(holonId) {
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         return {
             inline_keyboard: [
@@ -2127,8 +2136,8 @@ export default class Settings {
         };
     }
 
-    async getThemeKeyboard(chatID) {
-        let settings = await this.getSettings(chatID);
+    async getThemeKeyboard(holonId) {
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         return {
             inline_keyboard: [
@@ -2143,8 +2152,8 @@ export default class Settings {
         };
     }
 
-    async getLevelKeyboard(chatID) {
-        let settings = await this.getSettings(chatID);
+    async getLevelKeyboard(holonId) {
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         return {
             inline_keyboard: [
@@ -2160,7 +2169,7 @@ export default class Settings {
         };
     }
 
-    async getTimezoneKeyboard(chatID, region = null) {
+    async getTimezoneKeyboard(holonId, region = null) {
         const timezones = {
             'Europe': [
                 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
@@ -2176,7 +2185,7 @@ export default class Settings {
             ]
         };
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         const currentTimezone = settings.timezone ? settings.timezone.split('/')[1].replace('_', ' ') : i18next.t('settings_not_set', { lng: language });
 
@@ -2217,20 +2226,20 @@ export default class Settings {
         }
     }
 
-    async getTimezone(chatID) {
-        let settings = await this.getSettings(chatID);
+    async getTimezone(holonId) {
+        let settings = await this.getSettings(holonId);
         return settings.timezone || 'UTC';
     }
 
     // Add method to show array setting menu
     async showArraySettingMenu(ctx, type, removeMode = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (!chatID) {
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!holonId) {
             console.error('Could not determine chat ID');
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
 
         const keyboard = {
@@ -2362,24 +2371,24 @@ export default class Settings {
 
     // Add setPurpose method
     async setPurpose(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const text = ctx.message.text.replace('/setpurpose', '').trim();
-        const language = await this.getLanguage(chatID);
+        const language = await this.getLanguage(holonId);
 
         if (!text) {
             ctx.reply(i18next.t('settings_specify_purpose', { lng: language }));
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         settings.purpose = text;
         await this.setSettings(settings);
         await ctx.reply(i18next.t('settings_purpose_set', { lng: language, value: text }));
         await this.showArraySettingMenu(ctx, 'purpose', false);
     }
 
-    async getAdminKeyboard(chatID) {
-        let settings = await this.getSettings(chatID);
+    async getAdminKeyboard(holonId) {
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         const admin = settings.admin || i18next.t('settings_not_set', { lng: language });
 
@@ -2393,10 +2402,10 @@ export default class Settings {
         };
     }
 
-    async getHexKeyboard(chatID) {
-        let settings = await this.getSettings(chatID);
+    async getHexKeyboard(holonId) {
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
-        const hex = await this.getHex({ chat: { id: chatID } });
+        const hex = await this.getHex({ chat: { id: holonId } });
         return {
             inline_keyboard: [
                 [{ text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}`, callback_data: ' ' }],
@@ -2407,20 +2416,20 @@ export default class Settings {
     }
 
     async showAdminSelectionMenu(ctx, edit = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (!chatID) {
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!holonId) {
             console.error('Could not determine chat ID');
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         const currentAdmin = settings.admin || '';
 
         // Get all users from the chat
         let users = [];
         try {
-            users = await this.db.getAll(chatID + '/users');
+            users = await this.db.getAll(holonId + '/users');
         } catch (error) {
             console.error('Error getting users:', error);
         }
@@ -2486,17 +2495,17 @@ export default class Settings {
     }
 
     async showFederationMenu(ctx, edit = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (!chatID) {
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!holonId) {
             console.error('Could not determine chat ID');
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
 
         // Get federation info
-        const fedInfo = await this.db.getFederation(chatID);
+        const fedInfo = await this.db.getFederation(holonId);
         const inboundHolons = fedInfo && fedInfo.inbound ? fedInfo.inbound : [];
         const outboundHolons = fedInfo && fedInfo.outbound ? fedInfo.outbound : [];
 
@@ -2584,20 +2593,20 @@ export default class Settings {
 
     // Add users management menu method
     async showUsersManagementMenu(ctx, edit = false, removeMode = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (!chatID) {
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!holonId) {
             console.error('Could not determine chat ID');
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
 
         // Get all users from the chat
         let users = [];
         try {
             // Use the Users class functionality to get chat users
-            users = await this.db.getAll(chatID + '/users');
+            users = await this.db.getAll(holonId + '/users');
         } catch (error) {
             console.error('Error getting users:', error);
         }
@@ -2715,14 +2724,14 @@ export default class Settings {
 
     // Method to show user info
     async showUserInfo(ctx, userId) {
-        const chatID = ctx.callbackQuery.message.chat.id;
-        let settings = await this.getSettings(chatID);
+        const holonId = ctx.callbackQuery.message.chat.id;
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
 
         // Get user details
         let user = null;
         try {
-            const users = await this.db.getAll(chatID + '/users');
+            const users = await this.db.getAll(holonId + '/users');
             user = users.find(u => u.id.toString() === userId);
         } catch (error) {
             console.error('Error getting user info:', error);
@@ -2778,8 +2787,8 @@ export default class Settings {
 
     // Process user mentions from message
     async processUserMentions(ctx) {
-        const chatID = ctx.chat.id;
-        const language = await this.getLanguage(chatID);
+        const holonId = ctx.chat.id;
+        const language = await this.getLanguage(holonId);
         const messageText = ctx.message.text;
 
         // Handle both regular mentions and text_mentions
@@ -2808,7 +2817,7 @@ export default class Settings {
                     const username = messageText.substring(entity.offset + 1, entity.offset + entity.length);
 
                     // First check if user exists in our database
-                    user = await this.findUserInDatabase(chatID, username);
+                    user = await this.findUserInDatabase(holonId, username);
 
                     // If not in database, try to get from Telegram
                     if (!user) {
@@ -2841,7 +2850,7 @@ export default class Settings {
 
                 // If we have a valid user with ID, add to database
                 if (user && user.id) {
-                    await this.addUserToDatabase(chatID, user);
+                    await this.addUserToDatabase(holonId, user);
                     addedUsers.push(user.username || user.id.toString());
                 }
             } catch (error) {
@@ -2890,9 +2899,9 @@ export default class Settings {
     }
 
     // Find a user in our database by username
-    async findUserInDatabase(chatID, username) {
+    async findUserInDatabase(holonId, username) {
         try {
-            const users = await this.db.getAll(chatID + '/users');
+            const users = await this.db.getAll(holonId + '/users');
             return users.find(user =>
                 user.username &&
                 user.username.toLowerCase() === username.toLowerCase()
@@ -2954,8 +2963,8 @@ export default class Settings {
 
     // Handle combined username+ID format for manual entry
     async processManualUserEntry(ctx) {
-        const chatID = ctx.chat.id;
-        const language = await this.getLanguage(chatID);
+        const holonId = ctx.chat.id;
+        const language = await this.getLanguage(holonId);
         const messageText = ctx.message.text.trim();
 
         // Check if this is a username,ID format from a previous failed mention
@@ -2977,7 +2986,7 @@ export default class Settings {
                     };
 
                     try {
-                        await this.addUserToDatabase(chatID, user);
+                        await this.addUserToDatabase(holonId, user);
                         const successMsg = await ctx.reply(i18next.t('settings_user_added', { lng: language }));
 
                         // Store the success message ID for cleanup
@@ -2998,9 +3007,9 @@ export default class Settings {
 
    
     // Add user to database
-    async addUserToDatabase(chatID, user) {
+    async addUserToDatabase(holonId, user) {
         // Get current users
-        let users = await this.db.getAll(chatID + '/users');
+        let users = await this.db.getAll(holonId + '/users');
 
         // Check if user already exists
         const existingUser = users.find(u => u.id && u.id.toString() === user.id.toString());
@@ -3008,7 +3017,7 @@ export default class Settings {
             return false; // (`User with ID ${user.id} already exists.`);
         }
 
-        await this.db.put(chatID + '/users', user);
+        await this.db.put(holonId + '/users', user);
 
 
         return true;
@@ -3055,13 +3064,13 @@ export default class Settings {
 
     // Add method to show hex menu - follows the purpose pattern
     async showHexMenu(ctx, edit = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (!chatID) {
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!holonId) {
             console.error('Could not determine chat ID');
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         const currentHex = settings.hex || '';
 
@@ -3127,31 +3136,31 @@ export default class Settings {
      * Displays all lenses with inbound and outbound checkboxes on each line
      * @param {object} cachedLensConfig - Optional cached lens config to avoid DB read (for optimistic updates)
      */
-    async showFederationLensConfig(ctx, targetChatID, edit = false, cachedLensConfig = null) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (!chatID) {
+    async showFederationLensConfig(ctx, targetholonId, edit = false, cachedLensConfig = null) {
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!holonId) {
             console.error('Could not determine chat ID for federation lens config');
             return;
         }
 
-        const language = await this.getLanguage(chatID);
-        const targetHolonName = await this.getHolonDisplayName(targetChatID, ctx);
+        const language = await this.getLanguage(holonId);
+        const targetHolonName = await this.getHolonDisplayName(targetholonId, ctx);
         const title = i18next.t('settings_federation_lens_config', {
             lng: language,
-            targetChatID: targetHolonName,
+            targetholonId: targetHolonName,
             defaultValue: `🔗 Federation with ${targetHolonName}`
         });
 
         // Define these upfront for use throughout the function
-        const chatIDStr = chatID.toString();
-        const targetChatIDStr = targetChatID.toString();
+        const holonIdStr = holonId.toString();
+        const targetholonIdStr = targetholonId.toString();
 
         // Get the current lens configuration (use cached if provided for optimistic updates)
         let lensConfig;
         if (cachedLensConfig) {
             lensConfig = cachedLensConfig;
         } else {
-            lensConfig = await this.db.getFederatedConfig(chatIDStr, targetChatIDStr);
+            lensConfig = await this.db.getFederatedConfig(holonIdStr, targetholonIdStr);
         }
 
         const outboundLenses = lensConfig && lensConfig.outbound ? lensConfig.outbound : [];
@@ -3180,11 +3189,11 @@ export default class Settings {
                 },
                 {
                     text: hasOutbound ? '✅' : '🔘',
-                    callback_data: `toggle_lens_direction_${targetChatIDStr}_outbound_${lensName}`
+                    callback_data: `toggle_lens_direction_${targetholonIdStr}_outbound_${lensName}`
                 },
                 {
                     text: hasInbound ? '✅' : '🔘',
-                    callback_data: `toggle_lens_direction_${targetChatIDStr}_inbound_${lensName}`
+                    callback_data: `toggle_lens_direction_${targetholonIdStr}_inbound_${lensName}`
                 }
             ]);
         }
@@ -3213,43 +3222,43 @@ export default class Settings {
         }
     }
 
-    async showSharedLensesMenu(ctx, targetChatID, relationshipType, edit = false, currentLensesConfig = null) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        if (!chatID) {
+    async showSharedLensesMenu(ctx, targetholonId, relationshipType, edit = false, currentLensesConfig = null) {
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        if (!holonId) {
             console.error('Could not determine chat ID for shared lenses menu');
             return;
         }
 
-        const language = await this.getLanguage(chatID);
+        const language = await this.getLanguage(holonId);
         let title = '';
-        const targetHolonName = await this.getHolonDisplayName(targetChatID, ctx);
+        const targetHolonName = await this.getHolonDisplayName(targetholonId, ctx);
 
         // Support both old and new terminology
         if (relationshipType === 'outbound' || relationshipType === 'federated') {
-            title = i18next.t('settings_lenses_outbound_to', { lng: language, targetChatID: targetHolonName, defaultValue: `Outbound Lenses to ${targetHolonName}` });
+            title = i18next.t('settings_lenses_outbound_to', { lng: language, targetholonId: targetHolonName, defaultValue: `Outbound Lenses to ${targetHolonName}` });
         } else if (relationshipType === 'inbound' || relationshipType === 'notifies') {
-            title = i18next.t('settings_lenses_inbound_from', { lng: language, targetChatID: targetHolonName, defaultValue: `Inbound Lenses from ${targetHolonName}` });
+            title = i18next.t('settings_lenses_inbound_from', { lng: language, targetholonId: targetHolonName, defaultValue: `Inbound Lenses from ${targetHolonName}` });
         }
 
         let lensesConfig = currentLensesConfig;
         if (!lensesConfig) {
             // --- Placeholder for Lenses Data Fetching & Initialization ---
             // TODO: Replace this with actual logic to fetch shared lenses configuration (name, enabled state)
-            // for the targetChatID from db.holosphere or a similar source.
+            // for the targetholonId from db.holosphere or a similar source.
             // If no configuration exists, initialize it (e.g., all enabled by default) and persist it.
             // const EXAMPLE_LENS_NAMES = ['Quests', 'Offers', 'Tags', 'Expenses', 'Announcements', 'Users', 'Shopping', 'Recurring'];
             // lensesConfig = EXAMPLE_LENS_NAMES.map(name => ({ name: name, enabled: true }));
-            lensesConfig = await this.getLensesConfigForUI(chatID, targetChatID, relationshipType);
+            lensesConfig = await this.getLensesConfigForUI(holonId, targetholonId, relationshipType);
             // Example: 
-            // lensesConfig = await this.db.holosphere.getSharedLensesConfig(chatID, targetChatID, relationshipType);
+            // lensesConfig = await this.db.holosphere.getSharedLensesConfig(holonId, targetholonId, relationshipType);
             // if (!lensesConfig || lensesConfig.length === 0) { 
             //     lensesConfig = EXAMPLE_LENS_NAMES.map(name => ({ name: name, enabled: true }));
-            //     // await this.db.holosphere.setSharedLensesConfig(chatID, targetChatID, relationshipType, lensesConfig); // Persist initial
+            //     // await this.db.holosphere.setSharedLensesConfig(holonId, targetholonId, relationshipType, lensesConfig); // Persist initial
             // }
             // --- End Placeholder ---
         }
 
-        const keyboard = await this.getSharedLensesKeyboard(chatID, targetChatID, relationshipType, lensesConfig);
+        const keyboard = await this.getSharedLensesKeyboard(holonId, targetholonId, relationshipType, lensesConfig);
 
         try {
             if (edit && ctx.callbackQuery) {
@@ -3273,8 +3282,8 @@ export default class Settings {
         }
     }
 
-    async getSharedLensesKeyboard(chatID, targetChatID, relationshipType, lensesConfig) {
-        const language = await this.getLanguage(chatID);
+    async getSharedLensesKeyboard(holonId, targetholonId, relationshipType, lensesConfig) {
+        const language = await this.getLanguage(holonId);
         const keyboard = {
             inline_keyboard: []
         };
@@ -3285,13 +3294,13 @@ export default class Settings {
             const lens1 = lensesConfig[i];
             row.push({
                 text: `${lens1.enabled ? '✅' : '🔘'} ${lens1.name}`,
-                callback_data: `toggle_lens_${targetChatID}_${relationshipType}_${lens1.name}`
+                callback_data: `toggle_lens_${targetholonId}_${relationshipType}_${lens1.name}`
             });
             if (i + 1 < lensesConfig.length) {
                 const lens2 = lensesConfig[i+1];
                 row.push({
                     text: `${lens2.enabled ? '✅' : '🔘'} ${lens2.name}`,
-                    callback_data: `toggle_lens_${targetChatID}_${relationshipType}_${lens2.name}`
+                    callback_data: `toggle_lens_${targetholonId}_${relationshipType}_${lens2.name}`
                 });
             }
             keyboard.inline_keyboard.push(row);
@@ -3313,8 +3322,8 @@ export default class Settings {
         return keyboard;
     }
 
-    async getLensesConfigForUI(chatID, targetChatID, relationshipType) {
-        const persistedLinkConfig = await this.db.getFederatedConfig(chatID, targetChatID);
+    async getLensesConfigForUI(holonId, targetholonId, relationshipType) {
+        const persistedLinkConfig = await this.db.getFederatedConfig(holonId, targetholonId);
         let activeLensesForType = [];
 
         if (persistedLinkConfig) {
@@ -3333,13 +3342,13 @@ export default class Settings {
     }
 
     async showHolacracyMenu(ctx, edit = false) {
-        const chatID = utils.getChatId(ctx);
-        if (!chatID) {
+        const holonId = utils.getholonId(ctx);
+        if (!holonId) {
             console.error('Could not determine chat ID for Holacracy menu');
             return;
         }
 
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
 
         const menuText = `${this.getSettingIcon('holacracy')} ${i18next.t('settings_holacracy', {lng: language, defaultValue: 'Holacracy Settings'})}`;
@@ -3400,8 +3409,8 @@ export default class Settings {
     }
 
     async showMaxTasksMenu(ctx, edit = false) {
-        const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
-        let settings = await this.getSettings(chatID);
+        const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        let settings = await this.getSettings(holonId);
         const language = settings.language;
         const fibs = [2,3,5,8,13,21,34,55,0]; // 0 = Unlimited
         const keyboard = { inline_keyboard: [] };

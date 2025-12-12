@@ -72,12 +72,12 @@ export default class Holons {
     this.createHolonScene.action(/confirm_holon_creation_(.+)/, async (ctx) => {
       await ctx.answerCbQuery().catch()
       const flavor = ctx.match[1];
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const userID = utils.getUserId(ctx);
       await ctx.editMessageText(`Creating ${flavor} holon... Please wait.`);
       try {
         const creatorUserId = userID.toString();
-        const holonName = chatID.toString();
+        const holonName = holonId.toString();
         const parameterValue = flavor.toLowerCase() === "zoned" ? 5 : 0;
         const txParams = [flavor, creatorUserId, holonName, parameterValue];
         const createTx = await this.executeTransaction(this.holonsContract, 'newHolon', txParams, { gasLimit: 5000000 });
@@ -105,7 +105,7 @@ export default class Holons {
     });
     
     this.tokenBalanceScene.on('text', async (ctx) => {
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const tokenAddress = ctx.message.text.trim();
       
       // Validate the token address
@@ -115,7 +115,7 @@ export default class Holons {
       }
       
       try {
-        const contracts = await this.getHolonContracts(chatID, this.holonsContract, this.wallet);
+        const contracts = await this.getHolonContracts(holonId, this.holonsContract, this.wallet);
         if (!contracts.success) {
             throw new Error(`Failed to get holon contracts: ${contracts.error}`);
         }
@@ -131,7 +131,7 @@ export default class Holons {
         let tokenContract = new ethers.Contract(tokenAddress, ['function balanceOf(address) view returns (uint256)'], this.provider);
         let contractBalance = await tokenContract.balanceOf(address);
         
-        let users = await this.db.getAll(chatID.toString() + '/users');
+        let users = await this.db.getAll(holonId.toString() + '/users');
         if (!users || users.length === 0) {
           await ctx.reply("No users found in the database.");
           await ctx.scene.leave();
@@ -150,8 +150,8 @@ export default class Holons {
                       `${userId.padEnd(8)} | ${ethers.formatEther(balances[index])}`
                     ).join('\n');
         
-        const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-        let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+        const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+        let spliterAddress = (await this.getSplitterContract(holonIdNormalized)).target;
         let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
         // let message = `🔷 HOLON ADDRESS 🔷\n\`${address}\`\n\n`;
         message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -183,7 +183,7 @@ export default class Holons {
     });
     
     this.claimScene.on('text', async (ctx) => {
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const userID = utils.getUserId(ctx);
       const beneficiaryAddress = ctx.message.text.trim();
       
@@ -194,7 +194,7 @@ export default class Holons {
       }
       
       try {
-        const contracts = await this.getHolonContracts(chatID, this.holonsContract, this.wallet);
+        const contracts = await this.getHolonContracts(holonId, this.holonsContract, this.wallet);
         if (!contracts.success) {
             throw new Error(`Failed to get holon contracts: ${contracts.error}`);
         }
@@ -254,7 +254,7 @@ export default class Holons {
     });
     
     this.rewardScene.on('text', async (ctx) => {
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       // const args = ctx.message.text.split(" ").slice(1);
       const args = ctx.message.text.split(" ");
       
@@ -270,7 +270,7 @@ export default class Holons {
         // Parse the amount with 18 decimals (adjust if needed)
         const parsedAmount = ethers.parseUnits(amount, 18);
         
-        const contracts = await this.getHolonContracts(chatID, this.holonsContract, this.wallet);
+        const contracts = await this.getHolonContracts(holonId, this.holonsContract, this.wallet);
         if (!contracts.success) {
             throw new Error(`Failed to get holon contracts: ${contracts.error}`);
         }
@@ -432,8 +432,8 @@ export default class Holons {
     this.bot.command("holons", async (ctx) => this.showHolonsMenu(ctx));
 
     this.bot.command("listmembers", async (ctx) => {
-      const chatID = utils.getChatId(ctx);
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonId = utils.getholonId(ctx);
+      const holonName = `chat_${Math.abs(holonId)}`;
       let holon = await this.getManagedContract(holonName);
       let membersLength = await holon.getSize();
       let members = [];
@@ -443,8 +443,8 @@ export default class Holons {
         members.push(member);
       }
       if (membersLength > 0) {
-        const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-        let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+        const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+        let spliterAddress = (await this.getSplitterContract(holonIdNormalized)).target;
         let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
         message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
         message += `Members (${membersLength}):\n`;
@@ -463,8 +463,8 @@ export default class Holons {
         }
         return ctx.reply(message);
       } else {
-        const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-        let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+        const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+        let spliterAddress = (await this.getSplitterContract(holonIdNormalized)).target;
         let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
         ctx.reply(`${message}━━━━━━━━━━━━━━━━━━━━━━\n\nNo members found`);
       }
@@ -476,8 +476,8 @@ export default class Holons {
     });
 
     this.bot.command("assignzone", async (ctx) => {
-      const chatID = utils.getChatId(ctx);
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonId = utils.getholonId(ctx);
+      const holonName = `chat_${Math.abs(holonId)}`;
       const zonedContract = await this.getZonedContract(holonName);
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
         return ctx.reply("This chat does not have Zoned Holon functionality.");
@@ -544,14 +544,14 @@ export default class Holons {
     this.bot.action(/zone_confirm_remove_([^_]+)_(\d+)/, async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("CBQ Error in zone_confirm_remove:", e.message));
       const memberId = ctx.match[1];
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const senderUserId = utils.getUserId(ctx).toString();
-      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      const holonIdNormalized = `chat_${Math.abs(holonId)}`;
       let memberDisplay = memberId;
     
       // Try to get a display name for the member
       try {
-        const users = await this.db.getAll(chatID.toString() + '/users');
+        const users = await this.db.getAll(holonId.toString() + '/users');
         const userMap = users.reduce((map, user) => {
           map[user.id.toString()] = user.username || user.id.toString();
           return map;
@@ -560,7 +560,7 @@ export default class Holons {
       } catch {}
     
       try {
-        const zonedContract = await this.getZonedContract(chatIdNormalized);
+        const zonedContract = await this.getZonedContract(holonIdNormalized);
         if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
           throw new Error("External contract not found for this chat.");
         }
@@ -607,9 +607,9 @@ export default class Holons {
     this.bot.action(/holons_(.+)/, async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("Error answering CB query in main holons handler:", e.message));
       const action = ctx.match[1];
-      const chatID = utils.getChatId(ctx);
-      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-      let splitterContract = await this.getSplitterContract(chatIdNormalized);
+      const holonId = utils.getholonId(ctx);
+      const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+      let splitterContract = await this.getSplitterContract(holonIdNormalized);
       if (!splitterContract || splitterContract.target === '0x0000000000000000000000000000000000000000') {
         if (action !== 'create' && action !== 'back') {
           return ctx.editMessageText("No holon exists for this chat. Create one first.", {
@@ -636,10 +636,10 @@ export default class Holons {
           break;
         case 'manage_zones_view': 
           try {
-            console.log(`Zone management view requested for chatID: ${chatID}`);
-            const zonedContract = await this.getZonedContract(chatIdNormalized);
+            console.log(`Zone management view requested for holonId: ${holonId}`);
+            const zonedContract = await this.getZonedContract(holonIdNormalized);
             if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
-              console.log(`No zoned contract found for ${chatIdNormalized}`);
+              console.log(`No zoned contract found for ${holonIdNormalized}`);
               return ctx.editMessageText("This holon does not have Zoned functionality.", {
                 reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: "holons_back" }]] }
               }).catch(e => console.log("Error editing message for no zoned functionality:", e.message));
@@ -694,11 +694,11 @@ export default class Holons {
       let newInternalPercent = previousInternalPercent + adjustment;
       if (newInternalPercent < 0) newInternalPercent = 0;
       if (newInternalPercent > 100) newInternalPercent = 100;
-      const chatID = utils.getChatId(ctx);
-      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      const holonId = utils.getholonId(ctx);
+      const holonIdNormalized = `chat_${Math.abs(holonId)}`;
       let splitterAddress = "N/A";
       try {
-        const splitterContract = await this.getSplitterContract(chatIdNormalized);
+        const splitterContract = await this.getSplitterContract(holonIdNormalized);
         if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
           splitterAddress = splitterContract.target;
             } else {
@@ -723,14 +723,14 @@ export default class Holons {
       }
       const finalExternalPercent = 100 - finalInternalPercent;
       
-      const chatID = utils.getChatId(ctx);
-      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-      // const internalId = `${chatIdNormalized}_managed`; // No longer needed for setContractSplit
-      // const externalId = `${chatIdNormalized}_zoned`;   // No longer needed for setContractSplit
+      const holonId = utils.getholonId(ctx);
+      const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+      // const internalId = `${holonIdNormalized}_managed`; // No longer needed for setContractSplit
+      // const externalId = `${holonIdNormalized}_zoned`;   // No longer needed for setContractSplit
 
       await ctx.editMessageText(`Setting split to: Managed ${finalInternalPercent}% / Zoned ${finalExternalPercent}%...`).catch(e => console.log("E:", e.message));
       try {
-          const splitterContract = await this.getSplitterContract(chatIdNormalized);
+          const splitterContract = await this.getSplitterContract(holonIdNormalized);
           if (!splitterContract || splitterContract.target === '0x0000000000000000000000000000000000000000') {
               throw new Error("Splitter contract not found during set attempt.");
           }
@@ -888,12 +888,12 @@ export default class Holons {
     // Handle increment/decrement actions for member scores
     this.bot.action(/^member_(increment|decrement|increment10|decrement10)_(.+)$/, async (ctx) => {
       await ctx.answerCbQuery().catch(e => console.log("CBQ Error in member score adjustment:", e.message));
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const action = ctx.match[1];
       const memberId = ctx.match[2];
 
       try {
-        let settings = await this.getSettings(chatID);
+        let settings = await this.getSettings(holonId);
         if (!settings.memberAdjustments) {
           settings.memberAdjustments = {};
         }
@@ -957,16 +957,16 @@ export default class Holons {
   }
 
   async showFlowManagementMenu(ctx, edit = false) {
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
     
     let splitterContract = null;
     let isZonedHolon = false;
     
     try {
-      splitterContract = await this.getSplitterContract(chatIdNormalized);
+      splitterContract = await this.getSplitterContract(holonIdNormalized);
       if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
-        const zonedContract = await this.getZonedContract(chatIdNormalized);
+        const zonedContract = await this.getZonedContract(holonIdNormalized);
         if (zonedContract && zonedContract.target !== '0x0000000000000000000000000000000000000000') {
           isZonedHolon = true;
         }
@@ -1023,16 +1023,16 @@ export default class Holons {
   }
 
   async showHolonsMenu(ctx, edit = false) {
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
     
     let splitterContract = null;
     let isZonedHolon = false;
     
     try {
-      splitterContract = await this.getSplitterContract(chatIdNormalized);
+      splitterContract = await this.getSplitterContract(holonIdNormalized);
       if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
-        const zonedContract = await this.getZonedContract(chatIdNormalized);
+        const zonedContract = await this.getZonedContract(holonIdNormalized);
         if (zonedContract && zonedContract.target !== '0x0000000000000000000000000000000000000000') {
           isZonedHolon = true;
         }
@@ -1101,9 +1101,9 @@ export default class Holons {
     const tokenAddress = args[0];
     console.log("tokenAddress from reward(): ", tokenAddress);
     const amount = ethers.parseUnits(args[1], 18); // Assuming 18 decimals, adjust if needed
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
-    const holonName = `chat_${Math.abs(chatID)}`;
+    const holonName = `chat_${Math.abs(holonId)}`;
 
     try {
       let holonAddress = await this.getManagedContract(holonName);
@@ -1169,21 +1169,21 @@ export default class Holons {
 
   async ethBalance(ctx) {
     const userID = utils.getUserId(ctx);
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
     // ### Technical debt - it's fixed to Holon.sol at the moment. Decide what needs to happen in case of the zoned contract. 
     // Possibilities: 
     // Either we see if user is internal or external member and display balance based on that
     // Either we ask user if the request for balance is for internal or external members ( in chat )  
-    const holonName = `chat_${Math.abs(chatID)}`;
+    const holonName = `chat_${Math.abs(holonId)}`;
     const managedHolonAddress = await this.getManagedContract(holonName);
     const address = managedHolonAddress.target;
 
     let holon = new ethers.Contract(address, managed.default.abi, this.wallet);
     let balance = await holon.etherBalance(userID.toString());
 
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-    let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+    let spliterAddress = (await this.getSplitterContract(holonIdNormalized)).target;
 
     let message = `🔷 HOLON ADDRESS 🔷\n\`${spliterAddress}\`\n\n`;
     message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -1202,11 +1202,11 @@ export default class Holons {
   }
 
   async tokenBalance(ctx) {
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
     const args = ctx.message.text.split(" ").slice(1);
 
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-    let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+    let spliterAddress = (await this.getSplitterContract(holonIdNormalized)).target;
 
     if (args.length < 1) {
       return ctx.reply("Usage: /tokenbalance [token address]");
@@ -1214,7 +1214,7 @@ export default class Holons {
     const tokenAddress = args[0];
     console.log("tokenAddress from tokenBalance(): ", tokenAddress);
     
-    let users = await this.db.getAll(chatID.toString() + '/users');
+    let users = await this.db.getAll(holonId.toString() + '/users');
     if (!users || users.length === 0) {
       return ctx.reply("No users found in the database.");
     }
@@ -1227,7 +1227,7 @@ export default class Holons {
     // Possibilities: 
     // Either we see if user is internal or external member and display balance based on that
     // Either we ask user if the request for balance is for internal or external members ( in chat )  
-    const holonName = `chat_${Math.abs(chatID)}`;
+    const holonName = `chat_${Math.abs(holonId)}`;
     let managedHolonAddress = await this.getManagedContract(holonName);
     let address = managedHolonAddress.target;
                                              //?
@@ -1274,12 +1274,12 @@ export default class Holons {
 
   async syncScore(ctx) {
     console.log("=== STARTING SCORE SYNC PROCESS ===");
-    const chatID = utils.getChatId(ctx);
-    console.log(`Chat ID: ${chatID}`);
+    const holonId = utils.getholonId(ctx);
+    console.log(`Chat ID: ${holonId}`);
     
     // Step 1: Fetch users from database
     console.log("\n--- STEP 1: Fetching users from database ---");
-    let users = await this.db.getAll(chatID.toString() + '/users')
+    let users = await this.db.getAll(holonId.toString() + '/users')
     if (!users) {
       console.log("❌ No users found in database");
       return ctx.reply("No users found");
@@ -1298,7 +1298,7 @@ export default class Holons {
     
     // Step 3: Get settings and manual adjustments
     console.log("\n--- STEP 3: Fetching settings and manual adjustments ---");
-    const settings = await this.getSettings(chatID);
+    const settings = await this.getSettings(holonId);
     const memberAdjustments = settings.memberAdjustments || {};
     console.log("Settings retrieved:", {
       valueEquation: settings.valueEquation,
@@ -1327,10 +1327,10 @@ export default class Holons {
     console.log("\n--- STEP 5: Calculating scores with Settings method ---");
     console.log("Calling this.settings.calculateUserScores with:");
     console.log("- Users object keys:", Object.keys(usersObject));
-    console.log("- Chat ID:", chatID);
+    console.log("- Chat ID:", holonId);
     console.log("- Expenses instance:", !!this.expensesInstance);
     
-    const scoredUsers = await this.settings.calculateUserScores(usersObject, chatID, this.expensesInstance);
+    const scoredUsers = await this.settings.calculateUserScores(usersObject, holonId, this.expensesInstance);
     console.log(`✅ Score calculation completed for ${scoredUsers.length} users`);
     
     // Step 6: Create score mapping and apply adjustments
@@ -1363,7 +1363,7 @@ export default class Holons {
     
     // Step 8: Get holon contract
     console.log("\n--- STEP 8: Getting holon contract ---");
-    const holonName = `chat_${Math.abs(chatID)}`;
+    const holonName = `chat_${Math.abs(holonId)}`;
     console.log(`Holon name: ${holonName}`);
     let holon = await this.getManagedContract(holonName);
     console.log("✅ Holon contract retrieved:", holon.target);
@@ -1429,7 +1429,7 @@ export default class Holons {
         if (receipt.status === 1) {
           if (successMessage && context) {
             context.reply(`✅ Transaction completed: ${successMessage} ${tx.hash}`);
-            // const newAddress = await this.holonsContract.toAddress(utils.getChatId(context).toString());
+            // const newAddress = await this.holonsContract.toAddress(utils.getholonId(context).toString());
             // context.reply('New holon address: ' + newAddress);
           }
           return receipt;
@@ -1544,18 +1544,18 @@ export default class Holons {
     
     try {
       // Log input parameters
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const userID = utils.getUserId(ctx);
       
       console.log("Input parameters:");
-      console.log("- chatID:", chatID, "(" + typeof chatID + ")");
+      console.log("- holonId:", holonId, "(" + typeof holonId + ")");
       console.log("- userID:", userID, "(" + typeof userID + ")");
       
       const holonsAddress = this.holonsContract.target;
       console.log("Holons contract address:", holonsAddress);
       
       const creatorUserId = userID.toString();
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       const parameterValue = 5;
       
       console.log(`Creating holon bundle with name: ${holonName}`);
@@ -1648,8 +1648,8 @@ export default class Holons {
 
   async addMembersBundle(ctx) {
     console.log("addMembersBundle function called");
-    const chatID = utils.getChatId(ctx);
-    console.log("chatID from addMembers:", chatID);
+    const holonId = utils.getholonId(ctx);
+    console.log("holonId from addMembers:", holonId);
     const userID = utils.getUserId(ctx); // Get the user ID of the person who initiated the command
 
     // Logic to understand if it's member trough delegation?
@@ -1657,7 +1657,7 @@ export default class Holons {
     // Only the internal members can move external members trough zones!
 
     // If it isn't continue regularly
-    let users = await this.db.getAll(chatID.toString() + '/users');
+    let users = await this.db.getAll(holonId.toString() + '/users');
     let userIds = users.map(user => user.id.toString());
 
     let holonAddressManaged;
@@ -1666,9 +1666,9 @@ export default class Holons {
     if (!users || users.length === 0) {
       return ctx.reply("No users found in the database.");
     }
-    // const holonName = `${Math.abs(chatID)}`;
-    // const holonName = chatID;
-    const holonName = `chat_${Math.abs(chatID)}`;
+    // const holonName = `${Math.abs(holonId)}`;
+    // const holonName = holonId;
+    const holonName = `chat_${Math.abs(holonId)}`;
 
     try {
       holonAddressManaged = await this.getManagedContract(holonName);
@@ -1742,8 +1742,8 @@ export default class Holons {
   async addHolonsBundle(ctx) {
     let holonAddressZoned;
     console.log("addHolonBundle function called");
-    const chatID = utils.getChatId(ctx);
-    console.log("chatID from addMembers:", chatID);
+    const holonId = utils.getholonId(ctx);
+    console.log("holonId from addMembers:", holonId);
     //TODO: Check if the user is a member of the group and it is authorized to add holons
 
     const userID = utils.getUserId(ctx); // Get the user ID of the person who initiated the command
@@ -1753,7 +1753,7 @@ export default class Holons {
     // Only the internal members can move external members trough zones!
 
     // If it isn't continue regularly
-    // let users = await this.db.getAll(chatID.toString() + '/users'); // users variable seems unused in this function
+    // let users = await this.db.getAll(holonId.toString() + '/users'); // users variable seems unused in this function
     let userIdsParams = utils.getParameters(ctx);
     console.log("userIdsParams from addHolonBundle: ", userIdsParams);
 
@@ -1764,7 +1764,7 @@ export default class Holons {
         return ctx.reply("Please provide the Holon IDs to add.");
     }
 
-    const holonName = `chat_${Math.abs(chatID)}`;
+    const holonName = `chat_${Math.abs(holonId)}`;
 
     try {
       holonAddressZoned = await this.getZonedContract(holonName);
@@ -1984,7 +1984,7 @@ export default class Holons {
 
     const [memberAddress, zoneNumberStr] = args;
     const zoneNumber = parseInt(zoneNumberStr);
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
     if (!ethers.isAddress(memberAddress)) {
       return ctx.reply(`Invalid Ethereum address: ${memberAddress}`);
@@ -1995,7 +1995,7 @@ export default class Holons {
     }
 
     try {
-      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      const holonAddress = await this.holonsContract.toAddress(holonId.toString());
       if (holonAddress === '0x0000000000000000000000000000000000000000') {
         return ctx.reply("No holon exists for this chat");
       }
@@ -2037,19 +2037,19 @@ export default class Holons {
   }
 
   async showZones(ctx) {
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-    let spliterAddress = (await this.getSplitterContract(chatIdNormalized)).target;
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+    let spliterAddress = (await this.getSplitterContract(holonIdNormalized)).target;
     
     try {
-      // let holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      // let holonAddress = await this.holonsContract.toAddress(holonId.toString());
       // if (holonAddress === '0x0000000000000000000000000000000000000000') {
       //   return ctx.reply("No holon exists for this chat");
       // }
       
       // let holon = await this.getHolonContract(holonAddress);
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       let holon = await this.getZonedContract(holonName);
 
       
@@ -2064,8 +2064,8 @@ export default class Holons {
       //   return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only "Zoned" holons have zone functionality.`);
       // }
 
-      // Retrieve all users from the database for the given chatID
-      const users = await this.db.getAll(chatID.toString() + '/users');
+      // Retrieve all users from the database for the given holonId
+      const users = await this.db.getAll(holonId.toString() + '/users');
       const userMap = users.reduce((map, user) => {
           map[user.id] = user.username; // Assuming user.id is the address and user.username is the tag
           return map;
@@ -2143,11 +2143,11 @@ export default class Holons {
   }
   //#TODO: Those functions should be moved to helper.js: 
   //#TODO: Related to technical debt 1
-  async getSplitterContract(chatID) {
+  async getSplitterContract(holonId) {
     try {
-      // Convert chatID to string if it's not already
-      const chatIDStr = chatID.toString();
-      const holonAddress = await this.holonsContract.toAddress(chatIDStr);
+      // Convert holonId to string if it's not already
+      const holonIdStr = holonId.toString();
+      const holonAddress = await this.holonsContract.toAddress(holonIdStr);
       
       // Get the holon address for this chat
       if (holonAddress === '0x0000000000000000000000000000000000000000') {
@@ -2164,15 +2164,15 @@ export default class Holons {
     }
   }
     
-  async getZonedContract(chatID) {
+  async getZonedContract(holonId) {
     try {
       // First get the Splitter contract
-      const splitterContract = await this.getSplitterContract(chatID);
+      const splitterContract = await this.getSplitterContract(holonId);
       
       if (!splitterContract) {
         return null;
       }
-      const holonName = chatID + "_zoned";
+      const holonName = holonId + "_zoned";
       
       // Get the Zoned contract from the Splitter
       const zonedContractAddress = await splitterContract.contractsByType(holonName);
@@ -2193,17 +2193,17 @@ export default class Holons {
     // Remove all console.log statements
   }
   
-  async getManagedContract(chatID) {
+  async getManagedContract(holonId) {
     try {
       // First get the Splitter contract
-      const splitterContract = await this.getSplitterContract(chatID);
+      const splitterContract = await this.getSplitterContract(holonId);
       console.log("splitter contract address: ", splitterContract.target);
       
       if (!splitterContract) {
         return null;
       }
       
-      const holonName = chatID + "_managed"; 
+      const holonName = holonId + "_managed"; 
 
       // Get the Managed contract from the Splitter
       const managedContractAddress = await splitterContract.contractsByType(holonName);
@@ -2226,10 +2226,10 @@ export default class Holons {
 
     const [memberAddress, sharesStr] = args;
     const shares = parseInt(sharesStr);
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
     try {
-      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      const holonAddress = await this.holonsContract.toAddress(holonId.toString());
       const holon = await this.getHolonContract(holonAddress);
 
       // Check if this is a Splitter holon
@@ -2261,19 +2261,19 @@ export default class Holons {
     }
   }
   // #TODO: This was technical debt for the previous version
-  // async setSplit(userTags, percentages, chatID) {
+  // async setSplit(userTags, percentages, holonId) {
   //   try {
   //     // Ensure the lengths of userTags and percentages match
   //     if (userTags.length !== percentages.length) {
   //       throw new Error("User tags and percentages should be equal");
   //     }
 
-  //     const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+  //     const holonAddress = await this.holonsContract.toAddress(holonId.toString());
   //     // console.log("holonAddress: ", holonAddress);
   //     const holon = await this.getHolonContract(holonAddress);
 
-  //     // Retrieve all users from the database for the given chatID
-  //     let users = await this.db.getAll(chatID.toString() + '/users');
+  //     // Retrieve all users from the database for the given holonId
+  //     let users = await this.db.getAll(holonId.toString() + '/users');
 
   //     // Map user tags to user IDs and convert them to strings
   //     const userIds = userTags.map(tag => {
@@ -2318,7 +2318,7 @@ export default class Holons {
   // }
 
   // Modified setSplit to accept parsed arguments instead of ctx
-  async setSplit(userTags, percentages, chatID) { // Added chatID, but might not be needed here
+  async setSplit(userTags, percentages, holonId) { // Added holonId, but might not be needed here
     // Removed message parsing, as it's done in handleSetSplitCommand
     // const message = ctx.message.text;
     // const args = message.split(' ').slice(1);
@@ -2371,7 +2371,7 @@ export default class Holons {
 
   async handleSetSplitCommand(ctx) {
     try {
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const text = ctx.message.text;
 
       const args = text.split(' ').slice(1);
@@ -2403,9 +2403,9 @@ export default class Holons {
       // Call the setSplit function with parsed data
       // No need to await if setSplit is purely synchronous validation now
       // Or keep await if it might do async operations later (like DB save)
-      const validatedData = await this.setSplit(userTags, percentages, chatID);
+      const validatedData = await this.setSplit(userTags, percentages, holonId);
       // send the transaction to splitter contract
-      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      const holonAddress = await this.holonsContract.toAddress(holonId.toString());
       const holon = await this.getHolonContract(holonAddress);
       const tx = await this.executeTransaction(
         holon,
@@ -2426,19 +2426,19 @@ export default class Holons {
     }
   }
 
-  async appreciateUsersByUsername(userTags, percentages, chatID, senderUserId) {
+  async appreciateUsersByUsername(userTags, percentages, holonId, senderUserId) {
     try {
       // Ensure the lengths of usernames and percentages match
       if (userTags.length !== percentages.length) {
         throw new Error("userTags and percentages should be equal");
       }
   
-      const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+      const holonAddress = await this.holonsContract.toAddress(holonId.toString());
       // console.log("holonAddress: ", holonAddress);
       const holon = await this.getHolonContract(holonAddress);
   
-      // Retrieve all users from the database for the given chatID
-      let users = await this.db.getAll(chatID.toString() + '/users');
+      // Retrieve all users from the database for the given holonId
+      let users = await this.db.getAll(holonId.toString() + '/users');
   
       // Map userTags to user IDs and convert them to strings
       const userIds = userTags.map(tag => {
@@ -2483,7 +2483,7 @@ export default class Holons {
 
   async handleAppreciateCommand(ctx) {
     try {
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       const userID = utils.getUserId(ctx);
       const text = ctx.message.text;
 
@@ -2500,7 +2500,7 @@ export default class Holons {
       }
 
       // Call the appreciateUsersByUsername function with parsed data
-      await this.appreciateUsersByUsername(usernames, percentages, chatID, userID);
+      await this.appreciateUsersByUsername(usernames, percentages, holonId, userID);
 
       ctx.reply("Appreciation set successfully.");
     } catch (error) {
@@ -2518,9 +2518,9 @@ export default class Holons {
   }
 
   // Utility function to retrieve user by tag
-  async getUserByTag(chatID, tag) {
-      // Retrieve all users from the database for the given chatID
-      const users = await this.db.getAll(chatID.toString() + '/users');
+  async getUserByTag(holonId, tag) {
+      // Retrieve all users from the database for the given holonId
+      const users = await this.db.getAll(holonId.toString() + '/users');
       const username = tag.startsWith('@') ? tag.slice(1) : tag;
       const user = users.find(u => u.username === username);
       if (!user) {
@@ -2542,7 +2542,7 @@ export default class Holons {
     const userTag = args[0];
     const zoneStr = args[1];
     const telegramZone = parseInt(zoneStr, 10);
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
     let holonID = null;
 
     try {
@@ -2550,9 +2550,9 @@ export default class Holons {
 
         // Here we need to introduce Zoned contract
 
-        // const holonAddress = await this.holonsContract.toAddress(chatID.toString());
+        // const holonAddress = await this.holonsContract.toAddress(holonId.toString());
 
-        const holonName = `chat_${Math.abs(chatID)}`;
+        const holonName = `chat_${Math.abs(holonId)}`;
         const holon = await this.getZonedContract(holonName);
         const holonAddress = holon.target;
 
@@ -2568,11 +2568,11 @@ export default class Holons {
             return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only external holons have zone functionality.`);
         }
         
-        const users = await this.db.getAll(chatID.toString() + '/users');
+        const users = await this.db.getAll(holonId.toString() + '/users');
 
         // Retrieve users by tags
-        const senderUser = await this.getUserByTag(chatID, senderTag);
-        const user = await this.getUserByTag(chatID, userTag);
+        const senderUser = await this.getUserByTag(holonId, senderTag);
+        const user = await this.getUserByTag(holonId, userTag);
       if (!user) {
         holonID = args[0]
       } else {
@@ -2669,11 +2669,11 @@ export default class Holons {
   }
 
   async claim(ctx) {
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
     const userID = utils.getUserId(ctx);
     
     try {
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       let holon = await this.getManagedContract(holonName);
       if (holon.target === '0x0000000000000000000000000000000000000000') {
         return ctx.reply("No holon exists for this chat. Create one first with /createholon");
@@ -2748,9 +2748,9 @@ export default class Holons {
   }
 
   async listMembers(ctx) {
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
-    const managedContract = await this.getManagedContract(chatIdNormalized);
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
+    const managedContract = await this.getManagedContract(holonIdNormalized);
     let message = "";
 
     if (!managedContract) {
@@ -2782,8 +2782,8 @@ export default class Holons {
   }
 
   async showZoneManagementView(ctx, mode = 'view') { // Mode: 'view', 'prepare_move', 'prepare_remove'
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
     let message = "🔶 External Management\n\n";
     const keyboard = [];
 
@@ -2796,7 +2796,7 @@ export default class Holons {
     }
 
     try {
-      const zonedContract = await this.getZonedContract(chatIdNormalized);
+      const zonedContract = await this.getZonedContract(holonIdNormalized);
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
         message += "This Holon does not have external functionality.";
         keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
@@ -2807,7 +2807,7 @@ export default class Holons {
         }
       }
 
-      const users = await this.db.getAll(chatID.toString() + '/users');
+      const users = await this.db.getAll(holonId.toString() + '/users');
       const userMap = users.reduce((map, user) => {
         map[user.id] = user.username;
         return map;
@@ -2857,7 +2857,7 @@ export default class Holons {
 
       // Add federated holons section
       try {
-        const fedInfo = await this.db.getFederation(chatID);
+        const fedInfo = await this.db.getFederation(holonId);
         // Combine inbound and outbound arrays to get all federated holons (deduplicated)
         const inbound = fedInfo?.inbound || [];
         const outbound = fedInfo?.outbound || [];
@@ -2950,8 +2950,8 @@ export default class Holons {
   }
 
   async showMemberManagementView(ctx, edit = false, mode = 'view') { // Mode: 'view', 'prepare_remove'
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
     let message = "👥 Internal Management\n\n";
     const keyboard = [];
 
@@ -2962,7 +2962,7 @@ export default class Holons {
     }
 
     try {
-      const managedContract = await this.getManagedContract(chatIdNormalized);
+      const managedContract = await this.getManagedContract(holonIdNormalized);
       if (!managedContract || managedContract.target === '0x0000000000000000000000000000000000000000') {
         message += "Error: Could not find internal contract for this chat.";
         keyboard.push([{ text: "◀️ Back to Flow Management", callback_data: "holons_flow_management" }]);
@@ -2976,7 +2976,7 @@ export default class Holons {
             }
         }
 
-        const usersFromDB = await this.db.getAll(chatID.toString() + '/users');
+        const usersFromDB = await this.db.getAll(holonId.toString() + '/users');
         const userMap = usersFromDB.reduce((map, user) => {
           map[user.id.toString()] = user.username; // Ensure DB user ID is string for map key
           return map;
@@ -2987,7 +2987,7 @@ export default class Holons {
         } else {
           console.log("showMemberManagementView: understanding if the settings is properly initialized!", this.settings);
           // Get value equation for score calculation
-          const equation = await this.settings.getValueEquation(chatID);
+          const equation = await this.settings.getValueEquation(holonId);
           
           // Calculate total score for percentage calculations
           let totalCalculatedScore = 0;
@@ -3005,7 +3005,7 @@ export default class Holons {
               });
               
               // Calculate scores using Settings method
-              const scoredUsers = await this.settings.calculateUserScores(usersObject, chatID, this.expensesInstance);
+              const scoredUsers = await this.settings.calculateUserScores(usersObject, holonId, this.expensesInstance);
               
               // Create mapping from user ID to calculated score
               scoredUsers.forEach(user => {
@@ -3048,7 +3048,7 @@ export default class Holons {
           }
           
           // Get manual score adjustments
-          const settings = await this.getSettings(chatID);
+          const settings = await this.getSettings(holonId);
           const memberAdjustments = settings.memberAdjustments || {};
 
           // Display members with scores and percentages
@@ -3133,20 +3133,20 @@ export default class Holons {
   }
 
   async smartSync(ctx) {
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
     await ctx.reply("🔄 Smart Sync initiated...").catch(e => {});
 
     try {
       // 1. Check and Add Members if necessary
       await ctx.reply("🔍 Checking member counts...").catch(e => {});
-      const managedContract = await this.getManagedContract(chatIdNormalized);
+      const managedContract = await this.getManagedContract(holonIdNormalized);
       if (!managedContract || managedContract.target === '0x0000000000000000000000000000000000000000') {
         await ctx.reply("❌ Managed Holon contract not found. Cannot perform Smart Sync.").catch(e => console.log("Error replying no managed contract:", e.message));
         return;
       }
 
-      const dbUsers = await this.db.getAll(chatID.toString() + '/users');
+      const dbUsers = await this.db.getAll(holonId.toString() + '/users');
       if (!dbUsers || dbUsers.length === 0) {
         await ctx.reply("ℹ️ No users found in the database to sync.").catch(e => console.log("Error replying no db users:", e.message));
         // Decide if we should still sync scores (e.g. to remove appreciation for non-existent users if contract supports it)
@@ -3212,11 +3212,11 @@ export default class Holons {
   }
 
   async removeMemberFromManagedHolon(ctx, memberIdToRemove) {
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
 
     try {
-      const managedContract = await this.getManagedContract(chatIdNormalized);
+      const managedContract = await this.getManagedContract(holonIdNormalized);
       if (!managedContract || managedContract.target === '0x0000000000000000000000000000000000000000') {
         throw new Error("Internal contract not found for this chat.");
       }
@@ -3240,7 +3240,7 @@ export default class Holons {
   async promptForTargetZone(ctx, memberId, originalZoneTelegramIndex) {
     await ctx.answerCbQuery().catch(e => console.log("Error answering CBQ in promptForTargetZone:", e.message));
 
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
     
     // Determine if this is a federated holon or local member
     const isFederatedHolon = originalZoneTelegramIndex === -1;
@@ -3257,7 +3257,7 @@ export default class Holons {
       }
     } else {
       // For local members, use the existing user lookup logic
-    const users = await this.db.getAll(chatID.toString() + '/users');
+    const users = await this.db.getAll(holonId.toString() + '/users');
     const userMap = users.reduce((map, user) => {
       map[user.id.toString()] = user.username || user.id.toString();
       return map;
@@ -3310,14 +3310,14 @@ Select the TARGET zone:`;
         return ctx.scene.reenter();
       }
       const holonIdsToAddArray = holonIdsString.split(' ');
-      const chatID = utils.getChatId(ctx);
-      const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+      const holonId = utils.getholonId(ctx);
+      const holonIdNormalized = `chat_${Math.abs(holonId)}`;
       const senderUserId = utils.getUserId(ctx).toString();
 
       await ctx.reply(`🔗 Adding ${holonIdsToAddArray.length} external Holon(s)...`).catch(e => console.log("E:", e.message));
 
       try {
-        const zonedContract = await this.getZonedContract(chatIdNormalized);
+        const zonedContract = await this.getZonedContract(holonIdNormalized);
         if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
           await ctx.reply("Error: External contract not found for this chat.").catch(e => console.log("E:", e.message));
           await ctx.scene.leave();
@@ -3367,9 +3367,9 @@ Select the TARGET zone:`;
 
   async executeZoneMove(ctx, memberId, targetZoneTelegramIndex, originalZoneTelegramIndex) {
     await ctx.answerCbQuery().catch(e => console.log("Error answering CBQ in executeZoneMove:", e.message));
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
     const senderUserId = utils.getUserId(ctx).toString(); // User initiating the move
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
 
     // Determine if this is a federated holon or local member
     const isFederatedHolon = originalZoneTelegramIndex === -1;
@@ -3386,7 +3386,7 @@ Select the TARGET zone:`;
       }
     } else {
       // For local members, use the existing user lookup logic
-    const users = await this.db.getAll(chatID.toString() + '/users');
+    const users = await this.db.getAll(holonId.toString() + '/users');
     const userMap = users.reduce((map, user) => {
       map[user.id.toString()] = user.username || user.id.toString();
       return map;
@@ -3407,7 +3407,7 @@ Select the TARGET zone:`;
     ).catch(e => console.log("Error editing message for move start:", e.message));
 
     try {
-      const zonedContract = await this.getZonedContract(chatIdNormalized);
+      const zonedContract = await this.getZonedContract(holonIdNormalized);
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
         throw new Error("External contract not found for this chat.");
       }
@@ -3466,13 +3466,13 @@ Select the TARGET zone:`;
   }
 
   async displaySplitterManagementView(ctx) {
-    const chatID = utils.getChatId(ctx);
-    const chatIdNormalized = `chat_${Math.abs(chatID)}`;
+    const holonId = utils.getholonId(ctx);
+    const holonIdNormalized = `chat_${Math.abs(holonId)}`;
     let splitterAddress = "N/A";
     let internalPercent = 50; // Default
 
     try {
-      const splitterContract = await this.getSplitterContract(chatIdNormalized);
+      const splitterContract = await this.getSplitterContract(holonIdNormalized);
       if (splitterContract && splitterContract.target !== '0x0000000000000000000000000000000000000000') {
         splitterAddress = splitterContract.target;
         try {
@@ -3526,11 +3526,11 @@ Select the TARGET zone:`;
       return ctx.reply("All parameters must be valid integers");
     }
 
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
     const senderUserId = utils.getUserId(ctx).toString();
 
     try {
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       const zonedContract = await this.getZonedContract(holonName);
       
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
@@ -3566,10 +3566,10 @@ Select the TARGET zone:`;
   }
 
   async handleRewardPreview(ctx) {
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
     try {
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       const zonedContract = await this.getZonedContract(holonName);
       
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
@@ -3595,10 +3595,10 @@ Select the TARGET zone:`;
 
   async showRewardPreview(ctx, a, b, c, nzones = null) {
     try {
-      const chatID = utils.getChatId(ctx);
+      const holonId = utils.getholonId(ctx);
       
       if (nzones === null) {
-        const holonName = `chat_${Math.abs(chatID)}`;
+        const holonName = `chat_${Math.abs(holonId)}`;
         const zonedContract = await this.getZonedContract(holonName);
         nzones = Number(await zonedContract.nzones());
       }
@@ -3655,10 +3655,10 @@ Select the TARGET zone:`;
   // Interactive Polynomial Parameter UI Methods
 
   async showPolynomialParameterUI(ctx) {
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
     try {
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       const zonedContract = await this.getZonedContract(holonName);
       
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
@@ -3691,11 +3691,11 @@ Select the TARGET zone:`;
   }
 
   async updatePolynomialParameterUI(ctx, a, b, c, isNew = false) {
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
 
     try {
       // Generate the zone distribution chart
-      const chartPath = await this.generateZoneDistributionChart(a, b, c, chatID);
+      const chartPath = await this.generateZoneDistributionChart(a, b, c, holonId);
       
       // Create the parameter control keyboard
       const keyboard = this.createPolynomialParameterKeyboard(a, b, c);
@@ -3781,11 +3781,11 @@ Select the TARGET zone:`;
   }
 
   async savePolynomialParameters(ctx, a, b, c) {
-    const chatID = utils.getChatId(ctx);
+    const holonId = utils.getholonId(ctx);
     const senderUserId = utils.getUserId(ctx).toString();
 
     try {
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       const zonedContract = await this.getZonedContract(holonName);
       
       if (!zonedContract || zonedContract.target === '0x0000000000000000000000000000000000000000') {
@@ -3825,13 +3825,13 @@ Select the TARGET zone:`;
     this.ui = uiInstance;
   }
 
-  async generateZoneDistributionChart(a, b, c, chatID) {
+  async generateZoneDistributionChart(a, b, c, holonId) {
     if (!this.ui) {
       throw new Error('UI instance not available for chart generation');
     }
 
     try {
-      const holonName = `chat_${Math.abs(chatID)}`;
+      const holonName = `chat_${Math.abs(holonId)}`;
       const zonedContract = await this.getZonedContract(holonName);
       
       let nzones = 6; // Default
@@ -3843,7 +3843,7 @@ Select the TARGET zone:`;
         }
       }
 
-      return await this.ui.getZoneDistributionChart(a, b, c, nzones, chatID);
+      return await this.ui.getZoneDistributionChart(a, b, c, nzones, holonId);
     } catch (error) {
       console.error('Error generating zone distribution chart:', error);
       throw error;
@@ -3851,8 +3851,8 @@ Select the TARGET zone:`;
   }
 
   // Helper methods for settings management
-  async getSettings(chatID) {
-    return await this.settings.getSettings(chatID);
+  async getSettings(holonId) {
+    return await this.settings.getSettings(holonId);
   }
 
   async setSettings(settings) {

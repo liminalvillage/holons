@@ -31,8 +31,8 @@ async function testRelayDeletion() {
   const db = new DB('relay-deletion-test');
   await db.init();
 
-  const testChatID = 'test-deletion-chat-' + Date.now();
-  const testTable = testChatID + '/quests';
+  const testholonId = 'test-deletion-chat-' + Date.now();
+  const testTable = testholonId + '/quests';
 
   try {
     // Step 1: Write test data

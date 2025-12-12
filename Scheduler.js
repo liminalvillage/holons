@@ -85,7 +85,7 @@ class Scheduler {
                 const mockCtx = {
                     message: {
                         chat: {
-                            id: task.chatID
+                            id: task.holonId
                         },
                         from: task.initiator,
                         message_id: task.id,
@@ -93,7 +93,7 @@ class Scheduler {
                     },
                     from: task.initiator,
                     reply: (text, extra) => {
-                        return this.bot.telegram.sendMessage(task.chatID, text, extra);
+                        return this.bot.telegram.sendMessage(task.holonId, text, extra);
                     },
                     telegram: this.bot.telegram
                 };
@@ -105,7 +105,7 @@ class Scheduler {
     }
 
     async addTask(ctx) {
-        const chatID = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const [frequency, ...taskDetails] = ctx.message.text.split(' ').slice(1);
         
         if (!frequency || taskDetails.length === 0) {
@@ -124,7 +124,7 @@ class Scheduler {
 
         const task = {
             id: quest.id,
-            chatID: chatID,
+            holonId: holonId,
             title: taskDetails,
             frequency: frequency,
             when: new Date().toISOString(), // Convert Date to string for Nostr serialization
@@ -134,7 +134,7 @@ class Scheduler {
 
         // Save to database
         await this.db.holosphere.putGlobal('recurring', task);
-        await this.db.holosphere.putGlobal('recurringlookup', {id: chatID + quest.id, taskID: task.id});
+        await this.db.holosphere.putGlobal('recurringlookup', {id: holonId + quest.id, taskID: task.id});
         
         // Schedule the task
         await this.scheduleTask(task,ctx);
@@ -144,7 +144,7 @@ class Scheduler {
     }
 
     async scheduleTask(task, ctx) {
-        let chatID = task.chatID;
+        let holonId = task.holonId;
         if (!task.when || !task.frequency) {
             console.error('Invalid task, no when or frequency:', task);
             return;
@@ -162,23 +162,23 @@ class Scheduler {
             try {
                 // Store original task details for reference
                 const originalTask = {...task}; // Create a copy to ensure we don't modify the original
-                console.log('Running scheduled task for chatID:', originalTask.chatID);
+                console.log('Running scheduled task for holonId:', originalTask.holonId);
                 
                 // Ensure we have a valid chat ID
-                if (!originalTask.chatID || originalTask.chatID === 0) {
-                    console.error('Invalid chatID in task:', originalTask);
+                if (!originalTask.holonId || originalTask.holonId === 0) {
+                    console.error('Invalid holonId in task:', originalTask);
                     return;
                 }
                 
                 // Create mock context for quest creation with correct chat ID
                 const mockCtx = {
-                    chat: { // For utilities like getChatId that might look here first
-                        id: originalTask.chatID,
+                    chat: { // For utilities like getholonId that might look here first
+                        id: originalTask.holonId,
                         type: null // Type is unknown/not applicable for scheduler context at this level
                     },
                     message: {
                         chat: { // To make ctx.message.chat.type checks safer and ctx.message.chat.id available
-                            id: originalTask.chatID,
+                            id: originalTask.holonId,
                             type: null // For scheduled tasks, 'type' is not a supergroup/channel in the context of message origin.
                         },
                         from: originalTask.initiator,
@@ -188,7 +188,7 @@ class Scheduler {
                     from: originalTask.initiator,
                     telegram: this.bot.telegram,
                     reply: (text, extra) => {
-                        return this.bot.telegram.sendMessage(originalTask.chatID, text, extra);
+                        return this.bot.telegram.sendMessage(originalTask.holonId, text, extra);
                     },
                     platform: 'telegram'
                 };
@@ -205,7 +205,7 @@ class Scheduler {
                 
                 // Ensure quest has the correct chat ID
                 if (!quest.chat || quest.chat === 0) {
-                    quest.chat = originalTask.chatID;
+                    quest.chat = originalTask.holonId;
                     console.log('Corrected quest chat ID to:', quest.chat);
                 }
                 
@@ -234,7 +234,7 @@ class Scheduler {
                 // Copy checklist if it exists
                 if (originalTask.checklistId) {
                     try {
-                        const originalChecklist = await this.db.get(originalTask.chatID + '/checklists', originalTask.checklistId);
+                        const originalChecklist = await this.db.get(originalTask.holonId + '/checklists', originalTask.checklistId);
                         if (originalChecklist) {
                             // Create a new checklist with copied items but unchecked
                             const newChecklist = {
@@ -245,7 +245,7 @@ class Scheduler {
                                 created: new Date(),
                                 questId: quest.id,
                                 parentTitle: quest.title,
-                                chatId: quest.chat
+                                holonId: quest.chat
                             };
                             
                             // Save new checklist
@@ -262,15 +262,15 @@ class Scheduler {
                 // Save the updated quest
                 console.log('Saving quest with chat ID:', quest.chat);
                 await this.db.put(quest.chat + '/quests', quest);
-                const language = await this.settings.getLanguage(chatID);
+                const language = await this.settings.getLanguage(holonId);
                 await this.quests.updateMessage(ctx, quest, language, false);
                 
                 // Add the quest id to the lookup table
                 await this.db.holosphere.putGlobal('recurringlookup', {
-                    id: chatID + quest.id,
+                    id: holonId + quest.id,
                     taskID: task.id
                 });
-                console.log('Recurring Lookup TASK', chatID + quest.id, task.id);
+                console.log('Recurring Lookup TASK', holonId + quest.id, task.id);
                 
             } catch (error) {
                 console.error('Error in scheduled task execution');
@@ -341,7 +341,7 @@ class Scheduler {
             // Get the task to log details before deletion
             const task = await this.db.holosphere.getGlobal('recurring', taskId);
             if (task) {
-                console.log('Found task to stop, chat ID:', task.chatID);
+                console.log('Found task to stop, chat ID:', task.holonId);
             } else {
                 console.log('Task not found, proceeding with cleanup anyway');
             }
@@ -404,31 +404,31 @@ class Scheduler {
         }
     }
 
-    async getRecurringLookup(chatId, questId) {
-        return await this.db.holosphere.getGlobal('recurringlookup', `${chatId}${questId}`);
+    async getRecurringLookup(holonId, questId) {
+        return await this.db.holosphere.getGlobal('recurringlookup', `${holonId}${questId}`);
     }
 
-    async updateTaskSchedule(chatId, questId, selectedDate, ctx) {
+    async updateTaskSchedule(holonId, questId, selectedDate, ctx) {
         try {
             // Get the quest
-            const quest = await this.db.get(`${chatId}/quests`, questId);
+            const quest = await this.db.get(`${holonId}/quests`, questId);
             if (!quest) {
                 console.log('No quest found to update schedule');
                 return;
             }
 
             // Get language setting
-            const language = await this.settings.getLanguage(chatId);
+            const language = await this.settings.getLanguage(holonId);
 
             // Update the quest's when field with the selected date
             quest.when = selectedDate;
             
             // Save the updated quest
-            await this.db.put(`${chatId}/quests`, quest);
+            await this.db.put(`${holonId}/quests`, quest);
 
             // If this is a recurring task, update its schedule
             if (quest.type === 'recurring') {
-                const recurringID = await this.getRecurringLookup(chatId, questId);
+                const recurringID = await this.getRecurringLookup(holonId, questId);
                 if (recurringID) {
                     let task = await this.db.holosphere.getGlobal('recurring', recurringID.taskID);
                     if (task) {
@@ -451,11 +451,11 @@ class Scheduler {
 
     async removeRecurringTask(ctx) {
         console.log("REMOVE RECURRING ACTION");
-        const [chatId, messageId] = ctx.match[1].split('_');
+        const [holonId, messageId] = ctx.match[1].split('_');
         
         try {
             // Find the task in recurring lookup
-            const lookup = await this.getRecurringLookup(chatId, messageId);
+            const lookup = await this.getRecurringLookup(holonId, messageId);
             
             if (!lookup) {
                 console.log('No recurring task lookup found to remove');
@@ -488,23 +488,23 @@ class Scheduler {
     }
 
     async handleWhenCommand(ctx) {
-        const chatId = ctx.message.chat.id;
+        const holonId = ctx.message.chat.id;
         const messageId = ctx.message.message_id;
         
         // Show calendar for selecting date/time
-        await this.showCalendar(chatId, messageId);
+        await this.showCalendar(holonId, messageId);
     }
 
     async showCalendar(ctx, questId) {
         try {
-            const chatId = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
             const messageId = ctx.callbackQuery.message.message_id;
             
             // Store quest ID for later retrieval
-            this.calendar.questIds.set(chatId, questId);
+            this.calendar.questIds.set(holonId, questId);
             
             // Get the quest to keep its message
-            const quest = await this.db.get(`${chatId}/quests`, questId);
+            const quest = await this.db.get(`${holonId}/quests`, questId);
             if (!quest) {
                 console.log('Quest not found for calendar');
                 return;
@@ -513,11 +513,11 @@ class Scheduler {
             // Generate calendar markup using Calendar class's createNavigationKeyboard
             const now = new Date();
             now.setDate(1);
-            const calendarMarkup = this.calendar.createNavigationKeyboard(now, chatId);
+            const calendarMarkup = this.calendar.createNavigationKeyboard(now, holonId);
             
             // Update only the markup, keeping the original message
             await this.bot.telegram.editMessageReplyMarkup(
-                chatId,
+                holonId,
                 messageId,
                 null,
                 calendarMarkup
@@ -543,17 +543,17 @@ class Scheduler {
 
     async handleTimeSelection(ctx) {
         try {
-            const chatId = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
             const calendarMsgId = ctx.callbackQuery.message.message_id;
             // Assuming dateTimeStr is 'YYYY-MM-DD HH:mm' from the calendar callback
             const dateTimeStr = ctx.match[1].split('_')[0];
 
             // --- Use dayjs for timezone-aware parsing --- 
-            let chatTimezone = await this.settings.getTimezone(chatId);
+            let chatTimezone = await this.settings.getTimezone(holonId);
 
             // Validate timezone and set default if invalid
             if (!chatTimezone || typeof chatTimezone !== 'string') {
-                console.log(`Invalid timezone for chat ${chatId}, using UTC.`);
+                console.log(`Invalid timezone for chat ${holonId}, using UTC.`);
                 chatTimezone = 'UTC';
             }
 
@@ -572,7 +572,7 @@ class Scheduler {
             // -------------------------------------------
 
             // Get quest ID from calendar
-            const questId = this.calendar.questIds.get(chatId);
+            const questId = this.calendar.questIds.get(holonId);
             
             if (!questId) {
                 console.log('No quest ID found');
@@ -581,7 +581,7 @@ class Scheduler {
             }
             
             // Get quest
-            const quest = await this.db.get(`${chatId}/quests`, questId);
+            const quest = await this.db.get(`${holonId}/quests`, questId);
 
             
             if (!quest) {
@@ -592,21 +592,21 @@ class Scheduler {
             // Update quest
             quest.status = 'scheduled';
             quest.when = selectedDate; // Store the UTC Date object
-            await this.db.put(`${chatId}/quests`, quest);
+            await this.db.put(`${holonId}/quests`, quest);
             
             // Schedule reminder using the scheduler instead of setTimeout
             await this.scheduleOneTimeReminder(quest, ctx);
             
 
             // Get language
-            const language = await this.settings.getLanguage(chatId);
+            const language = await this.settings.getLanguage(holonId);
             
             // Update calendar message with quest info using centralized helper
             const markup = this.quests.markup(quest, language);
-            await this.quests.updateQuestMessage(ctx, quest, chatId, calendarMsgId, language, markup);
+            await this.quests.updateQuestMessage(ctx, quest, holonId, calendarMsgId, language, markup);
               
           // Clear stored quest ID
-            this.calendar.questIds.delete(chatId);
+            this.calendar.questIds.delete(holonId);
             
             await ctx.answerCbQuery('Task scheduled successfully!');
         } catch (error) {
@@ -743,7 +743,7 @@ class Scheduler {
             await this.saveReminderRecord({
                 id: reminderId,
                 questId: quest.id,
-                chatId: quest.chat,
+                holonId: quest.chat,
                 when: reminderDate.toISOString(), // Convert Date to string for Nostr serialization
                 cronExpression: cronExpression,
                 title: quest.title || "Task reminder",
@@ -763,7 +763,7 @@ class Scheduler {
             await this.db.holosphere.putGlobal('reminders', reminder);
 
             // Create lookup reference for easy retrieval
-            const lookupKey = `${reminder.chatId}${reminder.questId}`;
+            const lookupKey = `${reminder.holonId}${reminder.questId}`;
             const lookupData = {
                 id: lookupKey,
                 reminderId: reminder.id
@@ -787,7 +787,7 @@ class Scheduler {
             const reminder = await this.db.holosphere.getGlobal('reminders', reminderId);
             if (reminder) {
                 // Delete the lookup record if it exists
-                const lookupId = `${reminder.chatId}${reminder.questId}`;
+                const lookupId = `${reminder.holonId}${reminder.questId}`;
                 await this.db.holosphere.deleteGlobal('reminderslookup', lookupId);
                 console.log(`Deleted reminder lookup: ${lookupId}`);
             }
@@ -847,11 +847,11 @@ class Scheduler {
 
     async handleBackToQuest(ctx) {
         try {
-            const chatId = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
             const messageId = ctx.callbackQuery.message.message_id;
             
             // Get quest ID from calendar
-            const questId = this.calendar.questIds.get(chatId);
+            const questId = this.calendar.questIds.get(holonId);
             
             if (!questId) {
                 await ctx.answerCbQuery('Could not find associated task');
@@ -859,21 +859,21 @@ class Scheduler {
             }
             
             // Get quest
-            const quest = await this.db.get(`${chatId}/quests`, questId);
+            const quest = await this.db.get(`${holonId}/quests`, questId);
             if (!quest) {
                 await ctx.answerCbQuery('Task not found');
                 return;
             }
             
             // Get language
-            const language = await this.settings.getLanguage(chatId);
+            const language = await this.settings.getLanguage(holonId);
             
             // Use the quest's updateMessage method to properly restore the quest
             // This will handle both text and image quests correctly
             await this.quests.updateMessage(ctx, quest, language);
             
             // Clear stored quest ID
-            this.calendar.questIds.delete(chatId);
+            this.calendar.questIds.delete(holonId);
             
             await ctx.answerCbQuery('Returned to task');
         } catch (error) {
@@ -885,8 +885,8 @@ class Scheduler {
     async handleBackToCalendar(ctx) {
         try {
             // Get the quest ID and show calendar again
-            const chatId = ctx.callbackQuery.message.chat.id;
-            const questId = this.calendar.questIds.get(chatId);
+            const holonId = ctx.callbackQuery.message.chat.id;
+            const questId = this.calendar.questIds.get(holonId);
             
             if (!questId) {
                 console.log('No quest ID found for calendar');
@@ -905,11 +905,11 @@ class Scheduler {
 
     async schedule(ctx) {
         try {
-            const chatId = ctx.callbackQuery.message.chat.id;
+            const holonId = ctx.callbackQuery.message.chat.id;
             const questId = ctx.callbackQuery.data.split('_')[3];
             
             // Verify quest exists
-            const quest = await this.db.get(`${chatId}/quests`, questId);
+            const quest = await this.db.get(`${holonId}/quests`, questId);
             
             if (!quest) {
                 console.log(`Quest ${questId} not found`);
@@ -918,15 +918,15 @@ class Scheduler {
             }
             
             // Get language for the message
-            const language = await this.settings.getLanguage(chatId);
+            const language = await this.settings.getLanguage(holonId);
 
             // Store quest ID for later retrieval
-            this.calendar.questIds.set(chatId, questId);
+            this.calendar.questIds.set(holonId, questId);
 
             // Generate calendar markup
             const now = new Date();
             now.setDate(1);
-            const calendarMarkup = this.calendar.createNavigationKeyboard(now, chatId);
+            const calendarMarkup = this.calendar.createNavigationKeyboard(now, holonId);
 
             // Check if quest is shown as image
             const showImages = process.env.SHOW_QUESTS_AS_IMAGES === 'true';
@@ -971,17 +971,17 @@ class Scheduler {
                 task.id = Date.now().toString();
             }
             
-            // Validate the chat ID - check both chatID and chat properties
-            const chatId = task.chatID || task.chat;
-            if (!chatId || chatId === 0) {
-                console.error('Invalid chatID in createRecurringTask:', task);
+            // Validate the chat ID - check both holonId and chat properties
+            const holonId = task.holonId || task.chat;
+            if (!holonId || holonId === 0) {
+                console.error('Invalid holonId in createRecurringTask:', task);
                 throw new Error('Invalid chat ID');
             }
 
-            // Ensure the task has the chatID property for consistency
-            task.chatID = chatId;
+            // Ensure the task has the holonId property for consistency
+            task.holonId = holonId;
             
-            console.log('Creating recurring task with chat ID:', task.chatID);
+            console.log('Creating recurring task with chat ID:', task.holonId);
             console.log('Task details:', {
                 id: task.id,
                 title: task.title,
@@ -993,7 +993,7 @@ class Scheduler {
             await this.db.holosphere.putGlobal('recurring', task);
 
             // Create lookup reference
-            const lookupId = task.chatID + task.questId;
+            const lookupId = task.holonId + task.questId;
             await this.db.holosphere.putGlobal('recurringlookup', {
                 id: lookupId,
                 taskID: task.id
@@ -1004,21 +1004,21 @@ class Scheduler {
             const mockCtx = {
                 message: {
                     chat: { 
-                        id: task.chatID
+                        id: task.holonId
                     },
                     from: task.initiator,
                     text: `/recurring ${task.title}`
                 },
                 telegram: this.bot.telegram,
                 reply: (text, extra) => {
-                    return this.bot.telegram.sendMessage(task.chatID, text, extra);
+                    return this.bot.telegram.sendMessage(task.holonId, text, extra);
                 }
             };
             
             // Schedule the task
             await this.scheduleTask(task, mockCtx);
             
-            console.log('Created recurring task:', task.id, 'for chat ID:', task.chatID);
+            console.log('Created recurring task:', task.id, 'for chat ID:', task.holonId);
             return task.id;
         } catch (error) {
             console.error('Error creating recurring task:', error);
@@ -1034,22 +1034,22 @@ class Scheduler {
                 throw new Error(`Task with ID ${taskId} not found`);
             }
             
-            console.log('Updating recurring task:', taskId, 'for chat ID:', task.chatID);
+            console.log('Updating recurring task:', taskId, 'for chat ID:', task.holonId);
             
-            // Verify chatID exists and is valid
-            if (!task.chatID || task.chatID === 0) {
-                console.error('Invalid chatID in task to update:', task);
+            // Verify holonId exists and is valid
+            if (!task.holonId || task.holonId === 0) {
+                console.error('Invalid holonId in task to update:', task);
                 throw new Error('Invalid chat ID in existing task');
             }
             
-            // Update task properties but preserve the original chatID
-            const originalChatID = task.chatID;
+            // Update task properties but preserve the original holonId
+            const originalholonId = task.holonId;
             Object.assign(task, updates);
             
-            // Ensure chatID wasn't lost or changed incorrectly
-            if (!task.chatID || task.chatID === 0) {
-                task.chatID = originalChatID;
-                console.log('Restored original chatID:', originalChatID);
+            // Ensure holonId wasn't lost or changed incorrectly
+            if (!task.holonId || task.holonId === 0) {
+                task.holonId = originalholonId;
+                console.log('Restored original holonId:', originalholonId);
             }
             
             // Save updated task
@@ -1066,21 +1066,21 @@ class Scheduler {
             const mockCtx = {
                 message: {
                     chat: { 
-                        id: task.chatID 
+                        id: task.holonId 
                     },
                     from: task.initiator,
                     text: `/task ${task.title}`
                 },
                 telegram: this.bot.telegram,
                 reply: (text, extra) => {
-                    return this.bot.telegram.sendMessage(task.chatID, text, extra);
+                    return this.bot.telegram.sendMessage(task.holonId, text, extra);
                 }
             };
             
             // Reschedule with updated parameters
             await this.scheduleTask(task, mockCtx);
             
-            console.log('Updated recurring task:', taskId, 'for chat ID:', task.chatID);
+            console.log('Updated recurring task:', taskId, 'for chat ID:', task.holonId);
             return true;
         } catch (error) {
             console.error('Error updating recurring task:', error);
@@ -1113,7 +1113,7 @@ class Scheduler {
                         
                         // Check if quest still exists
                         try {
-                            const quest = await this.db.get(`${reminder.chatId}/quests`, reminder.questId);
+                            const quest = await this.db.get(`${reminder.holonId}/quests`, reminder.questId);
                             
                             // Skip if quest doesn't exist anymore or is not scheduled
                             if (!quest) {
@@ -1137,7 +1137,7 @@ class Scheduler {
                                     console.log(`Executing reminder for quest ${reminder.questId}`);
                                     
                                     // Get fresh copy of the quest
-                                    const freshQuest = await this.db.get(`${reminder.chatId}/quests`, reminder.questId);
+                                    const freshQuest = await this.db.get(`${reminder.holonId}/quests`, reminder.questId);
                                     if (!freshQuest) {
                                         console.log(`Quest ${reminder.questId} no longer exists, skipping reminder`);
                                         await this.deleteReminderRecord(reminder.id);
@@ -1156,28 +1156,28 @@ class Scheduler {
                                         callbackQuery: {
                                             message: {
                                                 chat: {
-                                                    id: reminder.chatId
+                                                    id: reminder.holonId
                                                 },
                                                 message_id: reminder.questId
                                             }
                                         },
                                         telegram: this.bot.telegram,
                                         reply: (text, options) => {
-                                            return this.bot.telegram.sendMessage(reminder.chatId, text, options);
+                                            return this.bot.telegram.sendMessage(reminder.holonId, text, options);
                                         }
                                     };
                                     
                                     // Try direct message approach first
                                     try {
                                         
-                                        const language = await this.settings.getLanguage(reminder.chatId);
+                                        const language = await this.settings.getLanguage(reminder.holonId);
                                         const timezone =
                                         await this.bot.telegram.sendMessage(
-                                            reminder.chatId,
+                                            reminder.holonId,
                                             'Reminder: "' + freshQuest.title + '" is starting now!',
                                             { reply_to_message_id: reminder.questId }
                                         );
-                                        console.log(`Direct reminder sent for quest ${reminder.questId} in chat ${reminder.chatId}`);
+                                        console.log(`Direct reminder sent for quest ${reminder.questId} in chat ${reminder.holonId}`);
                                     } catch (directError) {
                                         console.error('Error sending direct reminder message:', directError);
                                         
@@ -1239,8 +1239,8 @@ class Scheduler {
                 console.log(`Found ${lookups.length} recurring lookup records to migrate.`);
                 for (const lookup of lookups) {
                     if (lookup?.id?.includes('_')) {
-                        const [chatId, questId] = lookup.id.split('_');
-                        const newLookupId = `${chatId}|${questId}`;
+                        const [holonId, questId] = lookup.id.split('_');
+                        const newLookupId = `${holonId}|${questId}`;
                         await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
                         await this.db.holosphere.putGlobal('recurringlookup', {
                             id: newLookupId,

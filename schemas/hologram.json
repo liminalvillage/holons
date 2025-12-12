@@ -12,11 +12,11 @@
       "type": "string",
       "description": "ID of the source quest"
     },
-    "sourceChatId": {
+    "sourceholonId": {
       "type": ["string", "number"],
       "description": "Chat ID where the original quest exists"
     },
-    "targetChatId": {
+    "targetholonId": {
       "type": ["string", "number"],
       "description": "Chat ID where the hologram is displayed"
     },
@@ -74,7 +74,7 @@
   "required": [
     "id",
     "sourceQuestId",
-    "sourceChatId",
+    "sourceholonId",
     "type",
     "created"
   ],

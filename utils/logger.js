@@ -94,11 +94,11 @@ export const log = {
   },
 
   // Specialized logging functions
-  telegramEvent: (event, userId, chatId, meta = {}) => {
+  telegramEvent: (event, userId, holonId, meta = {}) => {
     logger.info('Telegram Event', {
       event,
       userId,
-      chatId,
+      holonId,
       ...meta,
       timestamp: new Date().toISOString(),
     });

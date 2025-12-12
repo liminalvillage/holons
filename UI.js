@@ -41,13 +41,13 @@ class UI {
     this.bot.command('cloud', (ctx) => this.valuescloud(ctx))
  
     this.bot.command('dashboard', async (ctx) => {
-      let chatID = ctx.message.chat.id
-      const language = await this.settings.getLanguage(chatID)
-      const dashboardUrl = `${DASHBOARD_ADDRESS}/${chatID}/dashboard`
+      let holonId = ctx.message.chat.id
+      const language = await this.settings.getLanguage(holonId)
+      const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/dashboard`
       
       try {
         // Generate QR code
-        const qrCodePath = `./temp/qr_dashboard_${chatID}.png`
+        const qrCodePath = `./temp/qr_dashboard_${holonId}.png`
         
         // Ensure temp directory exists
         if (!fs.existsSync('./temp')) {
@@ -151,9 +151,9 @@ class UI {
 
 
   async leaderboard(ctx) {
-    let chatID = ctx.message.chat.id
-    let users = await this.db.holosphere.getAll(chatID.toString(), 'users')
-    const language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.message.chat.id
+    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
+    const language = await this.settings.getLanguage(holonId)
 
     // Assuming Expenses class instance is available via this.bot.expenses
     // If not, this needs to be instantiated or passed to UI class constructor
@@ -165,7 +165,7 @@ class UI {
     }
 
     // Calculate user scores using the Settings class method
-    this.getRankTable(users, chatID, expensesInstance).then((path) => {
+    this.getRankTable(users, holonId, expensesInstance).then((path) => {
       if (path) {
         ctx.replyWithPhoto(
           { source: fs.createReadStream(path) },
@@ -173,7 +173,7 @@ class UI {
             caption: createPaddedCaption(''),
             ...Markup.inlineKeyboard([
               Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-                `${DASHBOARD_ADDRESS}/${chatID}/status`)
+                `${DASHBOARD_ADDRESS}/${holonId}/status`)
             ])
           }
         ).catch(err => console.error('Error sending leaderboard photo:', err));
@@ -187,16 +187,16 @@ class UI {
     return;
   }
 
-  async getRankTable(users, chatID, expensesInstance) {
-    const language = await this.settings.getLanguage(chatID)
+  async getRankTable(users, holonId, expensesInstance) {
+    const language = await this.settings.getLanguage(holonId)
     const rows = []
 
     // Get currencies from settings
-    const settings = await this.settings.getSettings(chatID);
+    const settings = await this.settings.getSettings(holonId);
     const currencies = settings.currencies || [];
 
     // Calculate and sort user scores using the Settings class method
-    const sortedUsers = await this.settings.calculateUserScores(users, chatID, expensesInstance);
+    const sortedUsers = await this.settings.calculateUserScores(users, holonId, expensesInstance);
 
     for (let i = 0; i < sortedUsers.length; i++) {
       const user = sortedUsers[i]
@@ -208,7 +208,7 @@ class UI {
       if (currencies.length > 0 && expensesInstance) {
         for (const currency of currencies) {
           try {
-            const balance = await expensesInstance.getUserCurrencyBalance(chatID, user.id, currency);
+            const balance = await expensesInstance.getUserCurrencyBalance(holonId, user.id, currency);
             currencyBalances.push(balance);
           } catch (e) {
             console.error(`Error getting balance for ${currency} for user ${user.id}:`, e);
@@ -287,8 +287,8 @@ class UI {
       </div>
     </div>`
 
-    const path = './images/rank' + chatID + '.png'
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID))
+    const path = './images/rank' + holonId + '.png'
+    const html = await this.generateHtml(element, await this.settings.getTheme(holonId))
     await this.screenshotHtml(html, path, '.status-table-container')
     return path
   }
@@ -296,14 +296,14 @@ class UI {
     if (!this.db) return
     
     try {
-    let chatID = ctx.message.chat.id
-    let language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.message.chat.id
+    let language = await this.settings.getLanguage(holonId)
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
     
       // Wait for users and quests to be retrieved using holosphere.getAll with holograms
-    let users = await this.db.holosphere.getAll(chatID.toString(), 'users')
-    let quests = await this.db.holosphere.getAll(chatID.toString(), 'quests')
+    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
+    let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
 
     // If in a topic, filter quests by message_thread_id
     if (isTopic && threadId) {
@@ -311,7 +311,7 @@ class UI {
     }
     
       // Wait for the table image to be generated
-      const path = await this.getBulletinTable(users, quests, chatID);
+      const path = await this.getBulletinTable(users, quests, holonId);
       
       if (!path) {
         ctx.reply(i18next.t('bulletinboardgenerror', {lng: language}) || 'Could not generate bulletin board image.');
@@ -325,7 +325,7 @@ class UI {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
             Markup.button.url(i18next.t('Open in Holons', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${chatID}/offers`)
+              `${DASHBOARD_ADDRESS}/${holonId}/offers`)
           ])
         }
       );
@@ -338,15 +338,15 @@ class UI {
   }
 
   async valuescloud(ctx) {
-    let chatID = ctx.message.chat.id
-    let values = [] // = this.getFederatedValues(chatID)
-    const language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.message.chat.id
+    let values = [] // = this.getFederatedValues(holonId)
+    const language = await this.settings.getLanguage(holonId)
    
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await this.db.getAll(chatID + '/users')
+    let users = await this.db.getAll(holonId + '/users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -357,7 +357,7 @@ class UI {
     }
     
     const page = await browser.newPage();
-    let path = './images/valuecloud' + utils.getChatId(ctx) + '.png'
+    let path = './images/valuecloud' + utils.getholonId(ctx) + '.png'
     page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
     page.on('console', msg => {
       for (let i = 0; i < msg.args().length; ++i) {
@@ -384,20 +384,20 @@ class UI {
         caption: createPaddedCaption(''),
         ...Markup.inlineKeyboard([
           Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-            `${DASHBOARD_ADDRESS}/${chatID}/values/`)
+            `${DASHBOARD_ADDRESS}/${holonId}/values/`)
         ])
       }
     )
   }
   async needscloud(ctx) {
-    let needs = [] // = this.getFederatedValues(chatID)
-    const chatID = ctx.message.chat.id;
-    const language = await this.settings.getLanguage(chatID)
+    let needs = [] // = this.getFederatedValues(holonId)
+    const holonId = ctx.message.chat.id;
+    const language = await this.settings.getLanguage(holonId)
     const entities = ctx.message.entities;
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await this.db.getAll(chatID + '/users')
+    let users = await this.db.getAll(holonId + '/users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -408,7 +408,7 @@ class UI {
     }
 
     const page = await browser.newPage();
-    let path = './images/needscloud' + utils.getChatId(ctx) + '.png'
+    let path = './images/needscloud' + utils.getholonId(ctx) + '.png'
     page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
     page.on('console', msg => {
       for (let i = 0; i < msg.args().length; ++i) {
@@ -434,7 +434,7 @@ class UI {
         caption: createPaddedCaption(''),
         ...Markup.inlineKeyboard([
           Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-            `${DASHBOARD_ADDRESS}/${chatID}/needs/`)
+            `${DASHBOARD_ADDRESS}/${holonId}/needs/`)
         ])
       }
     )
@@ -447,13 +447,13 @@ class UI {
     
     try {
     // Get a list of incomplete quests
-    let chatID = ctx.message.chat.id
-    const language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.message.chat.id
+    const language = await this.settings.getLanguage(holonId)
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Wait for all quests to be retrieved using holosphere.getAll with holograms
-    let quests = await this.db.holosphere.getAll(chatID.toString(), 'quests')
+    let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
     
       // Ensure we have a valid array before filtering
       if (!Array.isArray(quests)) {
@@ -465,7 +465,7 @@ class UI {
         (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') &&
         (quest.status === 'ongoing' || quest.status === 'scheduled') &&
         // Only show quests that belong to this holon (not federated from elsewhere)
-        (!quest.chat || quest.chat.toString() === chatID.toString())
+        (!quest.chat || quest.chat.toString() === holonId.toString())
       )
 
     // If in a topic, filter further by message_thread_id
@@ -482,19 +482,19 @@ class UI {
       // Create inline keyboard buttons
       const inline_keyboard_buttons = quests.map(quest => {
         const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
-        // Get the source holon: prefer _hologram.sourceHolon for resolved holograms, then quest.chat, fallback to chatID
-        const sourceHolon = quest._hologram?.sourceHolon || quest.chat || chatID;
+        // Get the source holon: prefer _hologram.sourceHolon for resolved holograms, then quest.chat, fallback to holonId
+        const sourceHolon = quest._hologram?.sourceHolon || quest.chat || holonId;
         return [Markup.button.callback(title, 'view_original_quest_' + sourceHolon + '_' + quest.id)];
       });
 
       inline_keyboard_buttons.push([
         Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-          `${DASHBOARD_ADDRESS}/${chatID}/tasks`)
+          `${DASHBOARD_ADDRESS}/${holonId}/tasks`)
       ]);
 
       // Try to generate the table image
       try {
-        const path = await this.getQuestsTable(quests, chatID, ctx);
+        const path = await this.getQuestsTable(quests, holonId, ctx);
 
         if (path) {
           // Send the photo with buttons
@@ -533,13 +533,13 @@ class UI {
     
     try {
     // Get a list of requests
-    let chatID = ctx.message.chat.id
-    const language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.message.chat.id
+    const language = await this.settings.getLanguage(holonId)
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Get requests from quests collection using holosphere.getAll with holograms
-    let allQuests = await this.db.holosphere.getAll(chatID.toString(), 'quests') || []
+    let allQuests = await this.db.holosphere.getAll(holonId.toString(), 'quests') || []
     let requests = allQuests.filter(quest => quest.type === 'request')
 
     // If in a topic, filter further by message_thread_id
@@ -548,7 +548,7 @@ class UI {
     }
 
       // Wait for the table image to be generated
-      const path = await this.getRequestsTable(requests, chatID);
+      const path = await this.getRequestsTable(requests, holonId);
       
       if (!path) {
         ctx.reply(i18next.t('requestsboardgenerror', {lng: language}) || 'Could not generate requests board image.');
@@ -562,7 +562,7 @@ class UI {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
             Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${chatID}/offers`)
+              `${DASHBOARD_ADDRESS}/${holonId}/offers`)
           ])
         }
       );
@@ -579,13 +579,13 @@ class UI {
     
     try {
     // Get a list of offers
-    let chatID = ctx.message.chat.id
-    const language = await this.settings.getLanguage(chatID)
+    let holonId = ctx.message.chat.id
+    const language = await this.settings.getLanguage(holonId)
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Get offers from quests collection using holosphere.getAll with holograms
-    let allQuests = await this.db.holosphere.getAll(chatID.toString(), 'quests') || []
+    let allQuests = await this.db.holosphere.getAll(holonId.toString(), 'quests') || []
     let offers = allQuests.filter(quest => quest.type === 'offer')
 
     // If in a topic, filter further by message_thread_id
@@ -594,7 +594,7 @@ class UI {
     }
 
       // Wait for the table image to be generated
-      const path = await this.getOffersTable(offers, chatID);
+      const path = await this.getOffersTable(offers, holonId);
       
       if (!path) {
         ctx.reply(i18next.t('offersboardgenerror', {lng: language}) || 'Could not generate offers board image.');
@@ -608,7 +608,7 @@ class UI {
           caption: createPaddedCaption(''),
           ...Markup.inlineKeyboard([
             Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-              `${DASHBOARD_ADDRESS}/${chatID}/offers/`)
+              `${DASHBOARD_ADDRESS}/${holonId}/offers/`)
           ])
         }
       );
@@ -621,21 +621,21 @@ class UI {
   }
 
   // Fast quest image generation with aggressive optimizations
-  async getQuestImage(quest, chatID, isHologram = false) {
+  async getQuestImage(quest, holonId, isHologram = false) {
     // PERFORMANCE OPTIMIZATION: Skip heavy operations for faster generation
     const useSimplifiedMode = process.env.QUEST_IMAGE_FAST_MODE === 'true' || false;
     
     if (useSimplifiedMode) {
-      return this.getSimplifiedQuestImage(quest, chatID, isHologram);
+      return this.getSimplifiedQuestImage(quest, holonId, isHologram);
     }
     
     // Cache frequently used data to avoid repeated database calls
-    const cachedLanguage = this.languageCache?.get(chatID) || await this.settings.getLanguage(chatID);
+    const cachedLanguage = this.languageCache?.get(holonId) || await this.settings.getLanguage(holonId);
     if (!this.languageCache) this.languageCache = new Map();
-    this.languageCache.set(chatID, cachedLanguage);
+    this.languageCache.set(holonId, cachedLanguage);
     
     // Check if this is a hologram by examining the quest's origin
-    if (!isHologram && quest.chat && quest.chat.toString() !== chatID.toString()) {
+    if (!isHologram && quest.chat && quest.chat.toString() !== holonId.toString()) {
       isHologram = true;
     }
     // Also check for meta information indicating it's from another chat
@@ -910,14 +910,14 @@ class UI {
     `;
 
     // Include source chat/holon ID and hologram status in filename for unique identification
-    const sourceIdentifier = chatID ? chatID.toString() : 'unknown';
+    const sourceIdentifier = holonId ? holonId.toString() : 'unknown';
     const hologramSuffix = isHologram ? '_hologram' : '';
     const path = `./images/quest${quest.id}_from_${sourceIdentifier}${hologramSuffix}.png`;
     
     // PERFORMANCE: Cache theme data to avoid repeated lookups
-    const cachedTheme = this.themeCache?.get(chatID) || await this.settings.getTheme(chatID);
+    const cachedTheme = this.themeCache?.get(holonId) || await this.settings.getTheme(holonId);
     if (!this.themeCache) this.themeCache = new Map();
-    this.themeCache.set(chatID, cachedTheme);
+    this.themeCache.set(holonId, cachedTheme);
     
     const html = await this.generateHtml(element, cachedTheme);
     await this.screenshotHtml(html, path, '.quest-card-container');
@@ -948,7 +948,7 @@ class UI {
   }
 
   // Ultra-fast simplified quest image for immediate updates
-  async getSimplifiedQuestImage(quest, chatID, isHologram = false) {
+  async getSimplifiedQuestImage(quest, holonId, isHologram = false) {
     const statusIcon = quest.status === 'completed' ? '✅' : 
                        quest.status === 'stopped' ? '🛑' : 
                        quest.status === 'scheduled' ? '📅' : '🔄';
@@ -974,7 +974,7 @@ class UI {
     `;
 
     // Include source chat/holon ID and hologram status in filename for unique identification
-    const sourceIdentifier = chatID ? chatID.toString() : 'unknown';
+    const sourceIdentifier = holonId ? holonId.toString() : 'unknown';
     const hologramSuffix = isHologram ? '_hologram' : '';
     const path = `./images/quest_simple_${quest.id}_from_${sourceIdentifier}${hologramSuffix}.png`;
     
@@ -1023,8 +1023,8 @@ class UI {
     return path;
   }
 
-  async getBulletinTable(users, quests, chatID) {
-    const language = await this.settings.getLanguage(chatID);
+  async getBulletinTable(users, quests, holonId) {
+    const language = await this.settings.getLanguage(holonId);
     const rows = [];
 
     // Get quest-based offers and requests
@@ -1150,14 +1150,14 @@ class UI {
       </div>
     </div>`;
 
-    const path = './images/offersneeds' + chatID + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    const path = './images/offersneeds' + holonId + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
     await this.screenshotHtml(html, path, '.status-table-container');
     return path;
   }
 
-  async getCreditTable(creditMatrix, userArray, chatID) {
-    const language = await this.settings.getLanguage(chatID);
+  async getCreditTable(creditMatrix, userArray, holonId) {
+    const language = await this.settings.getLanguage(holonId);
     const rows = [];
     userArray.forEach((user, index) => {
       const credits = creditMatrix[index].map((credit, creditIndex) => {
@@ -1192,14 +1192,14 @@ class UI {
       </div>
     </div>`;
   
-    const path = './images/creditMatrix' + chatID + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    const path = './images/creditMatrix' + holonId + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
     await this.screenshotHtml(html, path, '.status-table-container');
     return path;
   }
 
-  async getQuestsTable(quests, chatID, ctx) {
-    const language = await this.settings.getLanguage(chatID);
+  async getQuestsTable(quests, holonId, ctx) {
+    const language = await this.settings.getLanguage(holonId);
     const rows = [];
     for (const quest of quests) {
       let provenanceText = '';
@@ -1210,7 +1210,7 @@ class UI {
         provenanceText = quest._meta.origin_chat_name;
         provenanceIcon = '🌐';
         isHologram = true;
-      } else if (quest.chat && quest.chat.toString() !== chatID.toString()) {
+      } else if (quest.chat && quest.chat.toString() !== holonId.toString()) {
         try {
           const nameFromUtil = await utils.getHolonName(this.db, quest.chat, ctx);
           if (nameFromUtil && nameFromUtil.trim() !== '') { // Use if non-empty
@@ -1278,14 +1278,14 @@ class UI {
       </div>
     </div>`;
 
-    const path = './images/quests' + chatID + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    const path = './images/quests' + holonId + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
     await this.screenshotHtml(html, path, '.quest-list-container');
     return path;
   }
 
-  async getRolesTable(roles, chatID) {
-    const language = await this.settings.getLanguage(chatID);
+  async getRolesTable(roles, holonId) {
+    const language = await this.settings.getLanguage(holonId);
     const rows = [];
     
     if (roles.length === 0) {
@@ -1336,15 +1336,15 @@ class UI {
       </div>
     </div>`;
 
-    const path = './images/roles' + chatID + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    const path = './images/roles' + holonId + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
     await this.screenshotHtml(html, path, '.status-table-container');
     return path;
   }
 
 
-  async getRequestsTable(requests, chatID) {
-    const language = await this.settings.getLanguage(chatID);
+  async getRequestsTable(requests, holonId) {
+    const language = await this.settings.getLanguage(holonId);
 
     const rows = [];
     
@@ -1394,14 +1394,14 @@ class UI {
       </div>
     </div>`;
 
-    const path = './images/requests' + chatID + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    const path = './images/requests' + holonId + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
     await this.screenshotHtml(html, path, '.status-table-container');
     return path;
   }
 
-  async getOffersTable(offers, chatID) {
-    const language = await this.settings.getLanguage(chatID);
+  async getOffersTable(offers, holonId) {
+    const language = await this.settings.getLanguage(holonId);
 
     const rows = [];
     
@@ -1451,8 +1451,8 @@ class UI {
       </div>
     </div>`;
 
-    const path = './images/offers' + chatID + '.png';
-    const html = await this.generateHtml(element, await this.settings.getTheme(chatID));
+    const path = './images/offers' + holonId + '.png';
+    const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
     await this.screenshotHtml(html, path, '.status-table-container');
     return path;
   }
@@ -1630,8 +1630,8 @@ class UI {
     }
   }
 
-  async getZoneDistributionChart(a, b, c, nzones = 6, chatID) {
-    const language = await this.settings.getLanguage(chatID);
+  async getZoneDistributionChart(a, b, c, nzones = 6, holonId) {
+    const language = await this.settings.getLanguage(holonId);
     
     // Calculate zone weights and percentages
     let totalWeight = 0;
@@ -1857,7 +1857,7 @@ class UI {
       
     `;
 
-    const path = `./images/zone_distribution_${chatID}.png`;
+    const path = `./images/zone_distribution_${holonId}.png`;
     const html = await this.generateHtml(element, chartTheme);
     
     // Retry logic for screenshot generation

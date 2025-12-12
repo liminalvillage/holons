@@ -88,53 +88,53 @@ class DB {
 
     /**
      * Clear data locally first, then async sync deletions to relay with rate limiting
-     * @param {string} chatID - Chat ID to clear data for
+     * @param {string} holonId - Chat ID to clear data for
      * @param {string[]} lenses - Array of lens names to clear (e.g., ['quests', 'shopping'])
      * @param {string[]} globalTables - Array of global table names to clear entries from
      * @param {number} delayMs - Delay between relay deletions to avoid rate limiting (default: 200ms)
      * @returns {Promise<{localCleared: number, relayQueueSize: number}>}
      */
-    async clearWithAsyncRelaySync(chatID, lenses = [], globalTables = [], delayMs = 200) {
+    async clearWithAsyncRelaySync(holonId, lenses = [], globalTables = [], delayMs = 200) {
         const appName = this.holosphere.config?.appName || process.env.APPNAME || 'Holons';
         let localCleared = 0;
         const relayDeletions = []; // Queue of deletion tasks for relay
 
-        // Clear cache for this chatID immediately
-        this.holosphere.clearCache(chatID.toString());
-        console.log(`[clearWithAsyncRelaySync] Cleared cache for chatID ${chatID}`);
+        // Clear cache for this holonId immediately
+        this.holosphere.clearCache(holonId.toString());
+        console.log(`[clearWithAsyncRelaySync] Cleared cache for holonId ${holonId}`);
 
         // Collect lens deletions
         for (const lens of lenses) {
             relayDeletions.push({
                 type: 'lens',
-                table: `${chatID}/${lens}`,
+                table: `${holonId}/${lens}`,
                 lens: lens
             });
             localCleared++;
         }
 
-        // Collect global table deletions that belong to this chatID
+        // Collect global table deletions that belong to this holonId
         for (const table of globalTables) {
             try {
                 let items = [];
                 if (table === 'recurring') {
                     items = await this.holosphere.getAllGlobal('recurring') || [];
-                    items = items.filter(t => t.chatID === chatID);
+                    items = items.filter(t => t.holonId === holonId);
                 } else if (table === 'recurringlookup') {
                     items = await this.holosphere.getAllGlobal('recurringlookup') || [];
-                    items = items.filter(t => t.id && t.id.toString().startsWith(chatID.toString()));
+                    items = items.filter(t => t.id && t.id.toString().startsWith(holonId.toString()));
                 } else if (table === 'reminders') {
                     items = await this.holosphere.getAllGlobal('reminders') || [];
-                    items = items.filter(t => t.chatId === chatID);
+                    items = items.filter(t => t.holonId === holonId);
                 } else if (table === 'reminderslookup') {
                     items = await this.holosphere.getAllGlobal('reminderslookup') || [];
-                    items = items.filter(t => t.id && t.id.toString().startsWith(chatID.toString()));
+                    items = items.filter(t => t.id && t.id.toString().startsWith(holonId.toString()));
                 } else if (table === 'federation') {
                     items = await this.holosphere.getAllGlobal('federation') || [];
-                    items = items.filter(t => t.id === chatID.toString());
+                    items = items.filter(t => t.id === holonId.toString());
                 } else if (table === 'fedannouncements') {
                     items = await this.holosphere.getAllGlobal('fedannouncements') || [];
-                    items = items.filter(t => t.id && t.id.toString().startsWith(chatID.toString() + '_'));
+                    items = items.filter(t => t.id && t.id.toString().startsWith(holonId.toString() + '_'));
                 }
 
                 for (const item of items) {
@@ -193,13 +193,13 @@ class DB {
     }
 
     /**
-     * Clear cache entries for a specific chatID (delegates to holosphere2)
-     * @param {string} chatID - Chat ID to clear cache for
+     * Clear cache entries for a specific holonId (delegates to holosphere2)
+     * @param {string} holonId - Chat ID to clear cache for
      */
-    clearCacheForChatID(chatID) {
+    clearCacheForholonId(holonId) {
         // Delegate to holosphere2's cache clearing
-        this.holosphere.clearCache(chatID);
-        console.log(`DB.clearCacheForChatID: Cleared cache for chatID ${chatID}`);
+        this.holosphere.clearCache(holonId);
+        console.log(`DB.clearCacheForholonId: Cleared cache for holonId ${holonId}`);
     }
 
     async put(table, data, options = {}) {

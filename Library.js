@@ -17,20 +17,20 @@ class Library {
     }
 
     async addItem(ctx) {
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         const [_, item, credits, ...categoryWords] = ctx.message.text.split(/\s+/);
         const category = categoryWords.join(' ') || 'Uncategorized';
         if (!item) {
             ctx.reply('Please specify an item to add and optional credits. eg: /additem hammer 5');
             return;
         }
-        if(await this.db.get(chatID + '/library', item)) {
+        if(await this.db.get(holonId + '/library', item)) {
             ctx.reply(`${item} is already in the library.`);
             return;
         }
 
         const itemCredits = parseInt(credits) || 1;
-        await this.db.put(chatID + '/library', { 
+        await this.db.put(holonId + '/library', { 
             id: item, 
             borrowed: false,
             credits: itemCredits,
@@ -43,18 +43,18 @@ class Library {
     }
 
     async removeItem(ctx) {
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         const item = ctx.message.text.split('/removeitem ')[1];
         if (!item) {
             ctx.reply('Please specify an item to remove. eg: /removeitem hammer');
             return;
         }
-        await this.db.del(chatID + '/library', item);
+        await this.db.del(holonId + '/library', item);
         ctx.reply(`Removed ${item} from the library.`);
     }
 
     async borrowItem(ctx, fromKeyboard = false) {
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         const item = fromKeyboard ? ctx.match[1] : ctx.message.text.split('/borrow ')[1];
         
         if (!item) {
@@ -62,7 +62,7 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(chatID + '/library', item);
+        let currentItem = await this.db.get(holonId + '/library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -80,28 +80,28 @@ class Library {
             const deposit = Math.ceil(currentItem.credits * 0.5);
             const totalCost = currentItem.credits + deposit;
 
-            let userCredits = await this.getUserCredits(ctx.from.id, chatID);
+            let userCredits = await this.getUserCredits(ctx.from.id, holonId);
             if (userCredits < totalCost) {
                 ctx.reply(`You need ${currentItem.credits} credits plus ${deposit} credit deposit. You have ${userCredits} credits.`);
                 return;
             }
 
             // Deduct credits including deposit
-            await this.updateUserCredits(ctx.from.id, chatID, -totalCost);
-            await this.db.put(chatID + '/deposits', {
+            await this.updateUserCredits(ctx.from.id, holonId, -totalCost);
+            await this.db.put(holonId + '/deposits', {
                 id: item,
                 amount: deposit,
                 borrower: ctx.from.id
             });
             
             // Add credits to owner
-            await this.updateUserCredits(currentItem.owner, chatID, currentItem.credits);
+            await this.updateUserCredits(currentItem.owner, holonId, currentItem.credits);
             currentItem.totalEarned += currentItem.credits;
         }
 
         currentItem.borrowed = true;
         currentItem.borrower = ctx.from.username;
-        await this.db.put(chatID + '/library', currentItem);
+        await this.db.put(holonId + '/library', currentItem);
 
         if (fromKeyboard) {
             let list = await this.getLibraryItems(ctx);
@@ -116,14 +116,14 @@ class Library {
     }
 
     async setItemCredits(ctx) {
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         const [_, item, credits] = ctx.message.text.split(/\s+/);
         if (!item || !credits) {
             ctx.reply('Please specify item and credits. eg: /setcredits hammer 5');
             return;
         }
 
-        let currentItem = await this.db.get(chatID + '/library', item);
+        let currentItem = await this.db.get(holonId + '/library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -135,13 +135,13 @@ class Library {
         }
 
         currentItem.credits = parseInt(credits);
-        await this.db.put(chatID + '/library', currentItem);
+        await this.db.put(holonId + '/library', currentItem);
         ctx.reply(`Updated ${item} to ${credits} credits per borrow.`);
     }
 
     async showUserCredits(ctx) {
-        let chatID = ctx.chat.id;
-        const credits = await this.getUserCredits(ctx.from.id, chatID);
+        let holonId = ctx.chat.id;
+        const credits = await this.getUserCredits(ctx.from.id, holonId);
         const items = await this.getLibraryItems(ctx);
         let earnings = 0;
         
@@ -154,21 +154,21 @@ class Library {
         ctx.reply(`Your credits: ${credits}\nTotal earnings: ${earnings}`);
     }
 
-    async getUserCredits(userId, chatId) {
-        const credits = await this.db.get(chatId + '/credits', userId.toString());
+    async getUserCredits(userId, holonId) {
+        const credits = await this.db.get(holonId + '/credits', userId.toString());
         return credits?.amount || 10; // New users start with 10 credits
     }
 
-    async updateUserCredits(userId, chatId, amount) {
-        const current = await this.getUserCredits(userId, chatId);
-        await this.db.put(chatId + '/credits', {
+    async updateUserCredits(userId, holonId, amount) {
+        const current = await this.getUserCredits(userId, holonId);
+        await this.db.put(holonId + '/credits', {
             id: userId.toString(),
             amount: current + amount
         });
     }
 
     async returnItem(ctx, fromKeyboard = false) {
-        let chatID = ctx.chat.id;
+        let holonId = ctx.chat.id;
         const item = fromKeyboard ? ctx.match[1] : ctx.message.text.split('/return ')[1];
         
         if (!item) {
@@ -176,7 +176,7 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(chatID + '/library', item);
+        let currentItem = await this.db.get(holonId + '/library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -192,16 +192,16 @@ class Library {
         }
 
         // Return deposit if item is returned in good condition
-        const deposit = await this.db.get(chatID + '/deposits', currentItem.id);
+        const deposit = await this.db.get(holonId + '/deposits', currentItem.id);
         if (deposit) {
-            await this.updateUserCredits(ctx.from.id, chatID, deposit.amount);
-            await this.db.del(chatID + '/deposits', currentItem.id);
+            await this.updateUserCredits(ctx.from.id, holonId, deposit.amount);
+            await this.db.del(holonId + '/deposits', currentItem.id);
             ctx.reply(`Deposit of ${deposit.amount} credits returned.`);
         }
 
         currentItem.borrowed = false;
         currentItem.borrower = null;
-        await this.db.put(chatID + '/library', currentItem);
+        await this.db.put(holonId + '/library', currentItem);
 
         if (fromKeyboard) {
             let list = await this.getLibraryItems(ctx);
@@ -232,8 +232,8 @@ class Library {
     }
 
     async getLibraryItems(ctx) {
-        let chatID = ctx.chat.id;
-        let list = await this.db.getAll(chatID + '/library');
+        let holonId = ctx.chat.id;
+        let list = await this.db.getAll(holonId + '/library');
         list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }
@@ -265,7 +265,7 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(chatID + '/library', item);
+        let currentItem = await this.db.get(holonId + '/library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -279,7 +279,7 @@ class Library {
             date: new Date()
         });
 
-        await this.db.put(chatID + '/library', currentItem);
+        await this.db.put(holonId + '/library', currentItem);
         ctx.reply(`Thank you for rating ${item}!`);
     }
 
@@ -287,7 +287,7 @@ class Library {
         const [_, item, ...issueWords] = ctx.message.text.split(/\s+/);
         const issue = issueWords.join(' ');
 
-        let currentItem = await this.db.get(chatID + '/library', item);
+        let currentItem = await this.db.get(holonId + '/library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -301,7 +301,7 @@ class Library {
             resolved: false
         });
 
-        await this.db.put(chatID + '/library', currentItem);
+        await this.db.put(holonId + '/library', currentItem);
         ctx.reply(`Issue reported for ${item}. The owner will be notified.`);
     }
 

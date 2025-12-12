@@ -5,7 +5,7 @@ const welcomeScene = new Scenes.BaseScene('welcome');
 
 // Entry point for the scene
 welcomeScene.enter(async (ctx) => {
-  const chatID = ctx.chat.id;
+  const holonId = ctx.chat.id;
 
   // Initialize scene stack if it doesn't exist
   ctx.session.sceneStack = ctx.session.sceneStack || [];
@@ -13,7 +13,7 @@ welcomeScene.enter(async (ctx) => {
     ctx.session.sceneStack.push('welcome');
   }
 
-  if (chatID < 0) { // Group Chats
+  if (holonId < 0) { // Group Chats
     await ctx.reply('Welcome to our community onboarding process! Please answer the following questions from the community perspective to create your DNA');
     return ctx.scene.enter('dna');
   }

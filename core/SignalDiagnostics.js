@@ -167,7 +167,7 @@ export default class SignalDiagnostics {
                 if (matches.length === 0) {
                     log.error('No handler found for view_original_quest signal:', {
                         data,
-                        chatId: ctx.callbackQuery.message.chat.id,
+                        holonId: ctx.callbackQuery.message.chat.id,
                         userId: ctx.callbackQuery.from.id
                     });
                     
@@ -192,10 +192,10 @@ export default class SignalDiagnostics {
     }
 
     async notifyAdmin(message) {
-        const adminChatId = process.env.ADMIN_CHAT_ID;
-        if (adminChatId) {
+        const adminholonId = process.env.ADMIN_CHAT_ID;
+        if (adminholonId) {
             try {
-                await this.bot.telegram.sendMessage(adminChatId, message);
+                await this.bot.telegram.sendMessage(adminholonId, message);
             } catch (error) {
                 log.error('Failed to notify admin:', error);
             }

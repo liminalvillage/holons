@@ -13,7 +13,7 @@ This checklist tracks the implementation of features and tasks for the HolonsBot
 | Implement quest deletion (`/delete`)                                                                | Completed     | Must-have  | -            |                     |
 | **Feature: Telegram Holograms (Live Message Views)**                                                |               |            |              |                     |
 | Implement `/quests` command to list open quests                                                       | Completed     | Must-have  | -            |                     |
-| `viewOriginalQuest`: Parse `originalChatId_originalQuestId` from callback                         | Completed     | Must-have  | -            |                     |
+| `viewOriginalQuest`: Parse `originalholonId_originalQuestId` from callback                         | Completed     | Must-have  | -            |                     |
 | `viewOriginalQuest`: Send new Telegram message in current chat with original quest details          | Completed     | Must-have  | -            |                     |
 | `viewOriginalQuest`: Track new Telegram message in original quest's `activeHolograms` array         | Completed     | Must-have  | -            |                     |
 | `viewOriginalQuest`: Ensure original quest is saved after adding to `activeHolograms`               | Completed     | Must-have  | -            |                     |
