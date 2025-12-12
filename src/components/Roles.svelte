@@ -4,6 +4,7 @@
 	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { browser } from "$app/environment";
+	import { page } from "$app/stores";
 
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
@@ -332,6 +333,19 @@
 		if (typeof usersSubscriptionUnsubscribe === 'function') usersSubscriptionUnsubscribe();
 		usersSubscriptionUnsubscribe = undefined;
 	});
+
+	// Helper to validate holon ID
+	const isValidHolonId = (id: string | undefined | null): id is string =>
+		!!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
+
+	// Reactive block: when page ID changes (different holon), reload roles data
+	$: if ($page.params.id && $page.params.id !== activeHolonId && isValidHolonId($page.params.id) && holosphere) {
+		console.log(`[Roles.svelte] Page param changed. Old: ${activeHolonId}, New: ${$page.params.id}`);
+		activeHolonId = $page.params.id;
+		ID.set(activeHolonId);
+		isUserStoreReady = false;
+		loadAndSubscribeData(activeHolonId);
+	}
 
 	// Format time for display
 	/**

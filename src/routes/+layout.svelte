@@ -2,6 +2,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 	import { HoloSphere } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
 	import TelegramSplash from '../components/TelegramSplash.svelte';
@@ -9,6 +10,7 @@
 	import { nostrStore, nostrPrivateKey } from '$lib/stores/nostr';
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
+	import { addVisitedHolon } from '../utils/localStorage';
 
 	// Track if user has passed the splash screen
 	let showSplash = true;
@@ -26,6 +28,10 @@
 
 	// GC interval reference
 	let gcInterval: ReturnType<typeof setInterval>;
+
+	// Store holon name from onboarding (if provided)
+	let pendingHolonName: string | null = null;
+	let pendingTelegramUserId: number | null = null;
 
 	// Initialize user's personal holon with their public key as ID
 	async function initializeUserHolon() {
@@ -53,16 +59,43 @@
 				}
 			}
 
+			// Determine the holon name (from pending or existing settings or default)
+			const holonName = pendingHolonName || existingSettings?.name || 'My Holon';
+
 			if (!existingSettings || !existingSettings.name) {
-				// First time login - create the holon with default settings
-				console.log('First time user - creating personal holon');
+				// First time login - create the holon with custom or default name
+				console.log('First time user - creating personal holon:', holonName);
 				await holosphere.write(userPublicKey, 'settings', {
 					id: userPublicKey,
-					name: 'My Holon',
+					name: holonName,
 					purpose: 'Personal holon',
 					createdAt: Date.now(),
 					createdBy: userPublicKey
 				});
+
+				// Store Telegram mapping if this came from Telegram
+				if (pendingTelegramUserId) {
+					try {
+						await holosphere.writeGlobal('telegram_mappings', {
+							id: String(pendingTelegramUserId),
+							publicKey: userPublicKey,
+							holonName: holonName,
+							createdAt: Date.now()
+						});
+						console.log('Telegram mapping stored for user:', pendingTelegramUserId);
+					} catch (err) {
+						console.error('Failed to store Telegram mapping:', err);
+					}
+				}
+			}
+
+			// Add the holon to visited list so it appears in TopBar
+			if (browser) {
+				addVisitedHolon(null, userPublicKey, holonName, 'personal');
+				// Dispatch event to refresh TopBar holon list
+				window.dispatchEvent(new CustomEvent('holonCreated', {
+					detail: { holonId: userPublicKey, holonName }
+				}));
 			}
 
 			// Set the ID store to the user's public key (their personal holon)
@@ -203,12 +236,21 @@
 
 	// Handle splash screen completion
 	async function handleAuthenticated(event: CustomEvent) {
-		console.log('User authenticated with public key:', event.detail.publicKey, 'mode:', event.detail.mode);
+		const { publicKey, holonName, telegramUserId, mode } = event.detail;
+		console.log('User authenticated with public key:', publicKey, 'mode:', mode, 'holonName:', holonName);
+
+		// Store holon name and telegram user ID for use in initializeUserHolon
+		if (holonName) {
+			pendingHolonName = holonName;
+		}
+		if (telegramUserId) {
+			pendingTelegramUserId = telegramUserId;
+		}
 
 		// Determine which private key to use
 		let privateKey: string | null = null;
 
-		if (event.detail.mode === 'public') {
+		if (mode === 'public') {
 			// Public space mode - use the holosphere key from .env
 			privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
 			console.log('Using holosphere env key for public space');

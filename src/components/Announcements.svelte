@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext } from "svelte";
-	import { ID } from "../dashboard/store";;
+	import { ID } from "../dashboard/store";
+	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
 
 	let holosphere = getContext("holosphere") as HoloSphere;
@@ -45,6 +46,23 @@
 	let store: Record<string, Announcement> = {};
 	$: holonID = $ID;
 	$: announcements = Object.entries(store);
+
+	// Helper to validate holon ID
+	const isValidHolonId = (id: string | undefined | null): id is string =>
+		!!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
+
+	// Reactive block: when page ID changes (different holon), reload announcements
+	$: if ($page.params.id && $page.params.id !== currentHolonID && isValidHolonId($page.params.id) && holosphere) {
+		// Clean up previous subscription
+		if (unsubscribeFunction) {
+			unsubscribeFunction();
+			unsubscribeFunction = null;
+		}
+
+		currentHolonID = $page.params.id;
+		ID.set(currentHolonID);
+		subscribeToAnnouncements();
+	}
 
 	// Subscribe to changes in the specified holon
 	async function subscribeToAnnouncements() {

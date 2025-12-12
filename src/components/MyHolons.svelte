@@ -7,6 +7,7 @@
     import { browser } from "$app/environment";
     import type { HoloSphere } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
+    import { nostrPublicKey } from "$lib/stores/nostr";
     import { 
         savePersonalHolons, 
         loadPersonalHolons, 
@@ -73,6 +74,7 @@
     let federatedHolons: FederatedHolon[] = [];
     let showAddDialog = false;
     let showQRScanner = false;
+    let showMyQR = false;
     let newHolonId = '';
     let newHolonName = '';
     let error = '';
@@ -84,7 +86,6 @@
     let sortDirection: 'asc' | 'desc' = 'asc';
     let currentHolonId: string = '';
     let activeTab: 'personal' | 'visited' = 'personal';
-    let showSplashScreen = false;
     let showHolonIdInfo = false;
     
     // Progress tracking for name fetching
@@ -224,17 +225,6 @@
         return aVal > bVal ? multiplier : -multiplier;
     });
 
-    // Check if we should show splash screen
-    // Show splash screen when:
-    // 1. Not loading AND
-    // 2. No personal holons exist AND
-    // 3. No visited holons exist
-    $: {
-        const personalHolonsCount = myHolons.filter(h => h.isPersonal).length;
-        const visitedHolonsCount = visitedHolons.length;
-        showSplashScreen = !isLoading && personalHolonsCount === 0 && visitedHolonsCount === 0;
-    }
-
     // Subscribe to current holon ID
     let idStoreUnsubscribe: (() => void) | undefined;
     let lastProcessedId = '';
@@ -280,22 +270,40 @@
             window.addEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
             window.addEventListener('refreshAllHolonNames', handleRefreshAllRequest);
             window.addEventListener('holonNameUpdated', handleHolonNameUpdated);
+            window.addEventListener('holonCreated', handleHolonCreated);
         }
     });
+
+    // Handle new holon creation - reload data
+    function handleHolonCreated() {
+        loadData();
+    }
 
     onDestroy(() => {
         if (idStoreUnsubscribe) {
             idStoreUnsubscribe();
         }
-        
+
         // Remove event listeners
         if (browser) {
             window.removeEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
             window.removeEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
             window.removeEventListener('refreshAllHolonNames', handleRefreshAllRequest);
             window.removeEventListener('holonNameUpdated', handleHolonNameUpdated);
+            window.removeEventListener('holonCreated', handleHolonCreated);
         }
     });
+
+    // Helper to validate holon ID
+    const isValidHolonId = (id: string | undefined | null): id is string =>
+        !!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
+
+    // Reactive block: when page ID changes (different holon), reload federated holons
+    $: if ($page.params.id && $page.params.id !== currentHolonId && isValidHolonId($page.params.id) && holosphere && connectionReady) {
+        currentHolonId = $page.params.id;
+        ID.set(currentHolonId);
+        loadFederatedHolons();
+    }
 
     async function loadData() {
         if (!holosphere || !connectionReady) return;
@@ -959,94 +967,19 @@
     }
 </script>
 
-{#if showSplashScreen}
-    <!-- Splash Screen -->
-    <div class="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-        <div class="max-w-2xl w-full bg-gray-800/90 rounded-lg shadow-xl p-8 text-gray-100">
-            <div class="text-center mb-8">
-                <div class="flex items-center justify-center space-x-3 mb-6">
-                    <svg class="text-4xl text-white" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24">
-                        <circle cx="9" cy="12" r="6" fill="transparent" stroke="white" stroke-width="2"/>
-                        <circle cx="15" cy="12" r="6" fill="transparent" stroke="white" stroke-width="2"/>
-                    </svg>
-                    <h1 class="text-3xl font-bold">Welcome to the holonic dashboard</h1>
-                </div>
-                <p class="text-xl text-gray-300 mb-8">
-                    Get started by adding your first holon, and begin managing your holonic networks
-                </p>
-            </div>
-
-            <!-- Add First Holon Button - Moved to top for visibility -->
-            <div class="text-center mb-8">
-                <button
-                    on:click={() => showAddDialog = true}
-                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-lg text-xl font-semibold transition-colors flex items-center justify-center space-x-3 mx-auto shadow-lg"
-                >
-                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span>Add Your First Holon</span>
-                </button>
-            </div>
-
-            <div class="space-y-8">
-                <!-- How to Add a Holon -->
-                <div class="bg-gray-700/50 border border-gray-600 rounded-lg p-6">
-                    <h2 class="text-2xl font-semibold text-indigo-400 mb-4">How to Add Your First Holon</h2>
-                    <div class="space-y-4">
-                        <div class="flex items-start space-x-4">
-                            <div class="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold">1</div>
-                            <div>
-                                <h3 class="font-semibold text-white mb-2">Start a conversation with HolonsBot</h3>
-                                <p class="text-gray-300">Start a conversation with our Telegram bot or add it to your existing group:</p>
-                                <ul class="list-disc list-inside text-gray-400 mt-2 space-y-1">
-                                    <li>Start a conversation: <a href="https://t.me/HolonsBot" class="text-indigo-400 hover:text-indigo-300">@HolonsBot</a></li>
-                                    <li>Or add the bot to your existing Telegram group</li>
-                                </ul>
-                            </div>
-                        </div>
-                        
-                        <div class="flex items-start space-x-4">
-                            <div class="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold">2</div>
-                            <div>
-                                <h3 class="font-semibold text-white mb-2">Get your Holon ID</h3>
-                                <p class="text-gray-300">In the chat with HolonsBot, type one of these commands:</p>
-                                <ul class="list-disc list-inside text-gray-400 mt-2 space-y-1">
-                                    <li><code class="bg-gray-600 px-2 py-1 rounded">/id</code> or <code class="bg-gray-600 px-2 py-1 rounded">/settings</code> to get your holon ID</li>
-                                    <li><code class="bg-gray-600 px-2 py-1 rounded">/dashboard</code> to get a direct link to your holon dashboard</li>
-                                </ul>
-                            </div>
-                        </div>
-                        
-                        <div class="flex items-start space-x-4">
-                            <div class="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold">3</div>
-                            <div>
-                                <h3 class="font-semibold text-white mb-2">Add your Holon</h3>
-                                <p class="text-gray-300">Copy the holon ID and add it to the dashboard using the button above, or use the direct link from <code class="bg-gray-600 px-2 py-1 rounded">/dashboard</code></p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Demo Holon -->
-                <div class="bg-gray-700/50 border border-gray-600 rounded-lg p-6">
-                    <h3 class="text-xl font-semibold text-green-400 mb-3">Try Our Demo</h3>
-                    <p class="text-gray-300 mb-4">Want to see how it works? Check out our demo holon to explore the features.</p>
-                    <a href="/demo" class="inline-flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>View Demo Holon</span>
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-{:else}
-    <!-- Main MyHolons Interface -->
-    <div class="p-6">
+<!-- Main MyHolons Interface -->
+<div class="p-6">
         <!-- Header -->
         <div class="flex justify-end items-center mb-6 gap-2">
+            <button
+                on:click={() => showMyQR = true}
+                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                My QR
+            </button>
             <button
                 on:click={() => showAddDialog = true}
                 class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -1378,7 +1311,6 @@
             {/if}
         {/if}
     </div>
-{/if}
 
 <!-- QR Scanner Component -->
 <QRScanner 
@@ -1538,6 +1470,86 @@
                     Cancel
                 </button>
             </div>
+        </div>
+    </div>
+{/if}
+
+<!-- My QR Code Modal -->
+{#if showMyQR}
+    <div
+        class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+        on:click={() => showMyQR = false}
+        on:keydown={(e) => e.key === 'Escape' && (showMyQR = false)}
+        role="dialog"
+        tabindex="-1"
+        transition:fade={{ duration: 150 }}
+    >
+        <div
+            class="bg-gray-800 rounded-xl max-w-sm w-full p-6 shadow-2xl border border-gray-700"
+            on:click|stopPropagation
+            on:keydown|stopPropagation
+            transition:scale={{ duration: 200, start: 0.95 }}
+        >
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-white">My Holon QR Code</h3>
+                <button
+                    on:click={() => showMyQR = false}
+                    class="text-gray-400 hover:text-white transition-colors"
+                >
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- QR Code -->
+            <div class="bg-white rounded-lg p-4 mb-4">
+                <img
+                    src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&format=svg&data={encodeURIComponent($nostrPublicKey || '')}&margin=10"
+                    alt="QR Code for {$nostrPublicKey}"
+                    class="w-full h-auto"
+                />
+            </div>
+
+            <!-- Public Key Display -->
+            <div class="mb-4">
+                <label class="block text-sm text-gray-400 mb-1">Public Key / Holon ID</label>
+                <div class="bg-gray-900 rounded-lg p-3 font-mono text-xs text-gray-300 break-all select-all">
+                    {$nostrPublicKey || 'Not available'}
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-2">
+                <button
+                    on:click={() => {
+                        if ($nostrPublicKey) {
+                            navigator.clipboard.writeText($nostrPublicKey);
+                        }
+                    }}
+                    class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Copy ID
+                </button>
+                <a
+                    href="https://api.qrserver.com/v1/create-qr-code/?size=500x500&format=png&data={encodeURIComponent($nostrPublicKey || '')}&margin=20"
+                    download="holon-qr.png"
+                    class="flex-1 bg-gray-600 hover:bg-gray-500 text-white py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download
+                </a>
+            </div>
+
+            <p class="text-xs text-gray-500 text-center mt-4">
+                Share this QR code to let others add your holon to their federation
+            </p>
         </div>
     </div>
 {/if}

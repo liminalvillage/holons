@@ -1,19 +1,22 @@
 {
 	"name": "harvest",
-	"version": "1.0.0",
+	"version": "2.0.0",
 	"private": true,
 	"author": {
 		"name": "Roberto Valenti"
 	},
-	"license": "MIT",
+	"license": "AGPL",
 	"keywords": [
+		"holons",
+		"holonic",
 		"holosphere",
-		"harvest",
 		"dashboard",
 		"svelte",
 		"typescript",
 		"tailwindcss",
-		"mapbox"
+		"mapbox",
+		"h3",
+		"federation"
 	],
 	"scripts": {
 		"dev": "vite dev",

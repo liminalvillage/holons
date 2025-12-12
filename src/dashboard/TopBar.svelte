@@ -8,13 +8,13 @@
 	import type { HoloSphere } from "holosphere";
 	import { addVisitedHolon, getWalletAddress, loadVisitedHolons, saveVisitedHolons, type VisitedHolon } from "../utils/localStorage";
 	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
+	import { nostrPublicKey } from '$lib/stores/nostr';
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 	import VideoCall from '../components/VideoCall.svelte';
 	import WidgetDashboard from '../components/WidgetDashboard.svelte';
 	import KeyManager from '../components/KeyManager.svelte';
-
-	export let toggleMyHolons: () => void;
+	import QRScanner from '../components/QRScanner.svelte';
 
 	// Visited holons for tabs
 	let visitedHolons: VisitedHolon[] = [];
@@ -25,6 +25,7 @@
 	let newHolonName = '';
 	let addHolonError = '';
 	let addHolonLoading = false;
+	let showQRScanner = false;
 
 	// Helper to validate holon ID
 	const isValidHolonId = (id: string | undefined | null): id is string => {
@@ -39,15 +40,75 @@
 	let showVideoCall = false;
 	let showWidgetDashboard = false;
 
-	// Refresh holon names when opening MyHolons
-	function handleToggleMyHolons() {
-		if (browser) {
-			window.dispatchEvent(new CustomEvent('refreshAllHolonNames', { detail: { timestamp: Date.now() } }));
+	// Handle QR scan result
+	function handleQRScan(event: CustomEvent<{ decodedText: string }>) {
+		const { decodedText } = event.detail;
+
+		// Extract holon ID from the scanned text
+		let holonId = decodedText;
+
+		try {
+			// If it's a URL, try to extract the holon ID from it
+			if (decodedText.includes('://') || decodedText.startsWith('http')) {
+				const url = new URL(decodedText);
+				const pathParts = url.pathname.split('/').filter(part => part.trim() !== '');
+				const excludedPaths = ['dashboard', 'qr', 'settings', 'admin', 'holons', 'tasks', 'offers', 'map', 'council', 'proposals'];
+
+				for (const part of pathParts) {
+					if (excludedPaths.includes(part.toLowerCase())) continue;
+					if (/^[a-zA-Z0-9\-_]+$/.test(part) && part.length > 3) {
+						holonId = part;
+						break;
+					}
+				}
+
+				if (holonId === decodedText && pathParts.length > 0) {
+					holonId = pathParts[0];
+				}
+			} else if (decodedText.includes('/')) {
+				const pathParts = decodedText.split('/').filter(part => part.trim() !== '');
+				const excludedPaths = ['dashboard', 'qr', 'settings', 'admin', 'holons', 'tasks', 'offers', 'map', 'council', 'proposals'];
+
+				for (const part of pathParts) {
+					if (excludedPaths.includes(part.toLowerCase())) continue;
+					if (/^[a-zA-Z0-9\-_]+$/.test(part) && part.length > 3) {
+						holonId = part;
+						break;
+					}
+				}
+
+				if (holonId === decodedText && pathParts.length > 0) {
+					holonId = pathParts[0];
+				}
+			}
+
+			// Clean up the holon ID
+			holonId = holonId.split('?')[0];
+			holonId = holonId.split('#')[0];
+			holonId = holonId.replace(/\.(html|htm|php|asp|aspx|jsp|jspx)$/i, '');
+
+			const holonIdPattern = /^[a-zA-Z0-9\-_]+$/;
+
+			if (holonId && holonId.trim() && holonIdPattern.test(holonId.trim())) {
+				newHolonId = holonId.trim();
+			} else {
+				addHolonError = `Invalid holon ID format: "${holonId}". Please scan a valid holon QR code.`;
+				setTimeout(() => addHolonError = '', 5000);
+			}
+		} catch (err) {
+			console.error('Error parsing QR code:', err);
+			addHolonError = 'Error parsing QR code. Please try again.';
+			setTimeout(() => addHolonError = '', 5000);
 		}
-		if (isValidHolonId($ID)) {
-			updateCurrentHolonName($ID);
-		}
-		toggleMyHolons();
+
+		showQRScanner = false;
+	}
+
+	function handleQRScanError(event: CustomEvent<{ message: string }>) {
+		const { message } = event.detail;
+		addHolonError = `QR scan error: ${message}`;
+		setTimeout(() => addHolonError = '', 5000);
+		showQRScanner = false;
 	}
 
 	// Handle holon name update from Settings
@@ -178,6 +239,13 @@
 		}
 	}
 
+	// Navigate to home holon (user's public key)
+	function goToHomeHolon() {
+		if ($nostrPublicKey) {
+			navigateToHolon($nostrPublicKey);
+		}
+	}
+
 	// Load visited holons for tabs
 	function loadVisitedHolonsForTabs() {
 		if (browser) {
@@ -281,6 +349,11 @@
 		newHolonName = '';
 	}
 
+	// Handle new holon creation event
+	function handleHolonCreated() {
+		loadVisitedHolonsForTabs();
+	}
+
 	onMount(async () => {
 		isInitialized = true;
 		const initialId = $page.params.id;
@@ -298,6 +371,7 @@
 		window.addEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
 		window.addEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
 		window.addEventListener('holonNavigated', handleHolonNavigated as EventListener);
+		window.addEventListener('holonCreated', handleHolonCreated);
 		window.addEventListener('storage', loadVisitedHolonsForTabs);
 	});
 
@@ -306,6 +380,7 @@
 			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
 			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
 			window.removeEventListener('holonNavigated', handleHolonNavigated as EventListener);
+			window.removeEventListener('holonCreated', handleHolonCreated);
 			window.removeEventListener('storage', loadVisitedHolonsForTabs);
 		}
 	});
@@ -322,6 +397,22 @@
 	<button class="menu-btn" on:click={toggleSidebarExpanded} aria-label="Toggle menu">
 		<Menu size="22" />
 	</button>
+
+	<!-- Home holon button -->
+	{#if $nostrPublicKey}
+		<button
+			class="home-btn"
+			class:active={$ID === $nostrPublicKey}
+			on:click={goToHomeHolon}
+			title="Go to Home Holon"
+			aria-label="Go to Home Holon"
+		>
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+				<polyline points="9 22 9 12 15 12 15 22"/>
+			</svg>
+		</button>
+	{/if}
 
 	<!-- Holon cards section (scrollable, full width) -->
 	<div class="holon-cards">
@@ -404,6 +495,14 @@
 <WidgetDashboard bind:isVisible={showWidgetDashboard} />
 
 <!-- Add Holon Modal -->
+<!-- QR Scanner Component -->
+<QRScanner
+	showScanner={showQRScanner}
+	on:scan={handleQRScan}
+	on:error={handleQRScanError}
+	on:close={() => showQRScanner = false}
+/>
+
 {#if showAddHolonModal}
 	<div
 		class="modal-overlay"
@@ -424,14 +523,26 @@
 			<div class="modal-fields">
 				<div class="modal-field">
 					<label for="new-holon-id">Holon ID *</label>
-					<input
-						id="new-holon-id"
-						type="text"
-						bind:value={newHolonId}
-						placeholder="Enter holon ID"
-						on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
-					/>
-					<p class="modal-hint">Get your holon ID from @HolonsBot on Telegram using /id or /dashboard</p>
+					<div class="input-with-button">
+						<input
+							id="new-holon-id"
+							type="text"
+							bind:value={newHolonId}
+							placeholder="Enter holon ID"
+							on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
+						/>
+						<button
+							type="button"
+							class="qr-scan-btn"
+							on:click={() => showQRScanner = true}
+							title="Scan QR Code"
+						>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M3 3h6v6H3V3zm12 0h6v6h-6V3zM3 15h6v6H3v-6zm12 0h6v6h-6v-6zM9 3v6m0 6v6" />
+							</svg>
+						</button>
+					</div>
+					<p class="modal-hint">Get your holon ID from @HolonsBot on Telegram using /id or /dashboard, or scan a QR code</p>
 				</div>
 
 				<div class="modal-field">
@@ -495,6 +606,41 @@
 	.menu-btn:hover {
 		color: white;
 		background: rgba(55, 65, 81, 0.5);
+	}
+
+	.home-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		padding: 0;
+		color: #9ca3af;
+		background: rgba(31, 41, 55, 0.8);
+		border: 1px solid rgba(75, 85, 99, 0.4);
+		border-radius: 0.75rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		flex-shrink: 0;
+	}
+
+	.home-btn svg {
+		width: 20px;
+		height: 20px;
+	}
+
+	.home-btn:hover {
+		color: white;
+		background: rgba(55, 65, 81, 0.8);
+		border-color: rgba(96, 165, 250, 0.4);
+		transform: translateY(-1px);
+	}
+
+	.home-btn.active {
+		color: #818cf8;
+		background: rgba(79, 70, 229, 0.3);
+		border-color: rgba(129, 140, 248, 0.6);
+		box-shadow: 0 0 12px rgba(129, 140, 248, 0.3);
 	}
 
 	/* Hide on large screens where sidebar is always visible */
@@ -691,6 +837,16 @@
 			gap: 0.5rem;
 		}
 
+		.home-btn {
+			width: 32px;
+			height: 32px;
+		}
+
+		.home-btn svg {
+			width: 16px;
+			height: 16px;
+		}
+
 		.holon-cards {
 			gap: 0.375rem;
 		}
@@ -882,5 +1038,39 @@
 
 	.modal-btn-secondary:hover {
 		background: rgb(107, 114, 128);
+	}
+
+	.input-with-button {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.input-with-button input {
+		flex: 1;
+	}
+
+	.qr-scan-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 42px;
+		height: 42px;
+		padding: 0;
+		background: rgb(16, 185, 129);
+		border: none;
+		border-radius: 0.5rem;
+		color: white;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		flex-shrink: 0;
+	}
+
+	.qr-scan-btn:hover {
+		background: rgb(5, 150, 105);
+	}
+
+	.qr-scan-btn svg {
+		width: 20px;
+		height: 20px;
 	}
 </style>

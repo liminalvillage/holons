@@ -4,14 +4,12 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { data } from './sidebar/data';
-	import { onDestroy, onMount, setContext } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { autoTransitionEnabled } from './store';
-	import { fade, slide } from 'svelte/transition';
 
 	import TopBar from './TopBar.svelte';
 	import Overlay from './Overlay.svelte';
 	import Sidebar from './sidebar/Sidebar.svelte';
-	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
 
 	const style = {
@@ -24,11 +22,7 @@
 
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
-	let showMyHolons = false;
 
-	// Check if we're on the root route
-	$: isRootRoute = $page.url.pathname === '/';
-	
 	// Check if we're on a QR route
 	$: isQrRoute = $page.url.pathname.includes('/qr');
 
@@ -56,11 +50,6 @@
 		}
 	}
 
-	function toggleMyHolons() {
-		showMyHolons = !showMyHolons;
-	}
-
-
 	// Set up auto-switching if in browser
 	if (browser) {
 		// Set up mouse move listener
@@ -84,25 +73,11 @@
 		});
 	}
 
-	// Close drawer when a holon is selected (ID changes)
-	page.subscribe((val) => {
-		if (showMyHolons) {
-			showMyHolons = false;
-		}
-	});
-
-</script>
+	</script>
 
 <svelte:window on:keydown={handleGlobalKeydown} />
 
-{#if isRootRoute}
-	<!-- Root route layout: Clean MyHolons view -->
-	<div class={style.rootContainer}>
-		<main class={style.rootMain}>
-			<MyHolons />
-		</main>
-	</div>
-{:else if isQrRoute}
+{#if isQrRoute}
 	<!-- QR route layout: Clean view without topbar/sidebar -->
 	<div class={style.rootContainer}>
 		<main class={style.rootMain}>
@@ -115,7 +90,7 @@
 	<!-- Normal dashboard layout -->
 	<div class={style.container} on:mousemove={handleMouseMove} role="presentation">
 		<!-- TopBar spans full width above everything -->
-		<TopBar {toggleMyHolons} />
+		<TopBar />
 		<div class="flex items-stretch dashboard-content">
 			<Overlay />
 			<Sidebar mobileOrientation="start" />
@@ -127,22 +102,6 @@
 				</main>
 			</div>
 		</div>
-
-		{#if showMyHolons}
-			<div
-				class="absolute inset-0 z-40 pt-14"
-				on:click|self={() => showMyHolons = false}
-				role="presentation"
-				transition:fade
-			>
-				<div class="absolute top-14 left-4 right-4" transition:slide>
-					<div class="bg-gray-900/90 backdrop-blur-sm max-h-[70vh] overflow-y-auto rounded-xl border border-gray-700">
-						<MyHolons />
-					</div>
-				</div>
-			</div>
-		{/if}
-
 	</div>
 {/if}
 

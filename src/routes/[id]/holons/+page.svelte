@@ -4,11 +4,29 @@
   import { ethers } from 'ethers';
   import { HolonsManager } from '$lib/holons/HolonsManager.js';
   import { getContext } from 'svelte';
+  import { ID } from '../../../dashboard/store';
   import HolonFlowVisualization from '../../../components/HolonFlowVisualization.svelte';
-  
+
   const holosphere = getContext('holosphere');
-  const holonId = $page.params.id || 'default';
-  
+
+  // Reactive holonId that updates when URL changes
+  $: holonId = $page.params.id || 'default';
+
+  // Synchronize the ID store with URL params
+  $: if ($page.params.id && $page.params.id !== $ID) {
+    ID.set($page.params.id);
+  }
+
+  // Track current holon for reactivity
+  let currentHolonId: string | null = null;
+
+  // Reactive block: reload holon data when holonId changes
+  $: if (holonId && holonId !== currentHolonId && holonsManager) {
+    currentHolonId = holonId;
+    holonsManager.setCurrentHolon(holonId);
+    loadHolonData();
+  }
+
   let holonsManager: HolonsManager;
   let provider: ethers.Provider | null = null;
   let isConnected = false;

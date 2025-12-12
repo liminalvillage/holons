@@ -4,11 +4,15 @@
     import { ID } from '../../../dashboard/store';
     import { onMount } from 'svelte';
 
-    // Set the ID from URL params
+    // Synchronize the ID store with URL params
+    $: if ($page.params.id && $page.params.id !== $ID) {
+        ID.set($page.params.id);
+    }
+
     onMount(() => {
-        const holonId = $page.params.id;
-        if (holonId) {
-            ID.set(holonId);
+        // Ensure ID is set on initial mount
+        if ($page.params.id) {
+            ID.set($page.params.id);
         }
     });
 </script>

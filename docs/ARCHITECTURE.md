@@ -1,16 +1,4 @@
-================================================================================
-WEBSOCKET, RELAY, AND NOTIFICATION SYSTEM - SEARCH RESULTS SUMMARY
-================================================================================
-
-SEARCH COMPLETED: November 3, 2025
-REPOSITORIES ANALYZED:
-  - /Users/roberto/Projects/harvest (SvelteKit frontend)
-  - /Users/roberto/Projects/HolonsBot (Telegram bot backend)
-  - /Users/roberto/Projects/holosphere2 (Nostr relay library)
-
-================================================================================
-KEY FINDINGS
-================================================================================
+==============================================================================
 
 ARCHITECTURE: Nostr-based relay system + GunDB peer-to-peer sync
 NOT TRADITIONAL WEBSOCKETS: Uses Nostr protocol with cryptographic signatures
@@ -20,14 +8,14 @@ NOT TRADITIONAL WEBSOCKETS: Uses Nostr protocol with cryptographic signatures
 ================================================================================
 
 PRIMARY RELAY CONFIGURATION FILE:
-  /Users/roberto/Projects/HolonsBot/relay-config.js
+  /HolonsBot/relay-config.js
   
 RELAY ENDPOINTS:
   - ws://localhost:7777          (Custom local relay, real-time broadcasting)
   - wss://relay.nostr.band       (Public Nostr relay, backup/persistence)
 
 INITIALIZATION IN HARVEST:
-  /Users/roberto/Projects/harvest/src/routes/+layout.svelte
+  /harvest/src/routes/+layout.svelte
   Lines 21-25:
     relays: [
         'ws://localhost:7777',
@@ -48,12 +36,12 @@ ENVIRONMENTS:
 ================================================================================
 
 MAIN BOT ENTRY POINT:
-  /Users/roberto/Projects/HolonsBot/HolonsBot.js
+  /HolonsBot/HolonsBot.js
   - Minimal wrapper, delegates to core/HolonsBotCore.js
   - Includes graceful shutdown handlers (SIGINT/SIGTERM)
 
 DATABASE CLASS (MANAGES RELAY CONNECTIONS):
-  /Users/roberto/Projects/HolonsBot/DB.js
+  /HolonsBot/DB.js
   
   KEY FEATURES:
   - Creates HoloSphere instance with persistent private key
@@ -69,7 +57,7 @@ DATABASE CLASS (MANAGES RELAY CONNECTIONS):
   - holosphere.getFederation(chatId) → Gets federation config
 
 PERSISTENT KEY STORAGE:
-  /Users/roberto/Projects/HolonsBot/utils/key-storage.js
+  /HolonsBot/utils/key-storage.js
   Uses: getOrCreateKey(dbName, generatePrivateKey)
   
   IMPORTANCE: Maintains identity across bot restarts, allows
@@ -80,7 +68,7 @@ PERSISTENT KEY STORAGE:
 ================================================================================
 
 MAIN INITIALIZATION FILE:
-  /Users/roberto/Projects/harvest/src/routes/+layout.svelte
+  /harvest/src/routes/+layout.svelte
   
   KEY CODE (lines 13-26):
   const privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
@@ -110,7 +98,7 @@ IMPORTANT CONFIGURATION:
 ================================================================================
 
 REVERSE PROXY SERVER:
-  /Users/roberto/Projects/HolonsBot/proxy.js
+  /HolonsBot/proxy.js
   
   CONFIGURATION:
   - Listens on port 443 (HTTPS)
@@ -129,7 +117,7 @@ REVERSE PROXY SERVER:
   });
 
 GUNSERVER IMPLEMENTATION:
-  /Users/roberto/Projects/HolonsBot/GunServer.js
+  /HolonsBot/GunServer.js
   
   FEATURES:
   - Express-based HTTP/HTTPS server on port 8765
@@ -149,7 +137,7 @@ GUNSERVER IMPLEMENTATION:
 ================================================================================
 
 MAIN HOLOSPHERE CLASS:
-  /Users/roberto/Projects/holosphere2/src/core/holosphere.js
+  /holosphere2/src/core/holosphere.js
   
   CONFIGURATION:
   export class HoloSphere {
@@ -162,7 +150,7 @@ MAIN HOLOSPHERE CLASS:
       };
 
 NOSTR CLIENT - SIMPLEPOOL MANAGEMENT:
-  /Users/Roberto/Projects/holosphere2/src/storage/nostr-client.js
+  /holosphere2/src/storage/nostr-client.js
   
   KEY FEATURES:
   - SimplePool from nostr-tools library
@@ -190,7 +178,7 @@ NOSTR CLIENT - SIMPLEPOOL MANAGEMENT:
 ================================================================================
 
 CURRENT NOTIFICATION SYSTEM:
-  /Users/roberto/Projects/HolonsBot/Announcements.js
+  /HolonsBot/Announcements.js
   
   ANNOUNCEMENT BROADCASTING (lines 61-130):
   - Gets federation info: await db.holosphere.getFederation(chatId)
@@ -204,12 +192,12 @@ CURRENT NOTIFICATION SYSTEM:
     - notify: [] (which holons to notify)
 
 TELEGRAM NOTIFICATIONS:
-  /Users/roberto/Projects/HolonsBot/Quests.js:
+  /HolonsBot/Quests.js:
   this.bot.telegram.pinChatMessage(quest.chat, quest.id, {
     disable_notification: true
   });
 
-  /Users/roberto/Projects/HolonsBot/Holons.js:
+  /HolonsBot/Holons.js:
   await ctx.reply("🏁 Smart Sync process steps submitted. You will receive notifications for each transaction.");
 
 NOTIFICATION FLOW:
@@ -225,7 +213,7 @@ NOTIFICATION FLOW:
 ================================================================================
 
 HARVEST APPLICATION:
-  /Users/roberto/Projects/harvest/
+  /harvest/
     src/routes/+layout.svelte                  (Main HoloSphere init)
     src/lib/holons/HolonsManager.ts           (Smart contract events)
     src/lib/holons/HolonsContract.ts          (Blockchain interaction)
@@ -234,7 +222,7 @@ HARVEST APPLICATION:
     src/components/TelegramAuth.svelte        (Telegram login widget)
 
 HOLONSBOT:
-  /Users/roberto/Projects/HolonsBot/
+  /HolonsBot/
     HolonsBot.js                              (Entry point)
     relay-config.js                           (Relay URLs)
     DB.js                                     (Relay database)
@@ -245,7 +233,7 @@ HOLONSBOT:
     Quests.js                                 (Quest notifications)
 
 HOLOSPHERE LIBRARY:
-  /Users/roberto/Projects/holosphere2/
+  /holosphere2/
     src/core/holosphere.js                    (HoloSphere class)
     src/storage/nostr-client.js               (NostrClient/SimplePool)
     src/storage/nostr-wrapper.js              (Storage wrapper)
@@ -370,13 +358,13 @@ Layer 4 - Notifications:
 DOCUMENTATION CREATED
 ================================================================================
 
-1. /Users/roberto/Projects/harvest/WEBSOCKET_RELAY_ANALYSIS.md
+1. /harvest/WEBSOCKET_RELAY_ANALYSIS.md
    - Comprehensive technical documentation
    - 13 sections covering all aspects
    - Code examples and diagrams
    - Recommendations for improvements
 
-2. /Users/roberto/Projects/harvest/QUICK_REFERENCE.md
+2. /harvest/QUICK_REFERENCE.md
    - Quick lookup guide
    - Common issues and fixes
    - Useful commands

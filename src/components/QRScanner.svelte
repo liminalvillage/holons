@@ -125,21 +125,32 @@
         stopScanner();
         // Reset error state
         error = '';
+        // Set showScanner to false directly (works with bind:)
+        showScanner = false;
         dispatch('close');
     }
 </script>
 
 {#if showScanner}
-    <div 
-        class="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]" 
+    <div
+        class="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]"
         transition:fade
+        on:click|self={closeScanner}
+        on:keydown={(e) => e.key === 'Escape' && closeScanner()}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
     >
-        <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" transition:scale>
+        <div
+            class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4"
+            transition:scale
+            on:click|stopPropagation={() => {}}
+        >
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-bold text-white">Scan QR Code</h3>
                 <button
-                    on:click={closeScanner}
-                    class="text-gray-400 hover:text-white transition-colors"
+                    on:click|stopPropagation={closeScanner}
+                    class="p-2 bg-gray-700 hover:bg-red-600 text-white rounded-full transition-colors"
                     aria-label="Close QR scanner"
                 >
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -167,11 +178,11 @@
                     <!-- Scanning overlay -->
                     {#if isScanning}
                         <div class="absolute inset-0 pointer-events-none z-20">
-                            <div class="absolute inset-0 border-2 border-blue-500 rounded-lg m-4">
-                                <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-500"></div>
-                                <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-500"></div>
-                                <div class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-500"></div>
-                                <div class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-500"></div>
+                            <div class="absolute inset-0 border-2 border-indigo-500 rounded-lg m-4">
+                                <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-indigo-500"></div>
+                                <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-indigo-500"></div>
+                                <div class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-indigo-500"></div>
+                                <div class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-indigo-500"></div>
                             </div>
                         </div>
                     {/if}
@@ -186,7 +197,7 @@
                     {#if !isScanning}
                         <button
                             on:click={startScanner}
-                            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors"
+                            class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-colors"
                         >
                             Start Camera
                         </button>
