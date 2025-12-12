@@ -1036,7 +1036,8 @@
             
             const namePromises = validHolonIds.map(async (holonId) => {
                 try {
-                    const settings = await holosphere.get(holonId, "settings", holonId);
+                    const settingsResult = await holosphere.get(holonId, "settings");
+                    const settings = Array.isArray(settingsResult) ? settingsResult.find((s: any) => s?.name) : settingsResult;
                     const holonName = settings?.name || holonId;
                     return { holonId, name: holonName };
                 } catch (error) {
@@ -1095,7 +1096,8 @@
                             // Get the name of the federated holon
                             let federatedHolonName = federatedHolonId;
                             try {
-                                const federatedSettings = await holosphere.get(federatedHolonId, 'settings', federatedHolonId);
+                                const federatedSettingsResult = await holosphere.get(federatedHolonId, 'settings');
+                                const federatedSettings = Array.isArray(federatedSettingsResult) ? federatedSettingsResult.find((s: any) => s?.name) : federatedSettingsResult;
                                 if (federatedSettings && federatedSettings.name) {
                                     federatedHolonName = federatedSettings.name;
                                 }

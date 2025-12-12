@@ -3,6 +3,7 @@
     import { fade, slide, fly } from "svelte/transition";
     import { flip } from "svelte/animate";
     import { goto } from "$app/navigation";
+    import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
     import { handshake, nostrUtils } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
@@ -84,6 +85,7 @@
             outbound: string[];
             timestamp: number;
         }>;
+        partnerNames?: Record<string, string>;  // Maps partner pubkey/id to their holon name from handshake
         timestamp: number;
     }
 
@@ -188,6 +190,26 @@
         }
     });
 
+    // Helper to validate holon ID
+    const isValidHolonId = (id: string | undefined | null): id is string =>
+        !!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
+
+    // Reactive block: when page ID changes (different holon), reload federation data
+    $: if ($page.params.id && $page.params.id !== currentHolonId && isValidHolonId($page.params.id) && holosphere) {
+        // Unsubscribe from previous federation data
+        if (federationSubscription) {
+            federationSubscription.unsubscribe();
+            federationSubscription = null;
+        }
+
+        currentHolonId = $page.params.id;
+        ID.set(currentHolonId);
+        loading = true;
+        loadFederationData().then(() => {
+            subscribeFederationChanges();
+        });
+    }
+
     async function subscribeFederationChanges() {
         if (!holosphere || !currentHolonId) return;
 
@@ -236,8 +258,8 @@
 
                     console.log(`Lens config for ${holonId}:`, lensConfig);
 
-                    // Get actual holon name from settings
-                    const holonName = await getHolonName(holonId);
+                    // Use partner name from handshake (stored in partnerNames) - we can't read their settings
+                    const holonName = federationInfo.partnerNames?.[holonId] || holonId;
 
                     // Check if holonId is a valid Nostr public key (hex format)
                     let pubKey: string | undefined;
@@ -437,17 +459,25 @@
 
     async function getHolonName(holonId: string): Promise<string> {
         if (!holonId || !holosphere) return 'Unknown';
-        
+
         try {
-            // Get settings for this holon
-            const settings = await holosphere.get(holonId, 'settings', holonId);
-            if (settings && settings.name) {
+            // Get settings for this holon (no dataId - gets all settings)
+            const settings = await holosphere.get(holonId, 'settings');
+
+            // Settings might be an array (readAll returns array) or single object
+            if (Array.isArray(settings)) {
+                // Find the first settings object with a name
+                const settingsObj = settings.find((s: any) => s?.name);
+                if (settingsObj?.name) {
+                    return settingsObj.name;
+                }
+            } else if (settings && settings.name) {
                 return settings.name;
             }
         } catch (error) {
             console.warn(`Could not fetch settings name for holon ${holonId}:`, error);
         }
-        
+
         // Fallback to holon ID
         return holonId;
     }
@@ -971,6 +1001,15 @@
             // Update request status
             pendingFederationRequests.updateStatus(response.requestId, 'accepted');
 
+            // Create the actual federation record now that it's accepted
+            // Store the responder's name so we can display it without reading their settings
+            if (holosphere && currentHolonId) {
+                await holosphere.federateHolon(currentHolonId, senderPubKey, {
+                    lensConfig: response.lensConfig || { inbound: [], outbound: [] },
+                    partnerName: response.responderHolonName
+                });
+            }
+
             // Update the federation status to connected
             federatedHolons = federatedHolons.map(h =>
                 h.pendingRequestId === response.requestId
@@ -1065,28 +1104,42 @@
     }, new Set<string>()).size;
 </script>
 
-<div class="space-y-8">
+<div class="space-y-6">
     <!-- Header Section -->
-    <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-            <div class="text-center md:text-left mb-4 md:mb-0">
-                <h1 class="text-4xl font-bold text-white mb-2">Federation Configuration</h1>
-                <p class="text-gray-300 text-lg">Manage data sharing between holons</p>
+    <div class="bg-gradient-to-br from-indigo-900/80 via-purple-900/60 to-gray-900 py-6 px-6 rounded-2xl shadow-xl border border-purple-500/20">
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg">
+                    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-white">Federation</h1>
+                    <p class="text-purple-300/80 text-sm">Connect and share data across holons</p>
+                </div>
             </div>
-            <div class="flex flex-wrap items-center gap-3">
-                <button 
+            <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                <button
                     on:click={() => showNetworkView = !showNetworkView}
-                    class="bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg transition-colors flex items-center space-x-2 text-sm"
+                    class="flex-1 lg:flex-none bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/50 px-3 py-2 rounded-lg transition-all flex items-center justify-center space-x-2 text-sm text-gray-200 font-medium hover:border-gray-500/50"
                     title="Toggle network view"
                 >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zM13 12a1 1 0 11-2 0 1 1 0 012 0zM20 12a1 1 0 11-2 0 1 1 0 012 0z"></path>
-                    </svg>
-                    <span>{showNetworkView ? 'List View' : 'Network View'}</span>
+                    {#if showNetworkView}
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                        </svg>
+                        <span>List</span>
+                    {:else}
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path>
+                        </svg>
+                        <span>Network</span>
+                    {/if}
                 </button>
-                <button 
+                <button
                     on:click={() => showAddCustomLens = true}
-                    class="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-lg transition-colors flex items-center space-x-2 text-sm"
+                    class="flex-1 lg:flex-none bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/50 px-3 py-2 rounded-lg transition-all flex items-center justify-center space-x-2 text-sm text-purple-300 font-medium hover:border-purple-400/50"
                     title="Add custom lens"
                 >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1094,109 +1147,204 @@
                     </svg>
                     <span>Add Lens</span>
                 </button>
-                <button 
+                <button
                     on:click={() => showAddDialog = true}
-                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+                    class="flex-1 lg:flex-none bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-4 py-2 rounded-lg transition-all flex items-center justify-center space-x-2 text-white font-medium shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                     disabled={!currentHolonId || saving}
+                    title={!currentHolonId ? 'Select a holon first' : 'Add new federation'}
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                     </svg>
-                    <span>Add Federation</span>
+                    <span>Add Partner</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Main Content Container -->
-    <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
-        <div class="p-8">
-
-            <!-- Status Messages -->
-            {#if error}
-                <div class="bg-red-900/50 border border-red-700 rounded-lg p-4 mb-6" transition:slide>
-                    <div class="flex items-center space-x-2">
+    <!-- Status Messages (floating) -->
+    {#if error}
+        <div class="fixed top-4 right-4 z-50 max-w-md" transition:fly={{ x: 100, duration: 300 }}>
+            <div class="bg-red-900/95 border border-red-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
                         <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
-                        <span class="text-red-300">{error}</span>
                     </div>
+                    <div class="flex-1">
+                        <p class="text-red-200 font-medium text-sm">Error</p>
+                        <p class="text-red-300/80 text-sm mt-0.5">{error}</p>
+                    </div>
+                    <button on:click={() => error = ''} class="text-red-400 hover:text-red-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
                 </div>
-            {/if}
+            </div>
+        </div>
+    {/if}
 
-            {#if success}
-                <div class="bg-green-900/50 border border-green-700 rounded-lg p-4 mb-6" transition:slide>
-                    <div class="flex items-center space-x-2">
+    {#if success}
+        <div class="fixed top-4 right-4 z-50 max-w-md" transition:fly={{ x: 100, duration: 300 }}>
+            <div class="bg-green-900/95 border border-green-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                         <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                         </svg>
-                        <span class="text-green-300">{success}</span>
                     </div>
+                    <div class="flex-1">
+                        <p class="text-green-200 font-medium text-sm">Success</p>
+                        <p class="text-green-300/80 text-sm mt-0.5">{success}</p>
+                    </div>
+                    <button on:click={() => success = ''} class="text-green-400 hover:text-green-300">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
                 </div>
-            {/if}
+            </div>
+        </div>
+    {/if}
 
-            <!-- Stats Section -->
-            {#if !loading && currentHolonId && federatedHolons.length > 0}
-                <div class="grid grid-cols-2 gap-4 mb-8">
-                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                        <div class="text-2xl font-bold text-white mb-1">{totalFederations}</div>
-                        <div class="text-sm text-gray-400">Federations</div>
-                    </div>
-                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                        <div class="text-2xl font-bold text-white mb-1">{activeLenses}</div>
-                        <div class="text-sm text-gray-400">Active Lenses</div>
-                    </div>
+    <!-- Stats Bar -->
+    {#if !loading && currentHolonId && federatedHolons.length > 0}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" transition:slide>
+            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
                 </div>
-            {/if}
+                <div>
+                    <div class="text-xl font-bold text-white">{totalFederations}</div>
+                    <div class="text-xs text-gray-400">Partners</div>
+                </div>
+            </div>
+            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div class="text-xl font-bold text-white">{activeLenses}</div>
+                    <div class="text-xs text-gray-400">Active Lenses</div>
+                </div>
+            </div>
+            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div class="text-xl font-bold text-white">{federatedHolons.filter(h => h.status === 'connected').length}</div>
+                    <div class="text-xs text-gray-400">Connected</div>
+                </div>
+            </div>
+            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div class="text-xl font-bold text-white">{$incomingRequests.length}</div>
+                    <div class="text-xs text-gray-400">Pending</div>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    <!-- Main Content Container -->
+    <div class="bg-gray-800/50 rounded-2xl border border-gray-700/50 min-h-[500px]">
+        <div class="p-6">
 
             <!-- Incoming Federation Requests -->
             {#if $incomingRequests.length > 0}
-                <div class="bg-amber-900/30 border border-amber-600 rounded-xl p-6 mb-6" transition:slide>
-                    <h3 class="text-lg font-semibold text-amber-300 mb-4 flex items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-                        </svg>
-                        Incoming Federation Requests
-                        <span class="ml-2 bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full">
+                <div class="mb-6" transition:slide>
+                    <div class="flex items-center gap-2 mb-4">
+                        <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-base font-semibold text-white">Pending Requests</h3>
+                        <span class="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
                             {$incomingRequests.length}
                         </span>
-                    </h3>
+                    </div>
 
                     <div class="space-y-3">
                         {#each $incomingRequests as request (request.id)}
-                            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700" transition:slide>
-                                <div class="flex justify-between items-start">
-                                    <div class="flex-1">
-                                        <p class="text-white font-medium">{request.senderHolonName}</p>
-                                        <p class="text-gray-400 text-sm font-mono">{shortenNpub(request.senderNpub)}</p>
-                                        {#if request.lensConfig.outbound.length > 0}
-                                            <p class="text-gray-500 text-xs mt-1">
-                                                Wants to share: {request.lensConfig.outbound.join(', ')}
-                                            </p>
-                                        {/if}
-                                        {#if request.message}
-                                            <p class="text-gray-400 text-sm mt-2 italic">"{request.message}"</p>
-                                        {/if}
-                                        <p class="text-gray-600 text-xs mt-2">
-                                            {new Date(request.timestamp).toLocaleString()}
-                                        </p>
+                            <div class="bg-gradient-to-r from-amber-900/20 to-orange-900/10 rounded-xl p-4 border border-amber-500/30 hover:border-amber-500/50 transition-all" transition:slide>
+                                <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+                                    <!-- Avatar and Info -->
+                                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                                        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0 shadow-lg">
+                                            {request.senderHolonName?.charAt(0)?.toUpperCase() || '?'}
+                                        </div>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-white font-semibold truncate">{request.senderHolonName}</p>
+                                            <p class="text-amber-300/70 text-xs font-mono truncate">{shortenNpub(request.senderNpub)}</p>
+                                            {#if request.lensConfig.outbound.length > 0}
+                                                <div class="flex flex-wrap gap-1 mt-1.5">
+                                                    {#each request.lensConfig.outbound.slice(0, 3) as lens}
+                                                        <span class="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">{lens}</span>
+                                                    {/each}
+                                                    {#if request.lensConfig.outbound.length > 3}
+                                                        <span class="text-xs text-amber-400">+{request.lensConfig.outbound.length - 3} more</span>
+                                                    {/if}
+                                                </div>
+                                            {/if}
+                                        </div>
                                     </div>
-                                    <div class="flex gap-2 ml-4">
-                                        <button
-                                            on:click={() => acceptFederationRequest(request.id)}
-                                            disabled={saving}
-                                            class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition-colors text-white text-sm font-medium disabled:opacity-50"
-                                        >
-                                            Accept
-                                        </button>
+
+                                    <!-- Message (if any) -->
+                                    {#if request.message}
+                                        <div class="hidden sm:block w-px h-10 bg-amber-500/30"></div>
+                                        <div class="flex-1 max-w-xs">
+                                            <p class="text-amber-200/80 text-sm italic line-clamp-2">"{request.message}"</p>
+                                        </div>
+                                    {/if}
+
+                                    <!-- Actions -->
+                                    <div class="flex gap-2 flex-shrink-0">
                                         <button
                                             on:click={() => rejectFederationRequest(request.id)}
                                             disabled={saving}
-                                            class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition-colors text-white text-sm font-medium disabled:opacity-50"
+                                            class="px-4 py-2.5 rounded-lg transition-all text-red-400 hover:text-white hover:bg-red-600 border border-red-500/50 hover:border-red-500 text-sm font-medium disabled:opacity-50"
                                         >
-                                            Reject
+                                            Decline
+                                        </button>
+                                        <button
+                                            on:click={() => acceptFederationRequest(request.id)}
+                                            disabled={saving}
+                                            class="px-5 py-2.5 rounded-lg transition-all bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-sm font-medium shadow-lg shadow-green-500/25 disabled:opacity-50 disabled:shadow-none flex items-center gap-2"
+                                        >
+                                            {#if saving}
+                                                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                                </svg>
+                                            {:else}
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                                </svg>
+                                            {/if}
+                                            Accept
                                         </button>
                                     </div>
+                                </div>
+
+                                <!-- Timestamp -->
+                                <div class="mt-3 pt-3 border-t border-amber-500/20 flex items-center justify-between text-xs text-gray-500">
+                                    <span>Received {new Date(request.timestamp).toLocaleDateString()}</span>
+                                    <span>{new Date(request.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                 </div>
                             </div>
                         {/each}
@@ -1205,254 +1353,211 @@
             {/if}
 
         {#if loading}
-            <!-- Loading State -->
-            <div class="flex items-center justify-center py-20">
-                <div class="text-center">
-                    <svg class="animate-spin h-8 w-8 text-blue-400 mx-auto mb-4" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                    </svg>
-                    <p class="text-gray-400">Loading federation data...</p>
+            <!-- Skeleton Loading State -->
+            <div class="space-y-4 animate-pulse">
+                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {#each [1, 2, 3] as _}
+                        <div class="bg-gray-700/30 rounded-xl p-5 border border-gray-700/50">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-12 h-12 rounded-full bg-gray-600/50"></div>
+                                <div class="flex-1">
+                                    <div class="h-4 bg-gray-600/50 rounded w-2/3 mb-2"></div>
+                                    <div class="h-3 bg-gray-600/30 rounded w-1/2"></div>
+                                </div>
+                                <div class="w-8 h-8 rounded-lg bg-gray-600/30"></div>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="h-3 bg-gray-600/30 rounded w-full"></div>
+                                <div class="h-3 bg-gray-600/30 rounded w-3/4"></div>
+                            </div>
+                        </div>
+                    {/each}
                 </div>
             </div>
         {:else if !currentHolonId}
             <!-- No Holon Selected -->
-            <div class="text-center py-20">
-                <svg class="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-                </svg>
+            <div class="flex flex-col items-center justify-center py-16">
+                <div class="w-20 h-20 rounded-2xl bg-gray-700/50 flex items-center justify-center mb-6">
+                    <svg class="w-10 h-10 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                </div>
                 <h3 class="text-xl font-semibold text-gray-300 mb-2">No Holon Selected</h3>
-                <p class="text-gray-500">Please select a holon to configure federation settings.</p>
+                <p class="text-gray-500 text-center max-w-sm">Select a holon from the sidebar to configure its federation settings.</p>
             </div>
         {:else if federatedHolons.length === 0}
             <!-- Empty State -->
-            <div class="text-center py-20">
-                <svg class="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-                </svg>
-                <h3 class="text-xl font-semibold text-gray-300 mb-2">No Federations Configured</h3>
-                <p class="text-gray-500 mb-6">Start by creating your first federation to share data with other holons.</p>
-                <button 
-                    on:click={() => showAddDialog = true}
-                    class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg transition-colors inline-flex items-center space-x-2"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                    </svg>
-                    <span>Create Federation</span>
-                </button>
+            <div class="flex flex-col items-center justify-center py-16">
+                <!-- Illustration -->
+                <div class="relative mb-8">
+                    <div class="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500/20 to-indigo-500/20 flex items-center justify-center">
+                        <svg class="w-12 h-12 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                        </svg>
+                    </div>
+                    <!-- Decorative dots -->
+                    <div class="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-blue-500/30"></div>
+                    <div class="absolute -bottom-1 -left-3 w-3 h-3 rounded-full bg-purple-500/30"></div>
+                    <div class="absolute top-1/2 -right-6 w-2 h-2 rounded-full bg-indigo-500/30"></div>
+                </div>
+
+                <h3 class="text-xl font-semibold text-white mb-2">Start Federating</h3>
+                <p class="text-gray-400 text-center max-w-md mb-8">
+                    Connect with other holons to share data and collaborate. Federation enables real-time data sync across communities.
+                </p>
+
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <button
+                        on:click={() => showAddDialog = true}
+                        class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 px-6 py-3 rounded-xl transition-all inline-flex items-center justify-center gap-2 text-white font-medium shadow-lg shadow-purple-500/25"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                        </svg>
+                        Add Federation Partner
+                    </button>
+                    <button
+                        on:click={() => {/* TODO: Show help/docs */}}
+                        class="px-6 py-3 rounded-xl transition-all inline-flex items-center justify-center gap-2 text-gray-300 font-medium border border-gray-600 hover:border-gray-500 hover:bg-gray-700/50"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Learn More
+                    </button>
+                </div>
             </div>
         {:else}
             {#if !showNetworkView}
                 <!-- Federation List -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                     {#each federatedHolons as holon (holon.id)}
-                        <div 
-                            class="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:shadow-xl hover:bg-gray-800/70 backdrop-blur-sm"
+                        <div
+                            class="group bg-gray-700/30 rounded-xl border border-gray-600/30 hover:border-purple-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/5 overflow-hidden"
                             animate:flip={{ duration: 300 }}
                             in:fly={{ y: 20, duration: 300 }}
                             out:fly={{ y: -20, duration: 200 }}
                         >
-                        <!-- Holon Header -->
-                        <div class="flex items-center justify-between mb-6">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                                    {(holon.name && typeof holon.name === 'string') ? holon.name.charAt(0).toUpperCase() : '?'}
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                    <button
-                                        on:click={() => navigateToHolon(holon.id)}
-                                        class="font-semibold text-white truncate hover:text-blue-400 transition-colors text-left block w-full"
-                                        title="Navigate to {holon.name || holon.id}"
-                                    >
-                                        {holon.name || holon.id}
-                                    </button>
-                                    <div class="flex items-center gap-2 mt-1">
-                                        <div class={`w-2 h-2 rounded-full ${getStatusColor(holon.status).replace('text-', 'bg-')} shadow-sm flex-shrink-0`}></div>
-                                        <span class="text-xs text-gray-400 capitalize font-medium flex-shrink-0">{holon.status}</span>
+                        <!-- Card Header with gradient -->
+                        <div class="bg-gradient-to-r from-gray-700/50 to-gray-800/50 p-4 border-b border-gray-600/30">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3 min-w-0 flex-1">
+                                    <!-- Avatar -->
+                                    <div class="relative flex-shrink-0">
+                                        <div class="w-11 h-11 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg">
+                                            {(holon.name && typeof holon.name === 'string') ? holon.name.charAt(0).toUpperCase() : '?'}
+                                        </div>
+                                        <!-- Status indicator -->
+                                        <div class={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-gray-700 ${holon.status === 'connected' ? 'bg-green-500' : holon.status === 'pending' ? 'bg-amber-500' : 'bg-gray-500'}`}></div>
                                     </div>
-                                    {#if holon.npub}
-                                        <div class="flex items-center gap-2 mt-1">
-                                            <span class="text-xs text-purple-400 font-mono" title="Click to copy full npub">
-                                                {shortenNpub(holon.npub)}
-                                            </span>
+                                    <!-- Info -->
+                                    <div class="min-w-0 flex-1">
+                                        <button
+                                            on:click={() => navigateToHolon(holon.id)}
+                                            class="font-semibold text-white truncate hover:text-purple-400 transition-colors text-left block w-full text-sm"
+                                            title="Navigate to {holon.name || holon.id}"
+                                        >
+                                            {holon.name || holon.id}
+                                        </button>
+                                        {#if holon.npub}
                                             <button
-                                                class="text-gray-500 hover:text-purple-400 transition-colors"
+                                                class="text-xs text-gray-400 font-mono hover:text-purple-400 transition-colors flex items-center gap-1 mt-0.5"
                                                 title="Copy npub"
                                                 on:click|stopPropagation={() => {
                                                     navigator.clipboard.writeText(holon.npub || '');
-                                                    showSuccess('Copied npub to clipboard');
+                                                    showSuccess('Copied npub');
                                                 }}
                                             >
-                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                {shortenNpub(holon.npub)}
+                                                <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
                                                 </svg>
                                             </button>
-                                        </div>
-                                    {/if}
+                                        {/if}
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="flex items-center space-x-1">
-                                <button 
-                                    on:click={() => { }}
-                                    class="text-gray-400 hover:text-blue-400 transition-colors p-2 rounded-lg hover:bg-blue-900/20"
-                                    title="Configure Lenses"
-                                    aria-label="Configure lenses for {holon.name || holon.id}"
-                                >
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                    </svg>
-                                </button>
-                                <button 
+                                <!-- Delete button -->
+                                <button
                                     on:click={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         removeFederation(holon.id);
                                     }}
-                                    class="text-gray-400 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-900/20"
+                                    class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all p-1.5 rounded-lg hover:bg-red-500/10"
                                     title="Remove Federation"
                                     aria-label="Remove federation with {holon.name || holon.id}"
                                     disabled={saving}
                                 >
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                     </svg>
                                 </button>
                             </div>
                         </div>
 
-                        <!-- Lens Configuration Table -->
-                        <div class="mt-4">
-                            <h4 class="text-sm font-medium text-gray-300 mb-3 flex items-center">
-                                <i class="fas fa-cog mr-2 text-purple-400"></i>
-                                Lens Configuration
-                            </h4>
-                            
-                            {#if availableLenses.length > 0}
-                                <div class="bg-gray-700/30 rounded-lg border border-gray-600/50 overflow-hidden">
-                                    <table class="w-full">
-                                        <thead>
-                                            <tr class="border-b border-gray-600/50">
-                                                <th class="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                                                    Lens
-                                                </th>
-                                                <th class="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                                                    <div class="flex items-center justify-center space-x-1">
-                                                        <i class="fas fa-download text-blue-400 text-xs"></i>
-                                                        <span>Inbound</span>
-                                                    </div>
-                                                </th>
-                                                <th class="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                                                    <div class="flex items-center justify-center space-x-1">
-                                                        <i class="fas fa-upload text-green-400 text-xs"></i>
-                                                        <span>Outbound</span>
-                                                    </div>
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-gray-600/30">
-                                            {#each availableLenses as lens}
-                                                {@const isInbound = isLensInArray(lens, holon.lensConfig.inbound)}
-                                                {@const isOutbound = isLensInArray(lens, holon.lensConfig.outbound)}
-                                                {@const inboundCap = getCapabilityForLens(holon.pubKey, lens, 'inbound')}
-                                                {@const outboundCap = getCapabilityForLens(holon.pubKey, lens, 'outbound')}
-                                                <tr class="hover:bg-gray-700/20 transition-colors">
-                                                    <td class="py-3 px-4">
-                                                        <div class="flex items-center space-x-2">
-                                                            <span class="text-lg">{getLensIcon(lens)}</span>
-                                                            <span class="text-sm font-medium text-gray-300 capitalize">{lens}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td class="py-3 px-4 text-center">
-                                                        <div class="flex items-center justify-center space-x-2">
-                                                            <button
-                                                                class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                                                                disabled={saving}
-                                                                aria-pressed={isInbound}
-                                                                title={isInbound ? 'Revoke read access' : 'Grant read access'}
-                                                                on:click={async (e) => {
-                                                                    e.preventDefault();
-                                                                    if (saving) return;
-                                                                    await toggleLensCapability(holon.id, lens, 'inbound', isInbound);
-                                                                }}
-                                                            >
-                                                                {#if isInbound}
-                                                                    <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                                                                        <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                                        </svg>
-                                                                    </div>
-                                                                {:else}
-                                                                    <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
-                                                                {/if}
-                                                            </button>
-                                                            <!-- Capability status indicator for inbound -->
-                                                            {#if inboundCap}
-                                                                <span
-                                                                    class="text-xs px-1.5 py-0.5 rounded bg-green-900/50 text-green-400"
-                                                                    title={getExpirationDescription(inboundCap.expiresAt)}
-                                                                >
-                                                                    {inboundCap.expiresAt ? formatExpiration(inboundCap.expiresAt) : '∞'}
-                                                                </span>
-                                                            {:else if isInbound && holon.pubKey}
-                                                                <span class="text-xs px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-400" title="No capability token">
-                                                                    !
-                                                                </span>
-                                                            {/if}
-                                                        </div>
-                                                    </td>
-                                                    <td class="py-3 px-4 text-center">
-                                                        <div class="flex items-center justify-center space-x-2">
-                                                            <button
-                                                                class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 transition"
-                                                                disabled={saving}
-                                                                aria-pressed={isOutbound}
-                                                                title={isOutbound ? 'Revoke write access' : 'Grant write access'}
-                                                                on:click={async (e) => {
-                                                                    e.preventDefault();
-                                                                    if (saving) return;
-                                                                    await toggleLensCapability(holon.id, lens, 'outbound', isOutbound);
-                                                                }}
-                                                            >
-                                                                {#if isOutbound}
-                                                                    <div class="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                                                                        <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                                        </svg>
-                                                                    </div>
-                                                                {:else}
-                                                                    <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
-                                                                {/if}
-                                                            </button>
-                                                            <!-- Capability status indicator for outbound -->
-                                                            {#if outboundCap}
-                                                                <span
-                                                                    class="text-xs px-1.5 py-0.5 rounded bg-green-900/50 text-green-400"
-                                                                    title={getExpirationDescription(outboundCap.expiresAt)}
-                                                                >
-                                                                    {outboundCap.expiresAt ? formatExpiration(outboundCap.expiresAt) : '∞'}
-                                                                </span>
-                                                            {:else if isOutbound && holon.pubKey}
-                                                                <span class="text-xs px-1.5 py-0.5 rounded bg-yellow-900/50 text-yellow-400" title="No capability token">
-                                                                    !
-                                                                </span>
-                                                            {/if}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            {/each}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            {:else}
-                                <div class="flex items-center justify-center py-6 px-4 bg-gray-700/30 rounded-lg border border-gray-600/50">
-                                    <span class="text-xs text-gray-500 flex items-center">
-                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        <!-- Lens Configuration - Compact Grid -->
+                        <div class="p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Data Sharing</span>
+                                <div class="flex items-center gap-3 text-xs text-gray-500">
+                                    <span class="flex items-center gap-1">
+                                        <svg class="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
                                         </svg>
-                                        No lenses available
+                                        In
                                     </span>
+                                    <span class="flex items-center gap-1">
+                                        <svg class="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+                                        </svg>
+                                        Out
+                                    </span>
+                                </div>
+                            </div>
+
+                            {#if availableLenses.length > 0}
+                                <div class="grid grid-cols-2 gap-2">
+                                    {#each availableLenses.slice(0, 6) as lens}
+                                        {@const isInbound = isLensInArray(lens, holon.lensConfig.inbound)}
+                                        {@const isOutbound = isLensInArray(lens, holon.lensConfig.outbound)}
+                                        <div class="bg-gray-600/20 rounded-lg p-2 flex items-center justify-between gap-2">
+                                            <div class="flex items-center gap-2 min-w-0">
+                                                <span class="text-sm">{getLensIcon(lens)}</span>
+                                                <span class="text-xs text-gray-300 capitalize truncate">{lens}</span>
+                                            </div>
+                                            <div class="flex items-center gap-1.5 flex-shrink-0">
+                                                <!-- Inbound toggle -->
+                                                <button
+                                                    class="w-5 h-5 rounded flex items-center justify-center transition-all {isInbound ? 'bg-blue-500 text-white' : 'bg-gray-600/50 text-gray-500 hover:bg-gray-600'}"
+                                                    disabled={saving}
+                                                    title={isInbound ? 'Receiving data' : 'Not receiving'}
+                                                    on:click={() => toggleLensCapability(holon.id, lens, 'inbound', isInbound)}
+                                                >
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                                                    </svg>
+                                                </button>
+                                                <!-- Outbound toggle -->
+                                                <button
+                                                    class="w-5 h-5 rounded flex items-center justify-center transition-all {isOutbound ? 'bg-green-500 text-white' : 'bg-gray-600/50 text-gray-500 hover:bg-gray-600'}"
+                                                    disabled={saving}
+                                                    title={isOutbound ? 'Sharing data' : 'Not sharing'}
+                                                    on:click={() => toggleLensCapability(holon.id, lens, 'outbound', isOutbound)}
+                                                >
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                </div>
+                                {#if availableLenses.length > 6}
+                                    <p class="text-xs text-gray-500 text-center mt-2">+{availableLenses.length - 6} more lenses</p>
+                                {/if}
+                            {:else}
+                                <div class="text-center py-4 text-gray-500 text-xs">
+                                    No lenses configured
                                 </div>
                             {/if}
                         </div>

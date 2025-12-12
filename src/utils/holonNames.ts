@@ -32,7 +32,8 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 				return fallbackName;
 			}
 
-			const settings = await holosphere.get(holonId, "settings", holonId);
+			// Get settings without dataId to get all settings items
+			const settings = await holosphere.get(holonId, "settings");
 
 			// Check if settings exists and has the expected structure
 			if (!settings) {
@@ -42,7 +43,15 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 				return fallbackName;
 			}
 
-			const holonName = settings?.name;
+			// Settings might be an array (readAll returns array) or single object
+			let holonName: string | undefined;
+			if (Array.isArray(settings)) {
+				// Find the first settings object with a name
+				const settingsObj = settings.find((s: any) => s?.name);
+				holonName = settingsObj?.name;
+			} else {
+				holonName = settings?.name;
+			}
 
 			// Check if we got a real name (not empty, not undefined)
 			if (holonName && holonName.trim() !== '') {

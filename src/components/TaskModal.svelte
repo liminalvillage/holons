@@ -815,7 +815,8 @@
             // Get settings to check for hex configuration
             let settingsHex: string | null = null;
             try {
-                const settings = await holosphere.get(holonId, 'settings', holonId);
+                const settingsResult = await holosphere.get(holonId, 'settings');
+                const settings = Array.isArray(settingsResult) ? settingsResult.find((s: any) => s?.hex) : settingsResult;
                 if (settings && settings.hex) {
                     settingsHex = settings.hex;
                     console.log('[TaskModal] Found settings hex:', settingsHex);

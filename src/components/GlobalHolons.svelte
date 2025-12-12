@@ -286,7 +286,8 @@
             // Fetch all names in parallel
             const namePromises = validHolonIds.map(async (holonId) => {
                 try {
-                    const settings = await holosphere.get(holonId, "settings", holonId);
+                    const settingsResult = await holosphere.get(holonId, "settings");
+                    const settings = Array.isArray(settingsResult) ? settingsResult.find((s: any) => s?.name) : settingsResult;
                     const holonName = settings?.name || holonId;
                     return { holonId, name: holonName };
                 } catch (error) {
@@ -327,7 +328,8 @@
     // Simple function to fetch just the holon name
     async function getHolonName(holonId: string): Promise<string> {
         try {
-            const settings = await holosphere.get(holonId, "settings", holonId);
+            const settingsResult = await holosphere.get(holonId, "settings");
+            const settings = Array.isArray(settingsResult) ? settingsResult.find((s: any) => s?.name) : settingsResult;
             return settings?.name || holonId;
         } catch (error) {
             console.warn(`Failed to fetch name for holon ${holonId}:`, error);
