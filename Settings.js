@@ -12,7 +12,12 @@ export default class Settings {
         this.db = db;
         this.bot = bot;
         this.holons = null; // Re-add Holons instance placeholder
-        
+
+        // Settings cache to avoid repeated DB queries
+        // Key: chatID, Value: { settings, timestamp }
+        this._settingsCache = new Map();
+        this._cacheTTL = 60 * 1000; // 1 minute cache TTL
+
         // Create settings scenes handler
         this.scenes = new SettingsScenes(bot, db);
         
@@ -1823,6 +1828,12 @@ export default class Settings {
     }
 
     async getSettings(chatID) {
+        // Check cache first
+        const cached = this._settingsCache.get(chatID);
+        if (cached && Date.now() - cached.timestamp < this._cacheTTL) {
+            return cached.settings;
+        }
+
         let settings = await this.db.get(chatID + '/settings', chatID)
         if (!settings || settings == '') {
             let chatName = await utils.getChatName(this.bot, chatID)
@@ -1864,6 +1875,13 @@ export default class Settings {
             // NOTE: Removed auto-save here - it was causing race conditions
             // Settings should only be saved explicitly via setSettings()
         }
+
+        // Cache the result
+        this._settingsCache.set(chatID, {
+            settings,
+            timestamp: Date.now()
+        });
+
         return settings
     }
 
@@ -1873,6 +1891,10 @@ export default class Settings {
             return;
         }
         await this.db.put(settings.id + '/settings', settings);
+
+        // Invalidate local cache
+        this._settingsCache.delete(settings.id);
+
         this.db.clearCacheForChatID(settings.id);
     }
 
