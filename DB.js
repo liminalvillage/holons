@@ -33,7 +33,7 @@ class DB {
         // Performance: Default timeout for database operations (5 seconds)
         // This prevents slow relay responses from blocking the bot
         // Increased from 1000ms to 5000ms to handle slower Nostr relay responses
-        this.defaultTimeout = 5000;
+        this.defaultTimeout = 50000;
 
         // Track pending writes to prevent duplicate Nostr writes
         this.pendingWrites = new Map();

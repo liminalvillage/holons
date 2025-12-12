@@ -362,13 +362,9 @@ export default class Quests {
                 }
             }
 
-            await this.saveQuest(quest);
-            if (action === 'join' && chatID.toString() !== sender.id.toString()) {
-                await this.personalHologram(sender.id, quest);
-                await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
-            }
-
-            await this.updateMessage(ctx, quest, language);
+            // Unified save and update - pass interacting user for personal hologram on join
+            const interactingUser = (action === 'join') ? sender : null;
+            await this.updateMessage(ctx, quest, language, { interactingUser });
         });
     }
 
@@ -468,8 +464,8 @@ export default class Quests {
 
         const hologramsToUpdate = quest.activeHolograms ? [...quest.activeHolograms] : [];
         quest.activeHolograms = [];
-        await this.saveQuest(quest);
-        await this.updateMessage(ctx, quest, language, false, hologramsToUpdate);
+        // Unified save and update
+        await this.updateMessage(ctx, quest, language, { explicitHologramsToUpdate: hologramsToUpdate });
 
         ctx.telegram.unpinChatMessage(chatID, messageID).catch(() => {});
 
@@ -502,7 +498,7 @@ export default class Quests {
         }
 
         quest.status = quest.stoppers.length > 0 ? 'stopped' : 'ongoing';
-        await this.saveQuest(quest);
+        // Unified save and update
         await this.updateMessage(ctx, quest, language);
     }
 
@@ -589,13 +585,11 @@ export default class Quests {
                 return; // Not enough time to remove
             }
 
-            await this.db.put(chatID + '/quests', quest);
-            if (chatID.toString() !== sender.id.toString()) {
-                await this.personalHologram(sender.id, quest);
-                await this.ensureTelegramHologramMessage(ctx, quest, sender.id, language);
-            }
-
-            await this.updateMessage(ctx, quest, language, true);
+            // Unified save and update - pass interacting user for personal hologram
+            await this.updateMessage(ctx, quest, language, {
+                useExpandedMarkup: true,
+                interactingUser: sender
+            });
         });
     }
 
@@ -861,8 +855,35 @@ export default class Quests {
         return lines.join('\n') + '\n';
     }
 
-    async updateMessage(ctx, quest, language, useExpandedMarkup = false, explicitHologramsToUpdate = null) {
+    /**
+     * Unified save and update function for quests.
+     * Handles: saving quest, updating Telegram message, personal holograms, and federation.
+     *
+     * @param {Object} ctx - Telegraf context
+     * @param {Object} quest - Quest object to save and update
+     * @param {string} language - Language code
+     * @param {Object} options - Options object
+     * @param {boolean} options.useExpandedMarkup - Use expanded button layout
+     * @param {Array} options.explicitHologramsToUpdate - Specific holograms to update
+     * @param {Object} options.interactingUser - User who triggered the action (for personal hologram)
+     */
+    async updateMessage(ctx, quest, language, options = {}) {
         if (!quest?.chat || !quest.id) return;
+
+        // Support old signature: updateMessage(ctx, quest, language, useExpandedMarkup, explicitHologramsToUpdate)
+        let useExpandedMarkup = false;
+        let explicitHologramsToUpdate = null;
+        let interactingUser = null;
+
+        if (typeof options === 'boolean') {
+            // Old signature: options is useExpandedMarkup
+            useExpandedMarkup = options;
+            explicitHologramsToUpdate = arguments[4] || null;
+        } else if (typeof options === 'object') {
+            useExpandedMarkup = options.useExpandedMarkup || false;
+            explicitHologramsToUpdate = options.explicitHologramsToUpdate || null;
+            interactingUser = options.interactingUser || null;
+        }
 
         log.info(`updateMessage called - quest: ${quest.title}, chatID: ${quest.chat}, messageID: ${quest.id}, useExpandedMarkup: ${useExpandedMarkup}`);
 
@@ -870,21 +891,41 @@ export default class Quests {
         const markupConfig = useExpandedMarkup
             ? { reply_markup: { inline_keyboard: this.getExpandedButtons(quest, language) } }
             : this.markup(quest, language);
-        
+
+        // Track which messages we've updated to avoid duplicates
+        const updatedMessages = new Set();
+
+        // 1. Handle personal hologram for interacting user (before save, modifies quest.activeHolograms)
+        // Only create personal hologram if the user is interacting from a group chat (not their own private chat)
+        if (interactingUser && quest.chat.toString() !== interactingUser.id.toString()) {
+            await this.personalHologram(interactingUser.id, quest);
+            const hologramResult = await this.ensureTelegramHologramMessage(ctx, quest, interactingUser.id, language);
+            if (hologramResult) {
+                updatedMessages.add(`${hologramResult.chatId}_${hologramResult.messageId}`);
+            }
+        }
+
+        const mainMessageKey = `${quest.chat}_${quest.id}`;
+
+        // 2. Update the main Telegram message
         try {
             await ctx.telegram.getChat(quest.chat);
             await this.updateQuestMessage(ctx, quest, quest.chat, quest.id, language, markupConfig);
+            updatedMessages.add(mainMessageKey);
         } catch {}
-        
+
+        // 3. ONE unified save - triggers auto-propagation to federated holons
         try {
             await this.db.put(quest.chat + '/quests', quest);
         } catch {}
-        
+
+        // 4. Handle federated Telegram messages
         await this.handleFederatedMessages(ctx, quest, language).catch(() => {});
-        
+
+        // 5. Update existing holograms (skip already updated messages)
         const hologramsToUpdate = explicitHologramsToUpdate ?? (quest.activeHolograms || []);
         if (hologramsToUpdate.length > 0) {
-            await this.updateHolograms(ctx, quest, language, markupConfig, hologramsToUpdate);
+            await this.updateHolograms(ctx, quest, language, markupConfig, hologramsToUpdate, updatedMessages);
         }
     }
 
@@ -1355,9 +1396,8 @@ export default class Quests {
         try {
             // Toggle publish status
             quest.published = !quest.published;
-            await this.saveQuest(quest);
 
-            // Update the quest message
+            // Unified save and update (handles federation internally)
             await this.updateMessage(ctx, quest, language);
 
             const statusMessage = quest.published
@@ -1365,13 +1405,6 @@ export default class Quests {
                 : i18next.t('quest_unpublished', { lng: language, defaultValue: 'Quest removed from public feed.' });
 
             ctx.answerCbQuery(statusMessage).catch(() => {});
-
-            // If publishing, optionally send to other connected holons or federation
-            if (quest.published && this.handleFederatedMessages) {
-                await this.handleFederatedMessages(ctx, quest, language).catch(error => {
-                    console.error('Error handling federated publishing:', error);
-                });
-            }
 
         } catch (error) {
             console.error('Error publishing quest:', error);
@@ -1401,9 +1434,8 @@ export default class Quests {
         try {
             // Toggle broadcast status
             quest.broadcasted = !quest.broadcasted;
-            await this.saveQuest(quest);
 
-            // Update the quest message
+            // Unified save and update
             await this.updateMessage(ctx, quest, language);
 
             if (quest.broadcasted) {
@@ -2423,9 +2455,7 @@ export default class Quests {
 
             quest.activeHolograms.push(hologramLink);
 
-            // Save updated quest with new hologram link
-            await this.db.put(quest.chat + '/quests', quest);
-
+            // Don't save here - caller (updateMessage) handles the unified save
             return hologramLink;
 
         } catch (error) {
@@ -2536,6 +2566,14 @@ export default class Quests {
                     console.log(`[handleFederatedMessages] Sent Telegram message to federated chat ${targetHolon}`);
 
                 } catch (holonError) {
+                    // Fail gently for invalid/inaccessible chats - just skip this target
+                    if (holonError.response?.error_code === 400 && holonError.response?.description?.includes('chat not found')) {
+                        console.log(`[handleFederatedMessages] Chat ${targetHolon} not found or not accessible, skipping`);
+                        // TODO: Make activeHolograms context-aware. When holograms are saved in a Telegram holon,
+                        // they should have type: 'telegram'. When saved in a Discord holon, type: 'discord'.
+                        // This would allow filtering by platform before attempting to send messages.
+                        continue;
+                    }
                     console.error(`[handleFederatedMessages] Error sending Telegram message to ${targetHolon}:`, holonError);
                 }
             }
@@ -2660,12 +2698,18 @@ export default class Quests {
         }
     }
 
-    async updateHolograms(ctx, quest, language, markupConfig, hologramsToUpdate) {
+    async updateHolograms(ctx, quest, language, markupConfig, hologramsToUpdate, updatedMessages = new Set()) {
         if (!hologramsToUpdate?.length) return;
 
         const updatePromises = hologramsToUpdate.map(async (hologram) => {
             try {
                 if (hologram.platform === 'telegram') {
+                    // Skip already updated messages
+                    const messageKey = `${hologram.chatId}_${hologram.messageId}`;
+                    if (updatedMessages.has(messageKey)) {
+                        return;
+                    }
+                    updatedMessages.add(messageKey);
                     await this.updateQuestMessage(ctx, quest, hologram.chatId, hologram.messageId, language, markupConfig);
                 }
             } catch (error) {
