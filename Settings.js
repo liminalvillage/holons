@@ -1,7 +1,7 @@
 import i18next from "i18next";
 import fs from 'fs';
 import * as utils from './utilities.js'
-import { Scenes } from 'telegraf';
+import { Scenes, Markup } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
@@ -303,6 +303,24 @@ export default class Settings {
                 ctx.reply('Only a chat admin can perform this action')
                     .catch(e => console.log('Error in settings admin check:', e));
             }
+        });
+
+        // Dashboard command - opens dashboard as Telegram webapp
+        this.bot.command('dashboard', async (ctx) => {
+            const chatID = utils.getChatId(ctx);
+            const userId = ctx.from?.id;
+            const language = await this.getLanguage(chatID);
+            const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${chatID}&user=${userId}`;
+
+            await ctx.reply(
+                i18next.t('dashboard_open', { lng: language, defaultValue: 'Open your Holonic Dashboard:' }),
+                Markup.keyboard([
+                    [Markup.button.webApp(
+                        i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' }),
+                        dashboardUrl
+                    )]
+                ]).resize().oneTime()
+            ).catch(e => console.log('Error in dashboard command:', e));
         });
 
         // Handle settings menu callbacks
@@ -1892,10 +1910,13 @@ export default class Settings {
         }
         await this.db.put(settings.id + '/settings', settings);
 
-        // Invalidate local cache
-        this._settingsCache.delete(settings.id);
+        // Invalidate local cache - delete both numeric and string keys to handle type mismatches
+        const chatID = settings.id;
+        this._settingsCache.delete(chatID);
+        this._settingsCache.delete(Number(chatID));
+        this._settingsCache.delete(String(chatID));
 
-        this.db.clearCacheForChatID(settings.id);
+        this.db.clearCacheForChatID(chatID);
     }
 
     async setValueEquation(chatID, equation) {
@@ -1983,6 +2004,7 @@ export default class Settings {
 
     async showSettingsMenu(ctx, edit = false) {
         const chatID = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+        const userId = ctx.callbackQuery?.from?.id || ctx.from?.id;
         if (!chatID) {
             console.error('Could not determine chat ID');
             return;
@@ -1990,6 +2012,7 @@ export default class Settings {
 
         let settings = await this.getSettings(chatID);
         const language = settings.language;
+        const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${chatID}&user=${userId}`;
         
         // Fetch federation info for the button
         const fedInfo = await this.db.getFederation(chatID);
@@ -2058,9 +2081,9 @@ export default class Settings {
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
                     ],
-                    // 9. Dashboard (full width)
+                    // 9. Dashboard (full width) - opens as Telegram webapp
                     [
-                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: `${DASHBOARD_ADDRESS}/${chatID}/dashboard` }
+                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, web_app: { url: dashboardUrl } }
                     ]
                 ]
             }

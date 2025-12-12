@@ -133,8 +133,8 @@ class Scheduler {
         };
 
         // Save to database
-        await this.db.holosphere.putGlobal('recurring', task.id, task);
-        await this.db.holosphere.putGlobal('recurringlookup', chatID + quest.id, {id: chatID + quest.id,  taskID: task.id});
+        await this.db.holosphere.putGlobal('recurring', task);
+        await this.db.holosphere.putGlobal('recurringlookup', {id: chatID + quest.id, taskID: task.id});
         
         // Schedule the task
         await this.scheduleTask(task,ctx);
@@ -266,7 +266,7 @@ class Scheduler {
                 await this.quests.updateMessage(ctx, quest, language, false);
                 
                 // Add the quest id to the lookup table
-                await this.db.holosphere.putGlobal('recurringlookup', chatID + quest.id, {
+                await this.db.holosphere.putGlobal('recurringlookup', {
                     id: chatID + quest.id,
                     taskID: task.id
                 });
@@ -333,7 +333,6 @@ class Scheduler {
                 return null;
         }
     }
-
 
     async stopTask(taskId) {
         try {
@@ -435,7 +434,7 @@ class Scheduler {
                     if (task) {
                         // Convert Date to ISO string for Nostr serialization
                         task.when = selectedDate instanceof Date ? selectedDate.toISOString() : selectedDate;
-                        await this.db.holosphere.putGlobal('recurring', task.id, task);
+                        await this.db.holosphere.putGlobal('recurring', task);
                         await this.scheduleTask(task, ctx);
                     }
                 }
@@ -761,7 +760,7 @@ class Scheduler {
     async saveReminderRecord(reminder) {
         try {
             // Store in the global reminders table
-            await this.db.holosphere.putGlobal('reminders', reminder.id, reminder);
+            await this.db.holosphere.putGlobal('reminders', reminder);
 
             // Create lookup reference for easy retrieval
             const lookupKey = `${reminder.chatId}${reminder.questId}`;
@@ -770,7 +769,7 @@ class Scheduler {
                 reminderId: reminder.id
             };
 
-            await this.db.holosphere.putGlobal('reminderslookup', lookupKey, lookupData);
+            await this.db.holosphere.putGlobal('reminderslookup', lookupData);
 
             return true;
         } catch (error) {
@@ -991,11 +990,11 @@ class Scheduler {
             });
             
             // Save to database
-            await this.db.holosphere.putGlobal('recurring', task.id, task);
+            await this.db.holosphere.putGlobal('recurring', task);
 
             // Create lookup reference
             const lookupId = task.chatID + task.questId;
-            await this.db.holosphere.putGlobal('recurringlookup', lookupId, {
+            await this.db.holosphere.putGlobal('recurringlookup', {
                 id: lookupId,
                 taskID: task.id
             });
@@ -1054,7 +1053,7 @@ class Scheduler {
             }
             
             // Save updated task
-            await this.db.holosphere.putGlobal('recurring', task.id, task);
+            await this.db.holosphere.putGlobal('recurring', task);
             
             // Stop existing job
             const existingJob = this.jobs.get(taskId);
@@ -1243,7 +1242,7 @@ class Scheduler {
                         const [chatId, questId] = lookup.id.split('_');
                         const newLookupId = `${chatId}|${questId}`;
                         await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
-                        await this.db.holosphere.putGlobal('recurringlookup', newLookupId, {
+                        await this.db.holosphere.putGlobal('recurringlookup', {
                             id: newLookupId,
                             taskID: lookup.taskID
                         });

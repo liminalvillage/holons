@@ -117,6 +117,11 @@ class Config {
     return this.nodeEnv === 'development';
   }
 
+  // Dashboard Configuration
+  get dashboardAddress() {
+    return this.getString('DASHBOARD_ADDRESS', 'https://dashboard.holons.io');
+  }
+
   // Feature Flags
   get showQuestsAsImages() {
     return this.getBoolean('SHOW_QUESTS_AS_IMAGES', true);

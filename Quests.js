@@ -1871,7 +1871,7 @@ export default class Quests {
 
             // Cancel any scheduled recurring tasks if scheduler is available
             if (quest.recurringTaskId && this.scheduler) {
-                await this.scheduler.cancelRecurringTask(quest.recurringTaskId);
+                await this.scheduler.stopTask(quest.recurringTaskId);
             }
 
             await this.db.put(chatId + '/quests', quest);
@@ -1927,14 +1927,6 @@ export default class Quests {
 
             // Create buttons for each user
             const userButtons = [];
-
-            // Add "This Holon" (group) button first
-            const isHolonSelected = quest.participants.some(p => p.id === parseInt(chatId));
-            const holonStatus = isHolonSelected ? '✅' : '⬜️';
-            userButtons.push([{
-                text: `${holonStatus} 🏛️ This Holon`,
-                callback_data: `toggle_quest_holon:${questId}`
-            }]);
 
             // Add individual user buttons
             for (const user of users) {
@@ -2644,14 +2636,14 @@ export default class Quests {
             if (quest.frequency && this.scheduler) {
                 // Cancel existing recurring task if any
                 if (quest.recurringTaskId) {
-                    await this.scheduler.cancelRecurringTask(quest.recurringTaskId);
+                    await this.scheduler.stopTask(quest.recurringTaskId);
                 }
 
                 // Create new recurring task
                 quest.recurringTaskId = await this.scheduler.createRecurringTask(quest, quest.frequency);
             } else if (!quest.frequency && quest.recurringTaskId && this.scheduler) {
                 // Cancel recurring task if frequency is set to never
-                await this.scheduler.cancelRecurringTask(quest.recurringTaskId);
+                await this.scheduler.stopTask(quest.recurringTaskId);
                 quest.recurringTaskId = null;
             }
 

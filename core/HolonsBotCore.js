@@ -99,9 +99,31 @@ class HolonsBot {
       const telebot = await this.container.get('telebot');
       await telebot.launch({ handlerTimeout: Infinity });
       log.info('Telegram bot launched successfully');
+
+      // Set the bot menu button to open dashboard webapp
+      await this.setupMenuButton(telebot);
     } catch (error) {
       log.error('Failed to launch Telegram bot', { error: error.message });
       throw error;
+    }
+  }
+
+  /**
+   * Setup the bot menu button to open the dashboard webapp
+   */
+  async setupMenuButton(telebot) {
+    try {
+      const dashboardUrl = config.dashboardAddress;
+      await telebot.telegram.setChatMenuButton({
+        menu_button: {
+          type: 'web_app',
+          text: 'Dashboard',
+          web_app: { url: dashboardUrl }
+        }
+      });
+      log.info('Bot menu button configured for dashboard webapp');
+    } catch (error) {
+      log.warn('Failed to set menu button (non-critical)', { error: error.message });
     }
   }
 

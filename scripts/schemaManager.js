@@ -243,6 +243,7 @@ const commands = {
             // Add update metadata
             const updatedSchema = {
                 ...schema,
+                id: schemaName,
                 metadata: {
                     ...schema.metadata,
                     updatedAt: new Date().toISOString(),
@@ -253,7 +254,7 @@ const commands = {
             };
 
             console.log(\`📤 Updating schema: \${schemaName}\`);
-            await holosphere.putGlobal('schemas', schemaName, updatedSchema);
+            await holosphere.putGlobal('schemas', updatedSchema);
             console.log(\`✅ Successfully updated: \${schemaName}\`);
 
             // Update registry
@@ -272,7 +273,8 @@ const commands = {
                         registry.totalSchemas++;
                     }
 
-                    await holosphere.putGlobal('schema_registry', 'registry', registry);
+                    registry.id = 'registry';
+                    await holosphere.putGlobal('schema_registry', registry);
                     console.log('✅ Registry updated');
                 }
             } catch (registryError) {

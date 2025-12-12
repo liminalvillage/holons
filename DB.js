@@ -259,9 +259,11 @@ class DB {
         let [hex, lens] = table.split('/')
         try {
             if (lens === undefined) {
-                // For global tables, extract the key from data.id
-                const key = data.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                return await this.holosphere.putGlobal(table, key, data);
+                // For global tables, ensure data has an id property
+                if (!data.id) {
+                    data.id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                }
+                return await this.holosphere.putGlobal(table, data);
             } else {
                 return await this.holosphere.put(hex, lens, data, options);
             }
