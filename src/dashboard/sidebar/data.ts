@@ -19,6 +19,8 @@ import MyHolonsIcon from './icons/MyHolonsIcon.svelte';
 // Reuse Tags icon for SDGs in absence of a dedicated icon
 import SDGsIcon from './icons/TagsIcon.svelte';
 import OrbitsIcon from './icons/OrbitsIcon.svelte';
+import ContractsIcon from './icons/ContractsIcon.svelte';
+import FlowIcon from './icons/FlowIcon.svelte';
 
 export const data = [
 	{
@@ -85,6 +87,16 @@ export const data = [
 		title: 'Federation',
 		icon: FederationIcon,
 		link: '/federation'
+	},
+	{
+		title: 'Flow',
+		icon: FlowIcon,
+		link: '/flow'
+	},
+	{
+		title: 'Contracts',
+		icon: ContractsIcon,
+		link: '/contracts'
 	},
 	{
 		title: 'Settings',
