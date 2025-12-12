@@ -100,100 +100,26 @@ export default class Settings {
                 let chatName = await utils.getChatName(ctx, chatID)
 
                 console.log(`\n=== Starting reset for holon ${chatID} ===`);
+                console.log('(Relay deletions will be processed asynchronously)');
 
-                // Clear all cache entries for this chatID first
-                console.log('Clearing cache for chatID:', chatID);
-                this.db.clearCacheForChatID(chatID);
+                const lenses = [
+                    'shopping', 'quests', 'offers', 'users', 'tags',
+                    'expenses', 'announcements', 'recurring', 'checklists',
+                    'roles', 'settings', 'library', 'deposits', 'appreciations'
+                ];
 
-                // Drop all local tables (all lenses used in the holon)
-                console.log('Dropping local tables...');
-                await Promise.all([
-                    this.db.drop(chatID + '/shopping'),
-                    this.db.drop(chatID + '/quests'),
-                    this.db.drop(chatID + '/offers'),
-                    this.db.drop(chatID + '/users'),
-                    this.db.drop(chatID + '/tags'),
-                    this.db.drop(chatID + '/expenses'),
-                    this.db.drop(chatID + '/announcements'),
-                    this.db.drop(chatID + '/recurring'),
-                    this.db.drop(chatID + '/checklists'),
-                    this.db.drop(chatID + '/roles'),
-                    this.db.drop(chatID + '/settings'),
-                    this.db.drop(chatID + '/library'),
-                    this.db.drop(chatID + '/deposits'),
-                    this.db.drop(chatID + '/appreciations')
-                ])
-                console.log('Local tables dropped successfully');
+                const globalTables = [
+                    'recurring', 'recurringlookup', 'reminders',
+                    'reminderslookup', 'federation', 'fedannouncements'
+                ];
 
-                // Delete only items from global tables that belong to this holon
-                console.log('Deleting global table entries...');
-                let deletedCount = 0;
+                // Clear locally first, then async sync to relay with 200ms delay between deletions
+                const { localCleared, relayQueueSize } = await this.db.clearWithAsyncRelaySync(chatID, lenses, globalTables, 200);
 
-                // For recurring tasks
-                const recurringTasks = await this.db.holosphere.getAllGlobal('recurring') || [];
-                for (const task of recurringTasks) {
-                    if (task.chatID === chatID) {
-                        const result = await this.db.holosphere.deleteGlobal('recurring', task.id);
-                        console.log(`Deleted recurring task ${task.id}: ${result}`);
-                        deletedCount++;
-                    }
-                }
-
-                // For recurring lookup
-                const recurringLookups = await this.db.holosphere.getAllGlobal('recurringlookup') || [];
-                for (const lookup of recurringLookups) {
-                    if (lookup.id && lookup.id.toString().startsWith(chatID.toString())) {
-                        const result = await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
-                        console.log(`Deleted recurring lookup ${lookup.id}: ${result}`);
-                        deletedCount++;
-                    }
-                }
-
-                // For reminders
-                const reminders = await this.db.holosphere.getAllGlobal('reminders') || [];
-                for (const reminder of reminders) {
-                    if (reminder.chatId === chatID) {
-                        const result = await this.db.holosphere.deleteGlobal('reminders', reminder.id);
-                        console.log(`Deleted reminder ${reminder.id}: ${result}`);
-                        deletedCount++;
-                    }
-                }
-
-                // For reminders lookup
-                const remindersLookups = await this.db.holosphere.getAllGlobal('reminderslookup') || [];
-                for (const lookup of remindersLookups) {
-                    if (lookup.id && lookup.id.toString().startsWith(chatID.toString())) {
-                        const result = await this.db.holosphere.deleteGlobal('reminderslookup', lookup.id);
-                        console.log(`Deleted reminders lookup ${lookup.id}: ${result}`);
-                        deletedCount++;
-                    }
-                }
-
-                // For federation - only delete federation entries for this holon
-                const federations = await this.db.holosphere.getAllGlobal('federation') || [];
-                for (const fed of federations) {
-                    if (fed.id === chatID.toString()) {
-                        const result = await this.db.holosphere.deleteGlobal('federation', fed.id);
-                        console.log(`Deleted federation ${fed.id}: ${result}`);
-                        deletedCount++;
-                    }
-                }
-
-                // For federated announcements - delete entries that belong to this holon
-                const fedAnnouncements = await this.db.holosphere.getAllGlobal('fedannouncements') || [];
-                for (const ann of fedAnnouncements) {
-                    if (ann.id && ann.id.toString().startsWith(chatID.toString() + '_')) {
-                        const result = await this.db.holosphere.deleteGlobal('fedannouncements', ann.id);
-                        console.log(`Deleted fedannouncement ${ann.id}: ${result}`);
-                        deletedCount++;
-                    }
-                }
-
-                console.log(`Deleted ${deletedCount} global table entries`);
-                console.log('=== Reset complete ===\n');
+                console.log('=== Local reset complete, relay sync in progress ===\n');
 
                 await this.db.put(chatID + '/settings', await this.getDefaultSettings(chatID, chatName))
-                ctx.reply(`Holon reset complete! Cleared cache and deleted ${deletedCount} global entries. Deletion events published to relay.`)
+                ctx.reply(`Holon reset complete! ${relayQueueSize} items queued for relay deletion (processing in background).`)
             } else {
                 ctx.reply('Only a chat admin can perform this action')
             }

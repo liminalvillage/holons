@@ -87,6 +87,112 @@ class DB {
     }
 
     /**
+     * Clear data locally first, then async sync deletions to relay with rate limiting
+     * @param {string} chatID - Chat ID to clear data for
+     * @param {string[]} lenses - Array of lens names to clear (e.g., ['quests', 'shopping'])
+     * @param {string[]} globalTables - Array of global table names to clear entries from
+     * @param {number} delayMs - Delay between relay deletions to avoid rate limiting (default: 200ms)
+     * @returns {Promise<{localCleared: number, relayQueueSize: number}>}
+     */
+    async clearWithAsyncRelaySync(chatID, lenses = [], globalTables = [], delayMs = 200) {
+        const appName = this.holosphere.config?.appName || process.env.APPNAME || 'Holons';
+        let localCleared = 0;
+        const relayDeletions = []; // Queue of deletion tasks for relay
+
+        // Clear cache for this chatID immediately
+        this.holosphere.clearCache(chatID.toString());
+        console.log(`[clearWithAsyncRelaySync] Cleared cache for chatID ${chatID}`);
+
+        // Collect lens deletions
+        for (const lens of lenses) {
+            relayDeletions.push({
+                type: 'lens',
+                table: `${chatID}/${lens}`,
+                lens: lens
+            });
+            localCleared++;
+        }
+
+        // Collect global table deletions that belong to this chatID
+        for (const table of globalTables) {
+            try {
+                let items = [];
+                if (table === 'recurring') {
+                    items = await this.holosphere.getAllGlobal('recurring') || [];
+                    items = items.filter(t => t.chatID === chatID);
+                } else if (table === 'recurringlookup') {
+                    items = await this.holosphere.getAllGlobal('recurringlookup') || [];
+                    items = items.filter(t => t.id && t.id.toString().startsWith(chatID.toString()));
+                } else if (table === 'reminders') {
+                    items = await this.holosphere.getAllGlobal('reminders') || [];
+                    items = items.filter(t => t.chatId === chatID);
+                } else if (table === 'reminderslookup') {
+                    items = await this.holosphere.getAllGlobal('reminderslookup') || [];
+                    items = items.filter(t => t.id && t.id.toString().startsWith(chatID.toString()));
+                } else if (table === 'federation') {
+                    items = await this.holosphere.getAllGlobal('federation') || [];
+                    items = items.filter(t => t.id === chatID.toString());
+                } else if (table === 'fedannouncements') {
+                    items = await this.holosphere.getAllGlobal('fedannouncements') || [];
+                    items = items.filter(t => t.id && t.id.toString().startsWith(chatID.toString() + '_'));
+                }
+
+                for (const item of items) {
+                    if (item.id) {
+                        relayDeletions.push({
+                            type: 'global',
+                            table: table,
+                            id: item.id
+                        });
+                        localCleared++;
+                    }
+                }
+            } catch (e) {
+                console.log(`[clearWithAsyncRelaySync] Error collecting ${table}:`, e.message);
+            }
+        }
+
+        // Start async relay sync in background (don't await)
+        this._processRelayDeletionsAsync(relayDeletions, delayMs).catch(err => {
+            console.error('[clearWithAsyncRelaySync] Background relay sync error:', err.message);
+        });
+
+        return { localCleared, relayQueueSize: relayDeletions.length };
+    }
+
+    /**
+     * Process relay deletions asynchronously with rate limiting
+     * @private
+     */
+    async _processRelayDeletionsAsync(deletions, delayMs) {
+        console.log(`[relaySync] Starting async deletion of ${deletions.length} items (${delayMs}ms delay between each)`);
+        let processed = 0;
+        let failed = 0;
+
+        for (const deletion of deletions) {
+            try {
+                if (deletion.type === 'lens') {
+                    await this.holosphere.deleteAll(deletion.table.split('/')[0], deletion.lens);
+                } else if (deletion.type === 'global') {
+                    await this.holosphere.deleteGlobal(deletion.table, deletion.id);
+                }
+                processed++;
+            } catch (err) {
+                // Log but continue - don't let one failure stop the rest
+                console.log(`[relaySync] Failed to delete ${deletion.type} ${deletion.table}/${deletion.id || ''}: ${err.message}`);
+                failed++;
+            }
+
+            // Rate limit: wait between deletions
+            if (delayMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+
+        console.log(`[relaySync] Completed: ${processed} succeeded, ${failed} failed out of ${deletions.length} total`);
+    }
+
+    /**
      * Clear cache entries for a specific chatID (delegates to holosphere2)
      * @param {string} chatID - Chat ID to clear cache for
      */
@@ -96,7 +202,7 @@ class DB {
         console.log(`DB.clearCacheForChatID: Cleared cache for chatID ${chatID}`);
     }
 
-    async put(table, data) {
+    async put(table, data, options = {}) {
         try {
             const key = data.id;
             if (!key) return data;
@@ -111,7 +217,7 @@ class DB {
             }
 
             // Mark write as pending
-            const writePromise = this.addGunDB(table, data);
+            const writePromise = this.addGunDB(table, data, options);
             this.pendingWrites.set(cacheKey, writePromise);
 
             try {
@@ -149,7 +255,7 @@ class DB {
 
     // ===========================      Gun Functions
 
-    async addGunDB(table, data) {
+    async addGunDB(table, data, options = {}) {
         let [hex, lens] = table.split('/')
         try {
             if (lens === undefined) {
@@ -157,7 +263,7 @@ class DB {
                 const key = data.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                 return await this.holosphere.putGlobal(table, key, data);
             } else {
-                return await this.holosphere.put(hex, lens, data);
+                return await this.holosphere.put(hex, lens, data, options);
             }
         } catch (error) {
             console.error(`DB.addGunDB: FAILED to write ${table}/${data.id}:`, error.message);
