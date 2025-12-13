@@ -6,13 +6,15 @@
 	import { formatDate, formatTime } from "../utils/date";
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
-	import { getHologramSourceName } from "../utils/holonNames";
+	import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
+	import TitleBar from "./shared/TitleBar.svelte";
 
 	/**
 	 * @type {string | any[]}
 	 */
 	let store = {};
 	let holonID: string | null = null;
+	let holonName = 'Offers & Requests';
 
 	// Federated offers toggle
 	let includeFederatedOffers = false;
@@ -130,6 +132,12 @@
 			if (isDestroyed) return;
 			if (value && value !== holonID) {
 				holonID = value;
+				// Load holon name for TitleBar
+				if (holosphere) {
+					fetchHolonName(holosphere, value).then(name => {
+						holonName = name || 'Offers & Requests';
+					});
+				}
 				// Force re-initialization when ID changes with error handling
 				initializeComponent().catch(error => {
 					// Silently handle re-initialization errors
@@ -747,36 +755,26 @@
 	}
 </script>
 
-<div class="space-y-8">
-	<!-- Header Section -->
-	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-		<div class="flex flex-col md:flex-row justify-between items-center">
-			<div class="text-center md:text-left mb-4 md:mb-0">
-				<h1 class="text-4xl font-bold text-white mb-2">Offers & Requests</h1>
-				<p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
-			</div>
-			
-			<!-- Federated Toggle Switch -->
-			<div class="flex items-center gap-3">
-				<span class="text-white text-sm font-medium">Include Federated</span>
-				<button 
-					class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {includeFederatedOffers ? 'bg-blue-600' : 'bg-gray-600'}"
-					on:click={handleFederatedToggle}
-					disabled={loadingFederated}
-				>
-					<span class="sr-only">Include federated offers</span>
-					<span 
-						class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
-					></span>
-				</button>
-				{#if loadingFederated}
-					<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-				{/if}
-				
-
-			</div>
+<div class="space-y-4">
+	<!-- TitleBar -->
+	<TitleBar {holonName} title="Offers & Requests">
+		<div slot="actions" class="flex items-center gap-3">
+			<span class="text-white text-sm font-medium hidden sm:inline">Include Federated</span>
+			<button
+				class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {includeFederatedOffers ? 'bg-blue-600' : 'bg-gray-600'}"
+				on:click={handleFederatedToggle}
+				disabled={loadingFederated}
+			>
+				<span class="sr-only">Include federated offers</span>
+				<span
+					class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
+				></span>
+			</button>
+			{#if loadingFederated}
+				<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+			{/if}
 		</div>
-		</div>
+	</TitleBar>
 
 	<!-- Main Content Container -->
 	{#if !componentReady}

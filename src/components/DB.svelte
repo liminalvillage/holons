@@ -2,9 +2,20 @@
 	import { onMount, getContext } from "svelte";
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
+	import TitleBar from "./shared/TitleBar.svelte";
+	import { fetchHolonName } from "../utils/holonNames";
 
 	// Use URL param directly instead of global ID store to avoid race conditions
 	$: holonID = $page.params.id || "";
+	let holonName: string = 'Database';
+	let holosphere = getContext("holosphere") as HoloSphere;
+
+	// Load holon name when ID changes
+	$: if (holonID && holosphere) {
+		fetchHolonName(holosphere, holonID).then(name => {
+			holonName = name || 'Database';
+		});
+	}
 
 	let store: Record<string, any> = {};
 	let selectedTable = "quests";
@@ -627,15 +638,10 @@
 	}
 </script>
 
-<div class="db-explorer">
-	<!-- Header -->
-	<div class="header">
-		<div class="header-left">
-			<div class="title-section">
-				<i class="fas {getCurrentIcon()} title-icon"></i>
-				<h1>Database Explorer</h1>
-			</div>
-
+<div class="space-y-4">
+	<!-- TitleBar -->
+	<TitleBar {holonName} title="Database Explorer">
+		<div slot="actions" class="flex items-center gap-2">
 			<!-- Mode Toggle -->
 			<div class="mode-toggle">
 				<button
@@ -644,7 +650,7 @@
 					disabled={!isRootMode}
 				>
 					<i class="fas fa-table"></i>
-					Tables
+					<span class="hidden sm:inline">Tables</span>
 				</button>
 				<button
 					class="mode-btn {isRootMode ? 'active' : ''}"
@@ -652,22 +658,21 @@
 					disabled={isRootMode}
 				>
 					<i class="fas fa-sitemap"></i>
-					Root
+					<span class="hidden sm:inline">Root</span>
 				</button>
 			</div>
-		</div>
-
-		<div class="header-right">
 			<button class="action-btn export-btn" on:click={exportTableData}>
 				<i class="fas fa-download"></i>
-				Export
+				<span class="hidden sm:inline">Export</span>
 			</button>
 			<button class="action-btn add-btn" on:click={() => isAddingNewEntry = true}>
 				<i class="fas fa-plus"></i>
-				New Entry
+				<span class="hidden sm:inline">New Entry</span>
 			</button>
 		</div>
-	</div>
+	</TitleBar>
+
+	<div class="db-explorer">
 
 	<!-- Navigation Bar -->
 	<div class="nav-bar">
@@ -945,6 +950,7 @@
 			</div>
 		{/if}
 	</div>
+</div>
 </div>
 
 <style>

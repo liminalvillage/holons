@@ -6,6 +6,8 @@
 
 	import TreeView from "./TreeView.svelte";
 	import type { HoloSphere } from "holosphere";
+	import TitleBar from "./shared/TitleBar.svelte";
+	import { fetchHolonName } from "../utils/holonNames";
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -19,6 +21,7 @@
 	 */
 	let store = {};
 	let holonID: string = '';
+	let holonName: string = 'Knowledge Base';
 	let isLoading = true;
 	let connectionReady = false;
 	let error = '';
@@ -107,6 +110,11 @@
 		const idUnsubscribe = ID.subscribe(async (value) => {
 			if (value && value !== holonID) {
 				holonID = value;
+				// Load holon name for TitleBar
+				if (holosphere) {
+					const name = await fetchHolonName(holosphere, value);
+					holonName = name || 'Knowledge Base';
+				}
 				// Clean up previous subscription
 				if (unsubscribe) {
 					unsubscribe();
@@ -167,38 +175,32 @@
 	}
 </script>
 
-<div class="space-y-8">
-	<!-- Header Section -->
-	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-		<div class="flex flex-col md:flex-row justify-between items-center">
-			<div class="text-center md:text-left mb-4 md:mb-0">
-				<h1 class="text-4xl font-bold text-white mb-2">Knowledge Base</h1>
-				<p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
-			</div>
-			<div class="flex items-center gap-3">
-				<button 
-					class="p-2 rounded-lg transition-colors {viewMode === 'list' ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:text-white'}"
-					on:click={() => viewMode = 'list'}
-					title="List View"
-					aria-label="Switch to list view"
-				>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-					</svg>
-				</button>
-				<button
-					class="p-2 rounded-lg transition-colors {viewMode === 'grid' ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:text-white'}"
-					on:click={() => viewMode = 'grid'}
-					title="Grid View"
-					aria-label="Switch to grid view"
-				>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-					</svg>
-				</button>
-			</div>
+<div class="space-y-4">
+	<!-- TitleBar -->
+	<TitleBar {holonName} title="Knowledge Base">
+		<div slot="actions" class="flex items-center gap-3">
+			<button
+				class="p-2 rounded-lg transition-colors {viewMode === 'list' ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:text-white'}"
+				on:click={() => viewMode = 'list'}
+				title="List View"
+				aria-label="Switch to list view"
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+				</svg>
+			</button>
+			<button
+				class="p-2 rounded-lg transition-colors {viewMode === 'grid' ? 'bg-gray-600 text-white' : 'bg-transparent text-gray-400 hover:text-white'}"
+				on:click={() => viewMode = 'grid'}
+				title="Grid View"
+				aria-label="Switch to grid view"
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+				</svg>
+			</button>
 		</div>
-	</div>
+	</TitleBar>
 
 	<!-- Main Content Container -->
 	<div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">

@@ -5,6 +5,8 @@
     import { replaceState } from "$app/navigation";
     import Schedule from "./ScheduleWidget.svelte";
     import type { HoloSphere } from "holosphere";
+    import TitleBar from "./shared/TitleBar.svelte";
+    import { fetchHolonName } from "../utils/holonNames";
 
     interface ChecklistItem {
         text: string;
@@ -22,6 +24,7 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
     let holonID: string = $page.params.id;
+    let holonName: string = 'Checklists';
     let unsubscribe: () => void;
     let checklistsUnsubscribe: (() => void) | undefined;
     let isLoading = true;
@@ -139,6 +142,10 @@
                     ID.set(newId);
                     if (holosphere) {
                         fetchData();
+                        // Load holon name for TitleBar
+                        fetchHolonName(holosphere, newId).then(name => {
+                            holonName = name || 'Checklists';
+                        });
                     }
                 }, 100);
             }
@@ -405,24 +412,14 @@
     </div>
 </div>
 {:else}
-<div class="flex gap-6">
+<div class="flex gap-4">
     <!-- Main Checklist Content -->
-    <div class="flex-1 space-y-8">
-        <!-- Header Section -->
-        <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-            <div class="flex flex-col md:flex-row justify-between items-center">
-                <div class="text-center md:text-left mb-4 md:mb-0">
-                    <h1 class="text-4xl font-bold text-white mb-2">
-                        {#if selectedChecklist && checklists[selectedChecklist]}
-                            {getChecklistDisplayTitle(checklists[selectedChecklist])}
-                        {:else}
-                            Checklists
-                        {/if}
-                    </h1>
-                    <p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
-                </div>
-            </div>
-        </div>
+    <div class="flex-1 space-y-4">
+        <!-- TitleBar -->
+        <TitleBar
+            {holonName}
+            title={selectedChecklist && checklists[selectedChecklist] ? getChecklistDisplayTitle(checklists[selectedChecklist]) : 'Checklists'}
+        />
 
         <!-- Main Content Container -->
         <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">

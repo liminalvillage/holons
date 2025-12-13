@@ -7,6 +7,8 @@
     import User from "./User.svelte";
     import PieChart3D from "./PieChart3D.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
+    import TitleBar from "./shared/TitleBar.svelte";
+    import { fetchHolonName } from "../utils/holonNames";
     interface User {
         id?: string;
         username?: string;
@@ -48,6 +50,7 @@
     let expenseStore: Record<string, Expense> = {};
     let availableCurrencies: string[] = [];
     let holonID: string;
+    let holonName: string = 'Status';
     let holosphere = getContext("holosphere") as HoloSphere;
     let valueEquationLoaded = false;
     let selectedUserId: string | null = null;
@@ -135,6 +138,12 @@
             
             if (value && value !== holonID) {
             holonID = value;
+                // Load holon name for TitleBar
+                if (holosphere) {
+                    fetchHolonName(holosphere, value).then(name => {
+                        holonName = name || 'Status';
+                    });
+                }
                 store = {}; // Reset store
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
@@ -592,16 +601,9 @@
     }
 </script>
 
-<div class="space-y-8">
-    <!-- Header Section -->
-    <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-            <div class="text-center md:text-left mb-4 md:mb-0">
-                <h1 class="text-4xl font-bold text-white mb-2">Status Rankings</h1>
-                <p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
-            </div>
-        </div>
-    </div>
+<div class="space-y-4">
+    <!-- TitleBar -->
+    <TitleBar {holonName} title="Status Rankings" />
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">

@@ -4,7 +4,8 @@
     import { page } from "$app/stores";
     import { formatDate, formatTime } from "../utils/date";
     import type { HoloSphere } from "holosphere";
-    import { getHologramSourceName } from "../utils/holonNames";
+    import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
+    import TitleBar from "./shared/TitleBar.svelte";
 
     interface ShoppingItem {
         id: string;
@@ -24,6 +25,7 @@
     const holosphere = getContext("holosphere") as HoloSphere;
 
     let holonID: string = '';
+    let holonName: string = 'Shopping List';
     let store: Record<string, ShoppingItem> = {};
     $: shoppingItems = Object.entries(store);
     $: filteredItems = shoppingItems.filter(([_, item]: [string, any]) => {
@@ -154,6 +156,10 @@
             holonID = newId;
             ID.set(newId);
             fetchData();
+            // Load holon name for TitleBar
+            fetchHolonName(holosphere, newId).then(name => {
+                holonName = name || 'Shopping List';
+            });
         }
     }
 
@@ -255,35 +261,28 @@
     }
 </script>
 
-<div class="space-y-8">
-    <!-- Header Section -->
-    <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-            <div class="text-center md:text-left mb-4 md:mb-0">
-                <h1 class="text-4xl font-bold text-white mb-2">Shopping List</h1>
-                <p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
+<div class="space-y-4">
+    <!-- TitleBar -->
+    <TitleBar {holonName} title="Shopping List">
+        <label slot="actions" class="flex items-center cursor-pointer">
+            <div class="relative">
+                <input
+                    type="checkbox"
+                    class="sr-only"
+                    bind:checked={showHolograms}
+                />
+                <div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
+                <div
+                    class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
+                    class:translate-x-5={showHolograms}
+                ></div>
             </div>
-            <!-- Show Holograms Toggle -->
-            <label class="flex items-center cursor-pointer">
-                <div class="relative">
-                    <input
-                        type="checkbox"
-                        class="sr-only"
-                        bind:checked={showHolograms}
-                    />
-                    <div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-                    <div
-                        class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
-                        class:translate-x-5={showHolograms}
-                    ></div>
-                </div>
-                <div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-                    <span class="hidden sm:inline">Show Holograms</span>
-                    <span class="sm:hidden" aria-label="Show hologram items">🔮</span>
-                </div>
-            </label>
-        </div>
-    </div>
+            <div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
+                <span class="hidden sm:inline">Show Holograms</span>
+                <span class="sm:hidden" aria-label="Show hologram items">🔮</span>
+            </div>
+        </label>
+    </TitleBar>
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
