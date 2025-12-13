@@ -18,6 +18,11 @@
 	// Add new imports for quest library
 	import QuestImportModal from "./QuestImportModal.svelte";
 	import { fetchHolonName } from "../utils/holonNames";
+	// Import shared components
+	import TitleBar from "./shared/TitleBar.svelte";
+	import StatCard from "./shared/StatCard.svelte";
+	import StatGrid from "./shared/StatGrid.svelte";
+	import { CheckSquare, Clock, RefreshCw, CheckCircle, Layers } from 'svelte-feathers';
 
 	// Add filterType prop to allow filtering by quest type
 	let { filterType = 'all' }: { filterType?: 'task' | 'event' | 'all' } = $props();
@@ -67,6 +72,8 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let holonID = $state(''); // Start empty so reactive block triggers on first valid ID
+	let holonName = $state('Tasks'); // Default name
+	let statsCollapsed = $state(false); // For mobile stats toggle
 	let store: Store = $state({});
 	let quests = $derived(Object.entries(store));
 
@@ -1096,6 +1103,10 @@
 			connectionReady = true;
 			isLoading = true;
 			fetchData();
+			// Load holon name for TitleBar
+			fetchHolonName(holosphere, holonID).then(name => {
+				holonName = name || 'Tasks';
+			});
 		}
 	});
 
@@ -1213,58 +1224,31 @@
 
 </script>
 
-<div class="space-y-8">
-	<!-- Header Section -->
-	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
-		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
-			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
-				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">
-					{filterType === 'event' ? 'Events & Scheduled Items' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
-				</h1>
-			</div>
-			<!-- Hide date on xs screens -->
-			<p class="text-gray-300 text-base sm:text-lg flex-shrink-0 hidden sm:block">{new Date().toDateString()}</p>
-		</div>
-	</div>
+<div class="space-y-4">
+	<!-- TitleBar -->
+	<TitleBar
+		{holonName}
+		title={filterType === 'event' ? 'Events' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
+	/>
 
 	<!-- Main Content Container -->
-	<div class="flex flex-col xl:flex-row gap-4 sm:gap-8">
+	<div class="flex flex-col xl:flex-row gap-4">
 		<!-- Tasks Panel -->
-		<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
-			<div class="p-3 sm:p-8">
+		<div class="xl:flex-1 bg-gray-800 rounded-2xl shadow-xl min-h-[600px]">
+			<div class="p-3 sm:p-6">
 				<!-- Stats Section -->
-				<div class="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-8">
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">
-							{statsUnassigned}
-						</div>
-						<div class="text-sm text-gray-400">Unassigned</div>
-					</div>
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">
-							{statsOpenItems}
-						</div>
-						<div class="text-sm text-gray-400">Open Items</div>
-					</div>
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">
-							{statsRecurring}
-						</div>
-						<div class="text-sm text-gray-400">Recurring</div>
-					</div>
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">
-							{statsCompleted}
-						</div>
-						<div class="text-sm text-gray-400">Completed</div>
-					</div>
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">
-							{statsFilterSpecific}
-						</div>
-						<div class="text-sm text-gray-400">{filterType === 'event' ? 'Scheduled' : filterType === 'task' ? 'Tasks' : 'Quests'}</div>
-					</div>
-				</div>
+				<StatGrid collapsible={true} collapsed={statsCollapsed} title="Task Statistics" on:toggle={(e) => statsCollapsed = e.detail.collapsed}>
+					<StatCard label="Unassigned" value={statsUnassigned} icon={CheckSquare} compact />
+					<StatCard label="Open Items" value={statsOpenItems} icon={Clock} compact />
+					<StatCard label="Recurring" value={statsRecurring} icon={RefreshCw} compact />
+					<StatCard label="Completed" value={statsCompleted} icon={CheckCircle} compact />
+					<StatCard
+						label={filterType === 'event' ? 'Scheduled' : filterType === 'task' ? 'Tasks' : 'Quests'}
+						value={statsFilterSpecific}
+						icon={Layers}
+						compact
+					/>
+				</StatGrid>
 
 				<!-- Controls Section -->
 				<div class="mb-4 sm:mb-6">

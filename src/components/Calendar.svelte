@@ -7,6 +7,8 @@
     import { formatDate } from "../utils/date";
     import * as d3 from "d3";
     import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
+    import TitleBar from "./shared/TitleBar.svelte";
+    import { fetchHolonName } from "../utils/holonNames";
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -14,6 +16,9 @@
     const dispatch = createEventDispatcher<CalendarEvents>();
 
     const holosphere = getContext("holosphere") as HoloSphere;
+
+    // Holon name for TitleBar
+    let holonName = 'Calendar';
 
     // Calendar state
     let currentDate = new Date();
@@ -156,6 +161,13 @@
         loadProfiles();
         loadTasks();
         loadImportedCalendars();
+
+        // Load holon name for TitleBar
+        if ($ID && holosphere) {
+            fetchHolonName(holosphere, $ID).then(name => {
+                holonName = name || 'Calendar';
+            });
+        }
 
         // Set up periodic sync for imported calendars
         syncInterval = setInterval(() => {
@@ -1504,14 +1516,17 @@
     }
 </script>
 
-<Timeline 
-    currentDate={currentDate}
-    profiles={profiles}
-    users={users}
-    on:dateSelect={handleTimelineDateSelect}
-/>
+<div class="space-y-4">
+    <TitleBar {holonName} title="Calendar" />
 
-<div class="bg-gray-800 rounded-3xl p-6">
+    <Timeline
+        currentDate={currentDate}
+        profiles={profiles}
+        users={users}
+        on:dateSelect={handleTimelineDateSelect}
+    />
+
+    <div class="bg-gray-800 rounded-2xl p-4 sm:p-6">
     <div class="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
         <div class="flex items-center gap-4">
             <div class="flex gap-2">
@@ -2117,6 +2132,8 @@
         </div>
     </dialog>
 {/if}
+
+</div>
 
 <!-- Calendar Settings Modal -->
 <CalendarSettings

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
-  import { clearHolonNameCache } from '../utils/holonNames';
+  import { clearHolonNameCache, fetchHolonName } from '../utils/holonNames';
+  import TitleBar from './shared/TitleBar.svelte';
 
   // Types
   interface User {
@@ -34,6 +35,7 @@
   let holosphere: any;
   let loading = true;
   let error: string | null = null;
+  let holonName: string = 'Settings';
   let notifications: Array<{id: number, message: string, type: string}> = [];
   let notificationId = 0;
 
@@ -203,6 +205,12 @@
   $: if (holonId) {
     holosphere = getContext('holosphere');
     loadSettings();
+    // Load holon name for TitleBar
+    if (holosphere) {
+      fetchHolonName(holosphere, holonId).then(name => {
+        holonName = name || 'Settings';
+      });
+    }
   }
 
   // UI logic - updated to use settings store
@@ -276,29 +284,10 @@
 </script>
 
 <!-- Settings Container with proper scroll -->
-<div class="min-h-0 pb-8">
+<div class="space-y-4 min-h-0 pb-8">
 
-<!-- Header Section - Simple header aligned with main content -->
-<div class="bg-gray-800 rounded-2xl shadow-xl p-6 mb-8">
-	<div class="flex items-center gap-4">
-		<!-- Settings Icon -->
-		<div class="flex-shrink-0">
-			<div class="w-12 h-12 flex items-center justify-center">
-				<span class="text-3xl">⚙️</span>
-			</div>
-		</div>
-		
-		<!-- Title and Subtitle -->
-		<div class="flex-1">
-			<div class="text-2xl font-bold text-white">
-				Settings Overview
-			</div>
-			<div class="text-sm text-gray-400 font-mono mt-1">
-				{settings.id || 'No ID'}
-			</div>
-		</div>
-	</div>
-</div>
+<!-- TitleBar -->
+<TitleBar {holonName} title="Settings" />
 
 	<!-- Loading/Error/Notification UI -->
 	{#if loading}

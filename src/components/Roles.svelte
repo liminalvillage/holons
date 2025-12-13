@@ -9,6 +9,11 @@
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
 	import RoleModal from "./RoleModal.svelte";
+	import TitleBar from "./shared/TitleBar.svelte";
+	import StatCard from "./shared/StatCard.svelte";
+	import StatGrid from "./shared/StatGrid.svelte";
+	import { Users, UserCheck, UserX } from 'svelte-feathers';
+	import { fetchHolonName } from "../utils/holonNames";
 
 	/**
 	 * @type {Record<string, any>}
@@ -23,6 +28,8 @@
 
 	$: roles = Object.entries(store || {});
 	let holosphere = getContext("holosphere") as HoloSphere;
+	let holonName = 'Roles'; // Default name
+	let statsCollapsed = false; // For mobile stats toggle
 
 	// Initialize preferences with default values
 	let isListView = false;
@@ -345,6 +352,10 @@
 		ID.set(activeHolonId);
 		isUserStoreReady = false;
 		loadAndSubscribeData(activeHolonId);
+		// Load holon name for TitleBar
+		fetchHolonName(holosphere, activeHolonId).then(name => {
+			holonName = name || 'Roles';
+		});
 	}
 
 	// Format time for display
@@ -405,41 +416,29 @@
 	}
 </script>
 
-<div class="w-full bg-gray-800 py-6 px-6 rounded-3xl">
-		<div class="flex justify-between text-white items-center mb-8">
-			<div>
-				<h1 class="text-2xl font-bold">Roles</h1>
-				<p class="text-lg mt-1">Active Roles</p>
-			</div>
-			<p class="">{new Date().toDateString()}</p>
-		</div>
+<div class="space-y-4">
+	<TitleBar {holonName} title="Roles" />
 
-		<div class="flex flex-wrap justify-between items-center pb-8">
-			<div class="flex flex-wrap text-white">
-				<div class="pr-10">
-					<div class="text-2xl font-bold">{roles.length}</div>
-					<div class="">Total Roles</div>
-				</div>
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{roles.filter(
-							(role) => role[1].participants?.length > 0
-						).length}
-					</div>
-					<div class="">Assigned</div>
-				</div>
-				<div>
-					<div class="text-2xl font-bold">
-						{roles.length -
-							roles.filter(
-								(role) => role[1].participants?.length > 0
-							).length}
-					</div>
-					<div class="">Unassigned</div>
-				</div>
-			</div>
+	<div class="w-full bg-gray-800 p-4 sm:p-6 rounded-2xl">
+		<!-- Stats Section -->
+		<StatGrid collapsible={true} collapsed={statsCollapsed} title="Role Statistics" on:toggle={(e) => statsCollapsed = e.detail.collapsed}>
+			<StatCard label="Total Roles" value={roles.length} icon={Users} compact />
+			<StatCard
+				label="Assigned"
+				value={roles.filter((role) => role[1].participants?.length > 0).length}
+				icon={UserCheck}
+				compact
+			/>
+			<StatCard
+				label="Unassigned"
+				value={roles.length - roles.filter((role) => role[1].participants?.length > 0).length}
+				icon={UserX}
+				compact
+			/>
+		</StatGrid>
 
-			<div class="flex items-center mt-4 md:mt-0">
+		<!-- View Toggle -->
+		<div class="flex items-center justify-end mb-4">
 				<button
 					class="text-white {isListView
 						? 'bg-gray-700'
@@ -710,6 +709,7 @@
 			</div>
 		{/if}
 	</div>
+</div>
 
 {#if selectedRole && isUserStoreReady}
 	<RoleModal

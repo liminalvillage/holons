@@ -10,6 +10,7 @@
     import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
     import { fetchHolonName } from "../utils/holonNames";
     import { addVisitedHolon } from "../utils/localStorage";
+    import TitleBar from "./shared/TitleBar.svelte";
     import QRScanner from "./QRScanner.svelte";
     import ExpirationPicker from "./ExpirationPicker.svelte";
     import {
@@ -107,6 +108,7 @@
     }
 
     let currentHolonId: string = '';
+    let holonName: string = 'Federation';
     let federationInfo: FederationInfo | null = null;
     let federatedHolons: FederatedHolon[] = [];
     let loading = true;
@@ -164,6 +166,9 @@
                     await loadFederationData();
                     // Subscribe to federation data changes
                     await subscribeFederationChanges();
+                    // Load holon name for TitleBar
+                    const name = await fetchHolonName(holosphere, currentHolonId);
+                    holonName = name || 'Federation';
                 } else {
                     federationInfo = null;
                     federatedHolons = [];
@@ -1104,21 +1109,12 @@
     }, new Set<string>()).size;
 </script>
 
-<div class="space-y-6">
-    <!-- Header Section -->
-    <div class="bg-gradient-to-br from-indigo-900/80 via-purple-900/60 to-gray-900 py-6 px-6 rounded-2xl shadow-xl border border-purple-500/20">
-        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-            <div class="flex items-center gap-4">
-                <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                    <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-                    </svg>
-                </div>
-                <div>
-                    <h1 class="text-2xl font-bold text-white">Federation</h1>
-                    <p class="text-purple-300/80 text-sm">Connect and share data across holons</p>
-                </div>
-            </div>
+<div class="space-y-4">
+    <TitleBar {holonName} title="Federation" />
+
+    <!-- Controls Section -->
+    <div class="bg-gray-800 rounded-2xl p-4 sm:p-6">
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
             <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
                 <button
                     on:click={() => showNetworkView = !showNetworkView}
