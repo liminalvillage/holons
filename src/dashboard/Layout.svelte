@@ -5,16 +5,41 @@
 	import { goto } from '$app/navigation';
 	import { data } from './sidebar/data';
 	import { onDestroy } from 'svelte';
-	import { autoTransitionEnabled } from './store';
+	import { autoTransitionEnabled, sidebarExpanded } from './store';
 
 	import TopBar from './TopBar.svelte';
 	import Overlay from './Overlay.svelte';
-	import Sidebar from './sidebar/Sidebar.svelte';
+	import BrowserPanel from './browser/BrowserPanel.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
+
+	// Browser panel state (replaces sidebar for holon browsing)
+	let browserOpen = false;
+
+	// Open browser panel
+	function openBrowser() {
+		browserOpen = true;
+	}
+
+	// Close browser panel
+	function closeBrowser() {
+		browserOpen = false;
+	}
+
+	// Toggle browser panel
+	function toggleBrowser() {
+		browserOpen = !browserOpen;
+	}
+
+	// Handle add holon from browser panel
+	function handleAddHolon() {
+		// Dispatch event to TopBar to open the add holon modal
+		window.dispatchEvent(new CustomEvent('openAddHolonModal'));
+	}
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative flex flex-col`,
-		mainContainer: `flex flex-col flex-1 pl-0 w-full lg:pl-20 lg:space-y-4 overflow-hidden`,
+		// Updated: removed left padding since browser panel handles its own width
+		mainContainer: `flex flex-col flex-1 w-full overflow-hidden`,
 		main: `flex-1 overflow-auto pb-8 pt-2 px-2 md:pb-8 md:pt-2 lg:pt-2 lg:px-4`,
 		rootContainer: `bg-gray-900 h-screen overflow-hidden relative`,
 		rootMain: `h-screen overflow-auto p-4`
@@ -87,13 +112,32 @@
 		</main>
 	</div>
 {:else}
-	<!-- Normal dashboard layout -->
+	<!-- Normal dashboard layout with flipped structure -->
+	<!-- Left: Holon Browser, Top: Navigation Cards, Right: Content -->
 	<div class={style.container} on:mousemove={handleMouseMove} role="presentation">
-		<!-- TopBar spans full width above everything -->
-		<TopBar />
+		<!-- TopBar spans full width above everything - now contains navigation cards -->
+		<TopBar on:toggleBrowser={toggleBrowser} />
+
 		<div class="flex items-stretch dashboard-content">
 			<Overlay />
-			<Sidebar mobileOrientation="start" />
+
+			<!-- Browser Panel (left side) - for browsing holons -->
+			<BrowserPanel
+				isOpen={browserOpen}
+				on:close={closeBrowser}
+				on:add={handleAddHolon}
+			/>
+
+			<!-- Mobile overlay backdrop -->
+			{#if browserOpen}
+				<button
+					class="browser-backdrop"
+					on:click={closeBrowser}
+					aria-label="Close browser panel"
+				></button>
+			{/if}
+
+			<!-- Main content area -->
 			<div class={style.mainContainer}>
 				<main class={style.main}>
 					<RouteTransition pathname={$page.url.pathname}>
@@ -111,6 +155,24 @@
 		flex: 1;
 		overflow: hidden;
 		min-height: 0; /* Important for flex scroll containers */
+		position: relative;
+	}
+
+	/* Browser panel backdrop for mobile */
+	.browser-backdrop {
+		display: none;
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		z-index: var(--z-overlay, 40);
+		border: none;
+		cursor: pointer;
+	}
+
+	@media (max-width: 1024px) {
+		.browser-backdrop {
+			display: block;
+		}
 	}
 
 	/* Hide scrollbars while keeping scroll functionality */

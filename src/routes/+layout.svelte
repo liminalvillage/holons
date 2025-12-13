@@ -12,6 +12,9 @@
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
 
+	// Import global design system styles
+	import '../styles/index.css';
+
 	// Track if user has passed the splash screen
 	let showSplash = true;
 	let splashComplete = false;
