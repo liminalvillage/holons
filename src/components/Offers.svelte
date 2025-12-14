@@ -2,12 +2,14 @@
 	// @ts-nocheck
 
 	import { onMount, getContext } from "svelte";
+	import { goto } from "$app/navigation";
 	import { ID } from "../dashboard/store";
 	import { formatDate, formatTime } from "../utils/date";
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
 	import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
 	import TitleBar from "./shared/TitleBar.svelte";
+	import { Gift } from 'svelte-feathers';
 
 	/**
 	 * @type {string | any[]}
@@ -222,7 +224,29 @@
 					// Use federated data retrieval
 					await fetchFederatedOffersAndNeeds();
 				} else {
-					// Use regular subscription
+					// First, load initial data with getAll (subscription only gets updates, not existing data)
+					try {
+						const initialData = await holosphere.getAll(holonID, "quests");
+						if (Array.isArray(initialData)) {
+							initialData.forEach((item) => {
+								if (item && item.id) {
+									const key = item.id;
+									store[key] = { ...item, key };
+								}
+							});
+						} else if (typeof initialData === 'object' && initialData !== null) {
+							Object.entries(initialData).forEach(([key, item]: [string, any]) => {
+								if (item && item.id) {
+									store[key] = { ...item, key };
+								}
+							});
+						}
+						store = store; // Trigger reactivity
+					} catch (error) {
+						console.error('Error loading initial offers data:', error);
+					}
+
+					// Then set up subscription for live updates
 					questSubscriptionOff = holosphere.subscribe(holonID, "quests", (newItem, key) => {
 						try {
 							if (newItem) {
@@ -757,7 +781,7 @@
 
 <div class="space-y-4">
 	<!-- TitleBar -->
-	<TitleBar {holonName} title="Offers & Requests">
+	<TitleBar {holonName} title="Offers & Requests" icon={Gift}>
 		<div slot="actions" class="flex items-center gap-3">
 			<span class="text-white text-sm font-medium hidden sm:inline">Include Federated</span>
 			<button
@@ -793,25 +817,26 @@
 			<!-- Offers & Requests Panel -->
 			<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
 			<div class="p-8">
-				<!-- Stats Section -->
-				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">{offers.length}</div>
-						<div class="text-sm text-gray-400">Offers</div>
+				<!-- Stats Bar -->
+				<div class="stats-bar mb-4">
+					<div class="stats-bar__item stats-bar__item--success">
+						<span class="stats-bar__value">{offers.length}</span>
+						<span class="stats-bar__label">Offers</span>
 					</div>
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">{needs.length}</div>
-						<div class="text-sm text-gray-400">Requests</div>
+					<div class="stats-bar__divider"></div>
+					<div class="stats-bar__item stats-bar__item--info">
+						<span class="stats-bar__value">{needs.length}</span>
+						<span class="stats-bar__label">Requests</span>
 					</div>
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">
-							{offers.length + needs.length - offers.concat(needs).filter((item) => item.participants?.length > 0).length}
-						</div>
-						<div class="text-sm text-gray-400">Unassigned</div>
-				</div>
-					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-						<div class="text-2xl font-bold text-white mb-1">{offers.length + needs.length}</div>
-						<div class="text-sm text-gray-400">Total</div>
+					<div class="stats-bar__divider"></div>
+					<div class="stats-bar__item stats-bar__item--warning">
+						<span class="stats-bar__value">{offers.length + needs.length - offers.concat(needs).filter((item) => item.participants?.length > 0).length}</span>
+						<span class="stats-bar__label">Unassigned</span>
+					</div>
+					<div class="stats-bar__divider"></div>
+					<div class="stats-bar__item">
+						<span class="stats-bar__value">{offers.length + needs.length}</span>
+						<span class="stats-bar__label">Total</span>
 					</div>
 				</div>
 
@@ -868,7 +893,7 @@
 														on:click|stopPropagation={() => {
 															const sourceHolon = offer._hologram?.sourceHolon;
 															if (sourceHolon) {
-																window.location.href = `/${sourceHolon}/offers`;
+																goto(`/${sourceHolon}/offers`);
 															}
 														}}
 													>
@@ -927,7 +952,7 @@
 										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
 											<!-- Cast Button -->
 											<button
-												class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+												class="btn btn--primary btn--sm"
 												on:click|stopPropagation={() => {
 													console.log("[Offers.svelte] Cast button clicked for offer:", offer);
 													console.log("[Offers.svelte] Offer data:", offer);
@@ -957,7 +982,7 @@
 											<!-- Take Offer Dropdown -->
 											<div class="relative">
 												<button 
-													class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors" 
+													class="btn btn--success btn--sm"
 													on:click|stopPropagation={(e) => {
 														console.log('Take Offer button clicked for:', offer.key);
 														toggleDropdown(offer.key);
@@ -1071,7 +1096,7 @@
 														on:click|stopPropagation={() => {
 															const sourceHolon = need._hologram?.sourceHolon;
 															if (sourceHolon) {
-																window.location.href = `/${sourceHolon}/offers`;
+																goto(`/${sourceHolon}/offers`);
 															}
 														}}
 													>
@@ -1130,7 +1155,7 @@
 										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
 											<!-- Cast Button -->
 											<button
-												class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+												class="btn btn--primary btn--sm"
 												on:click|stopPropagation={() => {
 													console.log("[Offers.svelte] Cast button clicked for need:", need);
 													console.log("[Offers.svelte] Need data:", need);
@@ -1160,7 +1185,7 @@
 											<!-- Take Need Dropdown -->
 											<div class="relative">
 												<button 
-													class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors" 
+													class="btn btn--primary btn--sm"
 													on:click|stopPropagation={(e) => {
 														console.log('Take Need button clicked for:', need.key);
 														toggleDropdown(need.key);

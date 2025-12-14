@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, type ComponentType } from 'svelte';
 	import { ArrowLeft } from 'svelte-feathers';
 
 	// Props
@@ -7,6 +7,7 @@
 	export let holonName: string = '';
 	export let showBack: boolean = false;
 	export let compact: boolean = false;
+	export let icon: ComponentType | null = null;
 
 	const dispatch = createEventDispatcher();
 
@@ -22,11 +23,16 @@
 <header class="title-bar" class:title-bar--compact={compact}>
 	{#if showBack}
 		<button class="title-bar__back" on:click={handleBack} aria-label="Go back">
-			<ArrowLeft size={18} />
+			<ArrowLeft size="18" />
 		</button>
 	{/if}
 
 	<div class="title-bar__content">
+		{#if icon}
+			<span class="title-bar__icon">
+				<svelte:component this={icon} size="16" />
+			</span>
+		{/if}
 		{#if holonName}
 			<span class="title-bar__holon-name">{holonName}</span>
 		{/if}
@@ -87,6 +93,14 @@
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
+	}
+
+	.title-bar__icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-accent-light, #6366f1);
+		flex-shrink: 0;
 	}
 
 	.title-bar__holon-name {

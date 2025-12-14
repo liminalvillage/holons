@@ -3,7 +3,7 @@
   import { ethers } from 'ethers';
   import { walletAddress } from '../dashboard/store';
   import { HolonsManager } from '../lib/holons/HolonsManager';
-  import type { HolonBundle } from '../lib/holons/HolonsContract';
+  import type { HolonBundle, FlowConfig } from '../lib/holons/HolonsContract';
   import type { FlowVisualizationData, FlowNode, FlowEdge, FederationLink } from '../lib/holons/FlowSettings';
   import type { HoloSphere } from 'holosphere';
 
@@ -22,9 +22,86 @@
   let notifications: Array<{id: number, message: string, type: string}> = [];
   let notificationId = 0;
 
-  // Flow configuration
-  let internalPercent = 50;
-  let externalPercent = 50;
+  // Flow configuration (Bundle contract uses interior/exterior terminology)
+  let interiorPercent = 50;
+  let exteriorPercent = 50;
+
+  // Bundle parameters
+  let steepness = BigInt('500000000000000000'); // 0.5e18 = 50% decay per zone
+  let nzones = 6;
+
+  // Track original values from contract for change detection
+  let originalInteriorPercent = 50;
+  let originalSteepness = BigInt('500000000000000000');
+  let originalNzones = 6;
+  let syncing = false;
+
+  // Reactive: detect if there are unsaved changes
+  $: hasChanges = existingBundle && (
+    interiorPercent !== originalInteriorPercent ||
+    steepness !== originalSteepness ||
+    nzones !== originalNzones
+  );
+
+  // Alias for UI compatibility
+  $: internalPercent = interiorPercent;
+  $: externalPercent = exteriorPercent;
+
+  // Event signatures for parsing logs
+  const NEW_HOLON_EVENT_SIGNATURE = ethers.id('NewHolon(string,address)');
+  const HOLON_CREATED_EVENT_SIGNATURE = ethers.id('HolonCreated(address,string,string,address,uint256)');
+
+  // Parse holon address from transaction receipt logs
+  function parseHolonAddressFromReceipt(receipt: ethers.TransactionReceipt): string | null {
+    if (!receipt.logs || receipt.logs.length === 0) {
+      console.log('[FlowMgmt] No logs in receipt');
+      return null;
+    }
+
+    console.log('[FlowMgmt] Parsing logs from receipt:', receipt.logs.length, 'logs found');
+
+    for (const log of receipt.logs) {
+      // Try to parse HolonCreated event (indexed address is in topics[1])
+      if (log.topics[0] === HOLON_CREATED_EVENT_SIGNATURE && log.topics.length >= 2) {
+        const addressHex = log.topics[1];
+        const address = ethers.getAddress('0x' + addressHex.slice(26));
+        console.log('[FlowMgmt] Found HolonCreated event, address:', address);
+        return address;
+      }
+
+      // Try to parse NewHolon event (address is in data)
+      if (log.topics[0] === NEW_HOLON_EVENT_SIGNATURE) {
+        try {
+          const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+          const decoded = abiCoder.decode(['string', 'address'], log.data);
+          const address = decoded[1] as string;
+          console.log('[FlowMgmt] Found NewHolon event, address:', address);
+          return address;
+        } catch (e) {
+          console.log('[FlowMgmt] Failed to decode NewHolon event:', e);
+        }
+      }
+    }
+
+    // Fallback: try generic parsing
+    for (const log of receipt.logs) {
+      if (log.data && log.data.length >= 66) {
+        try {
+          const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+          try {
+            const decoded = abiCoder.decode(['string', 'address'], log.data);
+            if (decoded[1] && ethers.isAddress(decoded[1])) {
+              console.log('[FlowMgmt] Found address in (string, address) format:', decoded[1]);
+              return decoded[1] as string;
+            }
+          } catch {}
+        } catch {}
+      }
+    }
+
+    console.log('[FlowMgmt] Could not parse address from logs');
+    return null;
+  }
 
   // Zone management - zones 0 (center) to 5 (outer)
   interface ZonedHolon {
@@ -39,21 +116,16 @@
   }
 
   let federatedHolons: ZonedHolon[] = [];
-  let draggedHolon: ZonedHolon | null = null;
-  let isDragging = false;
 
   // Canvas references
-  let zoneCanvas: HTMLCanvasElement;
-  let zoneCtx: CanvasRenderingContext2D;
   let sankeyCanvas: HTMLCanvasElement;
   let sankeyCtx: CanvasRenderingContext2D;
 
   // Canvas dimensions
-  const ZONE_SIZE = 500;
   const SANKEY_WIDTH = 800;
   const SANKEY_HEIGHT = 400;
 
-  // Zone configuration
+  // Zone colors for display
   const ZONE_COLORS = [
     '#3b82f6', // Zone 0 - Blue (center/internal)
     '#8b5cf6', // Zone 1 - Purple
@@ -62,8 +134,6 @@
     '#10b981', // Zone 4 - Emerald
     '#6b7280', // Zone 5 - Gray (outer)
   ];
-
-  const ZONE_RADII = [40, 80, 120, 160, 200, 240]; // Radius for each zone
 
   // Animation
   let animationFrame: number;
@@ -141,17 +211,70 @@
 
   // Load existing bundle and federation data
   async function loadBundleAndFederation() {
-    if (!manager || !holonId) return;
+    if (!holonId) return;
 
     try {
       loading = true;
-      existingBundle = await manager.getHolonBundle(holonId);
+
+      // First, try to load bundle from holosphere settings
+      if (holosphere) {
+        try {
+          const settings = await holosphere.getAll(holonId, 'settings');
+          const bundleSettings = settings?.find((s: any) => s.bundle)?.bundle;
+
+          // Validate that the address is a proper contract address (40 hex chars)
+          // Not a tx hash (64 hex chars)
+          const isValidAddress = (addr: string) =>
+            addr && addr.startsWith('0x') && addr.length === 42;
+
+          if (bundleSettings?.address && isValidAddress(bundleSettings.address)) {
+            existingBundle = {
+              address: bundleSettings.address,
+              creatorUserId: bundleSettings.creatorUserId || holonId,
+              name: holonId,
+              timestamp: bundleSettings.deployedAt || Date.now(),
+              steepness: BigInt(bundleSettings.steepness || '500000000000000000'),
+              nzones: bundleSettings.nzones || 6,
+              // Legacy compatibility
+              splitterAddress: bundleSettings.address,
+              managedAddress: bundleSettings.address,
+              zonedAddress: bundleSettings.address
+            };
+            console.log('Loaded Bundle from holosphere settings:', existingBundle);
+          } else if (bundleSettings?.address) {
+            console.warn('Invalid bundle address in settings (possibly a tx hash):', bundleSettings.address);
+            // Clean up corrupted settings
+            try {
+              console.log('[FlowMgmt] Cleaning up invalid bundle settings...');
+              await holosphere.put(holonId, 'settings', { bundle: null });
+            } catch (cleanupErr) {
+              console.log('[FlowMgmt] Could not clean up invalid settings:', cleanupErr);
+            }
+          }
+        } catch (settingsErr) {
+          console.log('No Bundle in holosphere settings:', settingsErr);
+        }
+      }
+
+      // If not found in settings, try the contract (if manager is available)
+      if (!existingBundle && manager) {
+        existingBundle = await manager.getHolonBundle(holonId);
+      }
 
       if (existingBundle) {
-        const flowConfig = await manager.getFlowConfiguration(holonId);
-        if (flowConfig) {
-          internalPercent = flowConfig.internalPercent || 50;
-          externalPercent = 100 - internalPercent;
+        // Load flow config from Bundle contract
+        if (manager && existingBundle.address) {
+          const flowConfig = await manager.getFlowConfiguration(existingBundle.address);
+          if (flowConfig) {
+            interiorPercent = flowConfig.interiorPercent || 50;
+            exteriorPercent = 100 - interiorPercent;
+            steepness = flowConfig.steepness || BigInt('500000000000000000');
+            nzones = flowConfig.nzones || 6;
+            // Track original values for change detection
+            originalInteriorPercent = interiorPercent;
+            originalSteepness = steepness;
+            originalNzones = nzones;
+          }
         }
       }
 
@@ -194,7 +317,7 @@
     }
   }
 
-  // One-click deploy bundle
+  // One-click deploy Bundle contract
   async function deployBundle() {
     if (!manager || !holonId) {
       showNotification('Please connect wallet first', 'error');
@@ -203,162 +326,210 @@
 
     try {
       deploying = true;
-      const result = await manager.createHolonBundle(holonId, holonId);
-      showNotification(`Deploying bundle... TX: ${result.transaction.hash.slice(0, 10)}...`, 'info');
+      showNotification('Please confirm the transaction in your wallet...', 'info');
 
-      // Wait for deployment
-      setTimeout(() => loadBundleAndFederation(), 5000);
+      // Deploy Bundle contract directly (no registry needed!)
+      const result = await manager.createHolonBundle(holonId, holonId, steepness, nzones);
+      showNotification(`Transaction submitted! TX: ${result.transaction.hash.slice(0, 10)}...`, 'info');
+
+      // The address is returned directly from deployment
+      const deployedAddress = result.address;
+      console.log('[FlowMgmt] Bundle deployed at:', deployedAddress);
+
+      // Wait for transaction to be mined
+      showNotification('Waiting for transaction confirmation...', 'info');
+      const receipt = await result.transaction.wait();
+
+      // Debug: log the full receipt
+      console.log('[FlowMgmt] Transaction receipt:', {
+        status: receipt?.status,
+        hash: receipt?.hash,
+        blockNumber: receipt?.blockNumber,
+        gasUsed: receipt?.gasUsed?.toString(),
+        logsCount: receipt?.logs?.length,
+        contractAddress: receipt?.contractAddress,
+        logs: receipt?.logs?.map(l => ({
+          address: l.address,
+          topics: l.topics,
+          dataLength: l.data?.length
+        }))
+      });
+
+      // If receipt has no logs, try to fetch them explicitly
+      let logsToCheck = receipt?.logs || [];
+      if (logsToCheck.length === 0 && provider && receipt?.hash) {
+        try {
+          console.log('[FlowMgmt] No logs in receipt, fetching explicitly...');
+          const txReceipt = await provider.getTransactionReceipt(receipt.hash);
+          if (txReceipt?.logs && txReceipt.logs.length > 0) {
+            logsToCheck = txReceipt.logs;
+            console.log('[FlowMgmt] Fetched logs explicitly:', logsToCheck.length, 'logs found');
+          }
+        } catch (fetchErr) {
+          console.log('[FlowMgmt] Could not fetch logs:', fetchErr);
+        }
+      }
+
+      if (receipt?.status === 1) {
+        // Use the address from direct deployment (no need to parse logs!)
+        let finalAddress = deployedAddress;
+
+        // Fallback: try to parse from logs if not available
+        if (!finalAddress) {
+          finalAddress = parseHolonAddressFromReceipt({ ...receipt, logs: logsToCheck } as ethers.TransactionReceipt);
+        }
+
+        // Fallback: use contract address from receipt
+        if (!finalAddress && receipt.contractAddress) {
+          finalAddress = receipt.contractAddress;
+          console.log('[FlowMgmt] Using contract address from receipt:', finalAddress);
+        }
+
+        // Validate the address before saving
+        if (!finalAddress || !ethers.isAddress(finalAddress)) {
+          console.error('[FlowMgmt] Invalid or missing deployed address:', finalAddress);
+          showNotification('Bundle deployed but address not found. Please reload to check.', 'warning');
+          return;
+        }
+
+        console.log('[FlowMgmt] Final deployed address:', finalAddress);
+
+        // Set the bundle directly so UI updates immediately
+        existingBundle = {
+          address: finalAddress,
+          creatorUserId: holonId,
+          name: holonId,
+          timestamp: Date.now(),
+          steepness,
+          nzones,
+          // Legacy compatibility
+          splitterAddress: finalAddress,
+          managedAddress: finalAddress,
+          zonedAddress: finalAddress
+        };
+
+        // Save Bundle to holosphere settings
+        if (holosphere) {
+          try {
+            await holosphere.put(holonId, 'settings', {
+              bundle: {
+                address: finalAddress,
+                creatorUserId: holonId,
+                steepness: steepness.toString(),
+                nzones,
+                deployedAt: Date.now(),
+                txHash: result.transaction.hash
+              }
+            });
+            console.log('[FlowMgmt] Bundle saved to holosphere settings:', finalAddress);
+          } catch (saveErr) {
+            console.error('[FlowMgmt] Failed to save Bundle to settings:', saveErr);
+          }
+        }
+
+        // Initialize original values for sync tracking
+        originalInteriorPercent = interiorPercent;
+        originalSteepness = steepness;
+        originalNzones = nzones;
+
+        showNotification('Bundle deployed successfully!', 'success');
+        showNotification(`Bundle address: ${finalAddress}`, 'success');
+
+        // Also try to reload from contract (may take a moment to index)
+        setTimeout(() => loadBundleAndFederation(), 2000);
+      } else {
+        showNotification('Transaction failed on chain', 'error');
+      }
     } catch (err: any) {
       console.error('Error deploying bundle:', err);
-      showNotification(err.message || 'Failed to deploy bundle', 'error');
+      if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+        showNotification('Transaction rejected by user', 'error');
+      } else {
+        showNotification(err.message || 'Failed to deploy bundle', 'error');
+      }
     } finally {
       deploying = false;
     }
   }
 
-  // Update flow split
-  async function updateFlowSplit() {
-    if (!manager || !existingBundle) return;
+  // Sync UI changes to smart contract
+  async function syncToContract() {
+    if (!manager || !existingBundle || !hasChanges) return;
 
     try {
-      await manager.updateFlowSplit(holonId, internalPercent);
-      externalPercent = 100 - internalPercent;
-      showNotification(`Flow split updated: ${internalPercent}% internal`, 'success');
+      syncing = true;
+      showNotification('Please confirm the transaction(s) in your wallet...', 'info');
+
+      // Sync flow split if changed
+      if (interiorPercent !== originalInteriorPercent) {
+        await manager.updateFlowSplit(existingBundle.address, interiorPercent);
+        exteriorPercent = 100 - interiorPercent;
+        originalInteriorPercent = interiorPercent;
+        showNotification(`Flow split synced: ${interiorPercent}% interior`, 'success');
+      }
+
+      // Sync steepness if changed
+      if (steepness !== originalSteepness) {
+        await manager.setSteepness(existingBundle.address, steepness);
+        originalSteepness = steepness;
+        showNotification(`Steepness synced: ${formatSteepness(steepness)}`, 'success');
+      }
+
+      // Sync nzones if changed
+      if (nzones !== originalNzones) {
+        await manager.setNzones(existingBundle.address, nzones);
+        originalNzones = nzones;
+        showNotification(`Zones synced: ${nzones} zones`, 'success');
+      }
+
+      showNotification('All changes synced to contract!', 'success');
     } catch (err: any) {
-      console.error('Error updating flow split:', err);
-      showNotification(err.message || 'Failed to update flow split', 'error');
-    }
-  }
-
-  // Zone canvas rendering
-  function drawZones() {
-    if (!zoneCtx) return;
-
-    const centerX = ZONE_SIZE / 2;
-    const centerY = ZONE_SIZE / 2;
-
-    // Clear canvas
-    zoneCtx.clearRect(0, 0, ZONE_SIZE, ZONE_SIZE);
-
-    // Draw zone rings (outer to inner)
-    for (let i = 5; i >= 0; i--) {
-      zoneCtx.beginPath();
-      zoneCtx.arc(centerX, centerY, ZONE_RADII[i], 0, Math.PI * 2);
-      zoneCtx.fillStyle = `${ZONE_COLORS[i]}20`; // 20% opacity
-      zoneCtx.fill();
-      zoneCtx.strokeStyle = ZONE_COLORS[i];
-      zoneCtx.lineWidth = 2;
-      zoneCtx.stroke();
-
-      // Zone label
-      if (i > 0) {
-        zoneCtx.fillStyle = '#9ca3af';
-        zoneCtx.font = '10px sans-serif';
-        zoneCtx.textAlign = 'center';
-        zoneCtx.fillText(`Zone ${i}`, centerX, centerY - ZONE_RADII[i] + 15);
+      console.error('Error syncing to contract:', err);
+      if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
+        showNotification('Transaction rejected by user', 'error');
+      } else {
+        showNotification(err.message || 'Failed to sync to contract', 'error');
       }
+    } finally {
+      syncing = false;
     }
-
-    // Draw center (Zone 0 - Internal)
-    zoneCtx.beginPath();
-    zoneCtx.arc(centerX, centerY, ZONE_RADII[0], 0, Math.PI * 2);
-    zoneCtx.fillStyle = '#3b82f680';
-    zoneCtx.fill();
-    zoneCtx.fillStyle = '#ffffff';
-    zoneCtx.font = 'bold 12px sans-serif';
-    zoneCtx.textAlign = 'center';
-    zoneCtx.textBaseline = 'middle';
-    zoneCtx.fillText('INTERNAL', centerX, centerY - 10);
-    zoneCtx.font = '10px sans-serif';
-    zoneCtx.fillText(`${internalPercent}%`, centerX, centerY + 10);
-
-    // Draw federated holons
-    federatedHolons.forEach(holon => {
-      drawHolonNode(holon, centerX, centerY);
-    });
-
-    // Draw flow connections
-    drawFlowConnections(centerX, centerY);
   }
 
-  function drawHolonNode(holon: ZonedHolon, centerX: number, centerY: number) {
-    const radius = ZONE_RADII[holon.zone] - 20;
-    const x = centerX + Math.cos(holon.angle) * radius;
-    const y = centerY + Math.sin(holon.angle) * radius;
-
-    // Node circle
-    const nodeRadius = 25;
-    zoneCtx.beginPath();
-    zoneCtx.arc(x, y, nodeRadius, 0, Math.PI * 2);
-
-    // Color based on status
-    const baseColor = holon.status === 'active' ? '#10b981' :
-                      holon.status === 'pending' ? '#f59e0b' : '#6b7280';
-    zoneCtx.fillStyle = baseColor;
-    zoneCtx.fill();
-
-    // Highlight if dragging
-    if (draggedHolon?.id === holon.id) {
-      zoneCtx.strokeStyle = '#ffffff';
-      zoneCtx.lineWidth = 3;
-    } else {
-      zoneCtx.strokeStyle = '#1f2937';
-      zoneCtx.lineWidth = 2;
-    }
-    zoneCtx.stroke();
-
-    // Node label
-    zoneCtx.fillStyle = '#ffffff';
-    zoneCtx.font = 'bold 9px sans-serif';
-    zoneCtx.textAlign = 'center';
-    zoneCtx.textBaseline = 'middle';
-
-    // Truncate name
-    const displayName = holon.name.length > 8 ? holon.name.slice(0, 7) + '...' : holon.name;
-    zoneCtx.fillText(displayName, x, y - 5);
-
-    // Flow percentage
-    zoneCtx.font = '8px sans-serif';
-    zoneCtx.fillText(`${holon.flowPercent}%`, x, y + 8);
-
-    // Store position for hit detection
-    (holon as any)._x = x;
-    (holon as any)._y = y;
-    (holon as any)._radius = nodeRadius;
+  // Format steepness for display (convert from 1e18 to percentage)
+  function formatSteepness(value: bigint): string {
+    const percent = Number(value) / 1e16; // Convert to percentage
+    return `${percent.toFixed(0)}%`;
   }
 
-  function drawFlowConnections(centerX: number, centerY: number) {
-    const flowOffset = (flowAnimation % 1);
+  // Calculate zone weights based on steepness and nzones
+  // Zone weight[z] = steepness^z (in WAD scale where WAD = 1e18)
+  function calculateZoneWeights(s: bigint, zones: number): { weights: number[], percentages: number[] } {
+    const WAD = BigInt('1000000000000000000'); // 1e18
+    const weights: number[] = [];
+    let weight = WAD; // s^0 = 1
 
-    federatedHolons.forEach(holon => {
-      if (!holon || !(holon as any)._x) return;
+    for (let z = 0; z <= zones; z++) {
+      weights.push(Number(weight) / 1e18); // Convert to decimal
+      // s^(z+1) = s^z * s / WAD
+      weight = (weight * s) / WAD;
+    }
 
-      const x = (holon as any)._x;
-      const y = (holon as any)._y;
+    // Calculate percentages (assuming 1 member per zone)
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    const percentages = weights.map(w => totalWeight > 0 ? (w / totalWeight) * 100 : 0);
 
-      // Draw line from center to holon
-      zoneCtx.beginPath();
-      zoneCtx.moveTo(centerX, centerY);
-      zoneCtx.lineTo(x, y);
-      zoneCtx.strokeStyle = '#4b5563';
-      zoneCtx.lineWidth = Math.max(1, holon.flowPercent / 10);
-      zoneCtx.stroke();
+    return { weights, percentages };
+  }
 
-      // Animated flow particles
-      const dx = x - centerX;
-      const dy = y - centerY;
+  // Reactive zone weight calculation
+  $: zoneData = calculateZoneWeights(steepness, nzones);
 
-      for (let i = 0; i < 3; i++) {
-        const t = (flowOffset + i * 0.3) % 1;
-        const px = centerX + dx * t;
-        const py = centerY + dy * t;
-
-        zoneCtx.beginPath();
-        zoneCtx.arc(px, py, 3, 0, Math.PI * 2);
-        zoneCtx.fillStyle = '#10b981';
-        zoneCtx.fill();
-      }
-    });
+  // Reset to last synced values
+  function resetChanges() {
+    interiorPercent = originalInteriorPercent;
+    exteriorPercent = 100 - interiorPercent;
+    steepness = originalSteepness;
+    nzones = originalNzones;
   }
 
   // Sankey diagram rendering
@@ -487,78 +658,6 @@
     }
   }
 
-  // Drag and drop handling
-  function handleZoneMouseDown(event: MouseEvent) {
-    const rect = zoneCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-
-    // Check if click is on a holon
-    const holon = federatedHolons.find(h => {
-      const hx = (h as any)._x;
-      const hy = (h as any)._y;
-      const hr = (h as any)._radius || 25;
-      const dx = x - hx;
-      const dy = y - hy;
-      return Math.sqrt(dx * dx + dy * dy) <= hr;
-    });
-
-    if (holon) {
-      draggedHolon = holon;
-      isDragging = true;
-    }
-  }
-
-  function handleZoneMouseMove(event: MouseEvent) {
-    if (!isDragging || !draggedHolon) return;
-
-    const rect = zoneCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-
-    const centerX = ZONE_SIZE / 2;
-    const centerY = ZONE_SIZE / 2;
-
-    // Calculate angle and distance from center
-    const dx = x - centerX;
-    const dy = y - centerY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const angle = Math.atan2(dy, dx);
-
-    // Determine zone based on distance
-    let newZone = 5;
-    for (let i = 0; i < ZONE_RADII.length; i++) {
-      if (distance < ZONE_RADII[i]) {
-        newZone = i;
-        break;
-      }
-    }
-
-    // Don't allow zone 0 (internal) for federated holons
-    if (newZone < 1) newZone = 1;
-
-    // Update holon position
-    draggedHolon.zone = newZone;
-    draggedHolon.angle = angle;
-
-    // Trigger redraw
-    federatedHolons = [...federatedHolons];
-  }
-
-  function handleZoneMouseUp() {
-    if (draggedHolon && isDragging) {
-      // Save the new zone configuration
-      saveZoneConfiguration();
-    }
-    draggedHolon = null;
-    isDragging = false;
-  }
-
-  async function saveZoneConfiguration() {
-    // Save to holosphere or contract
-    showNotification('Zone configuration updated', 'success');
-  }
-
   // Update holon flow percentage
   function updateHolonFlow(holonId: string, newPercent: number) {
     const holon = federatedHolons.find(h => h.id === holonId);
@@ -579,7 +678,6 @@
   function startAnimation() {
     function animate() {
       flowAnimation += 0.01;
-      drawZones();
       drawSankey();
       animationFrame = requestAnimationFrame(animate);
     }
@@ -587,16 +685,13 @@
   }
 
   onMount(async () => {
-    // Initialize canvases
-    if (zoneCanvas) {
-      zoneCtx = zoneCanvas.getContext('2d')!;
-    }
+    // Initialize canvas
     if (sankeyCanvas) {
       sankeyCtx = sankeyCanvas.getContext('2d')!;
     }
 
-    // Load data
-    await loadFederationData();
+    // Load bundle data from holosphere settings first (doesn't require wallet)
+    await loadBundleAndFederation();
 
     // Start animation
     startAnimation();
@@ -624,8 +719,8 @@
   });
 
   // Reactive updates
-  $: if (internalPercent !== undefined) {
-    externalPercent = 100 - internalPercent;
+  $: if (interiorPercent !== undefined) {
+    exteriorPercent = 100 - interiorPercent;
   }
 </script>
 
@@ -678,22 +773,59 @@
     </div>
   {:else}
     <div class="space-y-8">
-      <!-- Quick Deploy Section -->
+      <!-- Quick Deploy Section - Only show if no bundle deployed -->
       {#if !existingBundle}
-        <section class="bg-gradient-to-r from-purple-900/50 to-blue-900/50 rounded-2xl p-8 border border-purple-500/30">
-          <div class="flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-bold text-white mb-2">Deploy Holon Bundle</h2>
-              <p class="text-gray-400">One-click deployment of Splitter + Managed + Zoned contracts</p>
+        <section class="panel deploy-panel">
+          <div class="deploy-panel__content">
+            <div class="deploy-panel__info">
+              <h2 class="deploy-panel__title">Deploy Bundle Contract</h2>
+              <p class="deploy-panel__description">Single unified contract with configurable flow distribution</p>
             </div>
+          </div>
+
+          <!-- Pre-deployment configuration -->
+          <div class="deploy-panel__config">
+            <div class="deploy-panel__config-row">
+              <div class="deploy-panel__config-item">
+                <label class="deploy-panel__config-label">Steepness (Zone Decay)</label>
+                <div class="deploy-panel__config-control">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Number(steepness) / 1e16}
+                    on:input={(e) => steepness = BigInt(Math.round(parseInt(e.currentTarget.value) * 1e16))}
+                    class="deploy-panel__slider"
+                  />
+                  <span class="deploy-panel__config-value">{formatSteepness(steepness)}</span>
+                </div>
+                <span class="deploy-panel__config-hint">How much value decays per zone</span>
+              </div>
+              <div class="deploy-panel__config-item">
+                <label class="deploy-panel__config-label">Number of Zones</label>
+                <div class="deploy-panel__config-control">
+                  <input
+                    type="number"
+                    min="2"
+                    max="10"
+                    bind:value={nzones}
+                    class="deploy-panel__input"
+                  />
+                </div>
+                <span class="deploy-panel__config-hint">Tiers for external distribution</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="deploy-panel__action">
             <button
-              class="px-8 py-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-xl transition-all font-bold text-lg shadow-lg hover:shadow-purple-500/25"
+              class="btn btn--primary btn--lg"
               on:click={deployBundle}
               disabled={deploying || !isConnected}
             >
               {#if deploying}
-                <span class="flex items-center gap-2">
-                  <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span class="deploy-panel__loading">
+                  <span class="deploy-panel__spinner"></span>
                   Deploying...
                 </span>
               {:else}
@@ -702,218 +834,258 @@
             </button>
           </div>
         </section>
-      {:else}
-        <section class="bg-green-900/30 rounded-2xl p-6 border border-green-500/30">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl">V</span>
-            <div>
-              <div class="text-green-400 font-medium">Bundle Deployed</div>
-              <div class="text-sm text-gray-400 font-mono">{existingBundle.splitterAddress?.slice(0, 20)}...</div>
-            </div>
-          </div>
-        </section>
       {/if}
 
-      <!-- Main Configuration Grid -->
-      <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
-        <!-- Zone Visualization -->
-        <section class="bg-gray-700/50 rounded-2xl p-6">
-          <h2 class="text-xl font-bold text-white mb-4">Federation Zones</h2>
-          <p class="text-sm text-gray-400 mb-4">Drag holons between zones to configure flow priority. Zone 0 (center) is internal, Zone 5 (outer) is lowest priority.</p>
+      <!-- Unsaved Changes Banner -->
+      {#if hasChanges}
+        <div class="sync-banner">
+          <div class="sync-banner__info">
+            <span class="sync-banner__dot"></span>
+            <span class="sync-banner__text">You have unsaved changes</span>
+          </div>
+          <div class="sync-banner__actions">
+            <button class="btn btn--ghost btn--sm" on:click={resetChanges}>
+              Reset
+            </button>
+            <button
+              class="btn btn--primary btn--sm"
+              on:click={syncToContract}
+              disabled={syncing}
+            >
+              {#if syncing}
+                Syncing...
+              {:else}
+                Sync to Contract
+              {/if}
+            </button>
+          </div>
+        </div>
+      {/if}
 
-          <div class="flex justify-center">
-            <canvas
-              bind:this={zoneCanvas}
-              width={ZONE_SIZE}
-              height={ZONE_SIZE}
-              class="bg-gray-800 rounded-xl cursor-pointer"
-              on:mousedown={handleZoneMouseDown}
-              on:mousemove={handleZoneMouseMove}
-              on:mouseup={handleZoneMouseUp}
-              on:mouseleave={handleZoneMouseUp}
-            ></canvas>
+      <!-- Flow Control - Top -->
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">Flow Control</h2>
+          {#if existingBundle && !hasChanges}
+            <span class="sync-status sync-status--synced">Synced</span>
+          {/if}
+        </div>
+        <div class="panel__body">
+          <!-- Visual Split Display -->
+          <div class="flow-split-bar">
+            <div class="flow-split-bar__internal" style="width: {interiorPercent}%">
+              {#if interiorPercent >= 15}
+                <span>{interiorPercent}% Interior</span>
+              {/if}
+            </div>
+            <div class="flow-split-bar__external" style="width: {exteriorPercent}%">
+              {#if exteriorPercent >= 15}
+                <span>{exteriorPercent}% Exterior</span>
+              {/if}
+            </div>
           </div>
 
-          <!-- Zone Legend -->
-          <div class="mt-4 flex flex-wrap justify-center gap-2">
-            {#each ZONE_COLORS as color, i}
-              <div class="flex items-center gap-1 px-2 py-1 rounded bg-gray-800">
-                <div class="w-3 h-3 rounded-full" style="background-color: {color}"></div>
-                <span class="text-xs text-gray-400">Zone {i}</span>
+          <!-- Interior/Exterior Slider -->
+          <div class="flow-slider">
+            <span class="flow-slider__label">Interior</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              bind:value={interiorPercent}
+              class="flow-slider__input"
+            />
+            <span class="flow-slider__label">Exterior</span>
+          </div>
+
+          <!-- Bundle Parameters (only when deployed) -->
+          {#if existingBundle}
+            <div class="flow-params">
+              <div class="flow-param">
+                <label class="flow-param__label">Steepness (Zone Decay)</label>
+                <div class="flow-param__control">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Number(steepness) / 1e16}
+                    on:input={(e) => steepness = BigInt(Math.round(parseInt(e.currentTarget.value) * 1e16))}
+                    class="flow-param__slider"
+                  />
+                  <span class="flow-param__value">{formatSteepness(steepness)}</span>
+                </div>
               </div>
-            {/each}
+              <div class="flow-param">
+                <label class="flow-param__label">Number of Zones</label>
+                <div class="flow-param__control">
+                  <input
+                    type="number"
+                    min="2"
+                    max="10"
+                    bind:value={nzones}
+                    class="flow-param__input"
+                  />
+                </div>
+              </div>
+            </div>
+          {/if}
+        </div>
+      </section>
+
+      <!-- Interior / Exterior Overview Grid -->
+      <div class="flow-grid">
+        <!-- Interior (Left) - Internal Members -->
+        <section class="panel flow-panel flow-panel--internal">
+          <div class="flow-panel__header">
+            <div class="flow-panel__icon">
+              <span>👥</span>
+            </div>
+            <div class="flow-panel__info">
+              <h3 class="flow-panel__title">Interior</h3>
+              <p class="flow-panel__subtitle">Internal Members</p>
+            </div>
+            <div class="flow-panel__value">{interiorPercent}%</div>
+          </div>
+
+          <div class="flow-panel__body">
+            <div class="flow-stat">
+              <span class="flow-stat__label">Distribution Method</span>
+              <span class="flow-stat__value">Equal split among members</span>
+            </div>
+            <div class="flow-stat">
+              <span class="flow-stat__label">Member Count</span>
+              <span class="flow-stat__value flow-stat__value--large">--</span>
+              <span class="flow-stat__hint">Synced from contract</span>
+            </div>
+            <div class="flow-stat">
+              <span class="flow-stat__label">Per-Member Share</span>
+              <span class="flow-stat__value flow-stat__value--accent">{interiorPercent}% ÷ members</span>
+            </div>
           </div>
         </section>
 
-        <!-- Flow Split Configuration -->
-        <section class="bg-gray-700/50 rounded-2xl p-6">
-          <h2 class="text-xl font-bold text-white mb-4">Flow Split</h2>
-
-          <!-- Visual Split Display -->
-          <div class="mb-6">
-            <div class="flex h-8 rounded-xl overflow-hidden">
-              <div
-                class="bg-blue-500 flex items-center justify-center text-white font-bold text-sm transition-all"
-                style="width: {internalPercent}%"
-              >
-                {internalPercent}% Internal
-              </div>
-              <div
-                class="bg-orange-500 flex items-center justify-center text-white font-bold text-sm transition-all"
-                style="width: {externalPercent}%"
-              >
-                {externalPercent}% External
-              </div>
+        <!-- Exterior (Right) - Federation by Zone -->
+        <section class="panel flow-panel flow-panel--external">
+          <div class="flow-panel__header">
+            <div class="flow-panel__icon flow-panel__icon--secondary">
+              <span>🌐</span>
             </div>
+            <div class="flow-panel__info">
+              <h3 class="flow-panel__title">Exterior</h3>
+              <p class="flow-panel__subtitle">Federation by Zone</p>
+            </div>
+            <div class="flow-panel__value flow-panel__value--secondary">{exteriorPercent}%</div>
           </div>
 
-          <!-- Slider -->
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm text-gray-300 mb-2">Internal / External Split</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                bind:value={internalPercent}
-                class="w-full h-3 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-              />
+          <div class="flow-panel__body">
+            <!-- Zone Weight Visualization -->
+            <div class="zone-weights">
+              <div class="zone-weights__header">
+                <span class="zone-weights__title">Zone Distribution (Steepness: {formatSteepness(steepness)})</span>
+                <span class="zone-weights__hint">Per-zone share assuming 1 member each</span>
+              </div>
+              <div class="zone-weights__bars">
+                {#each zoneData.percentages as percent, z}
+                  <div class="zone-weight">
+                    <div class="zone-weight__label">
+                      <span class="zone-weight__zone" style="background-color: {ZONE_COLORS[z] || ZONE_COLORS[5]}20; color: {ZONE_COLORS[z] || ZONE_COLORS[5]}">
+                        Z{z}
+                      </span>
+                      <span class="zone-weight__name">{z === 0 ? 'Core' : z === nzones ? 'Edge' : `Zone ${z}`}</span>
+                    </div>
+                    <div class="zone-weight__bar-container">
+                      <div
+                        class="zone-weight__bar"
+                        style="width: {percent}%; background-color: {ZONE_COLORS[z] || ZONE_COLORS[5]}"
+                      ></div>
+                    </div>
+                    <span class="zone-weight__percent">{percent.toFixed(1)}%</span>
+                  </div>
+                {/each}
+              </div>
+              <div class="zone-weights__formula">
+                <span>Formula: weight[z] = s<sup>z</sup> where s = {formatSteepness(steepness)}</span>
+              </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 text-center">
-              <div class="p-4 bg-blue-500/20 rounded-xl border border-blue-500/50">
-                <div class="text-3xl font-bold text-blue-400">{internalPercent}%</div>
-                <div class="text-sm text-gray-400">to Members</div>
+            <!-- Federated Holons -->
+            {#if federatedHolons.length > 0}
+              <div class="flow-list">
+                <div class="flow-list__header">Federated Holons</div>
+                {#each federatedHolons as holon}
+                  <div class="flow-item">
+                    <div class="flow-item__zone" style="background-color: {ZONE_COLORS[holon.zone]}20; color: {ZONE_COLORS[holon.zone]}">
+                      Z{holon.zone}
+                    </div>
+                    <div class="flow-item__info">
+                      <span class="flow-item__name">{holon.name}</span>
+                      <span class="flow-item__meta">{Math.round((holon.flowPercent / 100) * externalPercent)}% of total</span>
+                    </div>
+                    <div class="flow-item__control">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={holon.flowPercent}
+                        on:input={(e) => updateHolonFlow(holon.id, parseInt(e.currentTarget.value))}
+                        class="flow-item__slider"
+                      />
+                      <span class="flow-item__percent">{holon.flowPercent}%</span>
+                    </div>
+                  </div>
+                {/each}
               </div>
-              <div class="p-4 bg-orange-500/20 rounded-xl border border-orange-500/50">
-                <div class="text-3xl font-bold text-orange-400">{externalPercent}%</div>
-                <div class="text-sm text-gray-400">to Federation</div>
-              </div>
-            </div>
 
-            {#if existingBundle}
-              <button
-                class="w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors font-medium"
-                on:click={updateFlowSplit}
-              >
-                Update Flow Split on Chain
-              </button>
+              <div class="flow-summary">
+                <span>Active Federations</span>
+                <span class="flow-summary__value">{federatedHolons.filter(h => h.status === 'active').length} / {federatedHolons.length}</span>
+              </div>
+            {:else}
+              <div class="flow-empty flow-empty--small">
+                <span>No federated holons yet</span>
+              </div>
             {/if}
           </div>
         </section>
       </div>
 
-      <!-- Federated Holons List -->
-      <section class="bg-gray-700/50 rounded-2xl p-6">
-        <h2 class="text-xl font-bold text-white mb-4">Federated Holons</h2>
+      <!-- Sankey Diagram - Bottom -->
+      <section class="panel">
+        <div class="panel__header">
+          <h2 class="panel__title">Flow Visualization</h2>
+        </div>
+        <div class="panel__body">
+          <p class="flow-description">
+            How value flows from income through the splitter to internal members and external federation.
+          </p>
 
-        {#if federatedHolons.length === 0}
-          <div class="text-center py-8 text-gray-400">
-            <p>No federated holons yet.</p>
-            <p class="text-sm">Add federations through the Federation page to see them here.</p>
-          </div>
-        {:else}
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {#each federatedHolons as holon}
-              <div class="p-4 bg-gray-800 rounded-xl border border-gray-600 hover:border-gray-500 transition-colors">
-                <div class="flex items-center justify-between mb-3">
-                  <div class="font-medium text-white">{holon.name}</div>
-                  <span class="px-2 py-0.5 rounded text-xs {holon.status === 'active' ? 'bg-green-500/20 text-green-400' : holon.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-gray-500/20 text-gray-400'}">
-                    {holon.status}
-                  </span>
-                </div>
-
-                <div class="space-y-2 text-sm">
-                  <div class="flex justify-between">
-                    <span class="text-gray-400">Zone:</span>
-                    <span class="text-white" style="color: {ZONE_COLORS[holon.zone]}">{holon.zone}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-400">Flow %:</span>
-                    <span class="text-white">{holon.flowPercent}%</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-400">Their Split:</span>
-                    <span class="text-white">{holon.internalPercent}% int</span>
-                  </div>
-                </div>
-
-                <!-- Flow percentage slider -->
-                <div class="mt-3">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={holon.flowPercent}
-                    on:input={(e) => updateHolonFlow(holon.id, parseInt(e.currentTarget.value))}
-                    class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </section>
-
-      <!-- Sankey Diagram -->
-      <section class="bg-gray-700/50 rounded-2xl p-6">
-        <h2 class="text-xl font-bold text-white mb-4">Value Flow Visualization</h2>
-        <p class="text-sm text-gray-400 mb-4">
-          Sankey diagram showing how value flows through your holon to internal members and external federation.
-        </p>
-
-        <div class="overflow-x-auto">
-          <div class="flex justify-center min-w-fit">
+          <div class="flow-canvas-wrapper">
             <canvas
               bind:this={sankeyCanvas}
               width={SANKEY_WIDTH}
               height={SANKEY_HEIGHT}
-              class="bg-gray-800 rounded-xl"
+              class="flow-canvas"
             ></canvas>
           </div>
-        </div>
 
-        <!-- Flow Legend -->
-        <div class="mt-4 flex flex-wrap justify-center gap-4">
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 rounded" style="background-color: #8b5cf680"></div>
-            <span class="text-sm text-gray-400">Income</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 rounded" style="background-color: #3b82f680"></div>
-            <span class="text-sm text-gray-400">Internal Flow</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 rounded" style="background-color: #f59e0b80"></div>
-            <span class="text-sm text-gray-400">External Flow</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 rounded" style="background-color: #10b98180"></div>
-            <span class="text-sm text-gray-400">Federation</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Metrics Summary -->
-      <section class="bg-gray-700/50 rounded-2xl p-6">
-        <h2 class="text-xl font-bold text-white mb-4">Flow Metrics</h2>
-
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="p-4 bg-gray-800 rounded-xl text-center">
-            <div class="text-3xl font-bold text-purple-400">{federatedHolons.length}</div>
-            <div class="text-sm text-gray-400">Federations</div>
-          </div>
-          <div class="p-4 bg-gray-800 rounded-xl text-center">
-            <div class="text-3xl font-bold text-blue-400">{internalPercent}%</div>
-            <div class="text-sm text-gray-400">Internal</div>
-          </div>
-          <div class="p-4 bg-gray-800 rounded-xl text-center">
-            <div class="text-3xl font-bold text-orange-400">{externalPercent}%</div>
-            <div class="text-sm text-gray-400">External</div>
-          </div>
-          <div class="p-4 bg-gray-800 rounded-xl text-center">
-            <div class="text-3xl font-bold text-green-400">{federatedHolons.filter(h => h.status === 'active').length}</div>
-            <div class="text-sm text-gray-400">Active</div>
+          <!-- Flow Legend -->
+          <div class="flow-legend">
+            <div class="flow-legend__item">
+              <div class="flow-legend__color" style="background-color: var(--color-accent)"></div>
+              <span>Income</span>
+            </div>
+            <div class="flow-legend__item">
+              <div class="flow-legend__color flow-legend__color--internal"></div>
+              <span>Internal</span>
+            </div>
+            <div class="flow-legend__item">
+              <div class="flow-legend__color flow-legend__color--external"></div>
+              <span>External</span>
+            </div>
+            <div class="flow-legend__item">
+              <div class="flow-legend__color flow-legend__color--success"></div>
+              <span>Federation</span>
+            </div>
           </div>
         </div>
       </section>
@@ -922,36 +1094,881 @@
 </div>
 
 <style>
-  /* Range slider styling */
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: #8b5cf6;
-    cursor: pointer;
-    border-radius: 50%;
-    border: 2px solid #ffffff;
+  /* Flow Split Bar */
+  .flow-split-bar {
+    display: flex;
+    height: 2.5rem;
+    border-radius: var(--radius-lg, 0.5rem);
+    overflow: hidden;
+    background: var(--color-bg-primary, #111827);
+    margin-bottom: 1rem;
   }
 
-  input[type="range"]::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    background: #8b5cf6;
+  .flow-split-bar__internal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-accent, #4f46e5);
+    color: var(--color-text-primary, #fff);
+    font-weight: 600;
+    font-size: var(--font-size-sm, 0.875rem);
+    transition: width 200ms ease;
+  }
+
+  .flow-split-bar__external {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg-tertiary, #374151);
+    color: var(--color-text-primary, #fff);
+    font-weight: 600;
+    font-size: var(--font-size-sm, 0.875rem);
+    transition: width 200ms ease;
+  }
+
+  /* Flow Slider */
+  .flow-slider {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3, 0.75rem);
+  }
+
+  .flow-slider__label {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+    min-width: 4rem;
+  }
+
+  .flow-slider__label:last-child {
+    text-align: right;
+  }
+
+  .flow-slider__input {
+    flex: 1;
+    height: 0.5rem;
+    background: var(--color-bg-tertiary, #374151);
+    border-radius: var(--radius-full, 9999px);
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .flow-slider__input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1.25rem;
+    height: 1.25rem;
+    background: var(--color-accent, #4f46e5);
     cursor: pointer;
     border-radius: 50%;
-    border: 2px solid #ffffff;
+    border: 2px solid var(--color-text-primary, #fff);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .flow-slider__input::-moz-range-thumb {
+    width: 1.25rem;
+    height: 1.25rem;
+    background: var(--color-accent, #4f46e5);
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid var(--color-text-primary, #fff);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Flow Grid */
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-4, 1rem);
+  }
+
+  @media (max-width: 1024px) {
+    .flow-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Flow Panel */
+  .flow-panel {
+    border: 1px solid var(--color-border, #374151);
+  }
+
+  .flow-panel--internal {
+    border-color: var(--color-accent-subtle, rgba(79, 70, 229, 0.3));
+  }
+
+  .flow-panel--external {
+    border-color: var(--color-border-light, #4b5563);
+  }
+
+  .flow-panel__header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3, 0.75rem);
+    padding: var(--spacing-4, 1rem);
+    border-bottom: 1px solid var(--color-border, #374151);
+  }
+
+  .flow-panel__icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-md, 0.375rem);
+    background: var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+  }
+
+  .flow-panel__icon--secondary {
+    background: var(--color-bg-tertiary, #374151);
+  }
+
+  .flow-panel__info {
+    flex: 1;
+  }
+
+  .flow-panel__title {
+    font-size: var(--font-size-base, 1rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-text-primary, #fff);
+    margin: 0;
+  }
+
+  .flow-panel__subtitle {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+    margin: 0;
+  }
+
+  .flow-panel__value {
+    font-size: var(--font-size-2xl, 1.5rem);
+    font-weight: var(--font-weight-bold, 700);
+    color: var(--color-accent-light, #6366f1);
+  }
+
+  .flow-panel__value--secondary {
+    color: var(--color-text-secondary, #d1d5db);
+  }
+
+  .flow-panel__body {
+    padding: var(--spacing-4, 1rem);
+  }
+
+  /* Flow Stats */
+  .flow-stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1, 0.25rem);
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+    margin-bottom: var(--spacing-2, 0.5rem);
+  }
+
+  .flow-stat:last-child {
+    margin-bottom: 0;
+  }
+
+  .flow-stat__label {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .flow-stat__value {
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-primary, #fff);
+  }
+
+  .flow-stat__value--large {
+    font-size: var(--font-size-xl, 1.25rem);
+    font-weight: var(--font-weight-bold, 700);
+  }
+
+  .flow-stat__value--accent {
+    color: var(--color-accent-light, #6366f1);
+  }
+
+  .flow-stat__hint {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  /* Flow Empty State */
+  .flow-empty {
+    text-align: center;
+    padding: var(--spacing-6, 1.5rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+  }
+
+  .flow-empty p {
+    color: var(--color-text-secondary, #d1d5db);
+    margin: 0 0 var(--spacing-1, 0.25rem) 0;
+  }
+
+  .flow-empty span {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  /* Flow List */
+  .flow-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2, 0.5rem);
+    max-height: 16rem;
+    overflow-y: auto;
+  }
+
+  .flow-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3, 0.75rem);
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+  }
+
+  .flow-item__zone {
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-sm, 0.25rem);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: var(--font-weight-bold, 700);
+    flex-shrink: 0;
+  }
+
+  .flow-item__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .flow-item__name {
+    display: block;
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-primary, #fff);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .flow-item__meta {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .flow-item__control {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .flow-item__slider {
+    width: 5rem;
+    height: 0.375rem;
+    background: var(--color-bg-tertiary, #374151);
+    border-radius: var(--radius-full, 9999px);
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .flow-item__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 0.875rem;
+    height: 0.875rem;
+    background: var(--color-accent, #4f46e5);
+    cursor: pointer;
+    border-radius: 50%;
+  }
+
+  .flow-item__slider::-moz-range-thumb {
+    width: 0.875rem;
+    height: 0.875rem;
+    background: var(--color-accent, #4f46e5);
+    cursor: pointer;
+    border-radius: 50%;
+    border: none;
+  }
+
+  .flow-item__percent {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-secondary, #d1d5db);
+    min-width: 3rem;
+    text-align: right;
+  }
+
+  /* Flow Summary */
+  .flow-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: var(--spacing-3, 0.75rem);
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .flow-summary__value {
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-success, #10b981);
+  }
+
+  /* Flow Description */
+  .flow-description {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+    margin: 0 0 var(--spacing-4, 1rem) 0;
+  }
+
+  /* Flow Canvas */
+  .flow-canvas-wrapper {
+    overflow-x: auto;
+    display: flex;
+    justify-content: center;
+  }
+
+  .flow-canvas {
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+  }
+
+  /* Flow Legend */
+  .flow-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--spacing-4, 1rem);
+    margin-top: var(--spacing-4, 1rem);
+  }
+
+  .flow-legend__item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .flow-legend__color {
+    width: 1rem;
+    height: 1rem;
+    border-radius: var(--radius-sm, 0.25rem);
+    background: var(--color-accent, #4f46e5);
+  }
+
+  .flow-legend__color--internal {
+    background: var(--color-accent-light, #6366f1);
+  }
+
+  .flow-legend__color--external {
+    background: var(--color-bg-tertiary, #374151);
+  }
+
+  .flow-legend__color--success {
+    background: var(--color-success, #10b981);
   }
 
   canvas {
     touch-action: none;
   }
 
-  /* Responsive adjustments */
   @media (max-width: 768px) {
     canvas {
       max-width: 100%;
       height: auto;
+    }
+  }
+
+  /* Deploy Panel */
+  .deploy-panel {
+    padding: var(--spacing-6, 1.5rem);
+  }
+
+  .deploy-panel__content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-4, 1rem);
+  }
+
+  .deploy-panel__info {
+    flex: 1;
+  }
+
+  .deploy-panel__title {
+    font-size: var(--font-size-lg, 1.125rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-text-primary, #fff);
+    margin: 0 0 var(--spacing-1, 0.25rem) 0;
+  }
+
+  .deploy-panel__description {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+    margin: 0;
+  }
+
+  .deploy-panel__config {
+    margin-top: var(--spacing-4, 1rem);
+    padding: var(--spacing-4, 1rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+  }
+
+  .deploy-panel__config-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-4, 1rem);
+  }
+
+  .deploy-panel__config-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .deploy-panel__config-label {
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-secondary, #d1d5db);
+  }
+
+  .deploy-panel__config-control {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .deploy-panel__config-value {
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-accent-light, #6366f1);
+    min-width: 3rem;
+  }
+
+  .deploy-panel__config-hint {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .deploy-panel__slider {
+    flex: 1;
+    height: 0.5rem;
+    background: var(--color-bg-tertiary, #374151);
+    border-radius: var(--radius-full, 9999px);
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .deploy-panel__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 1rem;
+    height: 1rem;
+    background: var(--color-accent, #4f46e5);
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid var(--color-text-primary, #fff);
+  }
+
+  .deploy-panel__input {
+    width: 5rem;
+    padding: var(--spacing-2, 0.5rem);
+    background: var(--color-bg-tertiary, #374151);
+    border: 1px solid var(--color-border, #374151);
+    border-radius: var(--radius-md, 0.375rem);
+    color: var(--color-text-primary, #fff);
+    font-size: var(--font-size-sm, 0.875rem);
+    text-align: center;
+  }
+
+  .deploy-panel__action {
+    margin-top: var(--spacing-4, 1rem);
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .deploy-panel__loading {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .deploy-panel__spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .deploy-panel--success {
+    border-color: var(--color-success, #10b981);
+  }
+
+  .deploy-panel__header {
+    padding: var(--spacing-4, 1rem);
+    border-bottom: 1px solid var(--color-border, #374151);
+  }
+
+  .deploy-panel__status {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3, 0.75rem);
+  }
+
+  .deploy-panel__check {
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-success, #10b981);
+    color: var(--color-text-primary, #fff);
+    border-radius: 50%;
+    font-size: 1rem;
+  }
+
+  .deploy-panel__status-title {
+    font-size: var(--font-size-base, 1rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-success, #10b981);
+  }
+
+  .deploy-panel__status-text {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .deploy-panel__addresses {
+    padding: var(--spacing-4, 1rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3, 0.75rem);
+  }
+
+  .deploy-panel__address {
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+  }
+
+  .deploy-panel__address--primary {
+    border: 1px solid var(--color-success, #10b981);
+  }
+
+  .deploy-panel__label {
+    display: block;
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-secondary, #d1d5db);
+    margin-bottom: var(--spacing-2, 0.5rem);
+  }
+
+  .deploy-panel__address-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .deploy-panel__code {
+    flex: 1;
+    font-size: var(--font-size-sm, 0.875rem);
+    font-family: var(--font-mono);
+    color: var(--color-success, #10b981);
+    background: var(--color-bg-primary, #111827);
+    padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+    border-radius: var(--radius-md, 0.375rem);
+    word-break: break-all;
+  }
+
+  .deploy-panel__params {
+    display: flex;
+    gap: var(--spacing-4, 1rem);
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+  }
+
+  .deploy-panel__param {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1, 0.25rem);
+  }
+
+  .deploy-panel__param-label {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .deploy-panel__param-value {
+    font-size: var(--font-size-base, 1rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-text-primary, #fff);
+  }
+
+  /* Flow Parameters */
+  .flow-params {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-4, 1rem);
+    margin-top: var(--spacing-4, 1rem);
+    padding-top: var(--spacing-4, 1rem);
+    border-top: 1px solid var(--color-border, #374151);
+  }
+
+  .flow-param {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .flow-param__label {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .flow-param__control {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .flow-param__slider {
+    flex: 1;
+    height: 0.375rem;
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-full, 9999px);
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .flow-param__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 1rem;
+    height: 1rem;
+    background: var(--color-accent, #4f46e5);
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid var(--color-text-primary, #fff);
+  }
+
+  .flow-param__value {
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-accent-light, #6366f1);
+    min-width: 3rem;
+  }
+
+  .flow-param__input {
+    width: 5rem;
+    padding: var(--spacing-2, 0.5rem);
+    background: var(--color-bg-primary, #111827);
+    border: 1px solid var(--color-border, #374151);
+    border-radius: var(--radius-md, 0.375rem);
+    color: var(--color-text-primary, #fff);
+    font-size: var(--font-size-sm, 0.875rem);
+    text-align: center;
+  }
+
+  @media (max-width: 640px) {
+    .deploy-panel__config-row {
+      grid-template-columns: 1fr;
+    }
+
+    .flow-params {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Zone Weights Visualization */
+  .zone-weights {
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+    margin-bottom: var(--spacing-4, 1rem);
+  }
+
+  .zone-weights__header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1, 0.25rem);
+    margin-bottom: var(--spacing-3, 0.75rem);
+  }
+
+  .zone-weights__title {
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-secondary, #d1d5db);
+  }
+
+  .zone-weights__hint {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .zone-weights__bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .zone-weight {
+    display: grid;
+    grid-template-columns: 100px 1fr 50px;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .zone-weight__label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .zone-weight__zone {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm, 0.25rem);
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: var(--font-weight-bold, 700);
+    flex-shrink: 0;
+  }
+
+  .zone-weight__name {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .zone-weight__bar-container {
+    height: 8px;
+    background: var(--color-bg-secondary, #1f2937);
+    border-radius: var(--radius-full, 9999px);
+    overflow: hidden;
+  }
+
+  .zone-weight__bar {
+    height: 100%;
+    border-radius: var(--radius-full, 9999px);
+    transition: width 300ms ease;
+  }
+
+  .zone-weight__percent {
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-text-secondary, #d1d5db);
+    text-align: right;
+  }
+
+  .zone-weights__formula {
+    margin-top: var(--spacing-3, 0.75rem);
+    padding-top: var(--spacing-2, 0.5rem);
+    border-top: 1px solid var(--color-border, #374151);
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+    font-family: var(--font-mono);
+  }
+
+  .zone-weights__formula sup {
+    font-size: 0.7em;
+  }
+
+  .flow-list__header {
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-muted, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--spacing-2, 0.5rem);
+    padding-top: var(--spacing-3, 0.75rem);
+    border-top: 1px solid var(--color-border, #374151);
+  }
+
+  .flow-empty--small {
+    padding: var(--spacing-2, 0.5rem);
+    font-size: var(--font-size-xs, 0.75rem);
+  }
+
+  /* Sync Banner */
+  .sync-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+    background: var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
+    border: 1px solid var(--color-accent, #4f46e5);
+    border-radius: var(--radius-lg, 0.5rem);
+  }
+
+  .sync-banner__info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  .sync-banner__dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    background: var(--color-accent, #4f46e5);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .sync-banner__text {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-primary, #fff);
+  }
+
+  .sync-banner__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+  }
+
+  /* Sync Status */
+  .sync-status {
+    font-size: var(--font-size-xs, 0.75rem);
+    padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
+    border-radius: var(--radius-full, 9999px);
+  }
+
+  .sync-status--synced {
+    background: var(--color-success, #10b981);
+    color: var(--color-text-primary, #fff);
+  }
+
+  @media (max-width: 640px) {
+    .deploy-panel__content {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .sync-banner {
+      flex-direction: column;
+      gap: var(--spacing-3, 0.75rem);
     }
   }
 </style>

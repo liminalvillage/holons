@@ -5,10 +5,15 @@
 	import { browser } from '$app/environment';
 	import type { HoloSphere } from 'holosphere';
 	import { Search, Plus, X, Star, Users, Clock } from 'svelte-feathers';
+	import { nostrPublicKey } from '../../lib/stores/nostr';
+	import SidebarHeader from './SidebarHeader.svelte';
+	import KeysSection from './KeysSection.svelte';
+	import FederationSection from './FederationSection.svelte';
 	import BrowserHeader from './BrowserHeader.svelte';
 	import HolonList from './HolonList.svelte';
+	import QRScanner from '../../components/QRScanner.svelte';
 	import { ID, sidebarExpanded } from '../store';
-	import { loadPersonalHolons, loadVisitedHolons, savePersonalHolons } from '../../utils/localStorage';
+	import { loadPersonalHolons, loadVisitedHolons, savePersonalHolons, addVisitedHolon, getWalletAddress, saveVisitedHolons, type PersonalHolon } from '../../utils/localStorage';
 	import { fetchHolonName } from '../../utils/holonNames';
 
 	// Props
@@ -25,24 +30,38 @@
 	let federatedHolons: Array<{ id: string; name: string }> = [];
 	let isLoading: boolean = false;
 
+	// Add Holon Modal state
+	let showAddModal: boolean = false;
+	let newHolonId: string = '';
+	let newHolonName: string = '';
+	let addError: string = '';
+	let addSuccess: string = '';
+	let showQRScanner: boolean = false;
+
 	// Current holon from route
 	$: currentHolonId = $ID;
 
-	// Filtered holons based on search
-	$: filteredHolons = getFilteredHolons(activeTab, searchQuery);
+	// Filtered holons based on search - include all holon arrays as dependencies
+	$: filteredHolons = getFilteredHolons(activeTab, searchQuery, personalHolons, visitedHolons, federatedHolons);
 
-	function getFilteredHolons(tab: string, query: string) {
+	function getFilteredHolons(
+		tab: string,
+		query: string,
+		personal: typeof personalHolons,
+		visited: typeof visitedHolons,
+		federated: typeof federatedHolons
+	) {
 		let holons: Array<{ id: string; name: string; isPinned?: boolean; lastVisited?: number }> = [];
 
 		switch (tab) {
 			case 'personal':
-				holons = personalHolons;
+				holons = personal;
 				break;
 			case 'visited':
-				holons = visitedHolons;
+				holons = visited;
 				break;
 			case 'federated':
-				holons = federatedHolons;
+				holons = federated;
 				break;
 		}
 
@@ -67,6 +86,11 @@
 		window.addEventListener('holonNavigated', handleHolonNavigated as EventListener);
 	});
 
+	// Load federated holons when tab changes or holon changes
+	$: if (activeTab === 'federated' && currentHolonId && holosphere) {
+		loadFederatedHolons();
+	}
+
 	onDestroy(() => {
 		if (browser) {
 			window.removeEventListener('holonCreated', handleHolonCreated as EventListener);
@@ -78,7 +102,9 @@
 		isLoading = true;
 
 		try {
-			// Load personal holons from localStorage
+			const walletAddress = getWalletAddress();
+
+			// Load personal holons from localStorage (starred holons)
 			const savedPersonal = loadPersonalHolons();
 			personalHolons = savedPersonal.map((h: any) => ({
 				id: h.id,
@@ -87,7 +113,7 @@
 			}));
 
 			// Load visited holons from localStorage
-			const savedVisited = loadVisitedHolons();
+			const savedVisited = loadVisitedHolons(walletAddress);
 			visitedHolons = savedVisited.map((h: any) => ({
 				id: h.id,
 				name: h.name || `Holon ${h.id.slice(0, 6)}...`,
@@ -132,6 +158,38 @@
 		visitedHolons = [...visitedHolons];
 	}
 
+	async function loadFederatedHolons() {
+		if (!holosphere || !currentHolonId) return;
+
+		isLoading = true;
+		try {
+			// Get federation info from holosphere
+			const federationInfo = await holosphere.getFederation(currentHolonId);
+
+			if (federationInfo?.federated && Array.isArray(federationInfo.federated)) {
+				// Fetch names for all federated holons
+				const holonsWithNames: Array<{ id: string; name: string }> = [];
+
+				for (const holonId of federationInfo.federated) {
+					const name = await fetchHolonName(holosphere, holonId);
+					holonsWithNames.push({
+						id: holonId,
+						name: name || `Holon ${holonId.slice(0, 8)}...`
+					});
+				}
+
+				federatedHolons = holonsWithNames;
+			} else {
+				federatedHolons = [];
+			}
+		} catch (error) {
+			console.error('Failed to load federated holons:', error);
+			federatedHolons = [];
+		} finally {
+			isLoading = false;
+		}
+	}
+
 	function handleHolonCreated(event: CustomEvent) {
 		const { holonId, holonName } = event.detail;
 		// Add to personal holons if not already there
@@ -153,6 +211,25 @@
 	}
 
 	function selectHolon(holonId: string) {
+		// Find holon name from any list
+		const holon = personalHolons.find(h => h.id === holonId)
+			|| visitedHolons.find(h => h.id === holonId)
+			|| federatedHolons.find(h => h.id === holonId);
+		const holonName = holon?.name || `Holon ${holonId.slice(0, 6)}...`;
+
+		// Add to visited list
+		const walletAddress = getWalletAddress();
+		addVisitedHolon(walletAddress, holonId, holonName, 'personal');
+
+		// Update local visited list
+		const existingIndex = visitedHolons.findIndex((h) => h.id === holonId);
+		if (existingIndex >= 0) {
+			visitedHolons[existingIndex].lastVisited = Date.now();
+			visitedHolons = [...visitedHolons].sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
+		} else {
+			visitedHolons = [{ id: holonId, name: holonName, lastVisited: Date.now() }, ...visitedHolons];
+		}
+
 		ID.set(holonId);
 		goto(`/${holonId}/dashboard`);
 		dispatch('select', { holonId });
@@ -168,8 +245,45 @@
 		if (index >= 0) {
 			personalHolons[index].isPinned = !personalHolons[index].isPinned;
 			personalHolons = [...personalHolons];
-			savePersonalHolons(personalHolons);
+			savePersonalHolons(personalHolons.map(h => ({
+				id: h.id,
+				name: h.name,
+				lastVisited: Date.now(),
+				isPinned: h.isPinned || false,
+				isPersonal: true,
+				order: 0
+			})));
 		}
+	}
+
+	function starHolon(holonId: string) {
+		// Find holon in visited list
+		const holon = visitedHolons.find(h => h.id === holonId);
+		if (!holon) return;
+
+		// Check if already in personal holons
+		const existingIndex = personalHolons.findIndex(h => h.id === holonId);
+		if (existingIndex >= 0) {
+			// Remove from personal holons (unstar)
+			personalHolons = personalHolons.filter(h => h.id !== holonId);
+		} else {
+			// Add to personal holons (star)
+			personalHolons = [{ id: holon.id, name: holon.name, isPinned: false }, ...personalHolons];
+		}
+
+		// Save to localStorage
+		savePersonalHolons(personalHolons.map(h => ({
+			id: h.id,
+			name: h.name,
+			lastVisited: Date.now(),
+			isPinned: h.isPinned || false,
+			isPersonal: true,
+			order: 0
+		})));
+	}
+
+	function isStarred(holonId: string): boolean {
+		return personalHolons.some(h => h.id === holonId);
 	}
 
 	function handleClose() {
@@ -177,7 +291,86 @@
 	}
 
 	function handleAddHolon() {
-		dispatch('add');
+		showAddModal = true;
+		newHolonId = '';
+		newHolonName = '';
+		addError = '';
+		addSuccess = '';
+	}
+
+	function closeAddModal() {
+		showAddModal = false;
+		showQRScanner = false;
+		newHolonId = '';
+		newHolonName = '';
+		addError = '';
+		addSuccess = '';
+	}
+
+	function handleQRScan(event: CustomEvent<{ decodedText: string }>) {
+		const scannedText = event.detail.decodedText;
+		showQRScanner = false;
+
+		// Extract holon ID from the scanned text
+		// Could be a full URL like https://holons.me/abc123 or just the ID
+		let holonId = scannedText;
+
+		// Try to extract ID from URL patterns
+		const urlMatch = scannedText.match(/\/([a-zA-Z0-9_-]+)\/?$/);
+		if (urlMatch) {
+			holonId = urlMatch[1];
+		}
+
+		newHolonId = holonId;
+		addError = '';
+		addSuccess = 'QR code scanned successfully!';
+	}
+
+	function openQRScanner() {
+		showQRScanner = true;
+		addError = '';
+	}
+
+	async function addNewHolon() {
+		if (!newHolonId.trim()) {
+			addError = 'Please enter a Holon ID';
+			return;
+		}
+
+		const holonId = newHolonId.trim();
+		addError = '';
+
+		try {
+			// Try to fetch the holon name if not provided
+			let name = newHolonName.trim();
+			if (!name && holosphere) {
+				try {
+					const fetchedName = await fetchHolonName(holosphere, holonId);
+					name = fetchedName || `Holon ${holonId.slice(0, 8)}...`;
+				} catch {
+					name = `Holon ${holonId.slice(0, 8)}...`;
+				}
+			} else if (!name) {
+				name = `Holon ${holonId.slice(0, 8)}...`;
+			}
+
+			// Add to personal holons (starred)
+			const exists = personalHolons.some(h => h.id === holonId);
+			if (!exists) {
+				personalHolons = [{ id: holonId, name, isPinned: false }, ...personalHolons];
+				savePersonalHolons(personalHolons);
+			}
+
+			addSuccess = 'Holon added successfully!';
+
+			// Navigate to the holon
+			setTimeout(() => {
+				closeAddModal();
+				goto(`/${holonId}/dashboard`);
+			}, 500);
+		} catch (err) {
+			addError = err instanceof Error ? err.message : 'Failed to add holon';
+		}
 	}
 </script>
 
@@ -187,57 +380,152 @@
 	role="complementary"
 	aria-label="Holon browser"
 >
-	<BrowserHeader
-		bind:searchQuery
-		on:close={handleClose}
-		on:add={handleAddHolon}
-	/>
+	<!-- Sidebar Header: Logo, Current Holon, ID/QR -->
+	<SidebarHeader />
 
-	<!-- Tabs -->
-	<div class="browser-panel__tabs">
-		<button
-			class="browser-panel__tab"
-			class:browser-panel__tab--active={activeTab === 'personal'}
-			on:click={() => (activeTab = 'personal')}
-		>
-			<Star size={14} />
-			<span>My Holons</span>
-		</button>
-		<button
-			class="browser-panel__tab"
-			class:browser-panel__tab--active={activeTab === 'visited'}
-			on:click={() => (activeTab = 'visited')}
-		>
-			<Clock size={14} />
-			<span>Recent</span>
-		</button>
-		<button
-			class="browser-panel__tab"
-			class:browser-panel__tab--active={activeTab === 'federated'}
-			on:click={() => (activeTab = 'federated')}
-		>
-			<Users size={14} />
-			<span>Federated</span>
-		</button>
+	<!-- Keys & Access Section (collapsible) -->
+	<KeysSection />
+
+	<!-- Federation Section (collapsible) -->
+	<FederationSection />
+
+	<!-- Holon Browser Section -->
+	<div class="browser-panel__browser">
+		<BrowserHeader
+			bind:searchQuery
+			on:close={handleClose}
+			on:add={handleAddHolon}
+		/>
+
+		<!-- Tabs -->
+		<div class="browser-panel__tabs">
+			<button
+				class="browser-panel__tab"
+				class:browser-panel__tab--active={activeTab === 'personal'}
+				on:click={() => (activeTab = 'personal')}
+			>
+				<Star size="14" />
+				<span>My Holons</span>
+			</button>
+			<button
+				class="browser-panel__tab"
+				class:browser-panel__tab--active={activeTab === 'visited'}
+				on:click={() => (activeTab = 'visited')}
+			>
+				<Clock size="14" />
+				<span>Recent</span>
+			</button>
+			<button
+				class="browser-panel__tab"
+				class:browser-panel__tab--active={activeTab === 'federated'}
+				on:click={() => (activeTab = 'federated')}
+			>
+				<Users size="14" />
+				<span>Federated</span>
+			</button>
+		</div>
+
+		<!-- Holon List -->
+		<HolonList
+			holons={filteredHolons}
+			{currentHolonId}
+			{isLoading}
+			showPinButton={activeTab === 'personal'}
+			showStarButton={activeTab === 'visited'}
+			starredIds={personalHolons.map(h => h.id)}
+			homeHolonId={$nostrPublicKey}
+			on:select={(e) => selectHolon(e.detail.holonId)}
+			on:pin={(e) => togglePin(e.detail.holonId)}
+			on:star={(e) => starHolon(e.detail.holonId)}
+		/>
 	</div>
-
-	<!-- Holon List -->
-	<HolonList
-		holons={filteredHolons}
-		{currentHolonId}
-		{isLoading}
-		showPinButton={activeTab === 'personal'}
-		on:select={(e) => selectHolon(e.detail.holonId)}
-		on:pin={(e) => togglePin(e.detail.holonId)}
-	/>
 </aside>
+
+<!-- Add Holon Modal -->
+{#if showAddModal}
+	<div
+		class="add-modal-backdrop"
+		on:click={closeAddModal}
+		on:keydown={(e) => e.key === 'Escape' && closeAddModal()}
+		role="button"
+		tabindex="0"
+	>
+		<div
+			class="add-modal"
+			on:click|stopPropagation
+			on:keydown|stopPropagation
+			role="dialog"
+			aria-modal="true"
+		>
+			<div class="add-modal__header">
+				<h3>Add Holon</h3>
+				<button class="add-modal__close" on:click={closeAddModal} aria-label="Close">×</button>
+			</div>
+
+			<div class="add-modal__content">
+				{#if addError}
+					<div class="add-modal__error">{addError}</div>
+				{/if}
+				{#if addSuccess}
+					<div class="add-modal__success">{addSuccess}</div>
+				{/if}
+
+				<div class="add-modal__field">
+					<label for="holon-id-input">Holon ID</label>
+					<div class="add-modal__input-row">
+						<input
+							id="holon-id-input"
+							type="text"
+							bind:value={newHolonId}
+							placeholder="Enter Holon ID"
+							on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
+						/>
+						<button
+							type="button"
+							class="add-modal__qr-btn"
+							on:click={openQRScanner}
+							title="Scan QR Code"
+						>
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+							</svg>
+						</button>
+					</div>
+				</div>
+
+				<div class="add-modal__field">
+					<label for="holon-name-input">Display Name (optional)</label>
+					<input
+						id="holon-name-input"
+						type="text"
+						bind:value={newHolonName}
+						placeholder="Custom name for display"
+						on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
+					/>
+				</div>
+			</div>
+
+			<div class="add-modal__actions">
+				<button class="btn btn--primary" on:click={addNewHolon}>Add Holon</button>
+				<button class="btn btn--secondary" on:click={closeAddModal}>Cancel</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- QR Scanner -->
+<QRScanner
+	bind:showScanner={showQRScanner}
+	on:scan={handleQRScan}
+	on:close={() => showQRScanner = false}
+/>
 
 <style>
 	.browser-panel {
 		display: flex;
 		flex-direction: column;
 		width: var(--browser-width-expanded, 280px);
-		height: 100%;
+		height: 100vh;
 		background: var(--color-bg-primary, #111827);
 		border-right: 1px solid var(--color-border, #374151);
 		transition: transform 350ms ease, width 350ms ease;
@@ -263,10 +551,20 @@
 		}
 	}
 
+	/* Holon browser section - takes remaining space and scrolls */
+	.browser-panel__browser {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
 	.browser-panel__tabs {
 		display: flex;
 		border-bottom: 1px solid var(--color-border, #374151);
 		padding: 0 var(--spacing-2, 0.5rem);
+		flex-shrink: 0;
 	}
 
 	.browser-panel__tab {
@@ -303,5 +601,152 @@
 		.browser-panel__tab span {
 			display: inline;
 		}
+	}
+
+	/* Add Holon Modal */
+	.add-modal-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.7);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 100;
+	}
+
+	.add-modal {
+		background: var(--color-bg-secondary, #1f2937);
+		border-radius: var(--radius-xl, 1rem);
+		padding: var(--spacing-5, 1.25rem);
+		max-width: 400px;
+		width: 90%;
+		box-shadow: var(--shadow-xl);
+		border: 1px solid var(--color-border, #374151);
+	}
+
+	.add-modal__header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--spacing-4, 1rem);
+	}
+
+	.add-modal__header h3 {
+		font-size: var(--font-size-lg, 1.125rem);
+		font-weight: var(--font-weight-semibold, 600);
+		color: var(--color-text-primary, #ffffff);
+		margin: 0;
+	}
+
+	.add-modal__close {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: none;
+		color: var(--color-text-muted, #6b7280);
+		font-size: 1.5rem;
+		cursor: pointer;
+		border-radius: var(--radius-md, 0.375rem);
+	}
+
+	.add-modal__close:hover {
+		background: var(--color-bg-tertiary, #374151);
+		color: var(--color-text-primary, #ffffff);
+	}
+
+	.add-modal__content {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-4, 1rem);
+	}
+
+	.add-modal__field {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-2, 0.5rem);
+	}
+
+	.add-modal__field label {
+		font-size: var(--font-size-sm, 0.875rem);
+		font-weight: var(--font-weight-medium, 500);
+		color: var(--color-text-secondary, #d1d5db);
+	}
+
+	.add-modal__field input {
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		background: var(--color-bg-primary, #111827);
+		border: 1px solid var(--color-border, #374151);
+		border-radius: var(--radius-md, 0.375rem);
+		color: var(--color-text-primary, #ffffff);
+		font-size: var(--font-size-sm, 0.875rem);
+	}
+
+	.add-modal__field input:focus {
+		outline: none;
+		border-color: var(--color-accent, #4f46e5);
+		box-shadow: 0 0 0 2px var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
+	}
+
+	.add-modal__field input::placeholder {
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.add-modal__input-row {
+		display: flex;
+		gap: var(--spacing-2, 0.5rem);
+	}
+
+	.add-modal__input-row input {
+		flex: 1;
+	}
+
+	.add-modal__qr-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 42px;
+		height: 42px;
+		background: var(--color-success, #22c55e);
+		border: none;
+		border-radius: var(--radius-md, 0.375rem);
+		color: white;
+		cursor: pointer;
+		transition: background-color 150ms ease;
+		flex-shrink: 0;
+	}
+
+	.add-modal__qr-btn:hover {
+		background: var(--color-success-hover, #16a34a);
+	}
+
+	.add-modal__error {
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid var(--color-error, #ef4444);
+		border-radius: var(--radius-md, 0.375rem);
+		color: var(--color-error, #ef4444);
+		font-size: var(--font-size-sm, 0.875rem);
+	}
+
+	.add-modal__success {
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		background: rgba(34, 197, 94, 0.1);
+		border: 1px solid var(--color-success, #22c55e);
+		border-radius: var(--radius-md, 0.375rem);
+		color: var(--color-success, #22c55e);
+		font-size: var(--font-size-sm, 0.875rem);
+	}
+
+	.add-modal__actions {
+		display: flex;
+		gap: var(--spacing-3, 0.75rem);
+		margin-top: var(--spacing-4, 1rem);
+	}
+
+	.add-modal__actions .btn {
+		flex: 1;
 	}
 </style>

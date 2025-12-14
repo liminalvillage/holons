@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Star } from 'svelte-feathers';
+	import { Star, Home } from 'svelte-feathers';
 
 	export let id: string;
 	export let name: string;
 	export let isActive: boolean = false;
 	export let isPinned: boolean = false;
+	export let isStarred: boolean = false;
+	export let isHome: boolean = false;
 	export let showPinButton: boolean = false;
+	export let showStarButton: boolean = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -17,6 +20,11 @@
 	function handlePin(event: MouseEvent) {
 		event.stopPropagation();
 		dispatch('pin', { id });
+	}
+
+	function handleStar(event: MouseEvent) {
+		event.stopPropagation();
+		dispatch('star', { id });
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -73,7 +81,14 @@
 	</div>
 
 	<div class="holon-item__content">
-		<span class="holon-item__name">{name}</span>
+		<span class="holon-item__name">
+			{name}
+			{#if isHome}
+				<span class="holon-item__home-badge" title="Your home holon">
+					<Home size={12} />
+				</span>
+			{/if}
+		</span>
 		<span class="holon-item__id">{shortId}</span>
 	</div>
 
@@ -85,6 +100,17 @@
 			aria-label={isPinned ? 'Unpin holon' : 'Pin holon'}
 		>
 			<Star size={14} fill={isPinned ? 'currentColor' : 'none'} />
+		</button>
+	{/if}
+
+	{#if showStarButton}
+		<button
+			class="holon-item__star"
+			class:holon-item__star--active={isStarred}
+			on:click={handleStar}
+			aria-label={isStarred ? 'Remove from My Holons' : 'Add to My Holons'}
+		>
+			<Star size={14} fill={isStarred ? 'currentColor' : 'none'} />
 		</button>
 	{/if}
 </div>
@@ -135,12 +161,23 @@
 	}
 
 	.holon-item__name {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-1, 0.25rem);
 		font-size: var(--font-size-sm, 0.875rem);
 		font-weight: var(--font-weight-medium, 500);
 		color: var(--color-text-primary, #ffffff);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.holon-item__home-badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-accent-light, #818cf8);
+		flex-shrink: 0;
 	}
 
 	.holon-item__id {
@@ -180,6 +217,40 @@
 	}
 
 	.holon-item__pin--active:hover {
+		color: var(--color-warning, #f59e0b);
+	}
+
+	.holon-item__star {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		color: var(--color-text-muted, #6b7280);
+		cursor: pointer;
+		border-radius: var(--radius-sm, 0.25rem);
+		opacity: 0;
+		transition: opacity 150ms ease, color 150ms ease, background-color 150ms ease;
+	}
+
+	.holon-item:hover .holon-item__star {
+		opacity: 1;
+	}
+
+	.holon-item__star:hover {
+		background: var(--color-bg-tertiary, #374151);
+		color: var(--color-text-primary, #ffffff);
+	}
+
+	.holon-item__star--active {
+		opacity: 1;
+		color: var(--color-warning, #f59e0b);
+	}
+
+	.holon-item__star--active:hover {
 		color: var(--color-warning, #f59e0b);
 	}
 </style>

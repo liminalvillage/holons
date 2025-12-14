@@ -167,11 +167,12 @@ class QueryManager {
 		// Set up holosphere subscription if not already active
 		let entry = this.cache.get(key);
 		if (!entry?.subscription) {
+			// holosphere.subscribe returns synchronously in the current implementation
 			const subscription = this.holosphere.subscribe(holonId, lens, (item: any) => {
 				if (this.isValidItem(item)) {
 					this.handleUpdate(key, item);
 				}
-			});
+			}) as unknown as { unsubscribe: () => void };
 
 			if (entry) {
 				entry.subscription = subscription;

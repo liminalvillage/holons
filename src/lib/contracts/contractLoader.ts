@@ -5,10 +5,25 @@ import { browser } from '$app/environment';
 function getNetworkName(): string {
   // In browser, use import.meta.env instead of process.env
   if (typeof window !== 'undefined') {
-    return (import.meta.env?.VITE_NETWORK_NAME as string) || 'localhost';
+    // Try VITE_NETWORK_NAME first, then VITE_NETWORK, then fallback
+    const envNetwork = (import.meta.env?.VITE_NETWORK_NAME as string) ||
+                       (import.meta.env?.VITE_NETWORK as string) ||
+                       (import.meta.env?.NETWORK as string);
+    if (envNetwork) {
+      console.log('[ContractLoader] Using network from env:', envNetwork);
+      return envNetwork;
+    }
   }
   // On server, use process.env if available
-  return (typeof process !== 'undefined' ? process.env?.VITE_NETWORK_NAME : undefined) || 'localhost';
+  const serverNetwork = typeof process !== 'undefined'
+    ? (process.env?.VITE_NETWORK_NAME || process.env?.VITE_NETWORK || process.env?.NETWORK)
+    : undefined;
+  if (serverNetwork) {
+    console.log('[ContractLoader] Using network from server env:', serverNetwork);
+    return serverNetwork;
+  }
+  console.log('[ContractLoader] Defaulting to localhost');
+  return 'localhost';
 }
 
 // Available holon types
@@ -69,6 +84,51 @@ const DEPLOYMENT_ADDRESSES = {
 
 // Basic contract ABIs for essential functions
 const CONTRACT_ABIS = {
+  // Bundle contract - unified holon with configurable parameters
+  Bundle: [
+    {
+      "type": "constructor",
+      "inputs": [
+        { "name": "_owner", "type": "address" },
+        { "name": "_creatorUserId", "type": "string" },
+        { "name": "_name", "type": "string" },
+        { "name": "_steepness", "type": "uint256" },
+        { "name": "_nzones", "type": "uint256" }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    { "type": "function", "name": "name", "inputs": [], "outputs": [{"name": "", "type": "string"}], "stateMutability": "view" },
+    { "type": "function", "name": "owner", "inputs": [], "outputs": [{"name": "", "type": "address"}], "stateMutability": "view" },
+    { "type": "function", "name": "creator", "inputs": [], "outputs": [{"name": "", "type": "address"}], "stateMutability": "view" },
+    { "type": "function", "name": "steepness", "inputs": [], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "nzones", "inputs": [], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "interiorPercentage", "inputs": [], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "exteriorPercentage", "inputs": [], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "getSize", "inputs": [], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "getInteriorMembers", "inputs": [], "outputs": [{"name": "", "type": "string[]"}], "stateMutability": "view" },
+    { "type": "function", "name": "getZoneMembers", "inputs": [{"name": "_zone", "type": "uint256"}], "outputs": [{"name": "", "type": "string[]"}], "stateMutability": "view" },
+    { "type": "function", "name": "getZoneWeights", "inputs": [], "outputs": [{"name": "", "type": "uint256[]"}], "stateMutability": "view" },
+    { "type": "function", "name": "setContractSplit", "inputs": [{"name": "_interior", "type": "uint256"}, {"name": "_exterior", "type": "uint256"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "setSteepness", "inputs": [{"name": "_steepness", "type": "uint256"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "setNzones", "inputs": [{"name": "_nzones", "type": "uint256"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "addMember", "inputs": [{"name": "_userId", "type": "string"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "addMembers", "inputs": [{"name": "_userIds", "type": "string[]"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "assignToZone", "inputs": [{"name": "_userId", "type": "string"}, {"name": "_zone", "type": "uint256"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "isBundleMember", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view" },
+    { "type": "function", "name": "isInteriorMember", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view" },
+    { "type": "function", "name": "isExteriorMember", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view" },
+    { "type": "function", "name": "zone", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "interiorShare", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "setInteriorSplit", "inputs": [{"name": "_userIds", "type": "string[]"}, {"name": "_percentages", "type": "uint256[]"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "reward", "inputs": [{"name": "_tokenaddress", "type": "address"}, {"name": "_tokenamount", "type": "uint256"}], "outputs": [], "stateMutability": "payable" },
+    { "type": "function", "name": "claim", "inputs": [{"name": "_userId", "type": "string"}, {"name": "_beneficiary", "type": "address"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "etherBalance", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "tokenBalance", "inputs": [{"name": "", "type": "string"}, {"name": "", "type": "address"}], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "event", "name": "ContractSplitSet", "inputs": [{"name": "interior", "type": "uint256", "indexed": false}, {"name": "exterior", "type": "uint256", "indexed": false}], "anonymous": false },
+    { "type": "event", "name": "MemberAdded", "inputs": [{"name": "userId", "type": "string", "indexed": false}], "anonymous": false },
+    { "type": "event", "name": "MemberAssignedToZone", "inputs": [{"name": "userId", "type": "string", "indexed": false}, {"name": "zoneNumber", "type": "uint256", "indexed": false}], "anonymous": false },
+    { "type": "event", "name": "SteepnessSet", "inputs": [{"name": "steepness", "type": "uint256", "indexed": false}], "anonymous": false }
+  ],
   Splitter: [
     {
       "inputs": [{"name": "internalPercent", "type": "uint256"}],
@@ -79,7 +139,7 @@ const CONTRACT_ABIS = {
     },
     {
       "inputs": [],
-      "name": "getInternalPercent", 
+      "name": "getInternalPercent",
       "outputs": [{"name": "", "type": "uint256"}],
       "stateMutability": "view",
       "type": "function"
@@ -149,6 +209,68 @@ const CONTRACT_ABIS = {
       "outputs": [{"name": "", "type": "address"}],
       "stateMutability": "nonpayable",
       "type": "function"
+    },
+    {
+      "inputs": [{"name": "_name", "type": "string"}],
+      "name": "getFlavorAddress",
+      "outputs": [{"name": "", "type": "address"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "managedFactory",
+      "outputs": [{"name": "", "type": "address"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "zonedFactory",
+      "outputs": [{"name": "", "type": "address"}],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {"name": "_managedFactory", "type": "address"},
+        {"name": "_zonedFactory", "type": "address"}
+      ],
+      "name": "setFactories",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {"name": "_flavorname", "type": "string"},
+        {"name": "_flavoraddress", "type": "address"}
+      ],
+      "name": "newFlavor",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {"indexed": false, "name": "name", "type": "string"},
+        {"indexed": false, "name": "addr", "type": "address"}
+      ],
+      "name": "NewHolon",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "name": "holonAddress", "type": "address"},
+        {"indexed": false, "name": "holonName", "type": "string"},
+        {"indexed": false, "name": "flavor", "type": "string"},
+        {"indexed": true, "name": "creator", "type": "address"},
+        {"indexed": false, "name": "timestamp", "type": "uint256"}
+      ],
+      "name": "HolonCreated",
+      "type": "event"
     }
   ],
   SplitterFactory: [],

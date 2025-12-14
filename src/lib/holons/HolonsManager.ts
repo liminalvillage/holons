@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { ethers } from 'ethers';
-import { HolonsContract, type HolonBundle, type HolonMember, type TokenBalance, type HolonType } from './HolonsContract.js';
+import { HolonsContract, type HolonBundle, type HolonMember, type TokenBalance, type HolonType, type FlowConfig } from './HolonsContract.js';
 import { FlowSettings, type HolonSettings, type FlowVisualizationData, type LensType } from './FlowSettings.js';
 
 export interface HolonsManagerEvents {
@@ -85,53 +85,108 @@ export class HolonsManager extends EventEmitter {
   }
 
   /**
-   * Create a new holon of specified type
+   * Create a new Bundle holon
    */
   async createHolon(
-    type: HolonType, 
-    creatorUserId: string, 
-    name: string
+    type: HolonType,
+    creatorUserId: string,
+    name: string,
+    steepness?: bigint,
+    nzones?: number
   ): Promise<{ transaction: ethers.TransactionResponse; holonId: string }> {
-    const holonId = `chat_${Math.abs(parseInt(name))}`;
-    
-    const tx = await this.contract.createHolon(type, creatorUserId, holonId, type === 'Zoned' ? 5 : 0);
-    
+    const holonId = name;
+
+    const tx = await this.contract.createHolon(type, creatorUserId, holonId, steepness, nzones);
+
     // Wait for transaction and emit event
-    this.contract.waitForTransaction(tx, `${type} holon created`).then(() => {
+    this.contract.waitForTransaction(tx, `Bundle holon created`).then(() => {
       this.emit('holon:created', {
-        splitterAddress: '',
-        managedAddress: '', 
-        zonedAddress: '',
+        address: '',
         creatorUserId,
         name: holonId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        steepness: steepness || BigInt('500000000000000000'),
+        nzones: nzones || 6
       } as HolonBundle);
     });
-    
+
     return { transaction: tx, holonId };
   }
 
   /**
-   * Create complete holon bundle (recommended approach)
+   * Check if the Holons registry is properly configured
+   */
+  async checkRegistryConfiguration() {
+    return this.contract.checkRegistryConfiguration();
+  }
+
+  /**
+   * Configure the Holons registry (set factories and register flavors)
+   */
+  async configureRegistry() {
+    return this.contract.configureRegistry();
+  }
+
+  /**
+   * Ensure registry is configured before deployment
+   * Auto-configures if not set up
+   */
+  async ensureRegistryConfigured(): Promise<boolean> {
+    const config = await this.checkRegistryConfiguration();
+
+    if (!config.isConfigured) {
+      console.log('[HolonsManager] Registry not configured. Missing:', config.missingItems);
+      console.log('[HolonsManager] Attempting to configure registry...');
+
+      const result = await this.configureRegistry();
+
+      if (!result.success) {
+        console.error('[HolonsManager] Failed to configure registry:', result.errors);
+        return false;
+      }
+
+      console.log('[HolonsManager] Registry configured successfully');
+    }
+
+    return true;
+  }
+
+  /**
+   * Create Bundle contract (recommended approach)
+   * Uses direct deployment - no registry needed!
    */
   async createHolonBundle(
     creatorUserId: string,
-    chatId: string
-  ): Promise<{ transaction: ethers.TransactionResponse; holonId: string }> {
-    const holonId = `chat_${Math.abs(parseInt(chatId))}`;
-    
-    const result = await this.contract.createHolonBundle(creatorUserId, holonId);
-    
-    // Wait for transaction and cache result
-    this.contract.waitForTransaction(result.transaction, 'Holon bundle created').then(async () => {
-      const bundle = await this.getHolonBundle(holonId);
-      if (bundle) {
-        this.holonCache.set(holonId, bundle);
-        this.emit('holon:created', bundle);
-      }
-    });
-    
-    return { transaction: result.transaction, holonId };
+    holonName: string,
+    steepness?: bigint,
+    nzones?: number
+  ): Promise<{ transaction: ethers.TransactionResponse; holonId: string; address?: string }> {
+    // Use direct deployment - simpler and doesn't need registry configuration
+    console.log('[HolonsManager] Using direct Bundle deployment...');
+
+    const result = await this.contract.deployBundleDirect(creatorUserId, holonName, steepness, nzones);
+
+    // Cache the result immediately
+    this.holonCache.set(holonName, result.bundle);
+    this.emit('holon:created', result.bundle);
+
+    return {
+      transaction: result.transaction,
+      holonId: holonName,
+      address: result.address
+    };
+  }
+
+  /**
+   * Deploy Bundle directly (alias for createHolonBundle)
+   */
+  async deployBundleDirect(
+    creatorUserId: string,
+    holonName: string,
+    steepness?: bigint,
+    nzones?: number
+  ) {
+    return this.contract.deployBundleDirect(creatorUserId, holonName, steepness, nzones);
   }
 
   /**
@@ -152,81 +207,94 @@ export class HolonsManager extends EventEmitter {
   }
 
   /**
-   * Add members to internal (managed) holon
+   * Add members to interior (Bundle contract)
    */
   async addMembersToInternal(holonId: string, userIds: string[]): Promise<ethers.TransactionResponse> {
     const bundle = await this.getHolonBundle(holonId);
-    if (!bundle) {
-      throw new Error('Holon bundle not found');
+    if (!bundle || !bundle.address) {
+      throw new Error('Bundle not found');
     }
-    
-    const tx = await this.contract.addMembersToManaged(bundle.managedAddress, userIds);
-    
-    this.contract.waitForTransaction(tx, `Added ${userIds.length} members to internal holon`).then(() => {
+
+    const tx = await this.contract.addMembersToManaged(bundle.address, userIds);
+
+    this.contract.waitForTransaction(tx, `Added ${userIds.length} members to Bundle`).then(() => {
       this.emit('members:added', holonId, userIds);
     });
-    
+
     return tx;
   }
 
   /**
-   * Add holons to external (zoned) holon
+   * Add holons to exterior zones (Bundle contract)
    */
   async addHolonsToExternal(holonId: string, holonIds: string[]): Promise<ethers.TransactionResponse> {
     const bundle = await this.getHolonBundle(holonId);
-    if (!bundle) {
-      throw new Error('Holon bundle not found');
+    if (!bundle || !bundle.address) {
+      throw new Error('Bundle not found');
     }
-    
-    const tx = await this.contract.addHolonsToZoned(bundle.zonedAddress, holonIds);
-    
-    this.contract.waitForTransaction(tx, `Added ${holonIds.length} holons to external holon`).then(() => {
+
+    const tx = await this.contract.addHolonsToZoned(bundle.address, holonIds);
+
+    this.contract.waitForTransaction(tx, `Added ${holonIds.length} holons to exterior`).then(() => {
       this.emit('holon:updated', holonId, { type: 'holons_added', holonIds });
     });
-    
+
     return tx;
   }
 
   /**
-   * Update flow split ratio between internal and external
+   * Update flow split ratio between interior and exterior
    */
-  async updateFlowSplit(holonId: string, internalPercent: number): Promise<ethers.TransactionResponse> {
-    const bundle = await this.getHolonBundle(holonId);
-    if (!bundle) {
-      throw new Error('Holon bundle not found');
-    }
-    
-    const tx = await this.contract.setFlowSplit(bundle.splitterAddress, internalPercent);
-    
-    // Update settings
-    await this.flowSettings.updateFlowSettings(this.gun, holonId, {
-      internalPercent,
-      externalPercent: 100 - internalPercent
+  async updateFlowSplit(bundleAddress: string, interiorPercent: number): Promise<ethers.TransactionResponse> {
+    const tx = await this.contract.setFlowSplit(bundleAddress, interiorPercent);
+
+    this.contract.waitForTransaction(tx, `Flow split updated to ${interiorPercent}% interior`).then(() => {
+      this.emit('flow:updated', bundleAddress, { interiorPercent, exteriorPercent: 100 - interiorPercent });
     });
-    
-    this.contract.waitForTransaction(tx, `Flow split updated to ${internalPercent}% internal`).then(() => {
-      this.emit('flow:updated', holonId, { internalPercent, externalPercent: 100 - internalPercent });
-    });
-    
+
     return tx;
   }
 
   /**
-   * Get current flow configuration
+   * Set steepness parameter on Bundle contract
    */
-  async getFlowConfiguration(holonId: string): Promise<any> {
-    const bundle = await this.getHolonBundle(holonId);
-    if (!bundle) {
+  async setSteepness(bundleAddress: string, steepness: bigint): Promise<ethers.TransactionResponse> {
+    const tx = await this.contract.setSteepness(bundleAddress, steepness);
+
+    this.contract.waitForTransaction(tx, 'Steepness updated').then(() => {
+      this.emit('flow:updated', bundleAddress, { steepness });
+    });
+
+    return tx;
+  }
+
+  /**
+   * Set number of zones on Bundle contract
+   */
+  async setNzones(bundleAddress: string, nzones: number): Promise<ethers.TransactionResponse> {
+    const tx = await this.contract.setNzones(bundleAddress, nzones);
+
+    this.contract.waitForTransaction(tx, 'Zones updated').then(() => {
+      this.emit('flow:updated', bundleAddress, { nzones });
+    });
+
+    return tx;
+  }
+
+  /**
+   * Get current flow configuration from Bundle contract
+   */
+  async getFlowConfiguration(bundleAddress: string): Promise<FlowConfig | null> {
+    if (!bundleAddress) {
       return null;
     }
-    
-    const contractConfig = await this.contract.getFlowConfig(bundle.splitterAddress);
-    const settings = await this.flowSettings.loadSettings(this.gun, holonId);
-    
-    return {
-      ...contractConfig,
-      settings: settings.flowManagement
-    };
+
+    try {
+      return await this.contract.getFlowConfig(bundleAddress);
+    } catch (error) {
+      console.error('Error getting flow configuration:', error);
+      return null;
+    }
   }
 
   /**
@@ -266,45 +334,28 @@ export class HolonsManager extends EventEmitter {
   }
 
   /**
-   * Get holon members
+   * Get holon members from Bundle contract
    */
   async getHolonMembers(holonId: string): Promise<HolonMember[]> {
     const bundle = await this.getHolonBundle(holonId);
-    if (!bundle) {
+    if (!bundle || !bundle.address) {
       return [];
     }
-    
-    return this.contract.getHolonMembers(bundle.managedAddress);
+
+    return this.contract.getHolonMembers(bundle.address);
   }
 
   /**
-   * Get token balances for holon
+   * Get token balances for Bundle contract
    */
   async getHolonBalances(holonId: string, tokenAddresses: string[]): Promise<TokenBalance[]> {
     const bundle = await this.getHolonBundle(holonId);
-    if (!bundle) {
+    if (!bundle || !bundle.address) {
       return [];
     }
-    
-    // Get balances for all holon contracts
-    const managedBalances = await this.contract.getTokenBalances(bundle.managedAddress, tokenAddresses);
-    const zonedBalances = await this.contract.getTokenBalances(bundle.zonedAddress, tokenAddresses);
-    const splitterBalances = await this.contract.getTokenBalances(bundle.splitterAddress, tokenAddresses);
-    
-    // Combine balances
-    const combinedBalances = new Map<string, TokenBalance>();
-    
-    [...managedBalances, ...zonedBalances, ...splitterBalances].forEach(balance => {
-      const existing = combinedBalances.get(balance.address);
-      if (existing) {
-        existing.balance += balance.balance;
-        existing.formatted = ethers.formatUnits(existing.balance, existing.decimals);
-      } else {
-        combinedBalances.set(balance.address, { ...balance });
-      }
-    });
-    
-    return Array.from(combinedBalances.values());
+
+    // Get balances for the Bundle contract (single address)
+    return this.contract.getTokenBalances(bundle.address, tokenAddresses);
   }
 
   /**

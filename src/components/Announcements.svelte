@@ -3,6 +3,7 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
+	import { Bell } from 'svelte-feathers';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -94,9 +95,11 @@
 </script>
 
 <div class="w-full mt-8 lg:mt-0 lg:w-4/12 lg:pl-4">
-	<div class="bg-gray-800 rounded-3xl px-6 pt-6">
-		<div class="flex text-white text-2xl pb-6 font-bold">
-			<p>Announcements</p>
+	<div class="bg-gray-800 rounded-2xl p-4 sm:p-6">
+		<!-- Announcements Header -->
+		<div class="flex items-center gap-2 text-white pb-4 border-b border-gray-700 mb-4">
+			<Bell size="20" class="text-indigo-400" />
+			<h2 class="text-lg font-semibold">Announcements</h2>
 		</div>
 		<div>
 			{#each announcements.reverse() as [key, announcement]}

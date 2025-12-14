@@ -37,131 +37,141 @@
 	const secondaryNav = data.slice(6);   // Rest of the items
 </script>
 
-<nav class="top-nav" aria-label="Main navigation">
-	<div class="nav-cards">
+<nav class="tabs" aria-label="Main navigation">
+	<div class="tabs__list" role="tablist">
 		{#each data as item (item.title)}
 			<button
-				class="nav-card"
-				class:nav-card--active={isActive(item.link)}
+				class="tab"
+				class:tab--active={isActive(item.link)}
 				on:click={() => navigateTo(item.link)}
 				on:keydown={(e) => handleKeydown(e, item.link)}
 				title={item.title}
 				disabled={!currentHolonId}
+				role="tab"
+				aria-selected={isActive(item.link)}
 			>
-				<span class="nav-card__icon">
+				<span class="tab__icon">
 					<svelte:component this={item.icon} />
 				</span>
-				<span class="nav-card__label">{item.title}</span>
+				<span class="tab__label">{item.title}</span>
 			</button>
 		{/each}
 	</div>
 </nav>
 
 <style>
-	.top-nav {
+	.tabs {
 		display: flex;
-		align-items: center;
+		align-items: stretch;
 		flex: 1;
 		min-width: 0;
-		overflow: hidden;
+		height: 100%;
 	}
 
-	.nav-cards {
+	.tabs__list {
 		display: flex;
-		align-items: center;
-		gap: var(--spacing-1, 0.25rem);
+		align-items: stretch;
+		gap: 0;
 		overflow-x: auto;
 		scrollbar-width: none;
 		-ms-overflow-style: none;
-		padding: var(--spacing-1, 0.25rem) 0;
+		-webkit-overflow-scrolling: touch;
 	}
 
-	.nav-cards::-webkit-scrollbar {
+	.tabs__list::-webkit-scrollbar {
 		display: none;
 	}
 
-	.nav-card {
+	.tab {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: var(--spacing-2, 0.5rem);
-		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		padding: 0 var(--spacing-4, 1rem);
 		background: transparent;
-		border: 1px solid transparent;
-		border-radius: var(--radius-md, 0.375rem);
-		color: var(--color-text-secondary, #d1d5db);
+		border: none;
+		border-bottom: 2px solid transparent;
+		color: var(--color-text-muted, #6b7280);
 		font-size: var(--font-size-sm, 0.875rem);
 		font-weight: var(--font-weight-medium, 500);
 		white-space: nowrap;
 		cursor: pointer;
-		transition: all 150ms ease;
+		transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
 		flex-shrink: 0;
+		position: relative;
 	}
 
-	.nav-card:hover:not(:disabled) {
-		background: var(--color-bg-secondary, #1f2937);
-		border-color: var(--color-border, #374151);
-		color: var(--color-text-primary, #ffffff);
+	.tab:hover:not(:disabled) {
+		color: var(--color-text-secondary, #d1d5db);
+		background: var(--color-bg-tertiary, #374151);
 	}
 
-	.nav-card:disabled {
-		opacity: 0.5;
+	.tab:disabled {
+		opacity: 0.4;
 		cursor: not-allowed;
 	}
 
-	.nav-card--active {
-		background: var(--color-accent, #4f46e5);
-		border-color: var(--color-accent, #4f46e5);
+	.tab--active {
 		color: var(--color-text-primary, #ffffff);
+		border-bottom-color: var(--color-accent, #4f46e5);
+		background: var(--color-bg-tertiary, #374151);
 	}
 
-	.nav-card--active:hover:not(:disabled) {
-		background: var(--color-accent-hover, #4338ca);
-		border-color: var(--color-accent-hover, #4338ca);
+	.tab--active:hover:not(:disabled) {
+		color: var(--color-text-primary, #ffffff);
+		border-bottom-color: var(--color-accent-light, #6366f1);
 	}
 
-	.nav-card__icon {
+	.tab__icon {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 18px;
-		height: 18px;
+		width: 16px;
+		height: 16px;
 		flex-shrink: 0;
 	}
 
-	.nav-card__icon :global(svg) {
+	.tab__icon :global(svg) {
 		width: 100%;
 		height: 100%;
 	}
 
-	.nav-card__label {
+	.tab__label {
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	/* Mobile: Hide labels, show only icons */
-	@media (max-width: 768px) {
-		.nav-card {
-			padding: var(--spacing-2, 0.5rem);
+	/* Mobile: Compact tabs with icons only */
+	@media (max-width: 640px) {
+		.tab {
+			padding: 0 var(--spacing-3, 0.75rem);
 		}
 
-		.nav-card__label {
+		.tab__label {
 			display: none;
 		}
 
-		.nav-card__icon {
-			width: 20px;
-			height: 20px;
+		.tab__icon {
+			width: 18px;
+			height: 18px;
 		}
 	}
 
-	/* Tablet: Show shorter labels */
-	@media (min-width: 769px) and (max-width: 1024px) {
-		.nav-card {
-			padding: var(--spacing-2, 0.5rem) var(--spacing-2, 0.5rem);
+	/* Tablet: Slightly more compact */
+	@media (min-width: 641px) and (max-width: 1024px) {
+		.tab {
+			padding: 0 var(--spacing-3, 0.75rem);
 		}
 
-		.nav-card__label {
+		.tab__label {
 			font-size: var(--font-size-xs, 0.75rem);
+		}
+	}
+
+	/* Large screens: More spacious tabs */
+	@media (min-width: 1280px) {
+		.tab {
+			padding: 0 var(--spacing-5, 1.25rem);
 		}
 	}
 </style>

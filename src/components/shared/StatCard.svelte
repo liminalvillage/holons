@@ -37,9 +37,9 @@
 	on:click={handleClick}
 	on:keydown={handleKeydown}
 >
-	{#if icon && !compact}
+	{#if icon}
 		<div class="stat-card__icon">
-			<svelte:component this={icon} size={20} />
+			<svelte:component this={icon} size={compact ? 16 : 20} />
 		</div>
 	{/if}
 

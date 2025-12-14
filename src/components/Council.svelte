@@ -1832,7 +1832,7 @@ function selectSeatAdvisor(a: CouncilAdvisorExtended) {
 			const newHolonID = await createHolonFromRitualUtil(holosphere, ritualWithAdvisorObjects as RitualSession, holonID);
 			
 			// Navigate to new holon
-			window.location.href = `/${newHolonID}`;
+			goto(`/${newHolonID}/dashboard`);
 			
 		} catch (error) {
 			console.error('Error creating holon from ritual:', error);
@@ -3236,17 +3236,36 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 
 <!-- svelte-ignore css_unused_selector -->
 <!-- svelte-ignore css_unused_selector -->
-<div class="space-y-8">
+<div class="space-y-4">
 	<!-- Header Section -->
-	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
-		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
-			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
-				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">Council</h1>
-				<p class="text-gray-300 text-base sm:text-lg">Metatron Structure Governance</p>
+	<div class="bg-gray-800 rounded-2xl p-4 sm:p-6">
+		<div class="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+			<div class="text-center sm:text-left">
+				<h1 class="text-2xl sm:text-3xl font-bold text-white mb-1">Council</h1>
+				<p class="text-gray-400 text-sm">Metatron Structure Governance</p>
 			</div>
-			<div class="text-center sm:text-right">
-				<div class="text-2xl font-bold text-green-400">{activeMembers}</div>
-				<div class="text-sm text-gray-400">Active Members</div>
+		</div>
+
+		<!-- Stats Bar -->
+		<div class="stats-bar mb-4">
+			<div class="stats-bar__item stats-bar__item--success">
+				<span class="stats-bar__value">{activeMembers}</span>
+				<span class="stats-bar__label">Active</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item stats-bar__item--info">
+				<span class="stats-bar__value">{ritualSession.advisors.length}</span>
+				<span class="stats-bar__label">Advisors</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item">
+				<span class="stats-bar__value">{ritualSession.declared_values.length}</span>
+				<span class="stats-bar__label">Values</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item stats-bar__item--warning">
+				<span class="stats-bar__value">{previousRituals.length}</span>
+				<span class="stats-bar__label">Rituals</span>
 			</div>
 		</div>
 	</div>
@@ -3357,80 +3376,56 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 							{/each}
 						</div>
 
-						<!-- Ritual Buttons -->
-						<div class="flex justify-center gap-4 mt-8">
-							<button 
-								on:click={summonholonicecosystemcouncil}
-								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-green-500/50 hover:border-green-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-green-500/25 backdrop-blur-sm"
-							>
-								<div class="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl group-hover:bg-green-500 transition-colors duration-300">
-									🎭
-								</div>
-								Summon Holonic Ecosystem Council
-								<div class="absolute inset-0 bg-gradient-to-r from-green-500/10 to-emerald-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
-							</button>
-							
-                            <!-- DEPRECATED 2024-12-19: "Seat Your Council" button - functionality moved to direct circle interaction on Metatron table -->
-                            <!-- 
-                            <button 
-                                on:click={() => { showSeatCouncilModal = true; }}
-                                class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-blue-500/50 hover:border-blue-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-blue-500/25 backdrop-blur-sm"
-                            >
-                                <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-xl group-hover:bg-blue-500 transition-colors duration-300">
-                                    💠
-                                </div>
-                                Seat Your Council
-                                <div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
-							</button>
-                            -->
-							
-							<button 
-								on:click={startRitual}
-								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-indigo-500/50 hover:border-indigo-400 text-white py-6 px-12 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-xl font-medium shadow-2xl hover:shadow-indigo-500/25 backdrop-blur-sm"
-							>
-								<div class="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-2xl group-hover:bg-indigo-500 transition-colors duration-300">
-									✨
-								</div>
-								Begin Council Ritual
-								<div class="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
-							</button>
+						<!-- Action Buttons -->
+						<div class="controls-row mt-6">
+							<div class="controls-row__left">
+								<button
+									on:click={summonholonicecosystemcouncil}
+									class="add-btn"
+									style="background: #10b981;"
+								>
+									<span class="text-base">🎭</span>
+									<span class="hidden sm:inline">Summon HEC</span>
+								</button>
+							</div>
 
+							<div class="controls-row__center">
+								<button
+									on:click={startRitual}
+									class="add-btn"
+									style="background: #6366f1;"
+								>
+									<span class="text-base">✨</span>
+									<span>Begin Ritual</span>
+								</button>
 
-							<!-- Council Chat Button -->
-							<button 
-								on:click={async () => await openCouncilChat()}
-								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-purple-500/50 hover:border-purple-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-purple-500/25 backdrop-blur-sm"
-							>
-								<div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-xl group-hover:bg-purple-500 transition-colors duration-300">
-									💬
-								</div>
-								Council Chat
-								<div class="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
-							</button>
+								<button
+									on:click={async () => await openCouncilChat()}
+									class="add-btn"
+									style="background: #8b5cf6;"
+								>
+									<span class="text-base">💬</span>
+									<span class="hidden sm:inline">Chat</span>
+								</button>
+							</div>
 
-							<!-- Temporary: Design Streams Button -->
-							<button 
-								on:click={async () => { console.log('Design Streams button clicked'); await openDesignStreams(); }}
-								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-purple-500/50 hover:border-purple-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-purple-500/25 backdrop-blur-sm"
-							>
-								<div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-xl group-hover:bg-purple-500 transition-colors duration-300">
+							<div class="controls-row__right">
+								<button
+									on:click={async () => { console.log('Design Streams button clicked'); await openDesignStreams(); }}
+									class="icon-btn"
+									title="Design Streams"
+								>
 									🛠
-								</div>
-								Design Streams
-								<div class="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-pink-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
-							</button>
+								</button>
 
-							<!-- API Key Configuration Button -->
-							<button 
-								on:click={openApiModal}
-								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-yellow-500/50 hover:border-yellow-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-yellow-500/25 backdrop-blur-sm"
-							>
-								<div class="w-10 h-10 rounded-full bg-yellow-600 flex items-center justify-center text-xl group-hover:bg-yellow-500 transition-colors duration-300">
+								<button
+									on:click={openApiModal}
+									class="icon-btn"
+									title="API Keys"
+								>
 									🔐
-								</div>
-								API Keys
-								<div class="absolute inset-0 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-							</button>
+								</button>
+							</div>
 						</div>
 
 						<!-- Interactive Circle Input Overlay -->
@@ -3658,7 +3653,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 					<div class="space-y-3">
 						<button
 							on:click={converseWithAdvisor}
-							class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-3"
+							class="btn btn--primary w-full"
 						>
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
@@ -3667,7 +3662,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 						</button>
 						<button
 							on:click={changeAdvisor}
-							class="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-3"
+							class="btn btn--secondary w-full"
 						>
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
@@ -3697,7 +3692,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                 <!-- Create new advisor inline toggle -->
                 {#if !showCreateInPicker}
                     <button
-                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                        class="btn btn--primary w-full btn--sm"
                         on:click={() => showCreateInPicker = true}
                     >
                         ➕ Create New Advisor
@@ -3726,7 +3721,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                         </div>
                         <div class="flex">
                             <button
-                                class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold disabled:bg-gray-600"
+                                class="btn btn--success w-full"
                                 disabled={!currentAdvisorName.trim() || !currentAdvisorLens.trim() || isGeneratingAdvisor}
                                 on:click={async () => { await addAdvisor(); openSeatPicker(); showCreateInPicker = false; }}
                             >
@@ -3764,7 +3759,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                                 <div class="text-gray-300 text-sm capitalize">{a.type}</div>
                                 {#if a.lens}<div class="text-gray-400 text-xs italic">"{a.lens}"</div>{/if}
                             </div>
-                            <button class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm" on:click={() => selectSeatAdvisor(a)}>
+                            <button class="btn btn--success btn--sm" on:click={() => selectSeatAdvisor(a)}>
                                 Seat
                             </button>
                         </div>
@@ -3848,7 +3843,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                         </p>
                         <div class="flex flex-col sm:flex-row gap-4 justify-center mt-6">
                             <button
-                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl transition-colors font-semibold shadow"
+                                class="btn btn--primary btn--lg"
                                 on:click={() => {
                                     // Use existing Metatron seating as the ritual council and skip to Speak Your Wish
                                     try {

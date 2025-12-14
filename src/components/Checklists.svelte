@@ -2,11 +2,12 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
-    import { replaceState } from "$app/navigation";
+    import { replaceState, goto } from "$app/navigation";
     import Schedule from "./ScheduleWidget.svelte";
     import type { HoloSphere } from "holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
     import { fetchHolonName } from "../utils/holonNames";
+    import { CheckSquare } from 'svelte-feathers';
 
     interface ChecklistItem {
         text: string;
@@ -419,65 +420,70 @@
         <TitleBar
             {holonName}
             title={selectedChecklist && checklists[selectedChecklist] ? getChecklistDisplayTitle(checklists[selectedChecklist]) : 'Checklists'}
+            icon={CheckSquare}
         />
 
         <!-- Main Content Container -->
         <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
             <div class="p-8">
                 {#if selectedChecklistData}
-                    <!-- Stats Section for Selected Checklist -->
-                    <div class="grid grid-cols-3 gap-4 mb-8">
-                        <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                            <div class="text-2xl font-bold text-white mb-1">{pendingItems}</div>
-                            <div class="text-sm text-gray-400">Pending</div>
+                    <!-- Stats Bar for Selected Checklist -->
+                    <div class="stats-bar mb-4">
+                        <div class="stats-bar__item">
+                            <span class="stats-bar__value">{pendingItems}</span>
+                            <span class="stats-bar__label">Pending</span>
                         </div>
-                        <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                            <div class="text-2xl font-bold text-white mb-1">{completedItems}</div>
-                            <div class="text-sm text-gray-400">Completed</div>
+                        <div class="stats-bar__divider"></div>
+                        <div class="stats-bar__item stats-bar__item--success">
+                            <span class="stats-bar__value">{completedItems}</span>
+                            <span class="stats-bar__label">Done</span>
                         </div>
-                        <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                            <div class="text-2xl font-bold text-white mb-1">{totalItems}</div>
-                            <div class="text-sm text-gray-400">Total Items</div>
+                        <div class="stats-bar__divider"></div>
+                        <div class="stats-bar__item">
+                            <span class="stats-bar__value">{totalItems}</span>
+                            <span class="stats-bar__label">Total</span>
                         </div>
                     </div>
 
-                    <!-- Navigation and Actions -->
-                    <div class="flex justify-between items-center mb-6">
-                        <button
-                            on:click={() => {
-                                selectedChecklist = null;
-                                // Clear the checklist parameter from URL
-                                const url = new URL(window.location.href);
-                                url.searchParams.delete('checklist');
-                                replaceState(url.toString(), { replaceState: true });
-                            }}
-                            class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
-                        >
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-                            </svg>
-                            Back to Checklists
-                        </button>
-                        
-                        <div class="flex gap-3">
+                    <!-- Controls Row -->
+                    <div class="controls-row mb-4">
+                        <div class="controls-row__left">
+                            <button
+                                on:click={() => {
+                                    selectedChecklist = null;
+                                    // Clear the checklist parameter from URL
+                                    const url = new URL(window.location.href);
+                                    url.searchParams.delete('checklist');
+                                    replaceState(url.toString(), { replaceState: true });
+                                }}
+                                class="btn btn--secondary"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                                </svg>
+                                <span class="hidden sm:inline">Back</span>
+                            </button>
+                        </div>
+
+                        <div class="controls-row__right">
                             <button
                                 on:click={() => clearChecklist(selectedChecklist)}
-                                class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                                class="btn btn--secondary"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                 </svg>
-                                Clear All
+                                <span class="hidden sm:inline">Clear All</span>
                             </button>
-                            
+
                             <button
                                 on:click={() => showAddInput(false)}
-                                class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
+                                class="add-btn"
                             >
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                                 </svg>
-                                Add Item
+                                <span class="hidden sm:inline">Add Item</span>
                             </button>
                         </div>
                     </div>
@@ -553,7 +559,7 @@
                                 <p class="text-gray-400 mb-4">Add your first item to get started</p>
                                 <button
                                     on:click={() => showAddInput(false)}
-                                    class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors"
+                                    class="btn btn--primary"
                                 >
                                     Add Item
                                 </button>
@@ -561,69 +567,84 @@
                         {/if}
                     </div>
                 {:else}
-                    <!-- Checklists Overview -->
-                    <div class="grid grid-cols-1 gap-4 mb-8">
-                        <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                            <div class="text-2xl font-bold text-white mb-1">{checklistEntries.length}</div>
-                            <div class="text-sm text-gray-400">
-                                {activeFilter === 'all' ? 'Total Checklists' : 
-                                 activeFilter === 'standalone' ? 'Standalone Checklists' :
-                                 activeFilter === 'roles' ? 'Role Checklists' :
-                                 'Task Checklists'}
+                    <!-- Checklists Overview - Stats Bar -->
+                    <div class="stats-bar mb-4">
+                        <div class="stats-bar__item">
+                            <span class="stats-bar__value">{Object.keys(allChecklists).length}</span>
+                            <span class="stats-bar__label">Total</span>
+                        </div>
+                        <div class="stats-bar__divider"></div>
+                        <div class="stats-bar__item">
+                            <span class="stats-bar__value">{Object.entries(allChecklists).filter(([_, checklist]) => !checklist.questId && !checklist.roleId).length}</span>
+                            <span class="stats-bar__label">Standalone</span>
+                        </div>
+                        <div class="stats-bar__divider"></div>
+                        <div class="stats-bar__item stats-bar__item--info">
+                            <span class="stats-bar__value">{Object.entries(allChecklists).filter(([_, checklist]) => checklist.roleId).length}</span>
+                            <span class="stats-bar__label">Roles</span>
+                        </div>
+                        <div class="stats-bar__divider"></div>
+                        <div class="stats-bar__item stats-bar__item--warning">
+                            <span class="stats-bar__value">{Object.entries(allChecklists).filter(([_, checklist]) => checklist.questId).length}</span>
+                            <span class="stats-bar__label">Tasks</span>
+                        </div>
+                    </div>
+
+                    <!-- Controls Row -->
+                    <div class="controls-row mb-4">
+                        <div class="controls-row__left">
+                            {#if activeFilter === 'all' || activeFilter === 'standalone'}
+                                <button
+                                    on:click={() => showAddInput(true)}
+                                    class="add-btn"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                    </svg>
+                                    <span class="hidden sm:inline">New</span>
+                                </button>
+                            {/if}
+                        </div>
+
+                        <div class="controls-row__center">
+                            <!-- Filter Tabs -->
+                            <div class="filter-tabs">
+                                <button
+                                    on:click={() => activeFilter = 'all'}
+                                    class="filter-tabs__btn {activeFilter === 'all' ? 'filter-tabs__btn--active' : ''}"
+                                >
+                                    All
+                                </button>
+                                <button
+                                    on:click={() => activeFilter = 'standalone'}
+                                    class="filter-tabs__btn {activeFilter === 'standalone' ? 'filter-tabs__btn--active' : ''}"
+                                >
+                                    Lists
+                                </button>
+                                <button
+                                    on:click={() => activeFilter = 'roles'}
+                                    class="filter-tabs__btn {activeFilter === 'roles' ? 'filter-tabs__btn--active' : ''}"
+                                >
+                                    Roles
+                                </button>
+                                <button
+                                    on:click={() => activeFilter = 'quests'}
+                                    class="filter-tabs__btn {activeFilter === 'quests' ? 'filter-tabs__btn--active' : ''}"
+                                >
+                                    Tasks
+                                </button>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Filter Tabs -->
-                    <div class="flex justify-center mb-6">
-                        <div class="flex bg-gray-700 rounded-lg p-1">
-                            <button
-                                on:click={() => activeFilter = 'all'}
-                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
-                            >
-                                All ({Object.keys(allChecklists).length})
-                            </button>
-                            <button
-                                on:click={() => activeFilter = 'standalone'}
-                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'standalone' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
-                            >
-                                Checklists ({Object.entries(allChecklists).filter(([_, checklist]) => !checklist.questId && !checklist.roleId).length})
-                            </button>
-                            <button
-                                on:click={() => activeFilter = 'roles'}
-                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'roles' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
-                            >
-                                Roles ({Object.entries(allChecklists).filter(([_, checklist]) => checklist.roleId).length})
-                            </button>
-                            <button
-                                on:click={() => activeFilter = 'quests'}
-                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'quests' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
-                            >
-                                Tasks ({Object.entries(allChecklists).filter(([_, checklist]) => checklist.questId).length})
-                            </button>
-                        </div>
+                        <div class="controls-row__right"></div>
                     </div>
-
-                    {#if activeFilter === 'all' || activeFilter === 'standalone'}
-                        <div class="flex justify-center mb-6">
-                            <button
-                                on:click={() => showAddInput(true)}
-                                class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
-                            >
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                </svg>
-                                Create New Checklist
-                            </button>
-                        </div>
-                    {/if}
 
                     {#if activeFilter === 'quests'}
                         <div class="flex justify-center mb-6">
                             <div class="text-center">
                                 <p class="text-gray-400 text-sm mb-3">Task-attached checklists are created from tasks</p>
                                 <button
-                                    on:click={() => window.location.href = `/${holonID}/tasks`}
+                                    on:click={() => goto(`/${holonID}/tasks`)}
                                     class="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105 mx-auto"
                                 >
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -710,7 +731,7 @@
                                 {#if activeFilter === 'all' || activeFilter === 'standalone'}
                                     <button
                                         on:click={() => showAddInput(true)}
-                                        class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors"
+                                        class="btn btn--primary"
                                     >
                                         Create Checklist
                                     </button>
@@ -788,7 +809,7 @@
                         </button>
                         <button
                             type="submit"
-                            class="px-6 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                            class="btn btn--primary"
                             disabled={!inputText.trim()}
                         >
                             {isAddingChecklist ? "Create Checklist" : "Add Item"}

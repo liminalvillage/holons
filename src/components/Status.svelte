@@ -617,21 +617,21 @@
                     <span>Loading data...</span>
                 </div>
             {:else}
-                <!-- Stats Section -->
-                <div class="grid grid-cols-3 gap-4 mb-8">
-                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                        <div class="text-2xl font-bold text-white mb-1">{sortedUsers.length}</div>
-                        <div class="text-sm text-gray-400">Total Users</div>
+                <!-- Stats Bar -->
+                <div class="stats-bar mb-6">
+                    <div class="stats-bar__item stats-bar__item--info">
+                        <span class="stats-bar__value">{sortedUsers.length}</span>
+                        <span class="stats-bar__label">Users</span>
                     </div>
-                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                        <div class="text-2xl font-bold text-white mb-1">
-                            {sortedUsers.filter(([, user]) => calculateScore(user) > 0).length}
-                        </div>
-                        <div class="text-sm text-gray-400">Active Users</div>
+                    <div class="stats-bar__divider"></div>
+                    <div class="stats-bar__item stats-bar__item--success">
+                        <span class="stats-bar__value">{sortedUsers.filter(([, user]) => calculateScore(user) > 0).length}</span>
+                        <span class="stats-bar__label">Active</span>
                     </div>
-                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                        <div class="text-2xl font-bold text-white mb-1">{availableCurrencies.length}</div>
-                        <div class="text-sm text-gray-400">Currencies</div>
+                    <div class="stats-bar__divider"></div>
+                    <div class="stats-bar__item stats-bar__item--warning">
+                        <span class="stats-bar__value">{availableCurrencies.length}</span>
+                        <span class="stats-bar__label">Currencies</span>
                     </div>
                 </div>
 

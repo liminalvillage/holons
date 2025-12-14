@@ -254,8 +254,8 @@
 
         <!-- Profile stays -->
         {#each yearStays as stay}
-            {@const arrival = new Date(stay.profile.arrival)}
-            {@const departure = new Date(stay.profile.departure)}
+            {@const arrival = new Date(stay.profile.arrival || Date.now())}
+            {@const departure = new Date(stay.profile.departure || Date.now())}
             {@const startPos = Math.max(0, getPositionInYear(arrival))}
             {@const endPos = Math.min(100, getPositionInYear(departure))}
             <div 

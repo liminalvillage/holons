@@ -81,7 +81,7 @@
         if (!quest._hologram?.sourceHolon) return;
 
         // Navigate to the source holon using sourceHolon directly
-        window.location.href = `/${quest._hologram.sourceHolon}`;
+        goto(`/${quest._hologram.sourceHolon}/dashboard`);
     }
 
     onMount(() => {

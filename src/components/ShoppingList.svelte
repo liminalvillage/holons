@@ -2,10 +2,12 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
+    import { goto } from "$app/navigation";
     import { formatDate, formatTime } from "../utils/date";
     import type { HoloSphere } from "holosphere";
     import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
     import TitleBar from "./shared/TitleBar.svelte";
+    import { ShoppingCart } from 'svelte-feathers';
 
     interface ShoppingItem {
         id: string;
@@ -263,7 +265,7 @@
 
 <div class="space-y-4">
     <!-- TitleBar -->
-    <TitleBar {holonName} title="Shopping List">
+    <TitleBar {holonName} title="Shopping List" icon={ShoppingCart}>
         <label slot="actions" class="flex items-center cursor-pointer">
             <div class="relative">
                 <input
@@ -287,49 +289,51 @@
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
         <div class="p-8">
-            <!-- Stats Section -->
-            <div class="grid grid-cols-3 gap-4 mb-8">
-                <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                    <div class="text-2xl font-bold text-white mb-1">
-                        {filteredItems.filter(([_, item]) => !item.done).length}
-                    </div>
-                    <div class="text-sm text-gray-400">Pending</div>
+            <!-- Stats Bar -->
+            <div class="stats-bar mb-4">
+                <div class="stats-bar__item">
+                    <span class="stats-bar__value">{filteredItems.filter(([_, item]) => !item.done).length}</span>
+                    <span class="stats-bar__label">Pending</span>
                 </div>
-                <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                    <div class="text-2xl font-bold text-white mb-1">
-                        {filteredItems.filter(([_, item]) => item.done).length}
-                    </div>
-                    <div class="text-sm text-gray-400">Completed</div>
+                <div class="stats-bar__divider"></div>
+                <div class="stats-bar__item stats-bar__item--success">
+                    <span class="stats-bar__value">{filteredItems.filter(([_, item]) => item.done).length}</span>
+                    <span class="stats-bar__label">Done</span>
                 </div>
-                <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-                    <div class="text-2xl font-bold text-white mb-1">{filteredItems.length}</div>
-                    <div class="text-sm text-gray-400">Total Items</div>
+                <div class="stats-bar__divider"></div>
+                <div class="stats-bar__item">
+                    <span class="stats-bar__value">{filteredItems.length}</span>
+                    <span class="stats-bar__label">Total</span>
                 </div>
             </div>
 
-            <!-- Action Buttons -->
-            <div class="flex justify-center items-center gap-4 mb-6">
-                <button
-                    on:click={showAddInput}
-                    class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
-                    aria-label="Add new item"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                    <span>Add New Item</span>
-                </button>
+            <!-- Controls Row -->
+            <div class="controls-row mb-4">
+                <div class="controls-row__left">
+                    <button
+                        on:click={showAddInput}
+                        class="add-btn"
+                        aria-label="Add new item"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        <span class="hidden sm:inline">Add</span>
+                    </button>
+                </div>
 
-                <button 
-                    on:click={async () => {
-                        if (holonID) {
-                            await removeChecked(holonID);
-                        }
-                    }}
-                    class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
-                    aria-label="Remove checked items"
-                >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                    <span>Remove Checked</span>
-                </button>
+                <div class="controls-row__right">
+                    <button
+                        on:click={async () => {
+                            if (holonID) {
+                                await removeChecked(holonID);
+                            }
+                        }}
+                        class="btn btn--secondary"
+                        aria-label="Remove checked items"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        <span class="hidden sm:inline">Remove Checked</span>
+                    </button>
+                </div>
             </div>
 
             <!-- Shopping Items -->
@@ -380,7 +384,7 @@
                                                         on:click|stopPropagation={() => {
                                                             const match = item._hologram?.soul?.match(/Holons\/([^\/]+)/);
                                                             if (match) {
-                                                                window.location.href = `/${match[1]}/shopping`;
+                                                                goto(`/${match[1]}/shopping`);
                                                             }
                                                         }}
                                                         role="button"
@@ -389,7 +393,7 @@
                                                             if (e.key === 'Enter' || e.key === ' ') {
                                                                 const match = item._hologram?.soul?.match(/Holons\/([^\/]+)/);
                                                                 if (match) {
-                                                                    window.location.href = `/${match[1]}/shopping`;
+                                                                    goto(`/${match[1]}/shopping`);
                                                                 }
                                                             }
                                                         }}
@@ -439,7 +443,7 @@
                         <p class="text-gray-400 mb-4">Get started by adding your first item</p>
                         <button
                             on:click={showAddInput}
-                            class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors"
+                            class="btn btn--primary"
                         >
                             Add Item
                         </button>
@@ -498,14 +502,14 @@
                         <button
                             type="button"
                             on:click={() => showInput = false}
-                            class="px-6 py-2.5 text-sm font-medium rounded-xl bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
+                            class="btn btn--secondary"
                             aria-label="Cancel adding item"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
-                            class="px-6 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                            class="btn btn--primary"
                             disabled={!inputText.trim()}
                             aria-label="Add new item"
                         >

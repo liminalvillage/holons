@@ -14,6 +14,10 @@
     let isScanning = false;
     let error = '';
     export let showScanner = false;
+
+    // Camera selection
+    let useFrontCamera = false;
+    $: facingMode = useFrontCamera ? "user" : "environment";
     
     $: if (showScanner && scannerContainer) {
         // When scanner becomes visible and container is ready, start scanning
@@ -93,7 +97,7 @@
             };
             
             await html5QrCode.start(
-                { facingMode: "environment" },
+                { facingMode: facingMode },
                 config,
                 qrCodeSuccessCallback,
                 qrCodeErrorCallback
@@ -128,6 +132,28 @@
         // Set showScanner to false directly (works with bind:)
         showScanner = false;
         dispatch('close');
+    }
+
+    async function switchCamera() {
+        if (!isScanning) return;
+
+        try {
+            // Stop current camera
+            await html5QrCode?.stop();
+            isScanning = false;
+
+            // Toggle camera
+            useFrontCamera = !useFrontCamera;
+
+            // Small delay to ensure camera is released
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Start with new camera
+            await startScanner();
+        } catch (err) {
+            console.error('Failed to switch camera:', err);
+            error = 'Failed to switch camera. Try again.';
+        }
     }
 </script>
 
@@ -197,21 +223,32 @@
                     {#if !isScanning}
                         <button
                             on:click={startScanner}
-                            class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-colors"
+                            class="btn btn--primary flex-1"
                         >
                             Start Camera
                         </button>
                     {:else}
                         <button
                             on:click={stopScanner}
-                            class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors"
+                            class="btn btn--danger flex-1"
                         >
                             Stop Camera
                         </button>
                     {/if}
+                    {#if isScanning}
+                        <button
+                            on:click={switchCamera}
+                            class="btn btn--secondary"
+                            title="Switch Camera"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    {/if}
                     <button
                         on:click={closeScanner}
-                        class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg transition-colors"
+                        class="btn btn--secondary flex-1"
                     >
                         Cancel
                     </button>

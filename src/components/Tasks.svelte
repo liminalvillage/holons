@@ -3,7 +3,7 @@
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
-	import { replaceState } from "$app/navigation";
+	import { replaceState, goto } from "$app/navigation";
 	import { fade, slide } from "svelte/transition";
 	import { formatDate, formatTime } from "../utils/date";
 	import type { HoloSphere } from "holosphere";
@@ -20,9 +20,7 @@
 	import { fetchHolonName } from "../utils/holonNames";
 	// Import shared components
 	import TitleBar from "./shared/TitleBar.svelte";
-	import StatCard from "./shared/StatCard.svelte";
-	import StatGrid from "./shared/StatGrid.svelte";
-	import { CheckSquare, Clock, RefreshCw, CheckCircle, Layers } from 'svelte-feathers';
+	import { CheckSquare, Calendar as CalendarIcon } from 'svelte-feathers';
 
 	// Add filterType prop to allow filtering by quest type
 	let { filterType = 'all' }: { filterType?: 'task' | 'event' | 'all' } = $props();
@@ -44,7 +42,7 @@
 		appreciation: string[];
 		location?: string;
 		ends?: string;
-		type?: 'task' | 'quest' | 'event' | 'proposal' | 'recurring';
+		type?: 'task' | 'quest' | 'event' | 'recurring';
 		orderIndex?: number;
 		position?: { x: number; y: number };
 		dependsOn?: string[];
@@ -73,7 +71,6 @@
 
 	let holonID = $state(''); // Start empty so reactive block triggers on first valid ID
 	let holonName = $state('Tasks'); // Default name
-	let statsCollapsed = $state(false); // For mobile stats toggle
 	let store: Store = $state({});
 	let quests = $derived(Object.entries(store));
 
@@ -216,7 +213,7 @@
 	let sortDirection = $derived($taskSortStore.direction);
 
 	// SVG Paths for sort icons
-	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z"; // Calendar icon
+	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"; // Calendar icon
 	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
 	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
 	let currentIconPath = $state(calendarIconPath); // Initial icon
@@ -1229,6 +1226,7 @@
 	<TitleBar
 		{holonName}
 		title={filterType === 'event' ? 'Events' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
+		icon={filterType === 'event' ? CalendarIcon : CheckSquare}
 	/>
 
 	<!-- Main Content Container -->
@@ -1236,29 +1234,50 @@
 		<!-- Tasks Panel -->
 		<div class="xl:flex-1 bg-gray-800 rounded-2xl shadow-xl min-h-[600px]">
 			<div class="p-3 sm:p-6">
-				<!-- Stats Section -->
-				<StatGrid collapsible={true} collapsed={statsCollapsed} title="Task Statistics" on:toggle={(e) => statsCollapsed = e.detail.collapsed}>
-					<StatCard label="Unassigned" value={statsUnassigned} icon={CheckSquare} compact />
-					<StatCard label="Open Items" value={statsOpenItems} icon={Clock} compact />
-					<StatCard label="Recurring" value={statsRecurring} icon={RefreshCw} compact />
-					<StatCard label="Completed" value={statsCompleted} icon={CheckCircle} compact />
-					<StatCard
-						label={filterType === 'event' ? 'Scheduled' : filterType === 'task' ? 'Tasks' : 'Quests'}
-						value={statsFilterSpecific}
-						icon={Layers}
-						compact
-					/>
-				</StatGrid>
+				<!-- Inline Stats Bar - Always Visible -->
+				<div class="stats-bar mb-4">
+					<div class="stats-bar__item">
+						<span class="stats-bar__value">{statsOpenItems}</span>
+						<span class="stats-bar__label">Open</span>
+					</div>
+					<div class="stats-bar__divider"></div>
+					<div class="stats-bar__item">
+						<span class="stats-bar__value">{statsUnassigned}</span>
+						<span class="stats-bar__label">Unassigned</span>
+					</div>
+					<div class="stats-bar__divider"></div>
+					<div class="stats-bar__item">
+						<span class="stats-bar__value">{statsRecurring}</span>
+						<span class="stats-bar__label">Recurring</span>
+					</div>
+					<div class="stats-bar__divider"></div>
+					<div class="stats-bar__item stats-bar__item--success">
+						<span class="stats-bar__value">{statsCompleted}</span>
+						<span class="stats-bar__label">Done</span>
+					</div>
+				</div>
 
-				<!-- Controls Section -->
-				<div class="mb-4 sm:mb-6">
-					<div class="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-2 justify-between compact-toolbar">
-						<!-- View Mode Toggle -->
-						<div class="flex items-center bg-gray-700 rounded-xl p-0.5 h-9">
+				<!-- Controls Row - Compact and organized -->
+				<div class="controls-row mb-4">
+					<!-- Left: View toggle + Add button -->
+					<div class="controls-row__left">
+						<button
+							on:click={showDialog}
+							class="add-btn"
+							aria-label="Add new task"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+							</svg>
+							<span class="hidden sm:inline">Add</span>
+						</button>
+
+						<div class="view-toggle">
 							<button
-								class="flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-sm h-7 {viewMode === 'list' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'}"
+								class="view-toggle__btn {viewMode === 'list' ? 'view-toggle__btn--active' : ''}"
 								on:click={() => (viewMode = 'list')}
-								aria-label="Switch to list view"
+								aria-label="List view"
+								title="List view"
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<line x1="8" y1="6" x2="21" y2="6" />
@@ -1268,71 +1287,54 @@
 									<line x1="3" y1="12" x2="3.01" y2="12" />
 									<line x1="3" y1="18" x2="3.01" y2="18" />
 								</svg>
-								<span>List</span>
 							</button>
 							<button
-								class="flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-sm h-7 {viewMode === 'canvas' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'}"
+								class="view-toggle__btn {viewMode === 'canvas' ? 'view-toggle__btn--active' : ''}"
 								on:click={() => (viewMode = 'canvas')}
-								aria-label="Switch to canvas view"
+								aria-label="Canvas view"
+								title="Canvas view"
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<path d="M5 9l-3 3 3 3"></path>
-									<path d="M9 5l3-3 3 3"></path>
-									<path d="M9 19l3 3 3-3"></path>
-									<path d="M19 9l3 3-3 3"></path>
-									<path d="M2 12h20"></path>
-									<path d="M12 2v20"></path>
+									<rect x="3" y="3" width="7" height="7"></rect>
+									<rect x="14" y="3" width="7" height="7"></rect>
+									<rect x="14" y="14" width="7" height="7"></rect>
+									<rect x="3" y="14" width="7" height="7"></rect>
 								</svg>
-								<span>Canvas</span>
 							</button>
 						</div>
+					</div>
 
-						<!-- Category Filter -->
-						<div class="relative flex-1 w-auto min-w-[120px] max-w-[180px]">
-							<select
-								bind:value={selectedCategory}
-								class="appearance-none bg-gray-700 text-white px-3 py-1.5 pr-7 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full h-9"
-							>
-								{#each categories as category}
-									<option value={category}>
-										{category === "all" ? "All Categories" : category}
-									</option>
-								{/each}
-							</select>
-							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
-								<svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-									<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-								</svg>
-							</div>
-						</div>
+					<!-- Center: Filters -->
+					<div class="controls-row__center">
+						<select
+							bind:value={selectedCategory}
+							class="filter-select"
+						>
+							{#each categories as category}
+								<option value={category}>
+									{category === "all" ? "All Categories" : category}
+								</option>
+							{/each}
+						</select>
 
-						<!-- User Filter -->
-						<div class="relative flex-1 w-auto min-w-[120px] max-w-[180px]">
-							<select
-								bind:value={selectedUserId}
-								class="appearance-none bg-gray-700 text-white px-3 py-1.5 pr-7 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full h-9"
-							>
-								{#each allUsers as user}
-									<option value={user.id}>{user.name}</option>
-								{/each}
-							</select>
-							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
-								<svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-									<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-								</svg>
-							</div>
-						</div>
+						<select
+							bind:value={selectedUserId}
+							class="filter-select"
+						>
+							{#each allUsers as user}
+								<option value={user.id}>{user.name}</option>
+							{/each}
+						</select>
 
-						<!-- Sort Button -->
 						<button
-							class="flex items-center justify-center gap-1 px-3 py-1.5 bg-gray-700 text-white rounded-xl text-sm hover:bg-gray-600 transition-colors border border-gray-600 w-auto min-w-[80px] h-9"
+							class="sort-btn"
 							on:click={handleSortButtonClick}
 							aria-label="Sort tasks"
+							title="Sort by: {sortCriteria}"
 						>
-							<span>Sort</span>
 							{#key currentIconPath}
 								<svg
-									class="w-3 h-3 transform transition-transform"
+									class="w-4 h-4 transition-transform"
 									style="transform: rotate({sortButtonIconRotation}deg)"
 									viewBox="0 0 24 24"
 									fill="none"
@@ -1345,67 +1347,33 @@
 								</svg>
 							{/key}
 						</button>
-
-						<!-- Toggle Switches -->
-						<div class="flex flex-row gap-2 items-center ml-2">
-							<!-- Show Completed Toggle -->
-							<label class="flex items-center cursor-pointer text-sm">
-								<div class="relative">
-									<input
-										type="checkbox"
-										class="sr-only"
-										bind:checked={showCompleted}
-									/>
-									<div class="w-8 h-4 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-									<div
-										class="dot absolute w-3 h-3 bg-white rounded-full transition-transform duration-300 ease-in-out left-0.5 top-0.5"
-										class:translate-x-4={showCompleted}
-									></div>
-								</div>
-								<span class="ml-1 text-white font-medium">Show Completed</span>
-							</label>
-
-							<!-- Show Holograms Toggle -->
-							<label class="flex items-center cursor-pointer text-sm">
-								<div class="relative">
-									<input
-										type="checkbox"
-										class="sr-only"
-										bind:checked={showHolograms}
-									/>
-									<div class="w-8 h-4 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-									<div
-										class="dot absolute w-3 h-3 bg-white rounded-full transition-transform duration-300 ease-in-out left-0.5 top-0.5"
-										class:translate-x-4={showHolograms}
-									></div>
-								</div>
-								<span class="ml-1 text-white font-medium">Show Holograms</span>
-							</label>
-						</div>
 					</div>
-				</div>
 
-				<!-- Action Buttons -->
-				<div class="flex justify-center gap-4 mb-6">
-					<button
-						on:click={showDialog}
-						class="w-12 h-12 bg-gray-600 hover:bg-gray-500 text-white rounded-full flex items-center justify-center transition-all duration-300 transform hover:scale-110 shadow-lg hover:shadow-xl"
-						aria-label="Add new task"
-					>
-						<span class="text-xl font-bold leading-none">+</span>
-					</button>
-					
-					<button
-						on:click={() => showImportModal = true}
-						class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-sm font-medium"
-						aria-label="Import quests from JSON file or library"
-						title="Import quests from JSON file or library"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-						</svg>
-						Import Quests
-					</button>
+					<!-- Right: Toggles + Import -->
+					<div class="controls-row__right">
+						<label class="toggle-chip" title="Show completed tasks">
+							<input type="checkbox" bind:checked={showCompleted} class="sr-only" />
+							<span class="toggle-chip__dot" class:toggle-chip__dot--active={showCompleted}></span>
+							<span class="toggle-chip__label">Completed</span>
+						</label>
+
+						<label class="toggle-chip" title="Show holograms">
+							<input type="checkbox" bind:checked={showHolograms} class="sr-only" />
+							<span class="toggle-chip__dot" class:toggle-chip__dot--active={showHolograms}></span>
+							<span class="toggle-chip__label">Holograms</span>
+						</label>
+
+						<button
+							on:click={() => showImportModal = true}
+							class="import-btn"
+							aria-label="Import quests"
+							title="Import quests"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+							</svg>
+						</button>
+					</div>
 				</div>
 
 				<!-- Task Content -->
@@ -1487,13 +1455,13 @@
 														title="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
 														on:click|stopPropagation={() => {
 															if (quest._hologram?.sourceHolon) {
-																window.location.href = `/${quest._hologram.sourceHolon}/tasks`;
+																goto(`/${quest._hologram.sourceHolon}/tasks`);
 															}
 														}}
 														on:keydown|stopPropagation={(e) => {
 															if (e.key === 'Enter' || e.key === ' ') {
 																if (quest._hologram?.sourceHolon) {
-																	window.location.href = `/${quest._hologram.sourceHolon}/tasks`;
+																	goto(`/${quest._hologram.sourceHolon}/tasks`);
 																}
 															}
 														}}
@@ -1622,7 +1590,7 @@
 								<p class="text-gray-400 mb-4">Get started by creating your first task or quest</p>
 								<button
 									on:click={showDialog}
-									class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
+									class="btn btn--primary"
 								>
 									Create Task
 								</button>
@@ -1725,14 +1693,14 @@
 						<button
 							type="button"
 							on:click={hideDialog}
-							class="px-6 py-2.5 text-sm font-medium rounded-xl bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
+							class="btn btn--secondary"
 							aria-label="Cancel adding task"
 						>
 							Cancel
 						</button>
 													<button
 								type="submit"
-								class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+								class="btn btn--primary"
 								disabled={!newTask.title.trim()}
 								aria-label="Add new {filterType === 'event' ? 'event' : 'task'}"
 							>
@@ -1834,14 +1802,14 @@
 				<div class="flex gap-3">
 					<button
 						on:click={closeShareDialog}
-						class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+						class="btn btn--secondary flex-1"
 					>
 						Cancel
 					</button>
 					<button
 						on:click={shareQuestToSelected}
 						disabled={selectedHolonsToShare.length === 0 || sharingInProgress}
-						class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+						class="btn btn--primary flex-1"
 					>
 						{#if sharingInProgress}
 							<svg class="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
@@ -1860,9 +1828,24 @@
 {/if}
 
 <style>
-	/* Toggle switch styling */
-	.dot {
-		transition: transform 0.3s ease-in-out;
+	/* Import Button - Task-specific icon button */
+	.import-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 2rem;
+		height: 2rem;
+		background: #374151;
+		color: #9ca3af;
+		border-radius: 0.5rem;
+		border: 1px solid #4b5563;
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.import-btn:hover {
+		background: #4b5563;
+		color: #fff;
 	}
 
 	/* Task card styling */
@@ -1873,42 +1856,5 @@
 
 	.task-card:hover {
 		cursor: pointer;
-	}
-
-	/* Text truncation utilities */
-	.line-clamp-2 {
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-		line-clamp: 2;
-	}
-
-	/* Smooth animations */
-	@keyframes slideDown {
-		from {
-			opacity: 0;
-			transform: translateY(-10px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	.compact-toolbar {
-		gap: 0.5rem !important;
-	}
-	.compact-toolbar select,
-	.compact-toolbar button {
-		font-size: 0.95rem;
-		padding-top: 0.25rem;
-		padding-bottom: 0.25rem;
-		padding-left: 0.75rem;
-		padding-right: 0.75rem;
-		height: 2.25rem;
-	}
-	.compact-toolbar .dot {
-		transition: transform 0.3s ease-in-out;
 	}
 </style>

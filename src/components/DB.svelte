@@ -74,7 +74,6 @@
 		})
 		: allEntries;
 
-	let holosphere = getContext("holosphere") as HoloSphere;
 	let gun: any = null;
 	let mounted = false;
 

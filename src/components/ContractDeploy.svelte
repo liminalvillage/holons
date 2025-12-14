@@ -35,6 +35,8 @@
   let deploymentName: string = '';
   let deploying = false;
   let deploymentTxHash: string | null = null;
+  let deploymentStatus: 'idle' | 'pending' | 'confirming' | 'success' | 'failed' = 'idle';
+  let deployedAddress: string | null = null;
 
   // Setup state
   let flowSplitPercent: number = 50;
@@ -172,24 +174,198 @@
 
   // Load existing holon bundle
   async function loadExistingBundle() {
-    if (!manager || !holonId) return;
+    if (!manager) return;
+
+    // Try multiple names: registered name first, then holonId
+    const namesToTry = [
+      registeredHolonName,
+      holonId,
+      deploymentName
+    ].filter(Boolean);
+
+    console.log('[LoadBundle] Attempting to load bundle with names:', namesToTry);
 
     try {
       bundleLoading = true;
-      existingBundle = await manager.getHolonBundle(holonId);
 
-      if (existingBundle) {
-        // Load flow configuration
-        const flowConfig = await manager.getFlowConfiguration(holonId);
-        if (flowConfig) {
-          flowSplitPercent = flowConfig.internalPercent || 50;
+      // First try to load from blockchain
+      for (const name of namesToTry) {
+        if (!name) continue;
+        console.log('[LoadBundle] Trying name from blockchain:', name);
+        const bundle = await manager.getHolonBundle(name);
+        if (bundle?.address) {
+          console.log('[LoadBundle] Found bundle for name:', name, 'address:', bundle.address);
+          existingBundle = bundle;
+          deployedAddress = bundle.address;
+          registeredHolonName = name; // Remember which name worked
+
+          // Load flow configuration using the bundle address
+          try {
+            const flowConfig = await manager.getFlowConfiguration(bundle.address);
+            if (flowConfig) {
+              flowSplitPercent = flowConfig.interiorPercent || 50;
+              console.log('[LoadBundle] Flow config loaded:', flowConfig);
+            }
+          } catch (flowErr) {
+            console.log('[LoadBundle] Could not load flow config:', flowErr);
+          }
+          return;
         }
       }
+
+      // Fallback: try to load from Nostr storage
+      console.log('[LoadBundle] No bundle found on blockchain, trying Nostr storage...');
+      const nostrData = await loadHolonContract();
+      if (nostrData?.address) {
+        console.log('[LoadBundle] Found contract in Nostr:', nostrData);
+        existingBundle = {
+          address: nostrData.address,
+          creatorUserId: nostrData.name,
+          name: nostrData.name,
+          timestamp: Date.now(),
+          steepness: BigInt('500000000000000000'),
+          nzones: 6,
+          splitterAddress: nostrData.address,
+          managedAddress: nostrData.address,
+          zonedAddress: nostrData.address
+        };
+        deployedAddress = nostrData.address;
+        registeredHolonName = nostrData.name;
+        return;
+      }
+
+      console.log('[LoadBundle] No bundle found in any source');
+      existingBundle = null;
     } catch (err) {
-      console.error('Error loading bundle:', err);
+      console.error('[LoadBundle] Error loading bundle:', err);
     } finally {
       bundleLoading = false;
     }
+  }
+
+  // The name used for contract registration (important for lookups)
+  let registeredHolonName: string = '';
+
+  // Save deployed holon contract to Nostr via HoloSphere
+  async function saveHolonContract(name: string, address: string, type: string) {
+    if (!holosphere || !address) return;
+
+    const contractData = {
+      bundle: {
+        address,
+        type,
+        name,
+        deployedAt: new Date().toISOString(),
+        chainId: networkChainId
+      }
+    };
+
+    console.log('[SaveContract] Saving holon contract:', contractData);
+
+    try {
+      await holosphere.put(holonId, 'settings', contractData);
+      console.log('[SaveContract] Successfully saved holon contract to Nostr');
+    } catch (err) {
+      console.error('[SaveContract] Failed to save holon contract:', err);
+    }
+  }
+
+  // Load holon contract from Nostr via HoloSphere
+  async function loadHolonContract(): Promise<{ address: string; name: string; type: string } | null> {
+    if (!holosphere || !holonId) return null;
+
+    try {
+      const settings = await holosphere.getAll(holonId, 'settings');
+      console.log('[LoadContract] Settings from Nostr:', settings);
+
+      if (settings?.bundle?.address) {
+        console.log('[LoadContract] Found contract in Nostr:', settings.bundle);
+        return {
+          address: settings.bundle.address,
+          name: settings.bundle.name || holonId,
+          type: settings.bundle.type || 'Splitter'
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error('[LoadContract] Error loading from Nostr:', err);
+      return null;
+    }
+  }
+
+  // Event signatures for parsing logs
+  const NEW_HOLON_EVENT_SIGNATURE = ethers.id('NewHolon(string,address)');
+  const HOLON_CREATED_EVENT_SIGNATURE = ethers.id('HolonCreated(address,string,string,address,uint256)');
+
+  // Parse holon address from transaction receipt logs
+  function parseHolonAddressFromReceipt(receipt: ethers.TransactionReceipt): string | null {
+    if (!receipt.logs || receipt.logs.length === 0) {
+      console.log('[Deploy] No logs in receipt');
+      return null;
+    }
+
+    console.log('[Deploy] Parsing logs from receipt:', receipt.logs.length, 'logs found');
+    console.log('[Deploy] Looking for event signatures:');
+    console.log('[Deploy]   NewHolon:', NEW_HOLON_EVENT_SIGNATURE);
+    console.log('[Deploy]   HolonCreated:', HOLON_CREATED_EVENT_SIGNATURE);
+
+    for (const log of receipt.logs) {
+      console.log('[Deploy] Log address:', log.address);
+      console.log('[Deploy] Log topic[0]:', log.topics[0]);
+      console.log('[Deploy] Log data length:', log.data?.length);
+
+      // Try to parse HolonCreated event (indexed address is in topics[1])
+      if (log.topics[0] === HOLON_CREATED_EVENT_SIGNATURE && log.topics.length >= 2) {
+        // The holonAddress is the first indexed parameter (topics[1])
+        const addressHex = log.topics[1];
+        const address = ethers.getAddress('0x' + addressHex.slice(26));
+        console.log('[Deploy] Found HolonCreated event, address:', address);
+        return address;
+      }
+
+      // Try to parse NewHolon event (address is in data)
+      if (log.topics[0] === NEW_HOLON_EVENT_SIGNATURE) {
+        try {
+          // NewHolon(string name, address addr) - both params are in data (non-indexed)
+          const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+          const decoded = abiCoder.decode(['string', 'address'], log.data);
+          const address = decoded[1] as string;
+          console.log('[Deploy] Found NewHolon event, name:', decoded[0], 'address:', address);
+          return address;
+        } catch (e) {
+          console.log('[Deploy] Failed to decode NewHolon event:', e);
+        }
+      }
+
+      // Try generic parsing - look for any log with address-like data
+      if (log.data && log.data.length >= 66) {
+        try {
+          // Many contract events have address as first or second parameter
+          const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+          // Try to decode as (string, address)
+          try {
+            const decoded = abiCoder.decode(['string', 'address'], log.data);
+            if (decoded[1] && ethers.isAddress(decoded[1])) {
+              console.log('[Deploy] Found address in (string, address) format:', decoded[1]);
+              return decoded[1] as string;
+            }
+          } catch {}
+          // Try to decode as just (address)
+          try {
+            const decoded = abiCoder.decode(['address'], log.data);
+            if (decoded[0] && ethers.isAddress(decoded[0])) {
+              console.log('[Deploy] Found address in (address) format:', decoded[0]);
+              return decoded[0] as string;
+            }
+          } catch {}
+        } catch (e) {
+          // Continue to next log
+        }
+      }
+    }
+
+    console.log('[Deploy] Could not parse address from any log');
+    return null;
   }
 
   // Deploy new holon
@@ -202,23 +378,95 @@
     try {
       deploying = true;
       deploymentTxHash = null;
+      deploymentStatus = 'pending';
+      deployedAddress = null;
 
+      // Use holonId as the name for contract registration (this is what gets stored in toAddress mapping)
+      // deploymentName is just for display, the contract uses the holonId/name parameter
       const name = deploymentName || holonId;
+      registeredHolonName = name; // Store for later lookups
+
+      console.log('[Deploy] Starting deployment for holon:', holonId);
+      console.log('[Deploy] Contract registration name:', name);
+
+      let result: { transaction: ethers.TransactionResponse; holonId: string };
 
       if (selectedHolonType === 'Splitter') {
-        // Create complete bundle
-        const result = await manager.createHolonBundle(holonId, name);
-        showNotification(`Creating holon bundle... TX: ${result.transaction.hash.slice(0, 10)}...`, 'info');
+        // Create complete bundle - pass name as both creatorUserId and holonName for consistency
+        result = await manager.createHolonBundle(name, name);
+        console.log('[Deploy] createHolonBundle called, returned holonId:', result.holonId);
       } else {
         // Create individual holon type
-        const result = await manager.createHolon(selectedHolonType, holonId, name);
-        showNotification(`Creating ${selectedHolonType} holon... TX: ${result.transaction.hash.slice(0, 10)}...`, 'info');
+        result = await manager.createHolon(selectedHolonType, name, name);
+        console.log('[Deploy] createHolon called, returned holonId:', result.holonId);
       }
 
-      // Reload bundle after deployment
-      setTimeout(() => loadExistingBundle(), 5000);
+      deploymentTxHash = result.transaction.hash;
+      deploymentStatus = 'confirming';
+      showNotification(`Transaction submitted. Waiting for confirmation...`, 'info');
+      console.log('[Deploy] Transaction hash:', deploymentTxHash);
+
+      // Wait for transaction to be mined
+      const receipt = await result.transaction.wait();
+      console.log('[Deploy] Transaction receipt received, status:', receipt?.status);
+
+      if (receipt && receipt.status === 1) {
+        deploymentStatus = 'success';
+
+        // Parse the deployed address from the receipt logs
+        const parsedAddress = parseHolonAddressFromReceipt(receipt);
+
+        if (parsedAddress) {
+          deployedAddress = parsedAddress;
+          console.log('[Deploy] Successfully parsed address from logs:', parsedAddress);
+          showNotification(`Holon deployed at ${parsedAddress.slice(0, 10)}...`, 'success');
+
+          // Create a bundle object with the parsed address
+          existingBundle = {
+            address: parsedAddress,
+            creatorUserId: name,
+            name: name,
+            timestamp: Date.now(),
+            steepness: BigInt('500000000000000000'),
+            nzones: 6,
+            splitterAddress: parsedAddress,
+            managedAddress: parsedAddress,
+            zonedAddress: parsedAddress
+          };
+          console.log('[Deploy] Created bundle object:', existingBundle);
+
+          // Save to Nostr for persistence
+          await saveHolonContract(name, parsedAddress, selectedHolonType);
+        } else {
+          console.log('[Deploy] Could not parse address from logs, trying to load bundle...');
+          showNotification('Holon deployed! Loading details...', 'success');
+
+          // Fallback: try to load the bundle using the registered name
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+          // Use the name we registered with, not holonId
+          const bundle = await manager.getHolonBundle(registeredHolonName);
+          console.log('[Deploy] Loaded bundle:', bundle);
+
+          if (bundle?.address) {
+            existingBundle = bundle;
+            deployedAddress = bundle.address;
+            console.log('[Deploy] Bundle loaded successfully, address:', deployedAddress);
+
+            // Save to Nostr for persistence
+            await saveHolonContract(registeredHolonName, bundle.address, selectedHolonType);
+          } else {
+            console.log('[Deploy] Bundle not found after deployment');
+            showNotification('Holon created but address not found in registry. Try refreshing.', 'info');
+          }
+        }
+      } else {
+        deploymentStatus = 'failed';
+        showNotification('Transaction failed', 'error');
+      }
     } catch (err: any) {
-      console.error('Error deploying holon:', err);
+      console.error('[Deploy] Error deploying holon:', err);
+      deploymentStatus = 'failed';
       showNotification(err.message || 'Failed to deploy holon', 'error');
     } finally {
       deploying = false;
@@ -417,7 +665,7 @@
               <span class="ml-2 text-gray-400">Loading contract status...</span>
             </div>
           {:else if existingBundle}
-            <div class="space-y-4">
+            <div class="space-y-6">
               <div class="p-4 bg-green-500/20 border border-green-500/50 rounded-xl">
                 <div class="flex items-center gap-2 text-green-400 mb-2">
                   <span>V</span>
@@ -425,20 +673,146 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="p-4 bg-gray-600 rounded-xl">
-                  <div class="text-sm text-gray-400 mb-1">Splitter</div>
-                  <div class="text-white font-mono text-sm break-all">{formatAddress(existingBundle.splitterAddress)}</div>
-                </div>
-                <div class="p-4 bg-gray-600 rounded-xl">
-                  <div class="text-sm text-gray-400 mb-1">Managed (Internal)</div>
-                  <div class="text-white font-mono text-sm break-all">{formatAddress(existingBundle.managedAddress)}</div>
-                </div>
-                <div class="p-4 bg-gray-600 rounded-xl">
-                  <div class="text-sm text-gray-400 mb-1">Zoned (External)</div>
-                  <div class="text-white font-mono text-sm break-all">{formatAddress(existingBundle.zonedAddress)}</div>
+              <!-- Stylized Bucket Flow Visualization -->
+              <div class="flow-visualization bg-gray-800 rounded-2xl p-6">
+                <!-- Bucket (Holon Address) -->
+                <div class="flex flex-col items-center">
+                  <!-- Bucket shape -->
+                  <div class="bucket-container relative">
+                    <svg width="120" height="80" viewBox="0 0 120 80" class="bucket-svg">
+                      <!-- Bucket body -->
+                      <path
+                        d="M15 20 L25 70 L95 70 L105 20 Z"
+                        fill="url(#bucketGradient)"
+                        stroke="#60a5fa"
+                        stroke-width="2"
+                      />
+                      <!-- Bucket rim -->
+                      <ellipse cx="60" cy="20" rx="48" ry="10" fill="#3b82f6" stroke="#60a5fa" stroke-width="2"/>
+                      <!-- Bucket inner -->
+                      <ellipse cx="60" cy="20" rx="40" ry="7" fill="#1e3a5f" opacity="0.7"/>
+                      <!-- Flow waves inside bucket -->
+                      <path
+                        d="M30 25 Q45 30 60 25 Q75 20 90 25"
+                        fill="none"
+                        stroke="#93c5fd"
+                        stroke-width="1.5"
+                        opacity="0.6"
+                        class="flow-wave"
+                      />
+                      <defs>
+                        <linearGradient id="bucketGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <stop offset="0%" stop-color="#3b82f6"/>
+                          <stop offset="100%" stop-color="#1e40af"/>
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <!-- Address label on bucket -->
+                    <div class="absolute inset-0 flex items-center justify-center pt-4">
+                      <span class="text-white text-xs font-mono bg-gray-900/60 px-2 py-1 rounded">
+                        {formatAddress(existingBundle.address)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Holon Name -->
+                  <div class="mt-2 text-sm text-gray-300 font-medium">
+                    {existingBundle.name || holonId}
+                  </div>
+
+                  <!-- Flow Stream Down -->
+                  <div class="flow-stream relative h-16 w-1 my-2">
+                    <div class="absolute inset-0 bg-gradient-to-b from-blue-500 to-purple-500 rounded-full animate-flow-down"></div>
+                    <div class="flow-particles"></div>
+                  </div>
+
+                  <!-- Splitter Node -->
+                  <div class="splitter-node bg-purple-600 rounded-full w-12 h-12 flex items-center justify-center shadow-lg shadow-purple-500/30 border-2 border-purple-400">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                      <path d="M12 5v14M5 12l7 7 7-7"/>
+                    </svg>
+                  </div>
+
+                  <!-- Split Label -->
+                  <div class="text-xs text-gray-400 mt-1 mb-2">SPLITTER</div>
+
+                  <!-- Split Branches -->
+                  <div class="split-branches relative w-full max-w-md">
+                    <svg width="100%" height="60" viewBox="0 0 300 60" preserveAspectRatio="xMidYMid meet">
+                      <!-- Left branch to Interior -->
+                      <path
+                        d="M150 0 Q100 30 60 55"
+                        fill="none"
+                        stroke="url(#leftBranchGradient)"
+                        stroke-width="3"
+                        stroke-linecap="round"
+                        class="branch-line"
+                      />
+                      <!-- Right branch to Exterior -->
+                      <path
+                        d="M150 0 Q200 30 240 55"
+                        fill="none"
+                        stroke="url(#rightBranchGradient)"
+                        stroke-width="3"
+                        stroke-linecap="round"
+                        class="branch-line"
+                      />
+                      <defs>
+                        <linearGradient id="leftBranchGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <stop offset="0%" stop-color="#a855f7"/>
+                          <stop offset="100%" stop-color="#22c55e"/>
+                        </linearGradient>
+                        <linearGradient id="rightBranchGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <stop offset="0%" stop-color="#a855f7"/>
+                          <stop offset="100%" stop-color="#f97316"/>
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  </div>
+
+                  <!-- Interior / Exterior Targets -->
+                  <div class="flex justify-between w-full max-w-md px-4 -mt-2">
+                    <!-- Interior (Managed) -->
+                    <div class="flex flex-col items-center">
+                      <div class="target-node bg-green-600 rounded-xl w-20 h-20 flex flex-col items-center justify-center shadow-lg shadow-green-500/30 border-2 border-green-400">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                          <circle cx="12" cy="8" r="4"/>
+                          <path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>
+                        </svg>
+                        <span class="text-white text-xs mt-1 font-bold">{flowSplitPercent}%</span>
+                      </div>
+                      <div class="mt-2 text-sm text-green-400 font-medium">Interior</div>
+                      <div class="text-xs text-gray-500">Members</div>
+                    </div>
+
+                    <!-- Exterior (Zoned) -->
+                    <div class="flex flex-col items-center">
+                      <div class="target-node bg-orange-600 rounded-xl w-20 h-20 flex flex-col items-center justify-center shadow-lg shadow-orange-500/30 border-2 border-orange-400">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="M2 12h20M12 2c3 3 4.5 6 4.5 10s-1.5 7-4.5 10c-3-3-4.5-6-4.5-10s1.5-7 4.5-10"/>
+                        </svg>
+                        <span class="text-white text-xs mt-1 font-bold">{100 - flowSplitPercent}%</span>
+                      </div>
+                      <div class="mt-2 text-sm text-orange-400 font-medium">Exterior</div>
+                      <div class="text-xs text-gray-500">Federation</div>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              <!-- Contract Addresses (collapsed) -->
+              <details class="bg-gray-600/50 rounded-xl">
+                <summary class="p-4 cursor-pointer text-gray-300 hover:text-white transition-colors">
+                  Contract Addresses
+                </summary>
+                <div class="p-4 pt-0 grid grid-cols-1 gap-3">
+                  <div class="p-3 bg-gray-700 rounded-lg">
+                    <div class="text-xs text-gray-400 mb-1">Bundle Contract</div>
+                    <div class="text-white font-mono text-sm break-all">{existingBundle.address}</div>
+                  </div>
+                </div>
+              </details>
             </div>
           {:else}
             <div class="text-center py-8">
@@ -498,19 +872,83 @@
               on:click={deployHolon}
               disabled={deploying}
             >
-              {#if deploying}
+              {#if deploymentStatus === 'pending'}
                 <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                <span>Deploying...</span>
+                <span>Preparing Transaction...</span>
+              {:else if deploymentStatus === 'confirming'}
+                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <span>Confirming on Blockchain...</span>
               {:else}
                 <span>R</span>
                 <span>Deploy {selectedHolonType} Holon</span>
               {/if}
             </button>
 
-            {#if deploymentTxHash}
-              <div class="p-4 bg-gray-600 rounded-xl">
-                <div class="text-sm text-gray-400 mb-1">Transaction Hash</div>
-                <div class="text-white font-mono text-sm break-all">{deploymentTxHash}</div>
+            <!-- Deployment Progress -->
+            {#if deploymentStatus !== 'idle'}
+              <div class="deployment-progress p-4 bg-gray-600 rounded-xl space-y-3">
+                <!-- Progress Steps -->
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-2 {deploymentStatus === 'pending' || deploymentStatus === 'confirming' || deploymentStatus === 'success' ? 'text-green-400' : 'text-gray-500'}">
+                    <div class="w-6 h-6 rounded-full flex items-center justify-center {deploymentStatus === 'pending' ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}">
+                      {#if deploymentStatus === 'pending'}
+                        <span class="text-xs">1</span>
+                      {:else}
+                        <span class="text-xs">V</span>
+                      {/if}
+                    </div>
+                    <span class="text-sm">Transaction Created</span>
+                  </div>
+                  <div class="flex-1 h-0.5 bg-gray-700 rounded">
+                    <div class="h-full bg-green-500 rounded transition-all duration-500 {deploymentStatus === 'confirming' || deploymentStatus === 'success' ? 'w-full' : 'w-0'}"></div>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-2 {deploymentStatus === 'confirming' || deploymentStatus === 'success' ? 'text-green-400' : 'text-gray-500'}">
+                    <div class="w-6 h-6 rounded-full flex items-center justify-center {deploymentStatus === 'confirming' ? 'bg-blue-500 animate-pulse' : deploymentStatus === 'success' ? 'bg-green-500' : 'bg-gray-600'}">
+                      {#if deploymentStatus === 'confirming'}
+                        <span class="text-xs">2</span>
+                      {:else if deploymentStatus === 'success'}
+                        <span class="text-xs">V</span>
+                      {:else}
+                        <span class="text-xs">2</span>
+                      {/if}
+                    </div>
+                    <span class="text-sm">Confirming on Chain</span>
+                  </div>
+                  <div class="flex-1 h-0.5 bg-gray-700 rounded">
+                    <div class="h-full bg-green-500 rounded transition-all duration-500 {deploymentStatus === 'success' ? 'w-full' : 'w-0'}"></div>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-2 {deploymentStatus === 'success' ? 'text-green-400' : 'text-gray-500'}">
+                    <div class="w-6 h-6 rounded-full flex items-center justify-center {deploymentStatus === 'success' ? 'bg-green-500' : 'bg-gray-600'}">
+                      {#if deploymentStatus === 'success'}
+                        <span class="text-xs">V</span>
+                      {:else}
+                        <span class="text-xs">3</span>
+                      {/if}
+                    </div>
+                    <span class="text-sm">Deployed</span>
+                  </div>
+                </div>
+
+                <!-- Transaction Hash -->
+                {#if deploymentTxHash}
+                  <div class="mt-3 pt-3 border-t border-gray-500">
+                    <div class="text-xs text-gray-400 mb-1">Transaction Hash</div>
+                    <div class="text-white font-mono text-xs break-all">{deploymentTxHash}</div>
+                  </div>
+                {/if}
+
+                <!-- Error state -->
+                {#if deploymentStatus === 'failed'}
+                  <div class="mt-3 p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
+                    <div class="text-red-400 text-sm">Deployment failed. Please try again.</div>
+                  </div>
+                {/if}
               </div>
             {/if}
           </div>
@@ -652,10 +1090,115 @@
     border: none;
   }
 
+  /* Flow visualization animations */
+  .flow-visualization {
+    background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  }
+
+  .bucket-svg {
+    filter: drop-shadow(0 4px 12px rgba(59, 130, 246, 0.3));
+  }
+
+  .flow-wave {
+    animation: wave 2s ease-in-out infinite;
+  }
+
+  @keyframes wave {
+    0%, 100% {
+      d: path("M30 25 Q45 30 60 25 Q75 20 90 25");
+    }
+    50% {
+      d: path("M30 25 Q45 20 60 25 Q75 30 90 25");
+    }
+  }
+
+  .animate-flow-down {
+    animation: flowDown 1.5s ease-in-out infinite;
+  }
+
+  @keyframes flowDown {
+    0% {
+      opacity: 0.3;
+      transform: scaleY(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scaleY(1);
+    }
+    100% {
+      opacity: 0.3;
+      transform: scaleY(0.8);
+    }
+  }
+
+  .flow-stream::before {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: #93c5fd;
+    border-radius: 50%;
+    left: 50%;
+    transform: translateX(-50%);
+    animation: droplet 1s ease-in infinite;
+  }
+
+  @keyframes droplet {
+    0% {
+      top: 0;
+      opacity: 1;
+    }
+    100% {
+      top: 100%;
+      opacity: 0;
+    }
+  }
+
+  .splitter-node {
+    animation: pulse-purple 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-purple {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 20px 8px rgba(168, 85, 247, 0.2);
+    }
+  }
+
+  .target-node {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .target-node:hover {
+    transform: scale(1.05);
+  }
+
+  .branch-line {
+    stroke-dasharray: 8 4;
+    animation: dash 1s linear infinite;
+  }
+
+  @keyframes dash {
+    to {
+      stroke-dashoffset: -12;
+    }
+  }
+
   /* Responsive design */
   @media (max-width: 768px) {
     .grid {
       grid-template-columns: 1fr;
+    }
+
+    .flow-visualization .split-branches {
+      max-width: 280px;
+    }
+
+    .target-node {
+      width: 64px !important;
+      height: 64px !important;
     }
   }
 </style>

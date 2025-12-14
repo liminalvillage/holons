@@ -112,50 +112,73 @@
 		</main>
 	</div>
 {:else}
-	<!-- Normal dashboard layout with flipped structure -->
-	<!-- Left: Holon Browser, Top: Navigation Cards, Right: Content -->
-	<div class={style.container} on:mousemove={handleMouseMove} role="presentation">
-		<!-- TopBar spans full width above everything - now contains navigation cards -->
-		<TopBar on:toggleBrowser={toggleBrowser} />
+	<!-- New layout: Sidebar full height on left, TopBar + Content on right -->
+	<div class="app-layout" on:mousemove={handleMouseMove} role="presentation">
+		<Overlay />
 
-		<div class="flex items-stretch dashboard-content">
-			<Overlay />
+		<!-- Browser Panel (left side) - full height sidebar -->
+		<BrowserPanel
+			isOpen={browserOpen}
+			on:close={closeBrowser}
+			on:add={handleAddHolon}
+		/>
 
-			<!-- Browser Panel (left side) - for browsing holons -->
-			<BrowserPanel
-				isOpen={browserOpen}
-				on:close={closeBrowser}
-				on:add={handleAddHolon}
-			/>
+		<!-- Mobile overlay backdrop -->
+		{#if browserOpen}
+			<button
+				class="browser-backdrop"
+				on:click={closeBrowser}
+				aria-label="Close browser panel"
+			></button>
+		{/if}
 
-			<!-- Mobile overlay backdrop -->
-			{#if browserOpen}
-				<button
-					class="browser-backdrop"
-					on:click={closeBrowser}
-					aria-label="Close browser panel"
-				></button>
-			{/if}
+		<!-- Right side: TopBar + Content -->
+		<div class="app-layout__main">
+			<!-- TopBar as tab navigation -->
+			<TopBar on:toggleBrowser={toggleBrowser} />
 
 			<!-- Main content area -->
-			<div class={style.mainContainer}>
-				<main class={style.main}>
-					<RouteTransition pathname={$page.url.pathname}>
-						<slot />
-					</RouteTransition>
-				</main>
-			</div>
+			<main class="app-layout__content">
+				<RouteTransition pathname={$page.url.pathname}>
+					<slot />
+				</RouteTransition>
+			</main>
 		</div>
 	</div>
 {/if}
 
 <style>
-	/* Dashboard content takes remaining height */
-	.dashboard-content {
-		flex: 1;
+	/* Main app layout - horizontal flex with sidebar + content */
+	.app-layout {
+		display: flex;
+		height: 100vh;
+		width: 100%;
+		background: var(--color-bg-primary, #111827);
 		overflow: hidden;
-		min-height: 0; /* Important for flex scroll containers */
 		position: relative;
+	}
+
+	/* Right side container - TopBar + Content stacked */
+	.app-layout__main {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	/* Main content area */
+	.app-layout__content {
+		flex: 1;
+		overflow: auto;
+		padding: var(--spacing-2, 0.5rem);
+		padding-bottom: var(--spacing-8, 2rem);
+	}
+
+	@media (min-width: 768px) {
+		.app-layout__content {
+			padding: var(--spacing-4, 1rem);
+		}
 	}
 
 	/* Browser panel backdrop for mobile */

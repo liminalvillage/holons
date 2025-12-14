@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import type { EventEmitter } from 'events';
-import { 
+import {
   CONTRACT_ABIS,
   CONTRACT_ADDRESSES,
   HOLON_TYPES,
@@ -8,29 +8,31 @@ import {
   loadContractABIs,
   loadDeploymentAddresses
 } from '../contracts/contractLoader.js';
+import { BUNDLE_BYTECODE } from '../contracts/bundleBytecode.js';
 
 // Holon Types based on the original system
-export type HolonType = 'Managed' | 'Zoned' | 'Splitter' | 'Appreciative';
+export type HolonType = 'Managed' | 'Zoned' | 'Splitter' | 'Appreciative' | 'Bundle';
 
+// Single Bundle contract interface (unified holon)
 export interface HolonBundle {
-  splitterAddress: string;
-  managedAddress: string;
-  zonedAddress: string;
+  address: string;           // Single Bundle contract address
   creatorUserId: string;
   name: string;
   timestamp: number;
+  // Configurable parameters
+  steepness: bigint;         // Zone decay factor (0.5e18 = 50% decay per zone)
+  nzones: number;            // Number of zones (default 6)
+  // Legacy compatibility - all point to the same address
+  splitterAddress?: string;
+  managedAddress?: string;
+  zonedAddress?: string;
 }
 
 export interface FlowConfig {
-  internalPercent: number;
-  externalPercent: number;
-  lensConfig: {
-    [targetId: string]: {
-      inbound: string[];
-      outbound: string[];
-      timestamp: number;
-    };
-  };
+  interiorPercent: number;   // Interior (internal members) percentage
+  exteriorPercent: number;   // Exterior (federated holons) percentage
+  steepness: bigint;         // Zone decay factor
+  nzones: number;            // Number of zones
 }
 
 export interface HolonMember {
@@ -68,10 +70,15 @@ export class HolonsContract {
   // Holon type icons for UI
   private readonly HOLON_ICONS: Record<HolonType, string> = {
     'Managed': '🔹',
-    'Zoned': '🔶', 
+    'Zoned': '🔶',
     'Splitter': '💱',
-    'Appreciative': '💯'
+    'Appreciative': '💯',
+    'Bundle': '📦'
   };
+
+  // Default Bundle parameters
+  private readonly DEFAULT_STEEPNESS = BigInt('500000000000000000'); // 0.5e18 = 50% decay
+  private readonly DEFAULT_NZONES = 6;
 
   constructor(provider: ethers.Provider, eventEmitter: EventEmitter) {
     this.provider = provider;
@@ -116,7 +123,7 @@ export class HolonsContract {
         console.warn('Network does not support ENS, continuing without ENS resolution');
         this.signer = signer;
         // Try to get address without ENS resolution
-        const address = signer.address || 'unknown';
+        const address = (signer as any).address || 'unknown';
         this.eventEmitter.emit('wallet:connected', address);
       } else {
         throw error;
@@ -244,13 +251,95 @@ export class HolonsContract {
   }
 
   /**
-   * Create a new holon of specified type
+   * Check if the Holons contract is properly configured with factories
+   */
+  async checkContractConfiguration(): Promise<{
+    isConfigured: boolean;
+    managedFactory: string | null;
+    zonedFactory: string | null;
+    splitterFlavor: string | null;
+  }> {
+    await this.initialize();
+
+    const holonsContract = await this.getContract(
+      this.addresses.Holons,
+      this.contractABIs.Holons
+    );
+
+    let managedFactory: string | null = null;
+    let zonedFactory: string | null = null;
+    let splitterFlavor: string | null = null;
+
+    try {
+      managedFactory = await holonsContract.managedFactory();
+      console.log('[HolonsContract] managedFactory:', managedFactory);
+    } catch (err) {
+      console.log('[HolonsContract] managedFactory not set or not available');
+    }
+
+    try {
+      zonedFactory = await holonsContract.zonedFactory();
+      console.log('[HolonsContract] zonedFactory:', zonedFactory);
+    } catch (err) {
+      console.log('[HolonsContract] zonedFactory not set or not available');
+    }
+
+    try {
+      splitterFlavor = await holonsContract.getFlavorAddress('Splitter');
+      console.log('[HolonsContract] Splitter flavor:', splitterFlavor);
+    } catch (err) {
+      console.log('[HolonsContract] Splitter flavor not registered');
+    }
+
+    const isConfigured = !!(
+      managedFactory &&
+      managedFactory !== '0x0000000000000000000000000000000000000000' &&
+      zonedFactory &&
+      zonedFactory !== '0x0000000000000000000000000000000000000000' &&
+      splitterFlavor &&
+      splitterFlavor !== '0x0000000000000000000000000000000000000000'
+    );
+
+    console.log('[HolonsContract] Contract configured:', isConfigured);
+
+    return { isConfigured, managedFactory, zonedFactory, splitterFlavor };
+  }
+
+  /**
+   * Set the factory addresses on the Holons contract (requires owner/admin)
+   */
+  async setFactories(managedFactory: string, zonedFactory: string): Promise<ethers.TransactionResponse> {
+    if (!this.signer) {
+      throw new Error('Wallet not connected');
+    }
+
+    await this.initialize();
+
+    const holonsContract = await this.getContract(
+      this.addresses.Holons,
+      [...this.contractABIs.Holons, {
+        "inputs": [{"name": "_managedFactory", "type": "address"}, {"name": "_zonedFactory", "type": "address"}],
+        "name": "setFactories",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+      }]
+    );
+
+    console.log('[HolonsContract] Setting factories:', { managedFactory, zonedFactory });
+    return holonsContract.setFactories(managedFactory, zonedFactory);
+  }
+
+  /**
+   * Create a new Bundle holon using the Holons registry
+   * The Bundle contract is a unified holon with configurable steepness and zones
    */
   async createHolon(
-    type: HolonType, 
-    creatorUserId: string, 
-    name: string, 
-    parameterValue: number = 0
+    type: HolonType,
+    creatorUserId: string,
+    name: string,
+    steepness?: bigint,
+    nzones?: number
   ): Promise<ethers.TransactionResponse> {
     if (!this.addresses.Holons) {
       throw new Error('Holons contract address not configured');
@@ -258,145 +347,230 @@ export class HolonsContract {
 
     // Ensure contracts are initialized
     await this.initialize();
-    
+
     // Use the actual Holons contract ABI
     const holonsContract = await this.getContract(
       this.addresses.Holons,
       this.contractABIs.Holons
     );
 
+    // Use steepness as the parameter value (Bundle flavor uses this)
+    const steepnessValue = steepness || this.DEFAULT_STEEPNESS;
+    const zonesValue = nzones || this.DEFAULT_NZONES;
+
+    // Create Bundle type holon through the registry
+    // The Holons registry will use the Bundle factory to deploy
     return this.executeTransaction(
       holonsContract,
-      'newHolon',
-      [type, creatorUserId, name, parameterValue],
+      'newHolonBundle',
+      [creatorUserId, name, steepnessValue],
       { gasLimit: 5000000 }
     );
   }
 
   /**
-   * Create a complete holon bundle (Splitter + Managed + Zoned)
+   * Create a Bundle contract (unified holon with configurable parameters)
+   * Uses the Holons registry - requires registry to be configured
+   * @param creatorUserId - The creator's user ID
+   * @param name - The holon name
+   * @param steepness - Zone decay factor (default 0.5e18 = 50% decay per zone)
+   * @param nzones - Number of zones (default 6)
    */
   async createHolonBundle(
     creatorUserId: string,
-    name: string
+    name: string,
+    steepness?: bigint,
+    nzones?: number
   ): Promise<{
     transaction: ethers.TransactionResponse;
     bundleInfo: Partial<HolonBundle>;
   }> {
-    if (this.isDevelopment) {
-      // Return mock transaction for development
-      const mockTx = {
-        hash: '0x' + Math.random().toString(16).substr(2, 64),
-        wait: async () => ({ status: 1, logs: [] }),
-        to: null,
-        from: '',
-        nonce: 0,
-        gasLimit: BigInt(0),
-        gasPrice: BigInt(0),
-        data: '',
-        value: BigInt(0),
-        chainId: 1
-      } as any as ethers.TransactionResponse;
-      
-      return {
-        transaction: mockTx,
-        bundleInfo: {
-          splitterAddress: '0x' + Math.random().toString(16).substr(2, 40),
-          managedAddress: '0x' + Math.random().toString(16).substr(2, 40), 
-          zonedAddress: '0x' + Math.random().toString(16).substr(2, 40),
-          creatorUserId,
-          name,
-          timestamp: Date.now()
-        }
-      };
+    if (!this.signer) {
+      throw new Error('Wallet not connected. Please connect your wallet first.');
     }
 
-    // Real implementation would create actual contracts
-    const tx = await this.createHolon('Splitter', creatorUserId, name, 0);
-    
+    const steepnessValue = steepness || this.DEFAULT_STEEPNESS;
+    const zonesValue = nzones || this.DEFAULT_NZONES;
+
+    // Deploy Bundle contract through the Holons registry
+    const tx = await this.createHolon('Bundle', creatorUserId, name, steepnessValue, zonesValue);
+
     return {
       transaction: tx,
       bundleInfo: {
         creatorUserId,
         name,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        steepness: steepnessValue,
+        nzones: zonesValue
       }
     };
   }
 
   /**
-   * Get holon bundle addresses for a given chat/name
+   * Deploy a Bundle contract directly (no registry needed!)
+   * This is the simplest way to deploy a holon contract
+   * @param creatorUserId - The creator's user ID
+   * @param name - The holon name
+   * @param steepness - Zone decay factor (default 0.5e18 = 50% decay per zone)
+   * @param nzones - Number of zones (default 6)
+   * @returns The deployed contract address and transaction
    */
-  async getHolonBundle(chatId: string): Promise<HolonBundle | null> {
+  async deployBundleDirect(
+    creatorUserId: string,
+    name: string,
+    steepness?: bigint,
+    nzones?: number
+  ): Promise<{
+    address: string;
+    transaction: ethers.TransactionResponse;
+    bundle: HolonBundle;
+  }> {
+    if (!this.signer) {
+      throw new Error('Wallet not connected. Please connect your wallet first.');
+    }
+
+    const steepnessValue = steepness || this.DEFAULT_STEEPNESS;
+    const zonesValue = nzones || this.DEFAULT_NZONES;
+    const ownerAddress = await this.signer.getAddress();
+
+    console.log('[HolonsContract] Deploying Bundle directly...');
+    console.log('[HolonsContract] Owner:', ownerAddress);
+    console.log('[HolonsContract] Creator:', creatorUserId);
+    console.log('[HolonsContract] Name:', name);
+    console.log('[HolonsContract] Steepness:', steepnessValue.toString());
+    console.log('[HolonsContract] Zones:', zonesValue);
+
+    // Get the Bundle ABI
+    await this.initialize();
+    const bundleABI = this.contractABIs.Bundle;
+
+    if (!BUNDLE_BYTECODE) {
+      throw new Error('Bundle bytecode not available');
+    }
+
+    // Create contract factory and deploy
+    const factory = new ethers.ContractFactory(bundleABI, BUNDLE_BYTECODE, this.signer);
+
+    console.log('[HolonsContract] Deploying contract...');
+    const contract = await factory.deploy(
+      ownerAddress,
+      creatorUserId,
+      name,
+      steepnessValue,
+      zonesValue,
+      { gasLimit: 5000000 }
+    );
+
+    // Get the transaction
+    const tx = contract.deploymentTransaction();
+    if (!tx) {
+      throw new Error('Failed to get deployment transaction');
+    }
+
+    console.log('[HolonsContract] Deployment transaction:', tx.hash);
+
+    // Wait for deployment
+    await contract.waitForDeployment();
+    const address = await contract.getAddress();
+
+    console.log('[HolonsContract] Bundle deployed at:', address);
+
+    const bundle: HolonBundle = {
+      address,
+      creatorUserId,
+      name,
+      timestamp: Date.now(),
+      steepness: steepnessValue,
+      nzones: zonesValue,
+      splitterAddress: address,
+      managedAddress: address,
+      zonedAddress: address
+    };
+
+    this.eventEmitter.emit('bundle:deployed', bundle);
+
+    return {
+      address,
+      transaction: tx,
+      bundle
+    };
+  }
+
+  /**
+   * Get Bundle contract for a given holon name
+   */
+  async getHolonBundle(holonName: string): Promise<HolonBundle | null> {
     try {
-      const normalizedName = `chat_${Math.abs(parseInt(chatId))}`;
-      console.log(`[HolonsContract] Looking for holon bundle with chatId: ${chatId}, normalized: ${normalizedName}`);
-      
+      console.log(`[HolonsContract] Looking for Bundle with name: ${holonName}`);
+
       // Ensure contracts are initialized
       await this.initialize();
-      
+
       // Query the Holons contract to get the holon address
       const holonsContract = await this.getContract(
         this.addresses.Holons,
         this.contractABIs.Holons
       );
-      
+
       console.log(`[HolonsContract] Using Holons contract at address: ${this.addresses.Holons}`);
-      
-      // First, let's try to list all existing holons to debug
-      try {
-        const allHolons = await holonsContract.listHolons();
-        console.log(`[HolonsContract] All holons in contract:`, allHolons);
-      } catch (listError: any) {
-        if (listError.code === 'BAD_DATA' && listError.value === '0x') {
-          console.log(`[HolonsContract] No holons exist in contract yet (empty array)`);
-        } else {
-          console.warn(`[HolonsContract] Could not list holons:`, listError);
-        }
-      }
-      
+
       // Check if this holon exists by looking up its address
-      let holonAddress: string;
+      let bundleAddress: string;
       try {
-        holonAddress = await holonsContract.toAddress(normalizedName);
-        console.log(`[HolonsContract] toAddress(${normalizedName}) returned: ${holonAddress}`);
+        bundleAddress = await holonsContract.toAddress(holonName);
+        console.log(`[HolonsContract] toAddress(${holonName}) returned: ${bundleAddress}`);
       } catch (error: any) {
-        // Check if this is a "could not decode result data" error (empty return)
         if (error.code === 'BAD_DATA' && error.value === '0x') {
-          console.log(`[HolonsContract] Holon ${normalizedName} not found in contract (empty return)`);
+          console.log(`[HolonsContract] Bundle ${holonName} not found in contract (empty return)`);
           return null;
         }
-        console.log(`[HolonsContract] Holon ${normalizedName} not found in toAddress mapping:`, error);
+        console.log(`[HolonsContract] Bundle ${holonName} not found in toAddress mapping:`, error);
         return null;
       }
-      
+
       // If address is zero address, holon doesn't exist
-      if (!holonAddress || holonAddress === '0x0000000000000000000000000000000000000000') {
-        console.log(`[HolonsContract] Holon ${normalizedName} has zero address: ${holonAddress}`);
+      if (!bundleAddress || bundleAddress === '0x0000000000000000000000000000000000000000') {
+        console.log(`[HolonsContract] Bundle ${holonName} has zero address: ${bundleAddress}`);
         return null;
       }
-      
-      console.log(`[HolonsContract] Found holon ${normalizedName} at address: ${holonAddress}`);
-      
-      // For a complete bundle, we need to derive the component addresses
-      // Based on the contract system, this would typically involve:
-      // 1. Getting the splitter address from the main holon address
-      // 2. Getting managed and zoned addresses from the splitter
-      
-      // For now, return the main holon address as splitter (this may need refinement)
-      const bundle = {
-        splitterAddress: holonAddress,
-        managedAddress: holonAddress, // This may be derived differently
-        zonedAddress: holonAddress,   // This may be derived differently
-        creatorUserId: '', // Would need to be queried from contract
-        name: normalizedName,
-        timestamp: 0 // Would need to be queried from contract events
+
+      console.log(`[HolonsContract] Found Bundle ${holonName} at address: ${bundleAddress}`);
+
+      // Get Bundle contract to read its parameters
+      let steepness = this.DEFAULT_STEEPNESS;
+      let nzones = this.DEFAULT_NZONES;
+
+      try {
+        const bundleContract = await this.getContract(
+          bundleAddress,
+          this.contractABIs.Bundle
+        );
+
+        steepness = await bundleContract.steepness();
+        nzones = Number(await bundleContract.nzones());
+        console.log(`[HolonsContract] Bundle parameters: steepness=${steepness}, nzones=${nzones}`);
+      } catch (readError) {
+        console.warn('[HolonsContract] Could not read Bundle parameters, using defaults:', readError);
+      }
+
+      const bundle: HolonBundle = {
+        address: bundleAddress,
+        creatorUserId: '',
+        name: holonName,
+        timestamp: 0,
+        steepness,
+        nzones,
+        // Legacy compatibility
+        splitterAddress: bundleAddress,
+        managedAddress: bundleAddress,
+        zonedAddress: bundleAddress
       };
-      
-      console.log(`[HolonsContract] Returning bundle:`, bundle);
+
+      console.log(`[HolonsContract] Returning Bundle:`, bundle);
       return bundle;
     } catch (error) {
-      console.error('[HolonsContract] Error getting holon bundle:', error);
+      console.error('[HolonsContract] Error getting Bundle:', error);
       return null;
     }
   }
@@ -442,53 +616,188 @@ export class HolonsContract {
   }
 
   /**
-   * Set flow split ratios (internal vs external)
+   * Set flow split ratios (interior vs exterior) on a Bundle contract
    */
   async setFlowSplit(
-    splitterAddress: string,
-    internalPercent: number
+    bundleAddress: string,
+    interiorPercent: number
   ): Promise<ethers.TransactionResponse> {
-    const externalPercent = 100 - internalPercent;
-    
+    const exteriorPercent = 100 - interiorPercent;
+
     const contract = await this.getContract(
-      splitterAddress,
-      [] // Would be loaded from Splitter ABI
+      bundleAddress,
+      this.contractABIs.Bundle
     );
 
     return this.executeTransaction(
       contract,
       'setContractSplit',
-      [internalPercent, externalPercent],
+      [interiorPercent, exteriorPercent],
       { gasLimit: 1000000 }
     );
   }
 
   /**
-   * Get current flow configuration
+   * Set steepness parameter on a Bundle contract
    */
-  async getFlowConfig(splitterAddress: string): Promise<FlowConfig> {
+  async setSteepness(
+    bundleAddress: string,
+    steepness: bigint
+  ): Promise<ethers.TransactionResponse> {
     const contract = await this.getContract(
-      splitterAddress,
-      [] // Would be loaded from Splitter ABI
+      bundleAddress,
+      this.contractABIs.Bundle
     );
 
+    return this.executeTransaction(
+      contract,
+      'setSteepness',
+      [steepness],
+      { gasLimit: 500000 }
+    );
+  }
+
+  /**
+   * Set number of zones on a Bundle contract
+   */
+  async setNzones(
+    bundleAddress: string,
+    nzones: number
+  ): Promise<ethers.TransactionResponse> {
+    const contract = await this.getContract(
+      bundleAddress,
+      this.contractABIs.Bundle
+    );
+
+    return this.executeTransaction(
+      contract,
+      'setNzones',
+      [nzones],
+      { gasLimit: 500000 }
+    );
+  }
+
+  /**
+   * Get current flow configuration from a Bundle contract
+   */
+  async getFlowConfig(bundleAddress: string): Promise<FlowConfig> {
     try {
-      // This would query the actual contract
-      const internalPercent = 50; // await contract.getInternalPercent();
-      
+      const contract = await this.getContract(
+        bundleAddress,
+        this.contractABIs.Bundle
+      );
+
+      const [interiorPercent, exteriorPercent, steepness, nzones] = await Promise.all([
+        contract.interiorPercentage(),
+        contract.exteriorPercentage(),
+        contract.steepness(),
+        contract.nzones()
+      ]);
+
       return {
-        internalPercent,
-        externalPercent: 100 - internalPercent,
-        lensConfig: {}
+        interiorPercent: Number(interiorPercent),
+        exteriorPercent: Number(exteriorPercent),
+        steepness: BigInt(steepness.toString()),
+        nzones: Number(nzones)
       };
     } catch (error) {
       console.error('Error getting flow config:', error);
       return {
-        internalPercent: 50,
-        externalPercent: 50,
-        lensConfig: {}
+        interiorPercent: 50,
+        exteriorPercent: 50,
+        steepness: this.DEFAULT_STEEPNESS,
+        nzones: this.DEFAULT_NZONES
       };
     }
+  }
+
+  /**
+   * Get interior members from a Bundle contract
+   */
+  async getInteriorMembers(bundleAddress: string): Promise<string[]> {
+    try {
+      const contract = await this.getContract(
+        bundleAddress,
+        this.contractABIs.Bundle
+      );
+      return await contract.getInteriorMembers();
+    } catch (error) {
+      console.error('Error getting interior members:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get zone members from a Bundle contract
+   */
+  async getZoneMembers(bundleAddress: string, zone: number): Promise<string[]> {
+    try {
+      const contract = await this.getContract(
+        bundleAddress,
+        this.contractABIs.Bundle
+      );
+      return await contract.getZoneMembers(zone);
+    } catch (error) {
+      console.error('Error getting zone members:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get zone weights from a Bundle contract
+   */
+  async getZoneWeights(bundleAddress: string): Promise<bigint[]> {
+    try {
+      const contract = await this.getContract(
+        bundleAddress,
+        this.contractABIs.Bundle
+      );
+      return await contract.getZoneWeights();
+    } catch (error) {
+      console.error('Error getting zone weights:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Add a member to a Bundle contract
+   */
+  async addMember(
+    bundleAddress: string,
+    userId: string
+  ): Promise<ethers.TransactionResponse> {
+    const contract = await this.getContract(
+      bundleAddress,
+      this.contractABIs.Bundle
+    );
+
+    return this.executeTransaction(
+      contract,
+      'addMember',
+      [userId],
+      { gasLimit: 500000 }
+    );
+  }
+
+  /**
+   * Assign a member to a zone in a Bundle contract
+   */
+  async assignToZone(
+    bundleAddress: string,
+    userId: string,
+    zone: number
+  ): Promise<ethers.TransactionResponse> {
+    const contract = await this.getContract(
+      bundleAddress,
+      this.contractABIs.Bundle
+    );
+
+    return this.executeTransaction(
+      contract,
+      'assignToZone',
+      [userId, zone],
+      { gasLimit: 500000 }
+    );
   }
 
   /**
@@ -623,5 +932,166 @@ export class HolonsContract {
    */
   off(event: string, listener: (...args: any[]) => void): void {
     this.eventEmitter.off(event, listener);
+  }
+
+  /**
+   * Check if the Holons registry is properly configured
+   * Returns configuration status and what's missing
+   */
+  async checkRegistryConfiguration(): Promise<{
+    isConfigured: boolean;
+    managedFactory: string | null;
+    zonedFactory: string | null;
+    splitterFlavor: string | null;
+    missingItems: string[];
+  }> {
+    await this.initialize();
+
+    const result = {
+      isConfigured: true,
+      managedFactory: null as string | null,
+      zonedFactory: null as string | null,
+      splitterFlavor: null as string | null,
+      missingItems: [] as string[]
+    };
+
+    try {
+      const holonsContract = await this.getContract(
+        this.addresses.Holons,
+        this.contractABIs.Holons
+      );
+
+      // Check managedFactory
+      try {
+        result.managedFactory = await holonsContract.managedFactory();
+        if (!result.managedFactory || result.managedFactory === '0x0000000000000000000000000000000000000000') {
+          result.missingItems.push('managedFactory');
+          result.managedFactory = null;
+        }
+      } catch (e) {
+        result.missingItems.push('managedFactory');
+        console.log('[HolonsContract] managedFactory not set:', e);
+      }
+
+      // Check zonedFactory
+      try {
+        result.zonedFactory = await holonsContract.zonedFactory();
+        if (!result.zonedFactory || result.zonedFactory === '0x0000000000000000000000000000000000000000') {
+          result.missingItems.push('zonedFactory');
+          result.zonedFactory = null;
+        }
+      } catch (e) {
+        result.missingItems.push('zonedFactory');
+        console.log('[HolonsContract] zonedFactory not set:', e);
+      }
+
+      // Check Splitter flavor
+      try {
+        result.splitterFlavor = await holonsContract.getFlavorAddress('Splitter');
+        if (!result.splitterFlavor || result.splitterFlavor === '0x0000000000000000000000000000000000000000') {
+          result.missingItems.push('Splitter flavor');
+          result.splitterFlavor = null;
+        }
+      } catch (e) {
+        result.missingItems.push('Splitter flavor');
+        console.log('[HolonsContract] Splitter flavor not registered:', e);
+      }
+
+      result.isConfigured = result.missingItems.length === 0;
+
+      console.log('[HolonsContract] Registry configuration:', result);
+      return result;
+    } catch (error) {
+      console.error('[HolonsContract] Error checking registry configuration:', error);
+      result.isConfigured = false;
+      result.missingItems.push('Unable to query contract');
+      return result;
+    }
+  }
+
+  /**
+   * Configure the Holons registry with factories and flavors
+   * This should only be called once during initial setup
+   */
+  async configureRegistry(): Promise<{
+    success: boolean;
+    transactions: string[];
+    errors: string[];
+  }> {
+    if (!this.signer) {
+      throw new Error('Wallet not connected. Please connect your wallet first.');
+    }
+
+    await this.initialize();
+
+    const result = {
+      success: true,
+      transactions: [] as string[],
+      errors: [] as string[]
+    };
+
+    try {
+      const holonsContract = await this.getContract(
+        this.addresses.Holons,
+        this.contractABIs.Holons
+      );
+
+      const config = await this.checkRegistryConfiguration();
+
+      // Set factories if not set
+      if (!config.managedFactory || !config.zonedFactory) {
+        if (this.addresses.ManagedFactory && this.addresses.ZonedFactory) {
+          try {
+            console.log('[HolonsContract] Setting factories...');
+            const tx = await this.executeTransaction(
+              holonsContract,
+              'setFactories',
+              [this.addresses.ManagedFactory, this.addresses.ZonedFactory],
+              { gasLimit: 200000 }
+            );
+            const receipt = await tx.wait();
+            result.transactions.push(`setFactories: ${receipt?.hash}`);
+            console.log('[HolonsContract] Factories set successfully');
+          } catch (e: any) {
+            result.errors.push(`setFactories: ${e.message}`);
+            console.error('[HolonsContract] Failed to set factories:', e);
+          }
+        } else {
+          result.errors.push('Factory addresses not available in deployment config');
+        }
+      }
+
+      // Register Splitter flavor if not registered
+      if (!config.splitterFlavor && this.addresses.SplitterFactory) {
+        try {
+          console.log('[HolonsContract] Registering Splitter flavor...');
+          const tx = await this.executeTransaction(
+            holonsContract,
+            'newFlavor',
+            ['Splitter', this.addresses.SplitterFactory],
+            { gasLimit: 200000 }
+          );
+          const receipt = await tx.wait();
+          result.transactions.push(`newFlavor(Splitter): ${receipt?.hash}`);
+          console.log('[HolonsContract] Splitter flavor registered successfully');
+        } catch (e: any) {
+          // Might fail if flavor already exists
+          if (e.message?.includes('already exists')) {
+            console.log('[HolonsContract] Splitter flavor already registered');
+          } else {
+            result.errors.push(`newFlavor(Splitter): ${e.message}`);
+            console.error('[HolonsContract] Failed to register Splitter flavor:', e);
+          }
+        }
+      }
+
+      result.success = result.errors.length === 0;
+      return result;
+    } catch (error: any) {
+      console.error('[HolonsContract] Error configuring registry:', error);
+      result.success = false;
+      result.errors.push(error.message);
+      return result;
+    }
   }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount, afterUpdate } from 'svelte';
+    import { goto } from '$app/navigation';
     import { formatDate, formatTime } from '../utils/date.js';
     import type { HoloSphere } from 'holosphere';
     import DrawingTools from './DrawingTools.svelte';
@@ -1477,7 +1478,7 @@
                                             title="Navigate to source holon"
                                             on:click|stopPropagation={() => {
                                                 if (card.quest._hologram?.sourceHolon) {
-                                                    window.location.href = `/${card.quest._hologram.sourceHolon}/tasks`;
+                                                    goto(`/${card.quest._hologram.sourceHolon}/tasks`);
                                                 }
                                             }}
                                         >

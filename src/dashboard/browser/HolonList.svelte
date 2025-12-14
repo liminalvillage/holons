@@ -7,6 +7,7 @@
 		id: string;
 		name: string;
 		isPinned?: boolean;
+		isStarred?: boolean;
 		lastVisited?: number;
 	}
 
@@ -14,6 +15,9 @@
 	export let currentHolonId: string | null = null;
 	export let isLoading: boolean = false;
 	export let showPinButton: boolean = false;
+	export let showStarButton: boolean = false;
+	export let starredIds: string[] = [];
+	export let homeHolonId: string | null = null;
 
 	const dispatch = createEventDispatcher();
 
@@ -23,6 +27,10 @@
 
 	function pinHolon(holonId: string) {
 		dispatch('pin', { holonId });
+	}
+
+	function starHolon(holonId: string) {
+		dispatch('star', { holonId });
 	}
 
 	// Separate pinned and unpinned holons
@@ -54,9 +62,13 @@
 						name={holon.name}
 						isActive={holon.id === currentHolonId}
 						isPinned={true}
+						isStarred={starredIds.includes(holon.id)}
+						isHome={holon.id === homeHolonId}
 						{showPinButton}
+						{showStarButton}
 						on:select={() => selectHolon(holon.id)}
 						on:pin={() => pinHolon(holon.id)}
+						on:star={() => starHolon(holon.id)}
 					/>
 				{/each}
 			</div>
@@ -73,9 +85,13 @@
 						name={holon.name}
 						isActive={holon.id === currentHolonId}
 						isPinned={false}
+						isStarred={starredIds.includes(holon.id)}
+						isHome={holon.id === homeHolonId}
 						{showPinButton}
+						{showStarButton}
 						on:select={() => selectHolon(holon.id)}
 						on:pin={() => pinHolon(holon.id)}
+						on:star={() => starHolon(holon.id)}
 					/>
 				{/each}
 			</div>

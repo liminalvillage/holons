@@ -1,5 +1,5 @@
 <script lang="ts">
-	
+
 	import { onMount, getContext, createEventDispatcher } from "svelte";
 	import { ID } from "../dashboard/store";
 
@@ -7,6 +7,7 @@
 
 	import type { HoloSphere } from "holosphere";
 	import type { Quest } from '../types/Quest';
+	import { Calendar } from 'svelte-feathers';
 	
 
 	let holosphere = getContext("holosphere") as HoloSphere;
@@ -172,12 +173,7 @@
 		try {
 			if (!holonID) return;
 			holosphere.put(holonID, 'quests', updatedQuest)
-				.then((success) => {
-					if (!success) {
-						console.error('Failed to update quest');
-					}
-				})
-				.catch((error) => {
+				.catch((error: Error) => {
 					console.error('Error updating quest:', error);
 				});
 		} catch (error) {
@@ -212,13 +208,9 @@
 			selectedQuest = null;
 			
 			// Update in holosphere
+			if (!holonID) return;
 			holosphere.put(holonID, 'quests', updatedQuest)
-				.then((success) => {
-					if (!success) {
-						console.error('Failed to remove schedule');
-					}
-				})
-				.catch((error) => {
+				.catch((error: Error) => {
 					console.error('Error removing schedule:', error);
 				});
 		} catch (error) {
@@ -228,9 +220,11 @@
 </script>
 
 <div class="w-full h-full">
-	<div class="p-6 h-full flex flex-col">
-		<div class="flex text-white text-2xl pb-6 font-bold">
-			<p>Schedule</p>
+	<div class="p-4 sm:p-6 h-full flex flex-col">
+		<!-- Schedule Header -->
+		<div class="flex items-center gap-2 text-white pb-4 border-b border-gray-700 mb-4">
+			<Calendar size="20" class="text-indigo-400" />
+			<h2 class="text-lg font-semibold">Schedule</h2>
 		</div>
 		<div 
 			class="scheduleContainer flex-1 overflow-y-auto"

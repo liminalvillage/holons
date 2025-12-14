@@ -246,7 +246,7 @@
 	<div class="header">
 		<h2>Expenses</h2>
 		{#if selectedCurrency}
-			<select bind:value={selectedCurrency} class="currency-select">
+			<select bind:value={selectedCurrency} class="filter-select">
 				{#each availableCurrencies as currency}
 					<option value={currency}>{currency.toUpperCase()}</option>
 				{/each}
@@ -257,6 +257,26 @@
 			<span class="text-muted">Loading...</span>
 		{/if}
 	</div>
+
+	<!-- Stats Bar -->
+	{#if selectedCurrency && users.length > 0}
+		<div class="stats-bar mb-4">
+			<div class="stats-bar__item">
+				<span class="stats-bar__value">{users.length}</span>
+				<span class="stats-bar__label">Users</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item stats-bar__item--info">
+				<span class="stats-bar__value">{filteredExpenses.length}</span>
+				<span class="stats-bar__label">Expenses</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item stats-bar__item--warning">
+				<span class="stats-bar__value">{formatAmount(filteredExpenses.reduce((sum, e) => sum + e.amount, 0))}</span>
+				<span class="stats-bar__label">Total</span>
+			</div>
+		</div>
+	{/if}
 
 	{#if isLoading}
 		<div class="loading">
@@ -351,15 +371,6 @@
 		font-weight: 700;
 		color: white;
 		margin: 0;
-	}
-
-	.currency-select {
-		background: #374151;
-		color: white;
-		padding: 0.5rem 1rem;
-		border-radius: 0.5rem;
-		border: 1px solid #4b5563;
-		cursor: pointer;
 	}
 
 	.text-muted {

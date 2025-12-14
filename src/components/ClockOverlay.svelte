@@ -704,7 +704,7 @@
                     <!-- Badges Button -->
                     <button 
                         class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105 flex items-center space-x-2 shadow-lg"
-                        on:click={() => window.location.href = `/${holonID}/badges`}
+                        on:click={() => goto(`/${holonID}/badges`)}
                         aria-label="View community badges"
                     >
                         <span class="text-lg">🏆</span>

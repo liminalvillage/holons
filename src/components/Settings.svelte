@@ -328,27 +328,28 @@
 	{/if}
 
 	{#if !loading && !error}
-		<!-- Statistics Section -->
-		<section class="mb-8">
-			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-					<div class="text-2xl font-bold text-white mb-1">{realUserCount}</div>
-					<div class="text-sm text-gray-400">Total Users</div>
-				</div>
-				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-					<div class="text-2xl font-bold text-white mb-1">{settings.values.length}</div>
-					<div class="text-sm text-gray-400">Values</div>
-				</div>
-				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-					<div class="text-2xl font-bold text-white mb-1">{settings.domains.length}</div>
-					<div class="text-sm text-gray-400">Domains</div>
-				</div>
-				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
-					<div class="text-2xl font-bold text-white mb-1">{settings.maxTasks}</div>
-					<div class="text-sm text-gray-400">Max Tasks</div>
-				</div>
+		<!-- Stats Bar -->
+		<div class="stats-bar mb-6">
+			<div class="stats-bar__item stats-bar__item--info">
+				<span class="stats-bar__value">{realUserCount}</span>
+				<span class="stats-bar__label">Users</span>
 			</div>
-		</section>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item">
+				<span class="stats-bar__value">{settings.values.length}</span>
+				<span class="stats-bar__label">Values</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item">
+				<span class="stats-bar__value">{settings.domains.length}</span>
+				<span class="stats-bar__label">Domains</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item stats-bar__item--warning">
+				<span class="stats-bar__value">{settings.maxTasks}</span>
+				<span class="stats-bar__label">Max Tasks</span>
+			</div>
+		</div>
 
 		<!-- Settings Sections -->
 		<div class="space-y-8">

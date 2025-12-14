@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
+    import { goto } from "$app/navigation";
     import { createEventDispatcher } from 'svelte';
     import type { QuestTree, QuestTreeNode, GenerationConfig } from '../types/questTree';
     import { createQuestTreeFromRitual } from '../utils/timelineMapping';
@@ -1240,7 +1241,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 							<button
 								on:click={addValueDirect}
 								disabled={!newValueInput.trim() || tempValues.length >= 6}
-								class="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg transition-colors disabled:cursor-not-allowed font-medium"
+								class="btn btn--primary btn--lg"
 							>
 								Add Value
 							</button>
@@ -1439,7 +1440,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 							<button
 								on:click={sendUserMessage}
 								disabled={!userChatInput.trim() || isGeneratingQuests}
-								class="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors disabled:cursor-not-allowed"
+								class="btn btn--primary"
 							>
 								Send
 							</button>
@@ -1466,8 +1467,8 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 									<div class="flex items-center justify-between">
 										<span>New holon ready: {pendingNewHolonId}</span>
 										<button 
-											class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs transition-colors" 
-											on:click={() => window.location.href = `/${pendingNewHolonId}`}
+											class="btn btn--primary btn--sm" 
+											on:click={() => goto(`/${pendingNewHolonId}`)}
 										>
 											Open New Holon
 										</button>
@@ -1728,7 +1729,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 								<button
 									on:click={startVisionClarification}
 									disabled={isProcessingVisionClarification}
-									class="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-8 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
+									class="btn btn--primary btn--lg"
 								>
 									Begin Council Interview
 								</button>
@@ -1996,7 +1997,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 											<button
 												on:click={submitResponse}
 												disabled={!userResponseInput.trim() || isProcessingVisionClarification}
-												class="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
+												class="btn btn--primary btn--lg"
 											>
 												{currentQuestionIndex < (currentPhaseData?.questions.length || 0) - 1 ? 'Next Question' : 'Begin Council Deliberation'}
 											</button>

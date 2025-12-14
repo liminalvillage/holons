@@ -2,11 +2,12 @@
 	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
 	import Announcements from "./Announcements.svelte";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import StatCard from "./shared/StatCard.svelte";
 	import StatGrid from "./shared/StatGrid.svelte";
-	import { Users, CheckSquare, Calendar, ShoppingCart, Lightbulb, Gift, ClipboardList, UserPlus, Globe, Settings } from 'svelte-feathers';
+	import { Users, CheckSquare, Calendar, ShoppingCart, Gift, Clipboard, UserPlus, Grid } from 'svelte-feathers';
 	import type { HoloSphere } from "holosphere";
 	import { fetchHolonName } from "../utils/holonNames";
 
@@ -51,7 +52,6 @@
 	$: statsTotalTasks = tasks.length;
 	$: statsEvents = questsArray.filter((q: any) => q.type === 'event' && q.when && new Date(q.when) >= oneWeekAgo).length;
 	$: statsShopping = shoppingMap.size;
-	$: statsProposals = questsArray.filter((q: any) => q.type === 'proposal').length;
 	$: statsOffers = questsArray.filter((q: any) => ['offer', 'request', 'need'].includes(q.type)).length;
 	$: checklistsArray = Array.from(checklistsMap.values());
 	$: statsChecklists = checklistsArray.length;
@@ -65,7 +65,6 @@
 	$: statValueTasks = `${statsCompletedTasks}/${statsTotalTasks}`;
 	$: statValueEvents = statsEvents;
 	$: statValueShopping = statsShopping;
-	$: statValueProposals = statsProposals;
 	$: statValueOffers = statsOffers;
 	$: statValueChecklists = `${statsCompletedChecklists}/${statsChecklists}`;
 	$: statValueRoles = statsRoles;
@@ -191,7 +190,7 @@
 </script>
 
 <!-- Title Bar -->
-<TitleBar {holonName} title="Dashboard" />
+<TitleBar {holonName} title="Dashboard" icon={Grid} />
 
 {#if isLoading}
 	<div class="loading">
@@ -212,7 +211,7 @@
 				value={statValueUsers}
 				icon={Users}
 				clickable
-				on:click={() => window.location.href = `/${holonID}/status`}
+				on:click={() => goto(`/${holonID}/status`)}
 			/>
 			<StatCard
 				label="Tasks"
@@ -221,7 +220,7 @@
 				progress={progressTasks}
 				subtext="{statsCompletedTasks} completed"
 				clickable
-				on:click={() => window.location.href = `/${holonID}/tasks`}
+				on:click={() => goto(`/${holonID}/tasks`)}
 			/>
 			<StatCard
 				label="Events"
@@ -229,7 +228,7 @@
 				icon={Calendar}
 				subtext="This week"
 				clickable
-				on:click={() => window.location.href = `/${holonID}/calendar`}
+				on:click={() => goto(`/${holonID}/calendar`)}
 			/>
 			<StatCard
 				label="Shopping"
@@ -237,32 +236,23 @@
 				icon={ShoppingCart}
 				subtext="Items"
 				clickable
-				on:click={() => window.location.href = `/${holonID}/shopping`}
-			/>
-			<StatCard
-				label="Proposals"
-				value={statValueProposals}
-				icon={Lightbulb}
-				clickable
-				compact
-				on:click={() => window.location.href = `/${holonID}/proposals`}
+				on:click={() => goto(`/${holonID}/shopping`)}
 			/>
 			<StatCard
 				label="Offers & Needs"
 				value={statValueOffers}
 				icon={Gift}
 				clickable
-				compact
-				on:click={() => window.location.href = `/${holonID}/offers`}
+				on:click={() => goto(`/${holonID}/offers`)}
 			/>
 			<StatCard
 				label="Checklists"
 				value={statValueChecklists}
-				icon={ClipboardList}
+				icon={Clipboard}
 				progress={progressChecklists}
 				clickable
 				compact
-				on:click={() => window.location.href = `/${holonID}/checklists`}
+				on:click={() => goto(`/${holonID}/checklists`)}
 			/>
 			<StatCard
 				label="Roles"
@@ -271,7 +261,7 @@
 				subtext="{statsUnassignedRoles} unassigned"
 				clickable
 				compact
-				on:click={() => window.location.href = `/${holonID}/roles`}
+				on:click={() => goto(`/${holonID}/roles`)}
 			/>
 		</StatGrid>
 

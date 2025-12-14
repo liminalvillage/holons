@@ -417,80 +417,62 @@
 </script>
 
 <div class="space-y-4">
-	<TitleBar {holonName} title="Roles" />
+	<TitleBar {holonName} title="Roles" icon={Users} />
 
 	<div class="w-full bg-gray-800 p-4 sm:p-6 rounded-2xl">
-		<!-- Stats Section -->
-		<StatGrid collapsible={true} collapsed={statsCollapsed} title="Role Statistics" on:toggle={(e) => statsCollapsed = e.detail.collapsed}>
-			<StatCard label="Total Roles" value={roles.length} icon={Users} compact />
-			<StatCard
-				label="Assigned"
-				value={roles.filter((role) => role[1].participants?.length > 0).length}
-				icon={UserCheck}
-				compact
-			/>
-			<StatCard
-				label="Unassigned"
-				value={roles.length - roles.filter((role) => role[1].participants?.length > 0).length}
-				icon={UserX}
-				compact
-			/>
-		</StatGrid>
+		<!-- Stats Bar -->
+		<div class="stats-bar mb-4">
+			<div class="stats-bar__item">
+				<span class="stats-bar__value">{roles.length}</span>
+				<span class="stats-bar__label">Total</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item stats-bar__item--success">
+				<span class="stats-bar__value">{roles.filter((role) => role[1].participants?.length > 0).length}</span>
+				<span class="stats-bar__label">Assigned</span>
+			</div>
+			<div class="stats-bar__divider"></div>
+			<div class="stats-bar__item stats-bar__item--warning">
+				<span class="stats-bar__value">{roles.length - roles.filter((role) => role[1].participants?.length > 0).length}</span>
+				<span class="stats-bar__label">Unassigned</span>
+			</div>
+		</div>
 
-		<!-- View Toggle -->
-		<div class="flex items-center justify-end mb-4">
-				<button
-					class="text-white {isListView
-						? 'bg-gray-700'
-						: 'bg-transparent'} p-2 rounded-lg transition-colors"
-					title="List View"
-					on:click={() => (isListView = true)}
-					aria-label="Switch to list view"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="24"
-						height="24"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
+		<!-- Controls Row with View Toggle -->
+		<div class="controls-row mb-4">
+			<div class="controls-row__left"></div>
+			<div class="controls-row__center"></div>
+			<div class="controls-row__right">
+				<div class="view-toggle">
+					<button
+						class="view-toggle__btn {isListView ? 'view-toggle__btn--active' : ''}"
+						title="List View"
+						on:click={() => (isListView = true)}
+						aria-label="Switch to list view"
 					>
-						<line x1="8" y1="6" x2="21" y2="6" />
-						<line x1="8" y1="12" x2="21" y2="12" />
-						<line x1="8" y1="18" x2="21" y2="18" />
-						<line x1="3" y1="6" x2="3.01" y2="6" />
-						<line x1="3" y1="12" x2="3.01" y2="12" />
-						<line x1="3" y1="18" x2="3.01" y2="18" />
-					</svg>
-				</button>
-				<button
-					class="text-white {!isListView
-						? 'bg-gray-700'
-						: 'bg-transparent'} p-2 ml-2 rounded-lg transition-colors"
-					title="Grid View"
-					on:click={() => (isListView = false)}
-					aria-label="Switch to grid view"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="20"
-						height="20"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="8" y1="6" x2="21" y2="6" />
+							<line x1="8" y1="12" x2="21" y2="12" />
+							<line x1="8" y1="18" x2="21" y2="18" />
+							<line x1="3" y1="6" x2="3.01" y2="6" />
+							<line x1="3" y1="12" x2="3.01" y2="12" />
+							<line x1="3" y1="18" x2="3.01" y2="18" />
+						</svg>
+					</button>
+					<button
+						class="view-toggle__btn {!isListView ? 'view-toggle__btn--active' : ''}"
+						title="Grid View"
+						on:click={() => (isListView = false)}
+						aria-label="Switch to grid view"
 					>
-						<rect x="3" y="3" width="7" height="7" />
-						<rect x="14" y="3" width="7" height="7" />
-						<rect x="14" y="14" width="7" height="7" />
-						<rect x="3" y="14" width="7" height="7" />
-					</svg>
-				</button>
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="3" y="3" width="7" height="7" />
+							<rect x="14" y="3" width="7" height="7" />
+							<rect x="14" y="14" width="7" height="7" />
+							<rect x="3" y="14" width="7" height="7" />
+						</svg>
+					</button>
+				</div>
 			</div>
 		</div>
 
