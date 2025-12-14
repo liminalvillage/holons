@@ -1514,7 +1514,7 @@
 
             <!-- Public Key Display -->
             <div class="mb-4">
-                <label class="block text-sm text-gray-400 mb-1">Public Key / Holon ID</label>
+                <p class="block text-sm text-gray-400 mb-1">Public Key / Holon ID</p>
                 <div class="bg-gray-900 rounded-lg p-3 font-mono text-xs text-gray-300 break-all select-all">
                     {$nostrPublicKey || 'Not available'}
                 </div>

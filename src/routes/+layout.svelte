@@ -75,20 +75,22 @@
 					createdAt: Date.now(),
 					createdBy: userPublicKey
 				});
+			}
 
-				// Store Telegram mapping if this came from Telegram
-				if (pendingTelegramUserId) {
-					try {
-						await holosphere.writeGlobal('telegram_mappings', {
-							id: String(pendingTelegramUserId),
-							publicKey: userPublicKey,
-							holonName: holonName,
-							createdAt: Date.now()
-						});
-						console.log('Telegram mapping stored for user:', pendingTelegramUserId);
-					} catch (err) {
-						console.error('Failed to store Telegram mapping:', err);
-					}
+			// Store/update Telegram mapping if this came from Telegram
+			// Always update to handle cases where user creates new identity or restores different key
+			if (pendingTelegramUserId) {
+				try {
+					await holosphere.writeGlobal('telegram_mappings', {
+						id: String(pendingTelegramUserId),
+						publicKey: userPublicKey,
+						holonName: holonName,
+						createdAt: Date.now(),
+						updatedAt: Date.now()
+					});
+					console.log('Telegram mapping stored/updated for user:', pendingTelegramUserId, '-> publicKey:', userPublicKey);
+				} catch (err) {
+					console.error('Failed to store Telegram mapping:', err);
 				}
 			}
 

@@ -1172,7 +1172,7 @@
                         <p class="text-red-200 font-medium text-sm">Error</p>
                         <p class="text-red-300/80 text-sm mt-0.5">{error}</p>
                     </div>
-                    <button on:click={() => error = ''} class="text-red-400 hover:text-red-300">
+                    <button on:click={() => error = ''} class="text-red-400 hover:text-red-300" aria-label="Dismiss error">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -1195,7 +1195,7 @@
                         <p class="text-green-200 font-medium text-sm">Success</p>
                         <p class="text-green-300/80 text-sm mt-0.5">{success}</p>
                     </div>
-                    <button on:click={() => success = ''} class="text-green-400 hover:text-green-300">
+                    <button on:click={() => success = ''} class="text-green-400 hover:text-green-300" aria-label="Dismiss success message">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
@@ -1899,9 +1899,9 @@
 
                 <!-- Default Expiration Selection -->
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">
+                    <p class="block text-sm font-medium text-gray-300 mb-2">
                         Default Capability Expiration
-                    </label>
+                    </p>
                     <ExpirationPicker
                         bind:selectedPreset={selectedExpiration}
                         bind:customDate={customExpirationDate}

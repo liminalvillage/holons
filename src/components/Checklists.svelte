@@ -7,7 +7,7 @@
     import type { HoloSphere } from "holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
     import { fetchHolonName } from "../utils/holonNames";
-    import { CheckSquare } from 'svelte-feathers';
+    import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
 
     interface ChecklistItem {
         text: string;
