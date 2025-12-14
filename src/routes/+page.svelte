@@ -1,20 +1,23 @@
 <script lang="ts">
-  import MyHolons from '../components/MyHolons.svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
   import { onMount } from 'svelte';
+  import { holosphereStore } from '$lib/stores/holosphere';
   import 'tailwindcss/tailwind.css';
 
   onMount(() => {
-    // Only redirect if we have a holon ID in the URL path (not from store)
-    // The root page should always show MyHolons, regardless of store state
-    // Individual holon pages will handle their own redirects
+    // If holosphere is ready with a public key, redirect to user's dashboard
+    const unsubscribe = holosphereStore.subscribe((holosphere) => {
+      if (holosphere?.client?.publicKey) {
+        goto(`/${holosphere.client.publicKey}/dashboard`);
+      }
+    });
+    return unsubscribe;
   });
 </script>
 
 <svelte:head>
-  <title>My Holons</title>
+  <title>Holons</title>
 </svelte:head>
 
-<MyHolons />
+<!-- Root page redirects to user's dashboard after authentication -->
 
