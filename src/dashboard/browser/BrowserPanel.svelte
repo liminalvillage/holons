@@ -8,7 +8,6 @@
 	import { nostrPublicKey } from '../../lib/stores/nostr';
 	import SidebarHeader from './SidebarHeader.svelte';
 	import KeysSection from './KeysSection.svelte';
-	import FederationSection from './FederationSection.svelte';
 	import BrowserHeader from './BrowserHeader.svelte';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
@@ -386,9 +385,6 @@
 	<!-- Keys & Access Section (collapsible) -->
 	<KeysSection />
 
-	<!-- Federation Section (collapsible) -->
-	<FederationSection />
-
 	<!-- Holon Browser Section -->
 	<div class="browser-panel__browser">
 		<BrowserHeader
@@ -424,6 +420,16 @@
 				<span>Federated</span>
 			</button>
 		</div>
+
+		<!-- Federation Management (only on federated tab) -->
+		{#if activeTab === 'federated'}
+			<div class="browser-panel__federation-header">
+				<button class="browser-panel__manage-federation-btn" on:click={() => goto(`/${currentHolonId}/federation`)}>
+					<i class="fas fa-cog"></i>
+					<span>Manage Federation</span>
+				</button>
+			</div>
+		{/if}
 
 		<!-- Holon List -->
 		<HolonList
@@ -601,6 +607,35 @@
 		.browser-panel__tab span {
 			display: inline;
 		}
+	}
+
+	/* Federation Header */
+	.browser-panel__federation-header {
+		padding: var(--spacing-3, 0.75rem);
+		background: var(--color-bg-secondary, #1f2937);
+		border-bottom: 1px solid var(--color-border, #374151);
+		flex-shrink: 0;
+	}
+
+	.browser-panel__manage-federation-btn {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--spacing-2, 0.5rem);
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		background: var(--color-accent, #4f46e5);
+		border: none;
+		border-radius: var(--radius-md, 0.375rem);
+		color: white;
+		font-size: var(--font-size-sm, 0.875rem);
+		font-weight: var(--font-weight-medium, 500);
+		cursor: pointer;
+		transition: background-color 150ms ease;
+	}
+
+	.browser-panel__manage-federation-btn:hover {
+		background: var(--color-accent-light, #6366f1);
 	}
 
 	/* Add Holon Modal */

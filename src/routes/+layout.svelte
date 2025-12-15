@@ -77,6 +77,21 @@
 				});
 			}
 
+			// Always register/update holon in global registry for discovery
+			try {
+				await holosphere.writeGlobal('holons_registry', {
+					id: userPublicKey,
+					name: holonName,
+					purpose: existingSettings?.purpose || 'Personal holon',
+					createdAt: existingSettings?.createdAt || Date.now(),
+					lastSeen: Date.now(),
+					type: 'personal'
+				});
+				console.log('Registered holon in global registry:', holonName);
+			} catch (error) {
+				console.warn('Failed to register holon in global registry:', error);
+			}
+
 			// Store/update Telegram mapping if this came from Telegram
 			// Always update to handle cases where user creates new identity or restores different key
 			if (pendingTelegramUserId) {
@@ -113,6 +128,7 @@
 				currentPath !== '/' &&
 				!currentPath.startsWith('/federated') &&
 				!currentPath.startsWith('/navigator') &&
+				!currentPath.startsWith('/global') &&
 				!currentPath.startsWith('/sdgs') &&
 				!currentPath.startsWith('/qr');
 
@@ -191,14 +207,25 @@
 		}
 
 		console.log('Initializing HoloSphere with user key...');
+		// -=-=-=-=-=-=-=-=- USE GUN
+		// holosphere = new HoloSphere({
+		// 	appName: environmentName,
+		// 	privateKey: privateKey,
+		// 	backend: 'gundb',
+		// 	gundb: {
+		// 		peers: ['https://gun.holons.io/gun'],  // Gun relay server
+		// 		radisk: true,
+		// 		localStorage: true
+		// 	}
+		// });
 
+		// -=-=-=-=-=-=-=-=- USE NOSTR
 		holosphere = new HoloSphere({
 			appName: environmentName,
 			privateKey: privateKey,
 			backend: 'nostr',
 			nostr: {
-				relays: ['wss://relay.holons.io'],  // Nostr relay server
-				persistence: true
+				peers: ['https://relay.holons.io/g'], 
 			}
 		});
 
@@ -214,7 +241,22 @@
 		holosphereStore.set(holosphere);
 
 		// Initialize the user's personal holon with their public key as ID
-		initializeUserHolon();
+		// But skip if on certain routes like /global
+		if (browser) {
+			const currentPath = window.location.pathname;
+			console.log('Current path on init:', currentPath);
+			if (!currentPath.startsWith('/global') &&
+			    !currentPath.startsWith('/federated') &&
+			    !currentPath.startsWith('/navigator') &&
+			    !currentPath.startsWith('/sdgs')) {
+				console.log('Calling initializeUserHolon...');
+				initializeUserHolon();
+			} else {
+				console.log('Skipping initializeUserHolon for protected route:', currentPath);
+			}
+		} else {
+			initializeUserHolon();
+		}
 
 		// Grant capability token to the holosphere service key for federation
 		grantFederationCapability(privateKey);

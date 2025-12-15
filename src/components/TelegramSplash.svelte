@@ -76,6 +76,20 @@
 		}
 	}
 
+	// Handle entering public space (default mode)
+	function handlePublicSpace() {
+		const publicKey = getHolospherePublicKey();
+		if (publicKey) {
+			dispatch('authenticated', {
+				publicKey,
+				mode: 'public'
+			});
+		} else {
+			error = 'Public space not available. Please create or restore an identity.';
+			view = 'welcome';
+		}
+	}
+
 	onMount(async () => {
 		// Initialize stores
 		await nostrStore.init();
@@ -108,9 +122,9 @@
 				view = 'telegram-choice';
 			}, 500);
 		} else {
-			// First-time user without Telegram - show welcome screen
+			// Default to public space - skip welcome screen
 			setTimeout(() => {
-				view = 'welcome';
+				handlePublicSpace();
 			}, 500);
 		}
 	});

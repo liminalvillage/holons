@@ -12,12 +12,7 @@
 
     // Props
     export let isVisible = false;
-    
-    // Auto-trigger after inactivity
-    let inactivityTimer: ReturnType<typeof setTimeout>;
-    let lastActivityTime = Date.now();
-    const INACTIVITY_TIMEOUT = 3 * 60 * 1000; // 3 minutes
-    
+
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;
     
@@ -377,27 +372,6 @@
 
 
 
-        // Inactivity detection functions
-    function resetInactivityTimer() {
-        lastActivityTime = Date.now();
-        if (inactivityTimer) {
-            clearTimeout(inactivityTimer);
-        }
-        
-        if (!isVisible) {
-            inactivityTimer = setTimeout(() => {
-                const timeSinceActivity = Date.now() - lastActivityTime;
-                if (timeSinceActivity >= INACTIVITY_TIMEOUT) {
-                    isVisible = true;
-                }
-            }, INACTIVITY_TIMEOUT);
-        }
-    }
-
-    function handleActivity() {
-        resetInactivityTimer();
-    }
-
     // Watch for holon ID changes
     $: if (holonID && isVisible) {
         loadTodaysEvents();
@@ -430,21 +404,6 @@
                 loadTopTasks();
             }
         }
-
-        // Set up inactivity detection
-        resetInactivityTimer();
-        
-        // Add event listeners for user activity
-        const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-        events.forEach(event => {
-            document.addEventListener(event, handleActivity, true);
-        });
-
-        return () => {
-            events.forEach(event => {
-                document.removeEventListener(event, handleActivity, true);
-            });
-        };
     });
 
     onDestroy(() => {
@@ -454,23 +413,13 @@
         if (weatherRefreshInterval) {
             clearInterval(weatherRefreshInterval);
         }
-        if (inactivityTimer) {
-            clearTimeout(inactivityTimer);
-        }
     });
 
     // Close overlay on escape key
     function handleKeydown(event: KeyboardEvent) {
         if (event.key === 'Escape') {
             isVisible = false;
-            resetInactivityTimer(); // Reset timer when closing
         }
-    }
-
-    // Handle visibility changes
-    $: if (!isVisible) {
-        // When dashboard is closed, restart inactivity timer
-        resetInactivityTimer();
     }
 
 

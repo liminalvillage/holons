@@ -15,7 +15,6 @@ import ExpensesIcon from './icons/ExpensesIcon.svelte';
 import FederationIcon from './icons/FederationIcon.svelte';
 import MyHolonsIcon from './icons/MyHolonsIcon.svelte';
 import OrbitsIcon from './icons/OrbitsIcon.svelte';
-import ContractsIcon from './icons/ContractsIcon.svelte';
 import FlowIcon from './icons/FlowIcon.svelte';
 
 export const data = [
@@ -78,11 +77,6 @@ export const data = [
 		title: 'Flow',
 		icon: FlowIcon,
 		link: '/flow'
-	},
-	{
-		title: 'Contracts',
-		icon: ContractsIcon,
-		link: '/contracts'
 	},
 	{
 		title: 'Settings',

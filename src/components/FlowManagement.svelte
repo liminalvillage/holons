@@ -37,10 +37,9 @@
   let syncing = false;
 
   // Reactive: detect if there are unsaved changes
+  // Note: Only flow split can be synced to Splitter contract (no steepness/nzones support)
   $: hasChanges = existingBundle && (
-    interiorPercent !== originalInteriorPercent ||
-    steepness !== originalSteepness ||
-    nzones !== originalNzones
+    interiorPercent !== originalInteriorPercent
   );
 
   // Alias for UI compatibility
@@ -444,6 +443,16 @@
       console.error('Error deploying bundle:', err);
       if (err.code === 4001 || err.code === 'ACTION_REJECTED') {
         showNotification('Transaction rejected by user', 'error');
+      } else if (err.code === -32602 || err.message?.includes('failed to decode')) {
+        // Transaction encoding error - usually stale wallet session
+        showNotification('Wallet session expired. Please disconnect and reconnect your wallet.', 'error');
+        isConnected = false;
+      } else if (err.code === 4100 || err.message?.includes('not been authorised')) {
+        showNotification('Please authorize this site in your wallet settings.', 'error');
+        isConnected = false;
+      } else if (err.message?.includes('session expired')) {
+        showNotification(err.message, 'error');
+        isConnected = false;
       } else {
         showNotification(err.message || 'Failed to deploy bundle', 'error');
       }
@@ -461,6 +470,8 @@
       showNotification('Please confirm the transaction(s) in your wallet...', 'info');
 
       // Sync flow split if changed
+      // Note: Splitter contract supports setContractSplit for interior/exterior percentages
+      // but does NOT support setSteepness or setNzones (those are Bundle-only features)
       if (interiorPercent !== originalInteriorPercent) {
         await manager.updateFlowSplit(existingBundle.address, interiorPercent);
         exteriorPercent = 100 - interiorPercent;
@@ -468,19 +479,9 @@
         showNotification(`Flow split synced: ${interiorPercent}% interior`, 'success');
       }
 
-      // Sync steepness if changed
-      if (steepness !== originalSteepness) {
-        await manager.setSteepness(existingBundle.address, steepness);
-        originalSteepness = steepness;
-        showNotification(`Steepness synced: ${formatSteepness(steepness)}`, 'success');
-      }
-
-      // Sync nzones if changed
-      if (nzones !== originalNzones) {
-        await manager.setNzones(existingBundle.address, nzones);
-        originalNzones = nzones;
-        showNotification(`Zones synced: ${nzones} zones`, 'success');
-      }
+      // Note: Steepness and nzones are display-only in the UI
+      // The Splitter contract doesn't support these parameters
+      // They are set at deployment time and cannot be changed
 
       showNotification('All changes synced to contract!', 'success');
     } catch (err: any) {
@@ -528,8 +529,7 @@
   function resetChanges() {
     interiorPercent = originalInteriorPercent;
     exteriorPercent = 100 - interiorPercent;
-    steepness = originalSteepness;
-    nzones = originalNzones;
+    // Note: steepness and nzones are not synced to contract, so no need to reset
   }
 
   // Sankey diagram rendering
@@ -834,6 +834,24 @@
             </button>
           </div>
         </section>
+      {:else}
+        <!-- Redeploy option when bundle already exists -->
+        <section class="panel">
+          <div class="panel__header">
+            <h2 class="panel__title">Bundle Contract Deployed</h2>
+          </div>
+          <div class="panel__body">
+            <p style="color: var(--color-text-muted); margin-bottom: 1rem;">
+              Bundle deployed at: <code style="color: var(--color-success);">{existingBundle.address?.slice(0, 10)}...{existingBundle.address?.slice(-8)}</code>
+            </p>
+            <button
+              class="btn btn--ghost btn--sm"
+              on:click={() => { existingBundle = null; }}
+            >
+              Deploy New Bundle
+            </button>
+          </div>
+        </section>
       {/if}
 
       <!-- Unsaved Changes Banner -->
@@ -899,32 +917,19 @@
           </div>
 
           <!-- Bundle Parameters (only when deployed) -->
+          <!-- Note: Steepness and nzones are fixed at deployment time and cannot be changed -->
           {#if existingBundle}
             <div class="flow-params">
               <div class="flow-param">
-                <label class="flow-param__label">Steepness (Zone Decay)</label>
+                <label class="flow-param__label">Steepness (Zone Decay) <span class="flow-param__hint">(set at deploy)</span></label>
                 <div class="flow-param__control">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Number(steepness) / 1e16}
-                    on:input={(e) => steepness = BigInt(Math.round(parseInt(e.currentTarget.value) * 1e16))}
-                    class="flow-param__slider"
-                  />
                   <span class="flow-param__value">{formatSteepness(steepness)}</span>
                 </div>
               </div>
               <div class="flow-param">
-                <label class="flow-param__label">Number of Zones</label>
+                <label class="flow-param__label">Number of Zones <span class="flow-param__hint">(set at deploy)</span></label>
                 <div class="flow-param__control">
-                  <input
-                    type="number"
-                    min="2"
-                    max="10"
-                    bind:value={nzones}
-                    class="flow-param__input"
-                  />
+                  <span class="flow-param__value">{nzones}</span>
                 </div>
               </div>
             </div>
@@ -1781,6 +1786,12 @@
     color: var(--color-text-primary, #fff);
     font-size: var(--font-size-sm, 0.875rem);
     text-align: center;
+  }
+
+  .flow-param__hint {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+    font-weight: var(--font-weight-normal, 400);
   }
 
   @media (max-width: 640px) {

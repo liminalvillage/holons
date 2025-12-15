@@ -26,9 +26,15 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test:unit": "vitest",
 		"lint": "prettier --plugin-search-dir . --check . && eslint .",
-		"format": "prettier --plugin-search-dir . --write ."
+		"format": "prettier --plugin-search-dir . --write .",
+		"deploy": "node scripts/deploy.mjs",
+		"deploy:localhost": "node scripts/deploy.mjs --network localhost --all",
+		"deploy:sepolia": "node scripts/deploy.mjs --network sepolia --all",
+		"deploy:gnosis": "node scripts/deploy.mjs --network gnosis --all",
+		"deploy:mainnet": "node scripts/deploy.mjs --network mainnet --all"
 	},
 	"devDependencies": {
+		"tsx": "^4.7.0",
 		"@sveltejs/adapter-netlify": "^4.4.2",
 		"@sveltejs/kit": "^2.4.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.1",
@@ -64,7 +70,7 @@
 		"fontawesome": "^5.6.3",
 		"gun": "^0.2020.1241",
 		"h3-js": "^4.3.0",
-		"holosphere": "^2.0.0-alpha5",
+		"holosphere": "^2.0.0-alpha8",
 		"html5-qrcode": "^2.3.8",
 		"ical.js": "^2.2.1",
 		"lune": "^0.4.0",

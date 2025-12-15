@@ -73,6 +73,11 @@
       icon: '4',
       description: 'Appreciative holon with token-weighted distribution',
       color: 'green'
+    },
+    'Bundle': {
+      icon: '5',
+      description: 'Bundle holon that combines managed and zoned functionality',
+      color: 'cyan'
     }
   };
 

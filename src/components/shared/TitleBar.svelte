@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, type ComponentType } from 'svelte';
-	import { ArrowLeft } from 'svelte-feathers';
+	import { ArrowLeftIcon as ArrowLeft } from 'svelte-feather-icons';
 
 	// Props
 	export let title: string = '';

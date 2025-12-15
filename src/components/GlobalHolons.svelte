@@ -41,8 +41,8 @@
         announcements: number;
         expenses: number;
         federationCount: number;
-        federatedWith: string[];
-        notifyList: string[];
+        inboundConnections: string[];  // Holons this one receives data from
+        outboundConnections: string[]; // Holons this one sends data to
         purpose: string;
         lastActivity: number;
         status: "active" | "inactive" | "unknown";
@@ -90,11 +90,11 @@
             }
 
             connectionReady = true;
-            
+
             // Initial fetch
             await fetchAllHolons();
         };
-        
+
         checkConnection();
 
         // Cleanup subscription on unmount
@@ -135,83 +135,96 @@
 
     async function fetchAllHolons() {
         if (!holosphere || !connectionReady) return;
-        
+
         isLoading = true;
         holons = [];
-        
+
         try {
-            console.log("Fetching all holons from database...");
-            
-            // Create a set to collect all unique holon IDs
+            console.log("Fetching all holons from global registry...");
+
+            // Get all holons from the global holons registry
+            const holonsData = await holosphere.getAllGlobal('holons_registry');
+
+            // Extract holon IDs from the registry
             const holonIds = new Set<string>();
-            
-            // Get all holons directly from the Gun database (same as Navigator)
-            const holonPromises: Promise<void>[] = [];
-            
-            // @ts-ignore - Accessing private property for now
-            const holonsRef = holosphere.gun.get('Holons');
-            
-            // Create a promise that resolves when we've collected all holons
-            const collectHolons = new Promise<void>((resolve) => {
-                let timeoutId: any;
-                let hasResolved = false;
-                let lastCollectionTime = Date.now();
-                let subscription: any;
-                
-                const checkComplete = () => {
-                    if (hasResolved) return;
-                    hasResolved = true;
-                    clearTimeout(timeoutId);
-                    
-                    // Clean up the subscription
-                    if (subscription && typeof subscription.off === 'function') {
-                        try {
-                            subscription.off();
-                        } catch (e) {
-                            console.warn('Error cleaning up holon collection subscription:', e);
-                        }
-                    }
-                    
-                    console.log(`Collection complete. Found ${holonIds.size} potential holons.`);
-                    resolve();
-                };
-                
-                // Set a shorter timeout to avoid overloading
-                timeoutId = setTimeout(checkComplete, 2000); // Reduced from 3000ms
-                
-                try {
-                    subscription = holonsRef.map().on((holonData: any, key: string) => {
-                        if (holonData && key && typeof key === 'string' && key.trim() !== '') {
-                            holonIds.add(key);
-                            
-                            // Only log occasionally to reduce noise
-                            if (holonIds.size % 50 === 0) {
-                                console.log(`Found ${holonIds.size} potential holons so far...`);
-                            }
-                        }
-                        
-                        // Check if we should complete collection based on time and count
-                        const now = Date.now();
-                        if (now - lastCollectionTime > 800 && holonIds.size > 5) { // More conservative
-                            clearTimeout(timeoutId);
-                            timeoutId = setTimeout(checkComplete, 300);
-                            lastCollectionTime = now;
+
+            if (holonsData) {
+                // Handle different data formats
+                if (Array.isArray(holonsData)) {
+                    holonsData.forEach((entry: any) => {
+                        if (entry && entry.id) {
+                            holonIds.add(entry.id);
                         }
                     });
-                } catch (error) {
-                    console.error('Error accessing holons:', error);
-                    checkComplete();
+                } else if (typeof holonsData === 'object') {
+                    // If it's an object, iterate over values
+                    Object.values(holonsData).forEach((entry: any) => {
+                        if (entry && typeof entry === 'object' && entry.id) {
+                            holonIds.add(entry.id);
+                        }
+                    });
                 }
-            });
-            
-            // Wait for holon collection to complete
-            await collectHolons;
-            
+            }
+
+            console.log(`Found ${holonIds.size} holons in global registry`);
+
+            // If registry is empty or has very few entries, fall back to Gun scan
+            if (holonIds.size < 2) {
+                console.log("Registry empty or sparse, scanning Gun database...");
+
+                const gun = holosphere.backend?.gun;
+                if (gun) {
+                    // Scan Gun's Holons root for all holon IDs
+                    await new Promise<void>((resolve) => {
+                        const holonsRef = gun.get('Holons');
+                        const timeout = setTimeout(() => {
+                            console.log(`Gun scan timeout. Found ${holonIds.size} holons.`);
+                            resolve();
+                        }, 3000);
+
+                        let lastUpdate = Date.now();
+                        holonsRef.map().on((data: any, key: string) => {
+                            if (data && key && typeof key === 'string' && key.trim() !== '') {
+                                holonIds.add(key);
+                                lastUpdate = Date.now();
+                            }
+                        });
+
+                        // Auto-complete when no updates for 1 second
+                        const checkInterval = setInterval(() => {
+                            if (Date.now() - lastUpdate > 1000) {
+                                clearInterval(checkInterval);
+                                clearTimeout(timeout);
+                                console.log(`Gun scan complete. Found ${holonIds.size} holons.`);
+                                resolve();
+                            }
+                        }, 200);
+                    });
+                }
+            }
+
             // Add current holon if not already included
             if ($ID && !holonIds.has($ID)) {
                 holonIds.add($ID);
+
+                // Register current holon in global registry if not there
+                try {
+                    const settings = await holosphere.get($ID, 'settings');
+                    if (settings?.name) {
+                        await holosphere.writeGlobal('holons_registry', {
+                            id: $ID,
+                            name: settings.name,
+                            purpose: settings.purpose || '',
+                            createdAt: settings.createdAt || Date.now(),
+                            type: 'personal'
+                        });
+                        console.log(`Registered current holon ${$ID} in global registry`);
+                    }
+                } catch (error) {
+                    console.warn('Failed to register current holon:', error);
+                }
             }
-            
+
             // Filter out invalid IDs - only keep actual holon IDs
             const validHolonIds = Array.from(holonIds).filter(id => {
                 if (!id || typeof id !== 'string') return false;
@@ -268,8 +281,8 @@
                 announcements: 0,
                 expenses: 0,
                 federationCount: 0,
-                federatedWith: [],
-                notifyList: [],
+                inboundConnections: [],
+                outboundConnections: [],
                 purpose: "",
                 lastActivity: 0,
                 status: "unknown" as const,
@@ -374,12 +387,15 @@
                         shoppingCount: number;
                         offersCount: number;
                         needs: number;
+                        inboundCount: number;
+                        outboundCount: number;
+                        federationCount: number;
                     };
                 };
-                
+
                 // Update holon with computed stats - force reactivity
-                const updatedHolons = holons.map(holon => 
-                    holon.id === result.holonId 
+                const updatedHolons = holons.map(holon =>
+                    holon.id === result.holonId
                         ? {
                             ...holon,
                             users: result.stats.userCount,
@@ -389,6 +405,9 @@
                             shoppingItems: result.stats.shoppingCount,
                             offers: result.stats.offersCount,
                             needs: result.stats.needs,
+                            federationCount: result.stats.federationCount,
+                            inboundConnections: [], // Will be populated with actual IDs if needed
+                            outboundConnections: [], // Will be populated with actual IDs if needed
                             updatedAt: Date.now()
                         }
                         : holon
@@ -431,6 +450,9 @@
             shoppingCount: number;
             offersCount: number;
             needs: number;
+            inboundCount: number;
+            outboundCount: number;
+            federationCount: number;
         }>((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error('Direct stats fetch timeout'));
@@ -440,24 +462,31 @@
                 // Try HoloSphere getAll first for accurate data
                 const tryHoloSphereGetAll = async () => {
                     try {
-                        const [users, quests, shopping, offers] = await Promise.allSettled([
+                        const [users, quests, shopping, offers, federation] = await Promise.allSettled([
                             holosphere.getAll(holonId, "users"),
                             holosphere.getAll(holonId, "quests"),
                             holosphere.getAll(holonId, "shopping"),
-                            holosphere.getAll(holonId, "offers")
+                            holosphere.getAll(holonId, "offers"),
+                            holosphere.getFederation(holonId)
                         ]);
-                        
+
                         const userCount = ensureArray(users.status === 'fulfilled' ? users.value : null).length;
                         const questsArray = ensureArray(quests.status === 'fulfilled' ? quests.value : null);
                         const shoppingCount = ensureArray(shopping.status === 'fulfilled' ? shopping.value : null).length;
                         const offersCount = ensureArray(offers.status === 'fulfilled' ? offers.value : null).length;
-                        
+
                         // Process quests safely
                         const actualTasks = questsArray.filter((item: any) => item && (!item.type || item.type === "task"));
-            const completedTasks = actualTasks.filter((task: any) => task && task.status === "completed").length;
-            const openTasks = actualTasks.filter((task: any) => task && task.status !== "completed").length;
+                        const completedTasks = actualTasks.filter((task: any) => task && task.status === "completed").length;
+                        const openTasks = actualTasks.filter((task: any) => task && task.status !== "completed").length;
                         const needs = questsArray.filter((item: any) => item && (item.type === "need" || item.type === "want")).length;
-                        
+
+                        // Process federation data
+                        const federationData = federation.status === 'fulfilled' ? federation.value : null;
+                        const inboundCount = federationData?.inbound?.length || 0;
+                        const outboundCount = federationData?.outbound?.length || 0;
+                        const federationCount = inboundCount + outboundCount;
+
                         return {
                             userCount,
                             actualTasks: actualTasks.length,
@@ -465,7 +494,10 @@
                             openTasks,
                             shoppingCount,
                             offersCount,
-                            needs
+                            needs,
+                            inboundCount,
+                            outboundCount,
+                            federationCount
                         };
                     } catch (error) {
                         throw new Error('HoloSphere getAll failed, falling back to direct access');
@@ -482,7 +514,7 @@
                         // Fallback to direct Gun access
                         // @ts-ignore - Accessing private property for now
                         const holonRef = holosphere.gun.get(holosphere.appname).get(holonId);
-                        
+
                         // Create a simple stats object
                         let stats = {
                             userCount: 0,
@@ -491,11 +523,14 @@
                             openTasks: 0,
                             shoppingCount: 0,
                             offersCount: 0,
-                            needs: 0
+                            needs: 0,
+                            inboundCount: 0,
+                            outboundCount: 0,
+                            federationCount: 0
                         };
-                        
+
                         let completedCount = 0;
-                        const totalLenses = 4; // users, quests, shopping, offers
+                        const totalLenses = 5; // users, quests, shopping, offers, settings (for federation)
                         
                         const checkComplete = () => {
                             completedCount++;
@@ -598,8 +633,24 @@
                                 checkComplete();
                             }
                         });
+
+                        // Fetch federation data from settings
+                        holonRef.get('settings').once((settings) => {
+                            if (settings) {
+                                setTimeout(() => {
+                                    const inbound = Array.isArray(settings.inbound) ? settings.inbound : [];
+                                    const outbound = Array.isArray(settings.outbound) ? settings.outbound : [];
+                                    stats.inboundCount = inbound.length;
+                                    stats.outboundCount = outbound.length;
+                                    stats.federationCount = inbound.length + outbound.length;
+                                    checkComplete();
+                                }, 200);
+                            } else {
+                                checkComplete();
+                            }
+                        });
                     });
-            
+
         } catch (error) {
                 clearTimeout(timeout);
                 reject(error);
@@ -970,7 +1021,7 @@
                                 <td class="px-6 py-4">
                                     <div class="text-white font-medium">{holon.federationCount}</div>
                                     <div class="text-xs text-gray-400">
-                                        {holon.federatedWith.length} fed, {holon.notifyList.length} notify
+                                        {holon.inboundConnections.length} in, {holon.outboundConnections.length} out
                                     </div>
                                 </td>
 

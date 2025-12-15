@@ -410,6 +410,7 @@ export class HolonsContract {
   /**
    * Deploy a Bundle contract directly (no registry needed!)
    * This is the simplest way to deploy a holon contract
+   * Bundle constructor: (owner, creatorUserId, name, steepness, nzones)
    * @param creatorUserId - The creator's user ID
    * @param name - The holon name
    * @param steepness - Zone decay factor (default 0.5e18 = 50% decay per zone)
@@ -439,27 +440,70 @@ export class HolonsContract {
     console.log('[HolonsContract] Creator:', creatorUserId);
     console.log('[HolonsContract] Name:', name);
     console.log('[HolonsContract] Steepness:', steepnessValue.toString());
-    console.log('[HolonsContract] Zones:', zonesValue);
+    console.log('[HolonsContract] Nzones:', zonesValue);
 
-    // Get the Bundle ABI
+    // Ensure contracts are initialized
     await this.initialize();
-    const bundleABI = this.contractABIs.Bundle;
 
     if (!BUNDLE_BYTECODE) {
-      throw new Error('Bundle bytecode not available');
+      throw new Error('Bundle bytecode not available. Please run the deployment setup.');
     }
 
-    // Create contract factory and deploy
-    const factory = new ethers.ContractFactory(bundleABI, BUNDLE_BYTECODE, this.signer);
+    // Get factory addresses from deployment config
+    const managedFactoryAddress = this.addresses.ManagedFactory || ethers.ZeroAddress;
+    const zonedFactoryAddress = this.addresses.ZonedFactory || ethers.ZeroAddress;
 
-    console.log('[HolonsContract] Deploying contract...');
+    // Splitter ABI for deployment - only need constructor for deployment
+    const splitterABI = [
+      {
+        "type": "constructor",
+        "inputs": [
+          { "name": "_owner", "type": "address" },
+          { "name": "_creatorUserId", "type": "string" },
+          { "name": "_name", "type": "string" },
+          { "name": "_parameter", "type": "uint256" },
+          { "name": "_managedFactory", "type": "address" },
+          { "name": "_zonedFactory", "type": "address" }
+        ],
+        "stateMutability": "nonpayable"
+      }
+    ];
+
+    // Create contract factory and deploy
+    const factory = new ethers.ContractFactory(splitterABI, BUNDLE_BYTECODE, this.signer);
+
+    // Refresh signer connection to ensure valid session
+    try {
+      await this.signer.getAddress();
+    } catch (e) {
+      throw new Error('Wallet session expired. Please reconnect your wallet.');
+    }
+
+    console.log('[HolonsContract] Deploying Splitter contract...');
+    console.log('[HolonsContract] Constructor args:', {
+      owner: ownerAddress,
+      creatorUserId,
+      name,
+      parameter: steepnessValue.toString(),
+      managedFactory: managedFactoryAddress,
+      zonedFactory: zonedFactoryAddress
+    });
+
+    // Get fresh fee data
+    const feeData = await this.provider.getFeeData();
+
     const contract = await factory.deploy(
       ownerAddress,
       creatorUserId,
       name,
-      steepnessValue,
-      zonesValue,
-      { gasLimit: 5000000 }
+      steepnessValue,  // parameter field - BigInt is supported in ethers v6
+      managedFactoryAddress,
+      zonedFactoryAddress,
+      {
+        gasLimit: 5000000n,  // Use BigInt for gas limit
+        maxFeePerGas: feeData.maxFeePerGas,
+        maxPriorityFeePerGas: feeData.maxPriorityFeePerGas
+      }
     );
 
     // Get the transaction
@@ -679,6 +723,7 @@ export class HolonsContract {
 
   /**
    * Get current flow configuration from a Bundle contract
+   * Uses Bundle contract functions: interiorPercentage, exteriorPercentage, steepness, nzones
    */
   async getFlowConfig(bundleAddress: string): Promise<FlowConfig> {
     try {
@@ -687,18 +732,23 @@ export class HolonsContract {
         this.contractABIs.Bundle
       );
 
-      const [interiorPercent, exteriorPercent, steepness, nzones] = await Promise.all([
-        contract.interiorPercentage(),
-        contract.exteriorPercentage(),
-        contract.steepness(),
-        contract.nzones()
+      // Splitter contract uses internalContractSplitPercentage/externalContractSplitPercentage
+      const [interiorPercent, exteriorPercent] = await Promise.all([
+        contract.internalContractSplitPercentage().catch(() => BigInt(50)),
+        contract.externalContractSplitPercentage().catch(() => BigInt(50))
       ]);
+
+      console.log('[HolonsContract] Flow config from Splitter contract:', {
+        interiorPercent: Number(interiorPercent),
+        exteriorPercent: Number(exteriorPercent)
+      });
 
       return {
         interiorPercent: Number(interiorPercent),
         exteriorPercent: Number(exteriorPercent),
-        steepness: BigInt(steepness.toString()),
-        nzones: Number(nzones)
+        // Splitter doesn't have steepness/nzones, use defaults
+        steepness: this.DEFAULT_STEEPNESS,
+        nzones: this.DEFAULT_NZONES
       };
     } catch (error) {
       console.error('Error getting flow config:', error);

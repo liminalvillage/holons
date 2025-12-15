@@ -180,7 +180,7 @@
 						</button>
 						<button class="keys-section__action keys-section__action--danger" on:click={exitToPublic}>
 							<LogOut size="14" />
-							<span>Exit to Public</span>
+							<span>Logout</span>
 						</button>
 					{/if}
 				</div>
