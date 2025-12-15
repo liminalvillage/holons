@@ -4,34 +4,34 @@
  */
 
 // Core business modules
-export { default as Announcements } from '../Announcements.js';
-export { default as Bigtalk } from '../Bigtalk.js';
-export { default as CapitalGame } from '../CapitalGame.js';
-export { default as Checklists } from '../Checklists.js';
-export { default as Council } from '../Council.js';
-export { default as DB } from '../DB.js';
-export { default as Expenses } from '../Expenses.js';
-export { default as H3 } from '../H3.js';
-export { default as Holons } from '../Holons.js';
-export { default as Library } from '../Library.js';
-export { default as Lunation } from '../Lunation.js';
-export { default as Onboarding } from '../Onboarding.js';
-export { default as OneOnOne } from '../OneOnOne.js';
-export { default as Quests } from '../Quests.js';
-export { default as Roles } from '../Roles.js';
-export { default as Scheduler } from '../Scheduler.js';
-export { default as Server } from '../Server.js';
-export { default as Settings } from '../Settings.js';
-export { default as Shopping } from '../Shopping.js';
-export { default as Tags } from '../Tags.js';
-export { default as UI } from '../UI.js';
+export { default as Announcements } from '../src/Announcements.js';
+export { default as Bigtalk } from '../src/Bigtalk.js';
+export { default as CapitalGame } from '../src/CapitalGame.js';
+export { default as Checklists } from '../src/Checklists.js';
+export { default as Council } from '../src/Council.js';
+export { default as DB } from '../src/DB.js';
+export { default as Expenses } from '../src/Expenses.js';
+export { default as H3 } from '../src/H3.js';
+export { default as Holons } from '../src/Holons.js';
+export { default as Library } from '../src/Library.js';
+export { default as Lunation } from '../src/Lunation.js';
+export { default as Onboarding } from '../src/Onboarding.js';
+export { default as OneOnOne } from '../src/OneOnOne.js';
+export { default as Quests } from '../src/Quests.js';
+export { default as Roles } from '../src/Roles.js';
+export { default as Scheduler } from '../src/Scheduler.js';
+export { default as Server } from '../src/Server.js';
+export { default as Settings } from '../src/Settings.js';
+export { default as Shopping } from '../src/Shopping.js';
+export { default as Tags } from '../src/Tags.js';
+export { default as UI } from '../src/UI.js';
 export { default as Users } from '../Users.js';
 
 // RSVP/Participation (exported with more descriptive name)
-export { default as Participation } from '../RSVP.js';
+export { default as Participation } from '../src/RSVP.js';
 
 // Request handlers
-export * as Requests from '../Requests.js';
+export * as Requests from '../src/Requests.js';
 
 /**
  * Module categories for organized access

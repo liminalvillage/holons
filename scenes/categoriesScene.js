@@ -3,7 +3,7 @@ import {
   Markup
 } from 'telegraf';
 import categoryTypes from "../data/roles.json" with { type: "json" };
-import { createPaddedCaption } from '../utilities.js';
+import { createPaddedCaption } from '../src/utilities.js';
 
 import fs from 'fs';
 

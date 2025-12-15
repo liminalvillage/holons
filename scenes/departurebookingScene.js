@@ -1,5 +1,5 @@
 import { Scenes, Markup } from 'telegraf';
-import {Calendar} from '../Calendar.js';
+import {Calendar} from '../src/Calendar.js';
 
 // Create a scene for onboarding
 const departurebookingScene = new Scenes.BaseScene('departurebooking');

@@ -3,12 +3,13 @@ import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
 import { Markup } from 'telegraf';
-import { getDisplayName, getAvatarUrl, getHolonName, createPaddedCaption } from './utilities.js';
+import { getDisplayName, getAvatarUrl, getHolonName, createPaddedCaption, getQuestHolon } from './utilities.js';
 import QRCode from 'qrcode';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 let browser = null;
+let browserAvailable = false;
 
 class UI {
   constructor(bot, db, settings) {
@@ -123,11 +124,19 @@ class UI {
       if (!browser || !browser.connected) {
         console.log('Initializing Puppeteer browser...');
         browser = await puppetteer.launch(this.getPuppeteerLaunchOptions());
+        browserAvailable = true;
         console.log('Browser initialized successfully');
       }
     } catch (error) {
-      console.error('Failed to initialize browser:', error);
+      browserAvailable = false;
+      console.warn('⚠️  Browser initialization failed - running in text-only mode');
+      console.warn('   Image generation features will be disabled.');
+      console.warn('   Reason:', error.message);
     }
+  }
+
+  isBrowserAvailable() {
+    return browserAvailable && browser && browser.connected;
   }
 
   setExpensesInstance(expensesInstance) {
@@ -355,7 +364,12 @@ class UI {
     for (let i = 0; i < users.length; i++) {
       values = values.concat(users[i].values)
     }
-    
+
+    if (!this.isBrowserAvailable()) {
+      await ctx.reply(i18next.t('Image generation is not available. Please try the dashboard.', { lng: language }));
+      return;
+    }
+
     const page = await browser.newPage();
     let path = './images/valuecloud' + utils.getholonId(ctx) + '.png'
     page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
@@ -405,6 +419,11 @@ class UI {
 
     for (let i = 0; i < users.length; i++) {
       needs = needs.concat(users[i].needs)
+    }
+
+    if (!this.isBrowserAvailable()) {
+      await ctx.reply(i18next.t('Image generation is not available. Please try the dashboard.', { lng: language }));
+      return;
     }
 
     const page = await browser.newPage();
@@ -461,12 +480,13 @@ class UI {
       }
       
       // Initial filter for type and status - include tasks, holograms, and recurring tasks
-      quests = quests.filter(quest =>
-        (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') &&
-        (quest.status === 'ongoing' || quest.status === 'scheduled') &&
-        // Only show quests that belong to this holon (not federated from elsewhere)
-        (!quest.chat || quest.chat.toString() === holonId.toString())
-      )
+      quests = quests.filter(quest => {
+        const questHolonId = getQuestHolon(quest);
+        return (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') &&
+          (quest.status === 'ongoing' || quest.status === 'scheduled') &&
+          // Only show quests that belong to this holon (not federated from elsewhere)
+          (!questHolonId || questHolonId.toString() === holonId.toString());
+      })
 
     // If in a topic, filter further by message_thread_id
     if (isTopic && threadId) {
@@ -482,8 +502,8 @@ class UI {
       // Create inline keyboard buttons
       const inline_keyboard_buttons = quests.map(quest => {
         const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
-        // Get the source holon: prefer _hologram.sourceHolon for resolved holograms, then quest.chat, fallback to holonId
-        const sourceHolon = quest._hologram?.sourceHolon || quest.chat || holonId;
+        // Get the source holon: prefer _hologram.sourceHolon for resolved holograms, then quest.holon/chat, fallback to holonId
+        const sourceHolon = quest._hologram?.sourceHolon || getQuestHolon(quest) || holonId;
         return [Markup.button.callback(title, 'view_original_quest_' + sourceHolon + '_' + quest.id)];
       });
 
@@ -635,7 +655,8 @@ class UI {
     this.languageCache.set(holonId, cachedLanguage);
     
     // Check if this is a hologram by examining the quest's origin
-    if (!isHologram && quest.chat && quest.chat.toString() !== holonId.toString()) {
+    const questHolonId = getQuestHolon(quest);
+    if (!isHologram && questHolonId && questHolonId.toString() !== holonId.toString()) {
       isHologram = true;
     }
     // Also check for meta information indicating it's from another chat
@@ -787,9 +808,10 @@ class UI {
     // Dependencies (if any)
     if (quest.dependencies && quest.dependencies.length > 0) {
       try {
+        const depHolonId = getQuestHolon(quest);
         const deps = await Promise.all(
           quest.dependencies.map(async id => {
-            const dep = await this.db.get(quest.chat + '/quests', id);
+            const dep = await this.db.get(depHolonId + '/quests', id);
             return dep?.title || '';
           })
         );
@@ -854,34 +876,37 @@ class UI {
       // First try meta information
       if (quest._meta && quest._meta.origin_chat_name) {
         hologramSource = quest._meta.origin_chat_name;
-      } 
+      }
       // Then try to get actual holon name with timeout using utility function
-      else if (quest.chat) {
-        try {
-          // Check cache first for performance
-          const cacheKey = `holon_name_${quest.chat}`;
-          if (!this.holonNameCache) this.holonNameCache = new Map();
-          
-          if (this.holonNameCache.has(cacheKey)) {
-            hologramSource = this.holonNameCache.get(cacheKey);
-          } else {
-            // Add timeout to holon name lookup using the utility function
-            const holonNamePromise = getHolonName(this.db, quest.chat, null);
-            
-            const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Holon name lookup timeout')), 2000)
-            );
-            
-            // Use the utility function result directly, it has its own fallback logic
-            const nameFromUtil = await Promise.race([holonNamePromise, timeoutPromise]);
-            hologramSource = nameFromUtil || 'Unknown Holon';
-            
-            // Cache the result for 10 minutes
-            this.holonNameCache.set(cacheKey, hologramSource);
-            setTimeout(() => this.holonNameCache.delete(cacheKey), 600000);
+      else {
+        const holonSrcId = getQuestHolon(quest);
+        if (holonSrcId) {
+          try {
+            // Check cache first for performance
+            const cacheKey = `holon_name_${holonSrcId}`;
+            if (!this.holonNameCache) this.holonNameCache = new Map();
+
+            if (this.holonNameCache.has(cacheKey)) {
+              hologramSource = this.holonNameCache.get(cacheKey);
+            } else {
+              // Add timeout to holon name lookup using the utility function
+              const holonNamePromise = getHolonName(this.db, holonSrcId, null);
+
+              const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Holon name lookup timeout')), 2000)
+              );
+
+              // Use the utility function result directly, it has its own fallback logic
+              const nameFromUtil = await Promise.race([holonNamePromise, timeoutPromise]);
+              hologramSource = nameFromUtil || 'Unknown Holon';
+
+              // Cache the result for 10 minutes
+              this.holonNameCache.set(cacheKey, hologramSource);
+              setTimeout(() => this.holonNameCache.delete(cacheKey), 600000);
+            }
+          } catch (e) {
+            hologramSource = 'External Holon';
           }
-        } catch (e) {
-          hologramSource = 'External Holon';
         }
       }
       
@@ -1206,25 +1231,26 @@ class UI {
       let provenanceIcon = '🏠';
       let isHologram = false;
       
+      const questHolonIdForProv = getQuestHolon(quest);
       if (quest._meta && quest._meta.origin_chat_name) {
         provenanceText = quest._meta.origin_chat_name;
         provenanceIcon = '🌐';
         isHologram = true;
-      } else if (quest.chat && quest.chat.toString() !== holonId.toString()) {
+      } else if (questHolonIdForProv && questHolonIdForProv.toString() !== holonId.toString()) {
         try {
-          const nameFromUtil = await utils.getHolonName(this.db, quest.chat, ctx);
+          const nameFromUtil = await utils.getHolonName(this.db, questHolonIdForProv, ctx);
           if (nameFromUtil && nameFromUtil.trim() !== '') { // Use if non-empty
             provenanceText = nameFromUtil;
             provenanceIcon = '🔗';
             isHologram = true;
           } else { // Fallback if util function gives empty/null/undefined
-            provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`;
+            provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${questHolonIdForProv}`;
             provenanceIcon = '🔗';
             isHologram = true;
           }
         } catch (e) {
-          console.warn(`Could not get holon name for chat ${quest.chat}:`, e);
-          provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${quest.chat}`; // Fallback on error
+          console.warn(`Could not get holon name for holon ${questHolonIdForProv}:`, e);
+          provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${questHolonIdForProv}`; // Fallback on error
           provenanceIcon = '🔗';
           isHologram = true;
         }
@@ -1474,10 +1500,17 @@ class UI {
   async screenshotHtml(html, pathToSave, onElement) {
     let page = null;
     try {
+      // Check if browser is available
+      if (!browserAvailable) {
+        console.warn('Browser not available, skipping screenshot generation');
+        return null;
+      }
+
       // Ensure browser is available with optimized pool
       if (!browser || !browser.connected) {
         console.log('Launching optimized browser instance...');
         browser = await puppetteer.launch(this.getPuppeteerLaunchOptions());
+        browserAvailable = true;
       }
 
       page = await browser.newPage();

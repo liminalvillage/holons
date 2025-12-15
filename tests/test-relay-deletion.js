@@ -9,7 +9,7 @@
  * 5. Check if the relay properly handles NIP-09 deletion events
  */
 
-import DB from './DB.js';
+import DB from './src/DB.js';
 
 const colors = {
   reset: '\x1b[0m',

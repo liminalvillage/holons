@@ -1,7 +1,6 @@
 // Description: This file contains the DB class which is used to interact with the database.
 import {HoloSphere, createHologram as hsCreateHologram} from 'holosphere';
-import { getRelays } from './relay-config.js';
-import { getOrCreateKey } from './utils/key-storage.js';
+import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
 
 // Helper to generate hex private key
@@ -21,14 +20,29 @@ class DB {
         // Priority: 1) .env HOLOSPHERE_PRIVATE_KEY, 2) stored key, 3) generate new key
         const appName = process.env.APPNAME || 'Holons';
         const privateKey = process.env.HOLOSPHERE_PRIVATE_KEY || getOrCreateKey(appName, generatePrivateKey);
-
+        // -=-=-=-=- use NOSTR
         this.holosphere = new HoloSphere({
+            backend:'nostr',
             appName: appName,
             privateKey: privateKey,  // Use persistent key
             logLevel: 'INFO',
-            relays: getRelays('production') // Use Nostr relays for distributed sync
+            relays: ['wss://relay.holons.io/'] // Use Nostr relays for distributed sync
         });
-        this.db = 'nostr'; // Using Nostr relays for distributed storage
+        this.db = 'nostr'
+
+        // -=-=-=-=- use GUN
+        // this.holosphere = new HoloSphere({ 
+        //     backend: 'gundb',
+		// 	appName: appName,
+		// 	privateKey: privateKey,
+		// 	logLevel: 'DEBUG',
+		// 	gundb: {
+		// 		peers: ['https://gun.holons.io/gun'],  // Gun relay server
+		// 		radisk: true,
+		// 		localStorage: false
+		// 	}
+		// })
+        // this.db = 'gun'; // Using Nostr relays for distributed storage
 
         // Performance: Default timeout for database operations (5 seconds)
         // This prevents slow relay responses from blocking the bot

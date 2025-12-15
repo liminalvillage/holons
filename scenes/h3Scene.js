@@ -3,7 +3,7 @@ import {
   Markup
 } from 'telegraf';
 import categoryTypes from "../data/guilds.json" with { type: "json" };
-import  {getholonId } from '../utilities.js';
+import  {getholonId } from '../src/utilities.js';
 
 import fs from 'fs';
 

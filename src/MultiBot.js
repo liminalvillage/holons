@@ -4,11 +4,6 @@ import { Client, GatewayIntentBits,ActionRowBuilder, ButtonBuilder, ButtonStyle,
 import MattermostClient from 'mattermost-client';
 
 import fs from 'fs';
-
-import qrReader from 'qrcode-reader';
-import Jimp from 'jimp';
-import axios from 'axios';
-import sharp from 'sharp';
 import { platform } from 'os';
 
 class MultiBot extends Telegraf {
@@ -241,39 +236,12 @@ class MultiBot extends Telegraf {
 
             if (['/task', '/quest', '/todo', '/offer', '/request', '/compito', '/missione'].includes(command)) {
                 console.log('Creating quest from photo caption:', command);
-                // Ensure ctx.message.text is set for quest creation
                 ctx.message.text = ctx.message.caption;
                 this.quests.quest(command.slice(1), ctx);
-                return; // Exit early to avoid QR processing
             } else if (['/spent', '/expense', '/speso'].includes(command)) {
                 ctx.message.text = ctx.message.caption;
                 this.expenses.spent(ctx);
-                return; // Exit early to avoid QR processing
             }
-        }
-
-        try {
-            const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-            const fileLink = await ctx.telegram.getFileLink(fileId);
-            const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
-
-            const rawImageBuffer = await sharp(response.data).toBuffer();
-            const jimpImage = await Jimp.read(rawImageBuffer);
-            const qr = new qrReader();
-
-            qr.callback = (err, value) => {
-                if (err) {
-                    return;
-                }
-
-                if (value) {
-                    ctx.reply(`${value.result.split('/').slice(value.result.split('/').length - 1)}`, Markup.inlineKeyboard([Markup.button.webApp('Open', `${value.result}`)]));
-                }
-            };
-
-            qr.decode(jimpImage.bitmap);
-        } catch (error) {
-            console.error('Error processing QR code:', error);
         }
     }
 

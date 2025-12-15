@@ -89,7 +89,7 @@
 
 import { Scenes, Markup } from 'telegraf';
 import i18next from 'i18next';
-import * as utils from '../utilities.js';
+import * as utils from '../src/utilities.js';
 
 export default class InputScene {
     constructor(bot) {

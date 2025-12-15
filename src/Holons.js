@@ -4,14 +4,14 @@ import { Scenes } from 'telegraf';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 
-import * as appreciative from './contracts/Appreciative.json' with { type: "json" };
-import * as appreciativefactory from './contracts/AppreciativeFactory.json' with { type: "json" };
-import * as factory from './contracts/IHolonFactory.json' with { type: "json" };
+import * as appreciative from '../contracts/Appreciative.json' with { type: "json" };
+import * as appreciativefactory from '../contracts/AppreciativeFactory.json' with { type: "json" };
+import * as factory from '../contracts/IHolonFactory.json' with { type: "json" };
 
-import * as managed from './contracts/Managed.json' with { type: "json" };
-import * as zoned from './contracts/Zoned.json' with { type: "json" };
-import * as splitter from './contracts/Splitter.json' with { type: "json" };
-import * as holons from './contracts/Holons.json' with { type: "json" };
+import * as managed from '../contracts/Managed.json' with { type: "json" };
+import * as zoned from '../contracts/Zoned.json' with { type: "json" };
+import * as splitter from '../contracts/Splitter.json' with { type: "json" };
+import * as holons from '../contracts/Holons.json' with { type: "json" };
 
 // "SplitterFactory": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
 // "AppreciativeFactory": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
@@ -21,7 +21,7 @@ import * as holons from './contracts/Holons.json' with { type: "json" };
 // "Holons": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
 // "TestToken": "0x0165878A594ca255338adfa4d48449f69242Eb8F"
 
-import { createHolonBundle, createBundleContracts } from './utils/holonOperations.js';
+import { createHolonBundle, createBundleContracts } from '../utils/holonOperations.js';
 
 export default class Holons {
   constructor(bot, db, settings) {    

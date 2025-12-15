@@ -25,7 +25,7 @@ import i18next from "i18next";
 import { Scenes } from 'telegraf';
 import * as utils from './utilities.js';
 // spagheti
-import { createHolonBundle, createBundleContracts } from './utils/holonOperations.js';
+import { createHolonBundle, createBundleContracts } from '../utils/holonOperations.js';
 import * as fs from 'fs';
 import Holons from './Holons.js';
 // spagheti

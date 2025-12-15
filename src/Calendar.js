@@ -2,7 +2,7 @@ import { readFile } from 'fs/promises';
 import { createRequire } from "module";
 const lang = JSON.parse(
     await readFile(
-        new URL('./data/locales.json', import.meta.url)
+        new URL('../data/locales.json', import.meta.url)
     )
 );
 import dayjs from 'dayjs';

@@ -7,14 +7,14 @@
  */
 
 import 'dotenv/config';
-import { log } from './utils/logger.js';
+import { log } from '../utils/logger.js';
 
 async function startBot() {
   log.info('Starting HolonsBot');
 
   try {
-    const { default: HolonsBot } = await import('./core/HolonsBotCore.js');
-    const { setupGlobalErrorHandlers } = await import('./utils/errorHandler.js');
+    const { default: HolonsBot } = await import('../core/HolonsBotCore.js');
+    const { setupGlobalErrorHandlers } = await import('../utils/errorHandler.js');
 
     // Setup global error handlers to prevent crashes
     setupGlobalErrorHandlers();

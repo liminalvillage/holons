@@ -4,7 +4,8 @@ import i18next from 'i18next';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js'; // Import UTC plugin
 import timezone from 'dayjs/plugin/timezone.js'; // Import timezone plugin
-import { log } from './utils/logger.js';
+import { log } from '../utils/logger.js';
+import { getQuestHolon } from './utilities.js';
 
 // Extend dayjs with plugins
 dayjs.extend(utc);
@@ -201,18 +202,20 @@ class Scheduler {
                     return;
                 }
                 
-                console.log('New quest created, quest ID:', quest.id, 'chat ID:', quest.chat);
-                
-                // Ensure quest has the correct chat ID
-                if (!quest.chat || quest.chat === 0) {
-                    quest.chat = originalTask.holonId;
-                    console.log('Corrected quest chat ID to:', quest.chat);
+                let questHolonId = getQuestHolon(quest);
+                console.log('New quest created, quest ID:', quest.id, 'holon ID:', questHolonId);
+
+                // Ensure quest has the correct holon ID
+                if (!questHolonId || questHolonId === 0) {
+                    quest.holon = originalTask.holonId;
+                    questHolonId = originalTask.holonId;
+                    console.log('Corrected quest holon ID to:', questHolonId);
                 }
-                
+
                 // Copy details from original task
                 quest.frequency = originalTask.frequency === undefined ? null : originalTask.frequency;
                 quest.recurringTaskId = originalTask.id;
-                
+
                 // Only set originalTaskId if the questId exists
                 if (originalTask.questId) {
                     quest.originalTaskId = originalTask.questId; // Reference to the original task
@@ -220,17 +223,17 @@ class Scheduler {
                 } else {
                     console.log('No questId found in original task to reference');
                 }
-                
+
                 // Copy description if it exists
                 if (originalTask.description) {
                     quest.description = originalTask.description;
                 }
-                
+
                 // Copy dependencies if they exist
                 if (originalTask.dependencies && originalTask.dependencies.length > 0) {
                     quest.dependencies = [...originalTask.dependencies];
                 }
-                
+
                 // Copy checklist if it exists
                 if (originalTask.checklistId) {
                     try {
@@ -245,12 +248,12 @@ class Scheduler {
                                 created: new Date(),
                                 questId: quest.id,
                                 parentTitle: quest.title,
-                                holonId: quest.chat
+                                holonId: questHolonId
                             };
-                            
+
                             // Save new checklist
-                            await this.db.put(quest.chat + '/checklists', newChecklist);
-                            
+                            await this.db.put(questHolonId + '/checklists', newChecklist);
+
                             // Update quest with new checklist ID
                             quest.checklistId = quest.id.toString();
                         }
@@ -258,10 +261,10 @@ class Scheduler {
                         console.error('Error copying checklist:', error);
                     }
                 }
-                
+
                 // Save the updated quest
-                console.log('Saving quest with chat ID:', quest.chat);
-                await this.db.put(quest.chat + '/quests', quest);
+                console.log('Saving quest with holon ID:', questHolonId);
+                await this.db.put(questHolonId + '/quests', quest);
                 const language = await this.settings.getLanguage(holonId);
                 await this.quests.updateMessage(ctx, quest, language, false);
                 
@@ -657,20 +660,24 @@ class Scheduler {
             const cronExpression = `${minute} ${hour} ${day} ${month} *`; // At specific UTC minute/hour/day/month
 
 
+            const schedQuestHolon = getQuestHolon(quest);
+
             // Create the job, explicitly setting the timezone to UTC
             const job = new CronJob(cronExpression, async() => {
                 try {
                     console.log(`Executing reminder for quest ${quest.id}`);
-                    
+
                     // Get fresh copy of the quest in case it was updated
-                    const freshQuest = await this.db.get(`${quest.chat}/quests`, quest.id);
+                    const freshQuest = await this.db.get(`${schedQuestHolon}/quests`, quest.id);
                     if (!freshQuest) {
                         console.log(`Quest ${quest.id} no longer exists, skipping reminder`);
                         // Clean up the reminder record since the quest no longer exists
                         await this.deleteReminderRecord(reminderId);
                         return;
                     }
-                    
+
+                    const freshQuestHolon = getQuestHolon(freshQuest);
+
                     // Check if the quest is still scheduled (not completed or cancelled)
                     if (freshQuest.status !== 'scheduled') {
                         console.log(`Quest ${quest.id} is no longer scheduled (status: ${freshQuest.status}), skipping reminder`);
@@ -678,35 +685,35 @@ class Scheduler {
                         await this.deleteReminderRecord(reminderId);
                         return;
                     }
-                    
+
                     // Create mockCtx for the reminder with proper telegram instance
                     const mockCtx = {
                         callbackQuery: {
                             message: {
                                 chat: {
-                                    id: freshQuest.chat
+                                    id: freshQuestHolon
                                 },
                                 message_id: freshQuest.id
                             }
                         },
                         telegram: this.bot.telegram,
                         reply: (text, options) => {
-                            return this.bot.telegram.sendMessage(freshQuest.chat, text, options);
+                            return this.bot.telegram.sendMessage(freshQuestHolon, text, options);
                         }
                     };
-                    
+
                     // Try direct message approach first
                     try {
-                        const language = await this.settings.getLanguage(freshQuest.chat);
+                        const language = await this.settings.getLanguage(freshQuestHolon);
                         await this.bot.telegram.sendMessage(
-                            freshQuest.chat,
+                            freshQuestHolon,
                             'Reminder: "' + freshQuest.title + '" is starting now!',
                             { reply_to_message_id: freshQuest.id }
                         );
-                        console.log(`Direct reminder sent for quest ${freshQuest.id} in chat ${freshQuest.chat}`);
+                        console.log(`Direct reminder sent for quest ${freshQuest.id} in holon ${freshQuestHolon}`);
                     } catch (directError) {
                         console.error('Error sending direct reminder message:', directError);
-                        
+
                         // Fall back to using the remind method
                         try {
                             await this.quests.remind(mockCtx, freshQuest);
@@ -715,35 +722,35 @@ class Scheduler {
                             console.error('Error in fallback reminder method:', remindError);
                         }
                     }
-                    
+
                     // Stop and remove this job after execution
                     this.jobs.delete(reminderId);
                     job.stop();
-                    
+
                     // Clean up the reminder from the global table
                     await this.deleteReminderRecord(reminderId);
-                    
+
                 } catch (error) {
                     console.error('Error executing reminder:', error);
                 }
             }, null, false, 'UTC'); // Explicitly set timezone to UTC
-            
+
             // Store the job
             this.jobs.set(reminderId, job);
-            
+
             // Start the job
             job.start();
-            
-            
+
+
             // Save the reminder ID with the quest for potential cancellation
             quest.reminderId = reminderId;
-            await this.db.put(`${quest.chat}/quests`, quest);
-            
+            await this.db.put(`${schedQuestHolon}/quests`, quest);
+
             // Store reminder data in global reminders table for persistence across restarts
             await this.saveReminderRecord({
                 id: reminderId,
                 questId: quest.id,
-                holonId: quest.chat,
+                holonId: schedQuestHolon,
                 when: reminderDate.toISOString(), // Convert Date to string for Nostr serialization
                 cronExpression: cronExpression,
                 title: quest.title || "Task reminder",

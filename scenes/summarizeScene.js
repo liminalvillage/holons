@@ -2,7 +2,7 @@ import {
   Scenes,
   Markup
 } from 'telegraf';
-import { summarize } from "../AI.js";
+import { summarize } from "../src/AI.js";
 
 let summarizeScene = new Scenes.BaseScene('summarize');
 

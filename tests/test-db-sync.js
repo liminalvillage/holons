@@ -5,7 +5,7 @@
  * and that data syncs across multiple instances.
  */
 
-import DB from './DB.js';
+import DB from './src/DB.js';
 
 console.log('\n=== HolonsBot DB Sync Test ===\n');
 

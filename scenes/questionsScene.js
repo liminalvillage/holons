@@ -2,7 +2,7 @@ import {
   Scenes,
   Markup
 } from 'telegraf';
-import { getQuestions  } from "../AI.js";
+import { getQuestions  } from "../src/AI.js";
 import questionsData from "../data/questions.json" with { type: "json" };
 
 // Create a scene

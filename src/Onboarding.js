@@ -1,19 +1,19 @@
 import { Telegraf, Scenes, Markup } from 'telegraf';
 
-import h3Scene from './scenes/h3Scene.js';
-import arrivalbookingScene from './scenes/arrivalbookingScene.js';
-import departurebookingScene from './scenes/departurebookingScene.js';
-import videoScene from './scenes/videoScene.js';
-import valuesScene from './scenes/valuesScene.js';
-import categoriesScene from './scenes/categoriesScene.js';
-import { questionsScene, createScenesForQuestions } from './scenes/questionsScene.js';
-import onboardingScene from './scenes/onboardingScene.js';
-import locationScene from './scenes/locationScene.js';
-import saveprofileScene from './scenes/saveprofileScene.js'
-import summarizeScene from './scenes/summarizeScene.js';
-import welcomeScene from './scenes/welcomeScene.js';
-import { dnaScene, createScenesForDNA } from './scenes/dnaScene.js';
-import done from './scenes/doneScene.js';
+import h3Scene from '../scenes/h3Scene.js';
+import arrivalbookingScene from '../scenes/arrivalbookingScene.js';
+import departurebookingScene from '../scenes/departurebookingScene.js';
+import videoScene from '../scenes/videoScene.js';
+import valuesScene from '../scenes/valuesScene.js';
+import categoriesScene from '../scenes/categoriesScene.js';
+import { questionsScene, createScenesForQuestions } from '../scenes/questionsScene.js';
+import onboardingScene from '../scenes/onboardingScene.js';
+import locationScene from '../scenes/locationScene.js';
+import saveprofileScene from '../scenes/saveprofileScene.js'
+import summarizeScene from '../scenes/summarizeScene.js';
+import welcomeScene from '../scenes/welcomeScene.js';
+import { dnaScene, createScenesForDNA } from '../scenes/dnaScene.js';
+import done from '../scenes/doneScene.js';
 
 export default class Onboarding {
   constructor(bot, db) {

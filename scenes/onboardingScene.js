@@ -4,7 +4,7 @@ import {
 } from 'telegraf';
 import {
   onboarding
-} from "../AI.js";
+} from "../src/AI.js";
 
 // Create a scene for onboarding
 const onboardingScene = new Scenes.BaseScene('onboarding');

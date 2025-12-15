@@ -3,7 +3,7 @@ import i18next from 'i18next';
 import { getholonId, getMessageId, capitalize, getDisplayName, getHolonName, createPaddedCaption } from './utilities.js';
 import { Calendar } from './Calendar.js';
 import { Scenes } from 'telegraf';
-import { log } from './utils/logger.js';
+import { log } from '../utils/logger.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -15,6 +15,16 @@ const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.ho
  * - SHOW_QUESTS_AS_IMAGES: 'true' for image display, 'false' for text-only
  */
 export default class Quests {
+    /**
+     * Get the holon ID from a quest object with backward compatibility.
+     * Supports both new 'holon' field and legacy 'chat' field.
+     * @param {Object} quest - The quest object
+     * @returns {string|number|null} The holon ID
+     */
+    static getQuestHolon(quest) {
+        return quest?.holon ?? quest?.chat ?? null;
+    }
+
     constructor(bot, db, users, settings) {
         this.bot = bot;
         this.db = db;
@@ -210,7 +220,7 @@ export default class Quests {
         const quest = {
             id: '',
             version: '0.1',
-            chat: holonId,
+            holon: holonId,
             message_thread_id: ctx.message?.is_topic_message ? ctx.message.message_thread_id : null,
             initiator: sender,
             title,
@@ -271,24 +281,25 @@ export default class Quests {
         
         // Set quest ID based on platform
         quest.id = ctx.platform === 'discord' ? nctx.id : nctx.message_id;
-        if (!quest.chat || quest.chat === 0) {
-            quest.chat = ctx.platform === 'discord' ? nctx.channel.id : nctx.chat.id;
+        if (!quest.holon || quest.holon === 0) {
+            quest.holon = ctx.platform === 'discord' ? nctx.channel.id : nctx.chat.id;
         }
         
         await this.db.put(holonId + '/quests', quest);
         
         // Update buttons and pin message
+        const questHolon = Quests.getQuestHolon(quest);
         try {
-            await this.bot.telegram.editMessageReplyMarkup(quest.chat, quest.id, null, 
+            await this.bot.telegram.editMessageReplyMarkup(questHolon, quest.id, null,
                 this.markup(quest, language).reply_markup);
         } catch {}
-        
-        this.bot.telegram.pinChatMessage(quest.chat, quest.id, { disable_notification: true }).catch(() => {});
+
+        this.bot.telegram.pinChatMessage(questHolon, quest.id, { disable_notification: true }).catch(() => {});
         this.bot.telegram.deleteMessage(holonId, messageID).catch(() => {});
         
         // Generate quest image if enabled (always generate when showAsImage is true)
         if (showAsImage) {
-            this.regenerateQuestImageBackground(ctx, quest, quest.chat, quest.id, this.markup(quest, language));
+            this.regenerateQuestImageBackground(ctx, quest, questHolon, quest.id, this.markup(quest, language));
         }
         
         return quest;
@@ -377,7 +388,8 @@ export default class Quests {
             quest = await this.db.get(holonId + '/quests', messageID);
         } catch {}
 
-        const isHologram = quest?.chat && quest.chat.toString() !== holonId.toString();
+        const questHolonId = Quests.getQuestHolon(quest);
+        const isHologram = questHolonId && questHolonId.toString() !== holonId.toString();
 
         if (isHologram) {
             const msgId = ctx.callbackQuery?.message.message_id || messageID;
@@ -620,172 +632,174 @@ export default class Quests {
     }
 
     markup(quest, language) {
-        if (!quest?.chat) return Markup.inlineKeyboard([]);
-        
+        const questHolon = Quests.getQuestHolon(quest);
+        if (!questHolon) return Markup.inlineKeyboard([]);
+
         if (!quest.id || quest.id === '') {
             return Markup.inlineKeyboard([
                 [Markup.button.callback(quest.title || 'Creating quest...', 'placeholder')]
             ]);
         }
-        
+
         const buttons = [];
         const isTask = ['event', 'task', 'quest', 'todo', 'mission', 'compito', 'recurring'].includes(quest.type);
         const isProposal = quest.type === 'proposal';
         const isOfferRequest = ['offer', 'request'].includes(quest.type);
-        
+
         if (quest.status === "completed") {
             buttons.push([
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                      `appreciate_quest_${quest.chat}_${quest.id}`)
+                Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                      `appreciate_quest_${questHolon}_${quest.id}`)
             ]);
         } else if (isTask) {
             buttons.push(
                 [
-                    Markup.button.callback(i18next.t('join', { lng: language }), 
-                                          `participate_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('complete', { lng: language }), 
-                                          `complete_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('join', { lng: language }),
+                                          `participate_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('complete', { lng: language }),
+                                          `complete_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                          `appreciate_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('schedule', { lng: language }), 
-                                          `schedule_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                          `appreciate_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('schedule', { lng: language }),
+                                          `schedule_quest_${questHolon}_${quest.id}`)
                 ]
             );
         } else if (isProposal) {
             buttons.push([
-                Markup.button.callback(i18next.t('agree', { lng: language }), 
-                                      `participate_quest_${quest.chat}_${quest.id}`),
-                Markup.button.callback(i18next.t('stop', { lng: language }), 
-                                      `stop_quest_${quest.chat}_${quest.id}`)
+                Markup.button.callback(i18next.t('agree', { lng: language }),
+                                      `participate_quest_${questHolon}_${quest.id}`),
+                Markup.button.callback(i18next.t('stop', { lng: language }),
+                                      `stop_quest_${questHolon}_${quest.id}`)
             ]);
         } else if (isOfferRequest) {
             buttons.push([
-                Markup.button.callback(i18next.t('accept', { lng: language }), 
-                                      `participate_quest_${quest.chat}_${quest.id}`),
-                Markup.button.callback(i18next.t('complete', { lng: language }), 
-                                      `complete_quest_${quest.chat}_${quest.id}`)
+                Markup.button.callback(i18next.t('accept', { lng: language }),
+                                      `participate_quest_${questHolon}_${quest.id}`),
+                Markup.button.callback(i18next.t('complete', { lng: language }),
+                                      `complete_quest_${questHolon}_${quest.id}`)
             ]);
         } else {
             buttons.push([
-                Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                      `appreciate_quest_${quest.chat}_${quest.id}`)
+                Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                      `appreciate_quest_${questHolon}_${quest.id}`)
             ]);
         }
-        
+
         if (quest.status !== "completed" && (isTask || isProposal || isOfferRequest)) {
             buttons.push([
-                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }), 
-                                      `more_actions_${quest.chat}_${quest.id}`)
+                Markup.button.callback('⚙️ ' + i18next.t('more_actions', { lng: language }),
+                                      `more_actions_${questHolon}_${quest.id}`)
             ]);
         }
-        
+
         return Markup.inlineKeyboard(buttons);
     }
 
     getExpandedButtons(quest, language) {
         const buttons = [];
         const isTask = ['task', 'quest', 'todo', 'mission', 'compito', 'recurring'].includes(quest.type);
-        
+        const questHolon = Quests.getQuestHolon(quest);
+
         if (quest.status === "completed") {
             return [
-                [Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                      `appreciate_quest_${quest.chat}_${quest.id}`)],
-                [Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 
-                                      `less_actions_${quest.chat}_${quest.id}`)]
+                [Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                      `appreciate_quest_${questHolon}_${quest.id}`)],
+                [Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }),
+                                      `less_actions_${questHolon}_${quest.id}`)]
             ];
         }
-        
+
         if (isTask) {
             buttons.push(
                 [
-                    Markup.button.callback(i18next.t('join', { lng: language }), 
-                                          `participate_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('complete', { lng: language }), 
-                                          `complete_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('join', { lng: language }),
+                                          `participate_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('complete', { lng: language }),
+                                          `complete_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                          `appreciate_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('schedule', { lng: language }), 
-                                          `schedule_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                          `appreciate_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('schedule', { lng: language }),
+                                          `schedule_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback(i18next.t('stop', { lng: language }), 
-                                          `stop_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('cancel', { lng: language }), 
-                                          `cancel_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('stop', { lng: language }),
+                                          `stop_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('cancel', { lng: language }),
+                                          `cancel_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback('⏰ -1h', `subtract_1h_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback('⏰ -15m', `subtract_time_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback('⏰ +15m', `add_time_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback('⏰ +1h', `add_1h_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback('⏰ -1h', `subtract_1h_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback('⏰ -15m', `subtract_time_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback('⏰ +15m', `add_time_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback('⏰ +1h', `add_1h_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback('📝 ' + i18next.t('description', { lng: language }), 
-                                          `descriptions_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }), 
-                                          `checklist_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback('📝 ' + i18next.t('description', { lng: language }),
+                                          `descriptions_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback('📋 ' + i18next.t('subtasks', { lng: language }),
+                                          `checklist_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback('🔗 ' + i18next.t('dependencies', { lng: language }), 
-                                          `dependencies_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language), 
-                                          `recurring_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback('🔗 ' + i18next.t('dependencies', { lng: language }),
+                                          `dependencies_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback('🔄 ' + this.getRecurringButtonText(quest, language),
+                                          `recurring_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback('👥 ' + i18next.t('select_participants', { lng: language }), 
-                                          `participants_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback('👥 ' + i18next.t('select_participants', { lng: language }),
+                                          `participants_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 
-                                          `publish_quest_${quest.chat}_${quest.id}`),
+                    Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }),
+                                          `publish_quest_${questHolon}_${quest.id}`),
                     Markup.button.url('📊 Dashboard',
-                                     `${DASHBOARD_ADDRESS}/${quest.chat}/tasks?task=${quest.id}`)
+                                     `${DASHBOARD_ADDRESS}/${questHolon}/tasks?task=${quest.id}`)
                 ]
             );
         } else if (quest.type === 'event') {
             buttons.push(
                 [
-                    Markup.button.callback(i18next.t('join', { lng: language }), 
-                                          `participate_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('complete', { lng: language }), 
-                                          `complete_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('join', { lng: language }),
+                                          `participate_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('complete', { lng: language }),
+                                          `complete_quest_${questHolon}_${quest.id}`)
                 ],
                 [
-                    Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                          `appreciate_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('schedule', { lng: language }), 
-                                          `schedule_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                          `appreciate_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('schedule', { lng: language }),
+                                          `schedule_quest_${questHolon}_${quest.id}`)
                 ],
-                [Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }), 
-                                       `publish_quest_${quest.chat}_${quest.id}`)]
+                [Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }),
+                                       `publish_quest_${questHolon}_${quest.id}`)]
             );
         } else if (quest.type === 'proposal') {
             buttons.push(
                 [
-                    Markup.button.callback(i18next.t('agree', { lng: language }), 
-                                          `participate_quest_${quest.chat}_${quest.id}`),
-                    Markup.button.callback(i18next.t('stop', { lng: language }), 
-                                          `stop_quest_${quest.chat}_${quest.id}`)
+                    Markup.button.callback(i18next.t('agree', { lng: language }),
+                                          `participate_quest_${questHolon}_${quest.id}`),
+                    Markup.button.callback(i18next.t('stop', { lng: language }),
+                                          `stop_quest_${questHolon}_${quest.id}`)
                 ],
-                [Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                       `appreciate_quest_${quest.chat}_${quest.id}`)]
+                [Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                       `appreciate_quest_${questHolon}_${quest.id}`)]
             );
         } else {
             buttons.push(
-                [Markup.button.callback(i18next.t('appreciate', { lng: language }), 
-                                       `appreciate_quest_${quest.chat}_${quest.id}`)]
+                [Markup.button.callback(i18next.t('appreciate', { lng: language }),
+                                       `appreciate_quest_${questHolon}_${quest.id}`)]
             );
         }
-        
+
         buttons.push(
-            [Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }), 
-                                   `less_actions_${quest.chat}_${quest.id}`)]
+            [Markup.button.callback('🔼 ' + i18next.t('less_actions', { lng: language }),
+                                   `less_actions_${questHolon}_${quest.id}`)]
         );
-        
+
         return buttons;
     }
 
@@ -800,7 +814,7 @@ export default class Quests {
         if (quest.category) lines.push(`| 📑 ${i18next.t('category', { lng: language })}: ${quest.category}`);
         
         if (quest.dependencies?.length) {
-            const deps = await this.batchLoadDependencies(quest.chat, quest.dependencies);
+            const deps = await this.batchLoadDependencies(Quests.getQuestHolon(quest), quest.dependencies);
             const titles = deps.map(dep => dep?.title || '').filter(title => title);
             if (titles.length > 0) {
                 lines.push(`| 🔗 ${i18next.t('dependencies', { lng: language })}: ${titles.join(', ')}`);
@@ -808,7 +822,7 @@ export default class Quests {
         }
         
         if (quest.checklistId && this.checklists) {
-            const checklist = await this.db.get(quest.chat + '/checklists', quest.checklistId);
+            const checklist = await this.db.get(Quests.getQuestHolon(quest) + '/checklists', quest.checklistId);
             if (checklist?.items.length) {
                 const completed = checklist.items.filter(i => i.checked).length;
                 lines.push(`| 📋 ${i18next.t('subtasks', { lng: language })}: ${completed}/${checklist.items.length} completed`);
@@ -830,7 +844,7 @@ export default class Quests {
         for (const [field, emoji] of [['when', '📅'], ['until', '🔚']]) {
             if (quest[field]) {
                 const date = new Date(quest[field]);
-                const timezone = await this.settings.getTimezone(quest.chat) || 'UTC';
+                const timezone = await this.settings.getTimezone(Quests.getQuestHolon(quest)) || 'UTC';
                 try {
                     const dateStr = date.toLocaleDateString(language, {
                         weekday: 'long', month: 'long', day: 'numeric',
@@ -868,7 +882,8 @@ export default class Quests {
      * @param {Object} options.interactingUser - User who triggered the action (for personal hologram)
      */
     async updateMessage(ctx, quest, language, options = {}) {
-        if (!quest?.chat || !quest.id) return;
+        const questHolon = Quests.getQuestHolon(quest);
+        if (!questHolon || !quest.id) return;
 
         // Support old signature: updateMessage(ctx, quest, language, useExpandedMarkup, explicitHologramsToUpdate)
         let useExpandedMarkup = false;
@@ -885,9 +900,9 @@ export default class Quests {
             interactingUser = options.interactingUser || null;
         }
 
-        log.info(`updateMessage called - quest: ${quest.title}, holonId: ${quest.chat}, messageID: ${quest.id}, useExpandedMarkup: ${useExpandedMarkup}`);
+        log.info(`updateMessage called - quest: ${quest.title}, holonId: ${questHolon}, messageID: ${quest.id}, useExpandedMarkup: ${useExpandedMarkup}`);
 
-        language = language || await this.getLanguage(quest.chat);
+        language = language || await this.getLanguage(questHolon);
         const markupConfig = useExpandedMarkup
             ? { reply_markup: { inline_keyboard: this.getExpandedButtons(quest, language) } }
             : this.markup(quest, language);
@@ -897,7 +912,7 @@ export default class Quests {
 
         // 1. Handle personal hologram for interacting user (before save, modifies quest.activeHolograms)
         // Only create personal hologram if the user is interacting from a group chat (not their own private chat)
-        if (interactingUser && quest.chat.toString() !== interactingUser.id.toString()) {
+        if (interactingUser && questHolon.toString() !== interactingUser.id.toString()) {
             await this.personalHologram(interactingUser.id, quest);
             const hologramResult = await this.ensureTelegramHologramMessage(ctx, quest, interactingUser.id, language);
             if (hologramResult) {
@@ -905,18 +920,18 @@ export default class Quests {
             }
         }
 
-        const mainMessageKey = `${quest.chat}_${quest.id}`;
+        const mainMessageKey = `${questHolon}_${quest.id}`;
 
         // 2. Update the main Telegram message
         try {
-            await ctx.telegram.getChat(quest.chat);
-            await this.updateQuestMessage(ctx, quest, quest.chat, quest.id, language, markupConfig);
+            await ctx.telegram.getChat(questHolon);
+            await this.updateQuestMessage(ctx, quest, questHolon, quest.id, language, markupConfig);
             updatedMessages.add(mainMessageKey);
         } catch {}
 
         // 3. ONE unified save - triggers auto-propagation to federated holons
         try {
-            await this.db.put(quest.chat + '/quests', quest);
+            await this.db.put(questHolon + '/quests', quest);
         } catch {}
 
         // 4. Handle federated Telegram messages
@@ -931,7 +946,8 @@ export default class Quests {
 
     // Helper methods
     async personalHologram(userId, quest) {
-        if (!userId || !quest?.id || !quest.chat) return;
+        const questHolon = Quests.getQuestHolon(quest);
+        if (!userId || !quest?.id || !questHolon) return;
 
         try {
             // Use holosphere's propagateData to create a proper hologram
@@ -946,7 +962,7 @@ export default class Quests {
 
             await this.db.propagateData(
                 questData,
-                quest.chat.toString(),    // sourceHolon - where the quest lives
+                questHolon.toString(),    // sourceHolon - where the quest lives
                 userId.toString(),         // targetHolon - user's personal holon
                 'quests',
                 { mode: 'reference' }      // options - create hologram reference
@@ -1128,7 +1144,7 @@ export default class Quests {
     }
 
     queueImageUpdate(ctx, quest, holonId, messageId, markupConfig) {
-        const key = `${quest.chat}_${quest.id}`;
+        const key = `${Quests.getQuestHolon(quest)}_${quest.id}`;
         this.imageUpdateQueue.set(key, { ctx, quest, holonId, messageId, markupConfig });
         
         if (this.imageUpdateTimer) clearTimeout(this.imageUpdateTimer);
@@ -1151,7 +1167,7 @@ export default class Quests {
 
     async regenerateQuestImageBackground(ctx, quest, holonId, messageId, markupConfig) {
         try {
-            const isHologram = holonId.toString() !== quest.chat.toString();
+            const isHologram = holonId.toString() !== Quests.getQuestHolon(quest)?.toString();
             const imagePath = await this.getCachedQuestImage(quest, holonId, isHologram);
 
             if (imagePath) {
@@ -2288,7 +2304,7 @@ export default class Quests {
                     if (userHologramData && userHologramData.soul) {
                         questToView = {
                             id: actualOriginalQuestId,
-                            chat: originalQuestholonId,
+                            holon: originalQuestholonId,
                             title: userHologramData.title || 'Quest from Remote Holon',
                             status: userHologramData.status || 'ongoing',
                             type: 'task',
@@ -2384,7 +2400,8 @@ export default class Quests {
         }
     }
     async ensureTelegramHologramMessage(ctx, quest, userId, language) {
-        if (!quest?.id || !quest.chat || !userId) return;
+        const questHolon = Quests.getQuestHolon(quest);
+        if (!quest?.id || !questHolon || !userId) return;
 
         try {
             // Check if user already has a hologram message for this quest
@@ -2406,7 +2423,7 @@ export default class Quests {
             // Create new hologram message
             const showImages = this.shouldShowQuestsAsImages();
             const baseMessageText = await this.createMessage(quest, language);
-            const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
+            const originalHolonName = await getHolonName(this.db, questHolon, ctx);
             const messageText = baseMessageText +
                 `| 🔗 Linked from ${originalHolonName}\n`;
             const markup = this.markup(quest, language);
@@ -2414,7 +2431,7 @@ export default class Quests {
             let hologramMessage;
 
             if (showImages) {
-                const questImagePath = await this.getCachedQuestImage(quest, quest.chat, true);
+                const questImagePath = await this.getCachedQuestImage(quest, questHolon, true);
                 if (questImagePath) {
                     try {
                         hologramMessage = await ctx.telegram.sendPhoto(userId,
@@ -2461,9 +2478,10 @@ export default class Quests {
     }
     async handleFederatedMessages(ctx, quest, language) {
         try {
-            console.log(`[handleFederatedMessages] Starting for quest ${quest.id} in chat ${quest.chat}`);
+            const questHolon = Quests.getQuestHolon(quest);
+            console.log(`[handleFederatedMessages] Starting for quest ${quest.id} in holon ${questHolon}`);
 
-            const holonId = quest.chat;
+            const holonId = questHolon;
             const holonIdStr = holonId.toString();
 
             // Re-read quest to get updated _meta.activeHolograms from auto-propagation
@@ -2510,7 +2528,7 @@ export default class Quests {
                 try {
                     // Create a federated quest message for Telegram
                     const baseMessageText = await this.createMessage(updatedQuest, language);
-                    const originalHolonName = await getHolonName(this.db, quest.chat, ctx);
+                    const originalHolonName = await getHolonName(this.db, questHolon, ctx);
                     const federatedMessageText = `🌐 **${i18next.t('federated_quest', { lng: language, defaultValue: 'Federated Quest' })}**\n` +
                         `📡 ${i18next.t('from_holon', { lng: language, defaultValue: 'From holon' })}: ${originalHolonName}\n\n` +
                         baseMessageText;
@@ -2518,14 +2536,14 @@ export default class Quests {
                     const federatedMarkup = Markup.inlineKeyboard([
                         [Markup.button.callback(
                             i18next.t('view_original', { lng: language, defaultValue: 'View Original' }),
-                            `view_original_quest_${quest.chat}_${quest.id}`
+                            `view_original_quest_${questHolon}_${quest.id}`
                         )]
                     ]);
 
                     let federatedMessage;
 
                     if (this.shouldShowQuestsAsImages()) {
-                        const questImagePath = await this.getCachedQuestImage(updatedQuest, quest.chat, true);
+                        const questImagePath = await this.getCachedQuestImage(updatedQuest, questHolon, true);
                         if (questImagePath) {
                             try {
                                 federatedMessage = await ctx.telegram.sendPhoto(targetHolon,
@@ -2720,7 +2738,7 @@ export default class Quests {
         // Save updated quest if hologram links were cleaned up
         if (quest.activeHolograms && quest.activeHolograms.length !== hologramsToUpdate.length) {
             try {
-                await this.db.put(quest.chat + '/quests', quest);
+                await this.db.put(Quests.getQuestHolon(quest) + '/quests', quest);
             } catch (error) {
                 console.error('Error saving quest after hologram cleanup:', error);
             }
@@ -2734,7 +2752,7 @@ export default class Quests {
         }
 
         try {
-            const language = await this.getLanguage(quest.chat);
+            const language = await this.getLanguage(Quests.getQuestHolon(quest));
             const message = i18next.t('quest_reminder', {
                 lng: language,
                 title: quest.title,
@@ -2808,7 +2826,8 @@ export default class Quests {
     async getCachedQuestImage(quest, holonId, isHologram = false) {
         // Create a cache key that includes quest data hash for invalidation
         const questDataHash = this.getQuestDataHash(quest);
-        const cacheKey = `${quest.id}_${quest.chat}_${isHologram}_${questDataHash}`;
+        const questHolon = Quests.getQuestHolon(quest);
+        const cacheKey = `${quest.id}_${questHolon}_${isHologram}_${questDataHash}`;
 
         if (this.questImageCache.has(cacheKey)) {
             return this.questImageCache.get(cacheKey);
@@ -2820,7 +2839,7 @@ export default class Quests {
 
         try {
             // Clear old cache entries for this quest (with different hashes)
-            this.invalidateQuestImageCache(quest.id, quest.chat, isHologram);
+            this.invalidateQuestImageCache(quest.id, questHolon, isHologram);
 
             const imagePath = await this.ui.getQuestImage(quest, holonId, isHologram);
             this.questImageCache.set(cacheKey, imagePath);
@@ -2926,12 +2945,13 @@ export default class Quests {
 
     // Helper method to save quest and invalidate image cache
     async saveQuest(quest, path = null) {
-        const questPath = path || `${quest.chat}/quests`;
+        const questHolon = Quests.getQuestHolon(quest);
+        const questPath = path || `${questHolon}/quests`;
         await this.db.put(questPath, quest);
 
         // Invalidate image cache for this quest
-        if (quest.id && quest.chat) {
-            this.invalidateQuestImageCache(quest.id, quest.chat);
+        if (quest.id && questHolon) {
+            this.invalidateQuestImageCache(quest.id, questHolon);
         }
     }
 

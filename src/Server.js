@@ -4,7 +4,7 @@ import path from 'path';
 import axios from 'axios';
 import https from 'https';
 import crypto from 'crypto';
-import { log } from './utils/logger.js';
+import { log } from '../utils/logger.js';
 
 class Server {
   constructor(bot) {

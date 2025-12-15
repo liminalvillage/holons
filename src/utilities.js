@@ -11,6 +11,16 @@ export const createPaddedCaption = (text = '') => {
     return text + padding;
 };
 
+/**
+ * Get the holon ID from a quest object with backward compatibility.
+ * Supports both new 'holon' field and legacy 'chat' field.
+ * @param {Object} quest - The quest object
+ * @returns {string|number|null} The holon ID
+ */
+export const getQuestHolon = (quest) => {
+    return quest?.holon ?? quest?.chat ?? null;
+};
+
 // Use format "functionName_callbackData" with callback functions
 export const getCallbackData = (ctx) => ctx.match[0].split("_")[1];
 
