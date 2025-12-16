@@ -1015,15 +1015,22 @@ export default class Settings {
             await ctx.answerCbQuery().catch()
         });
         
-        // Action handler for viewing hex map (temporary replacement for web app button)
+        // Action handler for viewing hex map - opens dashboard map lens
         this.bot.action('hex_view_map', async (ctx) => {
             await ctx.answerCbQuery().catch()
             const holonId = ctx.callbackQuery.message.chat.id;
             const language = await this.getLanguage(holonId);
-            await ctx.reply(i18next.t('settings_map_redirect', { 
-                lng: language, 
-                defaultValue: 'View the hex map at: https://hexamap.holons.io/index.html?id=' + holonId 
-            }));
+            const mapUrl = `${DASHBOARD_ADDRESS}/${holonId}/map`;
+            await ctx.reply(i18next.t('settings_map_redirect', {
+                lng: language,
+                defaultValue: 'View this holon on the map:'
+            }), {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: `🗺️ ${i18next.t('settings_view_map', { lng: language, defaultValue: 'View on Map' })}`, url: mapUrl }
+                    ]]
+                }
+            });
         });
 
         // Action handler for editing hex (from hex menu) - Migrated to InputScene
@@ -2014,6 +2021,8 @@ export default class Settings {
     async showSettingsMenu(ctx, edit = false) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         const userId = ctx.callbackQuery?.from?.id || ctx.from?.id;
+        const chatType = ctx.callbackQuery?.message?.chat?.type || ctx.chat?.type;
+        const isPrivateChat = chatType === 'private';
         if (!holonId) {
             console.error('Could not determine chat ID');
             return;
@@ -2090,9 +2099,11 @@ export default class Settings {
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
                     ],
-                    // 9. Dashboard (full width) - opens as Telegram webapp
+                    // 9. Dashboard (full width) - web_app only works in private chats, use URL for groups
                     [
-                        { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, web_app: { url: dashboardUrl } }
+                        isPrivateChat
+                            ? { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, web_app: { url: dashboardUrl } }
+                            : { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: dashboardUrl }
                     ]
                 ]
             }

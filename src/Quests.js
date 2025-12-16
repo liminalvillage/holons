@@ -174,7 +174,6 @@ export default class Quests {
         this.bot.action(/remove_dependency_(.+)/, this.safeHandler(ctx => this.handleRemoveDependency(ctx)));
         this.bot.action(/toggle_quest_participant:(.+)_(.+)/, this.safeHandler(ctx => this.handleToggleParticipant(ctx)));
         this.bot.action(/select_all_quest_participants:(.+)/, this.safeHandler(ctx => this.handleSelectAllParticipants(ctx)));
-        this.bot.action(/toggle_quest_holon:(.+)/, this.safeHandler(ctx => this.handleToggleHolonParticipation(ctx)));
         this.bot.action(/set_recurring_(.+)/, this.safeHandler(ctx => this.handleSetRecurring(ctx)));
         this.bot.action(/back_from_recurring_(.+)/, this.safeHandler(ctx => this.handleBackFromRecurring(ctx)));
         this.bot.action(/back_(.+)/, this.safeHandler(ctx => this.handleBackAction(ctx)));
@@ -2065,46 +2064,6 @@ export default class Quests {
         } catch (error) {
             console.error('Error selecting all participants:', error);
             await ctx.answerCbQuery('Error selecting all participants');
-        }
-    }
-    async handleToggleHolonParticipation(ctx) {
-        try {
-            await ctx.answerCbQuery().catch(() => {});
-
-            const questId = ctx.callbackQuery.data.split(':')[1];
-            const holonId = ctx.callbackQuery.message.chat.id;
-
-            let quest = await this.db.get(holonId + '/quests', questId.toString());
-            if (!quest) {
-                await ctx.answerCbQuery('Quest not found');
-                return;
-            }
-
-            // Ensure participants array exists
-            if (!quest.participants) {
-                quest.participants = [];
-            }
-
-            const isHolonSelected = quest.participants.some(p => p.id === parseInt(holonId));
-
-            if (isHolonSelected) {
-                // "This Holon" is currently selected, deselect it and select all individual users
-                const users = await this.getUsers(holonId);
-                quest.participants = users.slice();
-            } else {
-                // "This Holon" is not selected, select it and deselect everyone else
-                const holonUser = { id: parseInt(holonId), first_name: "This Holon" };
-                quest.participants = [holonUser];
-            }
-
-            await this.db.put(holonId + '/quests', quest);
-
-            // Refresh the participant selection view
-            await this.refreshParticipantView(ctx, holonId, questId);
-
-        } catch (error) {
-            console.error('Error toggling holon participation:', error);
-            await ctx.answerCbQuery('Error updating holon participation');
         }
     }
     async backFromParticipants(ctx) {

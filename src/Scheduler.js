@@ -162,7 +162,9 @@ class Scheduler {
         const job = new CronJob(cronTime, async() => {
             try {
                 // Store original task details for reference
-                const originalTask = {...task}; // Create a copy to ensure we don't modify the original
+                const originalTask = {...task};
+                if (originalTask.chat )
+                    orginalTask[holonId]= originalTask.chat // Create a copy to ensure we don't modify the original
                 console.log('Running scheduled task for holonId:', originalTask.holonId);
                 
                 // Ensure we have a valid chat ID

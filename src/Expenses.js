@@ -83,14 +83,6 @@ export default class Expenses {
             await this.selectAllParticipants(ctx, holonId, messageID, expenseID);
         });
 
-        // New action for toggling "This Holon" (group) participation
-        bot.action(/toggle_holon:(.+)/, async (ctx) => {
-            const holonId = utils.getholonId(ctx);
-            const messageID = utils.getMessageId(ctx);
-            const expenseID = ctx.match[1];
-            await this.toggleHolonParticipation(ctx, holonId, messageID, expenseID);
-        });
-
         bot.command(['clear', 'balance', 'credit', 'bilancio'], async (ctx) => {
             const holonId = ctx.chat.id;
             const currency = ctx.message.text.split(' ').slice(1)[0];
@@ -734,15 +726,7 @@ export default class Expenses {
             
             // Create buttons for each user
             const userButtons = [];
-            
-            // Add "This Holon" (group) button first
-            const isHolonSelected = expense.splitWith.includes(holonId);
-            const holonStatus = isHolonSelected ? '✅' : '⬜️';
-            userButtons.push([{
-                text: `${holonStatus} 🏛️ This Holon`,
-                callback_data: `toggle_holon:${expenseID}`
-            }]);
-            
+
             // Add individual user buttons
             for (const user of users) {
                 const isSelected = expense.splitWith.includes(user.id);
@@ -868,36 +852,6 @@ export default class Expenses {
         }
     }
 
-    // Toggle "This Holon" (group) participation
-    async toggleHolonParticipation(ctx, holonId, messageID, expenseID) {
-        try {
-            await ctx.answerCbQuery().catch(() => {});
-            
-            let expense = await this.db.get(holonId + '/expenses', expenseID);
-            if (!expense) {
-                await ctx.answerCbQuery('Expense not found');
-                return;
-            }
-
-            if (expense.splitWith.includes(holonId)) {
-                // "This Holon" is currently selected, deselect it and select all individual users
-                const users = await this.db.getAll(holonId + '/users');
-                expense.splitWith = users.map(user => user.id);
-            } else {
-                // "This Holon" is not selected, select it and deselect everyone else
-                expense.splitWith = [holonId];
-            }
-
-            await this.db.put(holonId + '/expenses', expense);
-            
-            // Refresh the participant selection view
-            await this.showParticipantSelection(ctx, holonId, messageID, expenseID);
-
-        } catch (error) {
-            console.error('Error toggling holon participation:', error);
-            await ctx.answerCbQuery('Error updating holon participation');
-        }
-    }
 }
 
 

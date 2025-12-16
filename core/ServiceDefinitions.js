@@ -180,12 +180,12 @@ export const serviceDefinitions = {
     factory: ({ telebot, database }) => {
       const users = new Users(telebot, database);
 
-      // Add middleware to track user interactions
+      // Add middleware to track user interactions (skip bots)
       telebot.use((ctx, next) => {
-        if (ctx.callbackQuery) {
+        if (ctx.callbackQuery && !ctx.callbackQuery.from?.is_bot) {
           users.getUserInfo(ctx.callbackQuery.from, ctx.callbackQuery.message?.chat?.id);
         }
-        if (ctx.message) {
+        if (ctx.message && !ctx.message.from?.is_bot) {
           users.getUserInfo(ctx.message.from, ctx.message.chat.id);
         }
         return next();

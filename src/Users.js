@@ -125,6 +125,11 @@ class Users {
 
   //gets an existing user or  creates a new one
   async getUserInfo(user, holonId) {
+    // Never add bots to the database
+    if (user?.is_bot) {
+      return null;
+    }
+
     let userinfo = await this.db.get(holonId + '/users', user.id)
     // Initialize the receiver's points if they do not exist yet
     if (!userinfo || userinfo == '') {
