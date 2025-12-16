@@ -13,7 +13,8 @@
 	import RouteTransition from '../components/RouteTransition.svelte';
 
 	// Browser panel state (replaces sidebar for holon browsing)
-	let browserOpen = false;
+	// Default open on desktop, closed on mobile
+	let browserOpen = browser ? window.innerWidth >= 1024 : true;
 
 	// Open browser panel
 	function openBrowser() {
@@ -187,7 +188,7 @@
 		position: fixed;
 		inset: 0;
 		background: rgba(0, 0, 0, 0.5);
-		z-index: var(--z-overlay, 40);
+		z-index: 25; /* Below browser panel (z-index: 30) so panel is clickable */
 		border: none;
 		cursor: pointer;
 	}

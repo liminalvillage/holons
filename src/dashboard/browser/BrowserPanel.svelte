@@ -534,9 +534,16 @@
 		height: 100vh;
 		background: var(--color-bg-primary, #111827);
 		border-right: 1px solid var(--color-border, #374151);
-		transition: transform 350ms ease, width 350ms ease;
+		transition: transform 350ms ease, width 350ms ease, margin-left 350ms ease;
 		overflow: hidden;
 		flex-shrink: 0;
+	}
+
+	/* Desktop: hide sidebar by shifting it off-screen */
+	@media (min-width: 1025px) {
+		.browser-panel:not(.browser-panel--open) {
+			margin-left: calc(-1 * var(--browser-width-expanded, 280px));
+		}
 	}
 
 	/* Mobile overlay style */
@@ -547,9 +554,10 @@
 			top: 0;
 			bottom: 0;
 			width: min(85vw, 320px);
-			z-index: var(--z-fixed, 30);
+			z-index: 50; /* High z-index to be above backdrop (25) and other content */
 			transform: translateX(-100%);
-			box-shadow: var(--shadow-xl);
+			box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+			background: var(--color-bg-primary, #111827); /* Ensure solid background */
 		}
 
 		.browser-panel--open {
