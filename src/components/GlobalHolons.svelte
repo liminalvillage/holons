@@ -5,6 +5,7 @@
     import { browser } from "$app/environment";
     import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
+    import { isPublicSpaceMode } from "../lib/stores/holosphere";
     import { fetchHolonName } from "../utils/holonNames";
     import { addClickedHolon, addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 
@@ -208,20 +209,23 @@
                 holonIds.add($ID);
 
                 // Register current holon in global registry if not there
-                try {
-                    const settings = await holosphere.get($ID, 'settings');
-                    if (settings?.name) {
-                        await holosphere.writeGlobal('holons_registry', {
-                            id: $ID,
-                            name: settings.name,
-                            purpose: settings.purpose || '',
-                            createdAt: settings.createdAt || Date.now(),
-                            type: 'personal'
-                        });
-                        console.log(`Registered current holon ${$ID} in global registry`);
+                // Skip in public space mode (read-only, using service key)
+                if (!$isPublicSpaceMode) {
+                    try {
+                        const settings = await holosphere.get($ID, 'settings');
+                        if (settings?.name) {
+                            await holosphere.writeGlobal('holons_registry', {
+                                id: $ID,
+                                name: settings.name,
+                                purpose: settings.purpose || '',
+                                createdAt: settings.createdAt || Date.now(),
+                                type: 'personal'
+                            });
+                            console.log(`Registered current holon ${$ID} in global registry`);
+                        }
+                    } catch (error) {
+                        console.warn('Failed to register current holon:', error);
                     }
-                } catch (error) {
-                    console.warn('Failed to register current holon:', error);
                 }
             }
 

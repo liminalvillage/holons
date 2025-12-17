@@ -145,16 +145,28 @@ export class HolonsContract {
    */
   private async getContract(address: string, abi: any[]): Promise<ethers.Contract> {
     const key = `${address}:${JSON.stringify(abi).substring(0, 50)}`;
-    
+
+    // Debug: Log what ABI is being used
+    console.log('[HolonsContract] getContract:', {
+      address,
+      abiLength: abi?.length || 0,
+      abiPreview: abi?.slice(0, 2).map((item: any) => item.name || item.type) || 'empty',
+      cacheKey: key.substring(0, 80)
+    });
+
+    if (!abi || abi.length === 0) {
+      console.error('[HolonsContract] WARNING: Empty ABI for contract at', address);
+    }
+
     if (!this.contracts.has(key)) {
       const contract = new ethers.Contract(
-        address, 
-        abi, 
+        address,
+        abi,
         this.signer || this.provider
       );
       this.contracts.set(key, contract);
     }
-    
+
     return this.contracts.get(key)!;
   }
 
@@ -162,13 +174,29 @@ export class HolonsContract {
    * Execute a transaction with proper error handling and events
    */
   private async executeTransaction(
-    contract: ethers.Contract, 
-    method: string, 
-    args: any[] = [], 
+    contract: ethers.Contract,
+    method: string,
+    args: any[] = [],
     options: any = {}
   ): Promise<ethers.TransactionResponse> {
     if (!this.signer) {
       throw new Error('Wallet not connected');
+    }
+
+    // Debug: Log contract details
+    console.log('[HolonsContract] executeTransaction:', {
+      contractAddress: contract.target,
+      method,
+      args,
+      hasInterface: !!contract.interface,
+      hasMethod: typeof contract[method] === 'function'
+    });
+
+    // Verify the method exists on the contract interface
+    if (!contract.interface || !contract[method]) {
+      console.error('[HolonsContract] Method not found on contract:', method);
+      console.error('[HolonsContract] Contract interface:', contract.interface);
+      throw new Error(`Method "${method}" not found on contract at ${contract.target}`);
     }
 
     try {
@@ -666,7 +694,16 @@ export class HolonsContract {
     bundleAddress: string,
     interiorPercent: number
   ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
     const exteriorPercent = 100 - interiorPercent;
+
+    console.log('[HolonsContract] setFlowSplit called:', {
+      bundleAddress,
+      interiorPercent,
+      exteriorPercent,
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
 
     const contract = await this.getContract(
       bundleAddress,
@@ -688,6 +725,14 @@ export class HolonsContract {
     bundleAddress: string,
     steepness: bigint
   ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
+    console.log('[HolonsContract] setSteepness called:', {
+      bundleAddress,
+      steepness: steepness.toString(),
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
+
     const contract = await this.getContract(
       bundleAddress,
       this.contractABIs.Bundle
@@ -708,6 +753,14 @@ export class HolonsContract {
     bundleAddress: string,
     nzones: number
   ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
+    console.log('[HolonsContract] setNzones called:', {
+      bundleAddress,
+      nzones,
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
+
     const contract = await this.getContract(
       bundleAddress,
       this.contractABIs.Bundle
@@ -718,6 +771,72 @@ export class HolonsContract {
       'setNzones',
       [nzones],
       { gasLimit: 500000 }
+    );
+  }
+
+  /**
+   * Set interior member splits on a Bundle contract
+   * This adds members (if not already added) and sets their share percentages
+   */
+  async setInteriorSplit(
+    bundleAddress: string,
+    userIds: string[],
+    percentages: number[]
+  ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
+    if (userIds.length !== percentages.length) {
+      throw new Error('userIds and percentages arrays must have the same length');
+    }
+
+    console.log('[HolonsContract] setInteriorSplit called:', {
+      bundleAddress,
+      userIds,
+      percentages,
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
+
+    const contract = await this.getContract(
+      bundleAddress,
+      this.contractABIs.Bundle
+    );
+
+    // Convert percentages to uint256 values
+    const percentagesUint = percentages.map(p => BigInt(Math.round(p)));
+
+    return this.executeTransaction(
+      contract,
+      'setInteriorSplit',
+      [userIds, percentagesUint],
+      { gasLimit: 1000000 }
+    );
+  }
+
+  /**
+   * Add members to a Bundle contract's interior
+   */
+  async addInteriorMembers(
+    bundleAddress: string,
+    userIds: string[]
+  ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
+    console.log('[HolonsContract] addInteriorMembers called:', {
+      bundleAddress,
+      userIds,
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
+
+    const contract = await this.getContract(
+      bundleAddress,
+      this.contractABIs.Bundle
+    );
+
+    return this.executeTransaction(
+      contract,
+      'addMembers',
+      [userIds],
+      { gasLimit: 1000000 }
     );
   }
 
@@ -810,12 +929,80 @@ export class HolonsContract {
   }
 
   /**
+   * Get interior share for a specific user from a Bundle contract
+   */
+  async getInteriorShare(bundleAddress: string, userId: string): Promise<bigint> {
+    try {
+      const contract = await this.getContract(
+        bundleAddress,
+        this.contractABIs.Bundle
+      );
+      return await contract.interiorShare(userId);
+    } catch (error) {
+      console.error('Error getting interior share:', error);
+      return BigInt(0);
+    }
+  }
+
+  /**
+   * Get ether balance for a specific user from a Bundle contract
+   */
+  async getUserEtherBalance(bundleAddress: string, userId: string): Promise<bigint> {
+    try {
+      const contract = await this.getContract(
+        bundleAddress,
+        this.contractABIs.Bundle
+      );
+      return await contract.etherBalance(userId);
+    } catch (error) {
+      console.error('Error getting user ether balance:', error);
+      return BigInt(0);
+    }
+  }
+
+  /**
+   * Batch fetch all interior members with their shares and balances
+   */
+  async getInteriorMembersWithBalances(bundleAddress: string): Promise<{
+    userId: string;
+    share: bigint;
+    etherBalance: bigint;
+  }[]> {
+    try {
+      const members = await this.getInteriorMembers(bundleAddress);
+
+      const memberData = await Promise.all(
+        members.map(async (userId) => {
+          const [share, etherBalance] = await Promise.all([
+            this.getInteriorShare(bundleAddress, userId),
+            this.getUserEtherBalance(bundleAddress, userId)
+          ]);
+          return { userId, share, etherBalance };
+        })
+      );
+
+      return memberData;
+    } catch (error) {
+      console.error('Error getting interior members with balances:', error);
+      return [];
+    }
+  }
+
+  /**
    * Add a member to a Bundle contract
    */
   async addMember(
     bundleAddress: string,
     userId: string
   ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
+    console.log('[HolonsContract] addMember called:', {
+      bundleAddress,
+      userId,
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
+
     const contract = await this.getContract(
       bundleAddress,
       this.contractABIs.Bundle
@@ -826,6 +1013,40 @@ export class HolonsContract {
       'addMember',
       [userId],
       { gasLimit: 500000 }
+    );
+  }
+
+  /**
+   * Batch assign members to zones in a Bundle contract
+   */
+  async assignMembersToZones(
+    bundleAddress: string,
+    userIds: string[],
+    zones: number[]
+  ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
+    if (userIds.length !== zones.length) {
+      throw new Error('userIds and zones arrays must have the same length');
+    }
+
+    console.log('[HolonsContract] assignMembersToZones called:', {
+      bundleAddress,
+      userIds,
+      zones,
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
+
+    const contract = await this.getContract(
+      bundleAddress,
+      this.contractABIs.Bundle
+    );
+
+    return this.executeTransaction(
+      contract,
+      'assignMembersToZones',
+      [userIds, zones.map(z => BigInt(z))],
+      { gasLimit: 2000000 }
     );
   }
 

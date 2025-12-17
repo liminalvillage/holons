@@ -282,6 +282,93 @@ export class HolonsManager extends EventEmitter {
   }
 
   /**
+   * Update interior members with their share percentages
+   */
+  async updateInteriorMembers(
+    bundleAddress: string,
+    members: Array<{ userId: string; sharePercent: number }>
+  ): Promise<ethers.TransactionResponse> {
+    const userIds = members.map(m => m.userId);
+    const percentages = members.map(m => m.sharePercent);
+
+    const tx = await this.contract.setInteriorSplit(bundleAddress, userIds, percentages);
+
+    this.contract.waitForTransaction(tx, 'Interior members updated').then(() => {
+      this.emit('members:updated', bundleAddress, { members });
+    });
+
+    return tx;
+  }
+
+  /**
+   * Add members to the interior of a Bundle
+   */
+  async addInteriorMembers(
+    bundleAddress: string,
+    userIds: string[]
+  ): Promise<ethers.TransactionResponse> {
+    const tx = await this.contract.addInteriorMembers(bundleAddress, userIds);
+
+    this.contract.waitForTransaction(tx, 'Members added').then(() => {
+      this.emit('members:added', bundleAddress, { userIds });
+    });
+
+    return tx;
+  }
+
+  /**
+   * Add a single member to the interior of a Bundle
+   */
+  async addMember(
+    bundleAddress: string,
+    userId: string
+  ): Promise<ethers.TransactionResponse> {
+    const tx = await this.contract.addMember(bundleAddress, userId);
+
+    this.contract.waitForTransaction(tx, 'Member added').then(() => {
+      this.emit('member:added', bundleAddress, { userId });
+    });
+
+    return tx;
+  }
+
+  /**
+   * Assign a member to a zone in a Bundle contract
+   */
+  async assignToZone(
+    bundleAddress: string,
+    userId: string,
+    zone: number
+  ): Promise<ethers.TransactionResponse> {
+    const tx = await this.contract.assignToZone(bundleAddress, userId, zone);
+
+    this.contract.waitForTransaction(tx, `Member assigned to zone ${zone}`).then(() => {
+      this.emit('member:zoneAssigned', bundleAddress, { userId, zone });
+    });
+
+    return tx;
+  }
+
+  /**
+   * Batch assign members to zones in a Bundle contract
+   */
+  async assignMembersToZones(
+    bundleAddress: string,
+    assignments: Array<{ userId: string; zone: number }>
+  ): Promise<ethers.TransactionResponse> {
+    const userIds = assignments.map(a => a.userId);
+    const zones = assignments.map(a => a.zone);
+
+    const tx = await this.contract.assignMembersToZones(bundleAddress, userIds, zones);
+
+    this.contract.waitForTransaction(tx, `${assignments.length} members assigned to zones`).then(() => {
+      this.emit('members:zonesAssigned', bundleAddress, { assignments });
+    });
+
+    return tx;
+  }
+
+  /**
    * Get current flow configuration from Bundle contract
    */
   async getFlowConfiguration(bundleAddress: string): Promise<FlowConfig | null> {
@@ -356,6 +443,33 @@ export class HolonsManager extends EventEmitter {
 
     // Get balances for the Bundle contract (single address)
     return this.contract.getTokenBalances(bundle.address, tokenAddresses);
+  }
+
+  /**
+   * Get interior members with their shares and balances
+   */
+  async getInteriorMembersWithBalances(holonId: string): Promise<{
+    userId: string;
+    share: bigint;
+    sharePercent: number;
+    etherBalance: bigint;
+    etherFormatted: string;
+  }[]> {
+    const bundle = await this.getHolonBundle(holonId);
+    if (!bundle || !bundle.address) {
+      return [];
+    }
+
+    const members = await this.contract.getInteriorMembersWithBalances(bundle.address);
+
+    // Calculate total shares for percentage
+    const totalShares = members.reduce((sum, m) => sum + m.share, BigInt(0));
+
+    return members.map(m => ({
+      ...m,
+      sharePercent: totalShares > 0 ? Number((m.share * BigInt(10000)) / totalShares) / 100 : 0,
+      etherFormatted: ethers.formatEther(m.etherBalance)
+    }));
   }
 
   /**

@@ -106,8 +106,36 @@
 		if (state.privateKey) {
 			// Returning user - key exists, proceed to app
 			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey }), 300);
+		} else if (telegramUser && isTelegramWebApp) {
+			// Telegram Mini App user - check for existing mapping and auto-login
+			isProcessing = true;
+			try {
+				existingTelegramMapping = await checkTelegramMapping(telegramUser.id);
+				console.log('Existing mapping found:', existingTelegramMapping);
+			} catch (err) {
+				console.error('Error checking telegram mapping:', err);
+			}
+			isProcessing = false;
+
+			if (existingTelegramMapping) {
+				// User has existing mapping - skip splash and navigate directly to their holon
+				console.log('Telegram Mini App: Auto-login to existing holon:', existingTelegramMapping.holonName);
+				setTimeout(() => {
+					dispatch('authenticated', {
+						publicKey: existingTelegramMapping!.publicKey,
+						holonName: existingTelegramMapping!.holonName,
+						telegramUserId: telegramUser.id,
+						mode: 'telegram-mapped'
+					});
+				}, 300);
+			} else {
+				// New Telegram user - show telegram choice screen to create identity
+				setTimeout(() => {
+					view = 'telegram-choice';
+				}, 500);
+			}
 		} else if (telegramUser) {
-			// Telegram user (Mini App or logged in via widget) - check for existing mapping
+			// Telegram user via widget (not in Mini App) - show telegram choice screen
 			isProcessing = true;
 			try {
 				existingTelegramMapping = await checkTelegramMapping(telegramUser.id);

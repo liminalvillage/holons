@@ -8,6 +8,7 @@
     import { handshake, nostrUtils } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
     import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
+    import { isPublicSpaceMode } from "../lib/stores/holosphere";
     import { fetchHolonName } from "../utils/holonNames";
     import { addVisitedHolon } from "../utils/localStorage";
     import TitleBar from "./shared/TitleBar.svelte";
@@ -310,6 +311,13 @@
     }
 
     async function addFederation() {
+        // Prevent federation in public space mode (read-only)
+        if ($isPublicSpaceMode) {
+            error = 'Cannot create federation in public space mode';
+            console.log('Public space mode: blocking federation creation');
+            return;
+        }
+
         // Determine the federation target: prefer npub/hex pubkey, fallback to holon ID
         let federationTarget = '';
 
@@ -436,6 +444,13 @@
 
     async function updateLensConfig(holonId: string, inboundLenses: string[], outboundLenses: string[]) {
         if (!holosphere || !currentHolonId) return;
+
+        // Prevent lens config updates in public space mode (read-only)
+        if ($isPublicSpaceMode) {
+            error = 'Cannot update lens configuration in public space mode';
+            console.log('Public space mode: blocking lens config update');
+            return;
+        }
 
         saving = true;
 
@@ -629,6 +644,13 @@
         customExpiration?: string
     ): Promise<boolean> {
         if (!holosphere || !currentHolonId) return false;
+
+        // Prevent granting capabilities in public space mode (read-only)
+        if ($isPublicSpaceMode) {
+            error = 'Cannot grant capabilities in public space mode';
+            console.log('Public space mode: blocking capability grant');
+            return false;
+        }
 
         const permissions = getPermissionsForDirection(direction);
         const expiresAt = getExpirationTimestamp(expiration, customExpiration);
@@ -996,6 +1018,12 @@
     ) {
         console.log('Received federation response:', response.status, 'from:', senderPubKey.substring(0, 8) + '...');
 
+        // Prevent processing federation responses in public space mode (read-only)
+        if ($isPublicSpaceMode) {
+            console.log('Public space mode: ignoring federation response');
+            return;
+        }
+
         // Find the outgoing request this response is for
         const request = pendingFederationRequests.getById(response.requestId);
         if (!request) {
@@ -1041,6 +1069,13 @@
     }
 
     async function acceptFederationRequest(requestId: string) {
+        // Prevent accepting federation in public space mode (read-only)
+        if ($isPublicSpaceMode) {
+            error = 'Cannot accept federation in public space mode';
+            console.log('Public space mode: blocking federation accept');
+            return;
+        }
+
         const pendingRequest = pendingFederationRequests.getById(requestId);
         if (!pendingRequest || !$nostrPrivateKey) return;
 

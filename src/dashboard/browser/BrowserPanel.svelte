@@ -119,9 +119,6 @@
 				lastVisited: h.lastVisited || Date.now()
 			}));
 
-			// Sort visited by last visited (most recent first)
-			visitedHolons.sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
-
 			// Fetch names for holons that need updating
 			await refreshHolonNames();
 		} catch (error) {
@@ -134,24 +131,20 @@
 	async function refreshHolonNames() {
 		if (!holosphere) return;
 
-		// Update names for personal holons
+		// Always fetch names from settings for personal holons
 		for (const holon of personalHolons) {
-			if (!holon.name || holon.name.startsWith('Holon ')) {
-				const name = await fetchHolonName(holosphere, holon.id);
-				if (name) {
-					holon.name = name;
-				}
+			const name = await fetchHolonName(holosphere, holon.id);
+			if (name) {
+				holon.name = name;
 			}
 		}
 		personalHolons = [...personalHolons];
 
-		// Update names for visited holons
+		// Always fetch names from settings for visited holons
 		for (const holon of visitedHolons) {
-			if (!holon.name || holon.name.startsWith('Holon ')) {
-				const name = await fetchHolonName(holosphere, holon.id);
-				if (name) {
-					holon.name = name;
-				}
+			const name = await fetchHolonName(holosphere, holon.id);
+			if (name) {
+				holon.name = name;
 			}
 		}
 		visitedHolons = [...visitedHolons];
@@ -203,9 +196,9 @@
 		const existingIndex = visitedHolons.findIndex((h) => h.id === holonId);
 		if (existingIndex >= 0) {
 			visitedHolons[existingIndex].lastVisited = Date.now();
-			visitedHolons = [...visitedHolons].sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
+			visitedHolons = [...visitedHolons];
 		} else {
-			visitedHolons = [{ id: holonId, name: holonName, lastVisited: Date.now() }, ...visitedHolons];
+			visitedHolons = [...visitedHolons, { id: holonId, name: holonName, lastVisited: Date.now() }];
 		}
 	}
 
@@ -224,9 +217,9 @@
 		const existingIndex = visitedHolons.findIndex((h) => h.id === holonId);
 		if (existingIndex >= 0) {
 			visitedHolons[existingIndex].lastVisited = Date.now();
-			visitedHolons = [...visitedHolons].sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
+			visitedHolons = [...visitedHolons];
 		} else {
-			visitedHolons = [{ id: holonId, name: holonName, lastVisited: Date.now() }, ...visitedHolons];
+			visitedHolons = [...visitedHolons, { id: holonId, name: holonName, lastVisited: Date.now() }];
 		}
 
 		ID.set(holonId);

@@ -8,7 +8,7 @@
 	import TelegramSplash from '../components/TelegramSplash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import { nostrStore, nostrPrivateKey } from '$lib/stores/nostr';
-	import { holosphereStore } from '$lib/stores/holosphere';
+	import { holosphereStore, isPublicSpaceMode } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
 
@@ -36,12 +36,22 @@
 	let pendingHolonName: string | null = null;
 	let pendingTelegramUserId: number | null = null;
 
+	// Track if this is a telegram-mapped session (user without local key)
+	let isTelegramMappedSession = false;
+	let telegramMappedPublicKey: string | null = null;
+
+	// Track if user is in public space mode (read-only, using service key)
+	let isInPublicSpaceMode = false;
+
 	// Initialize user's personal holon with their public key as ID
 	async function initializeUserHolon() {
 		if (!holosphere || !holosphere.client?.publicKey) return;
 
-		const userPublicKey = holosphere.client.publicKey;
-		console.log('Initializing user holon with ID:', userPublicKey);
+		// For telegram-mapped sessions, use the mapped public key instead of service key
+		const userPublicKey = isTelegramMappedSession && telegramMappedPublicKey
+			? telegramMappedPublicKey
+			: holosphere.client.publicKey;
+		console.log('Initializing user holon with ID:', userPublicKey, 'telegram-mapped:', isTelegramMappedSession);
 
 		try {
 			// Check if holon settings already exist with retry logic
@@ -65,48 +75,53 @@
 			// Determine the holon name (from pending or existing settings or default)
 			const holonName = pendingHolonName || existingSettings?.name || 'My Holon';
 
-			if (!existingSettings || !existingSettings.name) {
-				// First time login - create the holon with custom or default name
-				console.log('First time user - creating personal holon:', holonName);
-				await holosphere.write(userPublicKey, 'settings', {
-					id: userPublicKey,
-					name: holonName,
-					purpose: 'Personal holon',
-					createdAt: Date.now(),
-					createdBy: userPublicKey
-				});
-			}
-
-			// Always register/update holon in global registry for discovery
-			try {
-				await holosphere.writeGlobal('holons_registry', {
-					id: userPublicKey,
-					name: holonName,
-					purpose: existingSettings?.purpose || 'Personal holon',
-					createdAt: existingSettings?.createdAt || Date.now(),
-					lastSeen: Date.now(),
-					type: 'personal'
-				});
-				console.log('Registered holon in global registry:', holonName);
-			} catch (error) {
-				console.warn('Failed to register holon in global registry:', error);
-			}
-
-			// Store/update Telegram mapping if this came from Telegram
-			// Always update to handle cases where user creates new identity or restores different key
-			if (pendingTelegramUserId) {
-				try {
-					await holosphere.writeGlobal('telegram_mappings', {
-						id: String(pendingTelegramUserId),
-						publicKey: userPublicKey,
-						holonName: holonName,
+			// Skip write operations in telegram-mapped mode (read-only access with service key)
+			if (!isTelegramMappedSession) {
+				if (!existingSettings || !existingSettings.name) {
+					// First time login - create the holon with custom or default name
+					console.log('First time user - creating personal holon:', holonName);
+					await holosphere.write(userPublicKey, 'settings', {
+						id: userPublicKey,
+						name: holonName,
+						purpose: 'Personal holon',
 						createdAt: Date.now(),
-						updatedAt: Date.now()
+						createdBy: userPublicKey
 					});
-					console.log('Telegram mapping stored/updated for user:', pendingTelegramUserId, '-> publicKey:', userPublicKey);
-				} catch (err) {
-					console.error('Failed to store Telegram mapping:', err);
 				}
+
+				// Always register/update holon in global registry for discovery
+				try {
+					await holosphere.writeGlobal('holons_registry', {
+						id: userPublicKey,
+						name: holonName,
+						purpose: existingSettings?.purpose || 'Personal holon',
+						createdAt: existingSettings?.createdAt || Date.now(),
+						lastSeen: Date.now(),
+						type: 'personal'
+					});
+					console.log('Registered holon in global registry:', holonName);
+				} catch (error) {
+					console.warn('Failed to register holon in global registry:', error);
+				}
+
+				// Store/update Telegram mapping if this came from Telegram
+				// Always update to handle cases where user creates new identity or restores different key
+				if (pendingTelegramUserId) {
+					try {
+						await holosphere.writeGlobal('telegram_mappings', {
+							id: String(pendingTelegramUserId),
+							publicKey: userPublicKey,
+							holonName: holonName,
+							createdAt: Date.now(),
+							updatedAt: Date.now()
+						});
+						console.log('Telegram mapping stored/updated for user:', pendingTelegramUserId, '-> publicKey:', userPublicKey);
+					} catch (err) {
+						console.error('Failed to store Telegram mapping:', err);
+					}
+				}
+			} else {
+				console.log('Telegram-mapped session: skipping write operations (read-only mode)');
 			}
 
 			// Add the holon to visited list so it appears in TopBar
@@ -225,7 +240,7 @@
 			privateKey: privateKey,
 			backend: 'nostr',
 			nostr: {
-				peers: ['https://relay.holons.io/g'], 
+				peers: ['wss://relay.holons.io'], 
 			}
 		});
 
@@ -242,24 +257,31 @@
 
 		// Initialize the user's personal holon with their public key as ID
 		// But skip if on certain routes like /global
-		if (browser) {
-			const currentPath = window.location.pathname;
-			console.log('Current path on init:', currentPath);
-			if (!currentPath.startsWith('/global') &&
-			    !currentPath.startsWith('/federated') &&
-			    !currentPath.startsWith('/navigator') &&
-			    !currentPath.startsWith('/sdgs')) {
-				console.log('Calling initializeUserHolon...');
-				initializeUserHolon();
+		// Also skip for telegram-mapped sessions and public space mode (read-only)
+		if (!isTelegramMappedSession && !isInPublicSpaceMode) {
+			if (browser) {
+				const currentPath = window.location.pathname;
+				console.log('Current path on init:', currentPath);
+				if (!currentPath.startsWith('/global') &&
+				    !currentPath.startsWith('/federated') &&
+				    !currentPath.startsWith('/navigator') &&
+				    !currentPath.startsWith('/sdgs')) {
+					console.log('Calling initializeUserHolon...');
+					initializeUserHolon();
+				} else {
+					console.log('Skipping initializeUserHolon for protected route:', currentPath);
+				}
 			} else {
-				console.log('Skipping initializeUserHolon for protected route:', currentPath);
+				initializeUserHolon();
 			}
-		} else {
-			initializeUserHolon();
-		}
 
-		// Grant capability token to the holosphere service key for federation
-		grantFederationCapability(privateKey);
+			// Grant capability token to the holosphere service key for federation
+			grantFederationCapability(privateKey);
+		} else if (isInPublicSpaceMode) {
+			console.log('Public space mode: skipping holon creation and federation capability grant (read-only)');
+		} else {
+			console.log('Telegram-mapped session: skipping auto-initialization');
+		}
 
 		// Periodically check for garbage collection opportunities
 		gcInterval = setInterval(() => {
@@ -300,7 +322,17 @@
 		if (mode === 'public') {
 			// Public space mode - use the holosphere key from .env
 			privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-			console.log('Using holosphere env key for public space');
+			isInPublicSpaceMode = true;
+			isPublicSpaceMode.set(true);
+			console.log('Using holosphere env key for public space (read-only mode)');
+		} else if (mode === 'telegram-mapped') {
+			// Telegram Mini App user with existing mapping but no local key
+			// Use holosphere service key for backend operations
+			// But set the ID to the user's mapped public key
+			privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
+			isTelegramMappedSession = true;
+			telegramMappedPublicKey = publicKey;
+			console.log('Telegram mapped session - using service key, navigating to user holon:', publicKey);
 		} else {
 			// Private mode - get the private key from the store
 			const state = nostrStore.getState();
@@ -309,6 +341,17 @@
 
 		if (privateKey) {
 			await initHoloSphere(privateKey);
+
+			// For telegram-mapped sessions, override the ID to the user's public key
+			if (isTelegramMappedSession && telegramMappedPublicKey) {
+				ID.set(telegramMappedPublicKey);
+				// Add the holon to visited list
+				if (browser) {
+					addVisitedHolon(null, telegramMappedPublicKey, holonName || 'My Holon', 'personal');
+				}
+				// Navigate directly to the user's holon
+				goto(`/${telegramMappedPublicKey}/dashboard`);
+			}
 		} else {
 			console.error('No private key available for initialization');
 		}

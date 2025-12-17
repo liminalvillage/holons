@@ -82,6 +82,7 @@ const CONTRACT_ABIS = {
     { "type": "function", "name": "addMember", "inputs": [{"name": "_userId", "type": "string"}], "outputs": [], "stateMutability": "nonpayable" },
     { "type": "function", "name": "addMembers", "inputs": [{"name": "_userIds", "type": "string[]"}], "outputs": [], "stateMutability": "nonpayable" },
     { "type": "function", "name": "assignToZone", "inputs": [{"name": "_userId", "type": "string"}, {"name": "_zone", "type": "uint256"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "assignMembersToZones", "inputs": [{"name": "_userIds", "type": "string[]"}, {"name": "_zones", "type": "uint256[]"}], "outputs": [], "stateMutability": "nonpayable" },
     { "type": "function", "name": "isSplitterMember", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view" },
     { "type": "function", "name": "isInteriorMember", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view" },
     { "type": "function", "name": "isExteriorMember", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view" },
@@ -92,6 +93,10 @@ const CONTRACT_ABIS = {
     { "type": "function", "name": "claim", "inputs": [{"name": "_userId", "type": "string"}, {"name": "_beneficiary", "type": "address"}], "outputs": [], "stateMutability": "nonpayable" },
     { "type": "function", "name": "etherBalance", "inputs": [{"name": "", "type": "string"}], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
     { "type": "function", "name": "tokenBalance", "inputs": [{"name": "", "type": "string"}, {"name": "", "type": "address"}], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "steepness", "inputs": [], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "nzones", "inputs": [], "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view" },
+    { "type": "function", "name": "setSteepness", "inputs": [{"name": "_steepness", "type": "uint256"}], "outputs": [], "stateMutability": "nonpayable" },
+    { "type": "function", "name": "setNzones", "inputs": [{"name": "_nzones", "type": "uint256"}], "outputs": [], "stateMutability": "nonpayable" },
     { "type": "event", "name": "ContractSplitSet", "inputs": [{"name": "interior", "type": "uint256", "indexed": false}, {"name": "exterior", "type": "uint256", "indexed": false}], "anonymous": false },
     { "type": "event", "name": "MemberAdded", "inputs": [{"name": "userId", "type": "string", "indexed": false}], "anonymous": false },
     { "type": "event", "name": "MemberAssignedToZone", "inputs": [{"name": "userId", "type": "string", "indexed": false}, {"name": "zoneNumber", "type": "uint256", "indexed": false}], "anonymous": false }

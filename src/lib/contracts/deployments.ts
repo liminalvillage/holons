@@ -154,12 +154,6 @@ export const DEPLOYMENTS: DeploymentsConfig = {
         txHash: '0xb921d31aa0a53d4801c10e421aa3756f5721c7e993feb5d5f65d975b0b2866b5',
         deployer: '0x22FCFCde1010aD545484E3D11B56E892Ba0F9A79'
       },
-      Splitter: {
-        address: '0xA7C9DEec93D8e6FcDe8DF34597bCBd129aAD7D6D',
-        deployedAt: 1765796522437,
-        txHash: '0x9614e25276260592784e5aaf1b7c84b0b5c10c0131c4fa01d3c65bb1891c6f67',
-        deployer: '0x22FCFCde1010aD545484E3D11B56E892Ba0F9A79'
-      },
       Bundle: {
         address: '0xC2DBA11019AcE422576cE8869fdFD65C8D2fc562',
         deployedAt: 1765796535556,

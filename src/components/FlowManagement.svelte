@@ -6,6 +6,7 @@
   import type { HolonBundle, FlowConfig } from '../lib/holons/HolonsContract';
   import type { FlowVisualizationData, FlowNode, FlowEdge, FederationLink } from '../lib/holons/FlowSettings';
   import type { HoloSphere } from 'holosphere';
+  import { fetchHolonName } from '../utils/holonNames';
 
   export let holonId: string;
 
@@ -36,10 +37,59 @@
   let originalNzones = 6;
   let syncing = false;
 
+  // Interior members state
+  interface InteriorMemberInfo {
+    userId: string;
+    share: bigint;
+    sharePercent: number;
+    etherBalance: bigint;
+    etherFormatted: string;
+  }
+  let interiorMembers: InteriorMemberInfo[] = [];
+  let loadingMembers = false;
+  let memberLoadError: string | null = null;
+
+  // Drag and drop state
+  let draggingHolonId: string | null = null;
+  let dropTargetZone: number | null = null;
+  let dragPosition = { x: 0, y: 0 };
+  let isDragging = false;
+  let svgElement: SVGSVGElement | null = null;
+  let draggedFromCard = false;
+
+  // Users from holosphere for syncing
+  interface HolosphereUser {
+    id: string;
+    username?: string;
+    initiated?: string[];
+    completed?: string[];
+    sent?: number;
+    received?: number;
+    hours?: number;
+    collaboration?: number;
+    wants?: string[];
+    offers?: string[];
+  }
+  let holosphereUsers: HolosphereUser[] = [];
+  let equation: Record<string, number> = {
+    initiated: 1,
+    completed: 2,
+    sent: 1,
+    received: 1,
+    hours: 1,
+    collaboration: 1,
+    wants: 1,
+    offers: 1
+  };
+
+  // Reactive: compute user percentages for display
+  $: displayUsers = holosphereUsers.length > 0 ? calculateUserPercentages() : [];
+
   // Reactive: detect if there are unsaved changes
-  // Note: Only flow split can be synced to Splitter contract (no steepness/nzones support)
   $: hasChanges = existingBundle && (
-    interiorPercent !== originalInteriorPercent
+    interiorPercent !== originalInteriorPercent ||
+    steepness !== originalSteepness ||
+    nzones !== originalNzones
   );
 
   // Alias for UI compatibility
@@ -279,6 +329,14 @@
 
       // Load federation data from holosphere
       await loadFederationData();
+
+      // Load users from holosphere (for syncing to contract)
+      await loadUsersFromHolosphere();
+
+      // Load interior members if bundle exists
+      if (existingBundle) {
+        await loadInteriorMembers();
+      }
     } catch (err) {
       console.error('Error loading bundle:', err);
     } finally {
@@ -299,21 +357,158 @@
     }
 
     try {
-      const settings = await holosphere.getAll(holonId, 'settings');
-      if (settings && settings[0]?.federation) {
-        federatedHolons = settings[0].federation.map((fed: FederationLink, index: number) => ({
-          id: fed.targetId,
-          name: fed.targetName,
-          zone: Math.floor(Math.random() * 4) + 2, // Random zone 2-5 for now
-          angle: (index * Math.PI * 2) / settings[0].federation.length,
-          flowPercent: Math.floor(100 / settings[0].federation.length),
-          status: 'active' as const,
-          internalPercent: 50
-        }));
+      // Try to get federation data from holosphere
+      let federationData: any[] = [];
+
+      // First try getFederation method
+      try {
+        const fedInfo = await holosphere.getFederation(holonId);
+        if (fedInfo?.federated && Array.isArray(fedInfo.federated)) {
+          federationData = fedInfo.federated.map((id: string) => ({ targetId: id }));
+          console.log('[FlowMgmt] Loaded federation from getFederation:', federationData.length);
+        }
+      } catch (fedErr) {
+        console.log('[FlowMgmt] getFederation not available, trying settings');
+      }
+
+      // Fallback to settings if no federation data yet
+      if (federationData.length === 0) {
+        const settings = await holosphere.getAll(holonId, 'settings');
+        if (settings && settings[0]?.federation) {
+          federationData = settings[0].federation;
+          console.log('[FlowMgmt] Loaded federation from settings:', federationData.length);
+        }
+      }
+
+      if (federationData.length > 0) {
+        const settings = await holosphere.getAll(holonId, 'settings');
+        const holonsWithNames = await Promise.all(
+          federationData.map(async (fed: FederationLink | { targetId: string }, index: number) => {
+            const targetId = (fed as any).targetId || (fed as any).id || fed;
+            // Always get name from target holon's settings
+            const name = await fetchHolonName(holosphere, String(targetId));
+            // Use saved zone if available, otherwise default to last zone
+            const savedZone = settings?.[0]?.federationZones?.[targetId];
+            return {
+              id: String(targetId),
+              name,
+              zone: savedZone ?? nzones, // Default to last zone
+              angle: (index * Math.PI * 2) / federationData.length,
+              flowPercent: Math.floor(100 / federationData.length),
+              status: 'active' as const,
+              internalPercent: 50
+            };
+          })
+        );
+        federatedHolons = holonsWithNames;
+        console.log('[FlowMgmt] Loaded federated holons:', federatedHolons.length);
       }
     } catch (err) {
       console.error('Error loading federation data:', err);
     }
+  }
+
+  // Load interior members with shares and balances from contract
+  async function loadInteriorMembers() {
+    if (!manager || !existingBundle?.address) {
+      interiorMembers = [];
+      return;
+    }
+
+    try {
+      loadingMembers = true;
+      memberLoadError = null;
+
+      const members = await manager.getInteriorMembersWithBalances(holonId);
+      interiorMembers = members;
+    } catch (err: any) {
+      console.error('Error loading interior members:', err);
+      memberLoadError = err.message || 'Failed to load member data';
+      interiorMembers = [];
+    } finally {
+      loadingMembers = false;
+    }
+  }
+
+  // Load users from holosphere
+  async function loadUsersFromHolosphere() {
+    if (!holosphere) return;
+
+    try {
+      const users = await holosphere.getAll(holonId, 'users');
+      if (Array.isArray(users)) {
+        holosphereUsers = users.filter((u: any) => u && u.id) as HolosphereUser[];
+      } else if (typeof users === 'object' && users !== null) {
+        holosphereUsers = Object.values(users).filter((u: any) => u && u.id) as HolosphereUser[];
+      }
+      console.log('[FlowMgmt] Loaded users from holosphere:', holosphereUsers.length);
+
+      // Also load equation from settings
+      try {
+        const settings = await holosphere.getAll(holonId, 'settings');
+        if (settings && settings[0]?.equation) {
+          equation = settings[0].equation;
+          console.log('[FlowMgmt] Loaded equation from settings:', equation);
+        }
+      } catch (eqErr) {
+        console.log('[FlowMgmt] Could not load equation, using defaults');
+      }
+    } catch (err) {
+      console.error('Error loading users from holosphere:', err);
+      holosphereUsers = [];
+    }
+  }
+
+  // Calculate score for a user based on equation
+  function calculateUserScore(user: HolosphereUser): number {
+    let score = 0;
+
+    if (equation.initiated > 0) {
+      const initiated = user.initiated || [];
+      score += (Array.isArray(initiated) ? initiated.length : 0) * equation.initiated;
+    }
+    if (equation.completed > 0) {
+      const completed = user.completed || [];
+      score += (Array.isArray(completed) ? completed.length : 0) * equation.completed;
+    }
+    if (equation.sent > 0) {
+      score += (user.sent || 0) * equation.sent;
+    }
+    if (equation.received > 0) {
+      score += (user.received || 0) * equation.received;
+    }
+    if (equation.hours > 0) {
+      score += (user.hours || 0) * equation.hours;
+    }
+    if (equation.collaboration > 0) {
+      score += (user.collaboration || 0) * equation.collaboration;
+    }
+    if (equation.wants > 0) {
+      const wants = user.wants || [];
+      score += (Array.isArray(wants) ? wants.length : 0) * equation.wants;
+    }
+    if (equation.offers > 0) {
+      const offers = user.offers || [];
+      score += (Array.isArray(offers) ? offers.length : 0) * equation.offers;
+    }
+
+    return score;
+  }
+
+  // Calculate percentages for all users based on their scores
+  function calculateUserPercentages(): Array<{ userId: string; username: string; score: number; percentage: number }> {
+    const usersWithScores = holosphereUsers.map(user => ({
+      userId: String(user.id), // Ensure userId is always a string for contract
+      username: user.username || String(user.id), // Use username if available, fallback to id
+      score: calculateUserScore(user)
+    }));
+
+    const totalScore = usersWithScores.reduce((sum, u) => sum + u.score, 0);
+
+    return usersWithScores.map(u => ({
+      ...u,
+      percentage: totalScore > 0 ? Math.round((u.score / totalScore) * 100) : 0
+    }));
   }
 
   // One-click deploy Bundle contract
@@ -463,15 +658,19 @@
 
   // Sync UI changes to smart contract
   async function syncToContract() {
-    if (!manager || !existingBundle || !hasChanges) return;
+    if (!manager || !existingBundle) return;
+
+    // Calculate user percentages from holosphere users
+    const usersWithPercentages = calculateUserPercentages();
+    const hasMembersToSync = usersWithPercentages.length > 0;
+
+    if (!hasChanges && !hasMembersToSync) return;
 
     try {
       syncing = true;
       showNotification('Please confirm the transaction(s) in your wallet...', 'info');
 
       // Sync flow split if changed
-      // Note: Splitter contract supports setContractSplit for interior/exterior percentages
-      // but does NOT support setSteepness or setNzones (those are Bundle-only features)
       if (interiorPercent !== originalInteriorPercent) {
         await manager.updateFlowSplit(existingBundle.address, interiorPercent);
         exteriorPercent = 100 - interiorPercent;
@@ -479,9 +678,58 @@
         showNotification(`Flow split synced: ${interiorPercent}% interior`, 'success');
       }
 
-      // Note: Steepness and nzones are display-only in the UI
-      // The Splitter contract doesn't support these parameters
-      // They are set at deployment time and cannot be changed
+      // Sync members from holosphere - first add all members, then set their splits
+      if (hasMembersToSync) {
+        // Step 1: Add all members to the contract
+        const userIds = usersWithPercentages.map(u => u.userId);
+        showNotification(`Adding ${userIds.length} members to contract...`, 'info');
+
+        try {
+          await manager.addInteriorMembers(existingBundle.address, userIds);
+          showNotification(`${userIds.length} members added to contract!`, 'success');
+        } catch (addErr: any) {
+          // Members might already exist, continue to set splits
+          console.log('[FlowMgmt] addMembers error (may already exist):', addErr.message);
+        }
+
+        // Step 2: Set their interior split percentages
+        showNotification(`Setting share percentages for ${usersWithPercentages.length} members...`, 'info');
+        const membersToSync = usersWithPercentages.map(u => ({
+          userId: u.userId,
+          sharePercent: u.percentage
+        }));
+        await manager.updateInteriorMembers(existingBundle.address, membersToSync);
+        showNotification(`${usersWithPercentages.length} member shares synced to contract!`, 'success');
+
+        // Reload interior members from contract to see updated data
+        await loadInteriorMembers();
+      }
+
+      // Sync federated holons to the zoned contract (exterior) - batch transaction
+      if (federatedHolons.length > 0) {
+        showNotification(`Syncing ${federatedHolons.length} federated holons to contract...`, 'info');
+
+        // Step 1: Add all federated holons as members in one transaction
+        const holonIds = federatedHolons.map(h => h.id);
+        try {
+          await manager.addInteriorMembers(existingBundle.address, holonIds);
+          showNotification(`${holonIds.length} federated holons added as members!`, 'success');
+        } catch (addErr: any) {
+          console.log('[FlowMgmt] addMembers for holons (may exist):', addErr.message);
+        }
+
+        // Step 2: Batch assign all zones in one transaction
+        const zoneAssignments = federatedHolons.map(h => ({
+          userId: h.id,
+          zone: h.zone
+        }));
+        try {
+          await manager.assignMembersToZones(existingBundle.address, zoneAssignments);
+          showNotification(`${federatedHolons.length} federated holons assigned to zones!`, 'success');
+        } catch (zoneErr: any) {
+          console.log('[FlowMgmt] batch assignToZones error:', zoneErr.message);
+        }
+      }
 
       showNotification('All changes synced to contract!', 'success');
     } catch (err: any) {
@@ -529,7 +777,8 @@
   function resetChanges() {
     interiorPercent = originalInteriorPercent;
     exteriorPercent = 100 - interiorPercent;
-    // Note: steepness and nzones are not synced to contract, so no need to reset
+    steepness = originalSteepness;
+    nzones = originalNzones;
   }
 
   // Sankey diagram rendering
@@ -539,76 +788,242 @@
     // Clear canvas
     sankeyCtx.clearRect(0, 0, SANKEY_WIDTH, SANKEY_HEIGHT);
 
-    const padding = 50;
-    const nodeWidth = 30;
+    const padding = 40;
 
-    // Define nodes
-    const nodes = [
-      { id: 'input', label: 'Income', x: padding, y: SANKEY_HEIGHT / 2, height: 150 },
-      { id: 'splitter', label: 'Splitter', x: 200, y: SANKEY_HEIGHT / 2, height: 150 },
-      { id: 'internal', label: `Internal\n${internalPercent}%`, x: 400, y: 80, height: Math.max(30, internalPercent * 1.5) },
-      { id: 'external', label: `External\n${externalPercent}%`, x: 400, y: 280, height: Math.max(30, externalPercent * 1.5) },
+    // Calculate interior flow for each member
+    const interiorFlow = interiorPercent;
+    const exteriorFlow = exteriorPercent;
+
+    // Calculate zone flows based on steepness
+    const zoneWeights = zoneData.percentages;
+
+    // Group federated holons by zone
+    const holonsByZone: Record<number, ZonedHolon[]> = {};
+    federatedHolons.forEach(h => {
+      if (!holonsByZone[h.zone]) holonsByZone[h.zone] = [];
+      holonsByZone[h.zone].push(h);
+    });
+
+    // Main nodes - always shown
+    const nodes: any[] = [
+      { id: 'input', label: 'Income', x: padding, y: SANKEY_HEIGHT / 2, height: 120, color: '#8b5cf6' },
+      { id: 'splitter', label: 'Bundle', x: 150, y: SANKEY_HEIGHT / 2, height: 120, color: '#6366f1' },
+      { id: 'interior', label: `Interior\n${interiorPercent}%`, x: 280, y: 100, height: Math.max(40, interiorFlow * 1.2), color: '#3b82f6' },
+      { id: 'exterior', label: `Exterior\n${exteriorPercent}%`, x: 280, y: 300, height: Math.max(40, exteriorFlow * 1.2), color: '#f59e0b' },
     ];
 
-    // Add federation nodes
-    let yOffset = 50;
-    federatedHolons.forEach((holon, i) => {
-      const flowHeight = Math.max(20, (holon.flowPercent / 100) * externalPercent * 1.5);
-      nodes.push({
-        id: holon.id,
-        label: `${holon.name}\n${Math.round((holon.flowPercent / 100) * externalPercent)}%`,
-        x: 600,
-        y: yOffset,
-        height: flowHeight
+    // Add interior member nodes (right side of interior)
+    let interiorYOffset = 30;
+    const memberNodes: any[] = [];
+
+    if (displayUsers.length > 0) {
+      displayUsers.slice(0, 6).forEach((user, i) => { // Limit to 6 for display
+        const userFlow = (user.percentage / 100) * interiorFlow;
+        const nodeHeight = Math.max(15, userFlow * 1.2);
+        memberNodes.push({
+          id: `member-${user.userId}`,
+          label: `${user.username.slice(0, 8)}\n${user.percentage}%`,
+          x: 420,
+          y: interiorYOffset + nodeHeight / 2,
+          height: nodeHeight,
+          color: '#3b82f6',
+          flowPercent: user.percentage
+        });
+        interiorYOffset += nodeHeight + 8;
       });
-      yOffset += flowHeight + 20;
-    });
-
-    // Draw links
-    drawSankeyLink(nodes[0], nodes[1], 100, '#8b5cf6');
-    drawSankeyLink(nodes[1], nodes[2], internalPercent, '#3b82f6');
-    drawSankeyLink(nodes[1], nodes[3], externalPercent, '#f59e0b');
-
-    // Links from external to federated holons
-    federatedHolons.forEach((holon, i) => {
-      const fedNode = nodes.find(n => n.id === holon.id);
-      if (fedNode) {
-        const flowValue = (holon.flowPercent / 100) * externalPercent;
-        drawSankeyLink(nodes[3], fedNode, flowValue, '#10b981');
+      if (displayUsers.length > 6) {
+        memberNodes.push({
+          id: 'member-others',
+          label: `+${displayUsers.length - 6} more`,
+          x: 420,
+          y: interiorYOffset + 10,
+          height: 20,
+          color: '#3b82f6',
+          flowPercent: displayUsers.slice(6).reduce((s, u) => s + u.percentage, 0)
+        });
       }
+    } else {
+      // Placeholder for empty members
+      memberNodes.push({
+        id: 'member-placeholder',
+        label: 'No members\n(add users)',
+        x: 420,
+        y: 80,
+        height: 40,
+        color: '#4b5563',
+        flowPercent: 100
+      });
+    }
+    nodes.push(...memberNodes);
+
+    // Add zone nodes (showing zone distribution) - always show zones
+    let exteriorYOffset = 220;
+    const zoneNodes: any[] = [];
+
+    // Always show at least the first few zones based on steepness
+    for (let z = 0; z <= Math.min(nzones, 5); z++) {
+      const zonePercent = zoneWeights[z] || 0;
+      const holonsInZone = holonsByZone[z] || [];
+      const nodeHeight = Math.max(18, zonePercent * 0.8);
+
+      if (zonePercent > 0.1) { // Show zones with any meaningful weight
+        zoneNodes.push({
+          id: `zone-${z}`,
+          label: `Z${z} ${zonePercent.toFixed(0)}%`,
+          x: 420,
+          y: exteriorYOffset + nodeHeight / 2,
+          height: nodeHeight,
+          color: ZONE_COLORS[z] || ZONE_COLORS[5],
+          flowPercent: zonePercent,
+          holons: holonsInZone
+        });
+        exteriorYOffset += nodeHeight + 6;
+      }
+    }
+    nodes.push(...zoneNodes);
+
+    // Add individual holon nodes (rightmost column)
+    let holonYOffset = 220;
+    const holonNodes: any[] = [];
+
+    if (federatedHolons.length > 0) {
+      zoneNodes.forEach(zoneNode => {
+        const holonsInZone = zoneNode.holons || [];
+        holonsInZone.forEach((holon: ZonedHolon) => {
+          const holonShare = zoneNode.flowPercent / Math.max(1, holonsInZone.length);
+          const nodeHeight = Math.max(14, holonShare * 0.6);
+          holonNodes.push({
+            id: `holon-${holon.id}`,
+            label: holon.name.slice(0, 10),
+            x: 560,
+            y: holonYOffset + nodeHeight / 2,
+            height: nodeHeight,
+            color: ZONE_COLORS[holon.zone] || ZONE_COLORS[5],
+            flowPercent: holonShare,
+            zone: holon.zone
+          });
+          holonYOffset += nodeHeight + 5;
+        });
+      });
+    } else {
+      // Placeholder for empty holons
+      holonNodes.push({
+        id: 'holon-placeholder',
+        label: 'No holons\n(federate)',
+        x: 560,
+        y: 280,
+        height: 40,
+        color: '#4b5563',
+        flowPercent: 0
+      });
+    }
+    nodes.push(...holonNodes);
+
+    // Draw links - Income to Splitter
+    drawSankeyLink(nodes[0], nodes[1], 100, '#8b5cf6');
+
+    // Splitter to Interior/Exterior
+    drawSankeyLink(nodes[1], nodes[2], interiorFlow, '#3b82f6');
+    drawSankeyLink(nodes[1], nodes[3], exteriorFlow, '#f59e0b');
+
+    // Interior to Members
+    memberNodes.forEach(memberNode => {
+      const flowValue = memberNode.id === 'member-placeholder'
+        ? interiorFlow
+        : (memberNode.flowPercent / 100) * interiorFlow;
+      drawSankeyLink(nodes[2], memberNode, Math.max(flowValue, 5), memberNode.color);
     });
 
-    // Draw nodes
+    // Exterior to Zones
+    zoneNodes.forEach(zoneNode => {
+      const flowValue = (zoneNode.flowPercent / 100) * exteriorFlow;
+      drawSankeyLink(nodes[3], zoneNode, Math.max(flowValue, 3), zoneNode.color);
+    });
+
+    // Zones to Holons (only if we have real holons)
+    if (federatedHolons.length > 0) {
+      holonNodes.forEach(holonNode => {
+        if (holonNode.id !== 'holon-placeholder') {
+          const zoneNode = zoneNodes.find(z => z.id === `zone-${holonNode.zone}`);
+          if (zoneNode) {
+            const flowValue = (holonNode.flowPercent / 100) * exteriorFlow;
+            drawSankeyLink(zoneNode, holonNode, Math.max(flowValue, 2), holonNode.color);
+          }
+        }
+      });
+    } else if (zoneNodes.length > 0) {
+      // Draw a single link from first zone to placeholder
+      const placeholderNode = holonNodes.find(n => n.id === 'holon-placeholder');
+      if (placeholderNode) {
+        drawSankeyLink(zoneNodes[0], placeholderNode, 10, '#4b5563');
+      }
+    }
+
+    // Draw all nodes
     nodes.forEach(node => {
       drawSankeyNode(node);
     });
+
+    // Draw title
+    sankeyCtx.fillStyle = '#9ca3af';
+    sankeyCtx.font = '12px sans-serif';
+    sankeyCtx.textAlign = 'center';
+    sankeyCtx.fillText('Flow Distribution Preview', SANKEY_WIDTH / 2, 20);
+
+    // Draw legend
+    drawSankeyLegend();
+  }
+
+  function drawSankeyLegend() {
+    const legendY = SANKEY_HEIGHT - 25;
+    sankeyCtx.font = '10px sans-serif';
+    sankeyCtx.textAlign = 'left';
+
+    // Interior
+    sankeyCtx.fillStyle = '#3b82f6';
+    sankeyCtx.fillRect(50, legendY, 12, 12);
+    sankeyCtx.fillStyle = '#9ca3af';
+    sankeyCtx.fillText('Interior Members', 66, legendY + 10);
+
+    // Exterior
+    sankeyCtx.fillStyle = '#f59e0b';
+    sankeyCtx.fillRect(180, legendY, 12, 12);
+    sankeyCtx.fillStyle = '#9ca3af';
+    sankeyCtx.fillText('Exterior Zones', 196, legendY + 10);
+
+    // Holons
+    sankeyCtx.fillStyle = '#10b981';
+    sankeyCtx.fillRect(300, legendY, 12, 12);
+    sankeyCtx.fillStyle = '#9ca3af';
+    sankeyCtx.fillText('Federated Holons', 316, legendY + 10);
   }
 
   function drawSankeyNode(node: any) {
-    const { x, y, height, label } = node;
-    const width = 30;
+    const { x, y, height, label, color } = node;
+    const width = 25;
 
-    // Node rectangle
-    sankeyCtx.fillStyle = '#374151';
+    // Node rectangle with color
+    const nodeColor = color || '#374151';
+    sankeyCtx.fillStyle = nodeColor + '40'; // Semi-transparent fill
     sankeyCtx.fillRect(x, y - height / 2, width, height);
-    sankeyCtx.strokeStyle = '#6b7280';
-    sankeyCtx.lineWidth = 1;
+    sankeyCtx.strokeStyle = nodeColor;
+    sankeyCtx.lineWidth = 2;
     sankeyCtx.strokeRect(x, y - height / 2, width, height);
 
-    // Label
+    // Label to the right of node
     sankeyCtx.fillStyle = '#e5e7eb';
-    sankeyCtx.font = '11px sans-serif';
-    sankeyCtx.textAlign = 'center';
+    sankeyCtx.font = '10px sans-serif';
+    sankeyCtx.textAlign = 'left';
     sankeyCtx.textBaseline = 'middle';
 
     const lines = label.split('\n');
     lines.forEach((line: string, i: number) => {
-      sankeyCtx.fillText(line, x + width / 2, y + (i - (lines.length - 1) / 2) * 14);
+      sankeyCtx.fillText(line, x + width + 5, y + (i - (lines.length - 1) / 2) * 12);
     });
   }
 
   function drawSankeyLink(source: any, target: any, value: number, color: string) {
-    const sourceRight = source.x + 30;
+    const sourceRight = source.x + 25;
     const targetLeft = target.x;
 
     const flowHeight = Math.max(5, value * 1.5);
@@ -672,6 +1087,118 @@
         }));
       }
     }
+  }
+
+  // Update zone for a federated holon
+  async function updateHolonZone(targetHolonId: string, newZone: number) {
+    // Clamp zone to valid range
+    const clampedZone = Math.max(0, Math.min(newZone, nzones));
+
+    // Update local state
+    federatedHolons = federatedHolons.map(h =>
+      h.id === targetHolonId ? { ...h, zone: clampedZone } : h
+    );
+
+    // Save to holosphere
+    if (holosphere) {
+      try {
+        const settings = await holosphere.getAll(holonId, 'settings');
+        const currentZones = settings?.[0]?.federationZones || {};
+        await holosphere.put(holonId, 'settings', {
+          ...settings?.[0],
+          federationZones: {
+            ...currentZones,
+            [targetHolonId]: clampedZone
+          }
+        });
+        showNotification(`Zone updated to Z${clampedZone}`, 'success');
+      } catch (err) {
+        console.error('Error saving zone:', err);
+        showNotification('Failed to save zone', 'error');
+      }
+    }
+
+    // Sync to contract if bundle exists
+    if (manager && existingBundle?.address) {
+      try {
+        await manager.contract.assignToZone(existingBundle.address, targetHolonId, clampedZone);
+        showNotification(`Zone synced to contract: Z${clampedZone}`, 'success');
+      } catch (err: any) {
+        console.error('Error syncing zone to contract:', err);
+        // Don't show error for contract sync - it's optional
+      }
+    }
+  }
+
+  // Drag and drop handlers for zone assignment - Card based
+  function handleCardDragStart(e: DragEvent, holonId: string) {
+    draggingHolonId = holonId;
+    draggedFromCard = true;
+    isDragging = true;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', holonId);
+      // Custom drag image
+      const dragEl = e.target as HTMLElement;
+      if (dragEl) {
+        e.dataTransfer.setDragImage(dragEl, 20, 20);
+      }
+    }
+  }
+
+  function handleCardDragEnd() {
+    draggingHolonId = null;
+    dropTargetZone = null;
+    isDragging = false;
+    draggedFromCard = false;
+  }
+
+  function handleZoneDragOver(e: DragEvent, zone: number) {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+    dropTargetZone = zone;
+  }
+
+  function handleZoneDragLeave() {
+    dropTargetZone = null;
+  }
+
+  function handleZoneDrop(e: DragEvent, zone: number) {
+    e.preventDefault();
+    if (draggingHolonId) {
+      updateHolonZone(draggingHolonId, zone);
+    }
+    draggingHolonId = null;
+    dropTargetZone = null;
+    isDragging = false;
+    draggedFromCard = false;
+  }
+
+  // Click on holon node in SVG to select it, then click zone to assign
+  let selectedHolonId: string | null = null;
+
+  function handleHolonClick(e: MouseEvent, holonId: string) {
+    e.stopPropagation();
+    if (selectedHolonId === holonId) {
+      selectedHolonId = null; // Deselect
+    } else {
+      selectedHolonId = holonId;
+    }
+  }
+
+  function handleZoneClick(e: MouseEvent, zone: number) {
+    e.stopPropagation();
+    if (selectedHolonId) {
+      updateHolonZone(selectedHolonId, zone);
+      selectedHolonId = null;
+    }
+  }
+
+  // Clear selection when clicking outside
+  function handleSvgClick() {
+    selectedHolonId = null;
   }
 
   // Animation loop
@@ -773,53 +1300,16 @@
     </div>
   {:else}
     <div class="space-y-8">
-      <!-- Quick Deploy Section - Only show if no bundle deployed -->
+      <!-- Bundle Status Section -->
       {#if !existingBundle}
         <section class="panel deploy-panel">
           <div class="deploy-panel__content">
             <div class="deploy-panel__info">
               <h2 class="deploy-panel__title">Deploy Bundle Contract</h2>
-              <p class="deploy-panel__description">Single unified contract with configurable flow distribution</p>
+              <p class="deploy-panel__description">Deploy to save your flow configuration on-chain</p>
             </div>
-          </div>
-
-          <!-- Pre-deployment configuration -->
-          <div class="deploy-panel__config">
-            <div class="deploy-panel__config-row">
-              <div class="deploy-panel__config-item">
-                <label class="deploy-panel__config-label">Steepness (Zone Decay)</label>
-                <div class="deploy-panel__config-control">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Number(steepness) / 1e16}
-                    on:input={(e) => steepness = BigInt(Math.round(parseInt(e.currentTarget.value) * 1e16))}
-                    class="deploy-panel__slider"
-                  />
-                  <span class="deploy-panel__config-value">{formatSteepness(steepness)}</span>
-                </div>
-                <span class="deploy-panel__config-hint">How much value decays per zone</span>
-              </div>
-              <div class="deploy-panel__config-item">
-                <label class="deploy-panel__config-label">Number of Zones</label>
-                <div class="deploy-panel__config-control">
-                  <input
-                    type="number"
-                    min="2"
-                    max="10"
-                    bind:value={nzones}
-                    class="deploy-panel__input"
-                  />
-                </div>
-                <span class="deploy-panel__config-hint">Tiers for external distribution</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="deploy-panel__action">
             <button
-              class="btn btn--primary btn--lg"
+              class="btn btn--primary"
               on:click={deployBundle}
               disabled={deploying || !isConnected}
             >
@@ -880,10 +1370,10 @@
         </div>
       {/if}
 
-      <!-- Flow Control - Top -->
+      <!-- Flow Split Control -->
       <section class="panel">
         <div class="panel__header">
-          <h2 class="panel__title">Flow Control</h2>
+          <h2 class="panel__title">Flow Split</h2>
           {#if existingBundle && !hasChanges}
             <span class="sync-status sync-status--synced">Synced</span>
           {/if}
@@ -915,25 +1405,6 @@
             />
             <span class="flow-slider__label">Exterior</span>
           </div>
-
-          <!-- Bundle Parameters (only when deployed) -->
-          <!-- Note: Steepness and nzones are fixed at deployment time and cannot be changed -->
-          {#if existingBundle}
-            <div class="flow-params">
-              <div class="flow-param">
-                <label class="flow-param__label">Steepness (Zone Decay) <span class="flow-param__hint">(set at deploy)</span></label>
-                <div class="flow-param__control">
-                  <span class="flow-param__value">{formatSteepness(steepness)}</span>
-                </div>
-              </div>
-              <div class="flow-param">
-                <label class="flow-param__label">Number of Zones <span class="flow-param__hint">(set at deploy)</span></label>
-                <div class="flow-param__control">
-                  <span class="flow-param__value">{nzones}</span>
-                </div>
-              </div>
-            </div>
-          {/if}
         </div>
       </section>
 
@@ -955,17 +1426,58 @@
           <div class="flow-panel__body">
             <div class="flow-stat">
               <span class="flow-stat__label">Distribution Method</span>
-              <span class="flow-stat__value">Equal split among members</span>
+              <span class="flow-stat__value">Share-weighted distribution</span>
             </div>
+
             <div class="flow-stat">
               <span class="flow-stat__label">Member Count</span>
-              <span class="flow-stat__value flow-stat__value--large">--</span>
-              <span class="flow-stat__hint">Synced from contract</span>
+              <span class="flow-stat__value flow-stat__value--large">
+                {#if loadingMembers}
+                  <span class="loading-spinner"></span>
+                {:else}
+                  {displayUsers.length}
+                {/if}
+              </span>
             </div>
-            <div class="flow-stat">
-              <span class="flow-stat__label">Per-Member Share</span>
-              <span class="flow-stat__value flow-stat__value--accent">{interiorPercent}% ÷ members</span>
-            </div>
+
+            {#if memberLoadError}
+              <div class="flow-error">
+                <span>{memberLoadError}</span>
+                <button class="btn btn--ghost btn--sm" on:click={loadUsersFromHolosphere}>Retry</button>
+              </div>
+            {:else if displayUsers.length > 0}
+              <div class="member-list">
+                <div class="member-list__header">
+                  <span>Name</span>
+                  <span>Score</span>
+                  <span>Share %</span>
+                </div>
+                {#each displayUsers as user}
+                  <div class="member-item">
+                    <span class="member-item__id" title={user.userId}>
+                      {user.username.length > 16 ? user.username.slice(0, 16) + '...' : user.username}
+                    </span>
+                    <span class="member-item__share">
+                      {user.score}
+                    </span>
+                    <span class="member-item__balance">
+                      {user.percentage}%
+                    </span>
+                  </div>
+                {/each}
+              </div>
+
+              <div class="flow-summary">
+                <span>Total Score</span>
+                <span class="flow-summary__value">
+                  {displayUsers.reduce((sum, u) => sum + u.score, 0)}
+                </span>
+              </div>
+            {:else if !loadingMembers}
+              <div class="flow-empty flow-empty--small">
+                <span>No users in holosphere yet</span>
+              </div>
+            {/if}
           </div>
         </section>
 
@@ -983,67 +1495,156 @@
           </div>
 
           <div class="flow-panel__body">
-            <!-- Zone Weight Visualization -->
-            <div class="zone-weights">
-              <div class="zone-weights__header">
-                <span class="zone-weights__title">Zone Distribution (Steepness: {formatSteepness(steepness)})</span>
-                <span class="zone-weights__hint">Per-zone share assuming 1 member each</span>
+            <!-- Zone Controls -->
+            <div class="zone-controls">
+              <div class="zone-control">
+                <label class="zone-control__label">Steepness</label>
+                <input
+                  type="range"
+                  min="10"
+                  max="90"
+                  step="5"
+                  value={Number(steepness) / 1e16}
+                  on:input={(e) => steepness = BigInt(Math.round(parseInt(e.currentTarget.value) * 1e16))}
+                  class="zone-control__slider"
+                />
+                <span class="zone-control__value">{formatSteepness(steepness)}</span>
               </div>
-              <div class="zone-weights__bars">
-                {#each zoneData.percentages as percent, z}
-                  <div class="zone-weight">
-                    <div class="zone-weight__label">
-                      <span class="zone-weight__zone" style="background-color: {ZONE_COLORS[z] || ZONE_COLORS[5]}20; color: {ZONE_COLORS[z] || ZONE_COLORS[5]}">
-                        Z{z}
-                      </span>
-                      <span class="zone-weight__name">{z === 0 ? 'Core' : z === nzones ? 'Edge' : `Zone ${z}`}</span>
-                    </div>
-                    <div class="zone-weight__bar-container">
-                      <div
-                        class="zone-weight__bar"
-                        style="width: {percent}%; background-color: {ZONE_COLORS[z] || ZONE_COLORS[5]}"
-                      ></div>
-                    </div>
-                    <span class="zone-weight__percent">{percent.toFixed(1)}%</span>
-                  </div>
-                {/each}
-              </div>
-              <div class="zone-weights__formula">
-                <span>Formula: weight[z] = s<sup>z</sup> where s = {formatSteepness(steepness)}</span>
+              <div class="zone-control">
+                <label class="zone-control__label">Zones</label>
+                <input
+                  type="range"
+                  min="2"
+                  max="10"
+                  bind:value={nzones}
+                  class="zone-control__slider"
+                />
+                <span class="zone-control__value">{nzones}</span>
               </div>
             </div>
 
-            <!-- Federated Holons -->
-            {#if federatedHolons.length > 0}
-              <div class="flow-list">
-                <div class="flow-list__header">Federated Holons</div>
-                {#each federatedHolons as holon}
-                  <div class="flow-item">
-                    <div class="flow-item__zone" style="background-color: {ZONE_COLORS[holon.zone]}20; color: {ZONE_COLORS[holon.zone]}">
-                      Z{holon.zone}
+            <!-- Zone Map with Vertical Graph -->
+            <div class="zone-map-layout">
+              <!-- Vertical Zone Percentage Graph -->
+              <div class="zone-graph-vertical">
+                {#each zoneData.percentages as percent, z}
+                  <div class="zone-bar-vertical">
+                    <span class="zone-bar-vertical__label" style="color: {ZONE_COLORS[z] || ZONE_COLORS[5]}">Z{z}</span>
+                    <div class="zone-bar-vertical__track">
+                      <div
+                        class="zone-bar-vertical__fill"
+                        style="height: {percent}%; background-color: {ZONE_COLORS[z] || ZONE_COLORS[5]}"
+                      ></div>
                     </div>
-                    <div class="flow-item__info">
-                      <span class="flow-item__name">{holon.name}</span>
-                      <span class="flow-item__meta">{Math.round((holon.flowPercent / 100) * externalPercent)}% of total</span>
-                    </div>
-                    <div class="flow-item__control">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={holon.flowPercent}
-                        on:input={(e) => updateHolonFlow(holon.id, parseInt(e.currentTarget.value))}
-                        class="flow-item__slider"
-                      />
-                      <span class="flow-item__percent">{holon.flowPercent}%</span>
-                    </div>
+                    <span class="zone-bar-vertical__percent">{percent.toFixed(0)}%</span>
                   </div>
                 {/each}
               </div>
 
+              <!-- Concentric Zone Map -->
+              <div class="zone-map">
+                <div class="zone-map__container">
+                  <svg viewBox="0 0 400 400" class="zone-map__svg" on:click={handleSvgClick}>
+                  <!-- Instruction text -->
+                  {#if selectedHolonId}
+                    <text x="200" y="20" class="zone-instruction" text-anchor="middle">
+                      Click a zone to move {federatedHolons.find(h => h.id === selectedHolonId)?.name || 'holon'}
+                    </text>
+                  {:else if isDragging}
+                    <text x="200" y="20" class="zone-instruction" text-anchor="middle">
+                      Drop on a zone circle
+                    </text>
+                  {/if}
+
+                  <!-- Concentric circles for each zone (outer to inner) -->
+                  {#each Array(nzones + 1) as _, z}
+                    {@const zoneIndex = nzones - z}
+                    {@const radius = 180 - (z * (160 / (nzones + 1)))}
+                    <circle
+                      cx="200"
+                      cy="200"
+                      r={radius}
+                      class="zone-circle {dropTargetZone === zoneIndex ? 'zone-circle--drop-target' : ''} {selectedHolonId ? 'zone-circle--clickable' : ''}"
+                      style="fill: {ZONE_COLORS[zoneIndex] || ZONE_COLORS[5]}{dropTargetZone === zoneIndex ? '40' : '15'}; stroke: {ZONE_COLORS[zoneIndex] || ZONE_COLORS[5]}"
+                      on:dragover={(e) => handleZoneDragOver(e, zoneIndex)}
+                      on:dragleave={handleZoneDragLeave}
+                      on:drop={(e) => handleZoneDrop(e, zoneIndex)}
+                      on:click={(e) => handleZoneClick(e, zoneIndex)}
+                      role="button"
+                      tabindex="0"
+                    />
+                    <!-- Zone label -->
+                    <text
+                      x={200 + radius - 12}
+                      y="200"
+                      class="zone-label"
+                      style="fill: {ZONE_COLORS[zoneIndex] || ZONE_COLORS[5]}"
+                    >Z{zoneIndex}</text>
+                  {/each}
+
+                  <!-- Federated holons positioned in their zones -->
+                  {#each federatedHolons as holon, i}
+                    {@const zoneRadius = 180 - ((nzones - holon.zone) * (160 / (nzones + 1))) - 20}
+                    {@const holonsInZone = federatedHolons.filter(h => h.zone === holon.zone)}
+                    {@const indexInZone = holonsInZone.findIndex(h => h.id === holon.id)}
+                    {@const angle = (indexInZone * (2 * Math.PI / Math.max(holonsInZone.length, 1))) - Math.PI / 2}
+                    {@const x = 200 + zoneRadius * Math.cos(angle)}
+                    {@const y = 200 + zoneRadius * Math.sin(angle)}
+                    <g
+                      class="holon-node {selectedHolonId === holon.id ? 'holon-node--selected' : ''} {draggingHolonId === holon.id ? 'holon-node--dragging' : ''}"
+                      transform="translate({x}, {y})"
+                      on:click={(e) => handleHolonClick(e, holon.id)}
+                      role="button"
+                      tabindex="0"
+                    >
+                      <title>{holon.name} (Zone {holon.zone}) - Click to select, then click a zone</title>
+                      <circle
+                        r={selectedHolonId === holon.id ? 28 : 24}
+                        class="holon-node__bg"
+                        style="fill: {ZONE_COLORS[holon.zone] || ZONE_COLORS[5]}{selectedHolonId === holon.id ? '80' : '40'}; stroke: {ZONE_COLORS[holon.zone] || ZONE_COLORS[5]}; stroke-width: {selectedHolonId === holon.id ? 3 : 2};"
+                      />
+                      <text class="holon-node__label" text-anchor="middle" dominant-baseline="middle">
+                        {holon.name.slice(0, 3)}
+                      </text>
+                    </g>
+                  {/each}
+
+                  <!-- Center label -->
+                  <text x="200" y="200" class="zone-center-label" text-anchor="middle" dominant-baseline="middle">
+                    Core
+                  </text>
+                </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Holon cards - drag to zone circles above -->
+            {#if federatedHolons.length > 0}
+              <div class="zone-map__cards-header">
+                Drag cards to zone circles above, or click to select
+              </div>
+              <div class="zone-map__list">
+                {#each federatedHolons as holon}
+                  <div
+                    class="zone-holon-card {draggingHolonId === holon.id ? 'zone-holon-card--dragging' : ''} {selectedHolonId === holon.id ? 'zone-holon-card--selected' : ''}"
+                    draggable="true"
+                    on:dragstart={(e) => handleCardDragStart(e, holon.id)}
+                    on:dragend={handleCardDragEnd}
+                    on:click={() => { selectedHolonId = selectedHolonId === holon.id ? null : holon.id; }}
+                    role="listitem"
+                    title="{holon.name} - Zone {holon.zone}"
+                  >
+                    <span class="zone-holon-card__zone" style="background-color: {ZONE_COLORS[holon.zone] || ZONE_COLORS[5]}">
+                      Z{holon.zone}
+                    </span>
+                    <span class="zone-holon-card__name">{holon.name}</span>
+                    <span class="zone-holon-card__drag-hint">⋮⋮</span>
+                  </div>
+                {/each}
+              </div>
               <div class="flow-summary">
-                <span>Active Federations</span>
-                <span class="flow-summary__value">{federatedHolons.filter(h => h.status === 'active').length} / {federatedHolons.length}</span>
+                <span>Federated Holons</span>
+                <span class="flow-summary__value">{federatedHolons.length}</span>
               </div>
             {:else}
               <div class="flow-empty flow-empty--small">
@@ -1322,8 +1923,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-2, 0.5rem);
-    max-height: 16rem;
-    overflow-y: auto;
   }
 
   .flow-item {
@@ -1333,6 +1932,20 @@
     padding: var(--spacing-3, 0.75rem);
     background: var(--color-bg-primary, #111827);
     border-radius: var(--radius-md, 0.375rem);
+  }
+
+  .flow-item--draggable {
+    cursor: grab;
+    transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+  }
+
+  .flow-item--draggable:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .flow-item--dragging {
+    opacity: 0.5;
+    cursor: grabbing;
   }
 
   .flow-item__zone {
@@ -1354,12 +1967,9 @@
 
   .flow-item__name {
     display: block;
-    font-size: var(--font-size-sm, 0.875rem);
-    font-weight: var(--font-weight-medium, 500);
+    font-size: var(--font-size-base, 1rem);
+    font-weight: var(--font-weight-semibold, 600);
     color: var(--color-text-primary, #fff);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .flow-item__meta {
@@ -1841,6 +2451,15 @@
     grid-template-columns: 100px 1fr 50px;
     align-items: center;
     gap: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-2, 0.5rem);
+    border-radius: var(--radius-md, 0.375rem);
+    border: 2px solid transparent;
+    transition: all 150ms ease;
+  }
+
+  .zone-weight--drop-target {
+    border-color: var(--color-accent, #4f46e5);
+    background: var(--color-accent-subtle, rgba(79, 70, 229, 0.1));
   }
 
   .zone-weight__label {
@@ -1981,5 +2600,450 @@
       flex-direction: column;
       gap: var(--spacing-3, 0.75rem);
     }
+  }
+
+  /* Member List Styles */
+  .member-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1, 0.25rem);
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: var(--spacing-3, 0.75rem);
+  }
+
+  .member-list__header {
+    display: grid;
+    grid-template-columns: 1fr 80px 100px;
+    gap: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-2, 0.5rem);
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: var(--font-weight-medium, 500);
+    color: var(--color-text-muted, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--color-border, #374151);
+  }
+
+  .member-item {
+    display: grid;
+    grid-template-columns: 1fr 80px 100px;
+    gap: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-2, 0.5rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-sm, 0.25rem);
+    font-size: var(--font-size-sm, 0.875rem);
+  }
+
+  .member-item__id {
+    color: var(--color-text-primary, #fff);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .member-item__share {
+    color: var(--color-accent-light, #6366f1);
+    font-weight: var(--font-weight-semibold, 600);
+    text-align: right;
+  }
+
+  .member-item__balance {
+    color: var(--color-success, #10b981);
+    text-align: right;
+  }
+
+  .flow-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-3, 0.75rem);
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--color-error, #ef4444);
+    border-radius: var(--radius-md, 0.375rem);
+    color: var(--color-error, #ef4444);
+    font-size: var(--font-size-sm, 0.875rem);
+  }
+
+  .flow-summary {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--spacing-3, 0.75rem);
+    margin-top: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-tertiary, #1f2937);
+    border-radius: var(--radius-md, 0.375rem);
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-secondary, #9ca3af);
+  }
+
+  .flow-summary__value {
+    color: var(--color-success, #10b981);
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  .flow-empty--small {
+    padding: var(--spacing-4, 1rem);
+    text-align: center;
+    color: var(--color-text-muted, #6b7280);
+    font-size: var(--font-size-sm, 0.875rem);
+  }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--color-border, #374151);
+    border-top-color: var(--color-accent, #4f46e5);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Preview indicator styles */
+  .zone-weights--preview {
+    border: 1px dashed var(--color-accent, #4f46e5);
+    border-radius: var(--radius-md, 0.375rem);
+    padding: var(--spacing-2, 0.5rem);
+  }
+
+  .zone-weights__preview-badge {
+    display: inline-block;
+    padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
+    background: var(--color-accent, #4f46e5);
+    color: var(--color-text-primary, #fff);
+    font-size: var(--font-size-xs, 0.75rem);
+    border-radius: var(--radius-full, 9999px);
+    margin-left: var(--spacing-2, 0.5rem);
+  }
+
+  .flow-param__changed {
+    color: var(--color-accent, #4f46e5);
+    font-weight: var(--font-weight-bold, 700);
+    margin-left: var(--spacing-1, 0.25rem);
+  }
+
+  .flow-params--editable {
+    background: var(--color-bg-primary, #111827);
+    padding: var(--spacing-4, 1rem);
+    border-radius: var(--radius-md, 0.375rem);
+    margin-top: var(--spacing-4, 1rem);
+  }
+
+  .flow-param__slider {
+    flex: 1;
+    height: 6px;
+    appearance: none;
+    background: var(--color-bg-tertiary, #1f2937);
+    border-radius: var(--radius-full, 9999px);
+    cursor: pointer;
+  }
+
+  .flow-param__slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--color-accent, #4f46e5);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .flow-param__input {
+    width: 80px;
+    padding: var(--spacing-2, 0.5rem);
+    background: var(--color-bg-tertiary, #1f2937);
+    border: 1px solid var(--color-border, #374151);
+    border-radius: var(--radius-md, 0.375rem);
+    color: var(--color-text-primary, #fff);
+    font-size: var(--font-size-sm, 0.875rem);
+    text-align: center;
+  }
+
+  .flow-param__input:focus {
+    outline: none;
+    border-color: var(--color-accent, #4f46e5);
+  }
+
+  /* Zone Controls */
+  .zone-controls {
+    display: flex;
+    gap: var(--spacing-4, 1rem);
+    margin-bottom: var(--spacing-4, 1rem);
+  }
+
+  .zone-control {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1, 0.25rem);
+  }
+
+  .zone-control__label {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  .zone-control__slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: var(--color-bg-primary, #111827);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .zone-control__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-accent, #4f46e5);
+    cursor: pointer;
+  }
+
+  .zone-control__value {
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: var(--font-weight-semibold, 600);
+    color: var(--color-text-primary, #fff);
+  }
+
+  /* Zone Map Layout - Side by side */
+  .zone-map-layout {
+    display: flex;
+    gap: var(--spacing-4, 1rem);
+    align-items: stretch;
+  }
+
+  /* Vertical Zone Graph */
+  .zone-graph-vertical {
+    display: flex;
+    gap: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+    min-width: 120px;
+  }
+
+  .zone-bar-vertical {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-1, 0.25rem);
+    flex: 1;
+  }
+
+  .zone-bar-vertical__label {
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: var(--font-weight-bold, 700);
+  }
+
+  .zone-bar-vertical__track {
+    flex: 1;
+    width: 16px;
+    min-height: 100px;
+    background: var(--color-bg-tertiary, #1f2937);
+    border-radius: var(--radius-sm, 0.25rem);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+
+  .zone-bar-vertical__fill {
+    width: 100%;
+    border-radius: var(--radius-sm, 0.25rem) var(--radius-sm, 0.25rem) 0 0;
+    transition: height 0.3s ease;
+  }
+
+  .zone-bar-vertical__percent {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  /* Zone Map - Concentric Circles */
+  .zone-map {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .zone-map__container {
+    display: flex;
+    justify-content: center;
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-lg, 0.5rem);
+  }
+
+  .zone-map__svg {
+    width: 100%;
+    max-width: 350px;
+    height: auto;
+  }
+
+  .zone-instruction {
+    font-size: 11px;
+    font-weight: 500;
+    fill: var(--color-accent-light, #6366f1);
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .zone-circle {
+    stroke-width: 2;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .zone-circle:hover {
+    stroke-width: 3;
+    filter: brightness(1.2);
+  }
+
+  .zone-circle--clickable {
+    cursor: pointer;
+    stroke-dasharray: 4 2;
+  }
+
+  .zone-circle--clickable:hover {
+    stroke-width: 4;
+    filter: brightness(1.3);
+  }
+
+  .zone-circle--drop-target {
+    stroke-width: 4;
+    filter: brightness(1.4);
+    stroke-dasharray: 8 4;
+    animation: pulseZone 0.8s infinite;
+  }
+
+  @keyframes pulseZone {
+    0%, 100% { opacity: 1; stroke-width: 4; }
+    50% { opacity: 0.8; stroke-width: 5; }
+  }
+
+  .zone-label {
+    font-size: 10px;
+    font-weight: 600;
+    pointer-events: none;
+  }
+
+  .zone-center-label {
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--color-text-muted, #6b7280);
+  }
+
+  .holon-node {
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+
+  .holon-node:hover {
+    transform: scale(1.1);
+  }
+
+  .holon-node--selected {
+    animation: selectedPulse 1.5s infinite;
+  }
+
+  @keyframes selectedPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
+  .holon-node--dragging {
+    opacity: 0.3;
+  }
+
+  .holon-node__bg {
+    stroke-width: 2;
+  }
+
+  .holon-node__label {
+    font-size: 10px;
+    font-weight: 600;
+    fill: var(--color-text-primary, #fff);
+    pointer-events: none;
+  }
+
+  .zone-map__cards-header {
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--color-text-muted, #6b7280);
+    text-align: center;
+    padding: var(--spacing-2, 0.5rem);
+    margin-top: var(--spacing-3, 0.75rem);
+  }
+
+  .zone-map__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-3, 0.75rem);
+    background: var(--color-bg-primary, #111827);
+    border-radius: var(--radius-md, 0.375rem);
+  }
+
+  .zone-holon-card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2, 0.5rem);
+    padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+    background: var(--color-bg-tertiary, #1f2937);
+    border-radius: var(--radius-md, 0.375rem);
+    cursor: grab;
+    transition: all 0.2s ease;
+  }
+
+  .zone-holon-card:hover {
+    background: var(--color-bg-secondary, #374151);
+    transform: translateY(-1px);
+  }
+
+  .zone-holon-card--dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+  }
+
+  .zone-holon-card__zone {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: var(--font-weight-bold, 700);
+    color: #fff;
+  }
+
+  .zone-holon-card__name {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-primary, #fff);
+    flex: 1;
+  }
+
+  .zone-holon-card__drag-hint {
+    color: var(--color-text-muted, #6b7280);
+    font-size: var(--font-size-sm, 0.875rem);
+    opacity: 0.5;
+    margin-left: auto;
+  }
+
+  .zone-holon-card:hover .zone-holon-card__drag-hint {
+    opacity: 1;
+  }
+
+  .zone-holon-card--selected {
+    outline: 2px solid var(--color-accent, #4f46e5);
+    outline-offset: 2px;
+    background: var(--color-accent-subtle, rgba(79, 70, 229, 0.15));
   }
 </style>

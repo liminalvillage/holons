@@ -1,14 +1,16 @@
 <script lang="ts">
 	// @ts-nocheck
     import { onMount, getContext } from "svelte";
-    import { ID } from "../dashboard/store";
+    import { ID, walletAddress } from "../dashboard/store";
     import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
+    import { ethers } from 'ethers';
     import User from "./User.svelte";
     import PieChart3D from "./PieChart3D.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
     import TitleBar from "./shared/TitleBar.svelte";
     import { fetchHolonName } from "../utils/holonNames";
+    import { HolonsManager } from "../lib/holons/HolonsManager";
     interface User {
         id?: string;
         username?: string;
@@ -58,6 +60,11 @@
     let currenciesLoaded = false;
     let expensesLoaded = false;
     let currencyBalanceCache: Record<string, number> = {};
+
+    // Contract share state
+    let manager: HolonsManager | null = null;
+    let contractShares: Record<string, { sharePercent: number; etherFormatted: string }> = {};
+    let contractSharesLoaded = false;
 
     // Initialize equation with default values
     let equation: Equation = {
@@ -148,13 +155,16 @@
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
                 expensesLoaded = false;
+                contractSharesLoaded = false;
                 expenseStore = {};
                 availableCurrencies = [];
+                contractShares = {};
                 loadEquation();
+                loadContractShares();
                 fetchInitialUsersAndSubscribe();
                 subscribeToSettings();
                 subscribeToExpenses();
-                
+
                 // Fallback timeout to ensure loading completes
                 setTimeout(() => {
                     if (!currenciesLoaded) {
@@ -178,13 +188,16 @@
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
                 expensesLoaded = false;
+                contractSharesLoaded = false;
                 expenseStore = {};
                 availableCurrencies = [];
+                contractShares = {};
                 loadEquation();
+                loadContractShares();
                 fetchInitialUsersAndSubscribe();
                 subscribeToSettings();
                 subscribeToExpenses();
-                
+
                 // Fallback timeout to ensure loading completes
                 setTimeout(() => {
                     if (!currenciesLoaded) {
@@ -200,10 +213,11 @@
         // Initial load if we have an ID
         if (holonID) {
             loadEquation();
+            loadContractShares();
             fetchInitialUsersAndSubscribe();
             subscribeToSettings();
             subscribeToExpenses();
-            
+
             // Fallback timeout to ensure loading completes
             setTimeout(() => {
                 if (!currenciesLoaded) {
@@ -225,17 +239,52 @@
     async function loadEquation() {
         try {
             const settings = await holosphere.getAll(holonID, 'settings');
-         
-            if (settings && settings[0]?.valueEquation) {
+
+            if (settings && settings[0]?.valueEquation && typeof settings[0].valueEquation === 'object') {
                 equation = {
                     ...equation, // Keep defaults as fallback
                     ...settings[0].valueEquation  // Override with stored values
                 };
-
-                valueEquationLoaded = true;
-            } 
+            }
+            // Always mark as loaded (using defaults if no settings found)
+            valueEquationLoaded = true;
         } catch (error) {
             console.error('Error loading equation settings:', error);
+            // Mark as loaded even on error to avoid blocking UI
+            valueEquationLoaded = true;
+        }
+    }
+
+    // Load contract shares for interior members
+    async function loadContractShares() {
+        if (!holosphere || !holonID) {
+            contractSharesLoaded = true;
+            return;
+        }
+
+        try {
+            // Initialize manager if we have a wallet connection
+            if ($walletAddress && window.ethereum) {
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                manager = new HolonsManager(provider, holosphere.gun);
+                await manager.initialize();
+
+                // Get interior members with their shares
+                const members = await manager.getInteriorMembersWithBalances(holonID);
+
+                // Convert to lookup by userId
+                contractShares = {};
+                for (const member of members) {
+                    contractShares[member.userId] = {
+                        sharePercent: member.sharePercent,
+                        etherFormatted: member.etherFormatted
+                    };
+                }
+            }
+            contractSharesLoaded = true;
+        } catch (error) {
+            console.error('Error loading contract shares:', error);
+            contractSharesLoaded = true;
         }
     }
 
@@ -663,6 +712,7 @@
                                     {/each}
                                     <th class="p-4 text-left font-semibold">Score</th>
                                     <th class="p-4 text-left font-semibold">Percentage</th>
+                                    <th class="p-4 text-left font-semibold">Contract Share</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -757,6 +807,17 @@
                                                     {percentage.toFixed(1)}%
                                                 </span>
                                             </div>
+                                        </td>
+                                        <td class="p-4">
+                                            {#if contractShares[userId] || contractShares[user.id]}
+                                                {@const share = contractShares[userId] || contractShares[user.id]}
+                                                <div class="flex flex-col gap-1">
+                                                    <span class="text-green-400 font-semibold">{share.sharePercent.toFixed(2)}%</span>
+                                                    <span class="text-xs text-gray-400">{share.etherFormatted} ETH</span>
+                                                </div>
+                                            {:else}
+                                                <span class="text-gray-500">--</span>
+                                            {/if}
                                         </td>
                                     </tr>
                                 {/each}
