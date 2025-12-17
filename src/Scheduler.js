@@ -1065,7 +1065,8 @@ class Scheduler {
             }
             
             console.log('Updating recurring task:', taskId, 'for chat ID:', task.holonId);
-            
+            if (task.chat)
+                task[holonId]= task.chat
             // Verify holonId exists and is valid
             if (!task.holonId || task.holonId === 0) {
                 console.error('Invalid holonId in task to update:', task);
