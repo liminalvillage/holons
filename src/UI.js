@@ -43,8 +43,9 @@ class UI {
  
     this.bot.command('dashboard', async (ctx) => {
       let holonId = ctx.message.chat.id
+      const userId = ctx.from?.id
       const language = await this.settings.getLanguage(holonId)
-      const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/dashboard`
+      const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?odyn=${holonId}&user=${userId}`
       
       try {
         // Generate QR code

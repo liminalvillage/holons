@@ -306,24 +306,6 @@ export default class Settings {
             }
         });
 
-        // Dashboard command - opens dashboard as Telegram webapp
-        this.bot.command('dashboard', async (ctx) => {
-            const holonId = utils.getholonId(ctx);
-            const userId = ctx.from?.id;
-            const language = await this.getLanguage(holonId);
-            const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?odyn=${holonId}&user=${userId}`;
-
-            await ctx.reply(
-                i18next.t('dashboard_open', { lng: language, defaultValue: 'Open your Holonic Dashboard:' }),
-                Markup.keyboard([
-                    [Markup.button.webApp(
-                        i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' }),
-                        dashboardUrl
-                    )]
-                ]).resize().oneTime()
-            ).catch(e => console.log('Error in dashboard command:', e));
-        });
-
         // Handle settings menu callbacks
         this.bot.action(/settings_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
