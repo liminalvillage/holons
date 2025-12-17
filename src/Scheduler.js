@@ -857,34 +857,55 @@ class Scheduler {
     async handleBackToQuest(ctx) {
         try {
             const holonId = ctx.callbackQuery.message.chat.id;
-            const messageId = ctx.callbackQuery.message.message_id;
-            
+
             // Get quest ID from calendar
             const questId = this.calendar.questIds.get(holonId);
-            
+
             if (!questId) {
                 await ctx.answerCbQuery('Could not find associated task');
                 return;
             }
-            
+
             // Get quest
             const quest = await this.db.get(`${holonId}/quests`, questId);
             if (!quest) {
                 await ctx.answerCbQuery('Task not found');
                 return;
             }
-            
+
             // Get language
             const language = await this.settings.getLanguage(holonId);
-            
-            // Use the quest's updateMessage method to properly restore the quest
-            // This will handle both text and image quests correctly
-            await this.quests.updateMessage(ctx, quest, language);
-            
+
+            // Get the task menu buttons
+            const taskMarkup = this.quests.markup(quest, language);
+
+            // Check if quest is shown as image
+            const showImages = process.env.SHOW_QUESTS_AS_IMAGES === 'true';
+
+            if (showImages) {
+                // For image messages, only edit the reply markup
+                await ctx.editMessageReplyMarkup(taskMarkup.reply_markup).catch((err) => {
+                    if (!err.response?.description?.includes('message is not modified')) {
+                        throw err;
+                    }
+                });
+            } else {
+                // For text messages, edit both text and markup
+                const message = await this.quests.createMessage(quest, language);
+                await ctx.editMessageText(message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: taskMarkup.reply_markup
+                }).catch((err) => {
+                    if (!err.response?.description?.includes('message is not modified')) {
+                        throw err;
+                    }
+                });
+            }
+
             // Clear stored quest ID
             this.calendar.questIds.delete(holonId);
-            
-            await ctx.answerCbQuery('Returned to task');
+
+            await ctx.answerCbQuery();
         } catch (error) {
             console.error('Error returning to quest:', error);
             await ctx.answerCbQuery('Error returning to task');

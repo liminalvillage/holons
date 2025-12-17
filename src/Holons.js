@@ -613,7 +613,10 @@ export default class Holons {
       if (!splitterContract || splitterContract.target === '0x0000000000000000000000000000000000000000') {
         if (action !== 'create' && action !== 'back') {
           return ctx.editMessageText("No holon exists for this chat. Create one first.", {
-            reply_markup: { inline_keyboard: [[{ text: "🆕 Create Holon", callback_data: "holons_create" }]] }
+            reply_markup: { inline_keyboard: [
+              [{ text: "🆕 Create Holon", callback_data: "holons_create" }],
+              [{ text: "◀️ Back", callback_data: "settings_back" }]
+            ]}
           }).catch(e => console.log("Error editing message for no holon:", e.message));
         }
       }

@@ -1084,7 +1084,7 @@ export default class Quests {
 
     async handleBackAction(ctx) {
         const data = ctx.callbackQuery.data;
-        
+
         try {
             if (data.startsWith('back_from_dependencies_')) {
                 return await this.backFromDependencies(ctx);
@@ -1092,6 +1092,8 @@ export default class Quests {
                 return await this.backFromParticipants(ctx);
             } else if (data.startsWith('back_to_quest_')) {
                 return await this.handleBackToQuest(ctx);
+            } else if (data === 'calendar_back_to_quest' && this.scheduler) {
+                return await this.scheduler.handleBackToQuest(ctx);
             } else {
                 // Generic back action - try to parse and handle
                 console.log('Unknown back action:', data);
