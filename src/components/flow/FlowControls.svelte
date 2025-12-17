@@ -1,0 +1,467 @@
+<script lang="ts">
+  import { createEventDispatcher } from 'svelte';
+  import { calculateZonePercentages, ZONE_COLORS } from './types';
+
+  export let steepness: number = 50;
+  export let nzones: number = 6;
+  export let interiorPercent: number = 50;
+  export let hasChanges: boolean = false;
+  export let syncing: boolean = false;
+  export let hasBundleDeployed: boolean = false;
+
+  const dispatch = createEventDispatcher<{
+    steepnessChange: number;
+    nzonesChange: number;
+    interiorChange: number;
+    sync: void;
+    reset: void;
+    deploy: void;
+    redeploy: void;
+  }>();
+
+  $: exteriorPercent = 100 - interiorPercent;
+  $: zonePercentages = calculateZonePercentages(steepness, nzones);
+
+  function handleSteepnessChange(e: Event) {
+    const value = parseInt((e.target as HTMLInputElement).value);
+    dispatch('steepnessChange', value);
+  }
+
+  function handleNzonesChange(e: Event) {
+    const value = parseInt((e.target as HTMLInputElement).value);
+    if (value >= 1 && value <= 10) {
+      dispatch('nzonesChange', value);
+    }
+  }
+
+  function handleInteriorChange(e: Event) {
+    const value = parseInt((e.target as HTMLInputElement).value);
+    dispatch('interiorChange', value);
+  }
+
+  function incrementZones() {
+    if (nzones < 10) {
+      dispatch('nzonesChange', nzones + 1);
+    }
+  }
+
+  function decrementZones() {
+    if (nzones > 1) {
+      dispatch('nzonesChange', nzones - 1);
+    }
+  }
+</script>
+
+<div class="flow-controls">
+  <div class="control-section">
+    <div class="control-group">
+      <label class="control-label">
+        Interior / Exterior Split
+        <span class="control-value">{interiorPercent}% / {exteriorPercent}%</span>
+      </label>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={interiorPercent}
+        on:input={handleInteriorChange}
+        class="slider interior-slider"
+      />
+      <div class="slider-labels">
+        <span>Interior</span>
+        <span>Exterior</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label class="control-label">
+         Exterior Reward Sharing        <span class="control-value">{steepness}%</span>
+      </label>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={steepness}
+        on:input={handleSteepnessChange}
+        class="slider steepness-slider"
+      />
+      <div class="slider-labels">
+        <span>Steep (0%)</span>
+        <span>Even (100%)</span>
+      </div>
+    </div>
+
+    <div class="control-group zones-group">
+      <label class="control-label">
+        Number of Zones
+      </label>
+      <div class="zones-input">
+        <button
+          class="zones-btn"
+          on:click={decrementZones}
+          disabled={nzones <= 1}
+        >
+          −
+        </button>
+        <input
+          type="number"
+          min="1"
+          max="10"
+          value={nzones}
+          on:change={handleNzonesChange}
+          class="zones-number"
+        />
+        <button
+          class="zones-btn"
+          on:click={incrementZones}
+          disabled={nzones >= 10}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="zone-bar-chart">
+    {#each zonePercentages as percent, i}
+      <div class="bar-column">
+        <div class="bar-track">
+          <div
+            class="bar-fill"
+            style="height: {percent}%; background: {ZONE_COLORS[i % ZONE_COLORS.length]};"
+          ></div>
+        </div>
+        <span class="bar-label">Z{i + 1}</span>
+        <span class="bar-value">{percent.toFixed(1)}%</span>
+      </div>
+    {/each}
+  </div>
+
+  <div class="action-buttons">
+    {#if !hasBundleDeployed}
+      <button
+        class="btn btn-deploy"
+        on:click={() => dispatch('deploy')}
+        disabled={syncing}
+      >
+        {#if syncing}
+          <span class="spinner"></span>
+          Deploying...
+        {:else}
+          Deploy Bundle
+        {/if}
+      </button>
+    {:else}
+      <button
+        class="btn btn-reset"
+        on:click={() => dispatch('reset')}
+        disabled={!hasChanges || syncing}
+      >
+        Reset
+      </button>
+      <button
+        class="btn btn-sync"
+        on:click={() => dispatch('sync')}
+        disabled={!hasChanges || syncing}
+      >
+        {#if syncing}
+          <span class="spinner"></span>
+          Syncing...
+        {:else}
+          Sync to Chain
+        {/if}
+      </button>
+      <button
+        class="btn btn-redeploy"
+        on:click={() => dispatch('redeploy')}
+        disabled={syncing}
+        title="Deploy a new Bundle contract (old one will be replaced)"
+      >
+        Redeploy
+      </button>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .flow-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(30, 41, 59, 0.5);
+    border-radius: 0.5rem;
+  }
+
+  .control-section {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .control-group {
+    flex: 1;
+    min-width: 180px;
+  }
+
+  .zones-group {
+    flex: 0 0 auto;
+    min-width: 120px;
+  }
+
+  .control-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.875rem;
+    color: #e2e8f0;
+    margin-bottom: 0.5rem;
+  }
+
+  .control-value {
+    font-family: monospace;
+    color: #60a5fa;
+    font-weight: 500;
+  }
+
+  .slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #334155;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    border: 2px solid #1e293b;
+    transition: transform 0.15s;
+  }
+
+  .slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+  }
+
+  .slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    border: 2px solid #1e293b;
+  }
+
+  .interior-slider::-webkit-slider-thumb {
+    background: linear-gradient(135deg, #475569 0%, #64748b 100%);
+  }
+
+  .steepness-slider::-webkit-slider-thumb {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  }
+
+  .slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-top: 0.25rem;
+  }
+
+  .zones-input {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .zones-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 0.25rem;
+    background: #334155;
+    border: 1px solid #475569;
+    color: #e2e8f0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .zones-btn:hover:not(:disabled) {
+    background: #475569;
+    border-color: #64748b;
+  }
+
+  .zones-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .zones-number {
+    width: 48px;
+    height: 32px;
+    text-align: center;
+    font-size: 1rem;
+    font-weight: 600;
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 0.25rem;
+    color: #e2e8f0;
+  }
+
+  .zones-number::-webkit-inner-spin-button,
+  .zones-number::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .zone-bar-chart {
+    display: flex;
+    gap: 0.125rem;
+    padding: 0.75rem 0;
+    border-top: 1px solid rgba(71, 85, 105, 0.5);
+    height: 200px;
+    max-width: 50%;
+  }
+
+  .bar-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .bar-track {
+    flex: 1;
+    width: 100%;
+    max-width: 16px;
+    background: rgba(51, 65, 85, 0.5);
+    border-radius: 0.25rem 0.25rem 0 0;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    width: 100%;
+    border-radius: 0.25rem 0.25rem 0 0;
+    transition: height 0.3s ease;
+    min-height: 2px;
+  }
+
+  .bar-label {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-top: 0.25rem;
+  }
+
+  .bar-value {
+    font-size: 0.5rem;
+    font-family: monospace;
+    color: #64748b;
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(71, 85, 105, 0.5);
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-reset {
+    background: transparent;
+    border: 1px solid #475569;
+    color: #94a3b8;
+  }
+
+  .btn-reset:hover:not(:disabled) {
+    background: rgba(71, 85, 105, 0.3);
+    color: #e2e8f0;
+  }
+
+  .btn-sync {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+  }
+
+  .btn-sync:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  }
+
+  .btn-deploy {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+  }
+
+  .btn-deploy:hover:not(:disabled) {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  }
+
+  .btn-redeploy {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+  }
+
+  .btn-redeploy:hover:not(:disabled) {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (max-width: 640px) {
+    .control-section {
+      flex-direction: column;
+    }
+
+    .action-buttons {
+      flex-direction: column;
+    }
+
+    .btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>

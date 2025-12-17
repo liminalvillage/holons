@@ -477,28 +477,24 @@ export class HolonsContract {
       throw new Error('Bundle bytecode not available. Please run the deployment setup.');
     }
 
-    // Get factory addresses from deployment config
-    const managedFactoryAddress = this.addresses.ManagedFactory || ethers.ZeroAddress;
-    const zonedFactoryAddress = this.addresses.ZonedFactory || ethers.ZeroAddress;
-
-    // Splitter ABI for deployment - only need constructor for deployment
-    const splitterABI = [
+    // Bundle ABI for deployment - only need constructor for deployment
+    // Bundle constructor: (address _owner, string _creatorUserId, string _name, uint256 _steepness, uint256 _nzones)
+    const bundleABI = [
       {
         "type": "constructor",
         "inputs": [
           { "name": "_owner", "type": "address" },
           { "name": "_creatorUserId", "type": "string" },
           { "name": "_name", "type": "string" },
-          { "name": "_parameter", "type": "uint256" },
-          { "name": "_managedFactory", "type": "address" },
-          { "name": "_zonedFactory", "type": "address" }
+          { "name": "_steepness", "type": "uint256" },
+          { "name": "_nzones", "type": "uint256" }
         ],
         "stateMutability": "nonpayable"
       }
     ];
 
     // Create contract factory and deploy
-    const factory = new ethers.ContractFactory(splitterABI, BUNDLE_BYTECODE, this.signer);
+    const factory = new ethers.ContractFactory(bundleABI, BUNDLE_BYTECODE, this.signer);
 
     // Refresh signer connection to ensure valid session
     try {
@@ -507,14 +503,13 @@ export class HolonsContract {
       throw new Error('Wallet session expired. Please reconnect your wallet.');
     }
 
-    console.log('[HolonsContract] Deploying Splitter contract...');
+    console.log('[HolonsContract] Deploying Bundle contract...');
     console.log('[HolonsContract] Constructor args:', {
       owner: ownerAddress,
       creatorUserId,
       name,
-      parameter: steepnessValue.toString(),
-      managedFactory: managedFactoryAddress,
-      zonedFactory: zonedFactoryAddress
+      steepness: steepnessValue.toString(),
+      nzones: zonesValue
     });
 
     // Get fresh fee data
@@ -524,11 +519,10 @@ export class HolonsContract {
       ownerAddress,
       creatorUserId,
       name,
-      steepnessValue,  // parameter field - BigInt is supported in ethers v6
-      managedFactoryAddress,
-      zonedFactoryAddress,
+      steepnessValue,  // steepness - BigInt is supported in ethers v6
+      zonesValue,      // nzones
       {
-        gasLimit: 5000000n,  // Use BigInt for gas limit
+        gasLimit: 10000000n,  // Increased for larger Bundle bytecode
         maxFeePerGas: feeData.maxFeePerGas,
         maxPriorityFeePerGas: feeData.maxPriorityFeePerGas
       }
