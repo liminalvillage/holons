@@ -311,7 +311,7 @@ export default class Settings {
             const holonId = utils.getholonId(ctx);
             const userId = ctx.from?.id;
             const language = await this.getLanguage(holonId);
-            const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${holonId}&user=${userId}`;
+            const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?odyn=${holonId}&user=${userId}`;
 
             await ctx.reply(
                 i18next.t('dashboard_open', { lng: language, defaultValue: 'Open your Holonic Dashboard:' }),
@@ -2030,7 +2030,7 @@ export default class Settings {
 
         let settings = await this.getSettings(holonId);
         const language = settings.language;
-        const dashboardUrl = `${DASHBOARD_ADDRESS}?odyn=${holonId}&user=${userId}`;
+        const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?odyn=${holonId}&user=${userId}`;
         
         // Fetch federation info for the button
         const fedInfo = await this.db.getFederation(holonId);
