@@ -8,7 +8,7 @@
 	import TelegramSplash from '../components/TelegramSplash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import { nostrStore, nostrPrivateKey } from '$lib/stores/nostr';
-	import { holosphereStore, isPublicSpaceMode } from '$lib/stores/holosphere';
+	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
 
@@ -39,9 +39,6 @@
 	// Track if this is a telegram-mapped session (user without local key)
 	let isTelegramMappedSession = false;
 	let telegramMappedPublicKey: string | null = null;
-
-	// Track if user is in public space mode (read-only, using service key)
-	let isInPublicSpaceMode = false;
 
 	// Initialize user's personal holon with their public key as ID
 	async function initializeUserHolon() {
@@ -257,8 +254,8 @@
 
 		// Initialize the user's personal holon with their public key as ID
 		// But skip if on certain routes like /global
-		// Also skip for telegram-mapped sessions and public space mode (read-only)
-		if (!isTelegramMappedSession && !isInPublicSpaceMode) {
+		// Also skip for telegram-mapped sessions (read-only)
+		if (!isTelegramMappedSession) {
 			if (browser) {
 				const currentPath = window.location.pathname;
 				console.log('Current path on init:', currentPath);
@@ -277,8 +274,6 @@
 
 			// Grant capability token to the holosphere service key for federation
 			grantFederationCapability(privateKey);
-		} else if (isInPublicSpaceMode) {
-			console.log('Public space mode: skipping holon creation and federation capability grant (read-only)');
 		} else {
 			console.log('Telegram-mapped session: skipping auto-initialization');
 		}
@@ -320,11 +315,9 @@
 		let privateKey: string | null = null;
 
 		if (mode === 'public') {
-			// Public space mode - use the holosphere key from .env
+			// Public space mode - use the holosphere key from .env (now writable)
 			privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-			isInPublicSpaceMode = true;
-			isPublicSpaceMode.set(true);
-			console.log('Using holosphere env key for public space (read-only mode)');
+			console.log('Using holosphere env key for public space');
 		} else if (mode === 'telegram-mapped') {
 			// Telegram Mini App user with existing mapping but no local key
 			// Use holosphere service key for backend operations
