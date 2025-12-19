@@ -56,6 +56,9 @@ export default class Quests {
         this.userCache = new Map();
         this.cacheExpiry = 5 * 60 * 1000; // 5 minutes
 
+        // Cache cleanup interval ID (stored for cleanup on shutdown)
+        this.cacheCleanupInterval = null;
+
         // Start cache cleanup timer
         this.startCacheCleanup();
 
@@ -248,14 +251,9 @@ export default class Quests {
         // Send message and save quest
         const showAsImage = this.shouldShowQuestsAsImages();
         let nctx;
-        
-        if (picture && showAsImage && this.ui?.getQuestImage) {
-            nctx = await ctx.replyWithPhoto(picture, {
-                caption: createPaddedCaption(''),
-                ...this.markup(quest, language)
-            });
-        } else if (showAsImage && this.ui?.getQuestImage) {
-            // If we have an image and showAsImage is true, start with a temporary photo that will be replaced
+
+        if (showAsImage && this.ui?.getQuestImage) {
+            // Image mode: show temporary message, will be replaced by generated image (with embedded picture if any)
             if (picture) {
                 nctx = await ctx.replyWithPhoto(picture, {
                     caption: createPaddedCaption("📝 " + quest.title),
@@ -267,25 +265,26 @@ export default class Quests {
                                       this.markup(quest, language));
             }
         } else if (picture) {
-            // Fallback: show original photo when showAsImage is disabled
+            // Text mode with picture: show original photo with quest text as caption
+            const caption = await this.createMessage(quest, language);
             nctx = await ctx.replyWithPhoto(picture, {
-                caption: createPaddedCaption(''),
-                parse_mode: 'Markdown',
+                caption: this.truncateCaption(caption),
                 ...this.markup(quest, language)
             });
         } else {
-            nctx = await ctx.reply(await this.createMessage(quest, language), 
+            // Text-only mode without picture
+            nctx = await ctx.reply(await this.createMessage(quest, language),
                                   this.markup(quest, language));
         }
-        
+
         // Set quest ID based on platform
         quest.id = ctx.platform === 'discord' ? nctx.id : nctx.message_id;
         if (!quest.holon || quest.holon === 0) {
             quest.holon = ctx.platform === 'discord' ? nctx.channel.id : nctx.chat.id;
         }
-        
+
         await this.db.put(holonId + '/quests', quest);
-        
+
         // Update buttons and pin message
         const questHolon = Quests.getQuestHolon(quest);
         try {
@@ -295,12 +294,12 @@ export default class Quests {
 
         this.bot.telegram.pinChatMessage(questHolon, quest.id, { disable_notification: true }).catch(() => {});
         this.bot.telegram.deleteMessage(holonId, messageID).catch(() => {});
-        
-        // Generate quest image if enabled (always generate when showAsImage is true)
+
+        // Generate quest image if image mode enabled (picture will be embedded in generated image)
         if (showAsImage) {
             this.regenerateQuestImageBackground(ctx, quest, questHolon, quest.id, this.markup(quest, language));
         }
-        
+
         return quest;
     }
 
@@ -1006,6 +1005,12 @@ export default class Quests {
         return process.env.SHOW_QUESTS_AS_IMAGES === 'true';
     }
 
+    // Truncate caption to Telegram's 1024 character limit
+    truncateCaption(caption) {
+        if (!caption || caption.length <= 1024) return caption;
+        return caption.slice(0, 1021) + '...';
+    }
+
     getCategory(ctx) {
         if (ctx.message?.message_thread_id && ctx.message?.reply_to_message?.forum_topic_created?.name) {
             return ctx.message.reply_to_message.forum_topic_created.name;
@@ -1108,14 +1113,14 @@ export default class Quests {
     async updateQuestMessage(ctx, quest, holonId, messageId, language, markupConfig) {
         const showImages = this.shouldShowQuestsAsImages();
 
-        log.info(`updateQuestMessage - showImages: ${showImages}, holonId: ${holonId}, messageId: ${messageId}`);
+        log.info(`updateQuestMessage - showImages: ${showImages}, holonId: ${holonId}, messageId: ${messageId}, hasPicture: ${!!quest.picture}`);
 
         try {
             if (showImages) {
+                // Image mode: regenerate quest image (picture will be embedded)
                 log.info('Updating reply markup for image mode');
                 await ctx.telegram.editMessageReplyMarkup(holonId, messageId, null, markupConfig.reply_markup)
                     .catch((err) => {
-                        // Ignore "message is not modified" error - it just means nothing changed
                         if (err.response?.description?.includes('message is not modified')) {
                             log.debug('Message markup unchanged, skipping update');
                         } else {
@@ -1126,12 +1131,24 @@ export default class Quests {
                 if (this.ui?.getQuestImage) {
                     this.queueImageUpdate(ctx, quest, holonId, messageId, markupConfig);
                 }
+            } else if (quest.picture) {
+                // Text mode with picture: update caption
+                log.info('Updating message caption for picture quest in text mode');
+                const caption = await this.createMessage(quest, language);
+                await ctx.telegram.editMessageCaption(holonId, messageId, null, this.truncateCaption(caption), markupConfig)
+                    .catch((err) => {
+                        if (err.response?.description?.includes('message is not modified')) {
+                            log.debug('Message caption unchanged, skipping update');
+                        } else {
+                            log.error('Error editing message caption', err);
+                        }
+                    });
             } else {
+                // Text mode without picture
                 log.info('Updating message text for text mode');
                 const message = await this.createMessage(quest, language);
                 await ctx.telegram.editMessageText(holonId, messageId, null, message, markupConfig)
                     .catch((err) => {
-                        // Ignore "message is not modified" error - it just means nothing changed
                         if (err.response?.description?.includes('message is not modified')) {
                             log.debug('Message text unchanged, skipping update');
                         } else {
@@ -2297,34 +2314,42 @@ export default class Quests {
             // Create message for the quest view
             const baseMessageText = await this.createMessage(questToView, language);
             const originalHolonName = await getHolonName(this.db, originalQuestholonId, ctx);
-            const messageText = baseMessageText + 
+            const messageText = baseMessageText +
                 `| 🔗 Linked from ${originalHolonName}\n`;
             const markup = this.markup(questToView, language);
-            
-            // Try to generate quest image
-            let questImagePath = null;
             const showQuestsAsImages = this.shouldShowQuestsAsImages();
-            
+
+            // Send the quest view
+            let newHologramMsg;
             if (showQuestsAsImages && this.ui && this.ui.getQuestImage) {
+                // Image mode: generate quest image (with embedded picture if any)
+                let questImagePath = null;
                 try {
                     questImagePath = await this.ui.getQuestImage(questToView, originalQuestholonId, true);
                 } catch (error) {
                     // Silently handle image generation errors
                 }
-            }
-            
-            // Send the quest view
-            let newHologramMsg;
-            if (showQuestsAsImages && questImagePath) {
-                newHologramMsg = await ctx.replyWithPhoto(
-                    { source: questImagePath }, 
-                    {
-                        caption: createPaddedCaption(''),
-                        parse_mode: 'Markdown',
-                        ...markup
-                    }
-                );
+
+                if (questImagePath) {
+                    newHologramMsg = await ctx.replyWithPhoto(
+                        { source: questImagePath },
+                        {
+                            caption: createPaddedCaption(''),
+                            parse_mode: 'Markdown',
+                            ...markup
+                        }
+                    );
+                } else {
+                    newHologramMsg = await ctx.reply(messageText, markup);
+                }
+            } else if (questToView.picture) {
+                // Text mode with picture: show original photo with caption
+                newHologramMsg = await ctx.replyWithPhoto(questToView.picture, {
+                    caption: this.truncateCaption(messageText),
+                    ...markup
+                });
             } else {
+                // Text mode without picture
                 newHologramMsg = await ctx.reply(messageText, markup);
             }
             
@@ -2392,6 +2417,7 @@ export default class Quests {
             let hologramMessage;
 
             if (showImages) {
+                // Image mode: generate quest image (with embedded picture if any)
                 const questImagePath = await this.getCachedQuestImage(quest, questHolon, true);
                 if (questImagePath) {
                     try {
@@ -2410,7 +2436,19 @@ export default class Quests {
                 } else {
                     hologramMessage = await ctx.telegram.sendMessage(userId, messageText, markup);
                 }
+            } else if (quest.picture) {
+                // Text mode with picture: show original photo with caption
+                try {
+                    hologramMessage = await ctx.telegram.sendPhoto(userId, quest.picture, {
+                        caption: this.truncateCaption(messageText),
+                        ...markup
+                    });
+                } catch (imageError) {
+                    // Fallback to text if image sending fails
+                    hologramMessage = await ctx.telegram.sendMessage(userId, messageText, markup);
+                }
             } else {
+                // Text mode without picture
                 hologramMessage = await ctx.telegram.sendMessage(userId, messageText, markup);
             }
 
@@ -2504,6 +2542,7 @@ export default class Quests {
                     let federatedMessage;
 
                     if (this.shouldShowQuestsAsImages()) {
+                        // Image mode: generate quest image (with embedded picture if any)
                         const questImagePath = await this.getCachedQuestImage(updatedQuest, questHolon, true);
                         if (questImagePath) {
                             try {
@@ -2521,7 +2560,18 @@ export default class Quests {
                         } else {
                             federatedMessage = await ctx.telegram.sendMessage(targetHolon, federatedMessageText, federatedMarkup);
                         }
+                    } else if (updatedQuest.picture) {
+                        // Text mode with picture: show original photo with caption
+                        try {
+                            federatedMessage = await ctx.telegram.sendPhoto(targetHolon, updatedQuest.picture, {
+                                caption: this.truncateCaption(federatedMessageText),
+                                ...federatedMarkup
+                            });
+                        } catch (imageError) {
+                            federatedMessage = await ctx.telegram.sendMessage(targetHolon, federatedMessageText, federatedMarkup);
+                        }
                     } else {
+                        // Text mode without picture
                         federatedMessage = await ctx.telegram.sendMessage(targetHolon, federatedMessageText, federatedMarkup);
                     }
 
@@ -2820,9 +2870,20 @@ export default class Quests {
 
     startCacheCleanup() {
         // Clean up expired cache entries every 10 minutes
-        setInterval(() => {
+        // Store interval ID so it can be cleared on shutdown
+        if (this.cacheCleanupInterval) {
+            clearInterval(this.cacheCleanupInterval);
+        }
+        this.cacheCleanupInterval = setInterval(() => {
             this.cleanupExpiredCache();
         }, 10 * 60 * 1000);
+    }
+
+    stopCacheCleanup() {
+        if (this.cacheCleanupInterval) {
+            clearInterval(this.cacheCleanupInterval);
+            this.cacheCleanupInterval = null;
+        }
     }
 
     cleanupExpiredCache() {
