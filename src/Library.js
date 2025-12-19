@@ -1,9 +1,16 @@
 import { Markup } from 'telegraf';
+import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
 
 class Library {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
+
+        // Initialize REA components
+        this.eventStore = new REAEventStore(db);
+        this.eventFactory = REAEventFactory;
+        this.aggregator = new REAAggregator(this.eventStore);
+
         this.bot.command('removeitem', (ctx) => this.removeItem(ctx));
         this.bot.command('additem', (ctx) => this.addItem(ctx));
         this.bot.command('borrow', (ctx) => this.borrowItem(ctx, false));
@@ -56,7 +63,7 @@ class Library {
     async borrowItem(ctx, fromKeyboard = false) {
         let holonId = ctx.chat.id;
         const item = fromKeyboard ? ctx.match[1] : ctx.message.text.split('/borrow ')[1];
-        
+
         if (!item) {
             ctx.reply('Please specify an item to borrow. eg: /borrow hammer');
             return;
@@ -93,10 +100,25 @@ class Library {
                 amount: deposit,
                 borrower: ctx.from.id
             });
-            
+
             // Add credits to owner
             await this.updateUserCredits(currentItem.owner, holonId, currentItem.credits);
             currentItem.totalEarned += currentItem.credits;
+
+            // Create REA events for the borrow transaction
+            try {
+                const events = this.eventFactory.itemBorrowed(
+                    holonId,
+                    ctx.from,
+                    currentItem,
+                    currentItem.credits,
+                    deposit
+                );
+                await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
+                console.log(`Item ${item} borrowed with ${events.length} REA events`);
+            } catch (error) {
+                console.error('Error creating REA events for borrow:', error);
+            }
         }
 
         currentItem.borrowed = true;
@@ -108,8 +130,8 @@ class Library {
             ctx.editMessageText('Here is the library inventory:', this.getLibraryKeyboard(list))
                 .catch((error) => { console.log(error) });
         } else {
-            const message = isOwner ? 
-                `You borrowed your own item: ${item}` : 
+            const message = isOwner ?
+                `You borrowed your own item: ${item}` :
                 `${currentItem.borrower} borrowed ${item} for ${currentItem.credits} credits.`;
             ctx.reply(message).catch((err) => { console.log(err) });
         }
@@ -170,7 +192,7 @@ class Library {
     async returnItem(ctx, fromKeyboard = false) {
         let holonId = ctx.chat.id;
         const item = fromKeyboard ? ctx.match[1] : ctx.message.text.split('/return ')[1];
-        
+
         if (!item) {
             ctx.reply('Please specify an item to return. eg: /return hammer');
             return;
@@ -196,6 +218,21 @@ class Library {
         if (deposit) {
             await this.updateUserCredits(ctx.from.id, holonId, deposit.amount);
             await this.db.del(holonId + '/deposits', currentItem.id);
+
+            // Create REA events for the return transaction
+            try {
+                const events = this.eventFactory.itemReturned(
+                    holonId,
+                    ctx.from,
+                    currentItem,
+                    deposit.amount
+                );
+                await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
+                console.log(`Item ${item} returned with ${events.length} REA events`);
+            } catch (error) {
+                console.error('Error creating REA events for return:', error);
+            }
+
             ctx.reply(`Deposit of ${deposit.amount} credits returned.`);
         }
 

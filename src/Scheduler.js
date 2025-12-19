@@ -167,13 +167,13 @@ class Scheduler {
                     orginalTask[holonId]= originalTask.chat // Create a copy to ensure we don't modify the original
                 console.log('Running scheduled task for holonId:', originalTask.holonId);
                 
-                // Ensure we have a valid chat ID
+                // Ensure we have a valid holon ID
                 if (!originalTask.holonId || originalTask.holonId === 0) {
                     console.error('Invalid holonId in task:', originalTask);
                     return;
                 }
                 
-                // Create mock context for quest creation with correct chat ID
+                // Create mock context for quest creation with correct holon ID
                 const mockCtx = {
                     chat: { // For utilities like getholonId that might look here first
                         id: originalTask.holonId,
@@ -346,7 +346,7 @@ class Scheduler {
             // Get the task to log details before deletion
             const task = await this.db.holosphere.getGlobal('recurring', taskId);
             if (task) {
-                console.log('Found task to stop, chat ID:', task.holonId);
+                console.log('Found task to stop, holon ID:', task.holonId);
             } else {
                 console.log('Task not found, proceeding with cleanup anyway');
             }
@@ -1001,17 +1001,17 @@ class Scheduler {
                 task.id = Date.now().toString();
             }
             
-            // Validate the chat ID - check both holonId and chat properties
+            // Validate the holon ID - check both holonId and chat properties
             const holonId = task.holonId || task.chat;
             if (!holonId || holonId === 0) {
                 console.error('Invalid holonId in createRecurringTask:', task);
-                throw new Error('Invalid chat ID');
+                throw new Error('Invalid holon ID');
             }
 
             // Ensure the task has the holonId property for consistency
             task.holonId = holonId;
             
-            console.log('Creating recurring task with chat ID:', task.holonId);
+            console.log('Creating recurring task with holon ID:', task.holonId);
             console.log('Task details:', {
                 id: task.id,
                 title: task.title,
@@ -1048,7 +1048,7 @@ class Scheduler {
             // Schedule the task
             await this.scheduleTask(task, mockCtx);
             
-            console.log('Created recurring task:', task.id, 'for chat ID:', task.holonId);
+            console.log('Created recurring task:', task.id, 'for holon ID:', task.holonId);
             return task.id;
         } catch (error) {
             console.error('Error creating recurring task:', error);
@@ -1064,13 +1064,13 @@ class Scheduler {
                 throw new Error(`Task with ID ${taskId} not found`);
             }
             
-            console.log('Updating recurring task:', taskId, 'for chat ID:', task.holonId);
+            console.log('Updating recurring task:', taskId, 'for holon ID:', task.holonId);
             if (task.chat)
                 task[holonId]= task.chat
             // Verify holonId exists and is valid
             if (!task.holonId || task.holonId === 0) {
                 console.error('Invalid holonId in task to update:', task);
-                throw new Error('Invalid chat ID in existing task');
+                throw new Error('Invalid holon ID in existing task');
             }
             
             // Update task properties but preserve the original holonId
@@ -1111,7 +1111,7 @@ class Scheduler {
             // Reschedule with updated parameters
             await this.scheduleTask(task, mockCtx);
             
-            console.log('Updated recurring task:', taskId, 'for chat ID:', task.holonId);
+            console.log('Updated recurring task:', taskId, 'for holon ID:', task.holonId);
             return true;
         } catch (error) {
             console.error('Error updating recurring task:', error);

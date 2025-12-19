@@ -15,7 +15,7 @@
     },
     "chat": {
       "type": ["string", "number"],
-      "description": "Chat ID where the quest belongs"
+      "description": "Holon ID where the quest belongs"
     },
     "message_thread_id": {
       "type": ["number", "null"],

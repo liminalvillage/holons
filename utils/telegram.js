@@ -26,7 +26,7 @@ export const getUser = (ctx) => {
 };
 
 /**
- * Get chat ID from Telegram context
+ * Get holon ID from Telegram context
  */
 export const getholonId = (ctx) => {
   return ctx?.chat?.id || 
@@ -252,7 +252,7 @@ export const validateTelegramContext = (ctx) => {
   }
 
   if (!holonId) {
-    throw new ValidationError('Chat ID not found in context');
+    throw new ValidationError('Holon ID not found in context');
   }
 
   return { userId, holonId };

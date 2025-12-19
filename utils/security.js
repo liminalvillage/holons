@@ -239,7 +239,7 @@ export class SecurityMiddleware {
     
     telegramholonId: body('holonId')
       .isInt()
-      .withMessage('Chat ID must be an integer'),
+      .withMessage('Holon ID must be an integer'),
     
     questId: body('questId')
       .isLength({ min: 1, max: 100 })

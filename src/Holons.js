@@ -1278,7 +1278,7 @@ export default class Holons {
   async syncScore(ctx) {
     console.log("=== STARTING SCORE SYNC PROCESS ===");
     const holonId = utils.getholonId(ctx);
-    console.log(`Chat ID: ${holonId}`);
+    console.log(`Holon ID: ${holonId}`);
     
     // Step 1: Fetch users from database
     console.log("\n--- STEP 1: Fetching users from database ---");
@@ -1330,7 +1330,7 @@ export default class Holons {
     console.log("\n--- STEP 5: Calculating scores with Settings method ---");
     console.log("Calling this.settings.calculateUserScores with:");
     console.log("- Users object keys:", Object.keys(usersObject));
-    console.log("- Chat ID:", holonId);
+    console.log("- Holon ID:", holonId);
     console.log("- Expenses instance:", !!this.expensesInstance);
     
     const scoredUsers = await this.settings.calculateUserScores(usersObject, holonId, this.expensesInstance);

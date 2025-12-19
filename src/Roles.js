@@ -342,7 +342,7 @@ export default class Roles {
         const holonId = options.holonId || ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
 
         if (!holonId) {
-            console.error("Could not determine chat ID in showRoleManagement");
+            console.error("Could not determine holon ID in showRoleManagement");
             if (ctx.callbackQuery) await ctx.answerCbQuery("Error: Could not find chat.").catch(() => {});
             return;
         }

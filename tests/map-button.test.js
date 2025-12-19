@@ -119,7 +119,7 @@ describe('Map Hexamap Webapp Button', () => {
         expect(buttonTexts).toContain('« Back');
     });
 
-    it('should generate correct webapp URL with chat ID', async () => {
+    it('should generate correct webapp URL with holon ID', async () => {
         const mockCtx = {
             chat: { id: 'test-chat-123' }
         };

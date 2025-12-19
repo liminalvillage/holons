@@ -102,7 +102,7 @@ class DB {
 
     /**
      * Clear data locally first, then async sync deletions to relay with rate limiting
-     * @param {string} holonId - Chat ID to clear data for
+     * @param {string} holonId - Holon ID to clear data for
      * @param {string[]} lenses - Array of lens names to clear (e.g., ['quests', 'shopping'])
      * @param {string[]} globalTables - Array of global table names to clear entries from
      * @param {number} delayMs - Delay between relay deletions to avoid rate limiting (default: 200ms)
@@ -208,7 +208,7 @@ class DB {
 
     /**
      * Clear cache entries for a specific holonId (delegates to holosphere2)
-     * @param {string} holonId - Chat ID to clear cache for
+     * @param {string} holonId - Holon ID to clear cache for
      */
     clearCacheForholonId(holonId) {
         // Delegate to holosphere2's cache clearing

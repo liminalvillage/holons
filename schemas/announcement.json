@@ -42,7 +42,7 @@
     },
     "chat": {
       "type": ["string", "number"],
-      "description": "Chat ID where announcement was made"
+      "description": "Holon ID where announcement was made"
     },
     "federated": {
       "type": "boolean",

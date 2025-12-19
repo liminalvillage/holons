@@ -4,6 +4,7 @@ import fs from 'fs';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
+import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
@@ -13,6 +14,11 @@ export default class Expenses {
         this.db = db;
         this.ui = ui;
         this.settings = settings;
+
+        // Initialize REA components
+        this.eventStore = new REAEventStore(db);
+        this.eventFactory = REAEventFactory;
+        this.aggregator = new REAAggregator(this.eventStore);
 
         bot.command(['expense', 'spent', 'speso'], async (ctx) => { this.spent(ctx) });
         bot.command(['remove'], async (ctx) => { this.removeFromSplit(ctx) });
@@ -89,7 +95,7 @@ export default class Expenses {
             const language = await this.settings.getLanguage(holonId)
             
             console.log(`\n=== BALANCE COMMAND EXECUTED ===`);
-            console.log(`Chat ID: ${holonId}`);
+            console.log(`Holon ID: ${holonId}`);
             console.log(`Currency: ${currency}`);
             console.log(`Language: ${language}`);
             
@@ -239,10 +245,21 @@ export default class Expenses {
             currency,
             description,
             paidBy,
-            splitWith    
+            splitWith
         };
-        await this.db.put(holonId + '/expenses', expense)
-        console.log('added expense', expense.id)
+
+        // Store expense record (for display and backward compatibility)
+        await this.db.put(holonId + '/expenses', expense);
+
+        // Create REA events for accounting (expense:paid + expense:share for each participant)
+        try {
+            const events = this.eventFactory.expenseEvents(holonId, expense);
+            await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
+            console.log(`Added expense ${expense.id} with ${events.length} REA events`);
+        } catch (error) {
+            console.error('Error creating REA events for expense:', error);
+        }
+
         return expense;
     }
 
@@ -397,7 +414,7 @@ export default class Expenses {
 
     async calculateCredits(holonId, currency) {
         console.log(`\n=== CALCULATING CREDITS ===`);
-        console.log(`Chat ID: ${holonId}`);
+        console.log(`Holon ID: ${holonId}`);
         console.log(`Currency: ${currency}`);
         
         // Validate and normalize currency input
@@ -614,7 +631,7 @@ export default class Expenses {
 
     async getUserCurrencyBalance(holonId, userID, currencyName) {
         console.log(`\n=== GETTING CURRENCY BALANCE ===`);
-        console.log(`Chat ID: ${holonId}, User ID: ${userID}, Currency: ${currencyName}`);
+        console.log(`Holon ID: ${holonId}, User ID: ${userID}, Currency: ${currencyName}`);
         
         const expenses = await this.db.getAll(holonId + '/expenses');
         let netBalance = 0;
@@ -838,7 +855,7 @@ export default class Expenses {
 
             const users = await this.db.getAll(holonId + '/users');
             
-            // Add all users to the split (excluding chat ID to avoid duplication)
+            // Add all users to the split (excluding holon ID to avoid duplication)
             expense.splitWith = users.map(user => user.id);
             
             await this.db.put(holonId + '/expenses', expense);

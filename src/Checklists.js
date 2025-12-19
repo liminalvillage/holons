@@ -147,11 +147,11 @@ class Checklists {
         const deleteMode = options.deleteMode || false;
         // Determine the message ID to edit: prioritize options, then callbackQuery
         const editMessageId = options.editMessageId || (ctx.callbackQuery ? ctx.callbackQuery.message.message_id : null);
-        // Determine chat ID reliably: prioritize options, then ctx.chat, then callbackQuery
+        // Determine holon ID reliably: prioritize options, then ctx.chat, then callbackQuery
         const holonId = options.holonId || ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
     
         if (!holonId) {
-            console.error("Could not determine chat ID in showAllChecklists");
+            console.error("Could not determine holon ID in showAllChecklists");
             // Try answering callback query if possible before returning
             if (ctx.callbackQuery) await ctx.answerCbQuery("Error: Could not find chat.").catch(() => {});
             return;

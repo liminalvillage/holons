@@ -81,12 +81,12 @@ export function validateUserId(userId) {
 }
 
 /**
- * Validate chat ID (can be negative for groups)
+ * Validate holon ID (can be negative for groups)
  */
 export function validateholonId(holonId) {
   const id = parseInt(holonId, 10);
   if (isNaN(id)) {
-    throw new Error('Invalid chat ID');
+    throw new Error('Invalid holon ID');
   }
   return id;
 }

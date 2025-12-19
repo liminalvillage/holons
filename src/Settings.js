@@ -103,7 +103,7 @@ export default class Settings {
         this.bot.command(['restart', 'reset'], async (ctx) => {
             if (utils.isAdmin(ctx)) {
                 let holonId = utils.getholonId(ctx)
-                let chatName = await utils.getChatName(ctx, holonId)
+                let holonName = await utils.getChatName(ctx, holonId)
 
                 console.log(`\n=== Starting reset for holon ${holonId} ===`);
                 console.log('(Relay deletions will be processed asynchronously)');
@@ -124,7 +124,7 @@ export default class Settings {
 
                 console.log('=== Local reset complete, relay sync in progress ===\n');
 
-                await this.db.put(holonId + '/settings', await this.getDefaultSettings(holonId, chatName))
+                await this.db.put(holonId + '/settings', await this.getDefaultSettings(holonId, holonName))
                 ctx.reply(`Holon reset complete! ${relayQueueSize} items queued for relay deletion (processing in background).`)
             } else {
                 ctx.reply('Only a chat admin can perform this action')
@@ -1441,11 +1441,44 @@ export default class Settings {
                         console.error('Error unfederating holon:', err);
                     });
                 } else {
-                    // Update federation with new lens config (direction derived from lensConfig)
+                    // Check if we're enabling a lens (it was just added to the array)
+                    const isEnabling = lensIndex === -1;
+
+                    // Update federation with new lens config - skip propagation by default
                     this.db.federateHolon(holonIdStr, targetholonIdStr, {
-                        lensConfig: lensConfig
-                    }).then(() => {
+                        lensConfig: lensConfig,
+                        skipPropagation: true  // Don't auto-propagate existing data
+                    }).then(async () => {
                         console.log(`[toggle_lens] Updated federation for ${holonIdStr} -> ${targetholonIdStr}`);
+
+                        // If enabling a lens, ask about propagating existing data
+                        if (isEnabling) {
+                            const language = await this.getLanguage(holonId);
+                            const targetName = await this.getHolonDisplayName(targetholonIdStr, ctx);
+
+                            await ctx.reply(
+                                i18next.t('settings_propagate_existing_prompt', {
+                                    lng: language,
+                                    lens: lensNameToToggle,
+                                    target: targetName,
+                                    defaultValue: `📤 Copy existing ${lensNameToToggle} to ${targetName}?`
+                                }),
+                                {
+                                    reply_markup: {
+                                        inline_keyboard: [[
+                                            {
+                                                text: i18next.t('yes', { lng: language, defaultValue: 'Yes' }),
+                                                callback_data: `propagate_existing_${targetholonIdStr}_${direction}_${lensNameToToggle}`
+                                            },
+                                            {
+                                                text: i18next.t('no', { lng: language, defaultValue: 'No' }),
+                                                callback_data: 'propagate_existing_dismiss'
+                                            }
+                                        ]]
+                                    }
+                                }
+                            );
+                        }
                     }).catch(err => {
                         console.error(`[toggle_lens] Error updating federation:`, err);
                     });
@@ -1474,6 +1507,63 @@ export default class Settings {
                 i18next.t('settings_max_tasks_updated', { lng: language, value: value === 0 ? i18next.t('settings_max_tasks_unlimited', { lng: language }) : value })
             );
             await this.showMaxTasksMenu(ctx, true);
+        });
+
+        // Handle propagate existing data confirmation
+        this.bot.action(/propagate_existing_(.+?)_(outbound|inbound)_(.+)/, async (ctx) => {
+            await ctx.answerCbQuery().catch(() => {});
+
+            const targetholonId = ctx.match[1];
+            const direction = ctx.match[2];
+            const lensName = ctx.match[3];
+            const holonId = ctx.callbackQuery?.message?.chat?.id;
+            const holonIdStr = holonId.toString();
+            const targetholonIdStr = targetholonId.toString();
+            const language = await this.getLanguage(holonId);
+
+            try {
+                // Delete the confirmation message
+                await ctx.deleteMessage().catch(() => {});
+
+                // Propagate existing data using holosphere's federate method
+                // For outbound: source sends to target
+                // For inbound: target sends to source
+                if (direction === 'outbound') {
+                    await this.db.holosphere.federate(holonIdStr, targetholonIdStr, lensName, {
+                        direction: 'outbound',
+                        mode: 'reference'
+                    });
+                } else {
+                    await this.db.holosphere.federate(targetholonIdStr, holonIdStr, lensName, {
+                        direction: 'outbound',
+                        mode: 'reference'
+                    });
+                }
+
+                const targetName = await this.getHolonDisplayName(targetholonIdStr, ctx);
+                await ctx.reply(
+                    i18next.t('settings_propagate_success', {
+                        lng: language,
+                        lens: lensName,
+                        target: targetName,
+                        defaultValue: `✅ Existing ${lensName} copied to ${targetName}`
+                    })
+                );
+            } catch (error) {
+                console.error('Error propagating existing data:', error);
+                await ctx.reply(
+                    i18next.t('settings_propagate_error', {
+                        lng: language,
+                        defaultValue: '❌ Failed to copy existing items'
+                    })
+                );
+            }
+        });
+
+        // Handle dismiss propagation prompt
+        this.bot.action('propagate_existing_dismiss', async (ctx) => {
+            await ctx.answerCbQuery().catch(() => {});
+            await ctx.deleteMessage().catch(() => {});
         });
     }
 
@@ -1574,31 +1664,27 @@ export default class Settings {
         };
     }
 
-    getDefaultSettings(holonId, chatName) {
+    getDefaultSettings(holonId, holonName) {
         return {
             id: holonId,
             hex: '',
-            version: 0.1,
-            name: chatName || 'unknown',
+            version: 0.2,
+            name: holonName || 'unknown',
             timezone: '',
             whitelisted: false,
             language: process.env.LANGUAGE || 'en',
             theme: 'dark',
             level: 0,
             admin: '',
-            roles: [],
             values: [],
             purpose: '',
             domains: [],
-            currencies: ['hour'], // Default currency for all groups
+            currencies: ['hour','euro'], // Default currency for all groups
             valueEquation: {
                 initiated: 1,
                 completed: 1,
                 sent: 1,
-                received: 1,
-                wants: 1,
-                offers: 1,
-                hour: 1 // Default weight for hour currency
+                received: 1
             },
             maxTasks: 13, // Default to 13 (Fibonacci)
         }
@@ -1701,7 +1787,7 @@ export default class Settings {
         const federationID = ctx.message.text.split(' ')[1];
 
         if (federationID === undefined || federationID === null) {
-            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456 or /federate 0x1234abcd. This chat ID is ' + holonId);
+            ctx.reply('Please specify the ID you would like to federate with. Example: /federate 123456 or /federate 0x1234abcd. This holon ID is ' + holonId);
             return;
         }
 
@@ -1852,8 +1938,8 @@ export default class Settings {
 
         let settings = await this.db.get(holonId + '/settings', holonId)
         if (!settings || settings == '') {
-            let chatName = await utils.getChatName(this.bot, holonId)
-            settings = this.getDefaultSettings(holonId, chatName)
+            let holonName = await utils.getChatName(this.bot, holonId)
+            settings = this.getDefaultSettings(holonId, holonName)
             await this.db.put(holonId + '/settings', settings)
         } else {
             // Ensure all required fields exist by merging with default settings
@@ -2006,7 +2092,7 @@ export default class Settings {
         const chatType = ctx.callbackQuery?.message?.chat?.type || ctx.chat?.type;
         const isPrivateChat = chatType === 'private';
         if (!holonId) {
-            console.error('Could not determine chat ID');
+            console.error('Could not determine holon ID');
             return;
         }
 
@@ -2228,7 +2314,7 @@ export default class Settings {
     async showArraySettingMenu(ctx, type, removeMode = false) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         if (!holonId) {
-            console.error('Could not determine chat ID');
+            console.error('Could not determine holon ID');
             return;
         }
 
@@ -2411,7 +2497,7 @@ export default class Settings {
     async showAdminSelectionMenu(ctx, edit = false) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         if (!holonId) {
-            console.error('Could not determine chat ID');
+            console.error('Could not determine holon ID');
             return;
         }
 
@@ -2490,7 +2576,7 @@ export default class Settings {
     async showFederationMenu(ctx, edit = false) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         if (!holonId) {
-            console.error('Could not determine chat ID');
+            console.error('Could not determine holon ID');
             return;
         }
 
@@ -2499,11 +2585,13 @@ export default class Settings {
 
         // Get federation info
         const fedInfo = await this.db.getFederation(holonId);
+        const federatedHolons = fedInfo && fedInfo.federated ? fedInfo.federated : [];
         const inboundHolons = fedInfo && fedInfo.inbound ? fedInfo.inbound : [];
         const outboundHolons = fedInfo && fedInfo.outbound ? fedInfo.outbound : [];
 
-        // Combine inbound and outbound for unified list
-        const allFederatedHolons = new Set([...inboundHolons, ...outboundHolons]);
+        // Combine federated, inbound and outbound for unified list
+        // federated array contains all partners, inbound/outbound indicate active lens directions
+        const allFederatedHolons = new Set([...federatedHolons, ...inboundHolons, ...outboundHolons]);
 
         const keyboard = {
             inline_keyboard: []
@@ -2588,7 +2676,7 @@ export default class Settings {
     async showUsersManagementMenu(ctx, edit = false, removeMode = false) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         if (!holonId) {
-            console.error('Could not determine chat ID');
+            console.error('Could not determine holon ID');
             return;
         }
 
@@ -3059,7 +3147,7 @@ export default class Settings {
     async showHexMenu(ctx, edit = false) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         if (!holonId) {
-            console.error('Could not determine chat ID');
+            console.error('Could not determine holon ID');
             return;
         }
 
@@ -3132,7 +3220,7 @@ export default class Settings {
     async showFederationLensConfig(ctx, targetholonId, edit = false, cachedLensConfig = null) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         if (!holonId) {
-            console.error('Could not determine chat ID for federation lens config');
+            console.error('Could not determine holon ID for federation lens config');
             return;
         }
 
@@ -3218,7 +3306,7 @@ export default class Settings {
     async showSharedLensesMenu(ctx, targetholonId, relationshipType, edit = false, currentLensesConfig = null) {
         const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
         if (!holonId) {
-            console.error('Could not determine chat ID for shared lenses menu');
+            console.error('Could not determine holon ID for shared lenses menu');
             return;
         }
 
@@ -3337,7 +3425,7 @@ export default class Settings {
     async showHolacracyMenu(ctx, edit = false) {
         const holonId = utils.getholonId(ctx);
         if (!holonId) {
-            console.error('Could not determine chat ID for Holacracy menu');
+            console.error('Could not determine holon ID for Holacracy menu');
             return;
         }
 
@@ -3449,9 +3537,9 @@ export default class Settings {
         // Try to get Telegram chat name if ctx is provided
         if (ctx) {
             try {
-                const chatName = await utils.getChatName(ctx, holonId.toString());
-                if (chatName && chatName !== 'unknown' && chatName !== null && chatName.trim() !== '') {
-                    return chatName;
+                const holonName = await utils.getChatName(ctx, holonId.toString());
+                if (holonName && holonName !== 'unknown' && holonName !== null && holonName.trim() !== '') {
+                    return holonName;
                 }
             } catch (error) {
                 // Chat name not available, continue to fallback

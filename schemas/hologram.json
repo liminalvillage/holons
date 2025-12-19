@@ -14,11 +14,11 @@
     },
     "sourceholonId": {
       "type": ["string", "number"],
-      "description": "Chat ID where the original quest exists"
+      "description": "Holon ID where the original quest exists"
     },
     "targetholonId": {
       "type": ["string", "number"],
-      "description": "Chat ID where the hologram is displayed"
+      "description": "Holon ID where the hologram is displayed"
     },
     "targetMessageId": {
       "type": "number",

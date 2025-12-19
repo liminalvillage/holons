@@ -37,7 +37,7 @@ class Shopping {
                     const callbackLanguage = await this.settings.getLanguage(callbackholonId);
 
                     console.log('[Shopping InputScene] Adding items:', items);
-                    console.log('[Shopping InputScene] Chat ID:', callbackholonId);
+                    console.log('[Shopping InputScene] Holon ID:', callbackholonId);
 
                     // Get or create the shopping checklist
                     let shoppingList = await this.db.get(callbackholonId + '/checklists', 'shopping');

@@ -1044,46 +1044,50 @@ export default class Quests {
     async recordCompletionActions(quest, holonId) {
         const actions = [];
 
-        // Batch all user actions for parallel processing
+        // Record quest initiated event
         actions.push({
             user: quest.initiator,
             action: "initiated",
             quest: quest.title,
             value: 0,
-            holonId
+            holonId,
+            questId: quest.id
         });
 
+        // Record quest completed events for each participant
         for (const user of quest.participants) {
             actions.push({
                 user,
                 action: "completed",
                 quest: quest.title,
                 value: 0,
-                holonId
+                holonId,
+                questId: quest.id
             });
         }
 
+        // Record appreciation events with full duality (sender + receiver)
+        // REA pattern: each appreciation creates dual events for both parties
         for (const sender of quest.appreciation) {
-            actions.push({
-                user: sender,
-                action: "sent",
-                quest: quest.title,
-                value: 0,
-                holonId
-            });
-
             for (const recipient of quest.participants) {
+                // Skip self-appreciation
+                if (sender.id === recipient.id) continue;
+
+                // Create appreciation sent event with receiver context
+                // The Users.saveUserAction will create both sent and received events
                 actions.push({
-                    user: recipient,
-                    action: "received",
+                    user: sender,
+                    action: "sent",
                     quest: quest.title,
-                    value: 0,
-                    holonId
+                    value: 1,
+                    holonId,
+                    questId: quest.id,
+                    receiver: recipient
                 });
             }
         }
 
-        // Process actions in parallel batches
+        // Process actions in parallel batches (grouped by user to prevent race conditions)
         await this.batchSaveUserActions(actions);
     }
 
@@ -2072,7 +2076,7 @@ export default class Quests {
 
             const users = await this.getUsers(holonId);
 
-            // Add all users to participants (excluding chat ID to avoid duplication)
+            // Add all users to participants (excluding holon ID to avoid duplication)
             quest.participants = users.slice();
 
             await this.db.put(holonId + '/quests', quest);
@@ -3029,14 +3033,42 @@ export default class Quests {
             return this.users.batchSaveUserActions(actions);
         }
 
-        // Fallback: Process in parallel batches of 10
+        // Group actions by user to prevent race conditions
+        // Multiple actions for the same user must be processed sequentially
+        const actionsByUser = new Map();
+        for (const action of actions) {
+            const userId = action.user?.id;
+            if (!userId) continue;
+            if (!actionsByUser.has(userId)) {
+                actionsByUser.set(userId, []);
+            }
+            actionsByUser.get(userId).push(action);
+        }
+
+        // Process users in parallel batches, but actions per user sequentially
+        const userIds = Array.from(actionsByUser.keys());
         const BATCH_SIZE = 10;
-        for (let i = 0; i < actions.length; i += BATCH_SIZE) {
-            const batch = actions.slice(i, i + BATCH_SIZE);
-            const promises = batch.map(action =>
-                this.users.saveUserAction(action.user, action.action, action.quest, action.value, action.holonId)
-                    .catch(error => console.error('Error saving user action:', error))
-            );
+        for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+            const batchUserIds = userIds.slice(i, i + BATCH_SIZE);
+            const promises = batchUserIds.map(async (userId) => {
+                const userActions = actionsByUser.get(userId);
+                // Process this user's actions sequentially to avoid race conditions
+                for (const action of userActions) {
+                    try {
+                        // Pass extra context for REA events (questId, receiver)
+                        await this.users.saveUserAction(
+                            action.user,
+                            action.action,
+                            action.quest,
+                            action.value,
+                            action.holonId,
+                            { questId: action.questId, receiver: action.receiver }
+                        );
+                    } catch (error) {
+                        console.error('Error saving user action:', error);
+                    }
+                }
+            });
             await Promise.allSettled(promises);
         }
     }

@@ -183,7 +183,7 @@
         "settings_specify_admin": "Please specify the admin. Example: /setAdmin @admin",
         "settings_select_admin": "Select an admin by clicking on a user:",
         "settings_no_users": "No users found in this chat. Users will appear here after they interact with the bot.",
-        "settings_specify_federation": "Please specify the ID you would like to federate with. Example: /federate 123456. This chat ID is {{holonId}}",
+        "settings_specify_federation": "Please specify the ID you would like to federate with. Example: /federate 123456. This holon ID is {{holonId}}",
         "settings_specify_separation": "Please specify who you would like to revoke the federation with. Example: /separate 123456.",
         "settings_specify_roles": "Please specify the roles. Example: /setRoles role1 role2",
         "settings_specify_values": "Please specify the values, separated by commas or newlines. Examples:\n\n1. Using commas:\n/setValues Collaboration, Communication, Pro-activity\n\n2. Using newlines:\n/setValues\nCollaboration\nCommunication\nPro-activity",

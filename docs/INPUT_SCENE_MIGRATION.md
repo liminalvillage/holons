@@ -64,7 +64,7 @@ ctx.scene.enter('input_scene', { /* options */ })
 17. **SettingsScenes.js:278-307** - Admin ID input
 18. **SettingsScenes.js:309-354** - Hex location input
 19. **SettingsScenes.js:389-421** - Add test
-20. **SettingsScenes.js:423-464** - Federation chat ID
+20. **SettingsScenes.js:423-464** - Federation holon ID
 21. **SettingsScenes.js:466-510** - Toggle user membership
 22. **SettingsScenes.js:512-556** - Add user by ID
 

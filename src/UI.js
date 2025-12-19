@@ -17,6 +17,11 @@ class UI {
     this.db = db;
     this.settings = settings
     this.expensesInstance = null;
+
+    // TTL-based cache for holon names (avoids memory leak from individual setTimeouts)
+    this.holonNameCache = new Map();
+    this.holonNameCacheExpiry = 10 * 60 * 1000; // 10 minutes TTL
+    this.cacheCleanupInterval = setInterval(() => this.cleanupHolonNameCache(), 5 * 60 * 1000); // Cleanup every 5 minutes
     //=========== UI COMMANDS ===============
 
     //Set up a command to display the appreciation score for each user
@@ -371,38 +376,47 @@ class UI {
       return;
     }
 
-    const page = await browser.newPage();
-    let path = './images/valuecloud' + utils.getholonId(ctx) + '.png'
-    page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
-    page.on('console', msg => {
-      for (let i = 0; i < msg.args().length; ++i) {
-        console.log(`${i}: ${msg.args()[i]}`);
-      }
-    });
-    await page.addScriptTag({
-      content: `
-          const words = ${JSON.stringify(values)};
-          window.myWordCloud.update(getWords(words));
-      `
-    });
+    let page = null;
+    try {
+      page = await browser.newPage();
+      let path = './images/valuecloud' + utils.getholonId(ctx) + '.png'
+      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
+      await page.addScriptTag({
+        content: `
+            const words = ${JSON.stringify(values)};
+            window.myWordCloud.update(getWords(words));
+        `
+      });
 
-    await page.waitForSelector('svg')
+      await page.waitForSelector('svg')
 
-    // Screenshot the word cloud
-    const svgElement = await page.$('svg');
-    await svgElement.screenshot({
-      path: path
-    });
-    await ctx.replyWithPhoto(
-      { source: fs.createReadStream(path) },
-      {
-        caption: createPaddedCaption(''),
-        ...Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-            `${DASHBOARD_ADDRESS}/${holonId}/values/`)
-        ])
+      // Screenshot the word cloud
+      const svgElement = await page.$('svg');
+      await svgElement.screenshot({
+        path: path
+      });
+      await ctx.replyWithPhoto(
+        { source: fs.createReadStream(path) },
+        {
+          caption: createPaddedCaption(''),
+          ...Markup.inlineKeyboard([
+            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+              `${DASHBOARD_ADDRESS}/${holonId}/values/`)
+          ])
+        }
+      )
+    } catch (error) {
+      console.error('Error generating values cloud:', error);
+      await ctx.reply(i18next.t('Error generating values cloud. Please try again.', { lng: language }));
+    } finally {
+      if (page) {
+        try {
+          await page.close();
+        } catch (closeError) {
+          console.error('Error closing page:', closeError);
+        }
       }
-    )
+    }
   }
   async needscloud(ctx) {
     let needs = [] // = this.getFederatedValues(holonId)
@@ -427,37 +441,46 @@ class UI {
       return;
     }
 
-    const page = await browser.newPage();
-    let path = './images/needscloud' + utils.getholonId(ctx) + '.png'
-    page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
-    page.on('console', msg => {
-      for (let i = 0; i < msg.args().length; ++i) {
-        console.log(`${i}: ${msg.args()[i]}`);
-      }
-    });
-    await page.addScriptTag({
-      content: `
-          const words = ${JSON.stringify(needs)};
-          window.myWordCloud.update(getWords(words));
-      `
-    });
-    await page.waitForSelector('svg')
+    let page = null;
+    try {
+      page = await browser.newPage();
+      let path = './images/needscloud' + utils.getholonId(ctx) + '.png'
+      page.setContent(fs.readFileSync('./html/cloud.html', 'utf8'))
+      await page.addScriptTag({
+        content: `
+            const words = ${JSON.stringify(needs)};
+            window.myWordCloud.update(getWords(words));
+        `
+      });
+      await page.waitForSelector('svg')
 
-    // Screenshot the word cloud
-    const svgElement = await page.$('svg');
-    await svgElement.screenshot({
-      path: path
-    });
-    await ctx.replyWithPhoto(
-      { source: fs.createReadStream(path) },
-      {
-        caption: createPaddedCaption(''),
-        ...Markup.inlineKeyboard([
-          Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
-            `${DASHBOARD_ADDRESS}/${holonId}/needs/`)
-        ])
+      // Screenshot the word cloud
+      const svgElement = await page.$('svg');
+      await svgElement.screenshot({
+        path: path
+      });
+      await ctx.replyWithPhoto(
+        { source: fs.createReadStream(path) },
+        {
+          caption: createPaddedCaption(''),
+          ...Markup.inlineKeyboard([
+            Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+              `${DASHBOARD_ADDRESS}/${holonId}/needs/`)
+          ])
+        }
+      )
+    } catch (error) {
+      console.error('Error generating needs cloud:', error);
+      await ctx.reply(i18next.t('Error generating needs cloud. Please try again.', { lng: language }));
+    } finally {
+      if (page) {
+        try {
+          await page.close();
+        } catch (closeError) {
+          console.error('Error closing page:', closeError);
+        }
       }
-    )
+    }
   }
 
 
@@ -885,10 +908,10 @@ class UI {
           try {
             // Check cache first for performance
             const cacheKey = `holon_name_${holonSrcId}`;
-            if (!this.holonNameCache) this.holonNameCache = new Map();
+            const cached = this.holonNameCache.get(cacheKey);
 
-            if (this.holonNameCache.has(cacheKey)) {
-              hologramSource = this.holonNameCache.get(cacheKey);
+            if (cached && cached.expires > Date.now()) {
+              hologramSource = cached.value;
             } else {
               // Add timeout to holon name lookup using the utility function
               const holonNamePromise = getHolonName(this.db, holonSrcId, null);
@@ -901,9 +924,11 @@ class UI {
               const nameFromUtil = await Promise.race([holonNamePromise, timeoutPromise]);
               hologramSource = nameFromUtil || 'Unknown Holon';
 
-              // Cache the result for 10 minutes
-              this.holonNameCache.set(cacheKey, hologramSource);
-              setTimeout(() => this.holonNameCache.delete(cacheKey), 600000);
+              // Cache the result with expiry timestamp (no individual setTimeout)
+              this.holonNameCache.set(cacheKey, {
+                value: hologramSource,
+                expires: Date.now() + this.holonNameCacheExpiry
+              });
             }
           } catch (e) {
             hologramSource = 'External Holon';
@@ -1914,6 +1939,24 @@ class UI {
     }
     
     throw new Error(`Failed to generate chart after ${maxRetries} attempts: ${lastError.message}`);
+  }
+
+  // Clean up expired holon name cache entries
+  cleanupHolonNameCache() {
+    const now = Date.now();
+    for (const [key, value] of this.holonNameCache.entries()) {
+      if (value.expires < now) {
+        this.holonNameCache.delete(key);
+      }
+    }
+  }
+
+  // Stop cache cleanup interval (call on shutdown)
+  stopCacheCleanup() {
+    if (this.cacheCleanupInterval) {
+      clearInterval(this.cacheCleanupInterval);
+      this.cacheCleanupInterval = null;
+    }
   }
 }
 

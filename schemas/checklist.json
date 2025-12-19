@@ -66,7 +66,7 @@
     },
     "holonId": {
       "type": ["string", "number"],
-      "description": "Chat ID where checklist belongs"
+      "description": "Holon ID where checklist belongs"
     }
   },
   "required": [

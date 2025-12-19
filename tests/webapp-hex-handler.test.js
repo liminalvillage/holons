@@ -155,7 +155,7 @@ describe('WebApp Hex Data Handler', () => {
         // Save the hex
         await settings.setHex(holonId, hex);
 
-        // Verify correct chat ID was used
+        // Verify correct holon ID was used
         expect(settings.setHexholonId).toBe(customholonId);
         expect(settings.setHexValue).toBe(validHex);
     });
