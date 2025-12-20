@@ -1,3 +1,7 @@
+/**
+ * @fileoverview User Interface components for HolonsBot.
+ * @module src/UI
+ */
 import puppetteer from 'puppeteer';
 import i18next from 'i18next';
 import * as utils from './utilities.js'
@@ -11,17 +15,43 @@ const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.ho
 let browser = null;
 let browserAvailable = false;
 
+/**
+ * User Interface class for generating visual outputs and display commands.
+ *
+ * @class UI
+ * @description Handles all visual output generation including leaderboards, dashboards,
+ * quest images, QR codes, and various board displays. Uses Puppeteer for HTML-to-image
+ * rendering when available.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Settings} settings - Settings module instance
+ * @property {Expenses|null} expensesInstance - Expenses module reference
+ * @property {Map<string, {name: string, timestamp: number}>} holonNameCache - Cache for holon names
+ * @property {number} holonNameCacheExpiry - Cache TTL in milliseconds
+ *
+ * @example
+ * const ui = new UI(bot, db, settings);
+ * ui.expensesInstance = expensesModule;
+ * // UI commands are now available: /leaderboard, /dashboard, etc.
+ */
 class UI {
+  /**
+   * Creates a new UI instance and registers display commands.
+   * @constructor
+   * @param {Telegraf} bot - The Telegraf bot instance
+   * @param {DB} db - The database instance
+   * @param {Settings} settings - The settings module instance
+   */
   constructor(bot, db, settings) {
     this.bot = bot;
     this.db = db;
     this.settings = settings
     this.expensesInstance = null;
 
-    // TTL-based cache for holon names (avoids memory leak from individual setTimeouts)
     this.holonNameCache = new Map();
-    this.holonNameCacheExpiry = 10 * 60 * 1000; // 10 minutes TTL
-    this.cacheCleanupInterval = setInterval(() => this.cleanupHolonNameCache(), 5 * 60 * 1000); // Cleanup every 5 minutes
+    this.holonNameCacheExpiry = 10 * 60 * 1000;
+    this.cacheCleanupInterval = setInterval(() => this.cleanupHolonNameCache(), 5 * 60 * 1000);
     //=========== UI COMMANDS ===============
 
     //Set up a command to display the appreciation score for each user
@@ -41,6 +71,9 @@ class UI {
 
     this.bot.command(['bulletin', 'billboard', 'board'], (ctx) => this.bulletinboard(ctx))
     this.bot.command(['bacheca', 'lavagna'], (ctx) => this.bulletinboard(ctx))
+
+    // Event board command
+    this.bot.command(['eventboard', 'calendario'], (ctx) => this.eventboard(ctx))
 
     this.bot.command('values', (ctx) => this.valuescloud(ctx))
     this.bot.command('needs', (ctx) => this.needscloud(ctx))
@@ -1939,6 +1972,130 @@ class UI {
     }
     
     throw new Error(`Failed to generate chart after ${maxRetries} attempts: ${lastError.message}`);
+  }
+
+  // ==================== Event Rendering Methods ====================
+
+  /**
+   * Create text message for an event.
+   * @param {Object} event - The event object
+   * @param {string} language - Language code
+   * @returns {Promise<string>} Formatted event message
+   */
+  async createEventMessage(event, language) {
+    const lines = [
+      `| ${i18next.t('Event', { lng: language, defaultValue: 'Event' })}${event.recurringTaskId ? ' 🔄' : ''}: ${event.title.padEnd(200)}`,
+      `| 💡 ${i18next.t('by', { lng: language, defaultValue: 'by' })}: ${getDisplayName(event.initiator)}`
+    ];
+
+    if (event.description) lines.push(`| 📝 ${event.description}`);
+    if (event.frequency) lines.push(`| 🔄 ${i18next.t('repeat', { lng: language, defaultValue: 'Repeat' })}: ${i18next.t(event.frequency, { lng: language, defaultValue: event.frequency })}`);
+
+    if (event.participants?.length) {
+      const names = event.participants.map(u => getDisplayName(u));
+      lines.push(`| 🙋‍♂️: ${names.join(', ')}`);
+    }
+
+    if (event.appreciation?.length) {
+      lines.push(`| 👍: ${event.appreciation.map(u => getDisplayName(u)).join(', ')}`);
+    }
+
+    // Event-specific date/time fields
+    const eventHolon = event.holon || event.chat;
+    for (const [field, emoji] of [['when', '📅'], ['until', '🔚']]) {
+      if (event[field]) {
+        const date = new Date(event[field]);
+        const timezone = await this.settings.getTimezone(eventHolon) || 'UTC';
+        try {
+          const dateStr = date.toLocaleDateString(language, {
+            weekday: 'long', month: 'long', day: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+            timeZone: timezone, timeZoneName: 'short'
+          });
+          lines.push(`| ${emoji}: ${dateStr}`);
+        } catch {
+          lines.push(`| ${emoji}: Invalid Date`);
+        }
+      }
+    }
+
+    // Location
+    if (event.where?.latitude) {
+      const locationName = event.where.name || `${event.where.latitude}, ${event.where.longitude}`;
+      lines.push(`| 📍: ${locationName}`);
+    }
+
+    lines.push(`| 🚥: ${i18next.t(event.status, { lng: language, defaultValue: event.status })}`);
+
+    if (event.published) lines.push(`| 📢 ${i18next.t('published', { lng: language, defaultValue: 'Published' })}`);
+
+    return lines.join('\n') + '\n';
+  }
+
+  /**
+   * Display event board - list of upcoming events.
+   * @param {Object} ctx - Telegraf context
+   */
+  async eventboard(ctx) {
+    if (!this.db) return;
+
+    try {
+      const holonId = ctx.message.chat.id;
+      const language = await this.settings.getLanguage(holonId);
+      const isTopic = ctx.message.is_topic_message;
+      const threadId = isTopic ? ctx.message.message_thread_id : null;
+
+      // Get events from events collection
+      let events = await this.db.holosphere.getAll(holonId.toString(), 'events') || [];
+
+      // Filter for ongoing/scheduled events
+      events = events.filter(event => {
+        const eventHolonId = event.holon || event.chat;
+        return (event.status === 'ongoing' || event.status === 'scheduled') &&
+          (!eventHolonId || eventHolonId.toString() === holonId.toString());
+      });
+
+      // If in a topic, filter by message_thread_id
+      if (isTopic && threadId) {
+        events = events.filter(event => event.message_thread_id === threadId);
+      }
+
+      // Sort by when date if available
+      events.sort((a, b) => {
+        if (a.when && b.when) return new Date(a.when) - new Date(b.when);
+        if (a.when) return -1;
+        if (b.when) return 1;
+        return 0;
+      });
+
+      if (!events || events.length === 0) {
+        await ctx.reply(i18next.t('noevents', { lng: language, defaultValue: 'No upcoming events.' }));
+        return;
+      }
+
+      // Create inline keyboard buttons
+      const inline_keyboard_buttons = events.map(event => {
+        const title = typeof event.title === 'string' ? event.title.substring(0, 50) : 'Untitled Event';
+        const sourceHolon = event.holon || event.chat || holonId;
+        const dateStr = event.when ? ` (${new Date(event.when).toLocaleDateString()})` : '';
+        return [Markup.button.callback(title + dateStr, 'view_event_' + sourceHolon + '_' + event.id)];
+      });
+
+      inline_keyboard_buttons.push([
+        Markup.button.url(i18next.t('Open Dashboard', { lng: language }),
+          `${DASHBOARD_ADDRESS}/${holonId}/events`)
+      ]);
+
+      await ctx.reply(
+        i18next.t('eventboard', { lng: language, defaultValue: 'Upcoming Events:' }),
+        Markup.inlineKeyboard(inline_keyboard_buttons)
+      );
+
+    } catch (err) {
+      console.error('Error in eventboard:', err);
+      const language = await this.settings.getLanguage(ctx.message.chat.id).catch(() => 'en');
+      ctx.reply(i18next.t('eventboardgenerror', { lng: language, defaultValue: 'Could not display event board.' }));
+    }
   }
 
   // Clean up expired holon name cache entries

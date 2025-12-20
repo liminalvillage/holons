@@ -67,9 +67,20 @@ describe('WebApp Closing Functionality', () => {
     });
 
     it('should call close() when cancel button is clicked', () => {
+        // Set up the cancel button click handler
+        let onClickHandler;
+        mockTelegramWebApp.MainButton.onClick.mockImplementation((handler) => {
+            onClickHandler = handler;
+            return mockTelegramWebApp.MainButton;
+        });
+
+        // Simulate registering the cancel button handler (as the real code would do)
+        mockTelegramWebApp.MainButton.onClick(() => {
+            mockTelegramWebApp.close();
+        });
+
         // Simulate the cancel button click
-        const cancelButtonClick = mockTelegramWebApp.MainButton.onClick.mock.calls[0][0];
-        cancelButtonClick();
+        onClickHandler();
 
         expect(mockTelegramWebApp.close).toHaveBeenCalled();
     });

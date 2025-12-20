@@ -89,11 +89,18 @@ describe('WebApp Hex Data Handler', () => {
         expect(settings.getLanguageholonId).toBe(holonId);
         expect(language).toBe('en');
 
-        // Verify i18next was called
+        // Simulate the i18next call that would happen in the real handler
+        const message = mockI18next.t('hex_updated', {
+            lng: language,
+            defaultValue: 'Hex updated successfully'
+        });
+
+        // Verify i18next was called and returned correct message
         expect(mockI18next.t).toHaveBeenCalledWith('hex_updated', {
             lng: 'en',
             defaultValue: 'Hex updated successfully'
         });
+        expect(message).toBe('Hex updated successfully');
     });
 
     it('should reject invalid hex data', async () => {

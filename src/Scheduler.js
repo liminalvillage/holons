@@ -1,22 +1,52 @@
+/**
+ * @fileoverview Task scheduling and reminder system for HolonsBot.
+ * @module src/Scheduler
+ */
 import { CronJob } from 'cron';
 import { Calendar } from './Calendar.js';
 import i18next from 'i18next';
 import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc.js'; // Import UTC plugin
-import timezone from 'dayjs/plugin/timezone.js'; // Import timezone plugin
+import utc from 'dayjs/plugin/utc.js';
+import timezone from 'dayjs/plugin/timezone.js';
 import { log } from '../utils/logger.js';
 import { getQuestHolon } from './utilities.js';
 
-// Extend dayjs with plugins
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
+/**
+ * Task scheduling and reminder system for managing recurring tasks and one-time reminders.
+ *
+ * @class Scheduler
+ * @description Handles scheduling of recurring tasks using cron jobs and one-time reminders.
+ * Provides calendar-based date/time selection for scheduling quests and tasks.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Quests} quests - Quests module instance
+ * @property {Settings} settings - Settings module instance
+ * @property {Map<string, CronJob>} jobs - Map of active cron jobs
+ * @property {Calendar} calendar - Calendar instance for date/time selection
+ *
+ * @example
+ * const scheduler = new Scheduler(bot, db, quests, settings);
+ * // Scheduler loads existing tasks and reminders on construction
+ */
 class Scheduler {
+    /**
+     * Creates a new Scheduler instance and loads existing tasks.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     * @param {Quests} quests - The quests module instance
+     * @param {Settings} settings - The settings module instance
+     */
     constructor(bot, db, quests, settings) {
         this.bot = bot;
         this.db = db;
         this.quests = quests;
         this.settings = settings;
+        this.events = null; // Set via setEvents after construction
         this.jobs = new Map();
         
         // Initialize calendar with time selector enabled
@@ -500,18 +530,20 @@ class Scheduler {
         await this.showCalendar(holonId, messageId);
     }
 
-    async showCalendar(ctx, questId) {
+    async showCalendar(ctx, itemId, lens = 'quests') {
         try {
             const holonId = ctx.callbackQuery.message.chat.id;
             const messageId = ctx.callbackQuery.message.message_id;
-            
-            // Store quest ID for later retrieval
-            this.calendar.questIds.set(holonId, questId);
-            
-            // Get the quest to keep its message
-            const quest = await this.db.get(`${holonId}/quests`, questId);
-            if (!quest) {
-                console.log('Quest not found for calendar');
+
+            // Store item ID and lens for later retrieval
+            this.calendar.questIds.set(holonId, itemId);
+            this.calendar.itemLens = this.calendar.itemLens || new Map();
+            this.calendar.itemLens.set(holonId, lens);
+
+            // Get the item (quest or event) to keep its message
+            const item = await this.db.get(`${holonId}/${lens}`, itemId);
+            if (!item) {
+                console.log(`Item not found for calendar (${lens})`);
                 return;
             }
 
@@ -519,7 +551,7 @@ class Scheduler {
             const now = new Date();
             now.setDate(1);
             const calendarMarkup = this.calendar.createNavigationKeyboard(now, holonId);
-            
+
             // Update only the markup, keeping the original message
             await this.bot.telegram.editMessageReplyMarkup(
                 holonId,
@@ -527,7 +559,7 @@ class Scheduler {
                 null,
                 calendarMarkup
             );
-            
+
         } catch (error) {
             console.error('Error showing calendar:', error);
             console.error(error.stack); // Add stack trace for debugging
@@ -553,7 +585,7 @@ class Scheduler {
             // Assuming dateTimeStr is 'YYYY-MM-DD HH:mm' from the calendar callback
             const dateTimeStr = ctx.match[1].split('_')[0];
 
-            // --- Use dayjs for timezone-aware parsing --- 
+            // --- Use dayjs for timezone-aware parsing ---
             let chatTimezone = await this.settings.getTimezone(holonId);
 
             // Validate timezone and set default if invalid
@@ -573,47 +605,53 @@ class Scheduler {
             }
 
             // Convert to standard JavaScript Date object (which is always UTC)
-            const selectedDate = localSelectedDayjs.toDate(); 
+            const selectedDate = localSelectedDayjs.toDate();
             // -------------------------------------------
 
-            // Get quest ID from calendar
-            const questId = this.calendar.questIds.get(holonId);
-            
-            if (!questId) {
-                console.log('No quest ID found');
+            // Get item ID and lens from calendar
+            const itemId = this.calendar.questIds.get(holonId);
+            const lens = this.calendar.itemLens?.get(holonId) || 'quests';
+
+            if (!itemId) {
+                console.log('No item ID found');
                 await ctx.answerCbQuery('Could not find associated task');
                 return;
             }
-            
-            // Get quest
-            const quest = await this.db.get(`${holonId}/quests`, questId);
 
-            
-            if (!quest) {
-                await ctx.answerCbQuery('Task not found');
+            // Get item (quest or event)
+            const item = await this.db.get(`${holonId}/${lens}`, itemId);
+
+            if (!item) {
+                await ctx.answerCbQuery('Item not found');
                 return;
             }
-            
-            // Update quest
-            quest.status = 'scheduled';
-            quest.when = selectedDate; // Store the UTC Date object
-            await this.db.put(`${holonId}/quests`, quest);
-            
+
+            // Update item
+            item.status = 'scheduled';
+            item.when = selectedDate; // Store the UTC Date object
+            await this.db.put(`${holonId}/${lens}`, item);
+
             // Schedule reminder using the scheduler instead of setTimeout
-            await this.scheduleOneTimeReminder(quest, ctx);
-            
+            await this.scheduleOneTimeReminder(item, ctx, lens);
 
             // Get language
             const language = await this.settings.getLanguage(holonId);
-            
-            // Update calendar message with quest info using centralized helper
-            const markup = this.quests.markup(quest, language);
-            await this.quests.updateQuestMessage(ctx, quest, holonId, calendarMsgId, language, markup);
-              
-          // Clear stored quest ID
+
+            // Update message based on lens type
+            if (lens === 'events' && this.events) {
+                const markup = this.events.markup(item, language);
+                await this.events.updateEventMessage(ctx, item, holonId, calendarMsgId, language, markup);
+            } else {
+                const markup = this.quests.markup(item, language);
+                await this.quests.updateQuestMessage(ctx, item, holonId, calendarMsgId, language, markup);
+            }
+
+            // Clear stored item ID and lens
             this.calendar.questIds.delete(holonId);
-            
-            await ctx.answerCbQuery('Task scheduled successfully!');
+            this.calendar.itemLens?.delete(holonId);
+
+            const itemType = lens === 'events' ? 'Event' : 'Task';
+            await ctx.answerCbQuery(`${itemType} scheduled successfully!`);
         } catch (error) {
             console.error('Error in time selection:', error);
             console.error(error.stack);
@@ -621,39 +659,39 @@ class Scheduler {
         }
     }
 
-    async scheduleOneTimeReminder(quest, ctx) {
+    async scheduleOneTimeReminder(item, ctx, lens = 'quests') {
         try {
             // Enhanced debug logging to help diagnose issues
-            
+
             if (ctx && ctx.callbackQuery) {
                 // Context available
             }
-            
-            if (!quest.when) {
-                console.error('Cannot schedule reminder: no when date provided for quest', quest.id);
+
+            if (!item.when) {
+                console.error(`Cannot schedule reminder: no when date provided for ${lens} item`, item.id);
                 return;
             }
-            
-            const reminderDate = new Date(quest.when);
+
+            const reminderDate = new Date(item.when);
             const now = new Date();
-            
-            
+
+
             // If the date is in the past, don't schedule
             if (reminderDate <= now) {
                 console.log(`Reminder date ${reminderDate} is in the past, not scheduling`);
                 return;
             }
-            
-            // Cancel any existing reminder for this quest
-            if (quest.reminderId) {
-                await this.cancelReminder(quest.reminderId);
-                console.log(`Cancelled existing reminder ${quest.reminderId} for quest ${quest.id}`);
+
+            // Cancel any existing reminder for this item
+            if (item.reminderId) {
+                await this.cancelReminder(item.reminderId);
+                console.log(`Cancelled existing reminder ${item.reminderId} for ${lens} ${item.id}`);
             }
-            
-            
+
+
             // Create a unique ID for this reminder job
-            const reminderId = `reminder_${quest.id}_${now.getTime()}`;
-            
+            const reminderId = `reminder_${item.id}_${now.getTime()}`;
+
             // Calculate cron expression for the specific date and time using UTC components
             const minute = reminderDate.getUTCMinutes();
             const hour = reminderDate.getUTCHours();
@@ -661,29 +699,28 @@ class Scheduler {
             const month = reminderDate.getUTCMonth() + 1; // Months are 1-indexed in JS, Cron months are 1-indexed
             const cronExpression = `${minute} ${hour} ${day} ${month} *`; // At specific UTC minute/hour/day/month
 
-
-            const schedQuestHolon = getQuestHolon(quest);
+            const itemHolon = item.holon || item.chat;
 
             // Create the job, explicitly setting the timezone to UTC
             const job = new CronJob(cronExpression, async() => {
                 try {
-                    console.log(`Executing reminder for quest ${quest.id}`);
+                    console.log(`Executing reminder for ${lens} ${item.id}`);
 
-                    // Get fresh copy of the quest in case it was updated
-                    const freshQuest = await this.db.get(`${schedQuestHolon}/quests`, quest.id);
-                    if (!freshQuest) {
-                        console.log(`Quest ${quest.id} no longer exists, skipping reminder`);
-                        // Clean up the reminder record since the quest no longer exists
+                    // Get fresh copy of the item in case it was updated
+                    const freshItem = await this.db.get(`${itemHolon}/${lens}`, item.id);
+                    if (!freshItem) {
+                        console.log(`${lens} item ${item.id} no longer exists, skipping reminder`);
+                        // Clean up the reminder record since the item no longer exists
                         await this.deleteReminderRecord(reminderId);
                         return;
                     }
 
-                    const freshQuestHolon = getQuestHolon(freshQuest);
+                    const freshItemHolon = freshItem.holon || freshItem.chat;
 
-                    // Check if the quest is still scheduled (not completed or cancelled)
-                    if (freshQuest.status !== 'scheduled') {
-                        console.log(`Quest ${quest.id} is no longer scheduled (status: ${freshQuest.status}), skipping reminder`);
-                        // Clean up the reminder record since the quest is not scheduled
+                    // Check if the item is still scheduled (not completed or cancelled)
+                    if (freshItem.status !== 'scheduled') {
+                        console.log(`${lens} item ${item.id} is no longer scheduled (status: ${freshItem.status}), skipping reminder`);
+                        // Clean up the reminder record since the item is not scheduled
                         await this.deleteReminderRecord(reminderId);
                         return;
                     }
@@ -693,35 +730,37 @@ class Scheduler {
                         callbackQuery: {
                             message: {
                                 chat: {
-                                    id: freshQuestHolon
+                                    id: freshItemHolon
                                 },
-                                message_id: freshQuest.id
+                                message_id: freshItem.id
                             }
                         },
                         telegram: this.bot.telegram,
                         reply: (text, options) => {
-                            return this.bot.telegram.sendMessage(freshQuestHolon, text, options);
+                            return this.bot.telegram.sendMessage(freshItemHolon, text, options);
                         }
                     };
 
                     // Try direct message approach first
+                    const itemType = lens === 'events' ? 'Event' : 'Reminder';
                     try {
-                        const language = await this.settings.getLanguage(freshQuestHolon);
                         await this.bot.telegram.sendMessage(
-                            freshQuestHolon,
-                            'Reminder: "' + freshQuest.title + '" is starting now!',
-                            { reply_to_message_id: freshQuest.id }
+                            freshItemHolon,
+                            `${itemType}: "${freshItem.title}" is starting now!`,
+                            { reply_to_message_id: freshItem.id }
                         );
-                        console.log(`Direct reminder sent for quest ${freshQuest.id} in holon ${freshQuestHolon}`);
+                        console.log(`Direct reminder sent for ${lens} ${freshItem.id} in holon ${freshItemHolon}`);
                     } catch (directError) {
                         console.error('Error sending direct reminder message:', directError);
 
-                        // Fall back to using the remind method
-                        try {
-                            await this.quests.remind(mockCtx, freshQuest);
-                            console.log(`Fallback reminder sent for quest ${freshQuest.id}`);
-                        } catch (remindError) {
-                            console.error('Error in fallback reminder method:', remindError);
+                        // Fall back to using the remind method (only for quests)
+                        if (lens === 'quests') {
+                            try {
+                                await this.quests.remind(mockCtx, freshItem);
+                                console.log(`Fallback reminder sent for quest ${freshItem.id}`);
+                            } catch (remindError) {
+                                console.error('Error in fallback reminder method:', remindError);
+                            }
                         }
                     }
 
@@ -744,21 +783,22 @@ class Scheduler {
             job.start();
 
 
-            // Save the reminder ID with the quest for potential cancellation
-            quest.reminderId = reminderId;
-            await this.db.put(`${schedQuestHolon}/quests`, quest);
+            // Save the reminder ID with the item for potential cancellation
+            item.reminderId = reminderId;
+            await this.db.put(`${itemHolon}/${lens}`, item);
 
             // Store reminder data in global reminders table for persistence across restarts
             await this.saveReminderRecord({
                 id: reminderId,
-                questId: quest.id,
-                holonId: schedQuestHolon,
+                questId: item.id,
+                holonId: itemHolon,
+                lens: lens, // Store the lens for loading
                 when: reminderDate.toISOString(), // Convert Date to string for Nostr serialization
                 cronExpression: cronExpression,
-                title: quest.title || "Task reminder",
+                title: item.title || "Reminder",
                 createdAt: now.toISOString() // Convert Date to string for Nostr serialization
             });
-            
+
             return reminderId;
         } catch (error) {
             console.error('Error scheduling one-time reminder:', error);
@@ -1142,46 +1182,48 @@ class Scheduler {
                             continue;
                         }
                         
-                        // Check if quest still exists
+                        // Check if item still exists (support both quests and events)
+                        const lens = reminder.lens || 'quests';
                         try {
-                            const quest = await this.db.get(`${reminder.holonId}/quests`, reminder.questId);
-                            
-                            // Skip if quest doesn't exist anymore or is not scheduled
-                            if (!quest) {
-                                console.log(`Quest ${reminder.questId} for reminder ${reminder.id} no longer exists, removing reminder`);
+                            const item = await this.db.get(`${reminder.holonId}/${lens}`, reminder.questId);
+
+                            // Skip if item doesn't exist anymore or is not scheduled
+                            if (!item) {
+                                console.log(`${lens} item ${reminder.questId} for reminder ${reminder.id} no longer exists, removing reminder`);
                                 await this.deleteReminderRecord(reminder.id);
                                 continue;
                             }
-                            
-                            if (quest.status !== 'scheduled') {
-                                console.log(`Quest ${reminder.questId} is no longer scheduled (status: ${quest.status}), removing reminder ${reminder.id}`);
+
+                            if (item.status !== 'scheduled') {
+                                console.log(`${lens} item ${reminder.questId} is no longer scheduled (status: ${item.status}), removing reminder ${reminder.id}`);
                                 await this.deleteReminderRecord(reminder.id);
                                 continue;
                             }
-                            
+
                             // Create a CronJob for this reminder
-                            console.log(`Scheduling reminder ${reminder.id} for quest ${reminder.questId} at ${reminderDate}`);
+                            console.log(`Scheduling reminder ${reminder.id} for ${lens} ${reminder.questId} at ${reminderDate}`);
                             
                             // Create the job with the saved cron expression
                             const job = new CronJob(reminder.cronExpression, async() => {
                                 try {
-                                    console.log(`Executing reminder for quest ${reminder.questId}`);
-                                    
-                                    // Get fresh copy of the quest
-                                    const freshQuest = await this.db.get(`${reminder.holonId}/quests`, reminder.questId);
-                                    if (!freshQuest) {
-                                        console.log(`Quest ${reminder.questId} no longer exists, skipping reminder`);
+                                    const itemLens = reminder.lens || 'quests';
+                                    console.log(`Executing reminder for ${itemLens} ${reminder.questId}`);
+
+                                    // Get fresh copy of the item
+                                    const freshItem = await this.db.get(`${reminder.holonId}/${itemLens}`, reminder.questId);
+                                    if (!freshItem) {
+                                        console.log(`${itemLens} item ${reminder.questId} no longer exists, skipping reminder`);
                                         await this.deleteReminderRecord(reminder.id);
                                         return;
                                     }
-                                    
-                                    // Check if the quest is still scheduled
-                                    if (freshQuest.status !== 'scheduled') {
-                                        console.log(`Quest ${reminder.questId} is no longer scheduled (status: ${freshQuest.status}), skipping reminder`);
+
+                                    // Check if the item is still scheduled
+                                    if (freshItem.status !== 'scheduled') {
+                                        console.log(`${itemLens} item ${reminder.questId} is no longer scheduled (status: ${freshItem.status}), skipping reminder`);
                                         await this.deleteReminderRecord(reminder.id);
                                         return;
                                     }
-                                    
+
                                     // Create mockCtx for the reminder
                                     const mockCtx = {
                                         callbackQuery: {
@@ -1197,27 +1239,27 @@ class Scheduler {
                                             return this.bot.telegram.sendMessage(reminder.holonId, text, options);
                                         }
                                     };
-                                    
+
                                     // Try direct message approach first
+                                    const itemType = itemLens === 'events' ? 'Event' : 'Reminder';
                                     try {
-                                        
-                                        const language = await this.settings.getLanguage(reminder.holonId);
-                                        const timezone =
                                         await this.bot.telegram.sendMessage(
                                             reminder.holonId,
-                                            'Reminder: "' + freshQuest.title + '" is starting now!',
+                                            `${itemType}: "${freshItem.title}" is starting now!`,
                                             { reply_to_message_id: reminder.questId }
                                         );
-                                        console.log(`Direct reminder sent for quest ${reminder.questId} in chat ${reminder.holonId}`);
+                                        console.log(`Direct reminder sent for ${itemLens} ${reminder.questId} in chat ${reminder.holonId}`);
                                     } catch (directError) {
                                         console.error('Error sending direct reminder message:', directError);
-                                        
-                                        // Fall back to using the remind method
-                                        try {
-                                            await this.quests.remind(mockCtx, freshQuest);
-                                            console.log(`Fallback reminder sent for quest ${reminder.questId}`);
-                                        } catch (remindError) {
-                                            console.error('Error in fallback reminder method:', remindError);
+
+                                        // Fall back to using the remind method (only for quests)
+                                        if (itemLens === 'quests') {
+                                            try {
+                                                await this.quests.remind(mockCtx, freshItem);
+                                                console.log(`Fallback reminder sent for quest ${reminder.questId}`);
+                                            } catch (remindError) {
+                                                console.error('Error in fallback reminder method:', remindError);
+                                            }
                                         }
                                     }
                                     
@@ -1288,6 +1330,14 @@ class Scheduler {
         } catch (error) {
             console.error('Error migrating recurring lookup:', error);
         }
+    }
+
+    /**
+     * Set the Events module instance for cross-module integration.
+     * @param {Events} events - The events module instance
+     */
+    setEvents(events) {
+        this.events = events;
     }
 }
 
