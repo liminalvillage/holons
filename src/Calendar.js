@@ -1,3 +1,7 @@
+/**
+ * @fileoverview Calendar and time selection for HolonsBot.
+ * @module src/Calendar
+ */
 import { readFile } from 'fs/promises';
 import { createRequire } from "module";
 const lang = JSON.parse(
@@ -7,10 +11,44 @@ const lang = JSON.parse(
 );
 import dayjs from 'dayjs';
 
+/**
+ * Calendar class for date and time selection in Telegram inline keyboards.
+ *
+ * @class Calendar
+ * @description Provides inline keyboard calendars for date selection and time picking.
+ * Supports multiple languages, custom date ranges, and time step configuration.
+ *
+ * @property {Object} options - Calendar configuration options
+ * @property {Telegraf|false} bot - The Telegraf bot instance or false
+ * @property {Map<number, Object>} chats - Map of chat states
+ * @property {Map<string, string>} questIds - Map of quest IDs for scheduling
+ * @static {boolean} actionsRegistered - Flag to prevent duplicate action registration
+ *
+ * @example
+ * const calendar = new Calendar(bot, {
+ *     date_format: 'YYYY/MM/DD HH:mm:ss',
+ *     time_selector_mod: true,
+ *     language: 'en'
+ * });
+ */
 export class Calendar {
-    // Static flag to track if bot actions have been registered
+    /** @static {boolean} Flag to track if bot actions have been registered */
     static actionsRegistered = false;
 
+    /**
+     * Creates a new Calendar instance with the specified options.
+     * @constructor
+     * @param {Telegraf|false} [bot=false] - The Telegraf bot instance or false
+     * @param {Object} [options={}] - Calendar configuration options
+     * @param {string} [options.language='en'] - Language for calendar labels
+     * @param {string} [options.date_format='YYYY-MM-DD'] - Date format string
+     * @param {string} [options.bot_api='node-telegram-bot-api'] - Bot API type
+     * @param {boolean} [options.close_calendar=true] - Whether to close on selection
+     * @param {number} [options.start_week_day=0] - Day to start week (0=Sunday)
+     * @param {boolean} [options.time_selector_mod=false] - Enable time selection
+     * @param {string} [options.time_range='00:00-23:59'] - Available time range
+     * @param {string} [options.time_step='30m'] - Time step increment
+     */
     constructor(bot = false, options = {}) {
         this.options = options;
         this.options.language = (typeof options.language === 'undefined') ? 'en' : options.language;

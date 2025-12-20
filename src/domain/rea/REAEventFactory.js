@@ -1,15 +1,24 @@
 /**
- * REA Event Factory
- *
- * Factory for creating properly structured REA (Resource-Event-Agent) events.
- * Ensures consistent event structure and proper dual-agent recording.
+ * @fileoverview REA Event Factory for creating structured REA events.
+ * @module src/domain/rea/REAEventFactory
  */
 
 /**
- * @typedef {import('./types.js').REAEvent} REAEvent
- * @typedef {import('./types.js').Agent} Agent
+ * @typedef {Object} REAEvent - Resource-Event-Agent event object
+ * @typedef {Object} Agent - Agent object representing a user, holon, or external entity
  */
 
+/**
+ * Factory class for creating properly structured REA (Resource-Event-Agent) events.
+ *
+ * @class REAEventFactory
+ * @description Provides static factory methods for creating consistent REA events
+ * including quest events, appreciation events, expense events, and declarations.
+ *
+ * @example
+ * const event = REAEventFactory.questInitiated(holonId, user, quest);
+ * await eventStore.put(holonId, event);
+ */
 export class REAEventFactory {
     /**
      * Generate a unique event ID

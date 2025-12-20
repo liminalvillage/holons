@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Main HolonsBot application with multi-platform support.
+ * @module src/HolonsMultiBot
+ */
+
 import fs from 'fs';
 import MultiBot from './MultiBot.js';
 import DB from "./DB.js";
@@ -24,6 +29,29 @@ if (fs.existsSync('./orbitdb/repo.lock')) {
   fs.rmdirSync('./orbitdb/repo.lock');
 }
 
+/**
+ * Main HolonsBot application orchestrating all modules.
+ *
+ * @class HolonsBot
+ * @description Central application class that initializes and wires together
+ * all HolonsBot modules including database, UI, quests, expenses, settings,
+ * and more. Supports multi-platform deployment via MultiBot.
+ *
+ * @property {DB} db - Database instance
+ * @property {MultiBot} bot - Multi-platform bot instance
+ * @property {Settings} settings - Settings manager
+ * @property {UI} ui - UI generator
+ * @property {Quests} quests - Quest management
+ * @property {Expenses} expenses - Expense tracking
+ * @property {Users} users - User management
+ * @property {Holons} holons - Blockchain integration
+ * @property {Library} library - Library system
+ * @property {Roles} roles - Role management
+ *
+ * @example
+ * const holons = new HolonsBot();
+ * await holons.init('MyApp', telegramToken, discordToken);
+ */
 class HolonsBot {
   constructor() {
     this.db = null;

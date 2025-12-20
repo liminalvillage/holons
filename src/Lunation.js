@@ -1,10 +1,17 @@
-// Original code by Maija Grudule https://github.com/MGrudule/moon_bot
+/**
+ * @fileoverview Moon phase tracking and lunation-based prompts.
+ * @module src/Lunation
+ * @author Original code by Maija Grudule https://github.com/MGrudule/moon_bot
+ */
 
 import lune from "lune";
 import moment from "moment";
 import julian from  "julian";
 
-
+/**
+ * Daily prompts aligned with the 28-day lunar cycle.
+ * @type {string[]}
+ */
 const prompts = [
 "Day 1: Group Dreaming Session: Share your dreams and aspirations in a circle, encouraging openness and understanding.",
 "Day 2: Emotional Mapping: Individually draw out a map of emotions associated with your dreams, then discuss as a team.",
@@ -35,9 +42,26 @@ const prompts = [
 "Day 27: Relaxation Retreat: Have a team day out or a rest day to rejuvenate before the next cycle begins.",
 "Day 28: Gratitude Gathering: Assemble and express your gratitude for each other and for the journey you've completed under the Last Quarter Moon."
 ]
+/**
+ * Moon phase tracker with lunation-aligned community prompts.
+ *
+ * @class Lunation
+ * @description Provides moon phase information and daily prompts aligned
+ * with the 28-day lunar cycle. Each day of the lunation has a specific
+ * activity designed to support community rhythm and collaboration.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ *
+ * @example
+ * const lunation = new Lunation(bot);
+ * // Use /fullmoon to see when the next full moon is
+ * // Use /prompt to get today's lunation activity
+ */
 class Lunation {
-  
-  constructor(bot){
+    /**
+     * @param {Object} bot - Telegraf bot instance
+     */
+    constructor(bot){
     this.bot = bot;
     bot.command("fullmoon", (ctx) => {
       let fullMoon = lune.phase_hunt()

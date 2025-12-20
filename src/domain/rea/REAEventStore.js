@@ -1,17 +1,27 @@
 /**
- * REA Event Store
- *
- * Manages persistent storage and retrieval of REA (Resource-Event-Agent) events.
- * Uses HoloSphere/GunDB for distributed storage.
- *
- * Events are stored at: holonId/rea_events
+ * @fileoverview REA Event Store for managing persistent REA events.
+ * @module src/domain/rea/REAEventStore
  */
 
 /**
- * @typedef {import('./types.js').REAEvent} REAEvent
- * @typedef {import('./types.js').EventQueryFilters} EventQueryFilters
+ * @typedef {Object} REAEvent - Resource-Event-Agent event object
+ * @typedef {Object} EventQueryFilters - Query filters for events
  */
 
+/**
+ * REA Event Store for managing persistent storage and retrieval of REA events.
+ *
+ * @class REAEventStore
+ * @description Stores and retrieves Resource-Event-Agent events using HoloSphere/GunDB.
+ * Events are stored at: holonId/rea_events
+ *
+ * @property {DB} db - Database instance for storage
+ *
+ * @example
+ * const store = new REAEventStore(db);
+ * await store.put(holonId, event);
+ * const events = await store.query(holonId, { agentId: userId });
+ */
 export class REAEventStore {
     /**
      * @param {Object} db - Database instance (HoloSphere/GunDB wrapper)

@@ -1,22 +1,52 @@
+/**
+ * @fileoverview Checklist management for HolonsBot.
+ * @module src/Checklists
+ */
 import { Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from './utilities.js';
 
-// Define standard checklist types
+/**
+ * Standard checklist types supported by the system.
+ * @constant {Object.<string, string>}
+ */
 const CHECKLIST_TYPES = {
-    CHECKLIST: 'checklist',    // Regular user-created checklist
-    AGENDA: 'agenda',          // Agenda/schedule checklist
-    SHOPPING: 'shopping',      // Shopping list
-    QUEST: 'quest',           // Quest/task checklist
-    ROLE: 'role'              // Role checklist
+    CHECKLIST: 'checklist',
+    AGENDA: 'agenda',
+    SHOPPING: 'shopping',
+    QUEST: 'quest',
+    ROLE: 'role'
 };
 
+/**
+ * Checklist management class for creating and managing various types of checklists.
+ *
+ * @class Checklists
+ * @description Handles creation, display, and management of checklists including
+ * regular checklists, agendas, shopping lists, quest checklists, and role checklists.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Quests|null} questInstance - Quests module reference
+ * @property {Roles|null} rolesInstance - Roles module reference
+ *
+ * @example
+ * const checklists = new Checklists(bot, db);
+ * checklists.questInstance = questsModule;
+ * // Checklist commands are now available: /checklist, /newchecklist, etc.
+ */
 class Checklists {
+    /**
+     * Creates a new Checklists instance and registers checklist commands.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     */
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
-        this.questInstance = null; // Initialize questInstance
-        this.rolesInstance = null; // Initialize rolesInstance
+        this.questInstance = null;
+        this.rolesInstance = null;
         
         // Scenes migrated to InputScene - no custom scenes needed
         

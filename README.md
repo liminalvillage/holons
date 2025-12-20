@@ -1,84 +1,271 @@
 # HolonsBot
 
-## Overview
+A decentralized community coordination platform built as a Telegram bot, enabling collaborative task management, resource sharing, expense tracking, and community governance through the HoloSphere ecosystem.
 
-HolonsBot is a multifaceted Telegram bot built with Telegraf.js and leveraging HoloSphere.js for its core data management. Initially focused on quest management with an innovative "hologram" system for live-updating views, the project has expanded to encompass a wider range of functionalities, becoming a more general-purpose platform for community interaction and data organization within the HoloSphere ecosystem.
+## What is HolonsBot?
 
-**Core Functionalities Include:**
+HolonsBot transforms Telegram groups into self-organizing communities (called "holons") with tools for:
 
-*   **Quest Management:** Allows users to create, manage, and interact with various types of quests (tasks, events, proposals, etc.). This includes features like joining, appreciating, scheduling, completing, and time tracking.
-*   **Hologram System:**
-    *   **Telegram Holograms:** Live-updating Telegram messages that mirror original quest data. Links to these are stored in the original quest's `activeHolograms` array.
-    *   **Personal Data Holograms:** HoloSphere.js objects in a user's personal holon (`userId/quests`) that link to original quest data, providing a personalized view and activity log.
-    *   Conditional logic prevents redundant hologram creation.
-*   **Holons Management:** While much interaction is via HoloSphere, dedicated logic in `Holons.js`  supports specific holon-centric operations or views.
-*   **Settings Management:** Users and chats can configure various settings, managed through dedicated commands and scenes (`Settings.js`, `SettingsScenes.js`).
-*   **Task Scheduling:** A robust scheduler (`Scheduler.js`) handles reminders for quests and manages recurring tasks.
-*   **User Management:** Tracks user data, preferences (beyond general settings), and actions within the bot (`Users.js`).
-*   **Data Persistence & Abstraction:** Primarily uses HoloSphere.js for data storage. `DB.js` might provide an abstraction layer or specific database utilities.
-*   **Additional Features:** The codebase includes modules for various other functionalities such as `Expenses.js`,  `Checklists.js`, `Bigtalk.js`, `Shopping.js`, `Council.js`, and `Roles.js`, indicating a broad feature set.
+- **Collective Task Management** - Create quests, tasks, and proposals that members can join, complete, and track
+- **Resource Coordination** - Share offers, needs, and track contributions using REA (Resource-Event-Agent) accounting
+- **Expense Splitting** - Track shared expenses and automatically calculate balances between members
+- **Community Governance** - Define roles, values, and manage member contributions
+- **Federation** - Connect multiple holons to share quests and resources across communities
 
-The bot is designed with modularity in mind, though some core files (`Quests.js`, `Holons.js`, `Settings.js`) are extensive and are candidates for future refactoring. The project aims for robust data consistency, particularly between original data entities and their various hologrammatic representations.
+All data is stored on a decentralized network using HoloSphere/Nostr, meaning communities own their data.
 
-## Patterns and Technologies Used
+## Key Features
 
-*   **Backend Framework:** Telegraf.js (for Telegram bot functionality)
-*   **Database/Data Management:**
-    *   HoloSphere.js
-    *   Gun.js (underlying HoloSphere)
-    *   Potentially custom database abstraction (`DB.js`)
-*   **Programming Language:** JavaScript (ES Modules)
-*   **Internationalization (i18n):** i18next
-*   **Scheduling:** Custom scheduler (`Scheduler.js`)
-*   **Core Concepts:**
-    *   Telegram Bots & API features (Commands, Callbacks, Scenes)
-    *   Modular design (with ongoing refactoring needs for large files)
-    *   Real-time message updates (Holograms)
-    *   Decentralized data storage concepts (via HoloSphere)
-    *   User-specific data spaces (Personal Holons)
-    *   Soul-linking for data relationships in HoloSphere
-    *   Community and role-based interactions (implied by `Council.js`, `Roles.js`)
-*   **Geospatial Indexing:** h3-js (available in HoloSphere, used in `H3.js`)
-*   **JSON Schema Validation:** Ajv2019 (available in HoloSphere)
-*   **AI Integration:** OpenAI (optional, via `AI.js` and HoloSphere capabilities)
-*   **Utilities:** Various helper modules for UI (`UI.js`), calendar (`Calendar.js`), general utilities (`utilities.js`), etc.
+### Quest System
+Create and manage various types of collaborative tasks:
+- **Tasks** (`/task`) - Work items that need doing
+- **Events** (`/event`) - Scheduled gatherings or activities
+- **Proposals** (`/proposal`) - Ideas for community decision
+- **Offers** (`/offer`) - Resources or skills being offered
+- **Requests** (`/request`) - Needs the community can help with
 
-## Quest Image Performance Optimizations
+Quests support:
+- Participation tracking (join/leave)
+- Time logging for contributors
+- Completion workflow with appreciation
+- Scheduling and reminders
+- Checklists for subtasks
+- Image-based or text-based display
 
-HolonsBot includes several performance optimizations for quest image generation:
+### Hologram System
+Live-updating references that sync across holons:
+- **Telegram Holograms** - Messages that auto-update when source data changes
+- **Personal Holograms** - User-specific views stored in personal data space
+- **Federation Holograms** - Quests shared across connected holons
+
+### Expense Tracking
+Built-in expense splitting for shared costs:
+- `/expense` or `/spent` - Record an expense
+- Automatic participant selection
+- Balance calculation per member
+- Multi-currency support
+- REA event-sourced accounting
+
+### Role Management
+Define community roles with associated responsibilities:
+- `/roles` - View all roles
+- `/addrole` - Create new roles
+- Role-based checklists
+- Member assignment
+
+### Checklists & Shopping Lists
+Collaborative list management:
+- `/checklist` - Create/view checklists
+- `/shopping` - Shopping list with toggle items
+- `/agenda` - Schedule-based checklists
+
+### Scheduling & Reminders
+Task scheduling with calendar interface:
+- `/when` - Schedule a quest with date/time picker
+- `/recurring` - Set up repeating tasks
+- Automatic reminder notifications
+
+### Federation
+Connect holons for cross-community collaboration:
+- `/spoon` or `/federate` - Link to another holon
+- `/fork` or `/separate` - Unlink from a holon
+- Configure which lenses (quests, offers, etc.) to share
+- Holograms automatically propagate to federated holons
+
+### Leaderboard & Appreciation
+Track community contributions:
+- `/leaderboard` - View member scores
+- Configurable value equation for scoring
+- REA-based appreciation tracking
+
+### Settings & Configuration
+Comprehensive holon customization:
+- `/settings` - Interactive settings menu
+- Language selection (en, it, es, fr, ru, de)
+- Theme (light/dark)
+- Admin management
+- Custom values and domains
+
+## Architecture
+
+```
+HolonsBot/
+├── core/                    # Core infrastructure
+│   ├── HolonsBotCore.js    # Main application entry
+│   ├── ServiceContainer.js  # Dependency injection
+│   ├── SignalManager.js     # Action/callback management
+│   └── ServiceDefinitions.js # Service registration
+├── src/                     # Feature modules
+│   ├── Quests.js           # Quest management
+│   ├── Settings.js         # Configuration
+│   ├── Users.js            # User management
+│   ├── Expenses.js         # Expense tracking
+│   ├── Holons.js           # Blockchain operations
+│   ├── Scheduler.js        # Task scheduling
+│   ├── Checklists.js       # List management
+│   ├── Shopping.js         # Shopping lists
+│   ├── Roles.js            # Role management
+│   ├── UI.js               # Visual output
+│   ├── DB.js               # Database abstraction
+│   ├── Calendar.js         # Date/time picker
+│   └── domain/rea/         # REA accounting
+│       ├── REAEventStore.js
+│       ├── REAEventFactory.js
+│       └── REAAggregator.js
+└── utils/                   # Utilities
+    ├── InputScene.js       # User input handling
+    ├── config.js           # Configuration
+    └── errorHandler.js     # Error management
+```
+
+### Technology Stack
+
+| Component | Technology |
+|-----------|------------|
+| Bot Framework | Telegraf.js |
+| Database | HoloSphere.js (Nostr backend) |
+| Blockchain | Ethers.js (optional) |
+| Scheduling | node-cron |
+| i18n | i18next |
+| Image Generation | Puppeteer |
+| Geospatial | h3-js |
+
+## Getting Started
+
+### Prerequisites
+- Node.js 18+
+- Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/HolonsBot.git
+cd HolonsBot
+
+# Install dependencies
+npm install
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your bot token and settings
+
+# Start the bot
+npm start
+```
 
 ### Environment Variables
 
 ```bash
-# Enable quest images (default: false)
-export SHOW_QUESTS_AS_IMAGES=true
+# Required
+TELEGRAM_BOT_TOKEN=your_bot_token
 
-# Enable ultra-fast simplified images (default: false)
-export QUEST_IMAGE_FAST_MODE=true
+# Optional
+APPNAME=Holons                    # Application name
+LANGUAGE=en                       # Default language
+DASHBOARD_ADDRESS=https://...     # Web dashboard URL
+SHOW_QUESTS_AS_IMAGES=true       # Enable image mode
+QUEST_IMAGE_FAST_MODE=false      # Use simplified images
+NODE_ENV=development             # Environment mode
 ```
 
-### Performance Features
+## Commands Reference
 
-1. **Smart Caching**: Images are only regenerated when visual content actually changes
-2. **Instant Button Updates**: User interactions update buttons immediately (< 200ms)
-3. **Background Image Regeneration**: Heavy image processing happens asynchronously
-4. **Batch Processing**: Multiple image updates are queued and processed in parallel
-5. **Simplified Fast Mode**: Ultra-lightweight images for maximum speed
-6. **Optimized Screenshot Engine**: Reduced timeouts, smaller viewports, minimal CSS
+### Quests
+| Command | Description |
+|---------|-------------|
+| `/quest`, `/task` | Create a new quest/task |
+| `/event` | Create an event |
+| `/proposal` | Create a proposal |
+| `/offer` | Create an offer |
+| `/request` | Create a request |
+| `/tasks`, `/todos` | View all tasks |
+| `/offers` | View all offers |
+| `/requests` | View all requests |
 
-### Performance Modes
+### Expenses
+| Command | Description |
+|---------|-------------|
+| `/expense`, `/spent` | Record an expense |
+| `/ledger` | View expense ledger |
 
-**Standard Mode** (`QUEST_IMAGE_FAST_MODE=false`):
-- Full-featured quest images with all details
-- Smart caching and change detection
-- Instant button updates + background image regeneration
+### Lists
+| Command | Description |
+|---------|-------------|
+| `/checklist` | View/create checklist |
+| `/shopping` | Shopping list |
+| `/agenda` | Agenda checklist |
 
-**Fast Mode** (`QUEST_IMAGE_FAST_MODE=true`):
-- Simplified quest images with essential info only
-- Minimal HTML/CSS for maximum speed
-- Ultra-fast generation (< 1 second)
+### Community
+| Command | Description |
+|---------|-------------|
+| `/roles` | View roles |
+| `/leaderboard` | View scores |
+| `/join` | Join the holon |
+| `/leave` | Leave the holon |
 
-**Text Mode** (`SHOW_QUESTS_AS_IMAGES=false`):
-- Text-only quest display
-- No image generation overhead
-- Maximum performance for low-resource environments 
+### Settings
+| Command | Description |
+|---------|-------------|
+| `/settings` | Open settings menu |
+| `/setlanguage` | Change language |
+| `/id` | Show holon ID |
+
+### Federation
+| Command | Description |
+|---------|-------------|
+| `/spoon`, `/federate` | Link to another holon |
+| `/fork`, `/separate` | Unlink from holon |
+| `/federation` | View federation status |
+
+## Development
+
+```bash
+# Development with auto-reload
+npm run dev
+
+# Run tests
+npm test
+
+# Lint code
+npm run lint
+
+# Generate documentation
+npm run docs
+```
+
+## API Documentation
+
+JSDoc documentation is available for all classes. Generate it with:
+
+```bash
+npm run docs
+open docs/api/index.html
+```
+
+## Quest Display Modes
+
+### Standard Mode
+Full-featured quest images with smart caching and background regeneration.
+
+### Fast Mode (`QUEST_IMAGE_FAST_MODE=true`)
+Simplified images for maximum speed (< 1 second generation).
+
+### Text Mode (`SHOW_QUESTS_AS_IMAGES=false`)
+Text-only display for low-resource environments.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes with tests
+4. Submit a pull request
+
+## License
+
+GPL-3.0-only - See [LICENSE](LICENSE) for details.
+
+## Links
+
+- [HoloSphere Documentation](https://holosphere.io/docs)
+- [Telegraf.js Documentation](https://telegraf.js.org)

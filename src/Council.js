@@ -1,8 +1,15 @@
+/**
+ * @fileoverview AI-powered council for multi-perspective wisdom generation.
+ * @module src/Council
+ */
 
 import OpenAI from 'openai';
 import h3 from 'h3-js';
 
-
+/**
+ * Council perspective prompts for diverse viewpoints.
+ * @type {string[]}
+ */
 let council = [
     'Answer the questions from the embodied perspective of Values and Worldview',
     'Answer the questions from the embodied perspective of Health & Wellbeing',
@@ -27,7 +34,27 @@ function emptycell(id){
 }
 
 
+/**
+ * AI-powered council system for generating multi-perspective wisdom.
+ *
+ * @class Council
+ * @description Uses OpenAI Assistants API to generate wisdom from 12 different
+ * perspectives representing various domains (health, business, climate, etc.).
+ * Each perspective contributes to a holistic understanding of complex questions.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance for cell storage
+ * @property {OpenAI} openai - OpenAI client for AI operations
+ *
+ * @example
+ * const council = new Council(bot, db);
+ * // Use /wisdom <question> to get multi-perspective insights
+ */
 class Council {
+    /**
+     * @param {Object} bot - Telegraf bot instance
+     * @param {DB} db - Database instance
+     */
     constructor(bot, db) {
         this.bot = bot;
         this.db = db

@@ -1,9 +1,30 @@
+/**
+ * @fileoverview Community announcements with federation support.
+ * @module src/Announcements
+ */
+
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import Users from './Users.js';
 import i18next from 'i18next';
 
-
+/**
+ * Announcement system for broadcasting messages across holons.
+ *
+ * @class Announcements
+ * @description Manages community announcements with support for federation.
+ * Announcements can be shared across federated holons based on lens configuration.
+ * Supports multiple languages and tracks announcement history.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Settings} settings - Settings manager for language preferences
+ * @property {Users} users - Users manager for user data
+ *
+ * @example
+ * const announcements = new Announcements(bot, db, settings, users);
+ * // Use /announce <message> to broadcast to the community
+ */
 class Announcements {
     constructor(bot, db,settings, users) {
         this.bot = bot;

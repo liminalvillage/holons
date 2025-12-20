@@ -1,5 +1,25 @@
+/**
+ * @fileoverview Deep conversation prompts for community bonding.
+ * @module src/Bigtalk
+ */
+
 import { Markup } from 'telegraf'
 
+/**
+ * Deep conversation prompt generator for meaningful group discussions.
+ *
+ * @class Bigtalk
+ * @description Provides random thought-provoking questions to spark deep
+ * conversations in community groups. Includes questions in English and Italian
+ * covering topics like personal growth, relationships, and life experiences.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {Settings} settings - Settings manager for language preferences
+ *
+ * @example
+ * const bigtalk = new Bigtalk(bot, settings);
+ * // Use /bigtalk to get a random conversation prompt
+ */
 class Bigtalk {
   
     constructor(bot, settings){

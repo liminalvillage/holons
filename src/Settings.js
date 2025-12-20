@@ -1,3 +1,7 @@
+/**
+ * @fileoverview Settings management for HolonsBot holons.
+ * @module src/Settings
+ */
 import i18next from "i18next";
 import fs from 'fs';
 import * as utils from './utilities.js'
@@ -5,21 +9,51 @@ import { Scenes, Markup } from 'telegraf';
 import SettingsScenes from './SettingsScenes.js';
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
+
+/**
+ * All available lenses that can be configured for a holon.
+ * @constant {string[]}
+ */
 const ALL_AVAILABLE_LENSES = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
 
+/**
+ * Settings management class for configuring holon behavior and preferences.
+ *
+ * @class Settings
+ * @description Manages all holon settings including language, theme, admin configuration,
+ * federation setup, notification preferences, and quest display modes. Provides both
+ * command-based and menu-based configuration interfaces.
+ *
+ * @property {DB} db - Database instance for persistence
+ * @property {Telegraf} bot - Telegraf bot instance
+ * @property {Holons|null} holons - Reference to Holons module
+ * @property {Quests|null} quests - Reference to Quests module for cache invalidation
+ * @property {Map<string, {settings: Object, timestamp: number}>} _settingsCache - Settings cache
+ * @property {number} _cacheTTL - Cache time-to-live in milliseconds
+ * @property {SettingsScenes} scenes - Settings scenes handler for Telegraf scenes
+ *
+ * @example
+ * const settings = new Settings(bot, db);
+ * const holonSettings = await settings.getSettings(chatId);
+ * holonSettings.language = 'es';
+ * await settings.setSettings(holonSettings);
+ */
 export default class Settings {
+    /**
+     * Creates a new Settings instance and registers all settings commands.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     */
     constructor(bot, db) {
         this.db = db;
         this.bot = bot;
-        this.holons = null; // Re-add Holons instance placeholder
-        this.quests = null; // Reference to Quests for cache invalidation
+        this.holons = null;
+        this.quests = null;
 
-        // Settings cache to avoid repeated DB queries
-        // Key: holonId, Value: { settings, timestamp }
         this._settingsCache = new Map();
-        this._cacheTTL = 60 * 1000; // 1 minute cache TTL
+        this._cacheTTL = 60 * 1000;
 
-        // Create settings scenes handler
         this.scenes = new SettingsScenes(bot, db);
         
         // Register required methods from Settings in the scenes instance
@@ -1664,6 +1698,12 @@ export default class Settings {
         };
     }
 
+    /**
+     * Creates a default settings object for a new holon.
+     * @param {string|number} holonId - The holon ID
+     * @param {string} holonName - The holon name
+     * @returns {Object} Default settings object
+     */
     getDefaultSettings(holonId, holonName) {
         return {
             id: holonId,
@@ -1690,12 +1730,23 @@ export default class Settings {
         }
     }
 
-    // get language from the database
+    /**
+     * Gets the language setting for a holon.
+     * @async
+     * @param {string|number} holonId - The holon ID
+     * @returns {Promise<string>} Language code (e.g., 'en', 'it', 'es')
+     */
     async getLanguage(holonId) {
         let settings = await this.getSettings(holonId)
         return settings.language
     }
 
+    /**
+     * Sets the language for a holon via command.
+     * @async
+     * @param {Object} ctx - Telegraf context
+     * @returns {Promise<void>}
+     */
     async setLanguage(ctx) {
         const holonId = ctx.message.chat.id;
         const language = ctx.message.text.split(' ')[1];
@@ -1716,19 +1767,28 @@ export default class Settings {
         ctx.reply('Language changed to ' + language)
     }
 
+    /**
+     * Gets the theme CSS for a holon.
+     * @async
+     * @param {string|number} holonId - The holon ID
+     * @returns {Promise<string>} Theme CSS content
+     */
     async getTheme(holonId) {
         let settings = await this.getSettings(holonId)
 
         if (settings.theme === 'light') {
-            //return themelight
             return fs.readFileSync('themes/theme-light.css', 'utf8');
         } else {
-            //return themedark
             return fs.readFileSync('themes/theme-dark.css', 'utf8');
         }
     }
 
-
+    /**
+     * Sets the theme for a holon via command.
+     * @async
+     * @param {Object} ctx - Telegraf context
+     * @returns {Promise<void>}
+     */
     async setTheme(ctx) {
         const holonId = ctx.message.chat.id;
         const theme = ctx.message.text.split(' ')[1];
@@ -1924,11 +1984,24 @@ export default class Settings {
         }
     }
 
+    /**
+     * Gets the values array from holon settings.
+     * @async
+     * @param {string|number} holonId - The holon ID
+     * @returns {Promise<string[]>} Array of values
+     */
     async getValues(holonId) {
         let settings = await this.getSettings(holonId);
         return settings.values;
     }
 
+    /**
+     * Retrieves settings for a holon, using cache when available.
+     * Creates default settings if none exist.
+     * @async
+     * @param {string|number} holonId - The holon ID
+     * @returns {Promise<Object>} The holon settings object
+     */
     async getSettings(holonId) {
         // Check cache first
         const cached = this._settingsCache.get(holonId);
@@ -1987,6 +2060,12 @@ export default class Settings {
         return settings
     }
 
+    /**
+     * Saves settings for a holon and invalidates the cache.
+     * @async
+     * @param {Object} settings - The settings object to save (must have 'id' property)
+     * @returns {Promise<void>}
+     */
     async setSettings(settings) {
         if (!settings.id) {
             console.error('[setSettings] ERROR: settings.id is missing!');
@@ -2098,7 +2177,7 @@ export default class Settings {
 
         let settings = await this.getSettings(holonId);
         const language = settings.language;
-        const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?odyn=${holonId}&user=${userId}`;
+        const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?user=${userId}`;
         
         // Fetch federation info for the button
         const fedInfo = await this.db.getFederation(holonId);

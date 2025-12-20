@@ -23,15 +23,45 @@ import * as holons from '../contracts/Holons.json' with { type: "json" };
 
 import { createHolonBundle, createBundleContracts } from '../utils/holonOperations.js';
 
+/**
+ * Holon management class for blockchain-based holon operations.
+ *
+ * @class Holons
+ * @module src/Holons
+ * @description Manages holon operations including creation, configuration, and blockchain
+ * interactions. Supports multiple holon types (Managed, Zoned, Splitter, Appreciative)
+ * through smart contract interactions.
+ *
+ * @property {string} network - The blockchain network name
+ * @property {number} chainId - The blockchain chain ID
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Settings} settings - Settings module instance
+ * @property {UI|null} ui - UI module (set after construction)
+ * @property {Expenses|null} expensesInstance - Expenses module reference
+ * @property {string} privateKey - Wallet private key for transactions
+ * @property {ethers.JsonRpcProvider} provider - Ethereum JSON-RPC provider
+ * @property {ethers.Wallet} wallet - Ethereum wallet for signing transactions
+ *
+ * @example
+ * const holons = new Holons(bot, db, settings);
+ * holons.ui = uiModule;
+ */
 export default class Holons {
-  constructor(bot, db, settings) {    
+  /**
+   * Creates a new Holons instance with blockchain connectivity.
+   * @constructor
+   * @param {Telegraf} bot - The Telegraf bot instance
+   * @param {DB} db - The database instance
+   * @param {Settings} settings - The settings module instance
+   */
+  constructor(bot, db, settings) {
     this.network = process.env.NETWORK;
     this.chainId = parseInt(process.env.CHAINID);
     this.bot = bot;
     this.db = db;
     this.settings = settings;
-    // console.log("Holons constructed, this.settings:", this.settings);
-    this.ui = null; // Will be set by main app
+    this.ui = null;
     this.expensesInstance = null;
     this.privateKey = process.env.WEB3KEY;
     this.provider = new ethers.JsonRpcProvider(process.env.WEB3PROVIDER);

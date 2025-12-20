@@ -1,14 +1,40 @@
+/**
+ * @fileoverview User management for HolonsBot holons.
+ * @module src/Users
+ */
 import { t } from "i18next";
 import * as utils from './utilities.js';
 import { Markup } from 'telegraf';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
 
+/**
+ * User management class for handling holon members and their contributions.
+ *
+ * @class Users
+ * @description Manages user data, values, needs, and resource event tracking within holons.
+ * Integrates with REA (Resource-Event-Agent) pattern for economic event tracking.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {REAEventStore} eventStore - REA event store for economic events
+ * @property {Object} eventFactory - REA event factory
+ * @property {REAAggregator} aggregator - REA aggregator for computing balances
+ *
+ * @example
+ * const users = new Users(bot, db);
+ * const userInfo = await users.getUserInfo(telegramUser, chatId);
+ */
 class Users {
+  /**
+   * Creates a new Users instance and registers user commands.
+   * @constructor
+   * @param {Telegraf} bot - The Telegraf bot instance
+   * @param {DB} db - The database instance
+   */
   constructor(bot, db) {
     this.bot = bot;
     this.db = db;
 
-    // Initialize REA components
     this.eventStore = new REAEventStore(db);
     this.eventFactory = REAEventFactory;
     this.aggregator = new REAAggregator(this.eventStore);

@@ -1,4 +1,7 @@
-// Description: This file contains the Expenses class, which handles all the expenses related commands and actions.
+/**
+ * @fileoverview Expense tracking and splitting for HolonsBot.
+ * @module src/Expenses
+ */
 import { Telegraf, Markup } from 'telegraf';
 import fs from 'fs';
 import i18next from 'i18next';
@@ -8,14 +11,40 @@ import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/inde
 
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
+/**
+ * Expense tracking and splitting class for managing shared expenses within holons.
+ *
+ * @class Expenses
+ * @description Handles expense creation, splitting among participants, and balance tracking.
+ * Integrates with REA (Resource-Event-Agent) pattern for economic event tracking.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {UI} ui - UI module instance
+ * @property {Settings} settings - Settings module instance
+ * @property {REAEventStore} eventStore - REA event store for economic events
+ * @property {Object} eventFactory - REA event factory
+ * @property {REAAggregator} aggregator - REA aggregator for computing balances
+ *
+ * @example
+ * const expenses = new Expenses(bot, db, ui, settings);
+ * // Expense commands are now available: /expense, /spent, /ledger, etc.
+ */
 export default class Expenses {
+    /**
+     * Creates a new Expenses instance and registers expense commands.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     * @param {UI} ui - The UI module instance
+     * @param {Settings} settings - The settings module instance
+     */
     constructor(bot, db, ui, settings) {
         this.bot = bot;
         this.db = db;
         this.ui = ui;
         this.settings = settings;
 
-        // Initialize REA components
         this.eventStore = new REAEventStore(db);
         this.eventFactory = REAEventFactory;
         this.aggregator = new REAAggregator(this.eventStore);

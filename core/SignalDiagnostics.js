@@ -1,21 +1,42 @@
 /**
- * Signal Diagnostics Module
- * 
- * Provides diagnostic commands and utilities to help debug signal issues
- * in the HolonsBot system.
+ * Signal Diagnostics Module that provides diagnostic commands and utilities
+ * to help debug signal issues in the HolonsBot system.
+ *
+ * @class SignalDiagnostics
+ * @module core/SignalDiagnostics
+ * @description Provides admin-only commands for debugging signal registration,
+ * testing signal patterns, validating required signals, and exporting registry data.
+ *
+ * @property {Object} bot - The Telegraf bot instance
+ * @property {SignalManager} signalManager - The signal manager to diagnose
+ *
+ * @example
+ * const diagnostics = new SignalDiagnostics(bot, signalManager);
+ * // Admin can now use /signals_debug, /test_signal, etc.
  */
 
 import { log } from '../utils/logger.js';
 
 export default class SignalDiagnostics {
+    /**
+     * Creates a new SignalDiagnostics instance and registers diagnostic commands.
+     * @constructor
+     * @param {Object} bot - The Telegraf bot instance
+     * @param {SignalManager} signalManager - The signal manager to diagnose
+     */
     constructor(bot, signalManager) {
         this.bot = bot;
         this.signalManager = signalManager;
-        
-        // Register diagnostic commands (admin only)
+
         this.registerDiagnosticCommands();
     }
 
+    /**
+     * Registers all diagnostic commands with the bot (admin only).
+     * Commands include: /signals_debug, /test_signal, /reset_signals, /export_signals, /validate_signals
+     * @private
+     * @returns {void}
+     */
     registerDiagnosticCommands() {
         // Command to show signal diagnostics
         this.bot.command('signals_debug', async (ctx) => {
@@ -184,13 +205,26 @@ export default class SignalDiagnostics {
         });
     }
 
+    /**
+     * Checks if the current user is a bot administrator.
+     * @async
+     * @private
+     * @param {Object} ctx - Telegraf context
+     * @returns {Promise<boolean>} True if user is admin
+     */
     async isAdmin(ctx) {
-        // Check if user is bot admin
         const userId = ctx.from?.id;
         const adminIds = process.env.ADMIN_IDS?.split(',').map(id => parseInt(id)) || [];
         return adminIds.includes(userId);
     }
 
+    /**
+     * Sends a notification message to the admin chat.
+     * @async
+     * @private
+     * @param {string} message - The message to send
+     * @returns {Promise<void>}
+     */
     async notifyAdmin(message) {
         const adminholonId = process.env.ADMIN_CHAT_ID;
         if (adminholonId) {
@@ -203,7 +237,9 @@ export default class SignalDiagnostics {
     }
 
     /**
-     * Generates a detailed report of signal health
+     * Generates a detailed report of signal health including statistics and recommendations.
+     * @async
+     * @returns {Promise<{timestamp: string, health: string, statistics: Object, modules: Object, conflicts: Array, missingSignals: Array, recommendations: Array}>} Health report
      */
     async generateHealthReport() {
         const diagnostics = this.signalManager.getDiagnostics();
@@ -226,6 +262,13 @@ export default class SignalDiagnostics {
         };
     }
 
+    /**
+     * Generates recommendations based on diagnostic and validation results.
+     * @private
+     * @param {Object} diagnostics - Diagnostics data from SignalManager
+     * @param {Object} validation - Validation results from SignalManager
+     * @returns {Array<{severity: string, issue: string, action: string}>} Array of recommendations
+     */
     generateRecommendations(diagnostics, validation) {
         const recommendations = [];
         
@@ -261,7 +304,10 @@ export default class SignalDiagnostics {
 }
 
 /**
- * Factory function to create and initialize SignalDiagnostics
+ * Factory function to create and initialize a SignalDiagnostics instance.
+ * @param {Object} bot - The Telegraf bot instance
+ * @param {SignalManager} signalManager - The signal manager to diagnose
+ * @returns {SignalDiagnostics} A new SignalDiagnostics instance
  */
 export function createSignalDiagnostics(bot, signalManager) {
     return new SignalDiagnostics(bot, signalManager);

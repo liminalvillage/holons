@@ -1,8 +1,28 @@
+/**
+ * @fileoverview Gun.js server for decentralized data synchronization.
+ * @module src/GunServer
+ */
+
 import express from 'express';
 import fs from 'fs';
 import https from 'https';
 import Gun from 'gun';
 
+/**
+ * Gun.js server for peer-to-peer data synchronization.
+ *
+ * @class GunServer
+ * @description Initializes and manages a Gun.js server instance that provides
+ * decentralized data storage and real-time synchronization. Supports both
+ * HTTP (development) and HTTPS (production) modes.
+ *
+ * @property {Object} serverInstance - The HTTP/HTTPS server instance
+ * @property {Gun} gun - The Gun.js database instance
+ *
+ * @example
+ * const gunServer = new GunServer();
+ * // Server automatically starts on construction
+ */
 class GunServer {
   constructor() {
     this.serverInstance = null;

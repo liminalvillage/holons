@@ -1,5 +1,30 @@
+/**
+ * @fileoverview Speed dating / one-on-one conversation pairing system.
+ * @module src/OneOnOne
+ */
+
 import schedule from 'node-schedule';
 
+/**
+ * One-on-one conversation pairing system for community networking.
+ *
+ * @class OneOnOne
+ * @description Facilitates scheduled one-on-one conversations between
+ * community members. Automatically pairs participants for 15-minute
+ * private discussions and collects conversation summaries. Tracks
+ * pairings to ensure everyone meets everyone over time.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Settings} settings - Settings manager
+ * @property {Object} conversations - Active conversation tracking
+ * @property {Set} pairings - Unique pairings tracker to avoid repeats
+ *
+ * @example
+ * const oneOnOne = new OneOnOne(bot, db, settings);
+ * // Use /round to schedule pairing rounds
+ * // Use /summary <text> to report conversation outcomes
+ */
 class OneOnOne {
   constructor(bot, db, settings) {
     this.bot = bot;

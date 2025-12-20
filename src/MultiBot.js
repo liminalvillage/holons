@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Multi-platform bot supporting Telegram, Discord, and Mattermost.
+ * @module src/MultiBot
+ */
+
 import 'dotenv/config';
 import { Telegraf, Markup } from 'telegraf';
 import { Client, GatewayIntentBits,ActionRowBuilder, ButtonBuilder, ButtonStyle,Events } from 'discord.js';
@@ -6,6 +11,28 @@ import MattermostClient from 'mattermost-client';
 import fs from 'fs';
 import { platform } from 'os';
 
+/**
+ * Multi-platform bot extending Telegraf with Discord and Mattermost support.
+ *
+ * @class MultiBot
+ * @extends Telegraf
+ * @description Unified bot interface that bridges Telegram, Discord, and Mattermost.
+ * Normalizes message contexts across platforms to enable cross-platform command
+ * handling. Supports voice channel tracking on Discord.
+ *
+ * @property {string} telegramtoken - Telegram bot token
+ * @property {string} discordtoken - Discord bot token
+ * @property {string} mattermosttoken - Mattermost bot token
+ * @property {Telegraf} telegramBot - Telegram bot instance
+ * @property {Client} discordBot - Discord.js client instance
+ * @property {MattermostClient} mattermostClient - Mattermost client instance
+ * @property {Object} commands - Registered command handlers
+ * @property {Object} userVoiceData - Discord voice channel tracking data
+ *
+ * @example
+ * const bot = new MultiBot(telegramToken, discordToken, mattermostToken);
+ * await bot.start();
+ */
 class MultiBot extends Telegraf {
     constructor(telegramtoken, discordtoken, mattermosttoken) {
         super(telegramtoken);

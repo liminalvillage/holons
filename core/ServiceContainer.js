@@ -2,10 +2,30 @@ import { config } from '../utils/config.js';
 import { log } from '../utils/logger.js';
 
 /**
- * Dependency Injection Container for HolonsBot
- * Manages service lifecycle and dependencies
+ * Dependency Injection Container for managing service lifecycle and dependencies.
+ *
+ * @class ServiceContainer
+ * @module core/ServiceContainer
+ * @description A lightweight DI container that handles service registration, dependency
+ * resolution, singleton management, and graceful shutdown of all services.
+ *
+ * @property {Map<string, *>} services - Map of service names to instances during initialization
+ * @property {Map<string, Object>} factories - Map of service names to factory definitions
+ * @property {Map<string, *>} singletons - Map of singleton service names to cached instances
+ * @property {Set<string>} initialized - Set of service names that have been initialized
+ *
+ * @example
+ * const container = new ServiceContainer();
+ * container.register('database', (deps) => new DB(), { singleton: true });
+ * container.register('users', (deps) => new Users(deps.database), { dependencies: ['database'] });
+ * await container.initializeAll();
+ * const users = await container.get('users');
  */
 export class ServiceContainer {
+  /**
+   * Creates a new ServiceContainer instance.
+   * @constructor
+   */
   constructor() {
     this.services = new Map();
     this.factories = new Map();
@@ -14,7 +34,13 @@ export class ServiceContainer {
   }
 
   /**
-   * Register a service factory
+   * Registers a service factory with the container.
+   * @param {string} name - Unique name for the service
+   * @param {Function} factory - Factory function that creates the service instance
+   * @param {Object} [options={}] - Registration options
+   * @param {boolean} [options.singleton=true] - Whether to cache the instance as a singleton
+   * @param {string[]} [options.dependencies=[]] - Names of services this service depends on
+   * @returns {void}
    */
   register(name, factory, options = {}) {
     this.factories.set(name, {
@@ -28,7 +54,11 @@ export class ServiceContainer {
   }
 
   /**
-   * Get a service instance
+   * Gets a service instance, creating it if necessary.
+   * @async
+   * @param {string} name - The name of the service to retrieve
+   * @returns {Promise<*>} The service instance
+   * @throws {Error} If service not found or circular dependency detected
    */
   async get(name) {
     // Return existing singleton if available
@@ -77,21 +107,27 @@ export class ServiceContainer {
   }
 
   /**
-   * Check if a service is registered
+   * Checks if a service is registered in the container.
+   * @param {string} name - The service name to check
+   * @returns {boolean} True if the service is registered
    */
   has(name) {
     return this.factories.has(name);
   }
 
   /**
-   * Get all service names
+   * Gets all registered service names.
+   * @returns {string[]} Array of service names
    */
   getServiceNames() {
     return Array.from(this.factories.keys());
   }
 
   /**
-   * Initialize all registered services in dependency order
+   * Initializes all registered services in dependency order.
+   * @async
+   * @returns {Promise<void>}
+   * @throws {Error} If any service fails to initialize
    */
   async initializeAll() {
     const serviceNames = this.getServiceNames();
@@ -115,7 +151,9 @@ export class ServiceContainer {
   }
 
   /**
-   * Shutdown all services
+   * Shuts down all services that have a shutdown method.
+   * @async
+   * @returns {Promise<void>}
    */
   async shutdown() {
     log.info('Shutting down services');
@@ -142,7 +180,8 @@ export class ServiceContainer {
   }
 
   /**
-   * Get service dependency graph for debugging
+   * Gets the service dependency graph for debugging purposes.
+   * @returns {Object.<string, {dependencies: string[], singleton: boolean, initialized: boolean}>} Dependency graph
    */
   getDependencyGraph() {
     const graph = {};
@@ -159,7 +198,9 @@ export class ServiceContainer {
   }
 
   /**
-   * Validate service dependencies
+   * Validates that all service dependencies are registered.
+   * @returns {void}
+   * @throws {Error} If any dependencies are missing
    */
   validateDependencies() {
     const errors = [];
@@ -180,7 +221,8 @@ export class ServiceContainer {
   }
 
   /**
-   * Create a scoped container (for testing)
+   * Creates a scoped container with copied factory definitions (useful for testing).
+   * @returns {ServiceContainer} A new container with copied factory definitions
    */
   createScope() {
     const scope = new ServiceContainer();

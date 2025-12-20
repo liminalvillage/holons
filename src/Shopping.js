@@ -1,10 +1,34 @@
+/**
+ * @fileoverview Shopping list management for HolonsBot.
+ * @module src/Shopping
+ */
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 
-
-
+/**
+ * Shopping list management class for creating and managing shopping lists.
+ *
+ * @class Shopping
+ * @description Handles shopping list creation, item management, and display.
+ * Provides commands for adding items, viewing the list, and marking items as done.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Settings} settings - Settings module instance
+ *
+ * @example
+ * const shopping = new Shopping(bot, db, settings);
+ * // Shopping commands are now available: /buy, /shopping, etc.
+ */
 class Shopping {
-    constructor(bot, db,settings) {
+    /**
+     * Creates a new Shopping instance and registers shopping commands.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     * @param {Settings} settings - The settings module instance
+     */
+    constructor(bot, db, settings) {
         this.bot = bot;
         this.db = db;
         this.settings = settings;

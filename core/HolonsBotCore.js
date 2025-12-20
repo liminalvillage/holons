@@ -5,10 +5,29 @@ import { log } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 
 /**
- * HolonsBot - Core Implementation
- * Uses Dependency Injection for proper service management
+ * Core HolonsBot application class that manages the lifecycle of a Telegram bot
+ * using dependency injection for service management.
+ *
+ * @class HolonsBot
+ * @module core/HolonsBotCore
+ * @description Main entry point for the HolonsBot application. Handles initialization,
+ * service registration, command setup, and graceful shutdown of the bot and all its dependencies.
+ *
+ * @property {ServiceContainer} container - The dependency injection container managing all services
+ * @property {boolean} isInitialized - Whether the bot has completed initialization
+ * @property {boolean} isShuttingDown - Whether the bot is currently shutting down
+ *
+ * @example
+ * const bot = new HolonsBot();
+ * await bot.init('MyApp', 'telegram-token');
+ * // Bot is now running
+ * await bot.shutdown();
  */
 class HolonsBot {
+  /**
+   * Creates a new HolonsBot instance.
+   * @constructor
+   */
   constructor() {
     this.container = new ServiceContainer();
     this.isInitialized = false;
@@ -16,7 +35,13 @@ class HolonsBot {
   }
 
   /**
-   * Initialize the bot with all its dependencies
+   * Initializes the bot with all its dependencies and starts the Telegram bot.
+   * @async
+   * @param {string} [appname='Holons'] - The application name for logging and identification
+   * @param {string|null} [telegramToken=null] - Override Telegram bot token (uses env if null)
+   * @param {string|null} [discordToken=null] - Override Discord bot token (uses env if null)
+   * @returns {Promise<void>}
+   * @throws {Error} If initialization fails
    */
   async init(appname = 'Holons', telegramToken = null, discordToken = null) {
     if (this.isInitialized) {
@@ -76,7 +101,9 @@ class HolonsBot {
   }
 
   /**
-   * Register all service definitions with the container
+   * Registers all service definitions from ServiceDefinitions with the DI container.
+   * @private
+   * @returns {void}
    */
   registerServices() {
     log.debug('Registering services');
@@ -92,7 +119,11 @@ class HolonsBot {
   }
 
   /**
-   * Launch the Telegram bot after all services are initialized
+   * Launches the Telegram bot after all services are initialized.
+   * @async
+   * @private
+   * @returns {Promise<void>}
+   * @throws {Error} If bot launch fails
    */
   async launchBot() {
     try {
@@ -109,7 +140,11 @@ class HolonsBot {
   }
 
   /**
-   * Setup the bot menu button to open the dashboard webapp
+   * Sets up the bot menu button to open the dashboard webapp.
+   * @async
+   * @private
+   * @param {Telegraf} telebot - The Telegraf bot instance
+   * @returns {Promise<void>}
    */
   async setupMenuButton(telebot) {
     try {
@@ -128,7 +163,10 @@ class HolonsBot {
   }
 
   /**
-   * Run post-initialization hooks
+   * Runs post-initialization hooks for services that require additional setup.
+   * @async
+   * @private
+   * @returns {Promise<void>}
    */
   async runPostInitHooks() {
     log.debug('Running post-initialization hooks');
@@ -148,7 +186,11 @@ class HolonsBot {
   }
 
   /**
-   * Setup command and event handlers
+   * Sets up Telegram command and event handlers.
+   * @async
+   * @private
+   * @returns {Promise<void>}
+   * @throws {Error} If handler setup fails
    */
   async setupHandlers() {
     try {
@@ -168,7 +210,11 @@ class HolonsBot {
   }
 
   /**
-   * Get a service from the container
+   * Retrieves a service from the dependency injection container.
+   * @async
+   * @param {string} name - The name of the service to retrieve
+   * @returns {Promise<*>} The requested service instance
+   * @throws {Error} If bot is not initialized or service not found
    */
   async getService(name) {
     if (!this.isInitialized) {
@@ -178,7 +224,10 @@ class HolonsBot {
   }
 
   /**
-   * Get multiple services at once
+   * Retrieves multiple services from the container at once.
+   * @async
+   * @param {...string} names - The names of the services to retrieve
+   * @returns {Promise<Object.<string, *>>} Object mapping service names to instances
    */
   async getServices(...names) {
     const services = {};
@@ -189,21 +238,25 @@ class HolonsBot {
   }
 
   /**
-   * Check if the bot is ready
+   * Checks if the bot is fully initialized and ready to handle requests.
+   * @returns {boolean} True if initialized and not shutting down
    */
   isReady() {
     return this.isInitialized && !this.isShuttingDown;
   }
 
   /**
-   * Get service dependency graph for debugging
+   * Gets the service dependency graph for debugging purposes.
+   * @returns {Object} The dependency graph from the container
    */
   getDependencyGraph() {
     return this.container.getDependencyGraph();
   }
 
   /**
-   * Graceful shutdown
+   * Performs a graceful shutdown of the bot and all services.
+   * @async
+   * @returns {Promise<void>}
    */
   async shutdown() {
     if (this.isShuttingDown) {
@@ -235,7 +288,9 @@ class HolonsBot {
   }
 
   /**
-   * Clean up lock files
+   * Cleans up any stale lock files from previous runs.
+   * @private
+   * @returns {void}
    */
   cleanupLockFiles() {
     try {
@@ -249,7 +304,9 @@ class HolonsBot {
   }
 
   /**
-   * Setup process event handlers
+   * Sets up process event handlers for graceful shutdown on signals.
+   * @private
+   * @returns {void}
    */
   setupProcessHandlers() {
     const handleShutdown = (signal) => {
@@ -279,8 +336,11 @@ class HolonsBot {
   }
 
   /**
-   * Setup Telegram commands
-   * TODO: Move this logic to individual service modules
+   * Sets up Telegram bot commands.
+   * @async
+   * @private
+   * @returns {Promise<void>}
+   * @todo Move this logic to individual service modules
    */
   async setupTelegramCommands() {
     // This would be implemented by calling setup methods on individual services
@@ -289,8 +349,11 @@ class HolonsBot {
   }
 
   /**
-   * Setup Telegram handlers
-   * TODO: Move this logic to individual service modules
+   * Sets up Telegram event handlers including photo processing.
+   * @async
+   * @private
+   * @returns {Promise<void>}
+   * @todo Move this logic to individual service modules
    */
   async setupTelegramHandlers() {
     // This would be implemented by calling setup methods on individual services
@@ -336,25 +399,34 @@ class HolonsBot {
   }
 
   /**
-   * Direct property access convenience methods
-   * Provides easy access to commonly used services
+   * Gets the Telegraf bot instance.
+   * @type {Promise<Telegraf>|null}
+   * @readonly
    */
   get telebot() {
     if (!this.isInitialized) return null;
     return this.container.get('telebot').catch(() => null);
   }
 
+  /**
+   * Gets the database service instance.
+   * @type {Promise<DB>|null}
+   * @readonly
+   */
   get db() {
     if (!this.isInitialized) return null;
     return this.container.get('database').catch(() => null);
   }
 
+  /**
+   * Gets the settings service instance.
+   * @type {Promise<Settings>|null}
+   * @readonly
+   */
   get settings() {
     if (!this.isInitialized) return null;
     return this.container.get('settings').catch(() => null);
   }
-
-  // Add other property getters as needed...
 }
 
 export default HolonsBot;

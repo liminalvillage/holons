@@ -1,7 +1,30 @@
+/**
+ * @fileoverview RSVP and participation tracking for events.
+ * @module src/RSVP
+ */
+
 import { Markup } from 'telegraf';
 
+/**
+ * RSVP system for event participation tracking.
+ *
+ * @class RSVP
+ * @description Creates interactive RSVP lists for events where community
+ * members can indicate their participation. Lists are pinned for visibility
+ * and update in real-time as users respond.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance
+ *
+ * @example
+ * const rsvp = new RSVP(bot, db);
+ * // Use /rsvp <event title> to create an RSVP list
+ */
 export default class RSVP {
-
+    /**
+     * @param {Object} bot - Telegraf bot instance
+     * @param {DB} db - Database instance
+     */
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;

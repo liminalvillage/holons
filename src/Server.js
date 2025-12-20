@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Express HTTP/HTTPS server with security middleware and file endpoints.
+ * @module src/Server
+ */
+
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -6,6 +11,27 @@ import https from 'https';
 import crypto from 'crypto';
 import { log } from '../utils/logger.js';
 
+/**
+ * Express server for serving static files, avatars, and images.
+ *
+ * @class Server
+ * @description Manages an Express HTTP/HTTPS server with comprehensive security
+ * middleware including rate limiting, security headers, and input validation.
+ * Provides endpoints for avatars, files, and images from Telegram.
+ *
+ * @property {Object} bot - Telegraf bot instance for Telegram API access
+ * @property {Object} serverInstance - The HTTP/HTTPS server instance
+ * @property {boolean} isRunning - Whether the server is currently running
+ * @property {Map} requestCounts - Rate limiting tracker per IP
+ * @property {string} avatarsDir - Directory path for cached avatars
+ * @property {string} filesDir - Directory path for cached files
+ * @property {string} imagesDir - Directory path for cached images
+ *
+ * @example
+ * const server = new Server(bot);
+ * // Server automatically starts on construction
+ * console.log(server.getServerStatus());
+ */
 class Server {
   constructor(bot) {
     this.bot = bot;

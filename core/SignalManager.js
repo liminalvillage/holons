@@ -1,34 +1,49 @@
 /**
- * Centralized Signal Manager for HolonsBot
- * 
- * This class manages all bot signals (actions/callbacks) centrally to prevent conflicts
- * and ensure signals work consistently across all modules.
- * 
- * Problems this solves:
- * 1. Multiple modules registering overlapping action patterns
- * 2. Actions not working when modules are loaded in different orders
- * 3. Lost action handlers when modules are reinitialized
- * 4. Difficulty debugging which module handles which signal
+ * Centralized Signal Manager for HolonsBot that manages all bot signals (actions/callbacks)
+ * to prevent conflicts and ensure signals work consistently across all modules.
+ *
+ * @class SignalManager
+ * @module core/SignalManager
+ * @description Solves the following problems:
+ * - Multiple modules registering overlapping action patterns
+ * - Actions not working when modules are loaded in different orders
+ * - Lost action handlers when modules are reinitialized
+ * - Difficulty debugging which module handles which signal
+ *
+ * @property {Object} bot - The Telegraf bot instance
+ * @property {Map<string, Object>} registeredActions - Map of pattern keys to action metadata
+ * @property {string[]} actionPatterns - Array to maintain order of registered patterns
+ * @property {boolean} debugMode - Whether debug logging is enabled
+ * @property {Map<string, number>} patternSpecificity - Map of patterns to their specificity scores
+ *
+ * @example
+ * const signalManager = new SignalManager(bot);
+ * signalManager.registerAction(/view_quest_(.+)/, handler, 'Quests', 10);
  */
 
 import { log } from '../utils/logger.js';
 
 export default class SignalManager {
+    /**
+     * Creates a new SignalManager instance and intercepts bot.action registrations.
+     * @constructor
+     * @param {Object} bot - The Telegraf bot instance to manage signals for
+     */
     constructor(bot) {
         this.bot = bot;
-        this.registeredActions = new Map(); // Map of pattern -> { module, handler, priority }
-        this.actionPatterns = []; // Array to maintain order of patterns
+        this.registeredActions = new Map();
+        this.actionPatterns = [];
         this.debugMode = process.env.SIGNAL_DEBUG === 'true';
-        
-        // Override bot.action to intercept all action registrations
+
         this.interceptBotAction();
-        
-        // Track pattern specificity to resolve conflicts better
+
         this.patternSpecificity = new Map();
     }
 
     /**
-     * Intercepts the bot.action method to centrally manage all action handlers
+     * Intercepts the bot.action method to centrally manage all action handlers.
+     * @private
+     * @returns {void}
      */
     interceptBotAction() {
         const originalAction = this.bot.action.bind(this.bot);
@@ -46,7 +61,12 @@ export default class SignalManager {
     }
 
     /**
-     * Registers an action handler with metadata
+     * Registers an action handler with metadata including priority and specificity.
+     * @param {RegExp|string} pattern - The pattern to match callback data against
+     * @param {Function} handler - The handler function to call when pattern matches
+     * @param {string} [module='unknown'] - The name of the module registering the action
+     * @param {number} [priority=0] - Priority for conflict resolution (higher wins)
+     * @returns {void}
      */
     registerAction(pattern, handler, module = 'unknown', priority = 0) {
         const patternKey = this.getPatternKey(pattern);
@@ -106,7 +126,9 @@ export default class SignalManager {
     }
 
     /**
-     * Creates a unique key for a pattern
+     * Creates a unique key for a pattern for use in the registry.
+     * @param {RegExp|string} pattern - The pattern to create a key for
+     * @returns {string} A unique key string (prefixed with 'regex:' or 'string:')
      */
     getPatternKey(pattern) {
         if (pattern instanceof RegExp) {
@@ -116,7 +138,9 @@ export default class SignalManager {
     }
 
     /**
-     * Calculates pattern specificity (higher = more specific)
+     * Calculates pattern specificity score (higher = more specific patterns).
+     * @param {RegExp|string} pattern - The pattern to calculate specificity for
+     * @returns {number} Specificity score
      */
     calculatePatternSpecificity(pattern) {
         if (pattern instanceof RegExp) {
@@ -141,7 +165,9 @@ export default class SignalManager {
     }
 
     /**
-     * Gets the calling module from the stack trace
+     * Gets the calling module name from the stack trace.
+     * @private
+     * @returns {string} The name of the module that called this method
      */
     getCallerModule() {
         const stack = new Error().stack;
@@ -183,7 +209,9 @@ export default class SignalManager {
     }
 
     /**
-     * Validates that all required signals are registered
+     * Validates that all required signals are registered with correct modules.
+     * @param {Array<{pattern: RegExp|string, expectedModule: string}>} [requiredSignals=[]] - Required signals to validate
+     * @returns {{valid: boolean, missing: Array, conflicts: Array}} Validation results
      */
     validateSignals(requiredSignals = []) {
         const missing = [];
@@ -221,7 +249,8 @@ export default class SignalManager {
     }
 
     /**
-     * Gets diagnostic information about registered signals
+     * Gets diagnostic information about all registered signals.
+     * @returns {{totalSignals: number, byModule: Object, conflicts: Array, patterns: string[]}} Diagnostics data
      */
     getDiagnostics() {
         const byModule = {};
@@ -266,7 +295,9 @@ export default class SignalManager {
     }
 
     /**
-     * Clears all registered actions for a specific module
+     * Clears all registered actions for a specific module.
+     * @param {string} moduleName - The name of the module whose actions to clear
+     * @returns {number} The number of actions that were cleared
      */
     clearModuleActions(moduleName) {
         let cleared = 0;
@@ -283,7 +314,12 @@ export default class SignalManager {
     }
 
     /**
-     * Re-registers actions with higher priority to ensure they work
+     * Re-registers an action with higher priority to ensure it takes precedence.
+     * @param {RegExp|string} pattern - The pattern to register
+     * @param {Function} handler - The handler function
+     * @param {string} module - The module name
+     * @param {number} [priority=10] - Priority level (higher wins)
+     * @returns {void}
      */
     ensureActionPriority(pattern, handler, module, priority = 10) {
         this.registerAction(pattern, handler, module, priority);
@@ -294,7 +330,15 @@ export default class SignalManager {
     }
 
     /**
-     * Provides a safe way for modules to register actions
+     * Provides a safe way for modules to register actions with conflict handling.
+     * @param {string} module - The module name registering the action
+     * @param {RegExp|string} pattern - The pattern to match
+     * @param {Function} handler - The handler function
+     * @param {Object} [options={}] - Registration options
+     * @param {number} [options.priority=0] - Priority level
+     * @param {boolean} [options.override=false] - Whether to override existing handlers
+     * @param {boolean} [options.warnOnConflict=true] - Whether to log warnings on conflicts
+     * @returns {boolean} True if registration succeeded
      */
     safeRegisterAction(module, pattern, handler, options = {}) {
         const { 
@@ -318,7 +362,9 @@ export default class SignalManager {
     }
 
     /**
-     * Debug helper to log all signals for a specific chat/context
+     * Debug helper to log all signals for a specific chat/context.
+     * @param {Object} ctx - Telegraf context object
+     * @returns {void}
      */
     logSignalsForContext(ctx) {
         if (!this.debugMode) return;
@@ -336,7 +382,9 @@ export default class SignalManager {
     }
 
     /**
-     * Finds all patterns that would match a given callback data
+     * Finds all registered patterns that would match given callback data.
+     * @param {string} callbackData - The callback data to match against
+     * @returns {Array<{pattern: string, module: string, priority: number}>} Matching patterns sorted by priority
      */
     findMatchingPatterns(callbackData) {
         if (!callbackData) return [];
@@ -370,7 +418,8 @@ export default class SignalManager {
     }
 
     /**
-     * Exports signal registry for debugging or backup
+     * Exports the signal registry for debugging or backup purposes.
+     * @returns {Array<{pattern: string, module: string, priority: number, registeredAt: string}>} Registry entries
      */
     exportRegistry() {
         const registry = [];
@@ -388,7 +437,9 @@ export default class SignalManager {
     }
 
     /**
-     * Imports a signal registry (useful for testing or recovery)
+     * Imports a signal registry (useful for testing or recovery).
+     * @param {Array<{pattern: string, module: string, priority: number, registeredAt: string}>} registry - Registry to import
+     * @returns {void}
      */
     importRegistry(registry) {
         this.registeredActions.clear();
@@ -410,14 +461,17 @@ export default class SignalManager {
 }
 
 /**
- * Factory function to create and initialize SignalManager
+ * Factory function to create and initialize a SignalManager instance.
+ * @param {Object} bot - The Telegraf bot instance
+ * @returns {SignalManager} A new SignalManager instance
  */
 export function createSignalManager(bot) {
     return new SignalManager(bot);
 }
 
 /**
- * Required signals that must be registered for core functionality
+ * Required signals that must be registered for core functionality.
+ * @constant {Array<{pattern: RegExp|string, expectedModule: string}>}
  */
 export const REQUIRED_SIGNALS = [
     // Quest signals

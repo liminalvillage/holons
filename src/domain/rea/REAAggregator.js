@@ -1,20 +1,32 @@
 /**
- * REA Aggregator
- *
- * Derives aggregates, balances, scores, and reports from REA events.
- * All values are computed from the event stream - no mutable state.
+ * @fileoverview REA Aggregator for computing balances and scores from events.
+ * @module src/domain/rea/REAAggregator
  */
 
 /**
- * @typedef {import('./types.js').REAEvent} REAEvent
- * @typedef {import('./types.js').UserAggregates} UserAggregates
- * @typedef {import('./types.js').ValueEquation} ValueEquation
- * @typedef {import('./types.js').ScoredUser} ScoredUser
+ * @typedef {Object} REAEvent - Resource-Event-Agent event object
+ * @typedef {Object} UserAggregates - Aggregated user statistics
+ * @typedef {Object} ValueEquation - Value equation configuration
+ * @typedef {Object} ScoredUser - User with computed score
  */
 
+/**
+ * REA Aggregator for deriving aggregates, balances, scores, and reports from events.
+ *
+ * @class REAAggregator
+ * @description Computes user statistics, currency balances, and leaderboard scores
+ * from the REA event stream. All values are computed on-demand with no mutable state.
+ *
+ * @property {REAEventStore} eventStore - Event store for querying events
+ *
+ * @example
+ * const aggregator = new REAAggregator(eventStore);
+ * const aggregates = await aggregator.getUserAggregates(holonId, userId);
+ * const balance = await aggregator.getCurrencyBalance(holonId, userId, 'EUR');
+ */
 export class REAAggregator {
     /**
-     * @param {import('./REAEventStore.js').REAEventStore} eventStore
+     * @param {REAEventStore} eventStore - Event store instance
      */
     constructor(eventStore) {
         this.eventStore = eventStore;

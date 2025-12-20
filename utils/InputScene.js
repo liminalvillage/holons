@@ -91,11 +91,36 @@ import { Scenes, Markup } from 'telegraf';
 import i18next from 'i18next';
 import * as utils from '../src/utilities.js';
 
+/**
+ * Reusable input scene for collecting user input with validation and translation support.
+ *
+ * @class InputScene
+ * @module utils/InputScene
+ * @description Provides a consistent interface for requesting and validating user input
+ * across the entire bot. Supports text, number, email validation, custom validation,
+ * array parsing, and auto-cleanup of messages.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {Scenes.BaseScene} scene - The Telegraf scene instance
+ *
+ * @example
+ * const inputScene = new InputScene(bot);
+ * ctx.scene.enter('input_scene', {
+ *     promptText: 'Please enter a description:',
+ *     onComplete: async (ctx, input) => {
+ *         await saveData(ctx.chat.id, input);
+ *     }
+ * });
+ */
 export default class InputScene {
+    /**
+     * Creates a new InputScene instance and sets up the scene handlers.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     */
     constructor(bot) {
         this.bot = bot;
 
-        // Create the reusable input scene
         this.scene = new Scenes.BaseScene('input_scene');
 
         // Scene entry handler

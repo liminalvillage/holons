@@ -1,15 +1,49 @@
-// Description: This file contains the DB class which is used to interact with the database.
+/**
+ * @fileoverview Database abstraction layer for HolonsBot using HoloSphere.
+ * @module src/DB
+ */
 import {HoloSphere, createHologram as hsCreateHologram} from 'holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
 import { generateSecretKey } from 'nostr-tools';
 
-// Helper to generate hex private key
+/**
+ * Generates a hex-encoded private key for Nostr.
+ * @private
+ * @returns {string} Hex-encoded private key
+ */
 function generatePrivateKey() {
     const secretKey = generateSecretKey();
     return Buffer.from(secretKey).toString('hex');
 }
 
+/**
+ * Database class providing an abstraction layer over HoloSphere for decentralized data storage.
+ *
+ * @class DB
+ * @description Manages all database operations using HoloSphere as the underlying decentralized
+ * database. Supports Nostr relays for distributed sync, federation operations, and hologram
+ * (reference) management.
+ *
+ * @property {Object|null} gun - Legacy Gun.js reference (deprecated)
+ * @property {string} dbName - Name of the database instance
+ * @property {Object} preloadedDB - Cache for preloaded data
+ * @property {HoloSphere} holosphere - The HoloSphere instance for data operations
+ * @property {string} db - Backend type identifier ('nostr' or 'gun')
+ * @property {number} defaultTimeout - Default timeout for database operations in ms
+ * @property {Map<string, Promise>} pendingWrites - Tracks pending write operations
+ *
+ * @example
+ * const db = new DB('myDatabase');
+ * await db.init();
+ * await db.put('users/data', { id: '123', name: 'John' });
+ * const user = await db.get('users/data', '123');
+ */
 class DB {
+    /**
+     * Creates a new DB instance with HoloSphere backend.
+     * @constructor
+     * @param {string} dbName - Name for the database instance
+     */
     constructor(dbName) {
         this.gun = null;
         this.dbName = dbName;
@@ -53,10 +87,13 @@ class DB {
         this.pendingWrites = new Map();
     }
 
+    /**
+     * Initializes the database connection.
+     * @async
+     * @returns {Promise<void>}
+     */
     async init() {
         try {
-            // HoloSphere is now initialized with Nostr relays
-            // Caching is handled internally by holosphere2's nostr-client
             console.log(`DB "${this.dbName}" initialized with ${this.holosphere.config.relays.length} Nostr relays`);
         } catch (error) {
             console.error("Error initializing database:", error);
@@ -78,6 +115,14 @@ class DB {
 
 
 
+    /**
+     * Deletes a record from the database.
+     * @async
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @param {string} key - Record key to delete
+     * @returns {Promise<*>} Deletion result
+     * @throws {Error} If deletion fails
+     */
     async del(table, key) {
         try {
             return this.deleteGunDB(table, key);
@@ -87,6 +132,13 @@ class DB {
         }
     }
 
+    /**
+     * Drops all data from a table.
+     * @async
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @returns {Promise<void>}
+     * @throws {Error} If drop operation fails
+     */
     async drop(table) {
         try {
             let [hex, lens] = table.split('/')
@@ -216,6 +268,15 @@ class DB {
         console.log(`DB.clearCacheForholonId: Cleared cache for holonId ${holonId}`);
     }
 
+    /**
+     * Stores data in the database.
+     * @async
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @param {Object} data - Data object to store (must have an 'id' property)
+     * @param {Object} [options={}] - Storage options
+     * @returns {Promise<Object>} The stored data object
+     * @throws {Error} If storage fails
+     */
     async put(table, data, options = {}) {
         try {
             const key = data.id;
@@ -247,9 +308,16 @@ class DB {
         }
     }
 
+    /**
+     * Retrieves a single record from the database.
+     * @async
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @param {string} key - Record key to retrieve
+     * @returns {Promise<Object|null>} The retrieved data or null if not found
+     * @throws {Error} If retrieval fails
+     */
     async get(table, key) {
         try {
-            // holosphere2 handles caching internally via nostr-client
             return await this.withTimeout(this.getGunDB(table, key));
         } catch (error) {
             console.error(`DB.get error: ${table}/${key}:`, error.message);
@@ -257,9 +325,15 @@ class DB {
         }
     }
 
+    /**
+     * Retrieves all records from a table.
+     * @async
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @returns {Promise<Array>} Array of all records in the table
+     * @throws {Error} If retrieval fails
+     */
     async getAll(table) {
         try {
-            // holosphere2 handles caching internally via nostr-client
             return await this.withTimeout(this.getAllGunDB(table));
         } catch (error) {
             console.error(`DB.getAll error for ${table}:`, error.message);
@@ -269,6 +343,16 @@ class DB {
 
     // ===========================      Gun Functions
 
+    /**
+     * Low-level method to add data to the database backend.
+     * @async
+     * @private
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @param {Object} data - Data to store
+     * @param {Object} [options={}] - Storage options
+     * @returns {Promise<*>} Storage result
+     * @throws {Error} If storage fails
+     */
     async addGunDB(table, data, options = {}) {
         let [hex, lens] = table.split('/')
         try {
@@ -287,6 +371,14 @@ class DB {
         }
     }
 
+    /**
+     * Low-level method to get data from the database backend.
+     * @async
+     * @private
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @param {string} key - Record key
+     * @returns {Promise<Object|null>} Retrieved data or null
+     */
     async getGunDB(table, key) {
         let [hex, lens] = table.split('/')
         if (lens === undefined) {
@@ -296,6 +388,13 @@ class DB {
         }
     }
 
+    /**
+     * Low-level method to get all data from a table in the database backend.
+     * @async
+     * @private
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @returns {Promise<Array>} Array of all records
+     */
     async getAllGunDB(table) {
         let [hex, lens] = table.split('/')
         if (lens === undefined)
@@ -303,12 +402,19 @@ class DB {
         else
             return await this.holosphere.getAll(hex, lens);
     }
-    
+
+    /**
+     * Low-level method to delete data from the database backend.
+     * @private
+     * @param {string} table - Table name (format: 'holonId/lens' or 'globalTable')
+     * @param {string} key - Record key to delete
+     * @returns {Promise<*>} Deletion result
+     */
     deleteGunDB(table, key) {
         let [hex, lens] = table.split('/')
         console.log('deleteGunDB:', hex, lens, key);
 
-        if (lens === undefined) // TODO: this is a hack to get the lens and key from the key. Refactor from scheduler
+        if (lens === undefined)
             [lens,key] = key.split('_')
         return this.holosphere.delete(hex, lens, key);
     }

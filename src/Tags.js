@@ -1,6 +1,25 @@
+/**
+ * @fileoverview Message tagging and categorization system.
+ * @module src/Tags
+ */
+
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 
+/**
+ * Tag management system for categorizing messages and content.
+ *
+ * @class Tags
+ * @description Allows users to tag messages with keywords for organization
+ * and retrieval. Tags are stored per-holon and can be searched and listed.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance
+ *
+ * @example
+ * const tags = new Tags(bot, db);
+ * // Reply to a message with /tag keyword1 keyword2
+ */
 export default class Tags {
   /**
    * Creates a new instance of the Tags class.

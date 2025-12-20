@@ -1,3 +1,8 @@
+/**
+ * @fileoverview User onboarding flow with multi-step scenes.
+ * @module src/Onboarding
+ */
+
 import { Telegraf, Scenes, Markup } from 'telegraf';
 
 import h3Scene from '../scenes/h3Scene.js';
@@ -15,8 +20,29 @@ import welcomeScene from '../scenes/welcomeScene.js';
 import { dnaScene, createScenesForDNA } from '../scenes/dnaScene.js';
 import done from '../scenes/doneScene.js';
 
+/**
+ * User onboarding system with multi-step scene flows.
+ *
+ * @class Onboarding
+ * @description Manages the user onboarding process through a series of
+ * Telegraf scenes including welcome, location, values selection, DNA
+ * questionnaire, and profile creation. Stores user responses for
+ * profile building.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Object} userResponses - Temporary storage for user responses
+ *
+ * @example
+ * const onboarding = new Onboarding(bot, db);
+ * // User enters /start to begin onboarding
+ */
 export default class Onboarding {
-  constructor(bot, db) {
+    /**
+     * @param {Object} bot - Telegraf bot instance
+     * @param {DB} db - Database instance
+     */
+    constructor(bot, db) {
     this.db = db;
     this.bot = bot;
     this.userResponses = {};

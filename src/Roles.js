@@ -1,15 +1,42 @@
+/**
+ * @fileoverview Role management for HolonsBot.
+ * @module src/Roles
+ */
 import { Markup } from 'telegraf';
 import * as utils from './utilities.js';
 import { createPaddedCaption } from './utilities.js';
 import fs from 'fs';
 
+/**
+ * Role management class for creating and managing holon roles.
+ *
+ * @class Roles
+ * @description Handles role creation, assignment, management, and role-based checklists.
+ * Provides commands for adding, editing, deleting, and viewing roles within holons.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {UI} ui - UI module instance
+ * @property {Checklists|null} checklists - Checklists module reference
+ *
+ * @example
+ * const roles = new Roles(bot, db, ui);
+ * roles.setChecklists(checklistsModule);
+ * // Role commands are now available: /roles, /addrole, etc.
+ */
 export default class Roles {
-
+    /**
+     * Creates a new Roles instance and registers role commands.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     * @param {UI} ui - The UI module instance
+     */
     constructor(bot, db, ui) {
         this.bot = bot;
         this.db = db;
         this.ui = ui;
-        this.checklists = null; // Initialize checklists instance
+        this.checklists = null;
 
         // Scenes migrated to InputScene - no custom scenes needed
 

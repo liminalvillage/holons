@@ -1,35 +1,44 @@
 /**
- * SettingsScenes.js
- * 
- * This file contains the SettingsScenes class which encapsulates all Telegraf scenes
- * used for managing settings in the Holons Bot. It provides a clean separation of
- * scene-related code from the main Settings class.
- * 
- * The scenes defined here handle various user interactions such as:
- * - Setting the purpose, name, domains, values, and roles for a Holon
- * - Managing users and administrators
- * - Setting up federations between Holons
- * - Managing hex identifiers and other configuration
- * 
- * Usage:
- * 1. Create an instance of SettingsScenes with a Telegraf bot and database
- * 2. Bind required methods from the Settings class to the instance
- * 3. Register the scenes with Telegraf's stage
- * 
- * Note: This class depends on several methods from the Settings class that are
- * passed via binding in the Settings constructor.
+ * @fileoverview Telegraf scenes for settings management in HolonsBot.
+ * @module src/SettingsScenes
+ */
+
+/**
+ * SettingsScenes class encapsulating all Telegraf scenes for managing holon settings.
+ *
+ * @class SettingsScenes
+ * @description Provides scene-based interfaces for setting purpose, name, domains, values,
+ * roles, users, administrators, federations, and hex identifiers. Works in conjunction
+ * with the Settings class.
+ *
+ * @property {DB} db - Database instance
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {Settings} settings - Settings module reference
+ * @property {string} network - Blockchain network name
+ * @property {number} chainId - Blockchain chain ID
+ * @property {ethers.Wallet} wallet - Ethereum wallet for transactions
+ *
+ * @example
+ * const scenes = new SettingsScenes(bot, db, settings);
+ * scenes.registerScenes(stage);
  */
 import { ethers } from 'ethers';
 
 import i18next from "i18next";
 import { Scenes } from 'telegraf';
 import * as utils from './utilities.js';
-// spagheti
 import { createHolonBundle, createBundleContracts } from '../utils/holonOperations.js';
 import * as fs from 'fs';
 import Holons from './Holons.js';
-// spagheti
+
 export default class SettingsScenes {
+    /**
+     * Creates a new SettingsScenes instance.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     * @param {Settings} settings - The settings module instance
+     */
     constructor(bot, db, settings) {
         this.db = db;
         this.bot = bot;

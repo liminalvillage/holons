@@ -1,3 +1,8 @@
+/**
+ * @fileoverview H3 geospatial indexing for location-based holon features.
+ * @module src/H3
+ */
+
 import h3 from 'h3-js';
 import 'gun/lib/then.js';
 import offerschema from '../schemas/offers_wants_schema-v0.0.2.json' with { type: "json" };

@@ -1,14 +1,35 @@
+/**
+ * @fileoverview Configuration management for HolonsBot.
+ * @module utils/config
+ */
 import dotenv from 'dotenv';
 import { log } from './logger.js';
 
-// Load environment variables
 dotenv.config();
 
 /**
- * Configuration management utility
- * Provides type-safe access to environment variables with defaults and validation
+ * Configuration management class providing type-safe access to environment variables.
+ *
+ * @class Config
+ * @description Provides methods for retrieving string, number, and boolean environment
+ * variables with defaults and validation. Includes commonly used configuration properties.
+ *
+ * @property {string} botToken - Telegram bot token
+ * @property {string} appName - Application name
+ * @property {boolean} isDevelopment - Whether running in development mode
+ * @property {number} port - Server port
+ * @property {string} dashboardAddress - Dashboard URL
+ *
+ * @example
+ * import { config } from './utils/config.js';
+ * const token = config.botToken;
+ * const customVar = config.getString('MY_VAR', 'default');
  */
 class Config {
+  /**
+   * Creates a new Config instance and validates required environment variables.
+   * @constructor
+   */
   constructor() {
     this.validateRequiredEnvVars();
   }

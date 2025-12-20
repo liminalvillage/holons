@@ -1,19 +1,46 @@
+/**
+ * @fileoverview Error handling utilities for HolonsBot.
+ * @module utils/errorHandler
+ */
 import { log } from './logger.js';
 
 /**
- * Custom error classes for better error categorization
+ * Base application error class for operational errors.
+ *
+ * @class AppError
+ * @extends Error
+ * @description Custom error class for categorizing application errors with status codes.
+ *
+ * @property {string} name - Error class name
+ * @property {number} statusCode - HTTP-like status code
+ * @property {boolean} isOperational - Whether error is expected (operational) vs unexpected
+ *
+ * @example
+ * throw new AppError('Something went wrong', 500);
  */
 export class AppError extends Error {
+  /**
+   * Creates a new AppError instance.
+   * @constructor
+   * @param {string} message - Error message
+   * @param {number} [statusCode=500] - HTTP-like status code
+   * @param {boolean} [isOperational=true] - Whether error is operational
+   */
   constructor(message, statusCode = 500, isOperational = true) {
     super(message);
     this.name = this.constructor.name;
     this.statusCode = statusCode;
     this.isOperational = isOperational;
-    
+
     Error.captureStackTrace(this, this.constructor);
   }
 }
 
+/**
+ * Validation error (400 Bad Request).
+ * @class ValidationError
+ * @extends AppError
+ */
 export class ValidationError extends AppError {
   constructor(message) {
     super(message, 400);
@@ -21,6 +48,11 @@ export class ValidationError extends AppError {
   }
 }
 
+/**
+ * Authentication error (401 Unauthorized).
+ * @class AuthenticationError
+ * @extends AppError
+ */
 export class AuthenticationError extends AppError {
   constructor(message = 'Authentication failed') {
     super(message, 401);
@@ -28,6 +60,11 @@ export class AuthenticationError extends AppError {
   }
 }
 
+/**
+ * Authorization error (403 Forbidden).
+ * @class AuthorizationError
+ * @extends AppError
+ */
 export class AuthorizationError extends AppError {
   constructor(message = 'Access denied') {
     super(message, 403);
@@ -35,6 +72,11 @@ export class AuthorizationError extends AppError {
   }
 }
 
+/**
+ * Not found error (404 Not Found).
+ * @class NotFoundError
+ * @extends AppError
+ */
 export class NotFoundError extends AppError {
   constructor(message = 'Resource not found') {
     super(message, 404);
@@ -42,6 +84,11 @@ export class NotFoundError extends AppError {
   }
 }
 
+/**
+ * Database error (500 Internal Server Error).
+ * @class DatabaseError
+ * @extends AppError
+ */
 export class DatabaseError extends AppError {
   constructor(message = 'Database operation failed') {
     super(message, 500);
@@ -49,6 +96,12 @@ export class DatabaseError extends AppError {
   }
 }
 
+/**
+ * External service error (502 Bad Gateway).
+ * @class ExternalServiceError
+ * @extends AppError
+ * @property {string} service - Name of the failing external service
+ */
 export class ExternalServiceError extends AppError {
   constructor(message = 'External service error', service) {
     super(message, 502);
@@ -58,7 +111,11 @@ export class ExternalServiceError extends AppError {
 }
 
 /**
- * Centralized error handler
+ * Centralized error handler for managing operational and unexpected errors.
+ *
+ * @class ErrorHandler
+ * @description Provides static methods for handling different types of errors,
+ * including Telegram-specific errors and async error wrapping.
  */
 export class ErrorHandler {
   /**

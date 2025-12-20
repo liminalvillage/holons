@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Security middleware for Express applications.
+ * @module utils/security
+ */
+
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -8,7 +13,17 @@ import { config } from './config.js';
 import ErrorHandler, { ValidationError } from './errorHandler.js';
 
 /**
- * Enhanced security middleware for Express applications
+ * Comprehensive security middleware for Express applications.
+ *
+ * @class SecurityMiddleware
+ * @description Provides a complete security layer for Express apps including
+ * Helmet headers, CORS, rate limiting, input sanitization, file upload
+ * validation, and API key authentication. All methods are static.
+ *
+ * @example
+ * import { SecurityMiddleware } from './security.js';
+ * SecurityMiddleware.setup(app);
+ * app.post('/api', SecurityMiddleware.validators.message, SecurityMiddleware.validationErrorHandler);
  */
 export class SecurityMiddleware {
   /**

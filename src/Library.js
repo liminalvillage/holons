@@ -1,6 +1,31 @@
+/**
+ * @fileoverview Community library system for item lending and borrowing.
+ * @module src/Library
+ */
+
 import { Markup } from 'telegraf';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
 
+/**
+ * Community library for managing shared items with credit-based borrowing.
+ *
+ * @class Library
+ * @description Provides a complete library system where community members can
+ * add items, set borrowing credits, and track lending history. Uses REA events
+ * for immutable transaction tracking. Features include deposits, credit balances,
+ * and item statistics.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {REAEventStore} eventStore - REA event store for transactions
+ * @property {REAEventFactory} eventFactory - Factory for creating REA events
+ * @property {REAAggregator} aggregator - Aggregator for computing balances
+ *
+ * @example
+ * const library = new Library(bot, db);
+ * // Use /additem hammer 5 to add an item worth 5 credits
+ * // Use /borrow hammer to borrow an item
+ */
 class Library {
     constructor(bot, db) {
         this.bot = bot;

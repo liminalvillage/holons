@@ -1,7 +1,14 @@
+/**
+ * @fileoverview Offers and wants management using Murmurations schema.
+ * @module src/Requests
+ */
+
 import { Markup } from 'telegraf';
 
 import Validator from 'jsonschema';
 import schema from './schemas/offers_wants_prototype-v0.0.2.json' with { type: "json" };
+
+/** @type {Validator.Validator} JSON Schema validator instance */
 var v = new Validator.Validator();
 
 var p = {"linked_schemas":["offers_wants_prototype-v0.0.2"],"profile_url":"https:\/\/hamlets.communityforge.net\/ad\/150\/murmurations.json","primary_url":"https:\/\/hamlets.communityforge.net","geolocation":{"lat":46.8145624,"lon":8.239973599999999},"country":"CH","title":"A traditional stress-tested dolly from the orient.","description":"\u003Cp\u003E\u003Cstrong\u003EDolus euismod \u003C\/strong\u003Ehos luptatum olim paratus similis. Bene gravis in letalis nisl odio pagus qui saluto validus. Abdo antehabeo consectetuer esse exputo os similis voco. Causa ea iaceo incassum macto minim nibh ratis sed. Humo macto nutus populus tum utrum velit vero vulputate zelus.\u003C\/p\u003E\r\n\r\n\u003Cp\u003EBlandit feugiat macto quibus. Elit macto mauris nobis nostrud patria secundum te venio. Commoveo interdico mos neque pagus paulatim scisco. Aliquam diam esse iriure jus magna quibus utrum vindico. Abbas adipiscing at distineo iustum olim velit.\u003C\/p\u003E","exchange_type":"want","item_type":"service","transaction_type":["receive-donate","borrow-lend"],"geographic_scope":"local","expires_at":1702422000,"tags":["Business Services \u0026 Clerical"],"contact_details":{"contact_form":"https:\/\/hamlets.communityforge.net\/user\/28\/contact"}}
@@ -9,8 +16,20 @@ var p = {"linked_schemas":["offers_wants_prototype-v0.0.2"],"profile_url":"https
 //V ALIDATION ==========================================================
 //console.log(v.validate(p, schema));
 
-// HANDLES REQUESTS ====================================================
-
+/**
+ * Request handler for offers and wants with Murmurations protocol support.
+ *
+ * @class Request
+ * @description Manages community offers and wants using the Murmurations
+ * offers_wants_prototype schema. Supports exchange types, item types,
+ * transaction types, and geographic scopes.
+ *
+ * @property {Object} bot - Telegraf bot instance
+ * @property {DB} db - Database instance
+ *
+ * @example
+ * const request = new Request(bot, db);
+ */
 class Request {
     constructor(bot, db){
         this.bot = bot;
