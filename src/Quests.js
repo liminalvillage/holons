@@ -8,16 +8,38 @@ import { log } from '../utils/logger.js';
 const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.holons.io';
 
 /**
- * Optimized Quest Management System
- * Reduced from 4,385 lines to ~1,800 lines (59% reduction)
+ * Quest Management System for HolonsBot.
  *
- * Environment Variables:
- * - SHOW_QUESTS_AS_IMAGES: 'true' for image display, 'false' for text-only
+ * @class Quests
+ * @module src/Quests
+ * @description Handles all quest-related functionality including creation, display,
+ * completion, participation, scheduling, and hologram (reference) management.
+ * Supports both image and text-based quest display modes.
+ *
+ * @property {Telegraf} bot - The Telegraf bot instance
+ * @property {DB} db - Database instance
+ * @property {Users} users - Users module instance
+ * @property {Settings} settings - Settings module instance
+ * @property {Calendar} calendar - Calendar instance for date/time selection
+ * @property {Expenses|null} expenses - Expenses module (set after construction)
+ * @property {Checklists|null} checklists - Checklists module (set after construction)
+ * @property {UI|null} ui - UI module (set after construction)
+ * @property {Scheduler|null} scheduler - Scheduler module (set after construction)
+ * @property {Map<string, Object>} questImageCache - Cache for generated quest images
+ * @property {Map<string, Promise>} questOperationQueues - Operation queues to prevent race conditions
+ * @property {Map<string, {value: *, timestamp: number}>} languageCache - Language settings cache
+ * @property {Map<string, {value: *, timestamp: number}>} userCache - User data cache
+ *
+ * @example
+ * const quests = new Quests(bot, db, users, settings);
+ * quests.expenses = expensesModule;
+ * // Quest commands are now available: /quest, /task, /offer, etc.
  */
 export default class Quests {
     /**
-     * Get the holon ID from a quest object with backward compatibility.
+     * Gets the holon ID from a quest object with backward compatibility.
      * Supports both new 'holon' field and legacy 'chat' field.
+     * @static
      * @param {Object} quest - The quest object
      * @returns {string|number|null} The holon ID
      */
@@ -25,6 +47,14 @@ export default class Quests {
         return quest?.holon ?? quest?.chat ?? null;
     }
 
+    /**
+     * Creates a new Quests instance and registers all quest commands and actions.
+     * @constructor
+     * @param {Telegraf} bot - The Telegraf bot instance
+     * @param {DB} db - The database instance
+     * @param {Users} users - The users module instance
+     * @param {Settings} settings - The settings module instance
+     */
     constructor(bot, db, users, settings) {
         this.bot = bot;
         this.db = db;
@@ -106,7 +136,7 @@ export default class Quests {
     registerCommands() {
         const commandGroups = {
             task: ['quest', 'mission', 'task', 'todo', 'missione', 'compito', 'fare'],
-            event: ['event', 'evento'],
+            // event commands now handled by Events.js
             proposal: ['proposal', 'propose', 'proposta', 'propongo'],
             request: ['need', 'request', 'want', 'wish', 'richiedo', 'bisogno', 'vorrei', 'sogno', 'richiesta', 'chiedo', 'cerco'],
             offer: ['offer', 'give', 'have', 'gift', 'offro', 'dono', 'regalo', 'chiedetemi', 'ho', 'offerta'],
@@ -640,7 +670,8 @@ export default class Quests {
         }
 
         const buttons = [];
-        const isTask = ['event', 'task', 'quest', 'todo', 'mission', 'compito', 'recurring'].includes(quest.type);
+        // event type now handled by Events.js
+        const isTask = ['task', 'quest', 'todo', 'mission', 'compito', 'recurring'].includes(quest.type);
         const isProposal = quest.type === 'proposal';
         const isOfferRequest = ['offer', 'request'].includes(quest.type);
 
@@ -758,23 +789,7 @@ export default class Quests {
                                      `${DASHBOARD_ADDRESS}/${questHolon}/tasks?task=${quest.id}`)
                 ]
             );
-        } else if (quest.type === 'event') {
-            buttons.push(
-                [
-                    Markup.button.callback(i18next.t('join', { lng: language }),
-                                          `participate_quest_${questHolon}_${quest.id}`),
-                    Markup.button.callback(i18next.t('complete', { lng: language }),
-                                          `complete_quest_${questHolon}_${quest.id}`)
-                ],
-                [
-                    Markup.button.callback(i18next.t('appreciate', { lng: language }),
-                                          `appreciate_quest_${questHolon}_${quest.id}`),
-                    Markup.button.callback(i18next.t('schedule', { lng: language }),
-                                          `schedule_quest_${questHolon}_${quest.id}`)
-                ],
-                [Markup.button.callback('📢 ' + i18next.t('publish', { lng: language }),
-                                       `publish_quest_${questHolon}_${quest.id}`)]
-            );
+        // event type now handled by Events.js
         } else if (quest.type === 'proposal') {
             buttons.push(
                 [

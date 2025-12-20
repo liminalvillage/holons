@@ -28,6 +28,7 @@ import Announcements from '../src/Announcements.js';
 import Checklists from '../src/Checklists.js';
 import Scheduler from '../src/Scheduler.js';
 import CapitalGame from '../src/CapitalGame.js';
+import Events from '../src/Events.js';
 import SignalManager, { REQUIRED_SIGNALS } from './SignalManager.js';
 
 import { log } from '../utils/logger.js';
@@ -291,15 +292,28 @@ export const serviceDefinitions = {
     dependencies: ['telebot', 'database', 'users', 'settings', 'checklists', 'ui', 'expenses', 'signalManager'],
   },
 
+  // Events
+  events: {
+    factory: ({ telebot, database, users, settings, ui }) => {
+      const events = new Events(telebot, database, users, settings);
+      events.setUIInstance(ui);
+      return events;
+    },
+    singleton: true,
+    dependencies: ['telebot', 'database', 'users', 'settings', 'ui'],
+  },
+
   // Scheduler
   scheduler: {
-    factory: ({ telebot, database, quests, settings }) => {
+    factory: ({ telebot, database, quests, events, settings }) => {
       const scheduler = new Scheduler(telebot, database, quests, settings);
       quests.setScheduler(scheduler);
+      events.setScheduler(scheduler);
+      scheduler.setEvents(events);
       return scheduler;
     },
     singleton: true,
-    dependencies: ['telebot', 'database', 'quests', 'settings'],
+    dependencies: ['telebot', 'database', 'quests', 'events', 'settings'],
   },
 
   // Other services (simpler dependencies)
