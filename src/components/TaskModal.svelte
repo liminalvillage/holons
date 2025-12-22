@@ -169,20 +169,20 @@
     $: completionSelectedUserIds = completionSelectedUsers; // Reactive for template
 
     // Optimistic toggle for snappy UI
-    async function toggleUserParticipation(userId: string, user: User) {
-        if (pendingUserUpdates.has(userId)) return; // Prevent double-clicks
+    async function toggleUserParticipation(userKey: string, user: User) {
+        if (pendingUserUpdates.has(userKey)) return; // Prevent double-clicks
 
-        pendingUserUpdates.add(userId);
+        pendingUserUpdates.add(userKey);
         pendingUserUpdates = pendingUserUpdates; // Trigger reactivity
 
         try {
-            if (isUserParticipant(user.username)) {
-                await removeParticipant(user.id, user.username);
+            if (isUserParticipant(user.id)) {
+                await removeParticipant(user.id);
             } else {
-                await toggleParticipant(userId);
+                await toggleParticipant(userKey);
             }
         } finally {
-            pendingUserUpdates.delete(userId);
+            pendingUserUpdates.delete(userKey);
             pendingUserUpdates = pendingUserUpdates;
         }
     }
@@ -227,15 +227,9 @@
         dispatch("close");
     }
 
-    async function removeParticipant(participantId: string, username?: string) {
-        // Filter by both ID and username to handle different storage formats
+    async function removeParticipant(participantId: string) {
         const participants = quest.participants.filter(
-            (p: { id: string; username?: string }) => {
-                // Remove if ID matches OR username matches
-                if (p.id === participantId) return false;
-                if (username && p.username === username) return false;
-                return true;
-            }
+            (p: { id: string }) => p.id !== participantId
         );
 
         // Also reset time tracking for the removed participant
@@ -250,17 +244,13 @@
         });
     }
 
-    function isUserParticipant(usernameToTest: string): boolean {
-        // usernameToTest is a key from our userStore (now user.username)
+    function isUserParticipant(userId: string): boolean {
         if (!quest.participants || quest.participants.length === 0) return false;
-        // quest.participants now stores { id: ACTUAL_USER_ID, username: USERNAME_STRING, firstName: ..., lastName: ... }
-        return quest.participants.some(
-            (p: { id: string; username?: string }) => p.username === usernameToTest
-        );
+        return quest.participants.some((p: { id: string }) => p.id === userId);
     }
 
-    // Reactive Set of participant usernames for Svelte template reactivity
-    $: participantUsernames = new Set((quest.participants || []).map((p: any) => p.username));
+    // Reactive Set of participant IDs for Svelte template reactivity
+    $: participantIds = new Set((quest.participants || []).map((p: any) => p.id));
 
     // Open completion modal and initialize with current participants
     function openCompletionModal() {
@@ -447,16 +437,16 @@
         }
     }
 
-    async function toggleParticipant(usernameToAdd: string) {
-        // usernameToAdd is a key from our userStore (now user.username)
-        const user = userStore[usernameToAdd];
-        if (!user || !user.username) { 
-            console.error("User not found in userStore or user.username is missing, for key (username):", usernameToAdd, "User object:", user);
+    async function toggleParticipant(userKey: string) {
+        // userKey is a key from userStore (username)
+        const user = userStore[userKey];
+        if (!user || !user.id) {
+            console.error("User not found in userStore or user.id is missing:", userKey);
             return;
         }
 
-        // Check if user is already a participant using their username
-        if (isUserParticipant(user.username)) {
+        // Check if user is already a participant by ID
+        if (isUserParticipant(user.id)) {
             return;
         }
 
@@ -1362,13 +1352,13 @@
                             {:else if Object.keys(userStore).length === 0}
                                 <p class="text-gray-500 text-xs py-2 text-center">No users in this holon</p>
                             {:else}
-                                {#each Object.entries(userStore) as [userId, user] (user.id)}
-                                    {@const isPending = pendingUserUpdates.has(userId)}
-                                    {@const isSelected = participantUsernames.has(user.username)}
+                                {#each Object.entries(userStore) as [userKey, user] (user.id)}
+                                    {@const isPending = pendingUserUpdates.has(userKey)}
+                                    {@const isSelected = participantIds.has(user.id)}
                                     {@const currentTime = isSelected ? (quest.timeTracking?.[user.id] || 0) : 0}
                                     <button
                                         class="w-full flex items-center justify-between p-2.5 rounded-lg text-sm transition-all touch-manipulation select-none active:scale-[0.98] {isSelected ? 'bg-indigo-500/20 border border-indigo-500/40' : 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border border-transparent'} {isPending ? 'opacity-60 pointer-events-none' : ''}"
-                                        on:click|stopPropagation={() => toggleUserParticipation(userId, user)}
+                                        on:click|stopPropagation={() => toggleUserParticipation(userKey, user)}
                                         type="button"
                                         disabled={isPending}
                                     >
