@@ -36,7 +36,7 @@ class OneOnOne {
 
     bot.command(['round'], async (ctx) => {
       let holonId = ctx.chat.id;
-      let participants = await this.db.getAll(holonId + '/users');
+      let participants = await this.db.getAll(`${holonId}/users`);
       if (participants.length < 2) {
         ctx.reply('Not enough participants for this. Please invite more people to join.');
         return;
@@ -56,7 +56,7 @@ class OneOnOne {
       if (this.conversations[user]) {
         const { partner, holonId } = this.conversations[user];
         // Store the summary in the database
-        await this.db.save(`${holonId}/summaries`, { user, partner, summary });
+        await this.db.put(holonId.toString(), 'summaries', { id: `${user}_${partner}`, user, partner, summary });
         ctx.reply('Thank you for your summary!');
         delete this.conversations[user]; // Remove the conversation after reporting
       } else {

@@ -81,8 +81,8 @@ export default class Roles {
     async roles(ctx) {
         // Load all users
         let holonId = ctx.chat.id;
-        let roles = await this.db.getAll(holonId + '/roles');
-        //let users = await this.db.getAll(holonId + '/users');
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
+        //let users = await this.db.getAll(holonId.toString(), 'users');
         if (roles.length == 0) {
             // Show role management interface when there are no roles
             await this.showRoleManagement(ctx, { holonId: holonId });
@@ -115,7 +115,7 @@ export default class Roles {
         // Save any migrated roles
         if (hasChanges) {
             for (const role of roles) {
-                await this.db.put(holonId + '/roles', role);
+                await this.db.put(holonId.toString(), 'roles', role);
             }
         }
         this.ui.getRolesTable(roles, holonId).then((path) => {
@@ -169,7 +169,7 @@ export default class Roles {
             checklistId: null, // Add checklist ID field
             created: new Date() // Add creation timestamp
         }
-        await this.db.put(holonId + '/roles', role);
+        await this.db.put(holonId.toString(), 'roles', role);
         let successMessage = `Role "${title}" added`;
         if (description) {
             successMessage += `\nDescription: ${description}`;
@@ -179,20 +179,21 @@ export default class Roles {
     //clears participants in all roles
     async clearroles(ctx) {
         let holonId = ctx.callbackQuery.message.chat.id;
-        let messageID = ctx.callbackQuery.message.message_id;
+        let messageId = ctx.callbackQuery.message.message_id;
         if (!utils.isAdmin(ctx)) {
             ctx.answerCbQuery('Only admins can clear all roles');
             return;
         }
-        let roles = await this.db.getAll(holonId + '/roles');
-        roles.forEach(role => {
-            //TODO: save actions for currrent settings before removing them
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
+        for (const role of roles) {
+            //TODO: save actions for current settings before removing them
 
-            role.participants.forEach(user => {
+            for (const user of role.participants) {
                 // Handle both string and object participants
                 const userId = typeof user === 'string' ? user : user.id;
                 if (userId) {
-                    this.db.get(holonId + '/users', userId).then(userData => {
+                    try {
+                        const userData = await this.db.get(holonId.toString(), 'users', userId);
                         if (userData) {
                             if (!userData.roles) {
                                 userData.roles = {};
@@ -201,23 +202,25 @@ export default class Roles {
                                 userData.roles[role.id] = 0;
                             }
                             userData.roles[role.id] += 1;
-                            this.db.put(holonId + '/users', userData);
+                            await this.db.put(holonId.toString(), 'users', userData);
                         }
-                    }).catch(err => console.log('Error updating user roles:', err));
+                    } catch (err) {
+                        console.log('Error updating user roles:', err);
+                    }
                 }
-            });
-            role.participants = []; 
-            this.db.put(holonId + '/roles', role)
-        });
+            }
+            role.participants = [];
+            await this.db.put(holonId.toString(), 'roles', role);
+        }
 
-         roles = await this.db.getAll(holonId + '/roles');
+        roles = await this.db.getAll(holonId.toString(), 'roles');
 
         //update picture:
         this.ui.getRolesTable(roles, holonId).then((path) => {
             //send the image
             ctx.editMessageMedia(
                 { type: 'photo', media: { source: path }, caption: createPaddedCaption('') }, 
-                Markup.inlineKeyboard(createroles(roles, messageID))
+                Markup.inlineKeyboard(createroles(roles, messageId))
             ).catch((error) => { });
         }) //update message
 
@@ -231,14 +234,14 @@ export default class Roles {
             return;
         }
         let title = ctx.message.text.split(' ').slice(1).join(' ');
-        let roles = await this.db.getAll(holonId + '/roles');
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
         let role = roles.find(role => role.title == title);
         if (role) {
             // Also remove associated checklist if it exists
             if (role.checklistId) {
-                await this.db.del(holonId + '/checklists', role.checklistId).catch(() => {});
+                await this.db.delete(holonId.toString(), 'checklists', role.checklistId).catch(() => {});
             }
-            await this.db.del(holonId + '/roles', role.id);
+            await this.db.delete(holonId.toString(), 'roles', role.id);
             ctx.reply('Role ' + title + ' removed');
         }
         else {
@@ -252,18 +255,18 @@ export default class Roles {
             ctx.reply('Only admins can reset all roles');
             return;
         }
-        
+
         // Remove associated checklists before removing roles
-        let roles = await this.db.getAll(holonId + '/roles');
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
         for (let role of roles) {
             if (role.checklistId) {
-                await this.db.del(holonId + '/checklists', role.checklistId).catch(() => {});
+                await this.db.delete(holonId.toString(), 'checklists', role.checklistId).catch(() => {});
             }
         }
-        
-        this.db.drop(holonId + '/roles');
-        // let roles = await this.db.getAll(holonId + '/roles');
-        // roles.forEach(role => this.db.del(holonId + '/roles', role.id));
+
+        await this.db.deleteAll(holonId.toString(), 'roles');
+        // let roles = await this.db.getAll(holonId.toString(), 'roles');
+        // roles.forEach(role => this.db.delete(holonId.toString(), 'roles', role.id));
         ctx.reply('All roles removed');
     }
 
@@ -293,19 +296,19 @@ export default class Roles {
         
         // Remove quotes if present
         title = title.replace(/^["']|["']$/g, '');
-        
-        let roles = await this.db.getAll(holonId + '/roles');
+
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
         let role = roles.find(role => role.title === title);
-        
+
         if (!role) {
             ctx.reply(`Role "${title}" not found.`);
             return;
         }
-        
+
         // Update the description
         role.description = newDescription;
-        await this.db.put(holonId + '/roles', role);
-        
+        await this.db.put(holonId.toString(), 'roles', role);
+
         ctx.reply(`Updated description for role "${title}": ${newDescription}`);
     }
 
@@ -322,10 +325,10 @@ export default class Roles {
         
         // Remove quotes if present
         roleTitle = roleTitle.replace(/^["']|["']$/g, '');
-        
-        let roles = await this.db.getAll(holonId + '/roles');
+
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
         let role = roles.find(role => role.title === roleTitle);
-        
+
         if (!role) {
             ctx.reply(`Role "${roleTitle}" not found.`);
             return;
@@ -374,8 +377,8 @@ export default class Roles {
             return;
         }
 
-        const roles = await this.db.getAll(holonId + '/roles');
-        
+        const roles = await this.db.getAll(holonId.toString(), 'roles');
+
         const buttons = roles.map(role => {
             if (deleteMode) {
                 return [Markup.button.callback(
@@ -474,7 +477,7 @@ export default class Roles {
                 }
 
                 // Check if role already exists
-                const existingRoles = await this.db.getAll(holonId + '/roles');
+                const existingRoles = await this.db.getAll(holonId.toString(), 'roles');
                 if (existingRoles.find(role => role.title === title.trim())) {
                     return { valid: false, error: `Role "${title.trim()}" already exists.` };
                 }
@@ -496,7 +499,7 @@ export default class Roles {
                 };
 
                 // Save role to database and wait for Nostr confirmation
-                await this.db.put(holonId + '/roles', role);
+                await this.db.put(holonId.toString(), 'roles', role);
 
                 // Return holonId for the onConfirm callback
                 return { holonId };
@@ -516,7 +519,7 @@ export default class Roles {
         const holonId = ctx.callbackQuery.message.chat.id;
 
         try {
-            const role = await this.db.get(holonId + '/roles', roleId);
+            const role = await this.db.get(holonId.toString(), 'roles', roleId);
             if (!role) {
                 await ctx.answerCbQuery('Role not found');
                 return;
@@ -529,7 +532,7 @@ export default class Roles {
                 onComplete: async (ctx, newDescription) => {
                     const holonId = ctx.chat.id;
 
-                    const role = await this.db.get(holonId + '/roles', roleId);
+                    const role = await this.db.get(holonId.toString(), 'roles', roleId);
                     if (!role) {
                         await ctx.reply('Role not found');
                         return;
@@ -537,7 +540,7 @@ export default class Roles {
 
                     role.description = newDescription;
                     // Save role to database and wait for Nostr confirmation
-                    await this.db.put(holonId + '/roles', role);
+                    await this.db.put(holonId.toString(), 'roles', role);
 
                     // Return holonId for the onConfirm callback
                     return { holonId };
@@ -560,7 +563,7 @@ export default class Roles {
         const holonId = ctx.callbackQuery.message.chat.id;
 
         try {
-            const role = await this.db.get(holonId + '/roles', roleId);
+            const role = await this.db.get(holonId.toString(), 'roles', roleId);
             if (!role) {
                 await ctx.answerCbQuery('Role not found');
                 return;
@@ -568,10 +571,10 @@ export default class Roles {
 
             // Remove associated checklist if it exists
             if (role.checklistId) {
-                await this.db.del(holonId + '/checklists', role.checklistId).catch(() => {});
+                await this.db.delete(holonId.toString(), 'checklists', role.checklistId).catch(() => {});
             }
 
-            await this.db.del(holonId + '/roles', roleId);
+            await this.db.delete(holonId.toString(), 'roles', roleId);
             await ctx.answerCbQuery(`Deleted role "${role.title}"`);
 
             // Refresh the delete mode view
@@ -607,8 +610,8 @@ export default class Roles {
         await ctx.answerCbQuery().catch();
         // Go back to the main roles view (with image)
         let holonId = ctx.callbackQuery.message.chat.id;
-        let roles = await this.db.getAll(holonId + '/roles');
-        
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
+
         // Migrate any old string-based participants to user objects
         let hasChanges = false;
         for (const role of roles) {
@@ -635,10 +638,10 @@ export default class Roles {
         // Save any migrated roles
         if (hasChanges) {
             for (const role of roles) {
-                await this.db.put(holonId + '/roles', role);
+                await this.db.put(holonId.toString(), 'roles', role);
             }
         }
-        
+
         this.ui.getRolesTable(roles, holonId).then((path) => {
             // Delete the management message and show main roles view
             ctx.deleteMessage().catch(() => {});
@@ -656,8 +659,8 @@ export default class Roles {
         await ctx.answerCbQuery().catch();
         const roleId = ctx.match[1];
         const holonId = ctx.callbackQuery.message.chat.id;
-        
-        const role = await this.db.get(holonId + '/roles', roleId);
+
+        const role = await this.db.get(holonId.toString(), 'roles', roleId);
         if (!role) {
             await ctx.answerCbQuery('Role not found');
             return;
@@ -705,10 +708,10 @@ export default class Roles {
         let holonId = ctx.callbackQuery.message.chat.id
         let userID = ctx.callbackQuery.from.id;
         let username = ctx.callbackQuery.from.username;
-        let messageID = ctx.callbackQuery.message.message_id;
+        let messageId = ctx.callbackQuery.message.message_id;
         let roleid = ctx.match[1];
 
-        let role = await this.db.get(holonId + '/roles', roleid);
+        let role = await this.db.get(holonId.toString(), 'roles', roleid);
 
         // Migrate old string-based participants to user objects if needed
         if (role.participants && role.participants.length > 0) {
@@ -727,7 +730,7 @@ export default class Roles {
                     return p;
                 });
                 // Save the migrated role
-                await this.db.put(holonId + '/roles', role);
+                await this.db.put(holonId.toString(), 'roles', role);
             }
         }
 
@@ -756,21 +759,21 @@ export default class Roles {
             ctx.answerCbQuery('You joined the role');
         }
 
-        await this.db.put(holonId + '/roles', role); // saves changes to the role
+        await this.db.put(holonId.toString(), 'roles', role); // saves changes to the role
 
-        // user.participated[messageID] = !user.participated[messageID];
+        // user.participated[messageId] = !user.participated[messageId];
 
-        // await this.db.put(holonId + '/users', user);
+        // await this.db.put(holonId.toString(), 'users', user);
 
 
-        let roles = await this.db.getAll(holonId + '/roles');
+        let roles = await this.db.getAll(holonId.toString(), 'roles');
 
         //update picture and markup:
         this.ui.getRolesTable(roles, holonId).then((path) => {
             //send the image
             ctx.editMessageMedia(
                 { type: 'photo', media: { source: path }, caption: createPaddedCaption('') }, 
-                Markup.inlineKeyboard(createroles(roles, messageID))
+                Markup.inlineKeyboard(createroles(roles, messageId))
             ).catch((error) => { console.log(error) });
         })
 
@@ -782,8 +785,8 @@ export default class Roles {
         const roleId = ctx.match[1];
         let holonId = ctx.callbackQuery.message.chat.id;
         let messageId = ctx.callbackQuery.message.message_id;
-        
-        let role = await this.db.get(holonId + '/roles', roleId);
+
+        let role = await this.db.get(holonId.toString(), 'roles', roleId);
         if (!role) {
             await ctx.answerCbQuery('Role not found');
             return;
@@ -802,15 +805,15 @@ export default class Roles {
                 parentTitle: role.title,
                 holonId: holonId
             };
-            
-            await this.db.put(holonId + '/checklists', checklist);
-            
+
+            await this.db.put(holonId.toString(), 'checklists', checklist);
+
             // Update role with checklist ID
             role.checklistId = messageId.toString();
-            await this.db.put(holonId + '/roles', role);
+            await this.db.put(holonId.toString(), 'roles', role);
         }
 
-        const checklist = await this.db.get(holonId + '/checklists', role.checklistId);
+        const checklist = await this.db.get(holonId.toString(), 'checklists', role.checklistId);
         if (!checklist) {
             await ctx.answerCbQuery('Checklist not found');
             return;
@@ -831,15 +834,15 @@ export default class Roles {
     async handleCheckItem(ctx) {
         const [checklistId, itemIndex] = ctx.match[1].split('_');
         let holonId = ctx.chat.id;
-        let checklist = await this.db.get(holonId + '/checklists', checklistId);
-        
+        let checklist = await this.db.get(holonId.toString(), 'checklists', checklistId);
+
         if (!checklist || !checklist.items[itemIndex]) {
             await ctx.answerCbQuery('Item not found');
             return;
         }
 
         checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
-        await this.db.put(holonId + '/checklists', checklist);
+        await this.db.put(holonId.toString(), 'checklists', checklist);
 
         await ctx.editMessageText(
             `👥 ${checklist.parentTitle || 'Role'} Tasks:`,
@@ -862,8 +865,8 @@ export default class Roles {
 
         // Get the role to find its checklist ID
         let holonId = ctx.callbackQuery.message.chat.id;
-        let role = await this.db.get(holonId + '/roles', roleId);
-        
+        let role = await this.db.get(holonId.toString(), 'roles', roleId);
+
         if (!role || !role.checklistId) {
             await ctx.answerCbQuery('Role checklist not found');
             return;
@@ -881,9 +884,9 @@ export default class Roles {
     async handleBackToRole(ctx) {
         const roleId = ctx.match[1];
         let holonId = ctx.callbackQuery.message.chat.id;
-        
+
         try {
-            const role = await this.db.get(holonId + '/roles', roleId);
+            const role = await this.db.get(holonId.toString(), 'roles', roleId);
             if (!role) {
                 await ctx.answerCbQuery('Role not found');
                 return;
@@ -891,9 +894,9 @@ export default class Roles {
 
             // Delete the checklist message since we're going back to the main roles view
             await ctx.deleteMessage().catch(() => {});
-            
+
             // Send roles view again
-            let roles = await this.db.getAll(holonId + '/roles');
+            let roles = await this.db.getAll(holonId.toString(), 'roles');
             this.ui.getRolesTable(roles, holonId).then((path) => {
                 ctx.replyWithPhoto(
                     { source: fs.createReadStream(path) }, 
@@ -937,7 +940,7 @@ export default class Roles {
     }
 }
 
-function createroles(roles, messageID) {
+function createroles(roles, messageId) {
     let mu = []
     roles.forEach(function (role) {
         // Add checklist indicator if role has a checklist
@@ -968,7 +971,7 @@ function createroles(roles, messageID) {
     // Add management and clear buttons
     mu.push([
         Markup.button.callback('⚙️ Manage Roles', 'manage_roles'),
-        Markup.button.callback('🧹 Clear all roles', `clearroles_${messageID}`)
+        Markup.button.callback('🧹 Clear all roles', `clearroles_${messageId}`)
     ]);
     
     return mu;

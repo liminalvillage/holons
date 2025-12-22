@@ -27,7 +27,7 @@ saveprofileScene.action('public', (ctx) => {
   ctx.session.id = ctx.from.id
   console.log(ctx.session)
   //store data in the db
-  ctx.session.db.holosphere.put(userID,"profile",createProfile(ctx.session))
+  ctx.session.db.put(userID,"profile",createProfile(ctx.session))
   if (ctx.session.stage === ctx.session.sequence.length) ctx.scene.enter('done');
   else ctx.scene.enter(ctx.session.sequence[ctx.session.stage]);
 });

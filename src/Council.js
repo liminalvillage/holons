@@ -71,7 +71,8 @@ class Council {
         this.bot.command("summary", async (ctx) => {
             holonId = ctx.message.chat.id
             let hex = ctx.message.text.split('/summary ')[1];
-            let summary = await this.db.get('cells').get(hex).get('summary')
+            let cell = await this.db.getGlobal('cell', hex);
+            let summary = cell?.summary;
             if (!summary) {
                 summary = await this.getChildSummary(hex)
             }
@@ -99,7 +100,7 @@ class Council {
         cellinfo.summary = summary
         // save the summary
 
-        await this.db.put('cell', cellinfo)
+        await this.db.putGlobal('cell', cellinfo)
 
         return
     }
@@ -183,10 +184,10 @@ class Council {
     }
 
     async getCellInfo(id) {
-        let cellInfo = await this.db.get('cell', id)
+        let cellInfo = await this.db.getGlobal('cell', id)
         if (!cellInfo) {
             cellInfo = emptycell(id)
-            await this.db.put('cell', cellInfo)
+            await this.db.putGlobal('cell', cellInfo)
         }
         return cellInfo
 

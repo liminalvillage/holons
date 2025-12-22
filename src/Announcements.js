@@ -37,7 +37,7 @@ class Announcements {
 
     async announce(ctx) {
         let holonId = ctx.chat.id;
-        let messageID = ctx.message.message_id;
+        let messageId = ctx.message.message_id;
         const language = await this.settings.getLanguage(holonId)
         const message = ctx.message.text.split(' ').slice(1).join(' ')
 
@@ -47,7 +47,7 @@ class Announcements {
             return ctx.scene.enter('input_scene', {
                 promptText: utils.i18next.t('announcementprompt', { lng: language }),
                 allowEmpty: false,
-                originalCommandMessageId: messageID, // Preserve original command message ID
+                originalCommandMessageId: messageId, // Preserve original command message ID
                 onComplete: async (callbackCtx, message) => {
                     // Retrieve the original command message ID from scene state
                     const originalMessageId = callbackCtx.scene.state.originalCommandMessageId || callbackCtx.message.message_id;
@@ -57,25 +57,25 @@ class Announcements {
         }
 
         // Message provided in command, process directly
-        await this.createAndPublishAnnouncement(ctx, message, messageID);
+        await this.createAndPublishAnnouncement(ctx, message, messageId);
     }
 
     async createAndPublishAnnouncement(ctx, message, originalMessageId = null) {
         let holonId = ctx.chat.id;
         // Use provided originalMessageId if available, otherwise fall back to current message ID
         // This ensures consistency: command message ID is used whether invoked directly or via InputScene
-        let messageID = originalMessageId !== null ? originalMessageId : ctx.message.message_id;
+        let messageId = originalMessageId !== null ? originalMessageId : ctx.message.message_id;
         const language = await this.settings.getLanguage(holonId);
 
         let announcement = {
-            id: messageID,
+            id: messageId,
             user: ctx.from,
             date: new Date(),
             content: message,
             chat: holonId
         }
 
-        await this.db.put(holonId + '/announcements', announcement);
+        await this.db.put(holonId.toString(), 'announcements', announcement);
 
         // Send formatted announcement in local chat
         const formattedMessage = this.createAnnouncementMessage(announcement, language);
@@ -102,7 +102,7 @@ class Announcements {
 
             // Get existing federation tracking info
             const federationKey = `${announcement.chat}_${announcement.id}_fedannouncements`;
-            let federatedMessages = await this.db.get('federation_messages', federationKey) || {
+            let federatedMessages = await this.db.getGlobal('federation_messages', federationKey) || {
                 id: federationKey,
                 holonId: announcement.chat,
                 announcementId: announcement.id,
@@ -189,7 +189,7 @@ class Announcements {
 
             // Save the updated federation message tracking information
             if (federatedMessages.messages.length > 0) {
-                await this.db.put('federation_messages', federatedMessages);
+                await this.db.putGlobal('federation_messages', federatedMessages);
                 console.log(`[handleFederatedAnnouncements] Saved federation tracking for ${federatedMessages.messages.length} messages`);
             }
 

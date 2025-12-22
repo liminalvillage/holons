@@ -40,7 +40,7 @@ export class REAEventStore {
         if (!event.id) {
             throw new Error('REA event must have an id');
         }
-        await this.db.put(`${holonId}/rea_events`, event);
+        await this.db.put(holonId.toString(), 'rea_events', event);
         return event;
     }
 
@@ -64,7 +64,7 @@ export class REAEventStore {
      * @returns {Promise<REAEvent|null>} The event or null
      */
     async get(holonId, eventId) {
-        return this.db.get(`${holonId}/rea_events`, eventId);
+        return this.db.get(holonId.toString(), 'rea_events', eventId);
     }
 
     /**
@@ -73,7 +73,7 @@ export class REAEventStore {
      * @returns {Promise<REAEvent[]>} All events
      */
     async getAll(holonId) {
-        const events = await this.db.getAll(`${holonId}/rea_events`);
+        const events = await this.db.getAll(holonId.toString(), 'rea_events');
         return events || [];
     }
 

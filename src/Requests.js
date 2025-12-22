@@ -37,9 +37,9 @@ class Request {
         
         bot.action('OFFER', async (ctx) => {
           let holonId = ctx.message.chat.id;
-          let offer = await this.db.get(holonId + '/offers', ctx.message.message_id)
+          let offer = await this.db.get(holonId.toString(), 'offers', ctx.message.message_id)
           offer['exchange_type'] = 'offer';
-          await this.db.put(holonId + '/offers', offer)
+          await this.db.put(holonId.toString(), 'offers', offer)
           ctx.editMessageText('You chose: Offer. What\'s next?', getKeyboard(offer));
         });
         
@@ -133,7 +133,7 @@ export async function request(type, ctx, db) {
     // Extract request from command argument
   
     let holonId = ctx.message.chat.id;
-    let messageID = ctx.message.message_id;
+    let messageId = ctx.message.message_id;
     const text = ctx.message.text;
     const sender = ctx.from;
 
@@ -148,10 +148,10 @@ export async function request(type, ctx, db) {
     }
     ctx.reply(`${ctx.from.username}'s ${type} for "${request.title}" has been added to the list.`) 
 
-    ctx.reply(createMessage(request), markup).then((ctx) => {
+    ctx.reply(createMessage(request), markup).then(async (ctx) => {
         // Add the message id to the quest
         request.id = ctx.message_id;
-        this.db.put(holonId + '/offers',request)
+        await db.put(holonId.toString(), 'offers', request)
     });
 }
 
@@ -159,7 +159,7 @@ export async function offer(ctx, db) {
     // Extract request from command argument
   
     let holonId = ctx.message.chat.id;
-    let messageID = ctx.message.message_id;
+    let messageId = ctx.message.message_id;
     const text = ctx.message.text;
     const sender = ctx.from;
 
@@ -173,12 +173,12 @@ export async function offer(ctx, db) {
     }
     ctx.reply(`${ctx.from.username}'s request for "${request.title}" has been added to the list.`) 
 
-    ctx.reply(createMessage(request), createProperties()).then((ctx) => {
+    ctx.reply(createMessage(request), createProperties()).then(async (ctx) => {
         // Add the message id to the quest
         request.id = ctx.message_id;
-        this.db.put(holonId + '/offers',request)
+        await db.put(holonId.toString(), 'offers', request)
     });
-   
+
 
 }
 
@@ -208,9 +208,9 @@ export async function offer(ctx, db) {
 
 export async function requests(ctx, db) {
     let holonId = ctx.message.chat.id;
-    let messageID = ctx.message.message_id;
+    let messageId = ctx.message.message_id;
     // Print list of unfulfilled requests
-    let requests = this.db.getAll(holonId + '/offers')
+    let requests = await db.getAll(holonId.toString(), 'offers')
     let message = 'Here are the currently open requests:\n';
     ctx.reply(message, createButtons(requests));
 }

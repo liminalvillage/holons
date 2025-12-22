@@ -56,13 +56,13 @@ class Library {
             ctx.reply('Please specify an item to add and optional credits. eg: /additem hammer 5');
             return;
         }
-        if(await this.db.get(holonId + '/library', item)) {
+        if(await this.db.get(holonId.toString(), 'library', item)) {
             ctx.reply(`${item} is already in the library.`);
             return;
         }
 
         const itemCredits = parseInt(credits) || 1;
-        await this.db.put(holonId + '/library', { 
+        await this.db.put(holonId.toString(), 'library', { 
             id: item, 
             borrowed: false,
             credits: itemCredits,
@@ -81,7 +81,7 @@ class Library {
             ctx.reply('Please specify an item to remove. eg: /removeitem hammer');
             return;
         }
-        await this.db.del(holonId + '/library', item);
+        await this.db.delete(holonId.toString(), 'library', item);
         ctx.reply(`Removed ${item} from the library.`);
     }
 
@@ -94,7 +94,7 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(holonId + '/library', item);
+        let currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -120,7 +120,7 @@ class Library {
 
             // Deduct credits including deposit
             await this.updateUserCredits(ctx.from.id, holonId, -totalCost);
-            await this.db.put(holonId + '/deposits', {
+            await this.db.put(holonId.toString(), 'deposits', {
                 id: item,
                 amount: deposit,
                 borrower: ctx.from.id
@@ -148,7 +148,7 @@ class Library {
 
         currentItem.borrowed = true;
         currentItem.borrower = ctx.from.username;
-        await this.db.put(holonId + '/library', currentItem);
+        await this.db.put(holonId.toString(), 'library', currentItem);
 
         if (fromKeyboard) {
             let list = await this.getLibraryItems(ctx);
@@ -170,7 +170,7 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(holonId + '/library', item);
+        let currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -182,7 +182,7 @@ class Library {
         }
 
         currentItem.credits = parseInt(credits);
-        await this.db.put(holonId + '/library', currentItem);
+        await this.db.put(holonId.toString(), 'library', currentItem);
         ctx.reply(`Updated ${item} to ${credits} credits per borrow.`);
     }
 
@@ -202,13 +202,13 @@ class Library {
     }
 
     async getUserCredits(userId, holonId) {
-        const credits = await this.db.get(holonId + '/credits', userId.toString());
+        const credits = await this.db.get(holonId.toString(), 'credits', userId.toString());
         return credits?.amount || 10; // New users start with 10 credits
     }
 
     async updateUserCredits(userId, holonId, amount) {
         const current = await this.getUserCredits(userId, holonId);
-        await this.db.put(holonId + '/credits', {
+        await this.db.put(holonId.toString(), 'credits', {
             id: userId.toString(),
             amount: current + amount
         });
@@ -223,7 +223,7 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(holonId + '/library', item);
+        let currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -239,10 +239,10 @@ class Library {
         }
 
         // Return deposit if item is returned in good condition
-        const deposit = await this.db.get(holonId + '/deposits', currentItem.id);
+        const deposit = await this.db.get(holonId.toString(), 'deposits', currentItem.id);
         if (deposit) {
             await this.updateUserCredits(ctx.from.id, holonId, deposit.amount);
-            await this.db.del(holonId + '/deposits', currentItem.id);
+            await this.db.delete(holonId.toString(), 'deposits', currentItem.id);
 
             // Create REA events for the return transaction
             try {
@@ -263,7 +263,7 @@ class Library {
 
         currentItem.borrowed = false;
         currentItem.borrower = null;
-        await this.db.put(holonId + '/library', currentItem);
+        await this.db.put(holonId.toString(), 'library', currentItem);
 
         if (fromKeyboard) {
             let list = await this.getLibraryItems(ctx);
@@ -295,7 +295,7 @@ class Library {
 
     async getLibraryItems(ctx) {
         let holonId = ctx.chat.id;
-        let list = await this.db.getAll(holonId + '/library');
+        let list = await this.db.getAll(holonId.toString(), 'library');
         list.sort((a, b) => a.id.localeCompare(b.id));
         return list;
     }
@@ -327,7 +327,7 @@ class Library {
             return;
         }
 
-        let currentItem = await this.db.get(holonId + '/library', item);
+        let currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -341,7 +341,7 @@ class Library {
             date: new Date()
         });
 
-        await this.db.put(holonId + '/library', currentItem);
+        await this.db.put(holonId.toString(), 'library', currentItem);
         ctx.reply(`Thank you for rating ${item}!`);
     }
 
@@ -349,7 +349,7 @@ class Library {
         const [_, item, ...issueWords] = ctx.message.text.split(/\s+/);
         const issue = issueWords.join(' ');
 
-        let currentItem = await this.db.get(holonId + '/library', item);
+        let currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
             ctx.reply(`${item} is not in the library.`);
             return;
@@ -363,7 +363,7 @@ class Library {
             resolved: false
         });
 
-        await this.db.put(holonId + '/library', currentItem);
+        await this.db.put(holonId.toString(), 'library', currentItem);
         ctx.reply(`Issue reported for ${item}. The owner will be notified.`);
     }
 

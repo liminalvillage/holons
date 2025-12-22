@@ -6,7 +6,7 @@ import i18next from 'i18next';
 
 // Import all modules
 import Server from '../src/Server.js';
-import DB from '../src/DB.js';
+import createHoloSphere from '../src/createHoloSphere.js';
 import UI from '../src/UI.js';
 import H3 from '../src/H3.js';
 import Holons from '../src/Holons.js';
@@ -44,7 +44,7 @@ export const serviceDefinitions = {
   signalManager: {
     factory: ({ telebot }) => {
       const signalManager = new SignalManager(telebot);
-      log.info('SignalManager initialized');
+      log.debug('SignalManager initialized');
       return signalManager;
     },
     singleton: true,
@@ -133,15 +133,17 @@ export const serviceDefinitions = {
     dependencies: ['config', 'logger'],
   },
 
-  // Database
+  // Database (thin wrapper around HoloSphere)
   database: {
-    factory: async ({ config, logger }) => {
+    factory: async ({ config }) => {
       const appname = config.isDevelopment ? 'HolonsDebug' : 'Holons';
-      const db = new DB(appname);
-      await db.init();
-      
-      log.info('Database initialized', { appname });
-      return db;
+      const holosphere = createHoloSphere(appname);
+
+      // Add self-reference so modules can use this.db.holosphere.xyz() consistently
+      holosphere.holosphere = holosphere;
+
+      log.debug('HoloSphere initialized', { appname });
+      return holosphere;
     },
     singleton: true,
     dependencies: ['config', 'logger'],
@@ -202,7 +204,7 @@ export const serviceDefinitions = {
   inputScene: {
     factory: ({ telebot }) => {
       const inputScene = new InputScene(telebot);
-      log.info('InputScene utility initialized and registered');
+      log.debug('InputScene utility initialized and registered');
       return inputScene;
     },
     singleton: true,
@@ -418,7 +420,7 @@ export const postInitHooks = {
       // Log diagnostics if in debug mode
       if (process.env.SIGNAL_DEBUG === 'true') {
         const diagnostics = signalManager.getDiagnostics();
-        log.info('Signal Manager Diagnostics:', {
+        log.debug('Signal Manager Diagnostics:', {
           totalSignals: diagnostics.totalSignals,
           moduleCount: Object.keys(diagnostics.byModule).length,
           conflictCount: diagnostics.conflicts.length

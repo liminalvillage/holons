@@ -161,7 +161,7 @@ export default class Holons {
         let tokenContract = new ethers.Contract(tokenAddress, ['function balanceOf(address) view returns (uint256)'], this.provider);
         let contractBalance = await tokenContract.balanceOf(address);
         
-        let users = await this.db.getAll(holonId.toString() + '/users');
+        let users = await this.db.getAll(holonId.toString(), 'users');
         if (!users || users.length === 0) {
           await ctx.reply("No users found in the database.");
           await ctx.scene.leave();
@@ -481,7 +481,7 @@ export default class Holons {
         for (let i = 0; i < members.length; i++) {
           const member = members[i];
           try {
-            const user = await this.db.get('users', member);
+            const user = await this.db.get(holonId.toString(), 'users', member);
             if (user && user.first_name) {
               message += `${i + 1}: ${user.first_name} ${user.last_name ? user.last_name.charAt(0) + '.' : ''} (${member})\n`;
             } else {
@@ -581,7 +581,7 @@ export default class Holons {
     
       // Try to get a display name for the member
       try {
-        const users = await this.db.getAll(holonId.toString() + '/users');
+        const users = await this.db.getAll(holonId.toString(), 'users');
         const userMap = users.reduce((map, user) => {
           map[user.id.toString()] = user.username || user.id.toString();
           return map;
@@ -1247,7 +1247,7 @@ export default class Holons {
     const tokenAddress = args[0];
     console.log("tokenAddress from tokenBalance(): ", tokenAddress);
     
-    let users = await this.db.getAll(holonId.toString() + '/users');
+    let users = await this.db.getAll(holonId.toString(), 'users');
     if (!users || users.length === 0) {
       return ctx.reply("No users found in the database.");
     }
@@ -1312,7 +1312,7 @@ export default class Holons {
     
     // Step 1: Fetch users from database
     console.log("\n--- STEP 1: Fetching users from database ---");
-    let users = await this.db.getAll(holonId.toString() + '/users')
+    let users = await this.db.getAll(holonId.toString(), 'users')
     if (!users) {
       console.log("❌ No users found in database");
       return ctx.reply("No users found");
@@ -1690,7 +1690,7 @@ export default class Holons {
     // Only the internal members can move external members trough zones!
 
     // If it isn't continue regularly
-    let users = await this.db.getAll(holonId.toString() + '/users');
+    let users = await this.db.getAll(holonId.toString(), 'users');
     let userIds = users.map(user => user.id.toString());
 
     let holonAddressManaged;
@@ -1786,7 +1786,7 @@ export default class Holons {
     // Only the internal members can move external members trough zones!
 
     // If it isn't continue regularly
-    // let users = await this.db.getAll(holonId.toString() + '/users'); // users variable seems unused in this function
+    // let users = await this.db.getAll(holonId.toString(), 'users'); // users variable seems unused in this function
     let userIdsParams = utils.getParameters(ctx);
     console.log("userIdsParams from addHolonBundle: ", userIdsParams);
 
@@ -2098,7 +2098,7 @@ export default class Holons {
       // }
 
       // Retrieve all users from the database for the given holonId
-      const users = await this.db.getAll(holonId.toString() + '/users');
+      const users = await this.db.getAll(holonId.toString(), 'users');
       const userMap = users.reduce((map, user) => {
           map[user.id] = user.username; // Assuming user.id is the address and user.username is the tag
           return map;
@@ -2306,7 +2306,7 @@ export default class Holons {
   //     const holon = await this.getHolonContract(holonAddress);
 
   //     // Retrieve all users from the database for the given holonId
-  //     let users = await this.db.getAll(holonId.toString() + '/users');
+  //     let users = await this.db.getAll(holonId.toString(), 'users');
 
   //     // Map user tags to user IDs and convert them to strings
   //     const userIds = userTags.map(tag => {
@@ -2471,7 +2471,7 @@ export default class Holons {
       const holon = await this.getHolonContract(holonAddress);
   
       // Retrieve all users from the database for the given holonId
-      let users = await this.db.getAll(holonId.toString() + '/users');
+      let users = await this.db.getAll(holonId.toString(), 'users');
   
       // Map userTags to user IDs and convert them to strings
       const userIds = userTags.map(tag => {
@@ -2553,7 +2553,7 @@ export default class Holons {
   // Utility function to retrieve user by tag
   async getUserByTag(holonId, tag) {
       // Retrieve all users from the database for the given holonId
-      const users = await this.db.getAll(holonId.toString() + '/users');
+      const users = await this.db.getAll(holonId.toString(), 'users');
       const username = tag.startsWith('@') ? tag.slice(1) : tag;
       const user = users.find(u => u.username === username);
       if (!user) {
@@ -2601,7 +2601,7 @@ export default class Holons {
             return ctx.reply(`This holon is of type "${flavor}" and does not support zones. Only external holons have zone functionality.`);
         }
         
-        const users = await this.db.getAll(holonId.toString() + '/users');
+        const users = await this.db.getAll(holonId.toString(), 'users');
 
         // Retrieve users by tags
         const senderUser = await this.getUserByTag(holonId, senderTag);
@@ -2840,7 +2840,7 @@ export default class Holons {
         }
       }
 
-      const users = await this.db.getAll(holonId.toString() + '/users');
+      const users = await this.db.getAll(holonId.toString(), 'users');
       const userMap = users.reduce((map, user) => {
         map[user.id] = user.username;
         return map;
@@ -3009,7 +3009,7 @@ export default class Holons {
             }
         }
 
-        const usersFromDB = await this.db.getAll(holonId.toString() + '/users');
+        const usersFromDB = await this.db.getAll(holonId.toString(), 'users');
         const userMap = usersFromDB.reduce((map, user) => {
           map[user.id.toString()] = user.username; // Ensure DB user ID is string for map key
           return map;
@@ -3179,7 +3179,7 @@ export default class Holons {
         return;
       }
 
-      const dbUsers = await this.db.getAll(holonId.toString() + '/users');
+      const dbUsers = await this.db.getAll(holonId.toString(), 'users');
       if (!dbUsers || dbUsers.length === 0) {
         await ctx.reply("ℹ️ No users found in the database to sync.").catch(e => console.log("Error replying no db users:", e.message));
         // Decide if we should still sync scores (e.g. to remove appreciation for non-existent users if contract supports it)
@@ -3290,7 +3290,7 @@ export default class Holons {
       }
     } else {
       // For local members, use the existing user lookup logic
-    const users = await this.db.getAll(holonId.toString() + '/users');
+    const users = await this.db.getAll(holonId.toString(), 'users');
     const userMap = users.reduce((map, user) => {
       map[user.id.toString()] = user.username || user.id.toString();
       return map;
@@ -3419,7 +3419,7 @@ Select the TARGET zone:`;
       }
     } else {
       // For local members, use the existing user lookup logic
-    const users = await this.db.getAll(holonId.toString() + '/users');
+    const users = await this.db.getAll(holonId.toString(), 'users');
     const userMap = users.reduce((map, user) => {
       map[user.id.toString()] = user.username || user.id.toString();
       return map;

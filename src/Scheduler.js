@@ -101,13 +101,13 @@ class Scheduler {
 
     async deleteTasks() {
         // Delete all recurring tasks from database
-        await this.db.holosphere.deleteAllGlobal('recurring');
-        //await this.db.holosphere.deleteAllGlobal('recurringlookup');
+        await this.db.deleteAllGlobal('recurring');
+        //await this.db.deleteAllGlobal('recurringlookup');
     }
 
     async loadTasks() {
         // Load all recurring tasks from database and schedule them
-        const tasks = await this.db.holosphere.getAllGlobal('recurring');
+        const tasks = await this.db.getAllGlobal('recurring');
         
         if (tasks && tasks.length > 0) {
             tasks.forEach(async task => {
@@ -164,8 +164,8 @@ class Scheduler {
         };
 
         // Save to database
-        await this.db.holosphere.putGlobal('recurring', task);
-        await this.db.holosphere.putGlobal('recurringlookup', {id: holonId + quest.id, taskID: task.id});
+        await this.db.putGlobal('recurring', task);
+        await this.db.putGlobal('recurringlookup', {id: holonId + quest.id, taskID: task.id});
         
         // Schedule the task
         await this.scheduleTask(task,ctx);
@@ -269,7 +269,7 @@ class Scheduler {
                 // Copy checklist if it exists
                 if (originalTask.checklistId) {
                     try {
-                        const originalChecklist = await this.db.get(originalTask.holonId + '/checklists', originalTask.checklistId);
+                        const originalChecklist = await this.db.get(originalTask.holonId, 'checklists', originalTask.checklistId);
                         if (originalChecklist) {
                             // Create a new checklist with copied items but unchecked
                             const newChecklist = {
@@ -284,7 +284,7 @@ class Scheduler {
                             };
 
                             // Save new checklist
-                            await this.db.put(questHolonId + '/checklists', newChecklist);
+                            await this.db.put(questHolonId, 'checklists', newChecklist);
 
                             // Update quest with new checklist ID
                             quest.checklistId = quest.id.toString();
@@ -296,12 +296,12 @@ class Scheduler {
 
                 // Save the updated quest
                 console.log('Saving quest with holon ID:', questHolonId);
-                await this.db.put(questHolonId + '/quests', quest);
+                await this.db.put(questHolonId, 'quests', quest);
                 const language = await this.settings.getLanguage(holonId);
                 await this.quests.updateMessage(ctx, quest, language, false);
                 
                 // Add the quest id to the lookup table
-                await this.db.holosphere.putGlobal('recurringlookup', {
+                await this.db.putGlobal('recurringlookup', {
                     id: holonId + quest.id,
                     taskID: task.id
                 });
@@ -374,7 +374,7 @@ class Scheduler {
             console.log('Stopping task:', taskId);
             
             // Get the task to log details before deletion
-            const task = await this.db.holosphere.getGlobal('recurring', taskId);
+            const task = await this.db.getGlobal('recurring', taskId);
             if (task) {
                 console.log('Found task to stop, holon ID:', task.holonId);
             } else {
@@ -394,7 +394,7 @@ class Scheduler {
             // Find all lookup records for this task
             try {
                 // Get all lookup records
-                const lookups = await this.db.holosphere.getAllGlobal('recurringlookup');
+                const lookups = await this.db.getAllGlobal('recurringlookup');
                 console.log('Found', lookups ? lookups.length : 0, 'lookup records to check');
                 
                 if (lookups && lookups.length > 0) {
@@ -403,7 +403,7 @@ class Scheduler {
                     
                     // Delete all related lookup records
                     for (const lookup of relatedLookups) {
-                        await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
+                        await this.db.deleteGlobal('recurringlookup', lookup.id);
                         console.log('Deleted lookup record:', lookup.id);
                     }
                 }
@@ -413,7 +413,7 @@ class Scheduler {
             
             // Delete the main task
             if (task) {
-                await this.db.holosphere.deleteGlobal('recurring', taskId);
+                await this.db.deleteGlobal('recurring', taskId);
                 console.log('Deleted recurring task:', taskId);
             }
             
@@ -427,7 +427,7 @@ class Scheduler {
     async getRecurringTask(taskId) {
         try {
             console.log(`Getting recurring task: ${taskId}`);
-            const task = await this.db.holosphere.getGlobal('recurring', taskId);
+            const task = await this.db.getGlobal('recurring', taskId);
             if (!task) {
                 console.log(`No task found with ID: ${taskId}`);
                 return null;
@@ -440,13 +440,13 @@ class Scheduler {
     }
 
     async getRecurringLookup(holonId, questId) {
-        return await this.db.holosphere.getGlobal('recurringlookup', `${holonId}${questId}`);
+        return await this.db.getGlobal('recurringlookup', `${holonId}${questId}`);
     }
 
     async updateTaskSchedule(holonId, questId, selectedDate, ctx) {
         try {
             // Get the quest
-            const quest = await this.db.get(`${holonId}/quests`, questId);
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 console.log('No quest found to update schedule');
                 return;
@@ -457,19 +457,19 @@ class Scheduler {
 
             // Update the quest's when field with the selected date
             quest.when = selectedDate;
-            
+
             // Save the updated quest
-            await this.db.put(`${holonId}/quests`, quest);
+            await this.db.put(holonId, 'quests', quest);
 
             // If this is a recurring task, update its schedule
             if (quest.type === 'recurring') {
                 const recurringID = await this.getRecurringLookup(holonId, questId);
                 if (recurringID) {
-                    let task = await this.db.holosphere.getGlobal('recurring', recurringID.taskID);
+                    let task = await this.db.getGlobal('recurring', recurringID.taskID);
                     if (task) {
                         // Convert Date to ISO string for Nostr serialization
                         task.when = selectedDate instanceof Date ? selectedDate.toISOString() : selectedDate;
-                        await this.db.holosphere.putGlobal('recurring', task);
+                        await this.db.putGlobal('recurring', task);
                         await this.scheduleTask(task, ctx);
                     }
                 }
@@ -499,7 +499,7 @@ class Scheduler {
             }
 
             // Get the actual task using the taskID from lookup
-            const task = await this.db.holosphere.getGlobal('recurring', lookup.taskID);
+            const task = await this.db.getGlobal('recurring', lookup.taskID);
             
             if (!task) {
                 console.log('No recurring task found to remove');
@@ -541,7 +541,7 @@ class Scheduler {
             this.calendar.itemLens.set(holonId, lens);
 
             // Get the item (quest or event) to keep its message
-            const item = await this.db.get(`${holonId}/${lens}`, itemId);
+            const item = await this.db.get(holonId, lens, itemId);
             if (!item) {
                 console.log(`Item not found for calendar (${lens})`);
                 return;
@@ -619,7 +619,7 @@ class Scheduler {
             }
 
             // Get item (quest or event)
-            const item = await this.db.get(`${holonId}/${lens}`, itemId);
+            const item = await this.db.get(holonId, lens, itemId);
 
             if (!item) {
                 await ctx.answerCbQuery('Item not found');
@@ -629,7 +629,7 @@ class Scheduler {
             // Update item
             item.status = 'scheduled';
             item.when = selectedDate; // Store the UTC Date object
-            await this.db.put(`${holonId}/${lens}`, item);
+            await this.db.put(holonId, lens, item);
 
             // Schedule reminder using the scheduler instead of setTimeout
             await this.scheduleOneTimeReminder(item, ctx, lens);
@@ -707,7 +707,7 @@ class Scheduler {
                     console.log(`Executing reminder for ${lens} ${item.id}`);
 
                     // Get fresh copy of the item in case it was updated
-                    const freshItem = await this.db.get(`${itemHolon}/${lens}`, item.id);
+                    const freshItem = await this.db.get(itemHolon, lens, item.id);
                     if (!freshItem) {
                         console.log(`${lens} item ${item.id} no longer exists, skipping reminder`);
                         // Clean up the reminder record since the item no longer exists
@@ -785,7 +785,7 @@ class Scheduler {
 
             // Save the reminder ID with the item for potential cancellation
             item.reminderId = reminderId;
-            await this.db.put(`${itemHolon}/${lens}`, item);
+            await this.db.put(itemHolon, lens, item);
 
             // Store reminder data in global reminders table for persistence across restarts
             await this.saveReminderRecord({
@@ -809,7 +809,7 @@ class Scheduler {
     async saveReminderRecord(reminder) {
         try {
             // Store in the global reminders table
-            await this.db.holosphere.putGlobal('reminders', reminder);
+            await this.db.putGlobal('reminders', reminder);
 
             // Create lookup reference for easy retrieval
             const lookupKey = `${reminder.holonId}${reminder.questId}`;
@@ -818,7 +818,7 @@ class Scheduler {
                 reminderId: reminder.id
             };
 
-            await this.db.holosphere.putGlobal('reminderslookup', lookupData);
+            await this.db.putGlobal('reminderslookup', lookupData);
 
             return true;
         } catch (error) {
@@ -833,16 +833,16 @@ class Scheduler {
             console.log(`Deleting reminder record: ${reminderId}`);
             
             // Get the reminder to find associated lookup
-            const reminder = await this.db.holosphere.getGlobal('reminders', reminderId);
+            const reminder = await this.db.getGlobal('reminders', reminderId);
             if (reminder) {
                 // Delete the lookup record if it exists
                 const lookupId = `${reminder.holonId}${reminder.questId}`;
-                await this.db.holosphere.deleteGlobal('reminderslookup', lookupId);
+                await this.db.deleteGlobal('reminderslookup', lookupId);
                 console.log(`Deleted reminder lookup: ${lookupId}`);
             }
             
             // Delete the main reminder record
-            await this.db.holosphere.deleteGlobal('reminders', reminderId);
+            await this.db.deleteGlobal('reminders', reminderId);
             console.log(`Deleted reminder record: ${reminderId}`);
             
             return true;
@@ -907,7 +907,7 @@ class Scheduler {
             }
 
             // Get quest
-            const quest = await this.db.get(`${holonId}/quests`, questId);
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Task not found');
                 return;
@@ -979,14 +979,14 @@ class Scheduler {
             const questId = ctx.callbackQuery.data.split('_')[3];
             
             // Verify quest exists
-            const quest = await this.db.get(`${holonId}/quests`, questId);
-            
+            const quest = await this.db.get(holonId, 'quests', questId);
+
             if (!quest) {
                 console.log(`Quest ${questId} not found`);
                 await ctx.answerCbQuery('Could not find the task');
                 return;
             }
-            
+
             // Get language for the message
             const language = await this.settings.getLanguage(holonId);
 
@@ -1060,11 +1060,11 @@ class Scheduler {
             });
             
             // Save to database
-            await this.db.holosphere.putGlobal('recurring', task);
+            await this.db.putGlobal('recurring', task);
 
             // Create lookup reference
             const lookupId = task.holonId + task.questId;
-            await this.db.holosphere.putGlobal('recurringlookup', {
+            await this.db.putGlobal('recurringlookup', {
                 id: lookupId,
                 taskID: task.id
             });
@@ -1099,7 +1099,7 @@ class Scheduler {
     async updateRecurringTask(taskId, updates) {
         try {
             // Get existing task
-            const task = await this.db.holosphere.getGlobal('recurring', taskId);
+            const task = await this.db.getGlobal('recurring', taskId);
             if (!task) {
                 throw new Error(`Task with ID ${taskId} not found`);
             }
@@ -1124,7 +1124,7 @@ class Scheduler {
             }
             
             // Save updated task
-            await this.db.holosphere.putGlobal('recurring', task);
+            await this.db.putGlobal('recurring', task);
             
             // Stop existing job
             const existingJob = this.jobs.get(taskId);
@@ -1163,7 +1163,7 @@ class Scheduler {
         console.log('Loading saved one-time reminders...');
         try {
             // Get all reminders from the global reminders table
-            const reminders = await this.db.holosphere.getAllGlobal('reminders');
+            const reminders = await this.db.getAllGlobal('reminders');
             let loadedReminders = 0;
             
             if (reminders && reminders.length > 0) {
@@ -1185,7 +1185,7 @@ class Scheduler {
                         // Check if item still exists (support both quests and events)
                         const lens = reminder.lens || 'quests';
                         try {
-                            const item = await this.db.get(`${reminder.holonId}/${lens}`, reminder.questId);
+                            const item = await this.db.get(reminder.holonId, lens, reminder.questId);
 
                             // Skip if item doesn't exist anymore or is not scheduled
                             if (!item) {
@@ -1210,7 +1210,7 @@ class Scheduler {
                                     console.log(`Executing reminder for ${itemLens} ${reminder.questId}`);
 
                                     // Get fresh copy of the item
-                                    const freshItem = await this.db.get(`${reminder.holonId}/${itemLens}`, reminder.questId);
+                                    const freshItem = await this.db.get(reminder.holonId, itemLens, reminder.questId);
                                     if (!freshItem) {
                                         console.log(`${itemLens} item ${reminder.questId} no longer exists, skipping reminder`);
                                         await this.deleteReminderRecord(reminder.id);
@@ -1305,7 +1305,7 @@ class Scheduler {
     async migrateRecurringLookup() {
         console.log('Migrating recurring lookup from underscore to pipe format...');
         try {
-            const lookups = await this.db.holosphere.getAllGlobal('recurringlookup');
+            const lookups = await this.db.getAllGlobal('recurringlookup');
             let migratedCount = 0;
 
             if (lookups && lookups.length > 0) {
@@ -1314,8 +1314,8 @@ class Scheduler {
                     if (lookup?.id?.includes('_')) {
                         const [holonId, questId] = lookup.id.split('_');
                         const newLookupId = `${holonId}|${questId}`;
-                        await this.db.holosphere.deleteGlobal('recurringlookup', lookup.id);
-                        await this.db.holosphere.putGlobal('recurringlookup', {
+                        await this.db.deleteGlobal('recurringlookup', lookup.id);
+                        await this.db.putGlobal('recurringlookup', {
                             id: newLookupId,
                             taskID: lookup.taskID
                         });

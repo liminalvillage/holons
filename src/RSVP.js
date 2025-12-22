@@ -41,7 +41,7 @@ export default class RSVP {
             ctx.reply('Please provide a title for the RSVP.');
             return;
         }
-        let users = await this.db.getAll( holonId + '/users');
+        let users = await this.db.getAll(holonId.toString(), 'users');
         if (users.lenght == 0) {
             ctx.reply('No users found.');
             return;
@@ -57,15 +57,15 @@ export default class RSVP {
         let topic = ctx.match[1];
         let holonId = ctx.callbackQuery.message.chat.id 
         let userID = ctx.callbackQuery.from.id;
-        let messageID = ctx.callbackQuery.message.message_id;
+        let messageId = ctx.callbackQuery.message.message_id;
         let targetuser = ctx.match[1];
         if (targetuser != userID) {
             ctx.answerCbQuery('You can only change your own RSVP');
             return;
         }
 
-    
-        let user = await this.db.get(holonId + '/users',targetuser);
+
+        let user = await this.db.get(holonId.toString(), 'users', targetuser);
 
         if (!user) {
             ctx.answerCbQuery('User not active, please complete a task to activate.');
@@ -77,26 +77,26 @@ export default class RSVP {
             console.log('participate was not an object')
         }
 
-        if (user.participated[messageID] == undefined) {
-            user.participated[messageID] = false;
+        if (user.participated[messageId] == undefined) {
+            user.participated[messageId] = false;
         }
 
-        user.participated[messageID] = !user.participated[messageID];
+        user.participated[messageId] = !user.participated[messageId];
 
-        await this.db.put(holonId + '/users', user);
-        let users = await this.db.getAll(holonId + '/users');
+        await this.db.put(holonId.toString(), 'users', user);
+        let users = await this.db.getAll(holonId.toString(), 'users');
   
         ctx.editMessageReplyMarkup({
             chat_id: holonId,
-            message_id: messageID,
-            inline_keyboard: createList(users, messageID)
+            message_id: messageId,
+            inline_keyboard: createList(users, messageId)
             
         }).catch((error) => { console.log(error) });
 
     }
 }
 
-function createList(users, messageID) {
+function createList(users, messageId) {
     let mu = []
     users.forEach(function (user) {
         if (typeof user.participated !== 'object') {
@@ -104,7 +104,7 @@ function createList(users, messageID) {
             console.log('participated is not an object')
         }
         let name = (user.first_name ? user.first_name : user.username) + (user.second_name ? ' ' + user.second_name : '');
-        mu.push([Markup.button.callback((user.participated[messageID] ? '✅ ' : '☑️ ') + name, `participate_rsvp_${user.id}`)])
+        mu.push([Markup.button.callback((user.participated[messageId] ? '✅ ' : '☑️ ') + name, `participate_rsvp_${user.id}`)])
     })
     return mu;
 

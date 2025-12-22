@@ -215,7 +215,7 @@ export default class Quests {
     // Core quest creation
     async quest(type, ctx) {
         const holonId = getholonId(ctx);
-        const messageID = getMessageId(ctx);
+        const messageId = getMessageId(ctx);
         const language = await this.getLanguage(holonId);
         const text = ctx.message.text || ctx.message.caption;
         
@@ -233,7 +233,7 @@ export default class Quests {
         if (type === 'task') {
             const settings = await this.settings.getSettings(holonId);
             if (settings.maxTasks > 0) {
-                const userTasks = (await this.db.getAll(holonId + '/quests'))
+                const userTasks = (await this.db.getAll(holonId, 'quests'))
                     .filter(q => q.initiator?.id === sender.id &&
                            q.type === 'task' &&
                            q.status === 'ongoing');
@@ -313,7 +313,7 @@ export default class Quests {
             quest.holon = ctx.platform === 'discord' ? nctx.channel.id : nctx.chat.id;
         }
 
-        await this.db.put(holonId + '/quests', quest);
+        await this.db.put(holonId, 'quests', quest);
 
         // Update buttons and pin message
         const questHolon = Quests.getQuestHolon(quest);
@@ -323,7 +323,7 @@ export default class Quests {
         } catch {}
 
         this.bot.telegram.pinChatMessage(questHolon, quest.id, { disable_notification: true }).catch(() => {});
-        this.bot.telegram.deleteMessage(holonId, messageID).catch(() => {});
+        this.bot.telegram.deleteMessage(holonId, messageId).catch(() => {});
 
         // Generate quest image if image mode enabled (picture will be embedded in generated image)
         if (showAsImage) {
@@ -343,32 +343,32 @@ export default class Quests {
     }
 
     async handleParticipation(ctx, action) {
-        const [, , holonId, messageID] = ctx.callbackQuery.data.split('_');
+        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
         const sender = ctx.callbackQuery.from;
 
-        log.info(`handleParticipation called - action: ${action}, holonId: ${holonId}, messageID: ${messageID}, user: ${sender.id}`);
+        log.info(`handleParticipation called - action: ${action}, holonId: ${holonId}, messageId: ${messageId}, user: ${sender.id}`);
 
         // Answer callback query IMMEDIATELY to prevent UI freezing
         ctx.answerCbQuery().catch(() => {});
 
         // Queue this operation to prevent race conditions
-        await this.queueQuestOperation(holonId, messageID, async () => {
+        await this.queueQuestOperation(holonId, messageId, async () => {
             const language = await this.getLanguage(holonId);
 
-            log.info(`Attempting to fetch quest from DB: ${holonId}/quests, key: ${messageID}`);
+            log.info(`Attempting to fetch quest from DB: ${holonId}/quests, key: ${messageId}`);
             let quest;
             try {
-                quest = await this.db.get(holonId + '/quests', messageID);
+                quest = await this.db.get(holonId, 'quests', messageId);
                 log.info(`Quest fetched successfully: ${quest ? quest.title : 'null'}`);
             } catch (err) {
-                log.error(`Failed to fetch quest from DB: ${holonId}/quests/${messageID}`, err);
+                log.error(`Failed to fetch quest from DB: ${holonId}/quests/${messageId}`, err);
             }
 
-            if (!await this.questExists(quest, ctx, messageID)) {
-                log.warn(`Quest does not exist: ${holonId}/quests/${messageID}`);
+            if (!await this.questExists(quest, ctx, messageId)) {
+                log.warn(`Quest does not exist: ${holonId}/quests/${messageId}`);
                 return;
             }
-            if (await this.handleCompletedQuestInteraction(ctx, quest, holonId, messageID, language)) return;
+            if (await this.handleCompletedQuestInteraction(ctx, quest, holonId, messageId, language)) return;
 
             quest.participants = quest.participants || [];
             quest.appreciation = quest.appreciation || [];
@@ -408,26 +408,26 @@ export default class Quests {
     }
 
     async cancel(ctx) {
-        const [, , holonId, messageID] = ctx.callbackQuery.data.split('_');
+        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
 
         let quest;
         try {
-            quest = await this.db.get(holonId + '/quests', messageID);
+            quest = await this.db.get(holonId, 'quests', messageId);
         } catch {}
 
         const questHolonId = Quests.getQuestHolon(quest);
-        const isHologram = questHolonId && questHolonId.toString() !== holonId.toString();
+        const isHologram = questHolonId && questHolonId.toString() !== holonId;
 
         if (isHologram) {
-            const msgId = ctx.callbackQuery?.message.message_id || messageID;
+            const msgId = ctx.callbackQuery?.message.message_id || messageId;
             const holonId = ctx.callbackQuery?.message.chat.id || holonId;
             await ctx.telegram.deleteMessage(holonId, msgId).catch(() => {});
             return ctx.answerCbQuery('Hologram cancelled.').catch(() => {});
         }
 
         if (!quest) {
-            const msgId = ctx.callbackQuery?.message.message_id || messageID;
+            const msgId = ctx.callbackQuery?.message.message_id || messageId;
             const holonId = ctx.callbackQuery?.message.chat.id || holonId;
             await ctx.telegram.deleteMessage(holonId, msgId).catch(() => {});
             return ctx.answerCbQuery('Quest not found or already cancelled.').catch(() => {});
@@ -453,17 +453,17 @@ export default class Quests {
             await this.scheduler.cancelReminder(quest.reminderId);
         }
 
-        await this.db.del(holonId + '/quests', messageID);
-        await ctx.telegram.unpinChatMessage(holonId, messageID).catch(() => {});
-        await ctx.deleteMessage(messageID).catch(() => {});
+        await this.db.delete(holonId, 'quests', messageId);
+        await ctx.telegram.unpinChatMessage(holonId, messageId).catch(() => {});
+        await ctx.deleteMessage(messageId).catch(() => {});
     }
 
     async complete(ctx) {
-        const [, , holonId, messageID] = ctx.callbackQuery.data.split('_');
+        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const quest = await this.db.get(holonId + '/quests', messageID);
+        const quest = await this.db.get(holonId, 'quests', messageId);
 
-        if (!await this.questExists(quest, ctx, messageID)) return;
+        if (!await this.questExists(quest, ctx, messageId)) return;
         if (quest.status === 'stopped') {
             return ctx.answerCbQuery(i18next.t('cannotcompletestopped', { lng: language }));
         }
@@ -490,13 +490,13 @@ export default class Quests {
         if (quest.timeTracking) {
             for (const [userID, hours] of Object.entries(quest.timeTracking)) {
                 if (hours > 0) {
-                    await this.expenses?.addExpense(messageID, holonId, hours, 'hour',
+                    await this.expenses?.addExpense(messageId, holonId, hours, 'hour',
                                                    quest.title, userID, holonId);
 
                     try {
                         const userInfo = await this.users.getUserInfo({ id: parseInt(userID) }, holonId);
                         userInfo.hours = (userInfo.hours || 0) + hours;
-                        await this.db.put(holonId + '/users', userInfo);
+                        await this.db.put(holonId, 'users', userInfo);
                     } catch {}
                 }
             }
@@ -507,19 +507,19 @@ export default class Quests {
         // Unified save and update
         await this.updateMessage(ctx, quest, language, { explicitHologramsToUpdate: hologramsToUpdate });
 
-        ctx.telegram.unpinChatMessage(holonId, messageID).catch(() => {});
+        ctx.telegram.unpinChatMessage(holonId, messageId).catch(() => {});
 
         await this.recordCompletionActions(quest, holonId);
 
-        ctx.reply(`Quest "${quest.title}" completed! 🎊`, { reply_to_message_id: messageID }).catch(() => {});
+        ctx.reply(`Quest "${quest.title}" completed! 🎊`, { reply_to_message_id: messageId }).catch(() => {});
     }
 
     async stop(ctx) {
-        const [, , holonId, messageID] = ctx.callbackQuery.data.split('_');
+        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const quest = await this.db.get(holonId + '/quests', messageID);
+        const quest = await this.db.get(holonId, 'quests', messageId);
 
-        if (!await this.questExists(quest, ctx, messageID)) return;
+        if (!await this.questExists(quest, ctx, messageId)) return;
 
         const sender = ctx.callbackQuery.from;
         const idx = quest.stoppers.findIndex(u => u.id === sender.id);
@@ -530,11 +530,11 @@ export default class Quests {
         if (idx > -1) {
             quest.stoppers.splice(idx, 1);
             ctx.reply(`${getDisplayName(sender)} revoked veto for "${quest.title}"`,
-                     { reply_to_message_id: messageID }).catch(() => {});
+                     { reply_to_message_id: messageId }).catch(() => {});
         } else {
             quest.stoppers.push(sender);
             ctx.reply(`${getDisplayName(sender)} stopped "${quest.title}". Please address concerns.`,
-                     { reply_to_message_id: messageID }).catch(() => {});
+                     { reply_to_message_id: messageId }).catch(() => {});
         }
 
         quest.status = quest.stoppers.length > 0 ? 'stopped' : 'ongoing';
@@ -547,16 +547,16 @@ export default class Quests {
         const holonId = ctx.callbackQuery.message.chat.id;
         
         try {
-            const quest = await this.db.get(`${holonId}/quests`, questID);
+            const quest = await this.db.get(holonId, 'quests', questID);
             if (!await this.questExists(quest, ctx, questID)) return;
-            
+
             const language = await this.getLanguage(holonId);
             if (await this.handleCompletedQuestInteraction(ctx, quest, holonId, questID, language)) return;
-            
+
             if (quest.reminderId && this.scheduler) {
                 await this.scheduler.cancelReminder(quest.reminderId);
                 delete quest.reminderId;
-                await this.db.put(`${holonId}/quests`, quest);
+                await this.db.put(holonId, 'quests', quest);
                 await this.updateMessage(ctx, quest, language);
             }
             
@@ -576,32 +576,32 @@ export default class Quests {
     }
 
     async handleTimeTracking(ctx, amount, isAdding) {
-        const [, , , holonId, messageID] = ctx.callbackQuery.data.split('_');
+        const [, , , holonId, messageId] = ctx.callbackQuery.data.split('_');
         const sender = ctx.callbackQuery.from;
 
-        log.info(`handleTimeTracking called - amount: ${amount}, isAdding: ${isAdding}, holonId: ${holonId}, messageID: ${messageID}, user: ${sender.id}`);
+        log.info(`handleTimeTracking called - amount: ${amount}, isAdding: ${isAdding}, holonId: ${holonId}, messageId: ${messageId}, user: ${sender.id}`);
 
         // Answer callback query IMMEDIATELY to prevent UI freezing
         ctx.answerCbQuery().catch(() => {});
 
         // Queue this operation to prevent race conditions
-        await this.queueQuestOperation(holonId, messageID, async () => {
+        await this.queueQuestOperation(holonId, messageId, async () => {
             const language = await this.getLanguage(holonId);
 
-            log.info(`Attempting to fetch quest from DB: ${holonId}/quests, key: ${messageID}`);
+            log.info(`Attempting to fetch quest from DB: ${holonId}/quests, key: ${messageId}`);
             let quest;
             try {
-                quest = await this.db.get(holonId + '/quests', messageID);
+                quest = await this.db.get(holonId, 'quests', messageId);
                 log.info(`Quest fetched successfully: ${quest ? quest.title : 'null'}`);
             } catch (err) {
-                log.error(`Failed to fetch quest from DB: ${holonId}/quests/${messageID}`, err);
+                log.error(`Failed to fetch quest from DB: ${holonId}/quests/${messageId}`, err);
             }
 
-            if (!await this.questExists(quest, ctx, messageID)) {
-                log.warn(`Quest does not exist: ${holonId}/quests/${messageID}`);
+            if (!await this.questExists(quest, ctx, messageId)) {
+                log.warn(`Quest does not exist: ${holonId}/quests/${messageId}`);
                 return;
             }
-            if (await this.handleCompletedQuestInteraction(ctx, quest, holonId, messageID, language)) return;
+            if (await this.handleCompletedQuestInteraction(ctx, quest, holonId, messageId, language)) return;
 
             const userId = sender.id;
 
@@ -637,8 +637,8 @@ export default class Quests {
     async showMoreActions(ctx) {
         const [,, holonId, questID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const quest = await this.db.get(holonId + '/quests', questID);
-        
+        const quest = await this.db.get(holonId, 'quests', questID);
+
         if (!await this.questExists(quest, ctx, questID)) return;
         
         const expandedButtons = this.getExpandedButtons(quest, language);
@@ -650,8 +650,8 @@ export default class Quests {
     async hideMoreActions(ctx) {
         const [,, holonId, questID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const quest = await this.db.get(holonId + '/quests', questID);
-        
+        const quest = await this.db.get(holonId, 'quests', questID);
+
         if (!await this.questExists(quest, ctx, questID)) return;
         
         await this.updateQuestMessage(ctx, quest, holonId, ctx.callbackQuery.message.message_id, 
@@ -835,7 +835,7 @@ export default class Quests {
         }
         
         if (quest.checklistId && this.checklists) {
-            const checklist = await this.db.get(Quests.getQuestHolon(quest) + '/checklists', quest.checklistId);
+            const checklist = await this.db.get(Quests.getQuestHolon(quest), 'checklists', quest.checklistId);
             if (checklist?.items.length) {
                 const completed = checklist.items.filter(i => i.checked).length;
                 lines.push(`| 📋 ${i18next.t('subtasks', { lng: language })}: ${completed}/${checklist.items.length} completed`);
@@ -913,7 +913,7 @@ export default class Quests {
             interactingUser = options.interactingUser || null;
         }
 
-        log.info(`updateMessage called - quest: ${quest.title}, holonId: ${questHolon}, messageID: ${quest.id}, useExpandedMarkup: ${useExpandedMarkup}`);
+        log.info(`updateMessage called - quest: ${quest.title}, holonId: ${questHolon}, messageId: ${quest.id}, useExpandedMarkup: ${useExpandedMarkup}`);
 
         language = language || await this.getLanguage(questHolon);
         const markupConfig = useExpandedMarkup
@@ -925,7 +925,7 @@ export default class Quests {
 
         // 1. Handle personal hologram for interacting user (before save, modifies quest.activeHolograms)
         // Only create personal hologram if the user is interacting from a group chat (not their own private chat)
-        if (interactingUser && questHolon.toString() !== interactingUser.id.toString()) {
+        if (interactingUser && questHolon !== interactingUser.id) {
             await this.personalHologram(interactingUser.id, quest);
             const hologramResult = await this.ensureTelegramHologramMessage(ctx, quest, interactingUser.id, language);
             if (hologramResult) {
@@ -944,7 +944,7 @@ export default class Quests {
 
         // 3. ONE unified save - triggers auto-propagation to federated holons
         try {
-            await this.db.put(questHolon + '/quests', quest);
+            await this.db.put(questHolon, 'quests', quest);
         } catch {}
 
         // 4. Handle federated Telegram messages
@@ -969,13 +969,13 @@ export default class Quests {
             // 2. Adding to source's activeHolograms list
             // 3. If quest is already a hologram, copies it instead of creating hologram of hologram
             const questData = {
-                id: quest.id.toString(),
+                id: quest.id,
                 ...quest
             };
 
             await this.db.propagateData(
                 questData,
-                questHolon.toString(),    // sourceHolon - where the quest lives
+                questHolon,    // sourceHolon - where the quest lives
                 userId.toString(),         // targetHolon - user's personal holon
                 'quests',
                 { mode: 'reference' }      // options - create hologram reference
@@ -1039,7 +1039,7 @@ export default class Quests {
             : i18next.t('never', { lng: language, defaultValue: 'Never' });
     }
 
-    async handleCompletedQuestInteraction(ctx, quest, holonId, messageID, language) {
+    async handleCompletedQuestInteraction(ctx, quest, holonId, messageId, language) {
         if (quest.status !== 'completed') return false;
         
         try {
@@ -1047,7 +1047,7 @@ export default class Quests {
             ctx.answerCbQuery(`Quest "${quest.title}" has already been completed`).catch(() => {});
             return true;
         } catch {
-            const msgId = ctx.callbackQuery?.message.message_id || messageID;
+            const msgId = ctx.callbackQuery?.message.message_id || messageId;
             const holonId = ctx.callbackQuery?.message.chat.id || holonId;
             
             await ctx.telegram.deleteMessage(holonId, msgId).catch(() => {});
@@ -1204,7 +1204,7 @@ export default class Quests {
 
     async regenerateQuestImageBackground(ctx, quest, holonId, messageId, markupConfig) {
         try {
-            const isHologram = holonId.toString() !== Quests.getQuestHolon(quest)?.toString();
+            const isHologram = holonId !== Quests.getQuestHolon(quest)?.toString();
             const imagePath = await this.getCachedQuestImage(quest, holonId, isHologram);
 
             if (imagePath) {
@@ -1219,19 +1219,19 @@ export default class Quests {
 
     // Remaining method implementations (add as needed)
     async delete(ctx) {
-        const [, messageID] = ctx.message.text.split(' ');
+        const [, messageId] = ctx.message.text.split(' ');
         const holonId = ctx.message.chat.id;
-        this.db.del(holonId + '/quests', messageID);
+        this.db.delete(holonId, 'quests', messageId);
         ctx.reply('Quest deleted');
     }
 
     async listtype(ctx) {
         let type = ctx.message.text.split(' ')[0].replace('/', '');
         if (type && type[type.length - 1] === 's') type = type.slice(0, -1);
-        
+
         const holonId = ctx.message.chat.id;
         const language = await this.getLanguage(holonId);
-        const quests = await this.db.getAll(holonId + '/quests');
+        const quests = await this.db.getAll(holonId, 'quests');
         
         const filtered = quests.filter(q => q.type === type);
         if (!filtered.length) {
@@ -1266,7 +1266,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quests = await this.db.getAll(holonId + '/quests');
+            const quests = await this.db.getAll(holonId, 'quests');
             const openQuests = quests.filter(q => q.status === 'ongoing');
 
             if (!openQuests.length) {
@@ -1394,17 +1394,17 @@ export default class Quests {
             };
 
             // Save appreciation record
-            await this.db.put(holonId + '/appreciations', appreciation);
+            await this.db.put(holonId, 'appreciations', appreciation);
 
             // Update user stats
             try {
                 const targetUserInfo = await this.users.getUserInfo(targetUser, holonId);
                 targetUserInfo.appreciationReceived = (targetUserInfo.appreciationReceived || 0) + amount;
-                await this.db.put(holonId + '/users', targetUserInfo);
+                await this.db.put(holonId, 'users', targetUserInfo);
 
                 const senderInfo = await this.users.getUserInfo(sender, holonId);
                 senderInfo.appreciationGiven = (senderInfo.appreciationGiven || 0) + amount;
-                await this.db.put(holonId + '/users', senderInfo);
+                await this.db.put(holonId, 'users', senderInfo);
             } catch (userError) {
                 console.error('Error updating user appreciation stats:', userError);
             }
@@ -1430,11 +1430,11 @@ export default class Quests {
         }
     }
     async publish(ctx) {
-        const [, , holonId, messageID] = ctx.callbackQuery.data.split('_');
+        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const quest = await this.db.get(holonId + '/quests', messageID);
+        const quest = await this.db.get(holonId, 'quests', messageId);
 
-        if (!await this.questExists(quest, ctx, messageID)) return;
+        if (!await this.questExists(quest, ctx, messageId)) return;
 
         const hasPermission = quest.initiator?.id === ctx.from.id ||
                              await this.checkUserAdmin(ctx.from.id, holonId);
@@ -1468,11 +1468,11 @@ export default class Quests {
         }
     }
     async broadcast(ctx) {
-        const [, , holonId, messageID] = ctx.callbackQuery.data.split('_');
+        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const quest = await this.db.get(holonId + '/quests', messageID);
+        const quest = await this.db.get(holonId, 'quests', messageId);
 
-        if (!await this.questExists(quest, ctx, messageID)) return;
+        if (!await this.questExists(quest, ctx, messageId)) return;
 
         const hasPermission = quest.initiator?.id === ctx.from.id ||
                              await this.checkUserAdmin(ctx.from.id, holonId);
@@ -1527,7 +1527,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            let quest = await this.db.get(holonId + '/quests', messageId.toString());
+            let quest = await this.db.get(holonId, 'quests', messageId);
             if (!await this.questExists(quest, ctx, messageId)) { return; }
 
             if (!this.checklists) {
@@ -1540,25 +1540,25 @@ export default class Quests {
             if (!quest.checklistId) {
                 // Create a new checklist with the quest's title
                 const checklist = {
-                    id: messageId.toString(),
+                    id: messageId,
                     type: 'quest',
                     items: [],
                     creator: quest.initiator.id,
                     created: new Date(),
-                    questId: messageId.toString(),
+                    questId: messageId,
                     title: quest.title
                 };
 
                 // Save the checklist
-                await this.db.put(holonId + '/checklists', checklist);
+                await this.db.put(holonId, 'checklists', checklist);
 
                 // Update quest with checklist reference
                 quest.checklistId = checklist.id;
-                await this.db.put(holonId + '/quests', quest);
+                await this.db.put(holonId, 'quests', quest);
             }
 
             // Get the checklist
-            const checklist = await this.db.get(holonId + '/checklists', quest.checklistId);
+            const checklist = await this.db.get(holonId, 'checklists', quest.checklistId);
             if (!checklist) {
                 await ctx.answerCbQuery('Checklist not found');
                 return;
@@ -1614,7 +1614,7 @@ export default class Quests {
         const messageId = ctx.callbackQuery.data.split('_')[3];
 
         try {
-            const quest = await this.db.get(holonId + '/quests', messageId.toString());
+            const quest = await this.db.get(holonId, 'quests', messageId);
             if (!await this.questExists(quest, ctx, messageId)) { return; }
 
             await ctx.answerCbQuery().catch(() => {});
@@ -1627,13 +1627,13 @@ export default class Quests {
                     const holonId = ctx.chat.id;
                     const questId = messageId;
 
-                    const quest = await this.db.get(holonId + '/quests', questId.toString());
+                    const quest = await this.db.get(holonId, 'quests', questId);
                     if (!await this.questExists(quest, ctx, questId)) {
                         return;
                     }
 
                     quest.description = description;
-                    await this.db.put(holonId + '/quests', quest);
+                    await this.db.put(holonId, 'quests', quest);
                     await this.updateMessage(ctx, quest);
                 }
             });
@@ -1652,11 +1652,11 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!await this.questExists(quest, ctx, questId)) { return; }
 
             // Get all ongoing quests in this chat
-            const allQuests = await this.db.getAll(holonId + '/quests');
+            const allQuests = await this.db.getAll(holonId, 'quests');
             const openQuests = allQuests.filter(q =>
                 q.status === 'ongoing' &&
                 q.id !== quest.id &&
@@ -1745,8 +1745,8 @@ export default class Quests {
 
         try {
             // Get the quest and dependency
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
-            const depQuest = await this.db.get(holonId + '/quests', dependencyId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
+            const depQuest = await this.db.get(holonId, 'quests', dependencyId);
 
             if (!quest || !depQuest) {
                 await ctx.answerCbQuery('Quest or dependency not found');
@@ -1768,7 +1768,7 @@ export default class Quests {
             quest.dependencies.push(dependencyId);
 
             // Save the updated quest
-            await this.db.put(holonId + '/quests', quest);
+            await this.db.put(holonId, 'quests', quest);
 
             // Update the original quest message in the chat
             await this.updateMessage(ctx, quest, language);
@@ -1789,7 +1789,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!quest || !quest.dependencies) {
                 await ctx.answerCbQuery('Quest or dependencies not found');
                 return;
@@ -1799,7 +1799,7 @@ export default class Quests {
             quest.dependencies = quest.dependencies.filter(id => id !== dependencyId);
 
             // Save the updated quest
-            await this.db.put(holonId + '/quests', quest);
+            await this.db.put(holonId, 'quests', quest);
 
             // Update the quest message
             await this.updateMessage(ctx, quest, language);
@@ -1822,7 +1822,7 @@ export default class Quests {
 
         try {
             await ctx.answerCbQuery().catch(() => {});
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -1844,7 +1844,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!await this.questExists(quest, ctx, questId)) return;
 
             // Show recurring options
@@ -1915,7 +1915,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!await this.questExists(quest, ctx, questId)) return;
 
             // Remove recurring settings
@@ -1927,7 +1927,7 @@ export default class Quests {
                 await this.scheduler.stopTask(quest.recurringTaskId);
             }
 
-            await this.db.put(holonId + '/quests', quest);
+            await this.db.put(holonId, 'quests', quest);
 
             // Update back to the main quest view
             await this.updateMessage(ctx, quest, language);
@@ -1952,7 +1952,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -2039,7 +2039,7 @@ export default class Quests {
             const userId = parseInt(userIdStr);
             const holonId = ctx.callbackQuery.message.chat.id;
 
-            let quest = await this.db.get(holonId + '/quests', questId.toString());
+            let quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -2066,7 +2066,7 @@ export default class Quests {
                 }
             }
 
-            await this.db.put(holonId + '/quests', quest);
+            await this.db.put(holonId, 'quests', quest);
 
             // Refresh the participant selection view only
             await this.refreshParticipantView(ctx, holonId, questId);
@@ -2083,7 +2083,7 @@ export default class Quests {
             const questId = ctx.callbackQuery.data.split(':')[1];
             const holonId = ctx.callbackQuery.message.chat.id;
 
-            let quest = await this.db.get(holonId + '/quests', questId.toString());
+            let quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -2094,7 +2094,7 @@ export default class Quests {
             // Add all users to participants (excluding holon ID to avoid duplication)
             quest.participants = users.slice();
 
-            await this.db.put(holonId + '/quests', quest);
+            await this.db.put(holonId, 'quests', quest);
 
             // Refresh the participant selection view
             await this.refreshParticipantView(ctx, holonId, questId);
@@ -2113,7 +2113,7 @@ export default class Quests {
 
         try {
             await ctx.answerCbQuery().catch(() => {});
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -2131,7 +2131,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quest = await this.db.get(holonId + '/quests', questId);
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!await this.questExists(quest, ctx, questId)) { 
                 return; 
             }
@@ -2152,7 +2152,7 @@ export default class Quests {
 
         try {
             // The checklistId for db.get is the quest's message_id which was used as checklist.id
-            const checklist = await this.db.get(holonId + '/checklists', checklistId);
+            const checklist = await this.db.get(holonId, 'checklists', checklistId);
             if (!checklist) {
                 await ctx.answerCbQuery('Checklist not found');
                 return;
@@ -2160,10 +2160,10 @@ export default class Quests {
 
             // Toggle the item's checked status
             checklist.items[itemIndex].checked = !checklist.items[itemIndex].checked;
-            await this.db.put(holonId + '/checklists', checklist);
+            await this.db.put(holonId, 'checklists', checklist);
 
             // Update the main quest display
-            const mainQuest = await this.db.get(holonId + '/quests', checklist.questId);
+            const mainQuest = await this.db.get(holonId, 'quests', checklist.questId);
             if (mainQuest) {
                 await this.updateMessage(ctx, mainQuest, await this.getLanguage(holonId));
             }
@@ -2199,7 +2199,7 @@ export default class Quests {
 
         try {
             // Get the checklist to ensure it exists
-            const checklist = await this.db.get(holonId + '/checklists', checklistId);
+            const checklist = await this.db.get(holonId, 'checklists', checklistId);
             if (!checklist) {
                 await ctx.answerCbQuery('Checklist not found');
                 return;
@@ -2220,10 +2220,10 @@ export default class Quests {
                         checked: false
                     });
 
-                    await this.db.put(holonId + '/checklists', checklist);
+                    await this.db.put(holonId, 'checklists', checklist);
 
                     // Update the main quest
-                    const mainQuest = await this.db.get(holonId + '/quests', checklist.questId);
+                    const mainQuest = await this.db.get(holonId, 'quests', checklist.questId);
                     if (mainQuest) {
                         await this.updateMessage(ctx, mainQuest, await this.getLanguage(holonId));
                     }
@@ -2288,14 +2288,14 @@ export default class Quests {
             let questToView;
             try {
                 // Try to get the quest from the original holon
-                questToView = await this.db.get(originalQuestholonId + '/quests', actualOriginalQuestId.toString());
+                questToView = await this.db.get(originalQuestholonId, 'quests', actualOriginalQuestId);
             } catch (dbError) {
                 // Try to find a local hologram copy
                 try {
-                    const userHologramData = await this.db.holosphere.get(
-                        interactingUserId.toString(), 
+                    const userHologramData = await this.db.get(
+                        interactingUserId, 
                         'quests', 
-                        actualOriginalQuestId.toString()
+                        actualOriginalQuestId
                     );
                     
                     if (userHologramData && userHologramData.soul) {
@@ -2392,7 +2392,7 @@ export default class Quests {
                 }
 
                 // Save the updated quest with the new hologram link
-                await this.db.put(originalQuestholonId + '/quests', questToView).catch(() => {});
+                await this.db.put(originalQuestholonId, 'quests', questToView).catch(() => {});
             } catch (error) {
                 // Silently handle tracking errors
             }
@@ -2500,10 +2500,10 @@ export default class Quests {
             console.log(`[handleFederatedMessages] Starting for quest ${quest.id} in holon ${questHolon}`);
 
             const holonId = questHolon;
-            const holonIdStr = holonId.toString();
+            const holonIdStr = holonId;
 
             // Re-read quest to get updated _meta.activeHolograms from auto-propagation
-            const updatedQuest = await this.db.get(holonIdStr + '/quests', quest.id.toString());
+            const updatedQuest = await this.db.get(holonIdStr, 'quests', quest.id);
             if (!updatedQuest) {
                 console.log(`[handleFederatedMessages] Quest ${quest.id} not found after propagation`);
                 return;
@@ -2620,7 +2620,7 @@ export default class Quests {
 
             // Save updated quest with Telegram message tracking
             if (updatedQuest.activeHolograms?.length > 0) {
-                await this.db.put(holonIdStr + '/quests', updatedQuest, { autoPropagate: false });
+                await this.db.put(holonIdStr, 'quests', updatedQuest, { autoPropagate: false });
             }
 
             console.log(`[handleFederatedMessages] Completed. Processed ${activeHolograms.length} active holograms`);
@@ -2650,7 +2650,7 @@ export default class Quests {
             const language = await this.getLanguage(holonId);
 
             // Get fresh quest data to ensure we have the latest state
-            const updatedQuest = await this.db.get(holonId + '/quests', questId.toString());
+            const updatedQuest = await this.db.get(holonId, 'quests', questId);
             if (!updatedQuest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -2674,7 +2674,7 @@ export default class Quests {
         const language = await this.getLanguage(holonId);
 
         try {
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!await this.questExists(quest, ctx, questId)) return;
 
             // Set the new frequency
@@ -2695,7 +2695,7 @@ export default class Quests {
                 quest.recurringTaskId = null;
             }
 
-            await this.db.put(holonId + '/quests', quest);
+            await this.db.put(holonId, 'quests', quest);
 
             // Update back to the main quest view
             await this.updateMessage(ctx, quest, language);
@@ -2724,7 +2724,7 @@ export default class Quests {
 
         try {
             await ctx.answerCbQuery().catch(() => {});
-            const quest = await this.db.get(holonId + '/quests', questId.toString());
+            const quest = await this.db.get(holonId, 'quests', questId);
             if (!quest) {
                 await ctx.answerCbQuery('Quest not found');
                 return;
@@ -2768,7 +2768,7 @@ export default class Quests {
         // Save updated quest if hologram links were cleaned up
         if (quest.activeHolograms && quest.activeHolograms.length !== hologramsToUpdate.length) {
             try {
-                await this.db.put(Quests.getQuestHolon(quest) + '/quests', quest);
+                await this.db.put(Quests.getQuestHolon(quest), 'quests', quest);
             } catch (error) {
                 console.error('Error saving quest after hologram cleanup:', error);
             }
@@ -2845,7 +2845,7 @@ export default class Quests {
             }
         }
 
-        const users = await this.db.getAll(holonId + '/users');
+        const users = await this.db.getAll(holonId, 'users');
         this.userCache.set(key, {
             users,
             expires: Date.now() + this.cacheExpiry
@@ -2970,7 +2970,7 @@ export default class Quests {
         for (const key of this.questImageCache.keys()) {
             // Match pattern: questId_questChat_isHologram_hash
             const parts = key.split('_');
-            if (parts.length >= 3 && parts[0] === questId.toString() && parts[1] === questChat.toString()) {
+            if (parts.length >= 3 && parts[0] === questId && parts[1] === questChat.toString()) {
                 if (isHologram === null || parts[2] === isHologram.toString()) {
                     keysToDelete.push(key);
                 }
@@ -2987,8 +2987,7 @@ export default class Quests {
     // Helper method to save quest and invalidate image cache
     async saveQuest(quest, path = null) {
         const questHolon = Quests.getQuestHolon(quest);
-        const questPath = path || `${questHolon}/quests`;
-        await this.db.put(questPath, quest);
+        await this.db.put(questHolon, 'quests', quest);
 
         // Invalidate image cache for this quest
         if (quest.id && questHolon) {
@@ -3034,7 +3033,7 @@ export default class Quests {
         if (!dependencyIds?.length) return [];
 
         const promises = dependencyIds.map(id =>
-            this.db.get(holonId + '/quests', id.toString()).catch(() => null)
+            this.db.get(holonId, 'quests', id).catch(() => null)
         );
 
         return Promise.all(promises);

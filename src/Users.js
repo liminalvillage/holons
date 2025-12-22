@@ -74,7 +74,7 @@ class Users {
   async leave(ctx) {
     const holonId = ctx.message.chat.id;
     const user = ctx.message.from;
-    await this.db.del(holonId + '/users', user.id)
+    await this.db.delete(holonId, 'users', user.id)
     ctx.reply('Goodbye ' + user.first_name + '!');
   }
 
@@ -92,7 +92,7 @@ class Users {
     if (!userinfo.values) userinfo.values = []
     userinfo.values = Array.from(new Set(userinfo.values.concat(values)))
 
-    await this.db.put(holonId + '/users', userinfo)
+    await this.db.put(holonId, 'users', userinfo)
     ctx.reply(`Added ${values.join(', ')} to your values.`);
   }
 
@@ -109,7 +109,7 @@ class Users {
     if (!userinfo.needs) userinfo.needs = []
     userinfo.needs = Array.from(new Set(userinfo.needs.concat(needs)))
 
-    await this.db.put(holonId + '/users', userinfo)
+    await this.db.put(holonId, 'users', userinfo)
     ctx.reply(`Added ${needs.join(', ')} to your needs.`);
   }
 
@@ -117,7 +117,7 @@ class Users {
 
   async listUsersActions(ctx) {
     const holonId = ctx.message.chat.id;
-    let users = await this.db.getAll(holonId + '/users')
+    let users = await this.db.getAll(holonId, 'users')
 
     let message = ''
     for (let i = 0; i < users.length; i++) {
@@ -269,7 +269,7 @@ class Users {
   }
 
   async getUsers(holonId) {
-    return this.db.getAll(holonId + '/users')
+    return await this.db.getAll(holonId, 'users')
   }
 
   /**
@@ -283,8 +283,9 @@ class Users {
     if (user?.is_bot) {
       return null;
     }
+    if (!holonId) return null;
 
-    let userinfo = await this.db.get(holonId + '/users', user.id)
+    let userinfo = await this.db.get(holonId, 'users', user.id)
     if (!userinfo || userinfo == '') {
       userinfo = {
         id: user.id,
@@ -297,7 +298,7 @@ class Users {
         needs: [],
         participated: {}
       }
-      await this.db.put(holonId + '/users', userinfo)
+      await this.db.put(holonIdStr, 'users', userinfo)
     }
     return userinfo
   }
@@ -309,8 +310,9 @@ class Users {
    */
   async ensureUserProfile(user, holonId) {
     if (user?.is_bot) return;
+    if (!holonId) return;
 
-    let userinfo = await this.db.get(holonId + '/users', user.id)
+    let userinfo = await this.db.get(holonId, 'users', user.id)
     if (!userinfo || userinfo == '') {
       await this.getUserProfile(user, holonId);
     }

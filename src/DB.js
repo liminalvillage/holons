@@ -1,6 +1,20 @@
 /**
  * @fileoverview Database abstraction layer for HolonsBot using HoloSphere.
  * @module src/DB
+ * @deprecated Use createHoloSphere from './createHoloSphere.js' instead.
+ * This class is kept for backward compatibility but all new code should
+ * use HoloSphere directly:
+ *
+ * @example
+ * // Old approach (deprecated):
+ * import DB from './DB.js';
+ * const db = new DB('myApp');
+ * await db.put(holonId, 'quests', data);
+ *
+ * // New approach:
+ * import createHoloSphere from './createHoloSphere.js';
+ * const holosphere = createHoloSphere('myApp');
+ * await holosphere.put(holonId, 'quests', data);
  */
 import {HoloSphere, createHologram as hsCreateHologram} from 'holosphere';
 import { getOrCreateKey } from '../utils/key-storage.js';
@@ -94,7 +108,7 @@ class DB {
      */
     async init() {
         try {
-            console.log(`DB "${this.dbName}" initialized with ${this.holosphere.config.relays.length} Nostr relays`);
+            console.log(`DB "${this.dbName}" initialized with ${this.db.config.relays.length} Nostr relays`);
         } catch (error) {
             console.error("Error initializing database:", error);
         }
@@ -143,129 +157,13 @@ class DB {
         try {
             let [hex, lens] = table.split('/')
             if (lens === undefined)
-                this.holosphere.deleteAllGlobal(table);
+                await this.db.deleteAllGlobal(table);
             else
-                this.holosphere.deleteAll(hex, lens);
+                await this.db.deleteAll(hex, lens);
         } catch (error) {
             console.error("Error dropping table:", error);
             throw error;
         }
-    }
-
-    /**
-     * Clear data locally first, then async sync deletions to relay with rate limiting
-     * @param {string} holonId - Holon ID to clear data for
-     * @param {string[]} lenses - Array of lens names to clear (e.g., ['quests', 'shopping'])
-     * @param {string[]} globalTables - Array of global table names to clear entries from
-     * @param {number} delayMs - Delay between relay deletions to avoid rate limiting (default: 200ms)
-     * @returns {Promise<{localCleared: number, relayQueueSize: number}>}
-     */
-    async clearWithAsyncRelaySync(holonId, lenses = [], globalTables = [], delayMs = 200) {
-        const appName = this.holosphere.config?.appName || process.env.APPNAME || 'Holons';
-        let localCleared = 0;
-        const relayDeletions = []; // Queue of deletion tasks for relay
-
-        // Clear cache for this holonId immediately
-        this.holosphere.clearCache(holonId.toString());
-        console.log(`[clearWithAsyncRelaySync] Cleared cache for holonId ${holonId}`);
-
-        // Collect lens deletions
-        for (const lens of lenses) {
-            relayDeletions.push({
-                type: 'lens',
-                table: `${holonId}/${lens}`,
-                lens: lens
-            });
-            localCleared++;
-        }
-
-        // Collect global table deletions that belong to this holonId
-        for (const table of globalTables) {
-            try {
-                let items = [];
-                if (table === 'recurring') {
-                    items = await this.holosphere.getAllGlobal('recurring') || [];
-                    items = items.filter(t => t.holonId === holonId);
-                } else if (table === 'recurringlookup') {
-                    items = await this.holosphere.getAllGlobal('recurringlookup') || [];
-                    items = items.filter(t => t.id && t.id.toString().startsWith(holonId.toString()));
-                } else if (table === 'reminders') {
-                    items = await this.holosphere.getAllGlobal('reminders') || [];
-                    items = items.filter(t => t.holonId === holonId);
-                } else if (table === 'reminderslookup') {
-                    items = await this.holosphere.getAllGlobal('reminderslookup') || [];
-                    items = items.filter(t => t.id && t.id.toString().startsWith(holonId.toString()));
-                } else if (table === 'federation') {
-                    items = await this.holosphere.getAllGlobal('federation') || [];
-                    items = items.filter(t => t.id === holonId.toString());
-                } else if (table === 'fedannouncements') {
-                    items = await this.holosphere.getAllGlobal('fedannouncements') || [];
-                    items = items.filter(t => t.id && t.id.toString().startsWith(holonId.toString() + '_'));
-                }
-
-                for (const item of items) {
-                    if (item.id) {
-                        relayDeletions.push({
-                            type: 'global',
-                            table: table,
-                            id: item.id
-                        });
-                        localCleared++;
-                    }
-                }
-            } catch (e) {
-                console.log(`[clearWithAsyncRelaySync] Error collecting ${table}:`, e.message);
-            }
-        }
-
-        // Start async relay sync in background (don't await)
-        this._processRelayDeletionsAsync(relayDeletions, delayMs).catch(err => {
-            console.error('[clearWithAsyncRelaySync] Background relay sync error:', err.message);
-        });
-
-        return { localCleared, relayQueueSize: relayDeletions.length };
-    }
-
-    /**
-     * Process relay deletions asynchronously with rate limiting
-     * @private
-     */
-    async _processRelayDeletionsAsync(deletions, delayMs) {
-        console.log(`[relaySync] Starting async deletion of ${deletions.length} items (${delayMs}ms delay between each)`);
-        let processed = 0;
-        let failed = 0;
-
-        for (const deletion of deletions) {
-            try {
-                if (deletion.type === 'lens') {
-                    await this.holosphere.deleteAll(deletion.table.split('/')[0], deletion.lens);
-                } else if (deletion.type === 'global') {
-                    await this.holosphere.deleteGlobal(deletion.table, deletion.id);
-                }
-                processed++;
-            } catch (err) {
-                // Log but continue - don't let one failure stop the rest
-                console.log(`[relaySync] Failed to delete ${deletion.type} ${deletion.table}/${deletion.id || ''}: ${err.message}`);
-                failed++;
-            }
-
-            // Rate limit: wait between deletions
-            if (delayMs > 0) {
-                await new Promise(resolve => setTimeout(resolve, delayMs));
-            }
-        }
-
-        console.log(`[relaySync] Completed: ${processed} succeeded, ${failed} failed out of ${deletions.length} total`);
-    }
-
-    /**
-     * Clear cache entries for a specific holonId (delegates to holosphere2)
-     * @param {string} holonId - Holon ID to clear cache for
-     */
-    clearCacheForholonId(holonId) {
-        // Delegate to holosphere2's cache clearing
-        this.holosphere.clearCache(holonId);
-        console.log(`DB.clearCacheForholonId: Cleared cache for holonId ${holonId}`);
     }
 
     /**
@@ -361,9 +259,9 @@ class DB {
                 if (!data.id) {
                     data.id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                 }
-                return await this.holosphere.putGlobal(table, data);
+                return await this.db.putGlobal(table, data);
             } else {
-                return await this.holosphere.put(hex, lens, data, options);
+                return await this.db.put(hex, lens, data, options);
             }
         } catch (error) {
             console.error(`DB.addGunDB: FAILED to write ${table}/${data.id}:`, error.message);
@@ -382,9 +280,9 @@ class DB {
     async getGunDB(table, key) {
         let [hex, lens] = table.split('/')
         if (lens === undefined) {
-            return await this.holosphere.getGlobal(table, key);
+            return await this.db.getGlobal(table, key);
         } else {
-            return await this.holosphere.get(hex, lens, key);
+            return await this.db.get(hex, lens, key);
         }
     }
 
@@ -398,9 +296,9 @@ class DB {
     async getAllGunDB(table) {
         let [hex, lens] = table.split('/')
         if (lens === undefined)
-            return await this.holosphere.getAllGlobal(table);
+            return await this.db.getAllGlobal(table);
         else
-            return await this.holosphere.getAll(hex, lens);
+            return await this.db.getAll(hex, lens);
     }
 
     /**
@@ -416,7 +314,7 @@ class DB {
 
         if (lens === undefined)
             [lens,key] = key.split('_')
-        return this.holosphere.delete(hex, lens, key);
+        return this.db.delete(hex, lens, key);
     }
 
     // ===========================      Federation Operations
@@ -427,7 +325,7 @@ class DB {
      * @returns {Promise<Object|null>} Federation data or null
      */
     async getFederation(holonId) {
-        return await this.withTimeout(this.holosphere.getFederation(holonId));
+        return await this.withTimeout(this.db.getFederation(holonId));
     }
 
     /**
@@ -437,7 +335,7 @@ class DB {
      * @returns {Promise<boolean>} Success indicator
      */
     async unfederateHolon(sourceHolon, targetHolon) {
-        return await this.holosphere.unfederateHolon(sourceHolon, targetHolon);
+        return await this.db.unfederateHolon(sourceHolon, targetHolon);
     }
 
     /**
@@ -448,7 +346,7 @@ class DB {
      * @returns {Promise<boolean>} Success indicator
      */
     async federateHolon(sourceHolon, targetHolon, options = {}) {
-        return await this.holosphere.federateHolon(sourceHolon, targetHolon, options);
+        return await this.db.federateHolon(sourceHolon, targetHolon, options);
     }
 
     /**
@@ -475,7 +373,7 @@ class DB {
      * @returns {Promise<Object>} Result with deletion info
      */
     async deleteHologram(holonId, lensName, dataId) {
-        return await this.holosphere.deleteHologram(holonId, lensName, dataId);
+        return await this.db.deleteHologram(holonId, lensName, dataId);
     }
 
     /**
@@ -488,7 +386,7 @@ class DB {
      */
     createHologram(sourceHolon, lensName, data, targetHolon = null) {
         const dataId = data.id;
-        const appName = this.holosphere.config?.appName || process.env.APPNAME || 'Holons';
+        const appName = this.db.config?.appName || process.env.APPNAME || 'Holons';
 
         try {
             // Try using holosphere's createHologram function
@@ -583,7 +481,7 @@ class DB {
     async propagate(sourceHolon, lensName, data, options = {}) {
         try {
             // Use HoloSphere's propagate method which handles federation correctly
-            return await this.holosphere.propagate(sourceHolon, lensName, data, options);
+            return await this.db.propagate(sourceHolon, lensName, data, options);
         } catch (error) {
             console.error('Error in propagate:', error);
             return { success: 0, failed: 0, error: error.message };
@@ -616,7 +514,7 @@ class DB {
     async propagateData(data, sourceHolon, targetHolon, lensName, options = {}) {
         try {
             // Use HoloSphere's propagateData method which passes the correct client
-            return await this.holosphere.propagateData(data, sourceHolon, targetHolon, lensName, options);
+            return await this.db.propagateData(data, sourceHolon, targetHolon, lensName, options);
         } catch (error) {
             console.error('Error in propagateData:', error);
             return false;

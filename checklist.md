@@ -22,7 +22,7 @@ This checklist tracks the implementation of features and tasks for the HolonsBot
 | **Feature: Personal Data Holograms (in User's Holon)**                                              |               |            |              |                     |
 | Define user's personal holon ID as `userId`                                                         | Implemented   | Must-have  | -            | By convention       |
 | Store data holograms under `userId/quests` lens                                                     | Implemented   | Must-have  | -            |                     |
-| Implement `personalHologram` function (constructs data, uses `db.holosphere.put`)                 | Completed     | Must-have  | -            |                     |
+| Implement `personalHologram` function (constructs data, uses `db.put`)                 | Completed     | Must-have  | -            |                     |
 | Integrate `personalHologram` into quest creation for initiator                                     | Completed     | Must-have  | -            |                     |
 | Integrate `personalHologram` into interaction handlers for interacting user                        | Completed     | Must-have  | -            |                     |
 | Integrate `personalHologram` into `viewOriginalQuest` for the viewer                              | Completed     | Must-have  | -            |                     |

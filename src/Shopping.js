@@ -64,7 +64,7 @@ class Shopping {
                     console.log('[Shopping InputScene] Holon ID:', callbackholonId);
 
                     // Get or create the shopping checklist
-                    let shoppingList = await this.db.get(callbackholonId + '/checklists', 'shopping');
+                    let shoppingList = await this.db.get(callbackholonId.toString(), 'checklists', 'shopping');
 
                     if (!shoppingList) {
                         console.log('[Shopping InputScene] Creating new shopping checklist');
@@ -89,7 +89,7 @@ class Shopping {
                     console.log('[Shopping InputScene] Updated shopping list:', shoppingList);
 
                     // Save to checklists
-                    await this.db.put(callbackholonId + '/checklists', shoppingList);
+                    await this.db.put(callbackholonId.toString(), 'checklists', shoppingList);
                     console.log('[Shopping InputScene] Saved to database');
 
                     await ctx.reply(utils.i18next.t('shoppingadded', {
@@ -104,7 +104,7 @@ class Shopping {
         console.log('[Shopping buy] Items provided directly, adding to DB');
 
         // Get or create the shopping checklist
-        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId.toString(), 'checklists', 'shopping');
 
         if (!shoppingList) {
             console.log('[Shopping buy direct] Creating new shopping checklist');
@@ -129,7 +129,7 @@ class Shopping {
         console.log('[Shopping buy direct] Updated shopping list:', shoppingList);
 
         // Save to checklists
-        await this.db.put(holonId + '/checklists', shoppingList);
+        await this.db.put(holonId.toString(), 'checklists', shoppingList);
         console.log('[Shopping buy direct] Saved to database');
 
         ctx.reply(utils.i18next.t('shoppingadded', { items: items.join(", "), lng: language }));
@@ -141,7 +141,7 @@ class Shopping {
         const language = await this.settings.getLanguage(holonId);
 
         // Get the shopping checklist
-        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId.toString(), 'checklists', 'shopping');
 
         if (!shoppingList || !shoppingList.items || shoppingList.items.length === 0) {
             console.log('[Shopping shopping] List is empty');
@@ -160,7 +160,7 @@ class Shopping {
         const itemId = ctx.match[1];
 
         // Get the shopping checklist
-        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId.toString(), 'checklists', 'shopping');
 
         if (!shoppingList || !shoppingList.items) {
             console.log('[Shopping toggle] Shopping list not found');
@@ -171,7 +171,7 @@ class Shopping {
         const item = shoppingList.items.find(i => i.id == itemId);
         if (item) {
             item.checked = !item.checked;
-            await this.db.put(holonId + '/checklists', shoppingList);
+            await this.db.put(holonId.toString(), 'checklists', shoppingList);
 
             ctx.editMessageText(
                 utils.i18next.t("shoppinglist", { lng: language }),
@@ -185,7 +185,7 @@ class Shopping {
         const language = await this.settings.getLanguage(holonId);
 
         // Get the shopping checklist
-        let shoppingList = await this.db.get(holonId + '/checklists', 'shopping');
+        let shoppingList = await this.db.get(holonId.toString(), 'checklists', 'shopping');
 
         if (!shoppingList || !shoppingList.items) {
             console.log('[Shopping done] Shopping list not found');
@@ -197,7 +197,7 @@ class Shopping {
         shoppingList.items = shoppingList.items.filter(item => !item.checked);
         const removedCount = beforeCount - shoppingList.items.length;
 
-        await this.db.put(holonId + '/checklists', shoppingList);
+        await this.db.put(holonId.toString(), 'checklists', shoppingList);
 
         console.log('[Shopping done] Removed', removedCount, 'items, remaining:', shoppingList.items.length);
 
@@ -224,7 +224,7 @@ class Shopping {
                 console.log('[Shopping addItem] Adding items:', items);
 
                 // Get or create the shopping checklist
-                let shoppingList = await this.db.get(callbackholonId + '/checklists', 'shopping');
+                let shoppingList = await this.db.get(callbackholonId.toString(), 'checklists', 'shopping');
 
                 if (!shoppingList) {
                     console.log('[Shopping addItem] Creating new shopping checklist');
@@ -249,7 +249,7 @@ class Shopping {
                 console.log('[Shopping addItem] Updated shopping list:', shoppingList);
 
                 // Save to checklists
-                await this.db.put(callbackholonId + '/checklists', shoppingList);
+                await this.db.put(callbackholonId.toString(), 'checklists', shoppingList);
 
                 await ctx.reply(utils.i18next.t('shoppingadded', {
                     items: items.join(", "),

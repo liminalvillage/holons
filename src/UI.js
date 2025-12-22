@@ -83,7 +83,7 @@ class UI {
       let holonId = ctx.message.chat.id
       const userId = ctx.from?.id
       const language = await this.settings.getLanguage(holonId)
-      const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?odyn=${holonId}&user=${userId}`
+      const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?user=${userId}`
       
       try {
         // Generate QR code
@@ -394,7 +394,7 @@ class UI {
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await this.db.getAll(holonId + '/users')
+    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -459,7 +459,7 @@ class UI {
     let mentions = entities.filter((entity) => (entity.type === 'mention' || entity.type === 'text_mention'));
     mentions = mentions.map((entity) => ctx.message.text.substring(entity.offset + 1, entity.offset + entity.length))
 
-    let users = await this.db.getAll(holonId + '/users')
+    let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
     //only select the mentioned users
 
     if (mentions.length > 0)
@@ -868,7 +868,7 @@ class UI {
         const depHolonId = getQuestHolon(quest);
         const deps = await Promise.all(
           quest.dependencies.map(async id => {
-            const dep = await this.db.get(depHolonId + '/quests', id);
+            const dep = await this.db.holosphere.get(depHolonId, 'quests', id);
             return dep?.title || '';
           })
         );

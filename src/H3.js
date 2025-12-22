@@ -45,7 +45,7 @@ var holon = {
 class H3 {
     constructor(bot, db, settings) {
         this.db = db
-        this.holosphere = db.holosphere
+        this.holosphere = db
         this.settings = settings
         this.bot = bot
 
@@ -57,7 +57,7 @@ class H3 {
             }
             let hex = (await this.settings.getSettings(holonId)).hex
 
-            let data = await this.holosphere.get(hex, tag)
+            let data = await this.db.get(hex, tag)
             ctx.reply(JSON.stringify(data, null, 2))
 
         })
@@ -75,7 +75,7 @@ class H3 {
                 return
             }
             let hex = (await this.settings.getSettings(holonId)).hex
-            await this.holosphere.compute(hex, lense, operation)
+            await this.db.compute(hex, lense, operation)
         })
 
         this.bot.command('cast', async (ctx) => {
@@ -87,23 +87,23 @@ class H3 {
                 return ctx.reply('Please provide at least one tag.');
             }
 
-            const messageID = ctx.message.reply_to_message.message_id;
+            const messageId = ctx.message.reply_to_message.message_id;
             const holonId = ctx.message.chat.id;
             const messageContent = ctx.message.reply_to_message.text;
             let settings = await this.settings.getSettings(holonId)
             let id = settings.hex ? settings.hex : 'Hex not set, use /setHex'
             // fetch the stored node
 
-            let node = await this.holosphere.getNode(holonId, 'quests', messageID)
+            let node = await this.db.getNode(holonId, 'quests', messageId)
             console.log(node)
 
             // if (!node) {
-            //     node = await this.holosphere.gun.get(holonId + '/' + messageID).put({ id: holonId + '/' + messageID, content: messageContent })
+            //     node = await this.db.gun.get(holonId + '/' + messageId).put({ id: holonId + '/' + messageId, content: messageContent })
             // }
 
             //for (let tag of tags) {
 
-            this.holosphere.upcast(id, 'quests', node)
+            await this.db.upcast(id, 'quests', node)
             //}
         })
 
@@ -116,7 +116,7 @@ class H3 {
                 return ctx.reply('Please provide at least one tag.');
             }
 
-            const messageID = ctx.message.reply_to_message.message_id;
+            const messageId = ctx.message.reply_to_message.message_id;
             const holonId = ctx.message.chat.id;
 
             let settings = await this.settings.getSettings(holonId)
@@ -128,7 +128,7 @@ class H3 {
 
             try {
                 // Get the node from holosphere
-                let node = await this.holosphere.getNode(holonId, 'quests', messageID)
+                let node = await this.db.getNode(holonId, 'quests', messageId)
                 
                 if (!node) {
                     return ctx.reply('No quest found for this message.');
@@ -137,7 +137,7 @@ class H3 {
                 // Setup federation with the hex target
                 let fedInfo = null;
                 try {
-                    fedInfo = await this.holosphere.getGlobal('federation', holonId);
+                    fedInfo = await this.db.getGlobal('federation', holonId);
                 } catch (error) {
                     // Federation info doesn't exist, create new one
                 }
@@ -174,14 +174,14 @@ class H3 {
                 };
 
                 // Save the federation configuration
-                await this.holosphere.putGlobal('federation', fedInfo);
+                await this.db.putGlobal('federation', fedInfo);
 
                 // Create hologram for the quest
-                const questReference = { id: messageID };
-                const hologram = this.holosphere.createHologram(holonId, 'quests', questReference);
+                const questReference = { id: messageId };
+                const hologram = this.db.createHologram(holonId, 'quests', questReference);
 
                 // Use federation propagation to publish to the hex
-                const propagationResult = await this.holosphere.propagate(holonId, 'quests', hologram, {
+                const propagationResult = await this.db.propagate(holonId, 'quests', hologram, {
                     useHolograms: true,
                     targetSpaces: [hex]
                 });
@@ -203,7 +203,7 @@ class H3 {
 
     reconstructNodeRef(soul) {
         const parts = soul.split('/');
-        let ref = this.holosphere.gun;
+        let ref = this.db.gun;
         parts.forEach(part => {
             ref = ref.get(part);
         });

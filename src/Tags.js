@@ -45,13 +45,13 @@ export default class Tags {
       const messageContent = ctx.message.reply_to_message.text;
 
       for (let i = 0; i < tags.length; i++) {
-        let tagobject = await this.db.get(holonId + '/tags', tags[i])
+        let tagobject = await this.db.get(holonId.toString(), 'tags', tags[i])
         if (tagobject?.content) {
           tagobject.content.push({ holonId, messageId, messageContent });
         } else {
           tagobject = { 'id': tags[i], 'content': [{ holonId, messageId, messageContent }] };
         }
-        await this.db.put(holonId + '/tags', tagobject)
+        await this.db.put(holonId.toString(), 'tags', tagobject)
 
       };
 
@@ -67,7 +67,7 @@ export default class Tags {
         return ctx.reply('Please specify a tag.');
       }
 
-      let tagobject = await this.db.get(holonId + '/tags', tag)
+      let tagobject = await this.db.get(holonId.toString(), 'tags', tag)
 
       if (!tagobject || !tagobject.content) {
         return ctx.reply('No messages found for this tag.');

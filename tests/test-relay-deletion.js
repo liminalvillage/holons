@@ -9,7 +9,7 @@
  * 5. Check if the relay properly handles NIP-09 deletion events
  */
 
-import DB from './src/DB.js';
+import createHoloSphere from './src/createHoloSphere.js';
 
 const colors = {
   reset: '\x1b[0m',
@@ -27,12 +27,10 @@ function log(message, color = 'reset') {
 async function testRelayDeletion() {
   log('\n=== Testing Relay Deletion Behavior ===\n', 'cyan');
 
-  // Initialize DB
-  const db = new DB('relay-deletion-test');
-  await db.init();
+  // Initialize HoloSphere
+  const holosphere = createHoloSphere('relay-deletion-test');
 
-  const testholonId = 'test-deletion-chat-' + Date.now();
-  const testTable = testholonId + '/quests';
+  const testHolonId = 'test-deletion-chat-' + Date.now();
 
   try {
     // Step 1: Write test data
@@ -48,8 +46,8 @@ async function testRelayDeletion() {
       description: 'This is another test quest'
     };
 
-    await db.put(testTable, testQuest1);
-    await db.put(testTable, testQuest2);
+    await holosphere.put(testHolonId, 'quests', testQuest1);
+    await holosphere.put(testHolonId, 'quests', testQuest2);
     log('✅ Test data written successfully', 'green');
 
     // Wait a bit for relay to process
@@ -57,8 +55,8 @@ async function testRelayDeletion() {
 
     // Step 2: Verify data exists
     log('\nStep 2: Verifying test data exists...', 'blue');
-    const quest1 = await db.get(testTable, 'quest-1');
-    const quest2 = await db.get(testTable, 'quest-2');
+    const quest1 = await holosphere.get(testHolonId, 'quests', 'quest-1');
+    const quest2 = await holosphere.get(testHolonId, 'quests', 'quest-2');
 
     if (quest1 && quest2) {
       log('✅ Both quests found:', 'green');
@@ -71,7 +69,7 @@ async function testRelayDeletion() {
 
     // Step 3: Delete single item
     log('\nStep 3: Deleting single quest (quest-1)...', 'blue');
-    await db.del(testTable, 'quest-1');
+    await holosphere.delete(testHolonId, 'quests', 'quest-1');
     log('✅ Delete command executed', 'green');
 
     // Wait for relay to process deletion
@@ -79,7 +77,7 @@ async function testRelayDeletion() {
 
     // Step 4: Verify single deletion
     log('\nStep 4: Verifying quest-1 is deleted...', 'blue');
-    const deletedQuest = await db.get(testTable, 'quest-1');
+    const deletedQuest = await holosphere.get(testHolonId, 'quests', 'quest-1');
 
     if (deletedQuest === null || deletedQuest._deleted === true) {
       log('✅ Quest 1 successfully deleted from relay', 'green');
@@ -89,24 +87,24 @@ async function testRelayDeletion() {
     }
 
     // Verify quest-2 still exists
-    const remainingQuest = await db.get(testTable, 'quest-2');
+    const remainingQuest = await holosphere.get(testHolonId, 'quests', 'quest-2');
     if (remainingQuest && !remainingQuest._deleted) {
       log('✅ Quest 2 still exists (correct)', 'green');
     } else {
       log('❌ Quest 2 was unexpectedly deleted', 'red');
     }
 
-    // Step 5: Delete entire table
-    log('\nStep 5: Dropping entire table...', 'blue');
-    await db.drop(testTable);
-    log('✅ Drop command executed', 'green');
+    // Step 5: Delete entire lens
+    log('\nStep 5: Deleting entire quests lens...', 'blue');
+    await holosphere.deleteAll(testHolonId, 'quests');
+    log('✅ DeleteAll command executed', 'green');
 
     // Wait for relay to process
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // Step 6: Verify table deletion
-    log('\nStep 6: Verifying entire table is deleted...', 'blue');
-    const allQuests = await db.getAll(testTable);
+    // Step 6: Verify lens deletion
+    log('\nStep 6: Verifying all quests are deleted...', 'blue');
+    const allQuests = await holosphere.getAll(testHolonId, 'quests');
 
     if (!allQuests || allQuests.length === 0 || allQuests.every(q => q._deleted === true)) {
       log('✅ All quests successfully deleted from relay', 'green');
@@ -117,8 +115,8 @@ async function testRelayDeletion() {
 
     // Step 7: Check relay configuration
     log('\nStep 7: Checking relay configuration...', 'blue');
-    log(`  Relay URL: ${db.holosphere.config.relays[0]}`, 'cyan');
-    log(`  Public Key: ${db.holosphere.client.publicKey}`, 'cyan');
+    log(`  Relay URL: ${holosphere.config.relays[0]}`, 'cyan');
+    log(`  Public Key: ${holosphere.client?.publicKey || holosphere.publicKey}`, 'cyan');
 
     // Summary
     log('\n=== Test Complete ===\n', 'cyan');

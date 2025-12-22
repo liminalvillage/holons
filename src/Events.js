@@ -133,7 +133,7 @@ export default class Events {
      */
     async createEvent(ctx) {
         const holonId = getholonId(ctx);
-        const messageID = getMessageId(ctx);
+        const messageId = getMessageId(ctx);
         const language = await this.getLanguage(holonId);
         const text = ctx.message.text || ctx.message.caption;
 
@@ -194,7 +194,7 @@ export default class Events {
         }
 
         // Save event to its own lens
-        await this.db.put(holonId + '/events', event);
+        await this.db.put(holonId.toString(), 'events', event);
 
         // Update buttons and pin message
         const eventHolon = Events.getEventHolon(event);
@@ -204,7 +204,7 @@ export default class Events {
         } catch {}
 
         this.bot.telegram.pinChatMessage(eventHolon, event.id, { disable_notification: true }).catch(() => {});
-        this.bot.telegram.deleteMessage(holonId, messageID).catch(() => {});
+        this.bot.telegram.deleteMessage(holonId, messageId).catch(() => {});
 
         return event;
     }
@@ -241,7 +241,7 @@ export default class Events {
             let event;
 
             try {
-                event = await this.db.get(holonId + '/events', eventID);
+                event = await this.db.get(holonId.toString(), 'events', eventID);
             } catch (err) {
                 log.error(`Failed to fetch event: ${holonId}/events/${eventID}`, err);
             }
@@ -274,9 +274,16 @@ export default class Events {
                 }
             }
 
-            // Save and update
+            // Save event using the same holonId we fetched from
+            try {
+                await this.db.put(holonId.toString(), 'events', event);
+            } catch (err) {
+                log.error(`Failed to save event after participation: ${holonId}/events/${eventID}`, err);
+            }
+
+            // Update message display
             const interactingUser = (action === 'join') ? sender : null;
-            await this.updateMessage(ctx, event, language, { interactingUser });
+            await this.updateMessage(ctx, event, language, { interactingUser, skipSave: true });
         });
     }
 
@@ -286,7 +293,7 @@ export default class Events {
     async complete(ctx) {
         const [, , holonId, eventID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const event = await this.db.get(holonId + '/events', eventID);
+        const event = await this.db.get(holonId.toString(), 'events', eventID);
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
@@ -332,7 +339,7 @@ export default class Events {
 
         let event;
         try {
-            event = await this.db.get(holonId + '/events', eventID);
+            event = await this.db.get(holonId.toString(), 'events', eventID);
         } catch {}
 
         const eventHolonId = Events.getEventHolon(event);
@@ -371,7 +378,7 @@ export default class Events {
             await this.scheduler.cancelReminder(event.reminderId);
         }
 
-        await this.db.del(holonId + '/events', eventID);
+        await this.db.delete(holonId.toString(), 'events', eventID);
         await ctx.telegram.unpinChatMessage(holonId, eventID).catch(() => {});
         await ctx.deleteMessage(eventID).catch(() => {});
     }
@@ -384,7 +391,7 @@ export default class Events {
         const holonId = ctx.callbackQuery.message.chat.id;
 
         try {
-            const event = await this.db.get(`${holonId}/events`, eventID);
+            const event = await this.db.get(holonId.toString(), 'events', eventID);
             if (!await this.eventExists(event, ctx, eventID)) return;
 
             const language = await this.getLanguage(holonId);
@@ -394,7 +401,7 @@ export default class Events {
             if (event.reminderId && this.scheduler) {
                 await this.scheduler.cancelReminder(event.reminderId);
                 delete event.reminderId;
-                await this.db.put(`${holonId}/events`, event);
+                await this.db.put(holonId.toString(), 'events', event);
                 await this.updateMessage(ctx, event, language);
             }
 
@@ -415,7 +422,7 @@ export default class Events {
         const language = await this.getLanguage(holonId);
 
         try {
-            const events = await this.db.getAll(holonId + '/events');
+            const events = await this.db.getAll(holonId.toString(), 'events');
             const openEvents = events.filter(e => e.status === 'ongoing' || e.status === 'scheduled');
 
             if (!openEvents.length) {
@@ -443,7 +450,7 @@ export default class Events {
     async showMoreActions(ctx) {
         const [,, holonId, eventID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const event = await this.db.get(holonId + '/events', eventID);
+        const event = await this.db.get(holonId.toString(), 'events', eventID);
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
@@ -456,7 +463,7 @@ export default class Events {
     async hideMoreActions(ctx) {
         const [,, holonId, eventID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const event = await this.db.get(holonId + '/events', eventID);
+        const event = await this.db.get(holonId.toString(), 'events', eventID);
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
@@ -621,10 +628,12 @@ export default class Events {
         let explicitHologramsToUpdate = null;
         let interactingUser = null;
 
+        let skipSave = false;
         if (typeof options === 'object') {
             useExpandedMarkup = options.useExpandedMarkup || false;
             explicitHologramsToUpdate = options.explicitHologramsToUpdate || null;
             interactingUser = options.interactingUser || null;
+            skipSave = options.skipSave || false;
         }
 
         language = language || await this.getLanguage(eventHolon);
@@ -648,15 +657,19 @@ export default class Events {
             updatedMessages.add(mainMessageKey);
         } catch {}
 
-        // Save event
-        try {
-            await this.db.put(eventHolon + '/events', event);
-        } catch {}
+        // Save event (unless already saved by caller)
+        if (!skipSave) {
+            try {
+                await this.db.put(eventHolon.toString(), 'events', event);
+            } catch (err) {
+                log.error(`Failed to save event in updateMessage: ${eventHolon}/${event.id}`, err);
+            }
+        }
 
-        // Update existing holograms
-        const hologramsToUpdate = explicitHologramsToUpdate ?? (event.activeHolograms || []);
-        if (hologramsToUpdate.length > 0) {
-            await this.updateHolograms(ctx, event, language, markupConfig, hologramsToUpdate, updatedMessages);
+        // Update existing holograms from _meta.activeHolograms
+        const metaHolograms = event._meta?.activeHolograms || [];
+        if (metaHolograms.length > 0) {
+            await this.updateHologramsFromMeta(ctx, event, language, markupConfig, metaHolograms, updatedMessages);
         }
     }
 
@@ -686,6 +699,41 @@ export default class Events {
         }
     }
 
+    /**
+     * Update holograms using the new _meta.activeHolograms structure from HoloSphere.
+     * Structure: { targetHolon, platforms: { telegram: { messageId } } }
+     */
+    async updateHologramsFromMeta(ctx, event, language, markupConfig, metaHolograms, updatedMessages = new Set()) {
+        if (!metaHolograms?.length) return;
+
+        for (const hologram of metaHolograms) {
+            try {
+                const telegramData = hologram.platforms?.telegram;
+                if (!telegramData?.messageId) {
+                    // No Telegram message for this hologram yet
+                    continue;
+                }
+
+                const targetHolon = hologram.targetHolon;
+                const messageId = telegramData.messageId;
+
+                // Skip already updated messages
+                const messageKey = `${targetHolon}_${messageId}`;
+                if (updatedMessages.has(messageKey)) {
+                    continue;
+                }
+                updatedMessages.add(messageKey);
+
+                await this.updateEventMessage(ctx, event, targetHolon, messageId, language, markupConfig);
+            } catch (error) {
+                log.error(`Error updating hologram ${hologram.targetHolon}:`, error);
+            }
+        }
+    }
+
+    /**
+     * @deprecated Use updateHologramsFromMeta instead. Kept for backward compatibility.
+     */
     async updateHolograms(ctx, event, language, markupConfig, hologramsToUpdate, updatedMessages) {
         for (const hologram of hologramsToUpdate) {
             const key = `${hologram.holonId}_${hologram.messageId}`;
@@ -810,7 +858,7 @@ export default class Events {
     async handleRecurringButton(ctx) {
         const [, , holonId, eventID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const event = await this.db.get(holonId + '/events', eventID);
+        const event = await this.db.get(holonId.toString(), 'events', eventID);
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
@@ -838,7 +886,7 @@ export default class Events {
         const eventID = parts[5];
 
         const language = await this.getLanguage(holonId);
-        const event = await this.db.get(holonId + '/events', eventID);
+        const event = await this.db.get(holonId.toString(), 'events', eventID);
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
@@ -882,7 +930,7 @@ export default class Events {
     async handleBackFromRecurring(ctx) {
         const [, , , holonId, eventID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const event = await this.db.get(holonId + '/events', eventID);
+        const event = await this.db.get(holonId.toString(), 'events', eventID);
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
@@ -896,7 +944,7 @@ export default class Events {
     async publish(ctx) {
         const [, , holonId, eventID] = ctx.callbackQuery.data.split('_');
         const language = await this.getLanguage(holonId);
-        const event = await this.db.get(holonId + '/events', eventID);
+        const event = await this.db.get(holonId.toString(), 'events', eventID);
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 

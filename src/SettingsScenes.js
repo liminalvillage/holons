@@ -267,7 +267,7 @@ export default class SettingsScenes {
 
             try {
                 // Get current users
-                let users = await this.db.getAll(holonId + '/users');
+                let users = await this.db.getAll(holonId.toString(), 'users');
 
                 // Find user index
                 const userIndex = users.findIndex(u => u.id.toString() === userId);
@@ -289,7 +289,7 @@ export default class SettingsScenes {
                     return;
                 }
 
-                await this.db.del(holonId + '/users', user.id.toString());
+                await this.db.delete(holonId.toString(), 'users', user.id.toString());
 
                 await ctx.reply('User removed successfully');
 

@@ -79,7 +79,7 @@ export default class Settings {
             const language = await this.getLanguage(holonId);
             
             // Get user details
-            const users = await this.db.getAll(holonId + '/users');
+            const users = await this.db.getAll(holonId.toString(), 'users');
             const user = users.find(u => u.id.toString() === userId);
             
             if (!user) {
@@ -148,18 +148,42 @@ export default class Settings {
                     'roles', 'settings', 'library', 'deposits', 'appreciations'
                 ];
 
-                const globalTables = [
-                    'recurring', 'recurringlookup', 'reminders',
-                    'reminderslookup', 'federation', 'fedannouncements'
-                ];
+                // Delete all data from each lens
+                let deletedCount = 0;
+                for (const lens of lenses) {
+                    try {
+                        await this.db.deleteAll(holonId.toString(), lens);
+                        deletedCount++;
+                    } catch (e) {
+                        console.log(`[reset] Error deleting ${lens}:`, e.message);
+                    }
+                }
 
-                // Clear locally first, then async sync to relay with 200ms delay between deletions
-                const { localCleared, relayQueueSize } = await this.db.clearWithAsyncRelaySync(holonId, lenses, globalTables, 200);
+                // Delete global table entries for this holon
+                const globalTables = ['recurring', 'recurringlookup', 'reminders', 'reminderslookup', 'federation', 'fedannouncements'];
+                for (const table of globalTables) {
+                    try {
+                        const items = await this.db.getAllGlobal(table) || [];
+                        const holonItems = items.filter(t =>
+                            t.holonId === holonId ||
+                            t.id === holonId.toString() ||
+                            (t.id && t.id.toString().startsWith(holonId.toString()))
+                        );
+                        for (const item of holonItems) {
+                            if (item.id) {
+                                await this.db.deleteGlobal(table, item.id);
+                                deletedCount++;
+                            }
+                        }
+                    } catch (e) {
+                        console.log(`[reset] Error clearing ${table}:`, e.message);
+                    }
+                }
 
-                console.log('=== Local reset complete, relay sync in progress ===\n');
+                console.log(`=== Reset complete, deleted ${deletedCount} items ===\n`);
 
-                await this.db.put(holonId + '/settings', await this.getDefaultSettings(holonId, holonName))
-                ctx.reply(`Holon reset complete! ${relayQueueSize} items queued for relay deletion (processing in background).`)
+                await this.db.put(holonId.toString(), 'settings', await this.getDefaultSettings(holonId, holonName))
+                ctx.reply(`Holon reset complete! ${deletedCount} items deleted.`)
             } else {
                 ctx.reply('Only a chat admin can perform this action')
             }
@@ -1436,7 +1460,8 @@ export default class Settings {
 
             try {
                 // Get current federation config
-                let lensConfig = await this.db.getFederatedConfig(holonIdStr, targetholonIdStr);
+                const fedData = await this.db.getFederation(holonIdStr);
+                let lensConfig = fedData?.lensConfig?.[targetholonIdStr] || null;
 
                 // If no config exists, create default
                 if (!lensConfig) {
@@ -1468,21 +1493,24 @@ export default class Settings {
                 // Check if federation should be removed (no lenses in either direction)
                 const hasAnyLenses = lensConfig.inbound.length > 0 || lensConfig.outbound.length > 0;
 
-                // NOW perform database operations in background
+                // Perform database operations
                 if (!hasAnyLenses) {
                     // No lenses enabled, remove the federation
-                    this.db.unfederateHolon(holonIdStr, targetholonIdStr).catch(err => {
+                    try {
+                        await this.db.unfederateHolon(holonIdStr, targetholonIdStr);
+                    } catch (err) {
                         console.error('Error unfederating holon:', err);
-                    });
+                    }
                 } else {
                     // Check if we're enabling a lens (it was just added to the array)
                     const isEnabling = lensIndex === -1;
 
                     // Update federation with new lens config - skip propagation by default
-                    this.db.federateHolon(holonIdStr, targetholonIdStr, {
-                        lensConfig: lensConfig,
-                        skipPropagation: true  // Don't auto-propagate existing data
-                    }).then(async () => {
+                    try {
+                        await this.db.federateHolon(holonIdStr, targetholonIdStr, {
+                            lensConfig: lensConfig,
+                            skipPropagation: true  // Don't auto-propagate existing data
+                        });
                         console.log(`[toggle_lens] Updated federation for ${holonIdStr} -> ${targetholonIdStr}`);
 
                         // If enabling a lens, ask about propagating existing data
@@ -1513,9 +1541,9 @@ export default class Settings {
                                 }
                             );
                         }
-                    }).catch(err => {
+                    } catch (err) {
                         console.error(`[toggle_lens] Error updating federation:`, err);
-                    });
+                    }
                 }
 
             } catch (error) {
@@ -1563,12 +1591,12 @@ export default class Settings {
                 // For outbound: source sends to target
                 // For inbound: target sends to source
                 if (direction === 'outbound') {
-                    await this.db.holosphere.federate(holonIdStr, targetholonIdStr, lensName, {
+                    await this.db.federate(holonIdStr, targetholonIdStr, lensName, {
                         direction: 'outbound',
                         mode: 'reference'
                     });
                 } else {
-                    await this.db.holosphere.federate(targetholonIdStr, holonIdStr, lensName, {
+                    await this.db.federate(targetholonIdStr, holonIdStr, lensName, {
                         direction: 'outbound',
                         mode: 'reference'
                     });
@@ -1637,7 +1665,7 @@ export default class Settings {
         const holonId = ctx.message.chat.id;
         let settings = await this.getSettings(holonId)
         let hex = settings.hex
-        let content = await this.db.getAll(hex + '/tags')
+        let content = await this.db.getAll(hex, 'tags')
         //console.log(content)
         return content ? content[0].id : 'not found'
     }
@@ -1762,7 +1790,7 @@ export default class Settings {
 
         let settings = await this.getSettings(holonId)
         settings.language = language
-        this.db.put(holonId + '/settings', settings)
+        await this.db.put(holonId.toString(), 'settings', settings)
         await i18next.changeLanguage(language); // Ensure i18next instance is updated
         ctx.reply('Language changed to ' + language)
     }
@@ -1803,7 +1831,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(holonId)
         settings.theme = theme
-        this.db.put(holonId + '/settings', settings)
+        await this.db.put(holonId.toString(), 'settings', settings)
         ctx.reply('Theme changed to ' + theme)
     }
 
@@ -1822,7 +1850,7 @@ export default class Settings {
 
         let settings = await this.getSettings(holonId)
         settings.level = level
-        this.db.put(holonId + '/settings', settings)
+        await this.db.put(holonId.toString(), 'settings', settings)
         ctx.reply('Level changed to ' + level)
 
     }
@@ -1836,7 +1864,7 @@ export default class Settings {
         }
         let settings = await this.getSettings(holonId)
         settings.admin = admin
-        this.db.put(holonId + '/settings', settings)
+        await this.db.put(holonId.toString(), 'settings', settings)
         ctx.reply('Admin changed to ' + admin)
     }
 
@@ -2009,11 +2037,11 @@ export default class Settings {
             return cached.settings;
         }
 
-        let settings = await this.db.get(holonId + '/settings', holonId)
+        let settings = await this.db.get(holonId.toString(), 'settings', holonId)
         if (!settings || settings == '') {
             let holonName = await utils.getChatName(this.bot, holonId)
             settings = this.getDefaultSettings(holonId, holonName)
-            await this.db.put(holonId + '/settings', settings)
+            await this.db.put(holonId.toString(), 'settings', settings)
         } else {
             // Ensure all required fields exist by merging with default settings
             const defaultSettings = this.getDefaultSettings(holonId, settings.name || 'unknown')
@@ -2071,21 +2099,19 @@ export default class Settings {
             console.error('[setSettings] ERROR: settings.id is missing!');
             return;
         }
-        await this.db.put(settings.id + '/settings', settings);
+        await this.db.put(settings.id, 'settings', settings);
 
         // Invalidate local cache - delete both numeric and string keys to handle type mismatches
         const holonId = settings.id;
         this._settingsCache.delete(holonId);
         this._settingsCache.delete(Number(holonId));
         this._settingsCache.delete(String(holonId));
-
-        this.db.clearCacheForholonId(holonId);
     }
 
     async setValueEquation(holonId, equation) {
         let settings = await this.getSettings(holonId)
         settings.valueEquation = equation
-        await this.db.put(holonId + '/settings', settings)
+        await this.db.put(holonId.toString(), 'settings', settings)
     }
 
     async getValueEquation(holonId) {
@@ -2587,7 +2613,7 @@ export default class Settings {
         // Get all users from the chat
         let users = [];
         try {
-            users = await this.db.getAll(holonId + '/users');
+            users = await this.db.getAll(holonId.toString(), 'users');
         } catch (error) {
             console.error('Error getting users:', error);
         }
@@ -2766,7 +2792,7 @@ export default class Settings {
         let users = [];
         try {
             // Use the Users class functionality to get chat users
-            users = await this.db.getAll(holonId + '/users');
+            users = await this.db.getAll(holonId.toString(), 'users');
         } catch (error) {
             console.error('Error getting users:', error);
         }
@@ -2891,7 +2917,7 @@ export default class Settings {
         // Get user details
         let user = null;
         try {
-            const users = await this.db.getAll(holonId + '/users');
+            const users = await this.db.getAll(holonId.toString(), 'users');
             user = users.find(u => u.id.toString() === userId);
         } catch (error) {
             console.error('Error getting user info:', error);
@@ -3061,7 +3087,7 @@ export default class Settings {
     // Find a user in our database by username
     async findUserInDatabase(holonId, username) {
         try {
-            const users = await this.db.getAll(holonId + '/users');
+            const users = await this.db.getAll(holonId.toString(), 'users');
             return users.find(user =>
                 user.username &&
                 user.username.toLowerCase() === username.toLowerCase()
@@ -3169,7 +3195,7 @@ export default class Settings {
     // Add user to database
     async addUserToDatabase(holonId, user) {
         // Get current users
-        let users = await this.db.getAll(holonId + '/users');
+        let users = await this.db.getAll(holonId.toString(), 'users');
 
         // Check if user already exists
         const existingUser = users.find(u => u.id && u.id.toString() === user.id.toString());
@@ -3177,7 +3203,7 @@ export default class Settings {
             return false; // (`User with ID ${user.id} already exists.`);
         }
 
-        await this.db.put(holonId + '/users', user);
+        await this.db.put(holonId.toString(), 'users', user);
 
 
         return true;
@@ -3320,7 +3346,8 @@ export default class Settings {
         if (cachedLensConfig) {
             lensConfig = cachedLensConfig;
         } else {
-            lensConfig = await this.db.getFederatedConfig(holonIdStr, targetholonIdStr);
+            const fedData = await this.db.getFederation(holonIdStr);
+            lensConfig = fedData?.lensConfig?.[targetholonIdStr] || null;
         }
 
         const outboundLenses = lensConfig && lensConfig.outbound ? lensConfig.outbound : [];
@@ -3404,16 +3431,16 @@ export default class Settings {
         if (!lensesConfig) {
             // --- Placeholder for Lenses Data Fetching & Initialization ---
             // TODO: Replace this with actual logic to fetch shared lenses configuration (name, enabled state)
-            // for the targetholonId from db.holosphere or a similar source.
+            // for the targetholonId from db or a similar source.
             // If no configuration exists, initialize it (e.g., all enabled by default) and persist it.
             // const EXAMPLE_LENS_NAMES = ['Quests', 'Offers', 'Tags', 'Expenses', 'Announcements', 'Users', 'Shopping', 'Recurring'];
             // lensesConfig = EXAMPLE_LENS_NAMES.map(name => ({ name: name, enabled: true }));
             lensesConfig = await this.getLensesConfigForUI(holonId, targetholonId, relationshipType);
             // Example: 
-            // lensesConfig = await this.db.holosphere.getSharedLensesConfig(holonId, targetholonId, relationshipType);
+            // lensesConfig = await this.db.getSharedLensesConfig(holonId, targetholonId, relationshipType);
             // if (!lensesConfig || lensesConfig.length === 0) { 
             //     lensesConfig = EXAMPLE_LENS_NAMES.map(name => ({ name: name, enabled: true }));
-            //     // await this.db.holosphere.setSharedLensesConfig(holonId, targetholonId, relationshipType, lensesConfig); // Persist initial
+            //     // await this.db.setSharedLensesConfig(holonId, targetholonId, relationshipType, lensesConfig); // Persist initial
             // }
             // --- End Placeholder ---
         }
@@ -3483,7 +3510,8 @@ export default class Settings {
     }
 
     async getLensesConfigForUI(holonId, targetholonId, relationshipType) {
-        const persistedLinkConfig = await this.db.getFederatedConfig(holonId, targetholonId);
+        const fedData = await this.db.getFederation(holonId);
+        const persistedLinkConfig = fedData?.lensConfig?.[targetholonId] || null;
         let activeLensesForType = [];
 
         if (persistedLinkConfig) {
@@ -3605,7 +3633,7 @@ export default class Settings {
 
         try {
             // Try to get the holon's settings to find its name
-            const settings = await this.db.get(holonId.toString() + '/settings', holonId.toString());
+            const settings = await this.db.get(holonId.toString(), 'settings', holonId.toString());
             if (settings && settings.name && settings.name !== 'unknown') {
                 return settings.name;
             }

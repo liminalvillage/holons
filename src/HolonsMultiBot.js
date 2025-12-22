@@ -5,7 +5,7 @@
 
 import fs from 'fs';
 import MultiBot from './MultiBot.js';
-import DB from "./DB.js";
+import createHoloSphere from "./createHoloSphere.js";
 import UI from './UI.js';
 import H3 from './H3.js';
 import Holons from './Holons.js';
@@ -79,15 +79,59 @@ class HolonsBot {
       
       this.bot = new MultiBot(telegramToken || process.env.TELEGRAM, discordToken|| process.env.DISCORD, mattermostToken || process.env.MATTERMOST);
 
-      if (process.env.MODE === 'development') {
-        console.log('Development Mode');
-        this.db = new DB(`${appname}Debug`);
-      } else {
-        console.log('Production Mode');
-        this.db = new DB(appname);
-      }
+      const holosphereName = process.env.MODE === 'development' ? `${appname}Debug` : appname;
+      console.log(process.env.MODE === 'development' ? 'Development Mode' : 'Production Mode');
 
-      await this.db.init();
+      const holosphere = createHoloSphere(holosphereName);
+
+      // Store original holosphere methods
+      const originalGet = holosphere.get.bind(holosphere);
+      const originalGetAll = holosphere.getAll.bind(holosphere);
+      const originalPut = holosphere.put.bind(holosphere);
+
+      // Add DB-compatible wrapper methods that detect calling convention
+      holosphere.get = async function(tableOrHolon, lensOrKey, key) {
+        if (key !== undefined) {
+          return await originalGet(tableOrHolon, lensOrKey, key);
+        }
+        const [hex, lens] = tableOrHolon.split('/');
+        if (lens === undefined) {
+          return await this.getGlobal(tableOrHolon, lensOrKey);
+        }
+        return await originalGet(hex, lens, lensOrKey);
+      };
+
+      holosphere.getAll = async function(tableOrHolon, lens) {
+        if (lens !== undefined && !tableOrHolon.includes('/')) {
+          return await originalGetAll(tableOrHolon, lens);
+        }
+        const [hex, parsedLens] = tableOrHolon.split('/');
+        if (parsedLens === undefined) {
+          return await this.getAllGlobal(tableOrHolon);
+        }
+        return await originalGetAll(hex, parsedLens);
+      };
+
+      holosphere.put = async function(tableOrHolon, lensOrData, dataOrOptions, options = {}) {
+        if (dataOrOptions !== undefined && typeof lensOrData === 'string' && !tableOrHolon.includes('/')) {
+          return await originalPut(tableOrHolon, lensOrData, dataOrOptions, options);
+        }
+        const [hex, lens] = tableOrHolon.split('/');
+        const data = lensOrData;
+        const opts = dataOrOptions || {};
+        if (lens === undefined) {
+          if (!data.id) {
+            data.id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          }
+          return await this.putGlobal(tableOrHolon, data);
+        }
+        return await originalPut(hex, lens, data, opts);
+      };
+
+      // Add self-reference for backward compatibility with code using db
+      holosphere.holosphere = holosphere;
+
+      this.db = holosphere;
 
       await this.initializeModules();
 
