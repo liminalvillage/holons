@@ -5,6 +5,19 @@
     import type { HoloSphere } from "holosphere";
     import { getHologramSourceName } from "../utils/holonNames";
     import { formatDate } from "../utils/date";
+    import {
+        calculateTaskCompletionScores,
+        getActionScore,
+        type ScoreEquation,
+        DEFAULT_EQUATION
+    } from "../lib/scoring/ContributionScoring";
+    import {
+        getCachedEquation,
+        getCachedUsersObject,
+        preloadHolon,
+        subscribeToHolon,
+        isSubscribed
+    } from "../lib/holonCache";
 
     export let quest: any;
     export let questId: string;
@@ -27,7 +40,9 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
-    let userStore: UserStore = {};
+    // Use cached data immediately for instant display
+    let userStore: UserStore = getCachedUsersObject(holonId);
+    let equation: ScoreEquation = getCachedEquation(holonId);
 
     let showDatePicker = false;
     let selectedDate = quest.when ? new Date(quest.when) : new Date();
@@ -85,154 +100,91 @@
     }
 
     onMount(() => {
-        document.addEventListener("click", handleClickOutside);
-
-        let unsubscribeUsers: (() => void) | undefined;
         let unsubscribeQuests: (() => void) | undefined;
+        let holonUnsub: (() => void) | undefined;
 
         if (holosphere && holonId) {
-            // Fetch initial users and build a userStore keyed by user.username
-            (async () => {
-                try {
-                    const initialUsersData = await holosphere.getAll(holonId, "users");
-                    let usersKeyedByUsername: UserStore = {};
-                    if (Array.isArray(initialUsersData)) {
-                        initialUsersData.forEach(user => {
-                            if (user && user.username) { // Ensure user and user.username are valid
-                                usersKeyedByUsername[user.username] = user as User;
-                            } else {
-                                console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData array item:", user);
-                            }
-                        });
-                    } else if (typeof initialUsersData === 'object' && initialUsersData !== null) {
-                        Object.values(initialUsersData).forEach((user: any) => {
-                            if (user && user.username) { // Ensure user and user.username are valid
-                                usersKeyedByUsername[user.username] = user as User;
-                            } else {
-                                console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData object value:", user);
-                            }
-                        });
-                    } else {
-                        console.warn("[TaskModal.svelte] Initial users data for TaskModal is not array or object:", initialUsersData);
-                    }
-                    userStore = usersKeyedByUsername;
-                } catch (e) {
-                    console.error("[TaskModal.svelte] Error fetching initial users for TaskModal:", e);
-                    userStore = {};
-                }
-            })();
-
-            // Subscribe to user updates - key from subscription might be different from username
-            try {
-                const off = holosphere.subscribe(holonId, "users", (updatedUser: User | null, subKey?: string) => {
-                    const subKeyStr = String(subKey); 
-
-                    if (updatedUser && updatedUser.username) { // Prioritize username as the key
-                        const actualUserKey = updatedUser.username; // Canonical key is username
-                        
-                        userStore = { ...userStore, [actualUserKey]: updatedUser };
-
-                        // If subKey from Holosphere was different and existed, remove it (if it wasn't another user's username)
-                        if (subKeyStr && subKeyStr !== actualUserKey && userStore.hasOwnProperty(subKeyStr) && (!userStore[subKeyStr] || userStore[subKeyStr]?.username !== subKeyStr)) {
-                            delete userStore[subKeyStr];
-                        }
-
-                    } else if (updatedUser === null) { // Deletion
-                        // For deletion, if subKey is a username, use it. 
-                        // If subKey is some other ID, we need to find the user by that other ID and delete by username.
-                        // This part is tricky if subKey is not the username. We'll assume for now subKey might be the username for deletions or we can't reliably delete.
-                        if (!subKeyStr || subKeyStr === 'undefined') {
-                            console.warn(`[TaskModal.svelte] User Deletion: Received invalid or undefined subKey: '${subKeyStr}'.`);
-                        } else if (userStore.hasOwnProperty(subKeyStr)) { // If subKey itself is a username key
-                            delete userStore[subKeyStr];
-                        } else {
-                            // If subKey was not a username, we might need to iterate userStore to find the user whose original_id matched subKey.
-                            // This is complex. For now, we log a warning if direct key deletion fails.
-                            console.warn(`[TaskModal.svelte] User Deletion: subKey '${subKeyStr}' not found as a username key. User might exist under a different key or is already deleted.`);
-                        }
-                    } else {
-                        console.warn(`[TaskModal.svelte] User subscription: Unhandled case or invalid data (e.g. user without username). SubKey: '${subKeyStr}', User:`, updatedUser, "Update skipped.");
-                        return;
-                    }
-                    userStore = { ...userStore };
-                });
-                if (typeof off === 'function') {
-                    unsubscribeUsers = off;
-                }
-            } catch (e) {
-                console.error("Error subscribing to user updates in TaskModal:", e);
+            // If we have cached users, mark as loaded immediately
+            if (Object.keys(userStore).length > 0) {
+                usersLoading = false;
             }
 
-            // Fetch available tasks for dependencies
-            (async () => {
-                try {
-                    const initialQuestsData = await holosphere.getAll(holonId, "quests");
-                    if (Array.isArray(initialQuestsData)) {
-                        availableTasks = initialQuestsData
-                            .filter((q: any) => q && q.id && q.id !== questId) // Exclude current task
-                            .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task' }));
-                    } else if (typeof initialQuestsData === 'object' && initialQuestsData !== null) {
-                        availableTasks = Object.values(initialQuestsData)
-                            .filter((q: any) => q && q.id && q.id !== questId) // Exclude current task
-                            .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task' }));
-                    }
+            // Subscribe to holon if not already subscribed at parent level
+            // This keeps users and settings cache fresh
+            if (!isSubscribed(holonId)) {
+                holonUnsub = subscribeToHolon(holosphere, holonId);
+            }
 
-                    // Subscribe to quest updates
-                    const questOff = holosphere.subscribe(holonId, "quests", (updatedQuest: any, subKey?: string) => {
-                        if (updatedQuest && updatedQuest.id && updatedQuest.id !== questId) {
-                            // Update available tasks
-                            const existingIndex = availableTasks.findIndex(t => t.id === updatedQuest.id);
-                            if (existingIndex >= 0) {
-                                availableTasks[existingIndex] = { 
-                                    id: updatedQuest.id, 
-                                    title: updatedQuest.title || 'Untitled Task' 
-                                };
-                            } else {
-                                availableTasks = [...availableTasks, { 
-                                    id: updatedQuest.id, 
-                                    title: updatedQuest.title || 'Untitled Task' 
-                                }];
-                            }
-                            availableTasks = [...availableTasks]; // Trigger reactivity
+            // Preload in background (will refresh cache if stale)
+            preloadHolon(holosphere, holonId).then(() => {
+                // Update local state from refreshed cache
+                userStore = getCachedUsersObject(holonId);
+                equation = getCachedEquation(holonId);
+                usersLoading = false;
+            });
+
+            // Subscribe to quests for dependency tracking
+            try {
+                const questOff = holosphere.subscribe(holonId, "quests", (updatedQuest: any) => {
+                    if (updatedQuest?.id && updatedQuest.id !== questId) {
+                        const existingIndex = availableTasks.findIndex(t => t.id === updatedQuest.id);
+                        const newTask = { id: updatedQuest.id, title: updatedQuest.title || 'Untitled Task' };
+                        if (existingIndex >= 0) {
+                            availableTasks[existingIndex] = newTask;
+                            availableTasks = availableTasks;
+                        } else {
+                            availableTasks = [...availableTasks, newTask];
                         }
-                    });
-                    if (typeof questOff === 'function') {
-                        unsubscribeQuests = questOff;
                     }
-                } catch (e) {
-                    console.error("Error fetching quests for dependencies in TaskModal:", e);
+                });
+                if (typeof questOff === 'function') {
+                    unsubscribeQuests = questOff;
                 }
-            })();
+            } catch (e) {
+                console.error("Error subscribing to quests in TaskModal:", e);
+            }
+
+            // Fetch quests for dependencies
+            holosphere.getAll(holonId, "quests").then((questsData: any) => {
+                const quests = Array.isArray(questsData) ? questsData : Object.values(questsData || {});
+                availableTasks = quests
+                    .filter((q: any) => q?.id && q.id !== questId)
+                    .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task' }));
+            }).catch(() => {});
         }
 
         return () => {
-            document.removeEventListener("click", handleClickOutside);
-            if (unsubscribeUsers) {
-                unsubscribeUsers();
-            }
-            if (unsubscribeQuests) {
-                unsubscribeQuests();
-            }
+            if (holonUnsub) holonUnsub();
+            if (unsubscribeQuests) unsubscribeQuests();
         };
     });
 
     const dispatch = createEventDispatcher();
-    let showAddParticipants = false;
-    let showDropdown = false;
+    let usersLoading = true;
+    let pendingUserUpdates = new Set<string>(); // Track pending updates for optimistic UI
 
-    async function fetchUsersAndShowDropdown() {
-        if (!holosphere) {
-            console.error("Cannot show user dropdown: holosphere is not available");
-            return;
+    // Completion modal state
+    let showCompletionModal = false;
+    let completionSelectedUsers = new Set<string>(); // Track selected user IDs for completion
+    $: completionSelectedUserIds = completionSelectedUsers; // Reactive for template
+
+    // Optimistic toggle for snappy UI
+    async function toggleUserParticipation(userId: string, user: User) {
+        if (pendingUserUpdates.has(userId)) return; // Prevent double-clicks
+
+        pendingUserUpdates.add(userId);
+        pendingUserUpdates = pendingUserUpdates; // Trigger reactivity
+
+        try {
+            if (isUserParticipant(user.username)) {
+                await removeParticipant(user.id, user.username);
+            } else {
+                await toggleParticipant(userId);
+            }
+        } finally {
+            pendingUserUpdates.delete(userId);
+            pendingUserUpdates = pendingUserUpdates;
         }
-        // userStore should be populated by onMount. This function now just ensures the dropdown is visible.
-        // Optional: Add a check or warning if userStore is empty, though onMount should handle population.
-        if (Object.keys(userStore).length === 0 && holonId) {
-            console.warn("User store in TaskModal is empty when trying to show dropdown. It should have been populated onMount.");
-            // As a fallback, you could attempt a one-time fetch here if truly necessary,
-            // but ideally, the onMount subscription keeps it live.
-        }
-        showDropdown = true; 
     }
 
     async function updateQuest(updates: any, shouldClose = false) {
@@ -243,8 +195,9 @@
 
         const updatedQuest = { ...quest, ...updates };
 
-        await holosphere.put(holonId, "quests", updatedQuest); // This line triggers the loop for quests
-        quest = updatedQuest; // Update local quest state
+        // holosphere.put() is optimistic - caches locally and returns immediately
+        await holosphere.put(holonId, "quests", updatedQuest);
+        quest = updatedQuest;
 
         if (shouldClose) {
             dispatch("close");
@@ -274,18 +227,24 @@
         dispatch("close");
     }
 
-    async function removeParticipant(participantId: string) {
+    async function removeParticipant(participantId: string, username?: string) {
+        // Filter by both ID and username to handle different storage formats
         const participants = quest.participants.filter(
-            (p: { id: string }) => p.id !== participantId,
+            (p: { id: string; username?: string }) => {
+                // Remove if ID matches OR username matches
+                if (p.id === participantId) return false;
+                if (username && p.username === username) return false;
+                return true;
+            }
         );
-        
+
         // Also reset time tracking for the removed participant
         const updatedTimeTracking = { ...quest.timeTracking };
         if (updatedTimeTracking[participantId]) {
             delete updatedTimeTracking[participantId];
         }
-        
-        await updateQuest({ 
+
+        await updateQuest({
             participants,
             timeTracking: updatedTimeTracking
         });
@@ -296,8 +255,34 @@
         if (!quest.participants || quest.participants.length === 0) return false;
         // quest.participants now stores { id: ACTUAL_USER_ID, username: USERNAME_STRING, firstName: ..., lastName: ... }
         return quest.participants.some(
-            (p: { id: string; username?: string }) => p.username === usernameToTest 
+            (p: { id: string; username?: string }) => p.username === usernameToTest
         );
+    }
+
+    // Reactive Set of participant usernames for Svelte template reactivity
+    $: participantUsernames = new Set((quest.participants || []).map((p: any) => p.username));
+
+    // Open completion modal and initialize with current participants
+    function openCompletionModal() {
+        // If already completed, just toggle back to ongoing
+        if (quest.status === "completed") {
+            completeQuest();
+            return;
+        }
+        // Initialize with current participants
+        completionSelectedUsers = new Set((quest.participants || []).map((p: any) => p.id));
+        showCompletionModal = true;
+    }
+
+    // Toggle user selection in completion modal
+    function toggleCompletionUser(userId: string) {
+        const newSet = new Set(completionSelectedUsers);
+        if (newSet.has(userId)) {
+            newSet.delete(userId);
+        } else {
+            newSet.add(userId);
+        }
+        completionSelectedUsers = newSet; // Trigger reactivity with new Set
     }
 
     async function completeQuest() {
@@ -305,7 +290,45 @@
             quest.status === "completed" ? "ongoing" : "completed";
 
         if (newStatus === "completed") {
-            // Track initiator action
+            // Get selected participants from completion modal (or current participants if modal not used)
+            const selectedParticipantIds = showCompletionModal
+                ? Array.from(completionSelectedUsers)
+                : (quest.participants || []).map((p: any) => p.id);
+
+            // Build the participants array from selected user IDs
+            const selectedParticipants = selectedParticipantIds
+                .map(id => {
+                    // First check if already in quest.participants
+                    const existing = (quest.participants || []).find((p: any) => p.id === id);
+                    if (existing) return existing;
+                    // Otherwise find in userStore
+                    const user = Object.values(userStore).find(u => u.id === id);
+                    if (user) {
+                        return {
+                            id: user.id,
+                            firstName: user.first_name,
+                            lastName: user.last_name,
+                            username: user.username
+                        };
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+
+            // Update quest participants to match selection
+            if (showCompletionModal) {
+                await updateQuest({ participants: selectedParticipants });
+            }
+
+            // Calculate scores using the same computation as Holonsbot
+            const completionScores = calculateTaskCompletionScores(
+                quest.initiator?.id || null,
+                selectedParticipantIds,
+                quest.timeTracking || {},
+                equation
+            );
+
+            // Track initiator action with equation-based scoring
             if (quest.initiator) {
                 const initiatorData = await holosphere.get(
                     holonId,
@@ -313,6 +336,9 @@
                     quest.initiator.id,
                 );
                 if (initiatorData) {
+                    const initiatorScore = completionScores.get(quest.initiator.id);
+                    const initiatedPoints = getActionScore('initiated', 1, equation).points;
+
                     await holosphere.put(holonId, "users", {
                         ...initiatorData,
                         initiated: [
@@ -324,7 +350,8 @@
                             {
                                 type: "initiated",
                                 action: quest.title,
-                                amount: 0,
+                                amount: initiatedPoints, // Use equation weight
+                                questId: questId,
                                 timestamp: new Date(),
                             },
                         ],
@@ -332,32 +359,56 @@
                 }
             }
 
-            // Track participant completions
-            if (quest.participants) {
-                for (const participant of quest.participants) {
-                    const userData = await holosphere.get(
-                        holonId,
-                        "users",
-                        participant.id,
-                    );
-                    if (!userData) {
-                        console.error(`User data not found for participant ID: ${participant.id}`);
-                        continue;
-                    }
-                    await holosphere.put(holonId, "users", {
-                        ...userData,
-                        completed: [...(Array.isArray(userData.completed) ? userData.completed : []), quest.title],
-                        actions: [
-                            ...(Array.isArray(userData.actions) ? userData.actions : []),
-                            {
-                                type: "completed",
-                                action: quest.title,
-                                amount: 0,
-                                timestamp: new Date(),
-                            },
-                        ],
+            // Track participant completions with equation-based scoring
+            for (const participant of selectedParticipants) {
+                const userData = await holosphere.get(
+                    holonId,
+                    "users",
+                    participant.id,
+                );
+                if (!userData) {
+                    console.error(`User data not found for participant ID: ${participant.id}`);
+                    continue;
+                }
+
+                const participantScore = completionScores.get(participant.id);
+                const completedPoints = getActionScore('completed', 1, equation).points;
+                const hoursTracked = (quest.timeTracking?.[participant.id] || 0) as number;
+
+                // Build updated user data
+                const updatedUser: any = {
+                    ...userData,
+                    completed: [...(Array.isArray(userData.completed) ? userData.completed : []), quest.title],
+                    actions: [
+                        ...(Array.isArray(userData.actions) ? userData.actions : []),
+                        {
+                            type: "completed",
+                            action: quest.title,
+                            amount: completedPoints, // Use equation weight
+                            questId: questId,
+                            timestamp: new Date(),
+                        },
+                    ],
+                };
+
+                // If they tracked hours, update hours and collaboration (same as Holonsbot)
+                if (hoursTracked > 0) {
+                    const hoursPoints = getActionScore('hours', hoursTracked, equation).points;
+                    const collabPoints = equation.collaboration; // 1 per time log event
+
+                    updatedUser.hours = (userData.hours || 0) + hoursTracked;
+                    updatedUser.collaboration = (userData.collaboration || 0) + 1;
+                    updatedUser.actions.push({
+                        type: "collaborated",
+                        action: quest.title,
+                        amount: hoursPoints + collabPoints, // Combined hours + collaboration score
+                        hours: hoursTracked,
+                        questId: questId,
+                        timestamp: new Date(),
                     });
                 }
+
+                await holosphere.put(holonId, "users", updatedUser);
             }
 
             // Create expense entries for all time tracked
@@ -388,6 +439,7 @@
             }
 
             await updateQuest({ status: newStatus, completed_at: new Date().toISOString() });
+            showCompletionModal = false;
             dispatch("taskCompleted", { questId });
             dispatch("close");
         } else {
@@ -405,7 +457,6 @@
 
         // Check if user is already a participant using their username
         if (isUserParticipant(user.username)) {
-            showDropdown = false;
             return;
         }
 
@@ -455,15 +506,6 @@
             console.debug(`[TaskModal.svelte] Could not create hologram in participant's holon (${user.id}):`, error);
         }
     }
-    
-    showDropdown = false;
-    }
-
-    function handleClickOutside(event: MouseEvent) {
-        const dropdown = document.querySelector(".user-dropdown");
-        if (dropdown && !dropdown.contains(event.target as Node)) {
-            showDropdown = false;
-        }
     }
 
     async function scheduleTask() {
@@ -815,8 +857,8 @@
             // Get settings to check for hex configuration
             let settingsHex: string | null = null;
             try {
-                const settingsResult = await holosphere.get(holonId, 'settings');
-                const settings = Array.isArray(settingsResult) ? settingsResult.find((s: any) => s?.hex) : settingsResult;
+                const settingsResult = await holosphere.get(holonId, 'settings', holonId);
+                const settings = settingsResult;
                 if (settings && settings.hex) {
                     settingsHex = settings.hex;
                     console.log('[TaskModal] Found settings hex:', settingsHex);
@@ -1298,72 +1340,80 @@
 
                 <!-- Right column -->
                 <div class="space-y-3 min-h-0">
-                    <!-- Participants -->
+                    <!-- Team Selection -->
                     <div class="bg-gray-700/30 p-3 rounded-lg">
-                        <div class="flex justify-between items-center mb-2">
-                            <h4 class="text-sm font-medium text-gray-300 flex items-center gap-2">
-                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                        <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
                             </svg>
-                                Team
-                            </h4>
-                        <button
-                                class="px-2 py-1 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 text-xs transition-colors"
-                            on:click|stopPropagation={fetchUsersAndShowDropdown}
-                            type="button"
-                        >
-                                + Add
-                        </button>
-                    </div>
+                            Team
+                            {#if quest.participants?.length}
+                                <span class="text-xs text-indigo-400">({quest.participants.length} selected)</span>
+                            {/if}
+                        </h4>
 
-                        <!-- Participants list -->
-                        {#if quest.participants?.length}
-                            <div class="space-y-1">
-                            {#each quest.participants as participant}
-                                {@const currentTime = quest.timeTracking?.[participant.id] || 0}
-                                    <div class="flex items-center justify-between bg-gray-800 p-2 rounded text-sm">
-                                    <div class="flex items-center gap-2">
-                                        <img
-                                            src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-                                            alt={`${participant.firstName} ${participant.lastName || ""}`}
-                                                class="w-6 h-6 rounded-full"
-                                        />
-                                            <div>
-                                                <div class="text-gray-300">
-                                                {participant.firstName} {participant.lastName || ""}
+                        <!-- Always visible, scrollable user list with multi-select -->
+                        <div class="max-h-48 overflow-y-auto space-y-1 pr-1 overscroll-contain">
+                            {#if usersLoading}
+                                <div class="flex items-center justify-center py-4">
+                                    <div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                    <span class="text-gray-400 text-xs ml-2">Loading team...</span>
+                                </div>
+                            {:else if Object.keys(userStore).length === 0}
+                                <p class="text-gray-500 text-xs py-2 text-center">No users in this holon</p>
+                            {:else}
+                                {#each Object.entries(userStore) as [userId, user] (user.id)}
+                                    {@const isPending = pendingUserUpdates.has(userId)}
+                                    {@const isSelected = participantUsernames.has(user.username)}
+                                    {@const currentTime = isSelected ? (quest.timeTracking?.[user.id] || 0) : 0}
+                                    <button
+                                        class="w-full flex items-center justify-between p-2.5 rounded-lg text-sm transition-all touch-manipulation select-none active:scale-[0.98] {isSelected ? 'bg-indigo-500/20 border border-indigo-500/40' : 'bg-gray-800 hover:bg-gray-700 active:bg-gray-600 border border-transparent'} {isPending ? 'opacity-60 pointer-events-none' : ''}"
+                                        on:click|stopPropagation={() => toggleUserParticipation(userId, user)}
+                                        type="button"
+                                        disabled={isPending}
+                                    >
+                                        <div class="flex items-center gap-2.5">
+                                            <!-- Checkbox indicator -->
+                                            <div class="w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors {isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-500'}">
+                                                {#if isPending}
+                                                    <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                {:else if isSelected}
+                                                    <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                                                    </svg>
+                                                {/if}
+                                            </div>
+                                            <img
+                                                src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
+                                                alt={user.first_name}
+                                                class="w-7 h-7 rounded-full"
+                                                loading="lazy"
+                                            />
+                                            <div class="text-left">
+                                                <div class="text-gray-200 font-medium">
+                                                    {user.first_name} {user.last_name || ""}
                                                 </div>
                                                 {#if currentTime > 0}
-                                                    <div class="text-xs text-gray-400">{formatTime(currentTime)}</div>
+                                                    <div class="text-xs text-indigo-300">{formatTime(currentTime)}</div>
                                                 {/if}
+                                            </div>
                                         </div>
-                                    </div>
-                                    
-                                    <div class="flex items-center gap-1">
-                                        <button
-                                                class="px-1 py-0.5 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30"
-                                            on:click={() => updateTimeTracking(participant.id, 0.25)}
-                                            title="Add 15 minutes"
-                                            type="button"
-                                        >
-                                            +15m
-                                        </button>
-                                        <button
-                                                class="text-gray-400 hover:text-red-400 p-1"
-                                                on:click={() => removeParticipant(participant.id)}
-                                            type="button"
-                                            aria-label={`Remove participant ${participant.firstName}`}
+
+                                        <!-- Time tracking button (only for selected users) -->
+                                        {#if isSelected && !isPending}
+                                            <button
+                                                class="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30 active:bg-green-500/40 flex-shrink-0 touch-manipulation min-h-[32px] min-w-[44px]"
+                                                on:click|stopPropagation={() => updateTimeTracking(user.id, 0.25)}
+                                                title="Add 15 minutes"
+                                                type="button"
                                             >
-                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                </div>
-                            {/each}
-                            </div>
-                        {:else}
-                            <p class="text-gray-500 text-xs">No participants</p>
-                        {/if}
+                                                +15m
+                                            </button>
+                                        {/if}
+                                    </button>
+                                {/each}
+                            {/if}
+                        </div>
 
                         <!-- Time summary -->
                         {#if quest.timeTracking && Object.keys(quest.timeTracking).length > 0}
@@ -1375,30 +1425,6 @@
                                 </div>
                             {/if}
                         {/if}
-
-                    <!-- User Dropdown -->
-                    {#if showDropdown}
-                        {@const availableUsers = Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId))}
-                            <div class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown border border-gray-600 max-h-32 overflow-y-auto">
-                            {#each availableUsers as [userId, user]}
-                                <button
-                                        class="w-full text-left px-3 py-2 transition-colors flex items-center gap-2 hover:bg-gray-600 text-gray-200 text-sm"
-                                        on:click|stopPropagation={() => toggleParticipant(userId)}
-                                    type="button"
-                                >
-                                    <img
-                                        src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
-                                        alt={user.first_name}
-                                            class="w-5 h-5 rounded-full"
-                                    />
-                                        <span>{user.first_name} {user.last_name || ""}</span>
-                                </button>
-                            {/each}
-                            {#if availableUsers.length === 0}
-                                    <div class="px-3 py-2 text-gray-400 text-xs">No more users available</div>
-                            {/if}
-                        </div>
-                    {/if}
                 </div>
 
                     <!-- Quick Actions -->
@@ -1493,7 +1519,7 @@
                             class="px-4 py-2 {quest.status === 'completed'
                                 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
                                 : 'bg-green-500/10 text-green-400 border-green-500/30'} rounded border hover:bg-opacity-20 transition-colors text-sm font-medium"
-                        on:click={completeQuest}
+                        on:click={openCompletionModal}
                         type="button"
                     >
                             {quest.status === "completed" ? "Mark Ongoing" : "Mark Complete"}
@@ -1510,3 +1536,103 @@
         </div>
     </div>
 </div>
+
+<!-- Completion Modal -->
+{#if showCompletionModal}
+    <div
+        class="fixed inset-0 bg-black bg-opacity-70 z-[60] flex items-center justify-center p-4"
+        on:click|self={() => showCompletionModal = false}
+        on:keydown={(e) => e.key === "Escape" && (showCompletionModal = false)}
+        role="presentation"
+        transition:fade
+    >
+        <div
+            class="bg-gray-800 rounded-xl max-w-md w-full shadow-2xl border border-gray-700"
+            transition:scale={{ duration: 200, start: 0.95 }}
+            role="dialog"
+            aria-modal="true"
+            on:click|stopPropagation
+            on:keydown|stopPropagation
+        >
+            <!-- Header -->
+            <div class="p-4 border-b border-gray-700">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Complete Task
+                </h3>
+                <p class="text-sm text-gray-400 mt-1">Select who completed this task</p>
+            </div>
+
+            <!-- User Selection -->
+            <div class="p-4 max-h-64 overflow-y-auto">
+                {#if Object.keys(userStore).length === 0}
+                    <p class="text-gray-500 text-sm text-center py-4">No users available</p>
+                {:else}
+                    <div class="space-y-1">
+                        {#each Object.entries(userStore) as [userId, user] (user.id)}
+                            {@const isSelected = completionSelectedUserIds.has(user.id)}
+                            <button
+                                class="w-full flex items-center gap-3 p-2.5 rounded-lg text-sm transition-all touch-manipulation {isSelected ? 'bg-green-500/20 border border-green-500/40' : 'bg-gray-700 hover:bg-gray-600 border border-transparent'}"
+                                on:click={() => toggleCompletionUser(user.id)}
+                                type="button"
+                            >
+                                <div class="w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors {isSelected ? 'bg-green-500 border-green-500' : 'border-gray-500'}">
+                                    {#if isSelected}
+                                        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                                        </svg>
+                                    {/if}
+                                </div>
+                                <img
+                                    src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
+                                    alt={user.first_name}
+                                    class="w-7 h-7 rounded-full"
+                                    loading="lazy"
+                                />
+                                <span class="text-gray-200 font-medium">
+                                    {user.first_name} {user.last_name || ""}
+                                </span>
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-700 flex justify-between gap-2">
+                <button
+                    class="px-3 py-2 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 border border-red-500/30 transition-colors text-sm flex items-center gap-2"
+                    on:click={() => { showCompletionModal = false; deleteQuest(); }}
+                    type="button"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Delete
+                </button>
+
+                <div class="flex gap-2">
+                    <button
+                        class="px-4 py-2 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors text-sm"
+                        on:click={() => showCompletionModal = false}
+                        type="button"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm font-medium flex items-center gap-2"
+                        on:click={completeQuest}
+                        type="button"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        Complete ({completionSelectedUserIds.size})
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+{/if}

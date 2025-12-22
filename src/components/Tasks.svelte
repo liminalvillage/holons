@@ -20,7 +20,27 @@
 	import { fetchHolonName } from "../utils/holonNames";
 	// Import shared components
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { CheckSquare, Calendar as CalendarIcon } from 'svelte-feathers';
+	import { CheckSquare, Calendar as CalendarIcon, Plus } from 'svelte-feathers';
+	import {
+		calculateTaskCompletionScores,
+		getActionScore,
+		type ScoreEquation,
+		DEFAULT_EQUATION
+	} from "../lib/scoring/ContributionScoring";
+	import {
+		getCachedEquation,
+		preloadHolon,
+		subscribeToHolon,
+		unsubscribeFromHolon
+	} from "../lib/holonCache";
+
+	// State for quick completion
+	let showCompleterModal = $state(false);
+	let taskToComplete: { key: string; quest: Quest } | null = $state(null);
+	let availableCompleters: Array<{ id: string; firstName: string; lastName?: string; username: string }> = $state([]);
+	let completersLoading = $state(false);
+	let equation: ScoreEquation = $state(DEFAULT_EQUATION);
+	let selectedCompleters: Set<string> = $state(new Set()); // Multi-select for completers
 
 	// Add filterType prop to allow filtering by quest type
 	let { filterType = 'all' }: { filterType?: 'task' | 'event' | 'all' } = $props();
@@ -867,11 +887,261 @@
 			}, 10000); // Show for 10 seconds
 		}
 		// Note: handleTaskDeleted will still be called via the "close" event to clear selectedTask
-		
+
 		// Clear the task parameter from URL
 		const url = new URL(window.location.href);
 		url.searchParams.delete('task');
 		replaceState(url.toString(), { replaceState: true });
+	}
+
+	// Quick completion from checkbox click
+	async function handleCheckboxClick(e: Event, key: string, quest: Quest) {
+		e.stopPropagation();
+
+		if (!holosphere || !holonID) return;
+
+		// If already completed, just toggle back to ongoing
+		if (quest.status === 'completed') {
+			const updatedQuest = { ...quest, id: key, status: 'ongoing', completed_at: null };
+			await holosphere.put(holonID, 'quests', updatedQuest);
+			store = { ...store, [key]: updatedQuest };
+			return;
+		}
+
+		// If task has participants, complete directly with REA accounting
+		if (quest.participants && quest.participants.length > 0) {
+			await completeTaskWithAccounting(key, quest);
+		} else {
+			// No participants - show modal to select who completed it
+			taskToComplete = { key, quest };
+			selectedCompleters = new Set(); // Reset selection
+			await loadAvailableCompleters();
+			showCompleterModal = true;
+		}
+	}
+
+	// Load available users for completer selection
+	async function loadAvailableCompleters() {
+		if (!holosphere || !holonID) return;
+
+		completersLoading = true;
+		try {
+			const usersData = await holosphere.getAll(holonID, 'users');
+			const users: Array<{ id: string; firstName: string; lastName?: string; username: string }> = [];
+
+			if (Array.isArray(usersData)) {
+				usersData.forEach((user: any) => {
+					if (user && user.id) {
+						users.push({
+							id: user.id,
+							firstName: user.first_name || user.firstName || 'Unknown',
+							lastName: user.last_name || user.lastName,
+							username: user.username || ''
+						});
+					}
+				});
+			} else if (typeof usersData === 'object' && usersData !== null) {
+				Object.values(usersData).forEach((user: any) => {
+					if (user && user.id) {
+						users.push({
+							id: user.id,
+							firstName: user.first_name || user.firstName || 'Unknown',
+							lastName: user.last_name || user.lastName,
+							username: user.username || ''
+						});
+					}
+				});
+			}
+
+			availableCompleters = users;
+		} catch (error) {
+			console.error('Error loading users for completion:', error);
+			availableCompleters = [];
+		} finally {
+			completersLoading = false;
+		}
+	}
+
+	// Toggle completer selection
+	function toggleCompleterSelection(userId: string) {
+		const newSet = new Set(selectedCompleters);
+		if (newSet.has(userId)) {
+			newSet.delete(userId);
+		} else {
+			newSet.add(userId);
+		}
+		selectedCompleters = newSet;
+	}
+
+	// Complete task with selected completers (multi-select)
+	async function completeWithSelectedCompleters() {
+		if (!taskToComplete || !holosphere || !holonID || selectedCompleters.size === 0) return;
+
+		const { key, quest } = taskToComplete;
+
+		// Build participants from selected users
+		const newParticipants = availableCompleters
+			.filter(user => selectedCompleters.has(user.id))
+			.map(user => ({
+				id: user.id,
+				firstName: user.firstName,
+				lastName: user.lastName,
+				username: user.username
+			}));
+
+		// Merge with existing participants (avoid duplicates)
+		const existingIds = new Set((quest.participants || []).map((p: any) => p.id));
+		const updatedParticipants = [
+			...(quest.participants || []),
+			...newParticipants.filter(p => !existingIds.has(p.id))
+		];
+
+		const updatedQuest = { ...quest, participants: updatedParticipants };
+
+		// Now complete with REA accounting
+		await completeTaskWithAccounting(key, updatedQuest);
+
+		// Close modal and reset
+		showCompleterModal = false;
+		taskToComplete = null;
+		selectedCompleters = new Set();
+	}
+
+	// Complete task with full REA accounting (same logic as TaskModal)
+	async function completeTaskWithAccounting(key: string, quest: Quest) {
+		if (!holosphere || !holonID) return;
+
+		try {
+			// Load equation if not loaded
+			if (equation === DEFAULT_EQUATION) {
+				equation = await loadEquation(holosphere, holonID);
+			}
+
+			// Calculate scores
+			const participantIds = (quest.participants || []).map((p: any) => p.id);
+			const completionScores = calculateTaskCompletionScores(
+				quest.initiator?.id || null,
+				participantIds,
+				quest.timeTracking || {},
+				equation
+			);
+
+			// Track initiator action
+			if (quest.initiator) {
+				const initiatorData = await holosphere.get(holonID, 'users', quest.initiator.id);
+				if (initiatorData) {
+					const initiatedPoints = getActionScore('initiated', 1, equation).points;
+					await holosphere.put(holonID, 'users', {
+						...initiatorData,
+						initiated: [
+							...(Array.isArray(initiatorData.initiated) ? initiatorData.initiated : []),
+							quest.title,
+						],
+						actions: [
+							...(Array.isArray(initiatorData.actions) ? initiatorData.actions : []),
+							{
+								type: 'initiated',
+								action: quest.title,
+								amount: initiatedPoints,
+								questId: key,
+								timestamp: new Date(),
+							},
+						],
+					});
+				}
+			}
+
+			// Track participant completions
+			if (quest.participants) {
+				for (const participant of quest.participants) {
+					const userData = await holosphere.get(holonID, 'users', participant.id);
+					if (!userData) continue;
+
+					const completedPoints = getActionScore('completed', 1, equation).points;
+					const hoursTracked = (quest.timeTracking?.[participant.id] || 0) as number;
+
+					const updatedUser: any = {
+						...userData,
+						completed: [...(Array.isArray(userData.completed) ? userData.completed : []), quest.title],
+						actions: [
+							...(Array.isArray(userData.actions) ? userData.actions : []),
+							{
+								type: 'completed',
+								action: quest.title,
+								amount: completedPoints,
+								questId: key,
+								timestamp: new Date(),
+							},
+						],
+					};
+
+					// Track hours if any
+					if (hoursTracked > 0) {
+						const hoursPoints = getActionScore('hours', hoursTracked, equation).points;
+						const collabPoints = equation.collaboration;
+
+						updatedUser.hours = (userData.hours || 0) + hoursTracked;
+						updatedUser.collaboration = (userData.collaboration || 0) + 1;
+						updatedUser.actions.push({
+							type: 'collaborated',
+							action: quest.title,
+							amount: hoursPoints + collabPoints,
+							hours: hoursTracked,
+							questId: key,
+							timestamp: new Date(),
+						});
+					}
+
+					await holosphere.put(holonID, 'users', updatedUser);
+				}
+			}
+
+			// Create expense entries for time tracked
+			if (quest.timeTracking) {
+				for (const [userID, hours] of Object.entries(quest.timeTracking)) {
+					const hoursNum = hours as number;
+					if (hoursNum > 0) {
+						try {
+							const messageID = `${key}_time_${userID}_${Date.now()}`;
+							await holosphere.put(holonID, 'expenses', {
+								id: messageID,
+								chatID: holonID,
+								amount: hoursNum,
+								unit: 'hour',
+								description: quest.title,
+								paidBy: userID,
+								splitWith: [holonID],
+								timestamp: new Date().toISOString(),
+								fromTimeTracking: true,
+								questId: key
+							});
+						} catch (error) {
+							console.error(`Error adding time tracking expense for user ${userID}:`, error);
+						}
+					}
+				}
+			}
+
+			// Update quest status
+			const completedQuest = {
+				...quest,
+				id: key,
+				status: 'completed' as const,
+				completed_at: new Date().toISOString()
+			};
+
+			await holosphere.put(holonID, 'quests', completedQuest);
+			store = { ...store, [key]: completedQuest };
+
+			// Show celebration
+			showFireworks = true;
+			showConfetti = true;
+			setTimeout(() => { showFireworks = false; }, 2500);
+			setTimeout(() => { showConfetti = false; }, 10000);
+
+		} catch (error) {
+			console.error('Error completing task with accounting:', error);
+		}
 	}
 
 	// Add fetchData function with retry logic
@@ -1081,6 +1351,7 @@
 			if (subscriptionState.batchTimeout) {
 				clearTimeout(subscriptionState.batchTimeout);
 			}
+			// Note: Don't unsubscribe from holon cache here - it persists across mounts
 			subscriptionState.currentHolonID = null;
 			currentHolonId = null; // Reset so next mount triggers fetch
 			window.removeEventListener('openDependencyTask', handleDependencyTask as EventListener);
@@ -1104,6 +1375,13 @@
 			fetchHolonName(holosphere, holonID).then(name => {
 				holonName = name || 'Tasks';
 			});
+			// Preload settings + users for TaskModal (instant cache hit when modal opens)
+			equation = getCachedEquation(holonID);
+			preloadHolon(holosphere, holonID).then(() => {
+				equation = getCachedEquation(holonID);
+			});
+			// Subscribe to holon changes (keeps cache fresh)
+			subscribeToHolon(holosphere, holonID);
 		}
 	});
 
@@ -1262,20 +1540,18 @@
 					<!-- Left: View toggle + Add button -->
 					<div class="controls-row__left">
 						<button
-							on:click={showDialog}
-							class="add-btn"
+							onclick={showDialog}
+							class="btn btn--primary"
 							aria-label="Add new task"
 						>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-							</svg>
+							<Plus size={16} />
 							<span class="hidden sm:inline">Add</span>
 						</button>
 
 						<div class="view-toggle">
 							<button
 								class="view-toggle__btn {viewMode === 'list' ? 'view-toggle__btn--active' : ''}"
-								on:click={() => (viewMode = 'list')}
+								onclick={() => (viewMode = 'list')}
 								aria-label="List view"
 								title="List view"
 							>
@@ -1290,7 +1566,7 @@
 							</button>
 							<button
 								class="view-toggle__btn {viewMode === 'canvas' ? 'view-toggle__btn--active' : ''}"
-								on:click={() => (viewMode = 'canvas')}
+								onclick={() => (viewMode = 'canvas')}
 								aria-label="Canvas view"
 								title="Canvas view"
 							>
@@ -1328,7 +1604,7 @@
 
 						<button
 							class="sort-btn"
-							on:click={handleSortButtonClick}
+							onclick={handleSortButtonClick}
 							aria-label="Sort tasks"
 							title="Sort by: {sortCriteria}"
 						>
@@ -1364,7 +1640,7 @@
 						</label>
 
 						<button
-							on:click={() => showImportModal = true}
+							onclick={() => showImportModal = true}
 							class="import-btn"
 							aria-label="Import quests"
 							title="Import quests"
@@ -1408,18 +1684,18 @@
 						<div
 							id={key}
 							class="w-full task-card relative text-left group cursor-pointer"
-							on:click|stopPropagation={() => handleTaskClick(key, quest)}
+							onclick={(e) => { e.stopPropagation(); handleTaskClick(key, quest); }}
 							draggable="true"
-							on:dragstart={(e) => handleDragStart(e, key)}
-							on:dragover={(e) => handleDragOver(e, key)}
-							on:drop={(e) => handleDrop(e, key)}
-							on:dragend={handleDragEnd}
+							ondragstart={(e) => handleDragStart(e, key)}
+							ondragover={(e) => handleDragOver(e, key)}
+							ondrop={(e) => handleDrop(e, key)}
+							ondragend={handleDragEnd}
 							role="button"
 							tabindex="0"
 							aria-label={`Open task: ${quest.title}`}
 							class:dragging={$dragState.draggedId === key}
 							class:drag-over={$dragState.dragOverId === key}
-							on:keydown={(e) => {
+							onkeydown={(e) => {
 								if (e.key === 'Enter' || e.key === ' ') {
 									handleTaskClick(key, quest);
 								}
@@ -1433,10 +1709,34 @@
 							>
 								<div class="flex items-center justify-between gap-2 sm:gap-3">
 									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-										<!-- Task Icon -->
-										<div class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-black/20 flex items-center justify-center text-xs sm:text-sm">
-											{quest.status === 'completed' ? '✅' : quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : (filterType === 'event' && quest.when) ? '📅' : '✓'}
-										</div>
+										<!-- Clickable Checkbox for completion -->
+										<button
+											class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-all duration-200 hover:scale-110 {quest.status === 'completed' ? 'bg-green-500 text-white' : 'bg-black/20 hover:bg-green-500/30 text-gray-600 hover:text-green-600'}"
+											onclick={(e) => handleCheckboxClick(e, key, quest)}
+											title={quest.status === 'completed' ? 'Mark as ongoing' : 'Mark as complete'}
+											aria-label={quest.status === 'completed' ? 'Mark task as ongoing' : 'Mark task as complete'}
+										>
+											{#if quest.status === 'completed'}
+												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+												</svg>
+											{:else if quest.type === 'event' || (filterType === 'event' && quest.when)}
+												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke-width="2"/>
+													<line x1="16" y1="2" x2="16" y2="6" stroke-width="2"/>
+													<line x1="8" y1="2" x2="8" y2="6" stroke-width="2"/>
+													<line x1="3" y1="10" x2="21" y2="10" stroke-width="2"/>
+												</svg>
+											{:else if quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating'}
+												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+												</svg>
+											{:else}
+												<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<circle cx="12" cy="12" r="10" stroke-width="2"/>
+												</svg>
+											{/if}
+										</button>
 										
 										<!-- Main Content -->
 										<div class="flex-1 min-w-0">
@@ -1453,12 +1753,13 @@
 													<span
 														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
 														title="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
-														on:click|stopPropagation={() => {
+														onclick={(e) => { e.stopPropagation();
 															if (quest._hologram?.sourceHolon) {
 																goto(`/${quest._hologram.sourceHolon}/tasks`);
 															}
 														}}
-														on:keydown|stopPropagation={(e) => {
+														onkeydown={(e) => {
+															e.stopPropagation();
 															if (e.key === 'Enter' || e.key === ' ') {
 																if (quest._hologram?.sourceHolon) {
 																	goto(`/${quest._hologram.sourceHolon}/tasks`);
@@ -1495,9 +1796,10 @@
 															{#if depQuest}
 																<button
 																	class="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs hover:bg-blue-200 transition-colors cursor-pointer touch-manipulation min-h-[24px] min-w-[24px] flex-shrink-0"
-																	on:click|stopPropagation={() => handleDependencyClick(depId)}
-																	on:touchstart|stopPropagation={(e) => e.preventDefault()}
-																	on:touchend|stopPropagation={(e) => {
+																	onclick={(e) => { e.stopPropagation(); handleDependencyClick(depId); }}
+																	ontouchstart={(e) => { e.stopPropagation(); e.preventDefault(); }}
+																	ontouchend={(e) => {
+																		e.stopPropagation();
 																		e.preventDefault();
 																		handleDependencyClick(depId);
 																	}}
@@ -1565,7 +1867,7 @@
 											<button
 												class="text-gray-500 hover:text-blue-400 p-1 rounded transition-colors hidden sm:block"
 												title="Share to federated holons"
-												on:click|stopPropagation={() => openShareDialog(key, quest)}
+												onclick={() => openShareDialog(key, quest)}
 											>
 												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
@@ -1589,7 +1891,7 @@
 								<h3 class="text-lg font-medium text-white mb-2">No tasks or quests found</h3>
 								<p class="text-gray-400 mb-4">Get started by creating your first task or quest</p>
 								<button
-									on:click={showDialog}
+									onclick={showDialog}
 									class="btn btn--primary"
 								>
 									Create Task
@@ -1610,7 +1912,7 @@
 	</div>
 </div>
 
-{#if selectedTask && holonID}
+{#if selectedTask?.key && selectedTask?.quest && holonID}
 	<TaskModal
 		quest={selectedTask.quest}
 		questId={selectedTask.key}
@@ -1622,10 +1924,10 @@
 
 <!-- Modern Task Input Modal -->
 {#if showTaskInput}
-	<div 
+	<div
 		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-		on:click|self={hideDialog}
-		on:keydown={handleDialogKeydown} 
+		onclick={(e) => { if (e.target === e.currentTarget) hideDialog(); }}
+		onkeydown={handleDialogKeydown} 
 		role="dialog"
 		aria-modal="true"
 		tabindex="-1" 
@@ -1638,7 +1940,7 @@
 				<div class="flex items-center justify-between mb-6">
 					<h3 id="task-input-title" class="text-white text-xl font-bold">Add New Task</h3>
 					<button
-						on:click={hideDialog}
+						onclick={hideDialog}
 						class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
 						aria-label="Close task input dialog"
 					>
@@ -1648,8 +1950,9 @@
 					</button>
 				</div>
 				
-				<form 
-					on:submit|preventDefault={async (e) => {
+				<form
+					onsubmit={async (e) => {
+						e.preventDefault();
 						await handleAddTask();
 						hideDialog();
 					}}
@@ -1692,7 +1995,7 @@
 					<div class="flex justify-end gap-3 pt-4">
 						<button
 							type="button"
-							on:click={hideDialog}
+							onclick={hideDialog}
 							class="btn btn--secondary"
 							aria-label="Cancel adding task"
 						>
@@ -1733,8 +2036,8 @@
 {#if showShareDialog && questToShare}
 	<div
 		class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-		on:click|self={closeShareDialog}
-		on:keydown={(e) => e.key === 'Escape' && closeShareDialog()}
+		onclick={(e) => { if (e.target === e.currentTarget) closeShareDialog(); }}
+		onkeydown={(e) => e.key === 'Escape' && closeShareDialog()}
 		role="dialog"
 		aria-modal="true"
 		tabindex="-1"
@@ -1745,7 +2048,7 @@
 				<div class="flex items-center justify-between mb-4">
 					<h3 class="text-white text-xl font-bold">Share Quest</h3>
 					<button
-						on:click={closeShareDialog}
+						onclick={closeShareDialog}
 						class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
 						aria-label="Close share dialog"
 					>
@@ -1801,13 +2104,13 @@
 
 				<div class="flex gap-3">
 					<button
-						on:click={closeShareDialog}
+						onclick={closeShareDialog}
 						class="btn btn--secondary flex-1"
 					>
 						Cancel
 					</button>
 					<button
-						on:click={shareQuestToSelected}
+						onclick={shareQuestToSelected}
 						disabled={selectedHolonsToShare.length === 0 || sharingInProgress}
 						class="btn btn--primary flex-1"
 					>
@@ -1820,6 +2123,105 @@
 						{:else}
 							Share
 						{/if}
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Completer Selection Modal -->
+{#if showCompleterModal && taskToComplete}
+	<div
+		class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		onclick={(e) => { if (e.target === e.currentTarget) { showCompleterModal = false; taskToComplete = null; } }}
+		onkeydown={(e) => e.key === 'Escape' && (showCompleterModal = false, taskToComplete = null)}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+		transition:fade={{ duration: 150 }}
+	>
+		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700" transition:slide={{ duration: 200 }}>
+			<div class="p-6">
+				<div class="flex items-center justify-between mb-4">
+					<h3 class="text-white text-xl font-bold">Who completed this task?</h3>
+					<button
+						onclick={() => { showCompleterModal = false; taskToComplete = null; }}
+						class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
+						aria-label="Close modal"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+
+				<p class="text-gray-300 mb-2 font-medium truncate">"{taskToComplete.quest.title}"</p>
+				<p class="text-gray-400 text-sm mb-4">Select who completed this task to record their contribution:</p>
+
+				{#if completersLoading}
+					<div class="flex items-center justify-center py-8">
+						<div class="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+						<span class="text-gray-400 text-sm ml-3">Loading team members...</span>
+					</div>
+				{:else if availableCompleters.length === 0}
+					<div class="text-center py-8">
+						<div class="w-12 h-12 mx-auto mb-3 bg-gray-700 rounded-full flex items-center justify-center">
+							<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+							</svg>
+						</div>
+						<p class="text-gray-400">No users found</p>
+						<p class="text-gray-500 text-sm mt-1">Add users to this holon first</p>
+					</div>
+				{:else}
+					<div class="max-h-60 overflow-y-auto space-y-1 mb-4 overscroll-contain">
+						{#each availableCompleters as user (user.id)}
+							{@const isSelected = selectedCompleters.has(user.id)}
+							<button
+								class="w-full flex items-center gap-3 p-3 rounded-lg transition-all text-left touch-manipulation select-none active:scale-[0.98] min-h-[56px] {isSelected ? 'bg-green-500/20 border border-green-500/40' : 'bg-gray-700 hover:bg-gray-600 border border-transparent'}"
+								onclick={() => toggleCompleterSelection(user.id)}
+							>
+								<div class="w-6 h-6 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors {isSelected ? 'bg-green-500 border-green-500' : 'border-gray-500'}">
+									{#if isSelected}
+										<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+										</svg>
+									{/if}
+								</div>
+								<img
+									src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
+									alt={user.firstName}
+									class="w-10 h-10 rounded-full"
+									loading="lazy"
+								/>
+								<div>
+									<span class="text-white font-medium">{user.firstName} {user.lastName || ''}</span>
+									{#if user.username}
+										<span class="text-gray-400 text-sm block">@{user.username}</span>
+									{/if}
+								</div>
+							</button>
+						{/each}
+					</div>
+				{/if}
+
+				<div class="flex gap-3">
+					<button
+						onclick={() => { showCompleterModal = false; taskToComplete = null; selectedCompleters = new Set(); }}
+						class="btn btn--secondary flex-1"
+					>
+						Cancel
+					</button>
+					<button
+						onclick={completeWithSelectedCompleters}
+						disabled={selectedCompleters.size === 0}
+						class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+						</svg>
+						Complete ({selectedCompleters.size})
 					</button>
 				</div>
 			</div>
