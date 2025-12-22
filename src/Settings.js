@@ -113,6 +113,51 @@ export default class Settings {
         // Use the registerScenes method to register all scenes with the bot's stage
         this.scenes.registerScenes(this.bot.stage);
 
+        // ================= WELCOME MESSAGES ===========================
+
+        // Handle /start command with localized messages based on chat type
+        this.bot.command('start', async (ctx) => {
+            try {
+                const holonId = utils.getholonId(ctx);
+                const chatType = ctx.chat?.type;
+                const language = await this.getLanguage(holonId);
+
+                // Use personalWelcome for private chats, groupWelcome for groups
+                const welcomeKey = chatType === 'private' ? 'personalWelcome' : 'groupWelcome';
+                const welcomeMessage = i18next.t(welcomeKey, { lng: language });
+
+                await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+            } catch (error) {
+                console.error('Error sending welcome message:', error);
+                // Fallback to simple message if translation fails
+                ctx.reply('Welcome! Type / for a list of commands.');
+            }
+        });
+
+        // Handle bot being added to a group
+        this.bot.on('my_chat_member', async (ctx) => {
+            try {
+                const update = ctx.myChatMember;
+                const newStatus = update.new_chat_member?.status;
+                const oldStatus = update.old_chat_member?.status;
+                const chatType = update.chat?.type;
+
+                // Only send welcome when bot is added to a group (not when removed or in private chats)
+                if (chatType !== 'private' &&
+                    (newStatus === 'member' || newStatus === 'administrator') &&
+                    (oldStatus === 'left' || oldStatus === 'kicked' || !oldStatus)) {
+
+                    const holonId = update.chat.id;
+                    const language = await this.getLanguage(holonId);
+                    const welcomeMessage = i18next.t('groupWelcome', { lng: language });
+
+                    await ctx.telegram.sendMessage(holonId, welcomeMessage, { parse_mode: 'Markdown' });
+                }
+            } catch (error) {
+                console.error('Error handling my_chat_member event:', error);
+            }
+        });
+
         // ================= ADMIN ===========================
 
         this.bot.command('getsettings', async (ctx) => {

@@ -298,7 +298,7 @@ class Users {
         needs: [],
         participated: {}
       }
-      await this.db.put(holonIdStr, 'users', userinfo)
+      await this.db.put(holonId, 'users', userinfo)
     }
     return userinfo
   }

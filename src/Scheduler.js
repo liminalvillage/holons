@@ -1184,8 +1184,16 @@ class Scheduler {
                         
                         // Check if item still exists (support both quests and events)
                         const lens = reminder.lens || 'quests';
+
+                        // Validate holonId before database call
+                        if (!reminder.holonId) {
+                            console.log(`Reminder ${reminder.id} has no valid holonId, removing it`);
+                            await this.deleteReminderRecord(reminder.id);
+                            continue;
+                        }
+
                         try {
-                            const item = await this.db.get(reminder.holonId, lens, reminder.questId);
+                            const item = await this.db.get(String(reminder.holonId), lens, reminder.questId);
 
                             // Skip if item doesn't exist anymore or is not scheduled
                             if (!item) {

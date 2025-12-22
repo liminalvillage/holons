@@ -51,8 +51,8 @@ class MultiBot extends Telegraf {
     async start() {
         //---------------------------------------- TELEGRAM
         this.telegramBot = this //new Telegraf(process.env.TELEGRAM);
-        this.telegramBot.launch(); // Start the bot  
-        this.telegramBot.command('start', (ctx) => ctx.reply('Welcome, please type / for  a list of commands'));
+        this.telegramBot.launch(); // Start the bot
+        // Note: /start command is handled by Settings.js with localized messages
         this.setupTelegramCommands();
 
 

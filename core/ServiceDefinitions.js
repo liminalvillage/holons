@@ -185,8 +185,8 @@ export const serviceDefinitions = {
 
       // Add middleware to track user interactions (skip bots)
       telebot.use((ctx, next) => {
-        if (ctx.callbackQuery && !ctx.callbackQuery.from?.is_bot) {
-          users.getUserInfo(ctx.callbackQuery.from, ctx.callbackQuery.message?.chat?.id);
+        if (ctx.callbackQuery && !ctx.callbackQuery.from?.is_bot && ctx.callbackQuery.message?.chat?.id) {
+          users.getUserInfo(ctx.callbackQuery.from, ctx.callbackQuery.message.chat.id);
         }
         if (ctx.message && !ctx.message.from?.is_bot) {
           users.getUserInfo(ctx.message.from, ctx.message.chat.id);

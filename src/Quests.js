@@ -2497,10 +2497,14 @@ export default class Quests {
     async handleFederatedMessages(ctx, quest, language) {
         try {
             const questHolon = Quests.getQuestHolon(quest);
+            if (!questHolon) {
+                console.log(`[handleFederatedMessages] Quest ${quest.id} has no valid holon, skipping`);
+                return;
+            }
             console.log(`[handleFederatedMessages] Starting for quest ${quest.id} in holon ${questHolon}`);
 
             const holonId = questHolon;
-            const holonIdStr = holonId;
+            const holonIdStr = String(holonId);
 
             // Re-read quest to get updated _meta.activeHolograms from auto-propagation
             const updatedQuest = await this.db.get(holonIdStr, 'quests', quest.id);
@@ -2511,10 +2515,8 @@ export default class Quests {
 
             // Get the activeHolograms populated by auto-propagation
             const activeHolograms = updatedQuest._meta?.activeHolograms || [];
-            console.log(`[handleFederatedMessages] Found ${activeHolograms.length} active holograms from propagation`);
 
             if (activeHolograms.length === 0) {
-                console.log(`[handleFederatedMessages] No active holograms for quest ${quest.id}`);
                 return;
             }
 
