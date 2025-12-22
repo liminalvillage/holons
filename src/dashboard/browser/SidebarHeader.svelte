@@ -65,7 +65,7 @@
 				<div class="sidebar-header__holon-actions">
 					<button
 						class="sidebar-header__action-btn"
-						on:click={copyHolonId}
+						onclick={copyHolonId}
 						title="Copy Holon ID"
 					>
 						{#if idCopied}
@@ -76,7 +76,7 @@
 					</button>
 					<button
 						class="sidebar-header__action-btn"
-						on:click={toggleQRModal}
+						onclick={toggleQRModal}
 						title="Show QR Code"
 					>
 						<Grid size="14" />
@@ -102,11 +102,11 @@
 
 <!-- QR Modal -->
 {#if showQRModal && currentHolonId}
-	<div class="qr-modal-backdrop" on:click={toggleQRModal} on:keydown={(e) => e.key === 'Escape' && toggleQRModal()} role="button" tabindex="0">
-		<div class="qr-modal" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true">
+	<div class="qr-modal-backdrop" onclick={toggleQRModal} onkeydown={(e) => e.key === 'Escape' && toggleQRModal()} role="button" tabindex="0">
+		<div class="qr-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
 			<div class="qr-modal__header">
 				<h3>Holon QR Code</h3>
-				<button class="qr-modal__close" on:click={toggleQRModal} aria-label="Close">×</button>
+				<button class="qr-modal__close" onclick={toggleQRModal} aria-label="Close">×</button>
 			</div>
 			<div class="qr-modal__content">
 				<!-- QR Code placeholder - can be replaced with actual QR library -->

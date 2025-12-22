@@ -47,7 +47,7 @@
 		isLoading = true;
 		try {
 			// Try to get federation info from holosphere
-			const settings = await holosphere.get(currentHolonId, 'settings');
+			const settings = await holosphere.get(currentHolonId, 'settings', currentHolonId);
 			if (settings) {
 				federationInfo = settings;
 				federatedCount = settings.federated?.length || 0;

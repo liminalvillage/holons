@@ -83,6 +83,19 @@
     let isEditingEquation = false;
     let editingEquation: Equation = { ...equation };
 
+    // Add currency state
+    let showAddCurrencyModal = false;
+    let newCurrencyInput = '';
+
+    function closeCurrencyModal() {
+        showAddCurrencyModal = false;
+        newCurrencyInput = '';
+    }
+
+    function openCurrencyModal() {
+        showAddCurrencyModal = true;
+    }
+
     // Function to save equation changes
     async function saveEquation() {
         try {
@@ -120,6 +133,56 @@
         const currentWeight = editingEquation.currencies[currency] || 0;
         const newWeight = Math.max(0, currentWeight + delta);
         editingEquation.currencies = { ...editingEquation.currencies, [currency]: newWeight };
+    }
+
+    // Function to add a new currency
+    async function addNewCurrency() {
+        if (!newCurrencyInput.trim()) return;
+
+        try {
+            // Get current settings first to check for existing currencies
+            const settings = await holosphere.getAll(holonID, 'settings');
+            const currentSettings = settings && settings[0] ? settings[0] : {};
+            const existingCurrencies = Array.isArray(currentSettings.currencies) ? currentSettings.currencies : [];
+
+            // Parse input and filter out duplicates (check against both local and saved currencies)
+            const allExisting = new Set([...availableCurrencies, ...existingCurrencies].map(c => c.toLowerCase()));
+            const currenciesToAdd = newCurrencyInput
+                .split(/[,\s]+/)
+                .map(c => c.trim().toLowerCase())
+                .filter(c => c && !allExisting.has(c));
+
+            if (currenciesToAdd.length === 0) {
+                closeCurrencyModal();
+                return;
+            }
+
+            // Use Set to ensure no duplicates in final array
+            const uniqueCurrencies = [...new Set([...existingCurrencies, ...currenciesToAdd])];
+
+            const updatedSettings = {
+                ...currentSettings,
+                currencies: uniqueCurrencies
+            };
+
+            await holosphere.put(holonID, 'settings', updatedSettings);
+
+            // Update local state with unique currencies
+            availableCurrencies = [...new Set([...availableCurrencies, ...currenciesToAdd])];
+
+            // Initialize weights for new currencies
+            currenciesToAdd.forEach(currency => {
+                if (!equation.currencies[currency]) {
+                    equation.currencies[currency] = 0;
+                }
+            });
+
+            newCurrencyInput = '';
+            showAddCurrencyModal = false;
+            console.log('Currencies added:', currenciesToAdd);
+        } catch (error) {
+            console.error('Error adding currency:', error);
+        }
     }
 
     onMount(async () => {
@@ -266,7 +329,7 @@
             // Initialize manager if we have a wallet connection
             if ($walletAddress && window.ethereum) {
                 const provider = new ethers.BrowserProvider(window.ethereum);
-                manager = new HolonsManager(provider, holosphere.gun);
+                manager = new HolonsManager(provider, holosphere);
                 await manager.initialize();
 
                 // Get interior members with their shares
@@ -689,7 +752,7 @@
                     <div class="bg-gray-700/30 rounded-2xl p-6 mb-8">
                         <div class="mb-4">
                             <h3 class="text-xl font-bold text-white">Share Distribution</h3>
-                            <p class="text-gray-400 text-sm">Hover over slices to see detailed breakdowns</p>
+                            <p class="text-gray-400 text-sm">Tap or hover over slices to see detailed breakdowns</p>
                         </div>
                         <PieChart3D users={pieChartData} />
                     </div>
@@ -701,18 +764,18 @@
                         <table class="w-full text-white">
                             <thead>
                                 <tr class="bg-gray-600/80">
-                                    <th class="p-4 text-left font-semibold">Rank</th>
-                                    <th class="p-4 text-left font-semibold">Name</th>
-                                    <th class="p-4 text-left font-semibold">Tasks Initiated</th>
-                                    <th class="p-4 text-left font-semibold">Tasks Completed</th>
-                                    <th class="p-4 text-left font-semibold">Appreciation Sent</th>
-                                    <th class="p-4 text-left font-semibold">Appreciation Received</th>
+                                    <th class="p-2 text-center font-semibold text-xs">#</th>
+                                    <th class="p-2 text-left font-semibold text-xs">Name</th>
+                                    <th class="p-2 font-semibold vertical-header"><span>Initiated</span></th>
+                                    <th class="p-2 font-semibold vertical-header"><span>Completed</span></th>
+                                    <th class="p-2 font-semibold vertical-header"><span>Sent</span></th>
+                                    <th class="p-2 font-semibold vertical-header"><span>Received</span></th>
                                     {#each availableCurrencies as currency}
-                                        <th class="p-4 text-left font-semibold">{currency.toUpperCase()}</th>
+                                        <th class="p-2 font-semibold vertical-header"><span>{currency.toUpperCase()}</span></th>
                                     {/each}
-                                    <th class="p-4 text-left font-semibold">Score</th>
-                                    <th class="p-4 text-left font-semibold">Percentage</th>
-                                    <th class="p-4 text-left font-semibold">Contract Share</th>
+                                    <th class="p-2 font-semibold vertical-header"><span>Score</span></th>
+                                    <th class="p-2 font-semibold vertical-header"><span>%</span></th>
+                                    <th class="p-2 font-semibold vertical-header"><span>Share</span></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -720,103 +783,98 @@
                                     {@const score = calculateScore(user)}
                                     {@const percentage = calculatePercentage(score)}
                                     <tr class="border-b border-gray-600/50 hover:bg-gray-600/20 transition-all duration-200">
-                                        <td class="p-4">
-                                            <div class="flex items-center">
-                                                {#if index === 0}
-                                                    <span class="w-8 h-8 bg-yellow-500 text-black rounded-full flex items-center justify-center font-bold text-sm">🏆</span>
-                                                {:else if index === 1}
-                                                    <span class="w-8 h-8 bg-gray-400 text-white rounded-full flex items-center justify-center font-bold text-sm">🥈</span>
-                                                {:else if index === 2}
-                                                    <span class="w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center font-bold text-sm">🥉</span>
-                                                {:else}
-                                                    <span class="w-8 h-8 bg-gray-600 text-white rounded-full flex items-center justify-center font-bold text-sm">{index + 1}</span>
-                                                {/if}
-                                            </div>
+                                        <td class="p-2 text-center">
+                                            {#if index === 0}
+                                                <span class="text-lg">🏆</span>
+                                            {:else if index === 1}
+                                                <span class="text-lg">🥈</span>
+                                            {:else if index === 2}
+                                                <span class="text-lg">🥉</span>
+                                            {:else}
+                                                <span class="text-gray-400 text-sm">{index + 1}</span>
+                                            {/if}
                                         </td>
-                                        <td class="p-4">
-                                            <button 
-                                                class="text-left hover:text-blue-400 transition-colors cursor-pointer underline-offset-2 hover:underline flex items-center gap-3"
-                                                on:click={(e) => {
+                                        <td class="p-2">
+                                            <button
+                                                class="text-left hover:text-blue-400 transition-colors cursor-pointer underline-offset-2 hover:underline flex items-center gap-2"
+                                                onclick={(e) => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
                                                     openUserModal(userId);
                                                 }}
                                             >
                                                 <div class="relative flex-shrink-0">
-                                                    <img 
+                                                    <img
                                                         src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
                                                         alt={`${user.first_name} ${user.last_name || ''}`}
-                                                        class="w-10 h-10 rounded-full object-cover border-2 border-gray-500 aspect-square flex-shrink-0"
-                                                        on:error={(e) => {
+                                                        class="w-8 h-8 rounded-full object-cover border border-gray-500 aspect-square flex-shrink-0"
+                                                        onerror={(e) => {
                                                             e.currentTarget.style.display = 'none';
                                                             e.currentTarget.nextElementSibling.style.display = 'flex';
                                                         }}
                                                     />
-                                                    <div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-white text-sm font-bold border-2 border-gray-500 aspect-square flex-shrink-0" style="display: none;">
+                                                    <div class="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center text-white text-xs font-bold border border-gray-500 aspect-square flex-shrink-0" style="display: none;">
                                                         {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
                                                     </div>
                                                 </div>
-                                                <div>
-                                                    <div class="font-semibold">{user.first_name} {user.last_name || ""}</div>
-                                                    {#if user.username}
-                                                        <div class="text-sm text-gray-400">@{user.username}</div>
-                                                    {/if}
+                                                <div class="text-sm">
+                                                    <div class="font-medium">{user.first_name}</div>
                                                 </div>
                                             </button>
                                         </td>
-                                        <td class="p-4">
-                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-300">
+                                        <td class="p-2 text-center">
+                                            <span class="text-xs text-blue-300">
                                                 {(user.initiated && Array.isArray(user.initiated)) ? user.initiated.length : 0}
                                             </span>
                                         </td>
-                                        <td class="p-4">
-                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-600/20 text-green-300">
+                                        <td class="p-2 text-center">
+                                            <span class="text-xs text-green-300">
                                                 {(user.completed && Array.isArray(user.completed)) ? user.completed.length : 0}
                                             </span>
                                         </td>
-                                        <td class="p-4">
-                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-300">
+                                        <td class="p-2 text-center">
+                                            <span class="text-xs text-blue-300">
                                                 {user.sent || 0}
                                             </span>
                                         </td>
-                                        <td class="p-4">
-                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-600/20 text-purple-300">
+                                        <td class="p-2 text-center">
+                                            <span class="text-xs text-purple-300">
                                                 {user.received || 0}
                                             </span>
                                         </td>
                                         {#each availableCurrencies as currency}
                                             {@const balance = getCurrencyBalance(user.id || userId, currency)}
-                                            <td class="p-4">
-                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {balance > 0 ? 'bg-green-600/20 text-green-300' : balance < 0 ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}">
+                                            <td class="p-2 text-center">
+                                                <span class="text-xs {balance > 0 ? 'text-green-300' : balance < 0 ? 'text-red-300' : 'text-gray-400'}">
                                                     {formatCurrencyAmount(balance, currency)}
                                                 </span>
                                             </td>
                                         {/each}
-                                        <td class="p-4">
-                                            <span class="font-bold text-lg text-white">{score.toFixed(1)}</span>
+                                        <td class="p-2 text-center">
+                                            <span class="font-bold text-sm text-white">{score.toFixed(1)}</span>
                                         </td>
-                                        <td class="p-4">
-                                            <div class="flex items-center gap-3">
-                                                <div class="flex-1 bg-gray-600 rounded-full h-3 min-w-[100px]">
-                                                    <div 
-                                                        class="bg-gradient-to-r from-blue-500 to-blue-400 h-3 rounded-full transition-all duration-500"
+                                        <td class="p-2">
+                                            <div class="flex items-center gap-2">
+                                                <div class="flex-1 bg-gray-600 rounded-full h-2 min-w-[60px]">
+                                                    <div
+                                                        class="bg-gradient-to-r from-blue-500 to-blue-400 h-2 rounded-full transition-all duration-500"
                                                         style="width: {percentage}%"
                                                     ></div>
                                                 </div>
-                                                <span class="text-sm font-medium text-gray-300 min-w-[45px]">
+                                                <span class="text-xs font-medium text-gray-300 min-w-[35px]">
                                                     {percentage.toFixed(1)}%
                                                 </span>
                                             </div>
                                         </td>
-                                        <td class="p-4">
+                                        <td class="p-2 text-center">
                                             {#if contractShares[userId] || contractShares[user.id]}
                                                 {@const share = contractShares[userId] || contractShares[user.id]}
-                                                <div class="flex flex-col gap-1">
-                                                    <span class="text-green-400 font-semibold">{share.sharePercent.toFixed(2)}%</span>
-                                                    <span class="text-xs text-gray-400">{share.etherFormatted} ETH</span>
+                                                <div class="flex flex-col">
+                                                    <span class="text-green-400 text-xs font-semibold">{share.sharePercent.toFixed(1)}%</span>
+                                                    <span class="text-[10px] text-gray-400">{share.etherFormatted}</span>
                                                 </div>
                                             {:else}
-                                                <span class="text-gray-500">--</span>
+                                                <span class="text-gray-500 text-xs">--</span>
                                             {/if}
                                         </td>
                                     </tr>
@@ -848,7 +906,7 @@
                         {#if isEditingEquation}
                             <div class="flex items-center gap-2">
                                 <button 
-                                    on:click={cancelEditing}
+                                    onclick={cancelEditing}
                                     class="inline-flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors text-sm font-medium"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -857,7 +915,7 @@
                                     Cancel
                                 </button>
                                 <button 
-                                    on:click={saveEquation}
+                                    onclick={saveEquation}
                                     class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -868,7 +926,7 @@
                             </div>
                         {:else}
                             <button 
-                                on:click={() => {
+                                onclick={() => {
                                     editingEquation = { ...equation };
                                     isEditingEquation = true;
                                 }}
@@ -892,7 +950,7 @@
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
                                     <button 
-                                        on:click={() => adjustValue('initiated', -1)}
+                                        onclick={() => adjustValue('initiated', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Decrease tasks initiated value"
                                     >
@@ -908,7 +966,7 @@
                                         class="w-16 text-center bg-gray-700 text-blue-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-blue-400 focus:outline-none"
                                     />
                                     <button 
-                                        on:click={() => adjustValue('initiated', 1)}
+                                        onclick={() => adjustValue('initiated', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Increase tasks initiated value"
                                     >
@@ -935,7 +993,7 @@
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
                                     <button 
-                                        on:click={() => adjustValue('completed', -1)}
+                                        onclick={() => adjustValue('completed', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Decrease completed tasks weight"
                                     >
@@ -951,7 +1009,7 @@
                                         class="w-16 text-center bg-gray-700 text-green-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-green-400 focus:outline-none"
                                     />
                                     <button 
-                                        on:click={() => adjustValue('completed', 1)}
+                                        onclick={() => adjustValue('completed', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Increase completed tasks weight"
                                     >
@@ -978,7 +1036,7 @@
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
                                     <button 
-                                        on:click={() => adjustValue('sent', -1)}
+                                        onclick={() => adjustValue('sent', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Decrease appreciation sent weight"
                                     >
@@ -994,7 +1052,7 @@
                                         class="w-16 text-center bg-gray-700 text-purple-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-purple-400 focus:outline-none"
                                     />
                                     <button 
-                                        on:click={() => adjustValue('sent', 1)}
+                                        onclick={() => adjustValue('sent', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Increase appreciation sent weight"
                                     >
@@ -1021,7 +1079,7 @@
                             {#if isEditingEquation}
                                 <div class="flex items-center gap-2">
                                     <button 
-                                        on:click={() => adjustValue('received', -1)}
+                                        onclick={() => adjustValue('received', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Decrease appreciation received weight"
                                     >
@@ -1037,7 +1095,7 @@
                                         class="w-16 text-center bg-gray-700 text-orange-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-orange-400 focus:outline-none"
                                     />
                                     <button 
-                                        on:click={() => adjustValue('received', 1)}
+                                        onclick={() => adjustValue('received', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                         aria-label="Increase appreciation received weight"
                                     >
@@ -1057,10 +1115,22 @@
                     </div>
 
                     <!-- Currency Weights -->
-                    {#if availableCurrencies.length > 0}
-                        <div class="mt-6">
-                            <h4 class="text-sm font-medium text-gray-400 mb-3">Currency Weights</h4>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="mt-6">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-medium text-gray-400">Currency Weights</h4>
+                            <button
+                                onclick={() => showAddCurrencyModal = true}
+                                class="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors text-xs font-medium"
+                                aria-label="Add new currency"
+                            >
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                </svg>
+                                Add Currency
+                            </button>
+                        </div>
+                        {#if availableCurrencies.length > 0}
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {#each availableCurrencies as currency}
                                     <div class="bg-gray-600/50 rounded-xl p-4 {equation.currencies[currency] > 0 ? '' : 'opacity-50'}">
                                         <div class="flex items-center justify-between mb-2">
@@ -1070,7 +1140,7 @@
                                         {#if isEditingEquation}
                                             <div class="flex items-center gap-2">
                                                 <button 
-                                                    on:click={() => adjustCurrencyWeight(currency, -1)}
+                                                    onclick={() => adjustCurrencyWeight(currency, -1)}
                                                     class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                                     aria-label="Decrease {currency} weight"
                                                 >
@@ -1086,7 +1156,7 @@
                                                     class="w-16 text-center bg-gray-700 text-emerald-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-emerald-400 focus:outline-none"
                                                 />
                                                 <button 
-                                                    on:click={() => adjustCurrencyWeight(currency, 1)}
+                                                    onclick={() => adjustCurrencyWeight(currency, 1)}
                                                     class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                                     aria-label="Increase {currency} weight"
                                                 >
@@ -1105,8 +1175,13 @@
                                     </div>
                                 {/each}
                             </div>
-                        </div>
-                    {/if}
+                        {:else}
+                            <div class="text-center py-6 bg-gray-600/30 rounded-xl">
+                                <p class="text-gray-400 text-sm mb-2">No currencies configured yet</p>
+                                <p class="text-gray-500 text-xs">Click "Add Currency" to add currencies for tracking</p>
+                            </div>
+                        {/if}
+                    </div>
 
                     <!-- Additional Metrics -->
                     <div class="mt-6">
@@ -1121,7 +1196,7 @@
                                 {#if isEditingEquation}
                                     <div class="flex items-center gap-2">
                                         <button 
-                                            on:click={() => adjustValue('hours', -1)}
+                                            onclick={() => adjustValue('hours', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Decrease hours weight"
                                         >
@@ -1137,7 +1212,7 @@
                                             class="w-16 text-center bg-gray-700 text-yellow-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-yellow-400 focus:outline-none"
                                         />
                                         <button 
-                                            on:click={() => adjustValue('hours', 1)}
+                                            onclick={() => adjustValue('hours', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Increase hours weight"
                                         >
@@ -1164,7 +1239,7 @@
                                 {#if isEditingEquation}
                                     <div class="flex items-center gap-2">
                                         <button 
-                                            on:click={() => adjustValue('collaboration', -1)}
+                                            onclick={() => adjustValue('collaboration', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Decrease collaboration weight"
                                         >
@@ -1180,7 +1255,7 @@
                                             class="w-16 text-center bg-gray-700 text-teal-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-teal-400 focus:outline-none"
                                         />
                                         <button 
-                                            on:click={() => adjustValue('collaboration', 1)}
+                                            onclick={() => adjustValue('collaboration', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Increase collaboration weight"
                                         >
@@ -1207,7 +1282,7 @@
                                 {#if isEditingEquation}
                                     <div class="flex items-center gap-2">
                                         <button 
-                                            on:click={() => adjustValue('wants', -1)}
+                                            onclick={() => adjustValue('wants', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Decrease wants weight"
                                         >
@@ -1223,7 +1298,7 @@
                                             class="w-16 text-center bg-gray-700 text-pink-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-pink-400 focus:outline-none"
                                         />
                                         <button 
-                                            on:click={() => adjustValue('wants', 1)}
+                                            onclick={() => adjustValue('wants', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Increase wants weight"
                                         >
@@ -1250,7 +1325,7 @@
                                 {#if isEditingEquation}
                                     <div class="flex items-center gap-2">
                                         <button 
-                                            on:click={() => adjustValue('offers', -1)}
+                                            onclick={() => adjustValue('offers', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Decrease offers weight"
                                         >
@@ -1266,7 +1341,7 @@
                                             class="w-16 text-center bg-gray-700 text-indigo-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-indigo-400 focus:outline-none"
                                         />
                                         <button 
-                                            on:click={() => adjustValue('offers', 1)}
+                                            onclick={() => adjustValue('offers', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
                                             aria-label="Increase offers weight"
                                         >
@@ -1295,13 +1370,91 @@
     </div>
 </div>
 
+<!-- Add Currency Modal -->
+{#if showAddCurrencyModal}
+    <div
+        class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+        onclick={(e) => { if (e.target === e.currentTarget) showAddCurrencyModal = false; }}
+        onkeydown={(e) => e.key === 'Escape' && (showAddCurrencyModal = false)}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
+    >
+        <div
+            class="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="add-currency-title"
+            tabindex="-1"
+        >
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="add-currency-title" class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="text-emerald-400">💱</span> Add Currency
+                </h3>
+                <button
+                    type="button"
+                    onclick={() => { showAddCurrencyModal = false; }}
+                    class="text-gray-400 hover:text-white transition-colors p-2"
+                    aria-label="Close"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <p class="text-gray-400 text-sm mb-4">
+                Enter currency names (singular form) separated by commas or spaces.
+            </p>
+
+            <div class="space-y-4">
+                <input
+                    type="text"
+                    bind:value={newCurrencyInput}
+                    placeholder="e.g., euro, dollar, token"
+                    class="w-full px-4 py-3 bg-gray-700 text-white rounded-xl border border-gray-600 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none placeholder-gray-500"
+                    onkeydown={(e) => e.key === 'Enter' && addNewCurrency()}
+                />
+
+                <div class="flex gap-3">
+                    <button
+                        type="button"
+                        onclick={() => { showAddCurrencyModal = false; }}
+                        class="flex-1 px-4 py-2.5 bg-gray-600 hover:bg-gray-500 text-white rounded-xl transition-colors font-medium"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onclick={addNewCurrency}
+                        class="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors font-medium"
+                    >
+                        Add Currency
+                    </button>
+                </div>
+            </div>
+
+            {#if availableCurrencies.length > 0}
+                <div class="mt-4 pt-4 border-t border-gray-700">
+                    <p class="text-xs text-gray-500 mb-2">Current currencies:</p>
+                    <div class="flex flex-wrap gap-2">
+                        {#each availableCurrencies as currency}
+                            <span class="px-2 py-1 bg-gray-700 text-gray-300 rounded-lg text-xs">{currency}</span>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+        </div>
+    </div>
+{/if}
+
 <!-- User Modal -->
 {#if showUserModal && selectedUserId && holonID && store[selectedUserId]}
-    <User 
-        userId={selectedUserId} 
-        holonId={holonID} 
+    <User
+        userId={selectedUserId}
+        holonId={holonID}
         userData={store[selectedUserId]}
-        on:close={closeUserModal} 
+        on:close={closeUserModal}
     />
 {/if}
 
@@ -1314,6 +1467,22 @@
     tr:hover {
         transition-property: color, background-color;
         transition-duration: 200ms;
+    }
+
+    .vertical-header {
+        height: 80px;
+        white-space: nowrap;
+        vertical-align: bottom;
+        text-align: center;
+    }
+
+    .vertical-header span {
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        transform: rotate(180deg);
+        display: inline-block;
+        font-size: 0.7rem;
+        color: #9ca3af;
     }
 </style>
 

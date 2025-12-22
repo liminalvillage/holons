@@ -2,9 +2,33 @@ import type { CouncilAdvisorExtended, ArchetypeAdvisor, RealPersonAdvisor, Mythi
 import type { HoloSphere } from "holosphere";
 
 /**
- * HOLONIC ADVISOR SERVICE
- * Single source of truth for all advisor operations
- * Replaces the fragmented advisor-library.ts approach
+ * Single source of truth for all advisor operations in the Harvest ecosystem.
+ *
+ * The AdvisorService manages the complete lifecycle of council advisors including
+ * creation, retrieval, validation, and deletion. It provides caching for performance
+ * and supports three advisor types: archetype, real (historical), and mythic.
+ *
+ * This class replaces the fragmented advisor-library.ts approach with a unified interface.
+ *
+ * @class AdvisorService
+ *
+ * @example
+ * ```typescript
+ * import { createAdvisorService } from './AdvisorService';
+ *
+ * const service = createAdvisorService(holosphere, 'myHolon');
+ *
+ * // Create a new advisor
+ * const advisorId = await service.createAdvisor('archetype', advisorData, 'user123');
+ *
+ * // Retrieve advisors
+ * const advisor = await service.getAdvisor(advisorId);
+ * const allAdvisors = await service.getAllAdvisors();
+ * const hecAdvisors = await service.getHECAdvisors();
+ *
+ * // Delete an advisor
+ * await service.deleteAdvisor(advisorId);
+ * ```
  */
 export class AdvisorService {
   private holosphere: HoloSphere;
@@ -13,14 +37,23 @@ export class AdvisorService {
   private cacheTimestamp: number = 0;
   private readonly CACHE_DURATION = 30000; // 30 seconds
 
+  /**
+   * Creates a new AdvisorService instance.
+   *
+   * @param {HoloSphere} holosphere - The HoloSphere instance for data persistence
+   * @param {string} holonId - The holon identifier for the advisors
+   */
   constructor(holosphere: HoloSphere, holonId: string) {
     this.holosphere = holosphere;
     this.holonId = holonId;
   }
 
   /**
-   * Generate consistent advisor ID from name
-   * Used for both new advisors and ID lookups
+   * Generates a consistent advisor ID from a name.
+   * Used for both new advisors and ID lookups.
+   *
+   * @param {string} name - The advisor name
+   * @returns {string} The generated ID (lowercase, hyphen-separated)
    */
   generateAdvisorId(name: string): string {
     return name.toLowerCase()
@@ -31,7 +64,11 @@ export class AdvisorService {
   }
 
   /**
-   * Validate advisor data completeness
+   * Validates advisor data completeness based on type-specific schemas.
+   *
+   * @private
+   * @param {CouncilAdvisorExtended} advisor - The advisor to validate
+   * @returns {boolean} True if the advisor is valid
    */
   private validateAdvisor(advisor: CouncilAdvisorExtended): boolean {
     if (!advisor.id || !advisor.name || !advisor.type || !advisor.lens) {
@@ -62,7 +99,14 @@ export class AdvisorService {
   }
 
   /**
-   * Create and store a new advisor
+   * Creates and stores a new advisor in HoloSphere.
+   *
+   * @async
+   * @param {'archetype' | 'real' | 'mythic'} type - The advisor type
+   * @param {CouncilAdvisorExtended} advisorData - The advisor data
+   * @param {string} [creatorUserId='SYSTEM'] - The ID of the user creating the advisor
+   * @returns {Promise<string>} The generated advisor ID
+   * @throws {Error} If validation fails or storage fails
    */
   async createAdvisor(
     type: 'archetype' | 'real' | 'mythic',
@@ -136,7 +180,11 @@ export class AdvisorService {
   }
 
   /**
-   * Get advisor by ID - SINGLE SOURCE OF TRUTH
+   * Gets an advisor by ID. This is the single source of truth for advisor retrieval.
+   *
+   * @async
+   * @param {string} advisorId - The advisor ID to look up
+   * @returns {Promise<CouncilAdvisorExtended | null>} The advisor or null if not found
    */
   async getAdvisor(advisorId: string): Promise<CouncilAdvisorExtended | null> {
     console.log(`🔍 Getting advisor by ID: "${advisorId}"`);
@@ -162,7 +210,10 @@ export class AdvisorService {
   }
 
   /**
-   * Get all advisors for this holon
+   * Gets all advisors for this holon.
+   *
+   * @async
+   * @returns {Promise<CouncilAdvisorExtended[]>} Array of all advisors
    */
   async getAllAdvisors(): Promise<CouncilAdvisorExtended[]> {
     console.log(`📚 Getting all advisors for holon: ${this.holonId}`);
@@ -175,7 +226,11 @@ export class AdvisorService {
   }
 
   /**
-   * Get specifically HEC (Holonic Ecosystem Council) advisors
+   * Gets specifically HEC (Holonic Ecosystem Council) advisors.
+   * These are archetype advisors with council_membership: 'ai-ecosystem'.
+   *
+   * @async
+   * @returns {Promise<CouncilAdvisorExtended[]>} Array of HEC advisors
    */
   async getHECAdvisors(): Promise<CouncilAdvisorExtended[]> {
     console.log(`🏛️ Getting HEC advisors for holon: ${this.holonId}`);
@@ -200,7 +255,12 @@ export class AdvisorService {
 
 
   /**
-   * Delete advisor by ID
+   * Deletes an advisor by ID.
+   *
+   * @async
+   * @param {string} advisorId - The advisor ID to delete
+   * @returns {Promise<void>}
+   * @throws {Error} If advisor not found or deletion fails
    */
   async deleteAdvisor(advisorId: string): Promise<void> {
     console.log(`🗑️ Deleting advisor: ${advisorId}`);
@@ -228,7 +288,10 @@ export class AdvisorService {
 
 
   /**
-   * Get advisor display name by ID (synchronous, cache-only)
+   * Gets advisor display name by ID (synchronous, cache-only).
+   *
+   * @param {string} advisorId - The advisor ID
+   * @returns {string} The advisor name or the ID if not found
    */
   getAdvisorName(advisorId: string): string {
     const advisor = this.advisorCache.get(advisorId);
@@ -236,7 +299,12 @@ export class AdvisorService {
   }
 
   /**
-   * Search advisors by name (for migration/fallback purposes)
+   * Searches for an advisor by name (for migration/fallback purposes).
+   * Tries exact match first, then partial match.
+   *
+   * @async
+   * @param {string} name - The advisor name to search for
+   * @returns {Promise<CouncilAdvisorExtended | null>} The found advisor or null
    */
   async findAdvisorByName(name: string): Promise<CouncilAdvisorExtended | null> {
     const allAdvisors = await this.getAllAdvisors();
@@ -264,7 +332,11 @@ export class AdvisorService {
   }
 
   /**
-   * Refresh advisor cache from HoloSphere
+   * Refreshes the advisor cache from HoloSphere if expired.
+   *
+   * @private
+   * @async
+   * @returns {Promise<void>}
    */
   private async refreshCacheIfNeeded(): Promise<void> {
     const now = Date.now();
@@ -301,7 +373,9 @@ export class AdvisorService {
   }
 
   /**
-   * Clear cache (useful for testing)
+   * Clears the advisor cache. Useful for testing.
+   *
+   * @returns {void}
    */
   clearCache(): void {
     this.advisorCache.clear();
@@ -311,7 +385,11 @@ export class AdvisorService {
 }
 
 /**
- * Factory function to create AdvisorService instance
+ * Factory function to create an AdvisorService instance.
+ *
+ * @param {HoloSphere} holosphere - The HoloSphere instance
+ * @param {string} holonId - The holon identifier
+ * @returns {AdvisorService} The created service instance
  */
 export function createAdvisorService(holosphere: HoloSphere, holonId: string): AdvisorService {
   return new AdvisorService(holosphere, holonId);

@@ -51,6 +51,37 @@ export interface TokenBalance {
   formatted: string;
 }
 
+/**
+ * Manages smart contract interactions for holons on the blockchain.
+ *
+ * This class provides the low-level interface for interacting with holon smart contracts,
+ * including deployment, configuration, and state management. It supports multiple holon
+ * types (Managed, Zoned, Splitter, Appreciative, Bundle) and handles wallet connections,
+ * transactions, and event emissions.
+ *
+ * @class HolonsContract
+ *
+ * @example
+ * ```typescript
+ * import { HolonsContract } from './HolonsContract';
+ * import { ethers } from 'ethers';
+ * import { EventEmitter } from 'events';
+ *
+ * const provider = new ethers.JsonRpcProvider('https://...');
+ * const eventEmitter = new EventEmitter();
+ * const contract = new HolonsContract(provider, eventEmitter);
+ *
+ * // Initialize and connect wallet
+ * await contract.initialize();
+ * await contract.connect(signer);
+ *
+ * // Deploy a Bundle contract
+ * const { address, bundle } = await contract.deployBundleDirect(
+ *   'user123',
+ *   'MyHolon'
+ * );
+ * ```
+ */
 export class HolonsContract {
   private provider: ethers.Provider;
   private signer: ethers.Signer | null = null;
@@ -80,13 +111,23 @@ export class HolonsContract {
   private readonly DEFAULT_STEEPNESS = BigInt('500000000000000000'); // 0.5e18 = 50% decay
   private readonly DEFAULT_NZONES = 6;
 
+  /**
+   * Creates a new HolonsContract instance.
+   *
+   * @param {ethers.Provider} provider - The ethers.js provider for blockchain interactions
+   * @param {EventEmitter} eventEmitter - Event emitter for broadcasting contract events
+   */
   constructor(provider: ethers.Provider, eventEmitter: EventEmitter) {
     this.provider = provider;
     this.eventEmitter = eventEmitter;
   }
 
   /**
-   * Initialize contracts with real ABIs and addresses
+   * Initializes contracts with real ABIs and addresses from deployment configuration.
+   * This should be called before any contract interactions.
+   *
+   * @async
+   * @returns {Promise<void>}
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -110,7 +151,12 @@ export class HolonsContract {
   }
 
   /**
-   * Connect a wallet/signer for transactions
+   * Connects a wallet signer for executing transactions.
+   *
+   * @async
+   * @param {ethers.Signer} signer - The ethers.js signer instance
+   * @returns {Promise<void>}
+   * @emits wallet:connected
    */
   async connect(signer: ethers.Signer): Promise<void> {
     try {
@@ -132,7 +178,10 @@ export class HolonsContract {
   }
 
   /**
-   * Disconnect wallet
+   * Disconnects the current wallet and clears cached contracts.
+   *
+   * @returns {void}
+   * @emits wallet:disconnected
    */
   disconnect(): void {
     this.signer = null;
@@ -141,7 +190,13 @@ export class HolonsContract {
   }
 
   /**
-   * Get or create contract instance
+   * Gets or creates a contract instance from cache.
+   *
+   * @private
+   * @async
+   * @param {string} address - The contract address
+   * @param {any[]} abi - The contract ABI
+   * @returns {Promise<ethers.Contract>} The contract instance
    */
   private async getContract(address: string, abi: any[]): Promise<ethers.Contract> {
     const key = `${address}:${JSON.stringify(abi).substring(0, 50)}`;
@@ -171,7 +226,19 @@ export class HolonsContract {
   }
 
   /**
-   * Execute a transaction with proper error handling and events
+   * Executes a transaction with proper error handling and event emissions.
+   *
+   * @private
+   * @async
+   * @param {ethers.Contract} contract - The contract instance
+   * @param {string} method - The method name to call
+   * @param {any[]} [args=[]] - The method arguments
+   * @param {any} [options={}] - Transaction options (gasLimit, etc.)
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
+   * @throws {Error} If wallet not connected or transaction fails
+   * @emits transaction:pending
+   * @emits transaction:submitted
+   * @emits transaction:error
    */
   private async executeTransaction(
     contract: ethers.Contract,
@@ -249,7 +316,14 @@ export class HolonsContract {
   }
 
   /**
-   * Wait for transaction confirmation with events
+   * Waits for transaction confirmation and emits appropriate events.
+   *
+   * @async
+   * @param {ethers.TransactionResponse} tx - The transaction response to wait for
+   * @param {string} [message] - Optional success message
+   * @returns {Promise<ethers.TransactionReceipt>} The transaction receipt
+   * @emits transaction:success
+   * @emits transaction:failed
    */
   async waitForTransaction(tx: ethers.TransactionResponse, message?: string): Promise<ethers.TransactionReceipt> {
     try {
@@ -279,7 +353,10 @@ export class HolonsContract {
   }
 
   /**
-   * Check if the Holons contract is properly configured with factories
+   * Checks if the Holons contract is properly configured with factories.
+   *
+   * @async
+   * @returns {Promise<{isConfigured: boolean, managedFactory: string|null, zonedFactory: string|null, splitterFlavor: string|null}>}
    */
   async checkContractConfiguration(): Promise<{
     isConfigured: boolean;
@@ -334,7 +411,14 @@ export class HolonsContract {
   }
 
   /**
-   * Set the factory addresses on the Holons contract (requires owner/admin)
+   * Sets the factory addresses on the Holons contract.
+   * Requires owner/admin privileges.
+   *
+   * @async
+   * @param {string} managedFactory - The Managed factory contract address
+   * @param {string} zonedFactory - The Zoned factory contract address
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
+   * @throws {Error} If wallet not connected
    */
   async setFactories(managedFactory: string, zonedFactory: string): Promise<ethers.TransactionResponse> {
     if (!this.signer) {
@@ -359,8 +443,17 @@ export class HolonsContract {
   }
 
   /**
-   * Create a new Bundle holon using the Holons registry
-   * The Bundle contract is a unified holon with configurable steepness and zones
+   * Creates a new holon using the Holons registry.
+   * The Bundle contract is a unified holon with configurable steepness and zones.
+   *
+   * @async
+   * @param {HolonType} type - The type of holon to create
+   * @param {string} creatorUserId - The creator's user ID
+   * @param {string} name - The holon name
+   * @param {bigint} [steepness] - Zone decay factor (default: 0.5e18)
+   * @param {number} [nzones] - Number of zones (default: 6)
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
+   * @throws {Error} If Holons contract address not configured
    */
   async createHolon(
     type: HolonType,
@@ -397,12 +490,16 @@ export class HolonsContract {
   }
 
   /**
-   * Create a Bundle contract (unified holon with configurable parameters)
-   * Uses the Holons registry - requires registry to be configured
-   * @param creatorUserId - The creator's user ID
-   * @param name - The holon name
-   * @param steepness - Zone decay factor (default 0.5e18 = 50% decay per zone)
-   * @param nzones - Number of zones (default 6)
+   * Creates a Bundle contract using the Holons registry.
+   * Requires the registry to be properly configured.
+   *
+   * @async
+   * @param {string} creatorUserId - The creator's user ID
+   * @param {string} name - The holon name
+   * @param {bigint} [steepness] - Zone decay factor (default: 0.5e18 = 50% decay per zone)
+   * @param {number} [nzones] - Number of zones (default: 6)
+   * @returns {Promise<{transaction: ethers.TransactionResponse, bundleInfo: Partial<HolonBundle>}>}
+   * @throws {Error} If wallet not connected
    */
   async createHolonBundle(
     creatorUserId: string,
@@ -436,14 +533,19 @@ export class HolonsContract {
   }
 
   /**
-   * Deploy a Bundle contract directly (no registry needed!)
-   * This is the simplest way to deploy a holon contract
-   * Bundle constructor: (owner, creatorUserId, name, steepness, nzones)
-   * @param creatorUserId - The creator's user ID
-   * @param name - The holon name
-   * @param steepness - Zone decay factor (default 0.5e18 = 50% decay per zone)
-   * @param nzones - Number of zones (default 6)
-   * @returns The deployed contract address and transaction
+   * Deploys a Bundle contract directly without using the registry.
+   * This is the simplest and recommended way to deploy a holon contract.
+   *
+   * Bundle constructor signature: (owner, creatorUserId, name, steepness, nzones)
+   *
+   * @async
+   * @param {string} creatorUserId - The creator's user ID
+   * @param {string} name - The holon name
+   * @param {bigint} [steepness] - Zone decay factor (default: 0.5e18 = 50% decay per zone)
+   * @param {number} [nzones] - Number of zones (default: 6)
+   * @returns {Promise<{address: string, transaction: ethers.TransactionResponse, bundle: HolonBundle}>}
+   * @throws {Error} If wallet not connected or bytecode not available
+   * @emits bundle:deployed
    */
   async deployBundleDirect(
     creatorUserId: string,
@@ -470,10 +572,16 @@ export class HolonsContract {
     console.log('[HolonsContract] Steepness:', steepnessValue.toString());
     console.log('[HolonsContract] Nzones:', zonesValue);
 
+    // Debug bytecode immediately
+    console.log('[HolonsContract] BUNDLE_BYTECODE exists:', !!BUNDLE_BYTECODE);
+    console.log('[HolonsContract] BUNDLE_BYTECODE length:', BUNDLE_BYTECODE?.length || 0);
+    console.log('[HolonsContract] BUNDLE_BYTECODE prefix:', BUNDLE_BYTECODE?.substring(0, 30) || 'EMPTY');
+
     // Ensure contracts are initialized
     await this.initialize();
 
-    if (!BUNDLE_BYTECODE) {
+    if (!BUNDLE_BYTECODE || BUNDLE_BYTECODE.length < 100) {
+      console.error('[HolonsContract] BUNDLE_BYTECODE is missing or too short!');
       throw new Error('Bundle bytecode not available. Please run the deployment setup.');
     }
 
@@ -522,7 +630,7 @@ export class HolonsContract {
       steepnessValue,  // steepness - BigInt is supported in ethers v6
       zonesValue,      // nzones
       {
-        gasLimit: 10000000n,  // Increased for larger Bundle bytecode
+        gasLimit: 15000000n,  // Large gas limit for Bundle contract deployment + constructor initialization
         maxFeePerGas: feeData.maxFeePerGas,
         maxPriorityFeePerGas: feeData.maxPriorityFeePerGas
       }
@@ -564,7 +672,11 @@ export class HolonsContract {
   }
 
   /**
-   * Get Bundle contract for a given holon name
+   * Retrieves Bundle contract information for a given holon name.
+   *
+   * @async
+   * @param {string} holonName - The name of the holon to look up
+   * @returns {Promise<HolonBundle | null>} The holon bundle or null if not found
    */
   async getHolonBundle(holonName: string): Promise<HolonBundle | null> {
     try {
@@ -642,7 +754,12 @@ export class HolonsContract {
   }
 
   /**
-   * Add members to managed holon
+   * Adds members to a managed holon contract.
+   *
+   * @async
+   * @param {string} managedAddress - The managed contract address
+   * @param {string[]} userIds - Array of user IDs to add
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async addMembersToManaged(
     managedAddress: string,
@@ -662,7 +779,12 @@ export class HolonsContract {
   }
 
   /**
-   * Add holons to zoned holon (federation)
+   * Adds holons to a zoned holon for federation.
+   *
+   * @async
+   * @param {string} zonedAddress - The zoned contract address
+   * @param {string[]} holonIds - Array of holon IDs to add
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async addHolonsToZoned(
     zonedAddress: string,
@@ -682,7 +804,12 @@ export class HolonsContract {
   }
 
   /**
-   * Set flow split ratios (interior vs exterior) on a Bundle contract
+   * Sets the flow split ratios between interior and exterior on a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {number} interiorPercent - The interior percentage (0-100)
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async setFlowSplit(
     bundleAddress: string,
@@ -713,7 +840,12 @@ export class HolonsContract {
   }
 
   /**
-   * Set steepness parameter on a Bundle contract
+   * Sets the steepness parameter on a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {bigint} steepness - The steepness value (WAD scale)
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async setSteepness(
     bundleAddress: string,
@@ -741,7 +873,12 @@ export class HolonsContract {
   }
 
   /**
-   * Set number of zones on a Bundle contract
+   * Sets the number of zones on a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {number} nzones - The number of zones
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async setNzones(
     bundleAddress: string,
@@ -769,8 +906,15 @@ export class HolonsContract {
   }
 
   /**
-   * Set interior member splits on a Bundle contract
-   * This adds members (if not already added) and sets their share percentages
+   * Sets interior member splits on a Bundle contract.
+   * Adds members if not already present and sets their share percentages.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {string[]} userIds - Array of user IDs
+   * @param {number[]} percentages - Array of percentages corresponding to user IDs
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
+   * @throws {Error} If arrays have different lengths
    */
   async setInteriorSplit(
     bundleAddress: string,
@@ -807,7 +951,12 @@ export class HolonsContract {
   }
 
   /**
-   * Add members to a Bundle contract's interior
+   * Adds members to a Bundle contract's interior.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {string[]} userIds - Array of user IDs to add
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async addInteriorMembers(
     bundleAddress: string,
@@ -835,8 +984,12 @@ export class HolonsContract {
   }
 
   /**
-   * Get current flow configuration from a Bundle contract
-   * Uses Bundle contract functions: interiorPercentage, exteriorPercentage, steepness, nzones
+   * Gets the current flow configuration from a Bundle contract.
+   * Uses Bundle contract functions for interior/exterior percentages.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @returns {Promise<FlowConfig>} The flow configuration
    */
   async getFlowConfig(bundleAddress: string): Promise<FlowConfig> {
     try {
@@ -875,7 +1028,11 @@ export class HolonsContract {
   }
 
   /**
-   * Get interior members from a Bundle contract
+   * Gets interior members from a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @returns {Promise<string[]>} Array of member user IDs
    */
   async getInteriorMembers(bundleAddress: string): Promise<string[]> {
     try {
@@ -891,7 +1048,12 @@ export class HolonsContract {
   }
 
   /**
-   * Get zone members from a Bundle contract
+   * Gets members from a specific zone in a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {number} zone - The zone number
+   * @returns {Promise<string[]>} Array of member user IDs in the zone
    */
   async getZoneMembers(bundleAddress: string, zone: number): Promise<string[]> {
     try {
@@ -907,7 +1069,11 @@ export class HolonsContract {
   }
 
   /**
-   * Get zone weights from a Bundle contract
+   * Gets zone weights from a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @returns {Promise<bigint[]>} Array of zone weights
    */
   async getZoneWeights(bundleAddress: string): Promise<bigint[]> {
     try {
@@ -923,7 +1089,12 @@ export class HolonsContract {
   }
 
   /**
-   * Get interior share for a specific user from a Bundle contract
+   * Gets the interior share for a specific user from a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {string} userId - The user ID to query
+   * @returns {Promise<bigint>} The user's share amount
    */
   async getInteriorShare(bundleAddress: string, userId: string): Promise<bigint> {
     try {
@@ -939,7 +1110,12 @@ export class HolonsContract {
   }
 
   /**
-   * Get ether balance for a specific user from a Bundle contract
+   * Gets the ether balance for a specific user from a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {string} userId - The user ID to query
+   * @returns {Promise<bigint>} The user's ether balance
    */
   async getUserEtherBalance(bundleAddress: string, userId: string): Promise<bigint> {
     try {
@@ -955,7 +1131,11 @@ export class HolonsContract {
   }
 
   /**
-   * Batch fetch all interior members with their shares and balances
+   * Batch fetches all interior members with their shares and balances.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @returns {Promise<Array<{userId: string, share: bigint, etherBalance: bigint}>>}
    */
   async getInteriorMembersWithBalances(bundleAddress: string): Promise<{
     userId: string;
@@ -983,7 +1163,12 @@ export class HolonsContract {
   }
 
   /**
-   * Add a member to a Bundle contract
+   * Adds a single member to a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {string} userId - The user ID to add
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async addMember(
     bundleAddress: string,
@@ -1011,7 +1196,14 @@ export class HolonsContract {
   }
 
   /**
-   * Batch assign members to zones in a Bundle contract
+   * Batch assigns members to zones in a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {string[]} userIds - Array of user IDs
+   * @param {number[]} zones - Array of zone numbers corresponding to user IDs
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
+   * @throws {Error} If arrays have different lengths
    */
   async assignMembersToZones(
     bundleAddress: string,
@@ -1045,7 +1237,13 @@ export class HolonsContract {
   }
 
   /**
-   * Assign a member to a zone in a Bundle contract
+   * Assigns a member to a specific zone in a Bundle contract.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {string} userId - The user ID to assign
+   * @param {number} zone - The zone number to assign to
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
    */
   async assignToZone(
     bundleAddress: string,
@@ -1066,7 +1264,79 @@ export class HolonsContract {
   }
 
   /**
-   * Get holon members
+   * Syncs all Bundle parameters in a single transaction for efficiency.
+   *
+   * @async
+   * @param {string} bundleAddress - The Bundle contract address
+   * @param {Object} params - The parameters to sync
+   * @param {number} params.interiorPercent - Interior percentage (0-100)
+   * @param {number} params.exteriorPercent - Exterior percentage (0-100)
+   * @param {bigint} params.steepness - Steepness value (WAD scale)
+   * @param {number} params.nzones - Number of zones
+   * @param {string[]} params.interiorUserIds - Interior member user IDs
+   * @param {number[]} params.interiorPercentages - Interior member percentages (basis points, sum to 10000)
+   * @param {string[]} params.exteriorUserIds - Exterior member user IDs
+   * @param {number[]} params.exteriorZones - Exterior member zone assignments
+   * @returns {Promise<ethers.TransactionResponse>} The transaction response
+   */
+  async syncAll(
+    bundleAddress: string,
+    params: {
+      interiorPercent: number;  // 0-100
+      exteriorPercent: number;  // 0-100
+      steepness: bigint;        // WAD scale
+      nzones: number;
+      interiorUserIds: string[];
+      interiorPercentages: number[];  // basis points, must sum to 10000
+      exteriorUserIds: string[];
+      exteriorZones: number[];
+    }
+  ): Promise<ethers.TransactionResponse> {
+    await this.initialize();
+
+    console.log('[HolonsContract] syncAll called:', {
+      bundleAddress,
+      interiorPercent: params.interiorPercent,
+      exteriorPercent: params.exteriorPercent,
+      steepness: params.steepness.toString(),
+      nzones: params.nzones,
+      interiorUserIds: params.interiorUserIds,
+      exteriorUserIds: params.exteriorUserIds,
+      bundleAbiLength: this.contractABIs.Bundle?.length || 0
+    });
+
+    const contract = await this.getContract(
+      bundleAddress,
+      this.contractABIs.Bundle
+    );
+
+    // Convert percentages to basis points (0-10000)
+    const interiorBps = BigInt(params.interiorPercent * 100);
+    const exteriorBps = BigInt(params.exteriorPercent * 100);
+
+    return this.executeTransaction(
+      contract,
+      'syncAll',
+      [
+        interiorBps,
+        exteriorBps,
+        params.steepness,
+        BigInt(params.nzones),
+        params.interiorUserIds,
+        params.interiorPercentages.map(p => BigInt(p)),
+        params.exteriorUserIds,
+        params.exteriorZones.map(z => BigInt(z))
+      ],
+      { gasLimit: 5000000 }  // Higher gas limit for batch operation
+    );
+  }
+
+  /**
+   * Gets holon members from a managed contract.
+   *
+   * @async
+   * @param {string} managedAddress - The managed contract address
+   * @returns {Promise<HolonMember[]>} Array of holon members
    */
   async getHolonMembers(managedAddress: string): Promise<HolonMember[]> {
     const contract = await this.getContract(
@@ -1097,7 +1367,12 @@ export class HolonsContract {
   }
 
   /**
-   * Get token balances for a holon
+   * Gets ERC20 token balances for a holon address.
+   *
+   * @async
+   * @param {string} holonAddress - The holon contract address
+   * @param {string[]} tokenAddresses - Array of ERC20 token addresses to query
+   * @returns {Promise<TokenBalance[]>} Array of token balances
    */
   async getTokenBalances(
     holonAddress: string,
@@ -1134,7 +1409,10 @@ export class HolonsContract {
   }
 
   /**
-   * Get available holon types/flavors
+   * Gets available holon types/flavors from the registry.
+   *
+   * @async
+   * @returns {Promise<HolonType[]>} Array of available holon types
    */
   async getAvailableHolonTypes(): Promise<HolonType[]> {
     try {
@@ -1159,21 +1437,29 @@ export class HolonsContract {
   }
 
   /**
-   * Get holon type icon
+   * Gets the emoji icon for a holon type.
+   *
+   * @param {HolonType} type - The holon type
+   * @returns {string} The emoji icon
    */
   getHolonIcon(type: HolonType): string {
     return this.HOLON_ICONS[type] || '🔸';
   }
 
   /**
-   * Check if wallet is connected
+   * Checks if a wallet is currently connected.
+   *
+   * @returns {boolean} True if wallet is connected
    */
   isConnected(): boolean {
     return this.signer !== null;
   }
 
   /**
-   * Get connected wallet address
+   * Gets the connected wallet address.
+   *
+   * @async
+   * @returns {Promise<string | null>} The wallet address or null if not connected
    */
   async getWalletAddress(): Promise<string | null> {
     if (!this.signer) return null;
@@ -1186,22 +1472,33 @@ export class HolonsContract {
   }
 
   /**
-   * Add event listener for contract events
+   * Adds an event listener for contract events.
+   *
+   * @param {string} event - The event name
+   * @param {Function} listener - The listener callback
+   * @returns {void}
    */
   on(event: string, listener: (...args: any[]) => void): void {
     this.eventEmitter.on(event, listener);
   }
 
   /**
-   * Remove event listener
+   * Removes an event listener.
+   *
+   * @param {string} event - The event name
+   * @param {Function} listener - The listener callback to remove
+   * @returns {void}
    */
   off(event: string, listener: (...args: any[]) => void): void {
     this.eventEmitter.off(event, listener);
   }
 
   /**
-   * Check if the Holons registry is properly configured
-   * Returns configuration status and what's missing
+   * Checks if the Holons registry is properly configured.
+   * Returns configuration status and identifies missing items.
+   *
+   * @async
+   * @returns {Promise<{isConfigured: boolean, managedFactory: string|null, zonedFactory: string|null, splitterFlavor: string|null, missingItems: string[]}>}
    */
   async checkRegistryConfiguration(): Promise<{
     isConfigured: boolean;
@@ -1275,8 +1572,12 @@ export class HolonsContract {
   }
 
   /**
-   * Configure the Holons registry with factories and flavors
-   * This should only be called once during initial setup
+   * Configures the Holons registry with factories and flavors.
+   * This should only be called once during initial setup.
+   *
+   * @async
+   * @returns {Promise<{success: boolean, transactions: string[], errors: string[]}>}
+   * @throws {Error} If wallet not connected
    */
   async configureRegistry(): Promise<{
     success: boolean;

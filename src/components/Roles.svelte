@@ -12,7 +12,7 @@
 	import TitleBar from "./shared/TitleBar.svelte";
 	import StatCard from "./shared/StatCard.svelte";
 	import StatGrid from "./shared/StatGrid.svelte";
-	import { Users, UserCheck, UserX } from 'svelte-feathers';
+	import { Users, UserCheck, UserX, Plus } from 'svelte-feathers';
 	import { fetchHolonName } from "../utils/holonNames";
 
 	/**
@@ -414,6 +414,20 @@
 		selectedRole = { key, role };
 		console.log("Selected role:", selectedRole);
 	}
+
+	async function addNewRole() {
+		const newRoleId = `role-${Date.now()}`;
+		const newRole = {
+			id: newRoleId,
+			title: 'New Role',
+			participants: [],
+			created_at: new Date().toISOString()
+		};
+		// Save the new role to HoloSphere
+		await holosphere.put(activeHolonId, 'roles', newRole);
+		// Open the modal for editing
+		selectedRole = { key: newRoleId, role: newRole };
+	}
 </script>
 
 <div class="space-y-4">
@@ -440,7 +454,16 @@
 
 		<!-- Controls Row with View Toggle -->
 		<div class="controls-row mb-4">
-			<div class="controls-row__left"></div>
+			<div class="controls-row__left">
+				<button
+					class="btn btn--primary"
+					on:click={addNewRole}
+					aria-label="Add new role"
+				>
+					<Plus size={16} />
+					<span class="hidden sm:inline">Add Role</span>
+				</button>
+			</div>
 			<div class="controls-row__center"></div>
 			<div class="controls-row__right">
 				<div class="view-toggle">

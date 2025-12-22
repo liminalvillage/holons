@@ -4,6 +4,7 @@
 	import type { HoloSphere } from "holosphere";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { fetchHolonName } from "../utils/holonNames";
+	import { Plus } from 'svelte-feathers';
 
 	// Use URL param directly instead of global ID store to avoid race conditions
 	$: holonID = $page.params.id || "";
@@ -53,11 +54,20 @@
 	let isRootMode = false;
 	let rootData: Record<string, any> = {};
 
-	// Gun address pattern detection
-	const GUN_ADDRESS_PATTERN = /^[a-zA-Z0-9_-]{20,}$/;
+	// Address pattern detection (for nostr/holosphere IDs)
+	const ADDRESS_PATTERN = /^[a-zA-Z0-9_-]{20,}$/;
 
 	// Track current subscription to avoid re-subscribing to the same holon/table
 	let currentSubscription = { holonId: '', tableName: '' };
+	let unsubscribeFn: (() => void) | null = null;
+
+	// Reactive display label and icon for the dropdown
+	$: displayLabel = isRootMode
+		? (navigationPath.length > 0 ? navigationPath[navigationPath.length - 1] : 'Root')
+		: (useCustomTable ? customTableName : (tables.find(t => t.value === selectedTable)?.label || selectedTable));
+	$: currentIcon = isRootMode
+		? 'fa-database'
+		: (tables.find(t => t.value === selectedTable)?.icon || 'fa-table');
 
 	// Filter entries based on search query
 	$: allEntries = Object.entries(isRootMode ? rootData : store);
@@ -74,26 +84,25 @@
 		})
 		: allEntries;
 
-	let gun: any = null;
 	let mounted = false;
 
-	// React to holonID changes from URL - only subscribe when actually changing
-	$: if (mounted && holonID && !isRootMode) {
-		// Only resubscribe if the holon actually changed
+	// Track previous holon ID to detect actual holon changes
+	let previousHolonID = '';
+
+	// React to holonID changes from URL - only subscribe when holon actually changes
+	$: if (mounted && holonID && !isRootMode && holonID !== previousHolonID) {
+		previousHolonID = holonID;
 		const currentTable = getCurrentTableName();
-		if (currentSubscription.holonId !== holonID || currentSubscription.tableName !== currentTable) {
-			subscribeToTable(currentTable);
-		}
+		subscribeToTable(currentTable);
 	}
 
 	onMount(() => {
 		mounted = true;
 
-		if (holosphere && holosphere.gun) {
-			gun = holosphere.gun;
-			console.log("[DB] Gun instance initialized");
+		if (holosphere) {
+			console.log("[DB] HoloSphere instance available");
 		} else {
-			console.error("[DB] Failed to access Gun instance from HoloSphere");
+			console.error("[DB] Failed to access HoloSphere instance");
 		}
 
 		// Initial subscription
@@ -111,6 +120,10 @@
 		document.addEventListener('click', handleClickOutside);
 		return () => {
 			mounted = false;
+			if (unsubscribeFn && typeof unsubscribeFn === 'function') {
+				unsubscribeFn();
+				unsubscribeFn = null;
+			}
 			document.removeEventListener('click', handleClickOutside);
 		};
 	});
@@ -123,18 +136,21 @@
 		const safeHolonID = holonID || "";
 
 		if (!safeHolonID || !safeHolonID.trim()) {
-			console.log(`[DB] Skipping subscription - no holon ID provided`);
 			return;
 		}
 
 		if (currentSubscription.holonId === safeHolonID && currentSubscription.tableName === tableName) {
-			console.log(`[DB] Already subscribed to ${tableName} for holon: ${safeHolonID}, skipping`);
 			return;
+		}
+
+		// Unsubscribe from previous subscription before subscribing to new one
+		if (unsubscribeFn && typeof unsubscribeFn === 'function') {
+			unsubscribeFn();
+			unsubscribeFn = null;
 		}
 
 		store = {};
 		currentSubscription = { holonId: safeHolonID, tableName };
-		console.log(`[DB] Subscribing to table: ${tableName} for holon: ${safeHolonID}`);
 
 		if (holosphere && tableName.trim()) {
 			// First, fetch initial data using read() - this filters out _deleted items
@@ -156,14 +172,17 @@
 					}
 					store = { ...store }; // Trigger reactivity
 				}
-				console.log(`[DB] Initial data loaded: ${Object.keys(store).length} entries`);
 			} catch (error) {
 				console.error(`[DB] Error loading initial data:`, error);
 			}
 
 			// Then subscribe for future updates
-			holosphere.subscribe(safeHolonID, tableName, (newData: any, key?: string) => {
+			const subscribeResult = holosphere.subscribe(safeHolonID, tableName, (newData: any, key?: string) => {
 				if (typeof key !== 'string') return;
+				// Verify this callback is still for the current subscription
+				if (currentSubscription.holonId !== safeHolonID || currentSubscription.tableName !== tableName) {
+					return; // Ignore stale callbacks
+				}
 				// Filter out deleted items - holosphere marks deleted items with _deleted: true
 				if (newData && !newData._deleted) {
 					store[key] = newData;
@@ -172,27 +191,46 @@
 				}
 				store = store; // Trigger reactivity
 			});
+			// Store unsubscribe function if returned
+			if (typeof subscribeResult === 'function') {
+				unsubscribeFn = subscribeResult;
+			}
 		}
 	}
 
 	function selectTable(table: string) {
-		selectedTable = table;
-		useCustomTable = false;
+		if (selectedTable === table && !useCustomTable) {
+			// Already on this table, just close dropdown
+			showDropdown = false;
+			return;
+		}
 		showDropdown = false;
-		currentSubscription = { holonId: '', tableName: '' }; // Reset to force resubscribe
-		subscribeToTable(table);
 		expandedFields.clear();
 		searchQuery = "";
+		// Unsubscribe before changing state to prevent reactive block race
+		if (unsubscribeFn && typeof unsubscribeFn === 'function') {
+			unsubscribeFn();
+			unsubscribeFn = null;
+		}
+		currentSubscription = { holonId: '', tableName: '' };
+		useCustomTable = false;
+		selectedTable = table;
+		subscribeToTable(table);
 	}
 
 	function handleCustomTableSubmit() {
 		if (customTableName.trim()) {
-			useCustomTable = true;
 			showDropdown = false;
-			currentSubscription = { holonId: '', tableName: '' };
-			subscribeToTable(customTableName.trim());
 			expandedFields.clear();
 			searchQuery = "";
+			// Unsubscribe before changing state
+			if (unsubscribeFn && typeof unsubscribeFn === 'function') {
+				unsubscribeFn();
+				unsubscribeFn = null;
+			}
+			currentSubscription = { holonId: '', tableName: '' };
+			useCustomTable = true;
+			subscribeToTable(customTableName.trim());
 		}
 	}
 
@@ -210,7 +248,10 @@
 		if (confirm("Are you sure you want to delete this entry?")) {
 			try {
 				if (isRootMode) {
-					await writeToGunPath([...navigationPath, key], null);
+					// Root mode: delete from current path using holosphere
+					const targetHolonId = navigationPath[0] || holonID;
+					const lens = navigationPath.length > 1 ? navigationPath.slice(1).join('/') : 'data';
+					await holosphere.delete(targetHolonId, lens, key);
 					delete rootData[key];
 					rootData = { ...rootData };
 				} else {
@@ -271,11 +312,11 @@
 		return { isParsed: false, parsed: value };
 	}
 
-	// Deserialize Gun data - handles JSON string (primary) and _json wrapper (legacy)
-	function deserializeGunData(data: any): any {
+	// Deserialize holosphere data - handles JSON strings and removes metadata
+	function deserializeData(data: any): any {
 		if (!data) return data;
 
-		// Primary format: JSON string (like old holosphere)
+		// Handle JSON strings
 		if (typeof data === 'string') {
 			try {
 				return JSON.parse(data);
@@ -286,7 +327,7 @@
 
 		if (typeof data !== 'object') return data;
 
-		// Legacy: holosphere2's _json wrapper format
+		// Handle _json wrapper format (holosphere internal)
 		if (data._json && typeof data._json === 'string') {
 			try {
 				return JSON.parse(data._json);
@@ -295,33 +336,7 @@
 			}
 		}
 
-		// Handle Gun node data with timestamps (has _ with > metadata)
-		if (data._ && data._['>']) {
-			const cleaned: Record<string, any> = {};
-			for (const [k, v] of Object.entries(data)) {
-				if (k === '_') continue;
-				// Check if value is a JSON string
-				if (typeof v === 'string') {
-					try {
-						cleaned[k] = JSON.parse(v);
-					} catch {
-						cleaned[k] = v;
-					}
-				// Check if the value is a _json wrapper (legacy)
-				} else if (typeof v === 'object' && v !== null && (v as any)._json) {
-					try {
-						cleaned[k] = JSON.parse((v as any)._json);
-					} catch {
-						cleaned[k] = v;
-					}
-				} else {
-					cleaned[k] = v;
-				}
-			}
-			return Object.keys(cleaned).length > 0 ? cleaned : data;
-		}
-
-		// Clean Gun metadata from plain objects
+		// Clean metadata from objects (keys starting with _)
 		if (data._) {
 			const cleaned = { ...data };
 			delete cleaned['_'];
@@ -344,7 +359,7 @@
 				const updatedEntry = { ...entry, [field]: currentArray };
 
 				if (isRootMode) {
-					await writeToGunPath([...navigationPath, key], updatedEntry);
+					await writeToPath([...navigationPath, key], updatedEntry);
 				} else {
 					await holosphere.put(holonID || "", getCurrentTableName(), updatedEntry);
 				}
@@ -353,7 +368,7 @@
 				const updatedEntry = { ...entry, [field]: parsedValue };
 
 				if (isRootMode) {
-					await writeToGunPath([...navigationPath, key], updatedEntry);
+					await writeToPath([...navigationPath, key], updatedEntry);
 				} else {
 					await holosphere.put(holonID || "", getCurrentTableName(), updatedEntry);
 				}
@@ -386,7 +401,7 @@
 			const updatedEntry = { ...entry, [newFieldName]: parsedValue };
 
 			if (isRootMode) {
-				await writeToGunPath([...navigationPath, key], updatedEntry);
+				await writeToPath([...navigationPath, key], updatedEntry);
 			} else {
 				await holosphere.put(holonID || "", getCurrentTableName(), updatedEntry);
 			}
@@ -404,7 +419,7 @@
 			const updatedEntry = { ...entry, [field]: newArray };
 
 			if (isRootMode) {
-				await writeToGunPath([...navigationPath, key], updatedEntry);
+				await writeToPath([...navigationPath, key], updatedEntry);
 			} else {
 				await holosphere.put(holonID || "", getCurrentTableName(), updatedEntry);
 			}
@@ -424,7 +439,7 @@
 				const updatedEntry = { ...entry, [field]: newArray };
 
 				if (isRootMode) {
-					await writeToGunPath([...navigationPath, key], updatedEntry);
+					await writeToPath([...navigationPath, key], updatedEntry);
 				} else {
 					await holosphere.put(holonID || "", getCurrentTableName(), updatedEntry);
 				}
@@ -473,7 +488,7 @@
 		try {
 			const parsedData = JSON.parse(newEntryJson);
 			if (isRootMode) {
-				await writeToGunPath([...navigationPath, newEntryKey], parsedData);
+				await writeToPath([...navigationPath, newEntryKey], parsedData);
 			} else {
 				await holosphere.put(holonID || "", getCurrentTableName(), { ...parsedData, id: newEntryKey });
 			}
@@ -504,41 +519,53 @@
 
 	async function loadRootData() {
 		rootData = {};
-		if (!gun) return;
+		if (!holosphere) return;
 
-		let currentRef = gun;
-
-		if (navigationPath.length === 0) {
-			const knownKeys = ['Holons', 'users', 'global', 'peers', 'system'];
-			for (const testKey of knownKeys) {
-				gun.get(testKey).once((data: any) => {
-					if (data !== null && data !== undefined) {
-						const deserialized = deserializeGunData(data);
-						rootData[testKey] = (typeof deserialized === 'object' && deserialized !== null) ? deserialized : { value: deserialized, type: typeof deserialized };
-						rootData = { ...rootData };
+		try {
+			if (navigationPath.length === 0) {
+				// At root level, show available holons and global data
+				// Use holosphere to fetch global registry
+				const registry = await holosphere.getAll('global', 'holons_registry');
+				if (registry && typeof registry === 'object') {
+					for (const [key, value] of Object.entries(registry)) {
+						if (key && !key.startsWith('_')) {
+							const deserialized = deserializeData(value);
+							rootData[key] = deserialized;
+						}
 					}
-				});
-			}
-
-			currentRef.map().on((data: any, key: string) => {
-				if (data !== null && data !== undefined && key && !key.startsWith('_')) {
-					const deserialized = deserializeGunData(data);
-					rootData[key] = (typeof deserialized === 'object' && deserialized !== null) ? deserialized : { value: deserialized, type: typeof deserialized };
-					rootData = { ...rootData };
 				}
-			});
-		} else {
-			for (const pathSegment of navigationPath) {
-				currentRef = currentRef.get(pathSegment);
-			}
-
-			currentRef.map().on((data: any, key: string) => {
-				if (data !== null && data !== undefined && key && !key.startsWith('_')) {
-					const deserialized = deserializeGunData(data);
-					rootData[key] = (typeof deserialized === 'object' && deserialized !== null) ? deserialized : { value: deserialized, type: typeof deserialized };
-					rootData = { ...rootData };
+				// Also show current holon data if available
+				if (holonID) {
+					rootData[holonID] = { _type: 'holon', _id: holonID };
 				}
-			});
+				rootData = { ...rootData };
+			} else {
+				// Navigate into a specific holon/lens
+				const targetHolonId = navigationPath[0];
+				const lens = navigationPath.length > 1 ? navigationPath[1] : null;
+
+				if (lens) {
+					// Fetch specific lens data
+					const data = await holosphere.getAll(targetHolonId, lens);
+					if (data && typeof data === 'object') {
+						for (const [key, value] of Object.entries(data)) {
+							if (key && !key.startsWith('_')) {
+								const deserialized = deserializeData(value);
+								rootData[key] = deserialized;
+							}
+						}
+					}
+				} else {
+					// Show available lenses for this holon
+					const knownLenses = ['quests', 'users', 'settings', 'offers', 'expenses', 'events', 'communities'];
+					for (const lensName of knownLenses) {
+						rootData[lensName] = { _type: 'lens', _name: lensName };
+					}
+				}
+				rootData = { ...rootData };
+			}
+		} catch (error) {
+			console.error('Error loading root data:', error);
 		}
 	}
 
@@ -565,24 +592,23 @@
 		expandedFields.clear();
 	}
 
-	async function writeToGunPath(path: string[], data: any) {
-		if (!gun) return;
-		let gunRef = gun;
-		for (const pathSegment of path) {
-			gunRef = gunRef.get(pathSegment);
-		}
-		gunRef.put(data);
+	async function writeToPath(path: string[], data: any) {
+		if (!holosphere) return;
+		// Convert path to holonId/lens structure
+		const targetHolonId = path[0] || holonID;
+		const lens = path.length > 1 ? path[1] : 'data';
+		const itemId = path.length > 2 ? path[path.length - 1] : data?.id || String(Date.now());
+
+		await holosphere.put(targetHolonId, lens, { ...data, id: itemId });
 	}
 
 	async function recursivelyDeleteNode(key: string) {
 		if (!confirm(`Delete "${key}" and all nested data? This cannot be undone.`)) return;
 		try {
 			if (isRootMode) {
-				let gunRef = gun;
-				for (const pathSegment of [...navigationPath, key]) {
-					gunRef = gunRef.get(pathSegment);
-				}
-				gunRef.put(null);
+				const targetHolonId = navigationPath[0] || holonID;
+				const lens = navigationPath.length > 1 ? navigationPath[1] : 'data';
+				await holosphere.delete(targetHolonId, lens, key);
 				delete rootData[key];
 				rootData = { ...rootData };
 			} else {
@@ -595,17 +621,12 @@
 		}
 	}
 
-	function isGunAddress(value: any): boolean {
+	function isHolosphereAddress(value: any): boolean {
 		if (typeof value !== 'string') return false;
-		return GUN_ADDRESS_PATTERN.test(value);
+		return ADDRESS_PATTERN.test(value);
 	}
 
-	function isGunReference(obj: any): boolean {
-		if (typeof obj !== 'object' || obj === null) return false;
-		return obj.hasOwnProperty('#') && typeof obj['#'] === 'string' && isGunAddress(obj['#']);
-	}
-
-	async function navigateToGunAddress(address: string) {
+	async function navigateToAddress(address: string) {
 		if (isRootMode) {
 			navigationPath = [address];
 			searchQuery = "";
@@ -622,19 +643,6 @@
 		}
 	}
 
-	function getDisplayLabel(): string {
-		if (isRootMode) {
-			return navigationPath.length > 0 ? navigationPath[navigationPath.length - 1] : 'Root';
-		}
-		const table = tables.find(t => t.value === selectedTable);
-		return useCustomTable ? customTableName : (table?.label || selectedTable);
-	}
-
-	function getCurrentIcon(): string {
-		if (isRootMode) return 'fa-database';
-		const table = tables.find(t => t.value === selectedTable);
-		return table?.icon || 'fa-table';
-	}
 </script>
 
 <div class="space-y-4">
@@ -645,7 +653,7 @@
 			<div class="mode-toggle">
 				<button
 					class="mode-btn {!isRootMode ? 'active' : ''}"
-					on:click={exitRootMode}
+					onclick={exitRootMode}
 					disabled={!isRootMode}
 				>
 					<i class="fas fa-table"></i>
@@ -653,19 +661,19 @@
 				</button>
 				<button
 					class="mode-btn {isRootMode ? 'active' : ''}"
-					on:click={enterRootMode}
+					onclick={enterRootMode}
 					disabled={isRootMode}
 				>
 					<i class="fas fa-sitemap"></i>
 					<span class="hidden sm:inline">Root</span>
 				</button>
 			</div>
-			<button class="action-btn export-btn" on:click={exportTableData}>
+			<button class="action-btn export-btn" onclick={exportTableData}>
 				<i class="fas fa-download"></i>
 				<span class="hidden sm:inline">Export</span>
 			</button>
-			<button class="action-btn add-btn" on:click={() => isAddingNewEntry = true}>
-				<i class="fas fa-plus"></i>
+			<button class="btn btn--primary" onclick={() => isAddingNewEntry = true}>
+				<Plus size={16} />
 				<span class="hidden sm:inline">New Entry</span>
 			</button>
 		</div>
@@ -678,20 +686,20 @@
 		{#if isRootMode}
 			<!-- Breadcrumb Navigation -->
 			<div class="breadcrumb">
-				<button class="breadcrumb-item root" on:click={() => { navigationPath = []; loadRootData(); }}>
+				<button class="breadcrumb-item root" onclick={() => { navigationPath = []; loadRootData(); }} aria-label="Go to root">
 					<i class="fas fa-home"></i>
 				</button>
 				{#each navigationPath as segment, index}
 					<i class="fas fa-chevron-right breadcrumb-separator"></i>
 					<button
 						class="breadcrumb-item {index === navigationPath.length - 1 ? 'current' : ''}"
-						on:click={() => navigateToBreadcrumb(index)}
+						onclick={() => navigateToBreadcrumb(index)}
 					>
 						{segment.length > 20 ? segment.substring(0, 20) + '...' : segment}
 					</button>
 				{/each}
 				{#if navigationPath.length > 0}
-					<button class="nav-up-btn" on:click={navigateUp} title="Go up">
+					<button class="nav-up-btn" onclick={navigateUp} title="Go up">
 						<i class="fas fa-level-up-alt"></i>
 					</button>
 				{/if}
@@ -699,9 +707,9 @@
 		{:else}
 			<!-- Table Selector -->
 			<div class="table-dropdown">
-				<button class="table-selector" on:click={() => showDropdown = !showDropdown}>
-					<i class="fas {getCurrentIcon()}"></i>
-					<span>{getDisplayLabel()}</span>
+				<button class="table-selector" onclick={() => showDropdown = !showDropdown}>
+					<i class="fas {currentIcon}"></i>
+					<span>{displayLabel}</span>
 					<i class="fas fa-chevron-down dropdown-arrow {showDropdown ? 'open' : ''}"></i>
 				</button>
 
@@ -712,7 +720,7 @@
 							{#each tables as table}
 								<button
 									class="dropdown-item {selectedTable === table.value && !useCustomTable ? 'selected' : ''}"
-									on:click={() => selectTable(table.value)}
+									onclick={() => selectTable(table.value)}
 								>
 									<i class="fas {table.icon}"></i>
 									<span>{table.label}</span>
@@ -727,9 +735,9 @@
 									type="text"
 									placeholder="Enter table name..."
 									bind:value={customTableName}
-									on:keydown={(e) => e.key === 'Enter' && handleCustomTableSubmit()}
+									onkeydown={(e) => e.key === 'Enter' && handleCustomTableSubmit()}
 								/>
-								<button class="custom-go-btn" on:click={handleCustomTableSubmit}>
+								<button class="custom-go-btn" onclick={handleCustomTableSubmit} aria-label="Go to table">
 									<i class="fas fa-arrow-right"></i>
 								</button>
 							</div>
@@ -748,7 +756,7 @@
 				bind:value={searchQuery}
 			/>
 			{#if searchQuery}
-				<button class="clear-search" on:click={() => searchQuery = ""}>
+				<button class="clear-search" onclick={() => searchQuery = ""} aria-label="Clear search">
 					<i class="fas fa-times"></i>
 				</button>
 			{/if}
@@ -768,11 +776,11 @@
 
 	<!-- Add New Entry Modal -->
 	{#if isAddingNewEntry}
-		<div class="modal-overlay" on:click={() => isAddingNewEntry = false}>
-			<div class="modal" on:click|stopPropagation>
+		<div class="modal-overlay" onclick={(e) => { if (e.target === e.currentTarget) isAddingNewEntry = false; }} onkeydown={(e) => e.key === 'Escape' && (isAddingNewEntry = false)} role="button" tabindex="0" aria-label="Close modal">
+			<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
 				<div class="modal-header">
 					<h3>Add New Entry</h3>
-					<button class="modal-close" on:click={() => isAddingNewEntry = false}>
+					<button class="modal-close" onclick={() => isAddingNewEntry = false} aria-label="Close modal">
 						<i class="fas fa-times"></i>
 					</button>
 				</div>
@@ -797,8 +805,8 @@
 					</div>
 				</div>
 				<div class="modal-footer">
-					<button class="btn btn-secondary" on:click={() => isAddingNewEntry = false}>Cancel</button>
-					<button class="btn btn-primary" on:click={addNewEntry}>Create Entry</button>
+					<button class="btn btn-secondary" onclick={() => isAddingNewEntry = false}>Cancel</button>
+					<button class="btn btn-primary" onclick={addNewEntry}>Create Entry</button>
 				</div>
 			</div>
 		</div>
@@ -812,12 +820,12 @@
 					<i class="fas fa-search empty-icon"></i>
 					<h3>No matches found</h3>
 					<p>No records match "{searchQuery}"</p>
-					<button class="btn btn-secondary" on:click={() => searchQuery = ""}>Clear search</button>
+					<button class="btn btn-secondary" onclick={() => searchQuery = ""}>Clear search</button>
 				{:else}
 					<i class="fas fa-inbox empty-icon"></i>
 					<h3>No records</h3>
 					<p>{isRootMode ? 'No data at this path' : 'This table is empty'}</p>
-					<button class="btn btn-primary" on:click={() => isAddingNewEntry = true}>
+					<button class="btn btn-primary" onclick={() => isAddingNewEntry = true}>
 						<i class="fas fa-plus"></i> Add first entry
 					</button>
 				{/if}
@@ -835,14 +843,14 @@
 									<span class="status-badge status-{data.status}">{data.status}</span>
 								{/if}
 								{#if isRootMode && typeof data === 'object' && data !== null}
-									<button class="card-action" on:click={() => navigateToPath(key)} title="Navigate into">
+									<button class="card-action" onclick={() => navigateToPath(key)} title="Navigate into">
 										<i class="fas fa-folder-open"></i>
 									</button>
 								{/if}
-								<button class="card-action" on:click={() => exportEntry(key, data)} title="Export">
+								<button class="card-action" onclick={() => exportEntry(key, data)} title="Export">
 									<i class="fas fa-download"></i>
 								</button>
-								<button class="card-action danger" on:click={() => recursivelyDeleteNode(key)} title="Delete">
+								<button class="card-action danger" onclick={() => recursivelyDeleteNode(key)} title="Delete">
 									<i class="fas fa-trash"></i>
 								</button>
 							</div>
@@ -854,7 +862,7 @@
 									<div class="field">
 										<div class="field-header">
 											<span class="field-name">{field}</span>
-											<button class="field-edit" on:click={() => startEditing(key, field, value)}>
+											<button class="field-edit" onclick={() => startEditing(key, field, value)} aria-label="Edit field">
 												<i class="fas fa-pen"></i>
 											</button>
 										</div>
@@ -866,8 +874,8 @@
 													bind:value={editValue}
 												></textarea>
 												<div class="field-editor-actions">
-													<button class="btn btn-sm btn-primary" on:click={() => saveEdit(key, field)}>Save</button>
-													<button class="btn btn-sm btn-secondary" on:click={cancelEdit}>Cancel</button>
+													<button class="btn btn-sm btn-primary" onclick={() => saveEdit(key, field)}>Save</button>
+													<button class="btn btn-sm btn-secondary" onclick={cancelEdit}>Cancel</button>
 												</div>
 											</div>
 										{:else if typeof value === "object" && value !== null}
@@ -879,8 +887,8 @@
 																<div class="array-item">
 																	<span class="array-index">{index}</span>
 																	<div class="array-content">
-																		{#if isGunAddress(item)}
-																			<button class="gun-link" on:click={() => navigateToGunAddress(item)}>
+																		{#if isHolosphereAddress(item)}
+																			<button class="address-link" onclick={() => navigateToAddress(item)}>
 																				<i class="fas fa-link"></i> {item.substring(0, 16)}...
 																			</button>
 																		{:else}
@@ -888,12 +896,12 @@
 																		{/if}
 																	</div>
 																	<div class="array-actions">
-																		<button on:click={() => startEditing(key, field, value, index)}><i class="fas fa-pen"></i></button>
-																		<button on:click={() => removeArrayItem(key, field, index, value)}><i class="fas fa-times"></i></button>
+																		<button onclick={() => startEditing(key, field, value, index)} aria-label="Edit item"><i class="fas fa-pen"></i></button>
+																		<button onclick={() => removeArrayItem(key, field, index, value)} aria-label="Remove item"><i class="fas fa-times"></i></button>
 																	</div>
 																</div>
 															{/each}
-															<button class="add-array-item" on:click={() => addArrayItem(key, field, value)}>
+															<button class="add-array-item" onclick={() => addArrayItem(key, field, value)}>
 																<i class="fas fa-plus"></i> Add item
 															</button>
 														</div>
@@ -901,21 +909,21 @@
 														<pre>{JSON.stringify(value, null, 2)}</pre>
 													{/if}
 												{:else}
-													<button class="expand-btn" on:click={() => toggleField(`${key}.${field}`)}>
+													<button class="expand-btn" onclick={() => toggleField(`${key}.${field}`)}>
 														{Array.isArray(value) ? `[${value.length} items]` : '{...}'}
 														<i class="fas fa-chevron-down"></i>
 													</button>
 												{/if}
 												{#if expandedFields.has(`${key}.${field}`)}
-													<button class="collapse-btn" on:click={() => toggleField(`${key}.${field}`)}>
+													<button class="collapse-btn" onclick={() => toggleField(`${key}.${field}`)}>
 														<i class="fas fa-chevron-up"></i> Collapse
 													</button>
 												{/if}
 											</div>
 										{:else}
 											<div class="field-value">
-												{#if isGunAddress(value)}
-													<button class="gun-link" on:click={() => navigateToGunAddress(String(value))}>
+												{#if isHolosphereAddress(value)}
+													<button class="address-link" onclick={() => navigateToAddress(String(value))}>
 														<i class="fas fa-link"></i> {String(value).substring(0, 20)}...
 													</button>
 												{:else}
@@ -931,12 +939,12 @@
 										<input type="text" placeholder="Field name" bind:value={newFieldName} />
 										<input type="text" placeholder="Value" bind:value={editValue} />
 										<div class="add-field-actions">
-											<button class="btn btn-sm btn-primary" on:click={() => addNewField(key)}>Add</button>
-											<button class="btn btn-sm btn-secondary" on:click={cancelEdit}>Cancel</button>
+											<button class="btn btn-sm btn-primary" onclick={() => addNewField(key)}>Add</button>
+											<button class="btn btn-sm btn-secondary" onclick={cancelEdit}>Cancel</button>
 										</div>
 									</div>
 								{:else}
-									<button class="add-field-btn" on:click={() => { addingFieldTo = key; editValue = ""; newFieldName = ""; }}>
+									<button class="add-field-btn" onclick={() => { addingFieldTo = key; editValue = ""; newFieldName = ""; }}>
 										<i class="fas fa-plus"></i> Add field
 									</button>
 								{/if}
@@ -977,21 +985,9 @@
 		gap: 1.5rem;
 	}
 
-	.title-section {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
 	.title-icon {
 		font-size: 1.5rem;
 		color: #60a5fa;
-	}
-
-	.title-section h1 {
-		font-size: 1.25rem;
-		font-weight: 600;
-		margin: 0;
 	}
 
 	.mode-toggle {
@@ -1055,14 +1051,6 @@
 		background: #4b5563;
 	}
 
-	.add-btn {
-		background: #059669;
-		color: white;
-	}
-
-	.add-btn:hover {
-		background: #047857;
-	}
 
 	/* Navigation Bar */
 	.nav-bar {
@@ -1578,8 +1566,8 @@
 		color: #6b7280;
 	}
 
-	/* Gun Link */
-	.gun-link {
+	/* Address Link */
+	.address-link {
 		background: #1e3a5f;
 		border: none;
 		padding: 0.25rem 0.5rem;
@@ -1590,7 +1578,7 @@
 		font-family: monospace;
 	}
 
-	.gun-link:hover {
+	.address-link:hover {
 		background: #2563eb;
 		color: white;
 	}

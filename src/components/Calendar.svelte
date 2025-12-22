@@ -9,6 +9,7 @@
     import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
     import TitleBar from "./shared/TitleBar.svelte";
     import { fetchHolonName } from "../utils/holonNames";
+    import { Plus } from 'svelte-feathers';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -32,6 +33,7 @@
     let tempDate: string;
     let tempTime: string;
     let tempEndTime: string;
+    let tempTitle: string;
     
     // View options: 'month', 'week', 'day', 'orbits'
     let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' | 'orbits' = 'week';
@@ -605,23 +607,54 @@
         tempDate = date.toISOString().split('T')[0];
         tempTime = date.toTimeString().slice(0, 5);
         tempEndTime = endDate.toTimeString().slice(0, 5);
+        tempTitle = task.title || '';
+        showModal = true;
+    }
+
+    async function addNewEvent() {
+        if (!$ID) return;
+        const now = selectedDate || new Date();
+        const startDate = new Date(now);
+        startDate.setHours(9, 0, 0, 0);
+        const endDate = new Date(startDate);
+        endDate.setHours(10, 0, 0, 0);
+
+        const newEvent = {
+            id: `event-${Date.now()}`,
+            title: 'New Event',
+            type: 'event',
+            status: 'ongoing',
+            when: startDate.toISOString(),
+            ends: endDate.toISOString(),
+            participants: [],
+            appreciation: []
+        };
+
+        await holosphere.put($ID, 'quests', newEvent);
+        // Open for editing
+        selectedTask = { id: newEvent.id, task: newEvent };
+        tempDate = startDate.toISOString().split('T')[0];
+        tempTime = startDate.toTimeString().slice(0, 5);
+        tempEndTime = endDate.toTimeString().slice(0, 5);
+        tempTitle = newEvent.title;
         showModal = true;
     }
 
     function updateDateTime() {
         if (!selectedTask || !$ID) return;
-        
+
         const newDate = new Date(`${tempDate}T${tempTime}`);
         const endDate = new Date(`${tempDate}T${tempEndTime}`);
         const updatedTask = {
             ...selectedTask.task,
+            title: tempTitle,
             when: newDate.toISOString(),
             ends: endDate.toISOString()
         };
-        
+
         showModal = false;
         selectedTask = null;
-        
+
         try {
             holosphere.put($ID, 'quests', updatedTask);
         } catch (error) {
@@ -1533,7 +1566,7 @@
                 <!-- svelte-ignore a11y_consider_explicit_label -->
                 <button
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
-                    on:click={() => handleNavigation(-1)}
+                    onclick={() => handleNavigation(-1)}
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -1541,7 +1574,7 @@
                 </button>
                 <button
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
-                    on:click={() => handleNavigation(1)}
+                    onclick={() => handleNavigation(1)}
                     aria-label="Next period"
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1562,8 +1595,16 @@
         </div>
         <div class="flex gap-2 flex-wrap items-center">
             <button
+                class="btn btn--primary"
+                onclick={addNewEvent}
+                aria-label="Add new event"
+            >
+                <Plus size={16} />
+                <span class="hidden sm:inline">Add Event</span>
+            </button>
+            <button
                 class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
-                on:click={() => showCalendarSettings = true}
+                onclick={() => showCalendarSettings = true}
                 aria-label="Calendar settings"
                 title="Calendar Settings - Import/Export"
             >
@@ -1574,25 +1615,25 @@
             </button>
             <button 
                 class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                on:click={() => handleViewModeChange('day')}
+                onclick={() => handleViewModeChange('day')}
             >
                 Day
             </button>
             <button 
                 class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'week' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                on:click={() => handleViewModeChange('week')}
+                onclick={() => handleViewModeChange('week')}
             >
                 Week
             </button>
             <button 
                 class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'month' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                on:click={() => handleViewModeChange('month')}
+                onclick={() => handleViewModeChange('month')}
             >
                 Month
             </button>
             <button 
                 class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'orbits' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                on:click={() => handleViewModeChange('orbits')}
+                onclick={() => handleViewModeChange('orbits')}
             >
                 Orbits
             </button>
@@ -1617,10 +1658,10 @@
                     class:ring-white={isSelected(date)}
                     class:bg-indigo-900={dragOverDate?.toDateString() === date.toDateString()}
                     class:bg-opacity-50={dragOverDate?.toDateString() === date.toDateString()}
-                    on:click={() => handleDateClick(date)}
-                    on:dragover={(e) => handleDragOver(e, date)}
-                    on:dragleave={handleDragLeave}
-                    on:drop={(e) => handleDrop(e, date)}
+                    onclick={() => handleDateClick(date)}
+                    ondragover={(e) => handleDragOver(e, date)}
+                    ondragleave={handleDragLeave}
+                    ondrop={(e) => handleDrop(e, date)}
                 >
                     <span 
                         class="inline-flex w-8 h-8 items-center justify-center rounded-full text-white
@@ -1652,13 +1693,15 @@
                         {#each dateEvents.slice(0, 3) as event}
                             {#if event.id && tasks[event.id]}
                                 <!-- This is a task, make it draggable -->
-                                <div 
+                                <div
                                     class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move"
                                     class:opacity-50={draggedTask?.key === event.id}
                                     style="background-color: {event.color || '#4B5563'}"
                                     draggable="true"
-                                    on:dragstart={(e) => handleDragStart(e, event.id, event)}
-                                    on:dragend={handleDragEnd}
+                                    ondragstart={(e) => handleDragStart(e, event.id, event)}
+                                    ondragend={handleDragEnd}
+                                    role="listitem"
+                                    aria-label="Drag task: {event.title}"
                                 >
                                     {event.title}
                                 </div>
@@ -1701,13 +1744,16 @@
                         <div class="divide-y divide-gray-700">
                             {#each Array(18) as _, i}
                                 {@const hour = i + 6}
-                                <div 
+                                <div
                                     class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
                                     class:bg-indigo-100={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
                                     class:bg-opacity-10={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
-                                    on:dragover={(e) => handleDragOver(e, date, hour)}
-                                    on:dragleave={handleDragLeave}
-                                    on:drop={(e) => handleDrop(e, date, hour)}
+                                    ondragover={(e) => handleDragOver(e, date, hour)}
+                                    ondragleave={handleDragLeave}
+                                    ondrop={(e) => handleDrop(e, date, hour)}
+                                    role="gridcell"
+                                    aria-label="Time slot {hour}:00"
+                                    tabindex="0"
                                 >
                                     <div class="text-xs text-gray-500 group-hover:text-gray-400">
                                         {hour.toString().padStart(2, '0')}:00
@@ -1732,10 +1778,10 @@
                                 class:p-1={isShortEvent}
                                 class:p-2={!isShortEvent}
                                 draggable="true"
-                                on:dragstart={(e) => handleDragStart(e, key, task)}
-                                on:dragend={handleDragEnd}
-                                on:click|stopPropagation={() => handleTaskClick(key, task)}
-                                on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                                ondragstart={(e) => handleDragStart(e, key, task)}
+                                ondragend={handleDragEnd}
+                                onclick={(e) => { e.stopPropagation(); handleTaskClick(key, task); }}
+                                onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                                 role="button"
                                 tabindex="0"
                                 style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
@@ -1825,12 +1871,12 @@
                             class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
                             class:bg-indigo-100={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
                             class:bg-opacity-10={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
-                            on:click={() => {
+                            onclick={() => {
                                 const eventDate = new Date(currentDate);
                                 eventDate.setHours(hour);
                                 handleDateClick(eventDate);
                             }}
-                            on:keydown={(e) => {
+                            onkeydown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault();
                                     const eventDate = new Date(currentDate);
@@ -1838,9 +1884,9 @@
                                     handleDateClick(eventDate);
                                 }
                             }}
-                            on:dragover={(e) => handleDragOver(e, currentDate, hour)}
-                            on:dragleave={handleDragLeave}
-                            on:drop={(e) => handleDrop(e, currentDate, hour)}
+                            ondragover={(e) => handleDragOver(e, currentDate, hour)}
+                            ondragleave={handleDragLeave}
+                            ondrop={(e) => handleDrop(e, currentDate, hour)}
                             role="button"
                             tabindex="0"
                         >
@@ -1860,10 +1906,10 @@
                         class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10"
                         class:opacity-50={draggedTask?.key === key}
                         draggable="true"
-                        on:dragstart={(e) => handleDragStart(e, key, task)}
-                        on:dragend={handleDragEnd}
-                        on:click|stopPropagation={() => handleTaskClick(key, task)}
-                        on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                        ondragstart={(e) => handleDragStart(e, key, task)}
+                        ondragend={handleDragEnd}
+                        onclick={(e) => { e.stopPropagation(); handleTaskClick(key, task); }}
+                        onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                         role="button"
                         tabindex="0"
                         style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
@@ -1976,7 +2022,7 @@
                 <h2 class="text-2xl font-bold text-white">{selectedOrbitTask.title}</h2>
                 <button 
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
-                    on:click={closeOrbitTaskDetails}
+                    onclick={closeOrbitTaskDetails}
                     aria-label="Close modal"
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2044,16 +2090,20 @@
                 aria-describedby="modal-description"
             >
                 <div class="flex justify-between items-start mb-6">
-                    <div>
-                        <h3 id="modal-title" class="text-white text-lg font-medium">Update Schedule</h3>
-                        {#if selectedTask?.task?.title}
-                            <p class="text-indigo-300 text-sm mt-1 font-medium">{selectedTask.task.title}</p>
-                        {/if}
+                    <div class="flex-1 mr-4">
+                        <input
+                            type="text"
+                            bind:value={tempTitle}
+                            placeholder="Event title..."
+                            class="w-full text-lg font-medium text-white bg-transparent border-b border-transparent hover:border-gray-600 focus:border-indigo-500 outline-none transition-colors pb-1"
+                            aria-label="Event title"
+                        />
+                        <p id="modal-title" class="text-gray-400 text-sm mt-1">Edit schedule</p>
                     </div>
                     <span id="modal-description" class="sr-only">Update schedule date and time</span>
-                    <button 
+                    <button
                         class="text-gray-400 hover:text-white transition-colors"
-                        on:click={() => {
+                        onclick={() => {
                             showModal = false;
                             selectedTask = null;
                         }}
@@ -2099,18 +2149,18 @@
                     </div>
                     
                     <div class="flex gap-3 justify-end pt-2">
-                        <button 
+                        <button
                             type="button"
-                            class="px-4 py-2 bg-gray-700 text-red-300 rounded-lg hover:bg-gray-600 border border-red-900/20 transition-colors text-sm font-medium"
-                            on:click={deleteSchedule}
+                            class="btn btn--danger"
+                            onclick={deleteSchedule}
                             aria-label="Remove schedule"
                         >
-                            Remove Schedule
+                            Remove
                         </button>
-                        <button 
+                        <button
                             type="button"
-                            class="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm font-medium"
-                            on:click={() => {
+                            class="btn btn--secondary"
+                            onclick={() => {
                                 showModal = false;
                                 selectedTask = null;
                             }}
@@ -2118,13 +2168,13 @@
                         >
                             Cancel
                         </button>
-                        <button 
+                        <button
                             type="button"
-                            class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors text-sm font-medium"
-                            on:click={updateDateTime}
+                            class="btn btn--primary"
+                            onclick={updateDateTime}
                             aria-label="Update schedule"
                         >
-                            Update
+                            Save
                         </button>
                     </div>
                 </div>

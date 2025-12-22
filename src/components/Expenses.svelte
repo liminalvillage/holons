@@ -4,6 +4,7 @@
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
 	import { calculateCreditMatrix } from "../utils/expenseCalculations";
+	import { Plus } from 'svelte-feathers';
 
 	interface Expense {
 		id: string;
@@ -59,7 +60,7 @@
 			const [expensesData, usersData, settingsData] = await Promise.allSettled([
 				holosphere.getAll(holonID, "expenses"),
 				holosphere.getAll(holonID, "users"),
-				holosphere.read(holonID, "settings")
+				holosphere.read(holonID, "settings", holonID)
 			]);
 
 			// Process expenses
@@ -240,22 +241,68 @@
 			}, 100);
 		}
 	}
+
+	// Add expense functionality
+	let showAddExpense = false;
+	let newExpense = {
+		amount: 0,
+		description: '',
+		paidBy: '',
+		splitWith: [] as string[]
+	};
+
+	function openAddExpense() {
+		showAddExpense = true;
+		newExpense = {
+			amount: 0,
+			description: '',
+			paidBy: users[0]?.id?.toString() || '',
+			splitWith: users.map(u => u.id.toString())
+		};
+	}
+
+	async function saveExpense() {
+		if (!holonID || !newExpense.description || !newExpense.amount) return;
+
+		const expense: Expense = {
+			id: `expense-${Date.now()}`,
+			amount: newExpense.amount,
+			currency: selectedCurrency,
+			description: newExpense.description,
+			paidBy: newExpense.paidBy,
+			splitWith: newExpense.splitWith,
+			date: new Date().toISOString()
+		};
+
+		await holosphere.put(holonID, 'expenses', expense);
+		showAddExpense = false;
+	}
 </script>
 
 <div class="expenses-container">
 	<div class="header">
 		<h2>Expenses</h2>
-		{#if selectedCurrency}
-			<select bind:value={selectedCurrency} class="filter-select">
-				{#each availableCurrencies as currency}
-					<option value={currency}>{currency.toUpperCase()}</option>
-				{/each}
-			</select>
-		{:else if noCurrenciesAvailable}
-			<span class="text-muted">No currencies configured</span>
-		{:else}
-			<span class="text-muted">Loading...</span>
-		{/if}
+		<div class="header-actions">
+			{#if selectedCurrency}
+				<button
+					class="btn btn--primary"
+					onclick={openAddExpense}
+					aria-label="Add new expense"
+				>
+					<Plus size={16} />
+					<span class="hidden sm:inline">Add Expense</span>
+				</button>
+				<select bind:value={selectedCurrency} class="filter-select">
+					{#each availableCurrencies as currency}
+						<option value={currency}>{currency.toUpperCase()}</option>
+					{/each}
+				</select>
+			{:else if noCurrenciesAvailable}
+				<span class="text-muted">No currencies configured</span>
+			{:else}
+				<span class="text-muted">Loading...</span>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Stats Bar -->
@@ -351,6 +398,119 @@
 		{/if}
 	{/if}
 </div>
+
+<!-- Add Expense Modal -->
+{#if showAddExpense}
+	<div
+		class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		onclick={() => showAddExpense = false}
+		role="button"
+		tabindex="0"
+		aria-label="Close modal"
+		onkeydown={(e) => e.key === 'Escape' && (showAddExpense = false)}
+	>
+		<div
+			class="bg-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-xl"
+			onclick={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+		>
+			<!-- Header with editable title -->
+			<div class="p-6 border-b border-gray-700">
+				<div class="flex items-start justify-between">
+					<div class="flex-1">
+						<input
+							type="text"
+							bind:value={newExpense.description}
+							placeholder="Expense title..."
+							class="w-full text-xl font-bold text-white bg-transparent border-b border-transparent hover:border-gray-600 focus:border-indigo-500 outline-none transition-colors pb-1"
+						/>
+						<p class="text-sm text-gray-400 mt-1">
+							{selectedCurrency.toUpperCase()} • {new Date().toLocaleDateString()}
+						</p>
+					</div>
+					<button
+						class="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700 transition-colors"
+						onclick={() => showAddExpense = false}
+						aria-label="Close"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+						</svg>
+					</button>
+				</div>
+			</div>
+
+			<!-- Body -->
+			<div class="p-6 overflow-y-auto flex-1 space-y-4">
+				<div class="bg-gray-700/30 p-4 rounded-xl">
+					<label class="text-sm font-medium text-gray-300 mb-2 block">Amount</label>
+					<div class="flex items-center gap-2">
+						<span class="text-gray-400 text-lg">{selectedCurrency.toUpperCase()}</span>
+						<input
+							type="number"
+							bind:value={newExpense.amount}
+							step="0.01"
+							min="0"
+							placeholder="0.00"
+							class="flex-1 text-2xl font-bold text-white bg-transparent border-none outline-none"
+						/>
+					</div>
+				</div>
+
+				<div class="bg-gray-700/30 p-4 rounded-xl">
+					<label class="text-sm font-medium text-gray-300 mb-2 block">Paid By</label>
+					<select
+						bind:value={newExpense.paidBy}
+						class="w-full bg-gray-700 text-white rounded-lg border border-gray-600 p-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors"
+					>
+						{#each users as user}
+							<option value={user.id.toString()}>{user.first_name}</option>
+						{/each}
+					</select>
+				</div>
+
+				<div class="bg-gray-700/30 p-4 rounded-xl">
+					<label class="text-sm font-medium text-gray-300 mb-3 block">Split With</label>
+					<div class="flex flex-wrap gap-2">
+						{#each users as user}
+							<label class="inline-flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors {newExpense.splitWith.includes(user.id.toString()) ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/50' : 'bg-gray-700 text-gray-300 border border-gray-600 hover:border-gray-500'}">
+								<input
+									type="checkbox"
+									value={user.id.toString()}
+									checked={newExpense.splitWith.includes(user.id.toString())}
+									onchange={(e) => {
+										const userId = user.id.toString();
+										if ((e.target as HTMLInputElement).checked) {
+											newExpense.splitWith = [...newExpense.splitWith, userId];
+										} else {
+											newExpense.splitWith = newExpense.splitWith.filter(id => id !== userId);
+										}
+									}}
+									class="sr-only"
+								/>
+								{user.first_name}
+							</label>
+						{/each}
+					</div>
+				</div>
+			</div>
+
+			<!-- Footer -->
+			<div class="p-6 border-t border-gray-700 flex justify-end gap-3">
+				<button class="btn btn--secondary" onclick={() => showAddExpense = false}>Cancel</button>
+				<button
+					class="btn btn--primary"
+					onclick={saveExpense}
+					disabled={!newExpense.description || !newExpense.amount}
+				>
+					<Plus size={16} />
+					Add Expense
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.expenses-container {
@@ -605,5 +765,12 @@
 		.expense-amount {
 			text-align: left;
 		}
+	}
+
+	/* Header actions */
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 	}
 </style>

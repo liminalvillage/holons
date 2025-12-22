@@ -103,8 +103,8 @@
       <div
         class="dnd-container"
         use:dndzone={{ items, flipDurationMs, dropTargetStyle: {} }}
-        on:consider={handleDndConsider}
-        on:finalize={handleDndFinalize}
+        onconsider={handleDndConsider}
+        onfinalize={handleDndFinalize}
       >
         {#each items as chromosome, index (chromosome.id)}
           <div class="sequence-item" tabindex="0">

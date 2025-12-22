@@ -270,14 +270,6 @@
 		background: #10b981;
 	}
 
-	.keys-section__chevron {
-		transition: transform 200ms ease;
-	}
-
-	.keys-section__chevron--up {
-		transform: rotate(180deg);
-	}
-
 	.keys-section__content {
 		padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
 		background: var(--color-bg-secondary, #1f2937);

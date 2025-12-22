@@ -11,6 +11,36 @@ interface LLMResponse {
   error?: string;
 }
 
+/**
+ * Manages LLM provider interactions for OpenAI, Anthropic, and Groq.
+ *
+ * The LLMService provides a unified interface for interacting with multiple LLM providers.
+ * It handles API authentication, message formatting, and response parsing for each provider.
+ * Configuration is loaded from environment variables.
+ *
+ * @class LLMService
+ *
+ * @example
+ * ```typescript
+ * import LLMService from './llm-service';
+ *
+ * const llm = new LLMService();
+ *
+ * // Send a message
+ * const response = await llm.sendMessage([
+ *   { role: 'system', content: 'You are a helpful assistant.' },
+ *   { role: 'user', content: 'Hello!' }
+ * ]);
+ *
+ * // Chat with an advisor
+ * const chat = await llm.chatWithAdvisor(advisor, 'What advice do you have?');
+ *
+ * // Generate advisor profiles
+ * const realPerson = await llm.generateRealPersonAdvisor('Einstein', 'physics');
+ * const mythic = await llm.generateMythicAdvisor('Athena', 'wisdom');
+ * const archetype = await llm.generateArchetypeAdvisor('The Sage', 'knowledge');
+ * ```
+ */
 class LLMService {
   private apiKey: string;
   private provider: string;
@@ -18,6 +48,17 @@ class LLMService {
   private maxTokens: number;
   private temperature: number;
 
+  /**
+   * Creates a new LLMService instance.
+   * Configuration is loaded from environment variables:
+   * - VITE_LLM_PROVIDER: 'openai' | 'anthropic' | 'groq'
+   * - VITE_LLM_MODEL: The model name
+   * - VITE_LLM_MAX_TOKENS: Maximum tokens for responses
+   * - VITE_LLM_TEMPERATURE: Temperature setting
+   * - VITE_OPENAI_API_KEY / VITE_ANTHROPIC_API_KEY / VITE_GROQ_API_KEY
+   *
+   * @throws {Error} If provider is unsupported or API key is missing
+   */
   constructor() {
     this.provider = import.meta.env.VITE_LLM_PROVIDER || 'openai';
     this.model = import.meta.env.VITE_LLM_MODEL || 'gpt-4o-mini';
@@ -44,6 +85,13 @@ class LLMService {
     }
   }
 
+  /**
+   * Sends messages to the configured LLM provider.
+   *
+   * @async
+   * @param {LLMMessage[]} messages - Array of messages in the conversation
+   * @returns {Promise<LLMResponse>} The LLM response
+   */
   async sendMessage(messages: LLMMessage[]): Promise<LLMResponse> {
     try {
       switch (this.provider) {
@@ -65,6 +113,15 @@ class LLMService {
     }
   }
 
+  /**
+   * Calls the OpenAI API.
+   *
+   * @private
+   * @async
+   * @param {LLMMessage[]} messages - The messages to send
+   * @returns {Promise<LLMResponse>} The response
+   * @throws {Error} If API call fails
+   */
   private async callOpenAI(messages: LLMMessage[]): Promise<LLMResponse> {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -91,6 +148,15 @@ class LLMService {
     };
   }
 
+  /**
+   * Calls the Anthropic API.
+   *
+   * @private
+   * @async
+   * @param {LLMMessage[]} messages - The messages to send
+   * @returns {Promise<LLMResponse>} The response
+   * @throws {Error} If API call fails
+   */
   private async callAnthropic(messages: LLMMessage[]): Promise<LLMResponse> {
     // Extract system message and user messages
     const systemMessage = messages.find(m => m.role === 'system')?.content || '';
@@ -123,6 +189,15 @@ class LLMService {
     };
   }
 
+  /**
+   * Calls the Groq API.
+   *
+   * @private
+   * @async
+   * @param {LLMMessage[]} messages - The messages to send
+   * @returns {Promise<LLMResponse>} The response
+   * @throws {Error} If API call fails
+   */
   private async callGroq(messages: LLMMessage[]): Promise<LLMResponse> {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -149,7 +224,16 @@ class LLMService {
     };
   }
 
-  // Convenience method for advisor chat
+  /**
+   * Convenience method for chatting with a council advisor.
+   * Automatically creates the appropriate system prompt from the advisor's character spec.
+   *
+   * @async
+   * @param {CouncilAdvisorExtended} advisor - The advisor to chat with
+   * @param {string} userMessage - The user's message
+   * @param {LLMMessage[]} [conversationHistory=[]] - Previous conversation messages
+   * @returns {Promise<LLMResponse>} The advisor's response
+   */
   async chatWithAdvisor(
     advisor: CouncilAdvisorExtended, 
     userMessage: string, 
@@ -170,7 +254,15 @@ class LLMService {
     return await this.sendMessage(messages);
   }
 
-  // Generate real person advisor
+  /**
+   * Generates a real person advisor profile using LLM.
+   * Creates detailed historical persona profiles for figures like Einstein, Mandela, etc.
+   *
+   * @async
+   * @param {string} personName - The name of the historical figure
+   * @param {string} lens - The wisdom area to focus on
+   * @returns {Promise<LLMResponse>} The generated profile as JSON
+   */
   async generateRealPersonAdvisor(personName: string, lens: string): Promise<LLMResponse> {
     const systemPrompt = `You are an expert historian and biographer. Your task is to create a detailed advisor profile for a real person.
 
@@ -268,7 +360,15 @@ Return ONLY valid JSON. No additional text or explanation.`;
     return await this.sendMessage(messages);
   }
 
-  // Generate mythic advisor
+  /**
+   * Generates a mythic advisor profile using LLM.
+   * Creates profiles for mythological figures like Athena, Thor, Ganesha, etc.
+   *
+   * @async
+   * @param {string} mythicName - The name of the mythic figure
+   * @param {string} lens - The wisdom area to focus on
+   * @returns {Promise<LLMResponse>} The generated profile as JSON
+   */
   async generateMythicAdvisor(mythicName: string, lens: string): Promise<LLMResponse> {
     const systemPrompt = `You are an expert in mythology, spirituality, and archetypal wisdom. Your task is to create a detailed advisor profile for a mythic/spiritual being.
 
@@ -316,7 +416,15 @@ Return ONLY valid JSON. No additional text or explanation.`;
     return await this.sendMessage(messages);
   }
 
-  // Generate archetype advisor
+  /**
+   * Generates an archetype advisor profile using LLM.
+   * Creates Jungian archetype profiles like The Sage, The Hero, The Caregiver, etc.
+   *
+   * @async
+   * @param {string} archetypeName - The name of the archetype
+   * @param {string} lens - The wisdom area to focus on
+   * @returns {Promise<LLMResponse>} The generated profile as JSON
+   */
   async generateArchetypeAdvisor(archetypeName: string, lens: string): Promise<LLMResponse> {
     const systemPrompt = `You are an expert in Jungian psychology, archetypal patterns, and collective unconscious. Your task is to create a detailed advisor profile for an archetypal being.
 

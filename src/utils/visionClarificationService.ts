@@ -26,14 +26,59 @@ import {
 // VISION CLARIFICATION SESSION MANAGEMENT
 // ============================================================================
 
+/**
+ * Handles LLM interactions for council-based vision clarification.
+ *
+ * The VisionClarificationService orchestrates multi-phase vision clarification sessions
+ * using a council of advisors. It supports the "celebrity interview" interaction pattern
+ * where advisors ask probing questions, deliberate on responses, and synthesize
+ * S.M.A.R.T. objectives from the user's vision.
+ *
+ * @class VisionClarificationService
+ *
+ * @example
+ * ```typescript
+ * import { VisionClarificationService } from './visionClarificationService';
+ *
+ * const service = new VisionClarificationService(llmService, advisors);
+ *
+ * // Start a new session
+ * const session = await service.startClarificationSession(
+ *   'My vision statement',
+ *   ['value1', 'value2']
+ * );
+ *
+ * // Generate interview questions
+ * const phase = await service.generateInterviewQuestions(session);
+ *
+ * // Conduct council deliberation
+ * const insights = await service.conductCouncilDeliberation(session, responses);
+ *
+ * // Synthesize final objective
+ * const smartObjective = await service.synthesizeVision(session);
+ * ```
+ */
 export class VisionClarificationService {
+  /**
+   * Creates a new VisionClarificationService instance.
+   *
+   * @param {LLMService} llmService - The LLM service for AI interactions
+   * @param {CouncilAdvisorExtended[]} advisors - Array of council advisors (minimum 6 required)
+   */
   constructor(
     private llmService: LLMService,
     private advisors: CouncilAdvisorExtended[]
   ) {}
 
   /**
-   * Start a new vision clarification session
+   * Starts a new vision clarification session.
+   *
+   * @async
+   * @param {string} originalVision - The user's original vision statement
+   * @param {string[]} originalValues - The user's values
+   * @param {InteractionPatternType} [interactionPattern='celebrity_interview'] - The interaction pattern to use
+   * @returns {Promise<VisionClarificationSession>} The new session
+   * @throws {Error} If no facilitator available or insufficient advisors
    */
   async startClarificationSession(
     originalVision: string,
@@ -66,7 +111,12 @@ export class VisionClarificationService {
   }
 
   /**
-   * Generate questions for the interview phase
+   * Generates questions for the interview phase.
+   *
+   * @async
+   * @param {VisionClarificationSession} session - The current session
+   * @returns {Promise<VisionClarificationPhase>} The phase with generated questions
+   * @throws {Error} If no interview phase found in pattern
    */
   async generateInterviewQuestions(
     session: VisionClarificationSession
@@ -142,7 +192,14 @@ export class VisionClarificationService {
   }
 
   /**
-   * Conduct council deliberation after user responses
+   * Conducts council deliberation after user responses are collected.
+   * Uses the remaining advisors (who didn't ask questions) to provide insights.
+   *
+   * @async
+   * @param {VisionClarificationSession} session - The current session
+   * @param {UserResponse[]} userResponses - The user's responses to interview questions
+   * @returns {Promise<string[]>} Array of formatted advisor insights
+   * @throws {Error} If not enough advisors for deliberation
    */
   async conductCouncilDeliberation(
     session: VisionClarificationSession,
@@ -238,7 +295,11 @@ Each advisor should offer unique perspectives based on their expertise, focusing
   }
 
   /**
-   * Synthesize final S.M.A.R.T. objective from all responses
+   * Synthesizes a final S.M.A.R.T. objective from all session responses.
+   *
+   * @async
+   * @param {VisionClarificationSession} session - The completed session
+   * @returns {Promise<SMARTObjective>} The synthesized S.M.A.R.T. objective
    */
   async synthesizeVision(session: VisionClarificationSession): Promise<SMARTObjective> {
     const pattern = getInteractionPattern(session.interactionPattern);
@@ -283,6 +344,14 @@ Each advisor should offer unique perspectives based on their expertise, focusing
   // RESPONSE PARSING
   // ============================================================================
 
+  /**
+   * Parses the LLM response for question generation.
+   *
+   * @private
+   * @param {string} content - The raw LLM response content
+   * @returns {VisionQuestionGenerationResponse} The parsed question response
+   * @throws {Error} If parsing fails or invalid format
+   */
   private parseQuestionGenerationResponse(content: string): VisionQuestionGenerationResponse {
     try {
       const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/```\n([\s\S]*?)\n```/);
@@ -313,6 +382,14 @@ Each advisor should offer unique perspectives based on their expertise, focusing
     }
   }
 
+  /**
+   * Parses the LLM response for vision synthesis.
+   *
+   * @private
+   * @param {string} content - The raw LLM response content
+   * @returns {VisionSynthesisResponse} The parsed synthesis response
+   * @throws {Error} If parsing fails or invalid format
+   */
   private parseSynthesisResponse(content: string): VisionSynthesisResponse {
     try {
       const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/```\n([\s\S]*?)\n```/);
@@ -335,6 +412,14 @@ Each advisor should offer unique perspectives based on their expertise, focusing
     }
   }
 
+  /**
+   * Parses the LLM response for council deliberation.
+   *
+   * @private
+   * @param {string} content - The raw LLM response content
+   * @returns {{deliberations: Array<{advisorName: string, insight: string}>}} The parsed deliberation response
+   * @throws {Error} If parsing fails or invalid format
+   */
   private parseDeliberationResponse(content: string): { deliberations: Array<{ advisorName: string; insight: string }> } {
     try {
       const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/```\n([\s\S]*?)\n```/);
@@ -362,6 +447,14 @@ Each advisor should offer unique perspectives based on their expertise, focusing
 // HELPER FUNCTIONS
 // ============================================================================
 
+/**
+ * Adds a user response to a session.
+ *
+ * @param {VisionClarificationSession} session - The current session
+ * @param {string} questionId - The ID of the question being answered
+ * @param {string} responseText - The user's response text
+ * @returns {VisionClarificationSession} The updated session
+ */
 export function addResponseToSession(
   session: VisionClarificationSession,
   questionId: string,
@@ -391,10 +484,22 @@ export function addResponseToSession(
   };
 }
 
+/**
+ * Checks if a phase is complete (all questions have been answered).
+ *
+ * @param {VisionClarificationPhase} phase - The phase to check
+ * @returns {boolean} True if all questions have responses
+ */
 export function isPhaseComplete(phase: VisionClarificationPhase): boolean {
   return phase.questions.length > 0 && phase.responses.length === phase.questions.length;
 }
 
+/**
+ * Checks if a session is complete (all phases are complete).
+ *
+ * @param {VisionClarificationSession} session - The session to check
+ * @returns {boolean} True if all phases are complete
+ */
 export function isSessionComplete(session: VisionClarificationSession): boolean {
   return session.phases.length > 0 && session.phases.every(isPhaseComplete);
 }

@@ -1,0 +1,200 @@
+# Harvest
+
+A decentralized holonic platform for organizational governance, resource distribution, and wisdom aggregation.
+
+## Overview
+
+Harvest is an advanced, decentralized holonic platform built on Svelte 5 and TypeScript that enables organizations to manage themselves as **holons** - self-organizing units that are simultaneously whole and part of larger wholes.
+
+The platform integrates blockchain smart contracts, federated data sharing, AI-powered advisory councils, and real-time collaborative features to create a comprehensive ecosystem for:
+
+- **Organizational Governance** - Decentralized decision-making with council advisors
+- **Task & Project Management** - Quests, proposals, and collaborative workflows
+- **Resource Distribution** - Smart contract-based flow management
+- **Wisdom Aggregation** - AI-powered councils with archetypal, historical, and mythic advisors
+- **Federation** - Connect holons across organizations with capability-based access control
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Svelte 5, TypeScript, Tailwind CSS |
+| Build | Vite, SvelteKit |
+| Data | HoloSphere (decentralized), Nostr, GunDB |
+| Blockchain | Ethers.js v6, ERC20 tokens |
+| Maps | Mapbox GL, H3-JS hexagonal indexing |
+| Visualization | D3.js |
+| AI/LLM | OpenAI, Anthropic, Groq |
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- (Optional) Ethereum wallet for blockchain features
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/harvest.git
+cd harvest
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+### Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Build for production |
+| `npm run preview` | Preview production build |
+| `npm run check` | Run type checking |
+| `npm run lint` | Run linter |
+| `npm run format` | Format code with Prettier |
+| `npm run deploy:localhost` | Deploy contracts to localhost |
+| `npm run deploy:sepolia` | Deploy contracts to Sepolia testnet |
+| `npm run deploy:gnosis` | Deploy contracts to Gnosis chain |
+
+## Top 30 Features
+
+### Dashboard & UI
+
+1. **Multi-View Dashboard** - Central hub displaying statistics (users, tasks, events, shopping items, offers/needs, checklists, roles) with collapsible stat cards and quick navigation
+
+2. **Responsive Layout System** - Desktop and mobile-optimized layout with sidebar navigation, top navigation bar, and draggable windows for flexible workspace management
+
+3. **Advanced Calendar Views** - Multiple calendar display modes (month, week, day, orbits) with drag-and-drop task scheduling, external calendar integration (iCal), and real-time event sync
+
+4. **Interactive Hexagonal Map** - H3-based geospatial mapping with Mapbox integration, layer filtering, search/geocoding, and multi-lens view selection (quests, offers, communities, organizations, projects, people)
+
+5. **Visual Flow Visualization** - Canvas-based animation system showing internal/external flow distribution with nodes, edges, and real-time metrics
+
+6. **Customizable Widget Dashboard** - Modular dashboard with widget positioning, theme customization, and persistent layout preferences
+
+7. **Dark Mode & Theme System** - Tailwind CSS-based design system with configurable color schemes and visual themes
+
+### Task & Project Management
+
+8. **Quest Management System** - Task/quest creation with types (task, event, recurring, quest), status tracking (ongoing, completed, recurring), and multi-participant assignment
+
+9. **Task Canvas View** - Visual task positioning and dependencies on interactive canvas with drag-and-drop organization
+
+10. **Schedule Widget** - Integrated scheduling view with time-based task assignment and visual timeline representation
+
+11. **Proposal System** - Create consensus-based proposals with participant agreement tracking and blocker/stopper management
+
+12. **Checklist Management** - Create and track multi-item checklists with completion status and progress visualization
+
+### Data Management
+
+13. **Shopping List Management** - Create and manage shopping items with categorization, status tracking, and shared visibility
+
+14. **Expense Tracking & Credit Matrix** - Expense logging with split-payment calculations, credit matrix for inter-group accounting, and multi-currency support
+
+15. **Role Management System** - Define organizational roles with participant assignment, zone allocation, and role-specific permissions
+
+16. **Tag Management** - Flexible tagging system for categorizing and organizing all holon content
+
+17. **Database Viewer (DB Panel)** - Direct view and manipulation of raw HoloSphere data for administrative purposes
+
+### AI & LLM Features
+
+18. **Council Advisor System** - AI-powered advisors with three types (Archetype, Real Historical Person, Mythic) that can be seated in councils and provide wisdom
+
+19. **Multi-Provider LLM Integration** - Support for OpenAI, Anthropic, and Groq with configurable models, temperature, and max token settings
+
+20. **AI Chat Modal** - Real-time chat interface with typing animations, message formatting, conversation history, and role-based responses
+
+21. **Vision Clarification Service** - LLM-powered service for understanding user intent and clarifying organizational visions through AI analysis
+
+### Blockchain & Smart Contracts
+
+22. **Bundle Smart Contract System** - Deploy and manage Bundle contracts with interior/exterior zones, member management, and flow distribution
+
+23. **Smart Contract Deployment** - Contract loader system supporting Managed, Zoned, Splitter, and Appreciative holon types with registry configuration
+
+24. **Flow Split Management** - Adjust flow distribution between interior (members) and exterior (federated holons) with steepness and zone parameters
+
+25. **Holon Manager Service** - Comprehensive contract management including member addition, zone assignment, balance queries, and event emission
+
+### Federation & Integration
+
+26. **Holonic Federation System** - Create federation links between holons with lens-based permissions (read/write/delete) and capability tokens
+
+27. **Nostr-Based Messaging** - Integration with Nostr protocol for decentralized direct messaging and federation handshakes
+
+28. **Capability-Based Access Control** - Issue and manage capability tokens with granular permissions (read, write, delete) and expiration settings
+
+29. **Global Holon Registry** - Discover and browse all holons in the federated network with search and filtering
+
+30. **Federation Navigator** - Browse and federate with remote holons, manage incoming/outgoing federation requests, and control lens-based data sharing
+
+## Architecture
+
+```
+src/
+├── components/          # Svelte UI components
+│   ├── calendar/        # Calendar views and widgets
+│   ├── flow/            # Flow visualization components
+│   ├── map/             # Hexagonal map components
+│   └── ...
+├── dashboard/           # Dashboard panels and widgets
+│   ├── browser/         # Data browser panels
+│   ├── widgets/         # Dashboard widgets
+│   └── ...
+├── lib/                 # Core libraries
+│   ├── holons/          # Holon management (contracts, settings)
+│   ├── holosphere/      # HoloSphere data layer
+│   └── contracts/       # Smart contract ABIs and bytecode
+├── routes/              # SvelteKit routes
+├── services/            # Business logic services
+│   └── AdvisorService   # Council advisor management
+├── stores/              # Svelte stores for state management
+├── types/               # TypeScript type definitions
+└── utils/               # Utility functions and services
+    ├── llm-service      # Multi-provider LLM integration
+    ├── sessionManager   # Session lifecycle management
+    └── ...
+```
+
+## Key Services
+
+| Service | Description |
+|---------|-------------|
+| `AdvisorService` | Manages council advisors with caching and validation |
+| `LLMService` | Unified interface for OpenAI, Anthropic, Groq providers |
+| `FlowSettings` | Holon configuration, federation, and flow management |
+| `HolonsManager` | Smart contract interaction and event handling |
+| `HolonsContract` | Low-level blockchain contract operations |
+| `QueryManager` | Centralized HoloSphere data queries with caching |
+| `SessionManager` | Design Streams session lifecycle management |
+| `QRActionService` | QR code action processing and dispatch |
+
+## Smart Contract Types
+
+| Contract | Purpose |
+|----------|---------|
+| Bundle | Primary contract with interior/exterior zones and member management |
+| Managed | Simpler contract with basic member and flow management |
+| Zoned | Contract with multiple configurable zones |
+| Splitter | Flow distribution contract for payment splitting |
+| Appreciative | Appreciative-based resource allocation |
+
+## License
+
+AGPL License - See LICENSE file for details.
+
+## Author
+
+Roberto Valenti
+
+## Contributing
+
+Contributions are welcome! Please read our contributing guidelines before submitting PRs.

@@ -3,6 +3,7 @@
     import { ID } from "../dashboard/store";
     import type { HoloSphere } from "holosphere";
     import ProposalChart from './ProposalChart.svelte';
+    import { Plus } from 'svelte-feathers';
 
     interface Proposal {
         id: string;
@@ -176,8 +177,9 @@
         <p class="text-2xl font-bold">Proposals</p>
         <button
             on:click={() => showAddDialog = true}
-            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg"
+            class="btn btn--primary"
         >
+            <Plus size={16} />
             New Proposal
         </button>
     </div>

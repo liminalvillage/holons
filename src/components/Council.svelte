@@ -17,6 +17,7 @@ import { getAdvisor, getRandomHolonicEcosystemCouncilMembers, getHolonicEcosyste
 import SeatCouncilContent from './SeatCouncilContent.svelte';
 	import { focusOnMount } from '../utils/focusUtils';
 	import { createHolonFromRitual as createHolonFromRitualUtil, type RitualSession } from '../utils/holonCreator';
+	import { Plus } from 'svelte-feathers';
 
 
 	interface CouncilMember {
@@ -3381,8 +3382,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 							<div class="controls-row__left">
 								<button
 									on:click={summonholonicecosystemcouncil}
-									class="add-btn"
-									style="background: #10b981;"
+									class="btn btn--primary"
 								>
 									<span class="text-base">🎭</span>
 									<span class="hidden sm:inline">Summon HEC</span>
@@ -3392,8 +3392,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 							<div class="controls-row__center">
 								<button
 									on:click={startRitual}
-									class="add-btn"
-									style="background: #6366f1;"
+									class="btn btn--primary"
 								>
 									<span class="text-base">✨</span>
 									<span>Begin Ritual</span>
@@ -3401,8 +3400,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 
 								<button
 									on:click={async () => await openCouncilChat()}
-									class="add-btn"
-									style="background: #8b5cf6;"
+									class="btn btn--primary"
 								>
 									<span class="text-base">💬</span>
 									<span class="hidden sm:inline">Chat</span>

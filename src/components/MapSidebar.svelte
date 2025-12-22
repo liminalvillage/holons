@@ -10,6 +10,7 @@
     import { createEventDispatcher } from 'svelte';
     import type { LensType, HexagonStats } from '../types/Map';
     import { goto } from '$app/navigation';
+    import { Plus, X } from 'svelte-feathers';
     import * as h3 from "h3-js";
     const dispatch = createEventDispatcher();
 
@@ -431,13 +432,13 @@
             <div>
                 {#if selectedLens}
                     <button
-                        class="px-3 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors flex items-center gap-2"
+                        class="btn {showForm ? 'btn--secondary' : 'btn--primary'}"
                         on:click={toggleForm}
                     >
                         {#if showForm}
-                            <span class="text-lg">×</span> Cancel
+                            <X size={16} /> Cancel
                         {:else}
-                            <span class="text-lg">+</span> Add New
+                            <Plus size={16} /> Add New
                         {/if}
                     </button>
                 {/if}
@@ -511,10 +512,10 @@
             {#if selectedLens && !showForm}
                 <div class="mb-4">
                     <button
-                        class="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors flex items-center justify-center gap-2"
+                        class="btn btn--primary w-full"
                         on:click={toggleForm}
                     >
-                        <span class="text-lg">+</span> Add New {schemaOptions.find(opt => opt.value === selectedLens)?.label}
+                        <Plus size={16} /> Add New {schemaOptions.find(opt => opt.value === selectedLens)?.label}
                     </button>
                 </div>
             {/if}

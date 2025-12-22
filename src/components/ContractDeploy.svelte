@@ -10,6 +10,7 @@
   } from '../lib/contracts/contractLoader';
   import { HolonsManager } from '../lib/holons/HolonsManager';
   import type { HolonBundle } from '../lib/holons/HolonsContract';
+  import { Plus } from 'svelte-feathers';
 
   export let holonId: string;
 
@@ -121,7 +122,7 @@
 
         // Initialize manager
         if (holosphere) {
-          manager = new HolonsManager(provider, holosphere.gun);
+          manager = new HolonsManager(provider, holosphere);
           await manager.connectWallet(signer);
 
           // Setup event listeners
@@ -1024,10 +1025,11 @@
                   class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors font-mono"
                 />
                 <button
-                  class="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-xl transition-colors font-medium"
+                  class="btn btn--primary"
                   on:click={addMember}
                   disabled={addingMember || !newMemberAddress}
                 >
+                  <Plus size={16} />
                   {#if addingMember}
                     <span>Adding...</span>
                   {:else}

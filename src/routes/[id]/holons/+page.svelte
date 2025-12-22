@@ -6,8 +6,9 @@
   import { getContext } from 'svelte';
   import { ID } from '../../../dashboard/store';
   import HolonFlowVisualization from '../../../components/HolonFlowVisualization.svelte';
+  import type { HoloSphere } from 'holosphere';
 
-  const holosphere = getContext('holosphere');
+  const holosphere = getContext('holosphere') as HoloSphere;
 
   // Reactive holonId that updates when URL changes
   $: holonId = $page.params.id || 'default';

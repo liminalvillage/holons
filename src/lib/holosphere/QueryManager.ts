@@ -31,6 +31,38 @@ const CACHE_TTL = 5 * 60 * 1000;
 // Deduplication window in milliseconds (100ms)
 const DEDUP_WINDOW = 100;
 
+/**
+ * Centralized query management with caching, deduplication, and real-time subscriptions.
+ *
+ * QueryManager provides an optimized layer for data fetching across all components
+ * in the application. It implements smart caching, query deduplication to prevent
+ * redundant requests, and real-time subscription management for live data updates.
+ *
+ * @class QueryManager
+ *
+ * @example
+ * ```typescript
+ * import { queryManager } from './QueryManager';
+ * import { holosphere } from 'holosphere';
+ *
+ * // Initialize with HoloSphere instance
+ * queryManager.init(holosphere);
+ *
+ * // Query data with automatic caching
+ * const users = await queryManager.query('myHolon', 'users');
+ *
+ * // Subscribe to real-time updates
+ * const unsubscribe = queryManager.subscribe({
+ *   holonId: 'myHolon',
+ *   lens: 'quests',
+ *   onUpdate: (data) => console.log('Quests updated:', data),
+ *   onError: (error) => console.error('Error:', error)
+ * });
+ *
+ * // Later: unsubscribe when done
+ * unsubscribe();
+ * ```
+ */
 class QueryManager {
 	private cache: Map<string, CacheEntry> = new Map();
 	private pendingQueries: Map<string, PendingQuery> = new Map();

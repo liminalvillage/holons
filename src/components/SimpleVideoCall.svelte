@@ -27,12 +27,12 @@
   let debugLogs: string[] = [];
   let showDebug = false;
   
-  // Gun instance
-  let gun: any;
-  let roomRef: any;
-  let signalRef: any;
-  let userRef: any;
-  
+  // Holosphere signaling
+  let signalLens: string;
+  let userLens: string;
+  let unsubscribeSignals: (() => void) | null = null;
+  let unsubscribeUsers: (() => void) | null = null;
+
   // Cleanup functions
   let cleanupFunctions: (() => void)[] = [];
 
@@ -53,19 +53,23 @@
 
   // Initialize holosphere context
   let holosphere: HoloSphere;
+  let signalingAvailable = false;
   try {
     holosphere = getContext('holosphere');
-    gun = holosphere?.gun;
+    if (holosphere) {
+      signalingAvailable = true;
+      log('Holosphere signaling available via Nostr');
+    }
   } catch (e) {
     log('❌ Failed to get holosphere context');
   }
 
   onMount(async () => {
     log(`🚀 Starting video call in room: ${roomId} as ${myUserId.substring(0, 12)}`);
-    
-    if (!gun) {
-      connectionStatus = 'Error: No Gun connection available';
-      log('❌ Gun instance not available');
+
+    if (!holosphere || !signalingAvailable) {
+      connectionStatus = 'Video calls temporarily unavailable';
+      log('❌ Video call signaling not available - holosphere not initialized');
       return;
     }
 
@@ -82,12 +86,11 @@
   });
 
   async function initializeRoom() {
-    const roomKey = `vroom_${roomId}`;
-    roomRef = gun.get(roomKey);
-    signalRef = roomRef.get('signals');
-    userRef = roomRef.get('users');
-    
-    log(`🏠 Initialized room: ${roomKey}`);
+    // Use room-specific lenses for signaling
+    signalLens = `video_signals_${roomId}`;
+    userLens = `video_users_${roomId}`;
+
+    log(`🏠 Initialized room signaling lenses for: ${roomId}`);
   }
 
   async function initializeLocalMedia() {
@@ -109,46 +112,55 @@
   }
 
   async function joinRoom() {
+    if (!holosphere) return;
+
     // Announce presence
     const presence = {
-      userId: myUserId,
+      id: myUserId,
+      odysId: myUserId,
       online: true,
       joinedAt: Date.now(),
       roomId: roomId
     };
-    
-    userRef.get(myUserId).put(presence);
+
+    await holosphere.put(roomId, userLens, presence);
     log(`📢 Announced presence`);
 
-    // Listen for other users
-    const userListener = userRef.map().on((userData: any, userId: string) => {
-      if (!userData || !userData.online || userData.userId === myUserId) return;
-      
-      log(`👤 User ${userData.userId.substring(0, 8)}: ${userData.online ? 'joined' : 'left'}`);
-      log(`🔤 Should I initiate to ${userData.userId.substring(0, 8)}? "${myUserId}" < "${userData.userId}" = ${myUserId.localeCompare(userData.userId) < 0}`);
-      
-      if (!peerConnections.has(userData.userId)) {
-        createPeerConnection(userData.userId);
+    // Listen for other users via holosphere subscription
+    const userSub = await holosphere.subscribe(roomId, userLens, (userData: any) => {
+      if (!userData || !userData.online || userData.id === myUserId) return;
+
+      log(`👤 User ${(userData.id || '').substring(0, 8)}: ${userData.online ? 'joined' : 'left'}`);
+      log(`🔤 Should I initiate to ${(userData.id || '').substring(0, 8)}? "${myUserId}" < "${userData.id}" = ${myUserId.localeCompare(userData.id || '') < 0}`);
+
+      if (!peerConnections.has(userData.id)) {
+        createPeerConnection(userData.id);
       }
     });
+    unsubscribeUsers = userSub?.unsubscribe || null;
 
-    // Listen for signaling messages
-    const signalListener = signalRef.get(myUserId).map().on((message: any, msgId: string) => {
+    // Listen for signaling messages via holosphere subscription
+    const signalSub = await holosphere.subscribe(roomId, signalLens, (message: any) => {
+      // Only process messages addressed to us
+      if (!message || message.msgTo !== myUserId) return;
+
       // Skip if we've already processed this message
-      if (processedMessages.has(msgId)) {
+      if (message.id && processedMessages.has(message.id)) {
         return;
       }
-      
-      log(`🔄 Raw signal received - msgId: ${msgId}, message: ${message ? 'exists' : 'null'}`);
-      
-      if (!message || !message.msgFrom || message.msgFrom === myUserId) {
-        log(`🚫 Ignoring signal - message: ${!!message}, from: ${message?.msgFrom}, myUserId: ${myUserId}`);
+
+      log(`🔄 Raw signal received - msgId: ${message.id || 'unknown'}, message: ${message ? 'exists' : 'null'}`);
+
+      if (!message.msgFrom || message.msgFrom === myUserId) {
+        log(`🚫 Ignoring signal - from: ${message?.msgFrom}, myUserId: ${myUserId}`);
         return;
       }
-      
+
       // Mark as processed to prevent duplicate handling
-      processedMessages.add(msgId);
-      
+      if (message.id) {
+        processedMessages.add(message.id);
+      }
+
       // Parse the message data
       let parsedData;
       try {
@@ -157,8 +169,8 @@
         log(`❌ Failed to parse message data: ${e}`);
         return;
       }
-      
-      // Convert to old format for compatibility
+
+      // Convert to standard format
       const compatMessage = {
         from: message.msgFrom,
         to: message.msgTo,
@@ -166,20 +178,21 @@
         data: parsedData,
         timestamp: message.timestamp
       };
-      
-      log(`📨 Signal from ${compatMessage.from.substring(0, 8)}: ${compatMessage.type} (msgId: ${msgId})`);
-      
+
+      log(`📨 Signal from ${compatMessage.from.substring(0, 8)}: ${compatMessage.type}`);
+
       // Extra logging for offers and answers
       if (compatMessage.type === 'offer' || compatMessage.type === 'answer') {
         log(`🎯 Processing ${compatMessage.type} from ${compatMessage.from.substring(0, 8)}, SDP length: ${compatMessage.data?.sdp?.length || 'unknown'}`);
       }
-      
+
       handleSignalingMessage(compatMessage);
     });
+    unsubscribeSignals = signalSub?.unsubscribe || null;
 
     cleanupFunctions.push(() => {
-      userListener.off();
-      signalListener.off();
+      if (unsubscribeUsers) unsubscribeUsers();
+      if (unsubscribeSignals) unsubscribeSignals();
     });
   }
 
@@ -467,9 +480,11 @@
     }, 1000);
   }
 
-  function sendSignal(toUserId: string, type: string, data: any) {
+  async function sendSignal(toUserId: string, type: string, data: any) {
+    if (!holosphere) return;
+
     const messageId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
+
     // Clean the data to ensure it's properly serialized
     let cleanData = data;
     if (type === 'offer' || type === 'answer') {
@@ -479,18 +494,19 @@
       };
       log(`📝 Sending ${type} with SDP length: ${data.sdp?.length || 0}`);
     }
-    
-    // Use Gun-friendly flat structure to prevent corruption
+
+    // Create signal message
     const message = {
+      id: messageId,
       msgFrom: myUserId,
       msgTo: toUserId,
       msgType: type,
       msgData: JSON.stringify(cleanData),
       timestamp: Date.now()
     };
-    
-    log(`📤 Storing signal in Gun: ${type} -> ${toUserId.substring(0, 8)}`);
-    signalRef.get(toUserId).get(messageId).put(message);
+
+    log(`📤 Sending signal via holosphere: ${type} -> ${toUserId.substring(0, 8)}`);
+    await holosphere.put(roomId, signalLens, message);
   }
 
   function toggleAudio() {
@@ -542,37 +558,29 @@
     });
   }
 
-  function debugGun() {
-    log('🔍 Debugging Gun signaling data');
-    
-    // Check what's actually in the signaling path
-    signalRef.get(myUserId).once((allSignals: any) => {
-      if (allSignals) {
-        const messageCount = Object.keys(allSignals).length;
-        log(`📬 Found ${messageCount} messages in my signaling inbox`);
-        
-        Object.entries(allSignals).forEach(([msgId, message]: [string, any]) => {
-          if (message && typeof message === 'object') {
-            const type = message.msgType || message.type || 'unknown';
-            const from = message.msgFrom?.substring(0, 8) || message.from?.substring(0, 8) || 'unknown';
-            log(`  📧 ${msgId}: ${type} from ${from}`);
-          }
-        });
-      } else {
-        log('📬 No messages found in signaling inbox');
-      }
-    });
-    
+  async function debugHolosphere() {
+    log('🔍 Debugging holosphere signaling data');
+
+    if (!holosphere) {
+      log('❌ Holosphere not available');
+      return;
+    }
+
     // Check room users
-    userRef.once((allUsers: any) => {
-      if (allUsers) {
+    try {
+      const allUsers = await holosphere.getAll(roomId, userLens);
+      if (allUsers && typeof allUsers === 'object') {
         const userCount = Object.keys(allUsers).length;
         log(`👥 Found ${userCount} users in room`);
         Object.keys(allUsers).forEach(userId => {
           log(`  👤 ${userId.substring(0, 12)}`);
         });
+      } else {
+        log('👥 No users found in room');
       }
-    });
+    } catch (e) {
+      log(`❌ Failed to get users: ${e}`);
+    }
   }
 
   function testDirectOffer() {
@@ -595,14 +603,18 @@
     }
   }
 
-  function leaveRoom() {
+  async function leaveRoom() {
     log('👋 Leaving room');
-    
-    // Remove presence
-    if (userRef) {
-      userRef.get(myUserId).put(null);
+
+    // Remove presence via holosphere
+    if (holosphere) {
+      try {
+        await holosphere.delete(roomId, userLens, myUserId);
+      } catch (e) {
+        log('Failed to remove presence');
+      }
     }
-    
+
     // Close all peer connections
     peerConnections.forEach((pc, peerId) => {
       log(`🔌 Closing connection to ${peerId.substring(0, 8)}`);
@@ -611,17 +623,18 @@
     peerConnections.clear();
     connectionStates.clear();
     pendingCandidates.clear();
-    
+    connectionAttempts.clear();
+
     // Stop local media
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop());
       localStream = null;
     }
-    
+
     // Call cleanup functions
     cleanupFunctions.forEach(cleanup => cleanup());
     cleanupFunctions = [];
-    
+
     // Navigate back
     window.history.back();
   }
@@ -727,8 +740,8 @@
       🔍 Debug Signals
     </button>
     
-    <button class="control-btn test" on:click={debugGun}>
-      🔍 Debug Gun
+    <button class="control-btn test" on:click={debugHolosphere}>
+      🔍 Debug Holosphere
     </button>
     
     <button class="control-btn test" on:click={testDirectOffer}>

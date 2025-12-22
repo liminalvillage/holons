@@ -1,0 +1,41 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/lib/holons/HolonsManager.ts",
+    "src/lib/holons/HolonsContract.ts",
+    "src/lib/holons/FlowSettings.ts",
+    "src/lib/holosphere/QueryManager.ts",
+    "src/services/AdvisorService.ts",
+    "src/utils/llm-service.ts",
+    "src/utils/sessionManager.ts",
+    "src/utils/qr-action-service.ts",
+    "src/utils/visionClarificationService.ts"
+  ],
+  "out": "docs/api",
+  "name": "Harvest API Documentation",
+  "readme": "./README.md",
+  "excludePrivate": false,
+  "excludeProtected": false,
+  "excludeInternal": false,
+  "includeVersion": true,
+  "navigationLinks": {
+    "Harvest": "https://github.com/your-org/harvest",
+    "HoloSphere": "https://holosphere.dev"
+  },
+  "categorizeByGroup": true,
+  "sort": ["source-order"],
+  "visibilityFilters": {
+    "protected": true,
+    "private": true,
+    "inherited": true
+  },
+  "plugin": [],
+  "theme": "default",
+  "validation": {
+    "notExported": false,
+    "invalidLink": false,
+    "notDocumented": false
+  },
+  "treatWarningsAsErrors": false,
+  "logLevel": "Error"
+}

@@ -58,7 +58,8 @@
 			const retryDelay = 500; // ms
 
 			for (let attempt = 0; attempt < maxRetries; attempt++) {
-				existingSettings = await holosphere.get(userPublicKey, 'settings');
+				// Pass userPublicKey as the key to fetch the specific settings record
+				existingSettings = await holosphere.get(userPublicKey, 'settings', userPublicKey);
 				if (existingSettings && existingSettings.name) {
 					console.log('Existing holon found on attempt', attempt + 1, ':', existingSettings.name);
 					break;
@@ -130,32 +131,46 @@
 				}));
 			}
 
-			// Set the ID store to the user's public key (their personal holon)
-			ID.set(userPublicKey);
-			console.log('User holon initialized and ID set to:', userPublicKey);
-
-			// Only navigate to dashboard if not already on a holon-specific route
+			// Check if there's already a holon ID in the URL path
 			const currentPath = $page.url.pathname;
-			const hasHolonInPath = currentPath.split('/').filter(Boolean).length > 0 &&
-				currentPath !== '/' &&
-				!currentPath.startsWith('/federated') &&
-				!currentPath.startsWith('/navigator') &&
-				!currentPath.startsWith('/global') &&
-				!currentPath.startsWith('/sdgs') &&
-				!currentPath.startsWith('/qr');
+			const pathParts = currentPath.split('/').filter(Boolean);
+			const holonIdInUrl = pathParts.length > 0 &&
+				!['federated', 'navigator', 'global', 'sdgs', 'qr', 'demo', 'badges-demo'].includes(pathParts[0])
+				? pathParts[0]
+				: null;
 
-			if (!hasHolonInPath) {
-				goto(`/${userPublicKey}/dashboard`);
+			// Only set ID to user's public key if no holon ID in URL
+			if (holonIdInUrl) {
+				// Respect the holon ID in the URL
+				ID.set(holonIdInUrl);
+				console.log('Using holon ID from URL:', holonIdInUrl);
+			} else {
+				// No holon in URL, set to user's personal holon
+				ID.set(userPublicKey);
+				console.log('User holon initialized and ID set to:', userPublicKey);
+				// Navigate to user's dashboard only if at root
+				if (currentPath === '/' || currentPath === '') {
+					goto(`/${userPublicKey}/dashboard`);
+				}
 			}
 		} catch (error) {
 			console.error('Failed to initialize user holon:', error);
-			// Still set the ID even if settings fail
-			ID.set(userPublicKey);
-
-			// Only navigate if not already on a holon-specific route
+			// Check if there's already a holon ID in the URL path
 			const currentPath = $page.url.pathname;
-			if (currentPath === '/' || currentPath === '') {
-				goto(`/${userPublicKey}/dashboard`);
+			const pathParts = currentPath.split('/').filter(Boolean);
+			const holonIdInUrl = pathParts.length > 0 &&
+				!['federated', 'navigator', 'global', 'sdgs', 'qr', 'demo', 'badges-demo'].includes(pathParts[0])
+				? pathParts[0]
+				: null;
+
+			// Only set ID to user's public key if no holon ID in URL
+			if (holonIdInUrl) {
+				ID.set(holonIdInUrl);
+			} else {
+				ID.set(userPublicKey);
+				if (currentPath === '/' || currentPath === '') {
+					goto(`/${userPublicKey}/dashboard`);
+				}
 			}
 		}
 	}

@@ -9,7 +9,13 @@
 	import Announcements from "./Announcements.svelte";
 	import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { Gift } from 'svelte-feathers';
+	import { Gift, Plus } from 'svelte-feathers';
+
+	// Add offer/request modal state
+	let showAddModal = false;
+	let addModalType: 'offer' | 'request' = 'offer';
+	let newItemTitle = '';
+	let newItemDescription = '';
 
 	/**
 	 * @type {string | any[]}
@@ -728,6 +734,33 @@
 		}
 	}
 
+	// Open add modal for offer or request
+	function openAddModal(type: 'offer' | 'request') {
+		addModalType = type;
+		newItemTitle = '';
+		newItemDescription = '';
+		showAddModal = true;
+	}
+
+	// Create a new offer or request
+	async function createNewItem() {
+		if (!holosphere || !holonID || !newItemTitle.trim()) return;
+
+		const newItem = {
+			id: crypto.randomUUID(),
+			type: addModalType,
+			title: newItemTitle.trim(),
+			description: newItemDescription.trim(),
+			participants: [],
+			created_at: new Date().toISOString()
+		};
+
+		await holosphere.put(holonID, 'quests', newItem);
+		showAddModal = false;
+		newItemTitle = '';
+		newItemDescription = '';
+	}
+
 	// Remove a user's participation from an offer or need
 	async function removeParticipation(item, user) {
 		if (!holosphere || !holonID || !item || !user) return;
@@ -783,20 +816,30 @@
 	<!-- TitleBar -->
 	<TitleBar {holonName} title="Offers & Requests" icon={Gift}>
 		<div slot="actions" class="flex items-center gap-3">
-			<span class="text-white text-sm font-medium hidden sm:inline">Include Federated</span>
-			<button
-				class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {includeFederatedOffers ? 'bg-blue-600' : 'bg-gray-600'}"
-				on:click={handleFederatedToggle}
-				disabled={loadingFederated}
-			>
-				<span class="sr-only">Include federated offers</span>
-				<span
-					class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
-				></span>
+			<button class="btn btn--primary" on:click={() => openAddModal('offer')}>
+				<Plus size={16} />
+				<span class="hidden sm:inline">Add Offer</span>
 			</button>
-			{#if loadingFederated}
-				<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-			{/if}
+			<button class="btn btn--primary" on:click={() => openAddModal('request')}>
+				<Plus size={16} />
+				<span class="hidden sm:inline">Add Request</span>
+			</button>
+			<div class="hidden md:flex items-center gap-2 ml-2">
+				<span class="text-white text-sm font-medium">Federated</span>
+				<button
+					class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {includeFederatedOffers ? 'bg-blue-600' : 'bg-gray-600'}"
+					on:click={handleFederatedToggle}
+					disabled={loadingFederated}
+				>
+					<span class="sr-only">Include federated offers</span>
+					<span
+						class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
+					></span>
+				</button>
+				{#if loadingFederated}
+					<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+				{/if}
+			</div>
 		</div>
 	</TitleBar>
 
@@ -981,8 +1024,8 @@
 
 											<!-- Take Offer Dropdown -->
 											<div class="relative">
-												<button 
-													class="btn btn--success btn--sm"
+												<button
+													class="btn btn--primary btn--sm"
 													on:click|stopPropagation={(e) => {
 														console.log('Take Offer button clicked for:', offer.key);
 														toggleDropdown(offer.key);
@@ -1269,6 +1312,77 @@
 	</div>
 	{/if}
 </div>
+
+<!-- Add Offer/Request Modal -->
+{#if showAddModal}
+	<div
+		class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+		on:click|self={() => showAddModal = false}
+		on:keydown={(e) => e.key === 'Escape' && (showAddModal = false)}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<div class="bg-gray-800 rounded-2xl w-full max-w-md shadow-xl">
+			<div class="p-6 border-b border-gray-700">
+				<div class="flex justify-between items-center">
+					<h2 class="text-xl font-bold text-white">
+						New {addModalType === 'offer' ? 'Offer' : 'Request'}
+					</h2>
+					<button
+						class="text-gray-400 hover:text-white transition-colors"
+						on:click={() => showAddModal = false}
+						aria-label="Close modal"
+					>
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
+			</div>
+
+			<div class="p-6 space-y-4">
+				<div>
+					<label for="item-title" class="block text-sm font-medium text-gray-300 mb-2">Title</label>
+					<input
+						id="item-title"
+						type="text"
+						bind:value={newItemTitle}
+						placeholder={addModalType === 'offer' ? 'What are you offering?' : 'What do you need?'}
+						class="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors"
+					/>
+				</div>
+
+				<div>
+					<label for="item-description" class="block text-sm font-medium text-gray-300 mb-2">Description (optional)</label>
+					<textarea
+						id="item-description"
+						bind:value={newItemDescription}
+						placeholder="Add more details..."
+						rows="3"
+						class="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors resize-none"
+					></textarea>
+				</div>
+			</div>
+
+			<div class="p-6 border-t border-gray-700 flex justify-end gap-3">
+				<button
+					class="btn btn--secondary"
+					on:click={() => showAddModal = false}
+				>
+					Cancel
+				</button>
+				<button
+					class="btn btn--primary"
+					on:click={createNewItem}
+					disabled={!newItemTitle.trim()}
+				>
+					Create {addModalType === 'offer' ? 'Offer' : 'Request'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	/* Task card styling */

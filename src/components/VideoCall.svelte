@@ -40,11 +40,11 @@
   let isVideoEnabled = true;
   let connectionStatus = 'Initializing...';
 
-  // Gun instance
-  let gun: any;
-  let roomRef: any;
-  let signalRef: any;
-  let userRef: any;
+  // Holosphere signaling
+  let signalLens: string;
+  let userLens: string;
+  let unsubscribeSignals: (() => void) | null = null;
+  let unsubscribeUsers: (() => void) | null = null;
 
   // Cleanup functions
   let cleanupFunctions: (() => void)[] = [];
@@ -64,9 +64,13 @@
 
   // Initialize holosphere context
   let holosphere: HoloSphere;
+  let signalingAvailable = false;
   try {
     holosphere = getContext('holosphere');
-    gun = holosphere?.gun;
+    if (holosphere) {
+      signalingAvailable = true;
+      log('Holosphere signaling available via Nostr');
+    }
   } catch (e) {
     log('Failed to get holosphere context');
   }
@@ -188,16 +192,15 @@
     }
   }
 
-  // Initialize Gun signaling references
+  // Initialize holosphere signaling
   async function setupSignaling() {
-    if (!gun || !roomId) return;
+    if (!holosphere || !roomId) return;
 
-    const roomKey = `vroom_${roomId}`;
-    roomRef = gun.get(roomKey);
-    signalRef = roomRef.get('signals');
-    userRef = roomRef.get('users');
+    // Use room-specific lenses for signaling
+    signalLens = `video_signals_${roomId}`;
+    userLens = `video_users_${roomId}`;
 
-    log(`📡 Signaling setup complete for room: ${roomKey}`);
+    log(`📡 Signaling setup complete for room: ${roomId}`);
   }
 
   // Create a new peer connection with comprehensive handling
@@ -446,30 +449,37 @@
   }
 
   async function joinRoom() {
+    if (!holosphere) return;
+
     // Announce presence
     const presence = {
-      userId: myUserId,
+      id: myUserId,
+      odysId: myUserId,
       online: true,
       joinedAt: Date.now(),
       roomId: roomId
     };
 
-    userRef.get(myUserId).put(presence);
+    await holosphere.put(roomId, userLens, presence);
     log('Announced presence');
 
-    // Listen for other users
-    const userListener = userRef.map().on((userData: any, userId: string) => {
-      if (!userData || !userData.online || userData.userId === myUserId) return;
+    // Listen for other users via holosphere subscription
+    const userSub = await holosphere.subscribe(roomId, userLens, (userData: any) => {
+      if (!userData || !userData.online || userData.id === myUserId) return;
 
-      log(`User ${userData.userId.substring(0, 8)} joined`);
+      log(`User ${(userData.id || '').substring(0, 8)} joined`);
 
-      if (!peerConnections.has(userData.userId)) {
-        createPeerConnection(userData.userId);
+      if (!peerConnections.has(userData.id)) {
+        createPeerConnection(userData.id);
       }
     });
+    unsubscribeUsers = userSub?.unsubscribe || null;
 
-    // Listen for signaling messages
-    const signalListener = signalRef.get(myUserId).map().on((message: any, msgId: string) => {
+    // Listen for signaling messages via holosphere subscription
+    const signalSub = await holosphere.subscribe(roomId, signalLens, (message: any) => {
+      // Only process messages addressed to us
+      if (!message || message.msgTo !== myUserId) return;
+
       log(`Signal received from ${message.msgFrom?.substring(0, 8)}: ${message.msgType}`);
 
       // Parse the message data
@@ -481,7 +491,7 @@
         return;
       }
 
-      // Convert to old format for compatibility
+      // Convert to standard format
       const compatMessage = {
         from: message.msgFrom,
         to: message.msgTo,
@@ -492,10 +502,11 @@
 
       handleSignalingMessage(compatMessage);
     });
+    unsubscribeSignals = signalSub?.unsubscribe || null;
 
     cleanupFunctions.push(() => {
-      userListener.off();
-      signalListener.off();
+      if (unsubscribeUsers) unsubscribeUsers();
+      if (unsubscribeSignals) unsubscribeSignals();
     });
   }
 
@@ -540,7 +551,9 @@
     }
   }
 
-  function sendSignal(toUserId: string, type: string, data: any) {
+  async function sendSignal(toUserId: string, type: string, data: any) {
+    if (!holosphere) return;
+
     const messageId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     // Clean the data to ensure it's properly serialized
@@ -552,8 +565,9 @@
       };
     }
 
-    // Use Gun-friendly flat structure to prevent corruption
+    // Create signal message
     const message = {
+      id: messageId,
       msgFrom: myUserId,
       msgTo: toUserId,
       msgType: type,
@@ -562,7 +576,7 @@
     };
 
     log(`Sending ${type} to ${toUserId.substring(0, 8)}`);
-    signalRef.get(toUserId).get(messageId).put(message);
+    await holosphere.put(roomId, signalLens, message);
   }
 
   function toggleAudio() {
@@ -588,12 +602,16 @@
   }
 
 
-  function leaveRoom() {
+  async function leaveRoom() {
     log('Leaving room');
 
-    // Remove presence
-    if (userRef) {
-      userRef.get(myUserId).put(null);
+    // Remove presence via holosphere
+    if (holosphere) {
+      try {
+        await holosphere.delete(roomId, userLens, myUserId);
+      } catch (e) {
+        log('Failed to remove presence');
+      }
     }
 
     // Close all peer connections
@@ -624,19 +642,15 @@
   onMount(async () => {
     log(`🚀 Video call component mounted for room: ${roomId}`);
 
-    if (!gun) {
-      try {
-        const holosphere = getContext('holosphere') as HoloSphere;
-        gun = holosphere.gun;
-      } catch (e) {
-        connectionStatus = 'Error: No Gun connection available';
-        log('❌ Gun instance not available');
-        return;
-      }
+    if (!holosphere) {
+      // Video call signaling not available with current backend
+      connectionStatus = 'Video calls temporarily unavailable';
+      log('❌ Video call signaling not available - holosphere not initialized');
+      return;
     }
 
     // Only set up signaling, don't initialize media until video window opens
-    if (gun) {
+    if (signalingAvailable) {
       await setupSignaling();
       connectionStatus = 'Ready to start call';
     }
@@ -658,19 +672,16 @@
       try {
         log(`🚀 Video window opened - requesting camera access for room: ${roomId} as ${myUserId.substring(0, 12)}`);
 
-        if (!gun) {
-          try {
-            const holosphere = getContext('holosphere') as HoloSphere;
-            gun = holosphere.gun;
-          } catch (e) {
-            connectionStatus = 'Error: No Gun connection available';
-            return;
-          }
+        if (!holosphere || !signalingAvailable) {
+          // Video call signaling not available with current backend
+          connectionStatus = 'Video calls temporarily unavailable';
+          log('❌ Video call signaling not available - holosphere not initialized');
+          return;
         }
 
         // Camera permission is requested HERE when video window opens
         await initializeLocalMedia();
-        if (!roomRef || !signalRef || !userRef) {
+        if (!signalLens || !userLens) {
           await setupSignaling();
         }
         await joinRoom();

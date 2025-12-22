@@ -1,4 +1,8 @@
 // Flow Settings Management based on the original Settings.js system
+// Updated to use holosphere2 API instead of direct Gun access
+
+import type { HoloSphere } from 'holosphere';
+
 export interface LensConfig {
   name: string;
   enabled: boolean;
@@ -94,50 +98,105 @@ export const AVAILABLE_LENSES = [
 
 export type LensType = typeof AVAILABLE_LENSES[number];
 
+/**
+ * Manages holon flow settings including federation links, lens configurations,
+ * and flow visualization data generation.
+ *
+ * This class provides the settings layer for the Harvest holon system,
+ * based on the original Settings.js system but modernized for the web frontend.
+ * It handles persistence via holosphere2 and provides event-based change notifications.
+ *
+ * @class FlowSettings
+ *
+ * @example
+ * ```typescript
+ * import { FlowSettings } from './FlowSettings';
+ *
+ * const settings = new FlowSettings('myHolon');
+ *
+ * // Load settings
+ * const holonSettings = await settings.loadSettings(holosphere, 'myHolon');
+ *
+ * // Update flow settings
+ * await settings.updateFlowSettings(holosphere, 'myHolon', { internalPercent: 60 });
+ *
+ * // Manage federation
+ * await settings.addFederationLink(holosphere, 'myHolon', 'targetHolon', 'Target', 'federated');
+ * await settings.toggleLens(holosphere, 'myHolon', 'targetHolon', 'quests', 'federate');
+ *
+ * // Generate visualization
+ * const viz = await settings.generateFlowVisualization('myHolon', bundle, members, balances);
+ * ```
+ */
 export class FlowSettings {
   private settings: Map<string, HolonSettings> = new Map();
   private callbacks: Map<string, Function[]> = new Map();
 
+  /**
+   * Creates a new FlowSettings instance.
+   *
+   * @param {string} holonId - The holon identifier for these settings
+   */
   constructor(private holonId: string) {}
 
   /**
-   * Load settings for a holon
+   * Loads settings for a holon from holosphere.
+   *
+   * @async
+   * @param {HoloSphere} holosphere - The holosphere instance
+   * @param {string} holonId - The holon identifier
+   * @returns {Promise<HolonSettings>} The holon settings (default if not found)
    */
-  async loadSettings(gun: any, holonId: string): Promise<HolonSettings> {
-    return new Promise((resolve) => {
-      gun.get(`holon_settings/${holonId}`).once((data: any) => {
-        if (data) {
-          const settings = this.parseSettings(data);
-          this.settings.set(holonId, settings);
-          resolve(settings);
-        } else {
-          const defaultSettings = this.getDefaultSettings(holonId);
-          this.settings.set(holonId, defaultSettings);
-          resolve(defaultSettings);
-        }
-      });
-    });
+  async loadSettings(holosphere: HoloSphere, holonId: string): Promise<HolonSettings> {
+    try {
+      const data = await holosphere.get(holonId, 'settings', holonId);
+      if (data) {
+        const settings = this.parseSettings(data);
+        this.settings.set(holonId, settings);
+        return settings;
+      } else {
+        const defaultSettings = this.getDefaultSettings(holonId);
+        this.settings.set(holonId, defaultSettings);
+        return defaultSettings;
+      }
+    } catch (error) {
+      console.error('Error loading holon settings:', error);
+      const defaultSettings = this.getDefaultSettings(holonId);
+      this.settings.set(holonId, defaultSettings);
+      return defaultSettings;
+    }
   }
 
   /**
-   * Save settings for a holon
+   * Saves settings for a holon to holosphere.
+   *
+   * @async
+   * @param {HoloSphere} holosphere - The holosphere instance
+   * @param {string} holonId - The holon identifier
+   * @param {Partial<HolonSettings>} settings - The settings to save
+   * @returns {Promise<void>}
    */
-  async saveSettings(gun: any, holonId: string, settings: Partial<HolonSettings>): Promise<void> {
+  async saveSettings(holosphere: HoloSphere, holonId: string, settings: Partial<HolonSettings>): Promise<void> {
     const currentSettings = this.settings.get(holonId) || this.getDefaultSettings(holonId);
     const updatedSettings = {
       ...currentSettings,
       ...settings,
+      id: holonId,
       timestamp: Date.now()
     };
-    
+
     this.settings.set(holonId, updatedSettings);
-    gun.get(`holon_settings/${holonId}`).put(updatedSettings);
-    
+    await holosphere.put(holonId, 'settings', updatedSettings);
+
     this.notifyCallbacks('settings:updated', updatedSettings);
   }
 
   /**
-   * Get default settings for a holon
+   * Gets default settings for a holon.
+   *
+   * @private
+   * @param {string} holonId - The holon identifier
+   * @returns {HolonSettings} The default settings
    */
   private getDefaultSettings(holonId: string): HolonSettings {
     return {
@@ -166,7 +225,11 @@ export class FlowSettings {
   }
 
   /**
-   * Parse settings from Gun data
+   * Parses settings from holosphere data format.
+   *
+   * @private
+   * @param {any} data - The raw data
+   * @returns {HolonSettings} The parsed settings
    */
   private parseSettings(data: any): HolonSettings {
     return {
@@ -192,16 +255,22 @@ export class FlowSettings {
   }
 
   /**
-   * Update flow management settings
+   * Updates flow management settings.
+   *
+   * @async
+   * @param {HoloSphere} holosphere - The holosphere instance
+   * @param {string} holonId - The holon identifier
+   * @param {Partial<HolonSettings['flowManagement']>} flowSettings - The flow settings to update
+   * @returns {Promise<void>}
    */
   async updateFlowSettings(
-    gun: any,
+    holosphere: HoloSphere,
     holonId: string,
     flowSettings: Partial<HolonSettings['flowManagement']>
   ): Promise<void> {
     const currentSettings = this.settings.get(holonId) || this.getDefaultSettings(holonId);
-    
-    await this.saveSettings(gun, holonId, {
+
+    await this.saveSettings(holosphere, holonId, {
       flowManagement: {
         ...currentSettings.flowManagement,
         ...flowSettings
@@ -210,19 +279,27 @@ export class FlowSettings {
   }
 
   /**
-   * Add federation link
+   * Adds a federation link between holons.
+   *
+   * @async
+   * @param {HoloSphere} holosphere - The holosphere instance
+   * @param {string} holonId - The source holon identifier
+   * @param {string} targetId - The target holon identifier
+   * @param {string} targetName - The target holon name
+   * @param {'federated' | 'notifies'} relationship - The relationship type
+   * @returns {Promise<void>}
    */
   async addFederationLink(
-    gun: any,
+    holosphere: HoloSphere,
     holonId: string,
     targetId: string,
     targetName: string,
     relationship: 'federated' | 'notifies'
   ): Promise<void> {
     const settings = this.settings.get(holonId) || this.getDefaultSettings(holonId);
-    
+
     const existingLink = settings.federation.find(f => f.targetId === targetId);
-    
+
     if (existingLink) {
       existingLink.relationship = relationship;
       existingLink.timestamp = Date.now();
@@ -238,34 +315,48 @@ export class FlowSettings {
         timestamp: Date.now()
       });
     }
-    
-    await this.saveSettings(gun, holonId, settings);
+
+    await this.saveSettings(holosphere, holonId, settings);
   }
 
   /**
-   * Remove federation link
+   * Removes a federation link.
+   *
+   * @async
+   * @param {HoloSphere} holosphere - The holosphere instance
+   * @param {string} holonId - The source holon identifier
+   * @param {string} targetId - The target holon identifier to remove
+   * @returns {Promise<void>}
    */
-  async removeFederationLink(gun: any, holonId: string, targetId: string): Promise<void> {
+  async removeFederationLink(holosphere: HoloSphere, holonId: string, targetId: string): Promise<void> {
     const settings = this.settings.get(holonId) || this.getDefaultSettings(holonId);
-    
+
     settings.federation = settings.federation.filter(f => f.targetId !== targetId);
     delete settings.lensConfig[targetId];
-    
-    await this.saveSettings(gun, holonId, settings);
+
+    await this.saveSettings(holosphere, holonId, settings);
   }
 
   /**
-   * Toggle lens for federation link
+   * Toggles a lens for a federation link.
+   *
+   * @async
+   * @param {HoloSphere} holosphere - The holosphere instance
+   * @param {string} holonId - The source holon identifier
+   * @param {string} targetId - The target holon identifier
+   * @param {LensType} lensType - The lens type to toggle
+   * @param {'federate' | 'notify'} relationship - The relationship type
+   * @returns {Promise<void>}
    */
   async toggleLens(
-    gun: any,
+    holosphere: HoloSphere,
     holonId: string,
     targetId: string,
     lensType: LensType,
     relationship: 'federate' | 'notify'
   ): Promise<void> {
     const settings = this.settings.get(holonId) || this.getDefaultSettings(holonId);
-    
+
     if (!settings.lensConfig[targetId]) {
       settings.lensConfig[targetId] = {
         inbound: [],
@@ -278,20 +369,25 @@ export class FlowSettings {
     const arrayName = relationship === 'federate' ? 'inbound' : 'outbound';
     const lensArray = settings.lensConfig[targetId][arrayName];
     const lensIndex = lensArray.indexOf(lensType);
-    
+
     if (lensIndex > -1) {
       lensArray.splice(lensIndex, 1); // Remove
     } else {
       lensArray.push(lensType); // Add
     }
-    
+
     settings.lensConfig[targetId].timestamp = Date.now();
-    
-    await this.saveSettings(gun, holonId, settings);
+
+    await this.saveSettings(holosphere, holonId, settings);
   }
 
   /**
-   * Get lens configuration for UI
+   * Gets lens configuration for UI display.
+   *
+   * @param {string} holonId - The source holon identifier
+   * @param {string} targetId - The target holon identifier
+   * @param {'federate' | 'notify'} relationship - The relationship type
+   * @returns {LensConfig[]} Array of lens configurations with enabled status
    */
   getLensesConfig(holonId: string, targetId: string, relationship: 'federate' | 'notify'): LensConfig[] {
     const settings = this.settings.get(holonId);
@@ -311,7 +407,11 @@ export class FlowSettings {
   }
 
   /**
-   * Get lens description
+   * Gets a human-readable description for a lens type.
+   *
+   * @private
+   * @param {LensType} lens - The lens type
+   * @returns {string} The description
    */
   private getLensDescription(lens: LensType): string {
     const descriptions: Record<LensType, string> = {
@@ -329,7 +429,14 @@ export class FlowSettings {
   }
 
   /**
-   * Generate flow visualization data
+   * Generates flow visualization data for rendering.
+   *
+   * @async
+   * @param {string} holonId - The holon identifier
+   * @param {any} holonBundle - The holon bundle data
+   * @param {any[]} members - Array of holon members
+   * @param {any[]} tokenBalances - Array of token balances
+   * @returns {Promise<FlowVisualizationData>} The visualization data including nodes, edges, and metrics
    */
   async generateFlowVisualization(
     holonId: string,
@@ -440,7 +547,11 @@ export class FlowSettings {
   }
 
   /**
-   * Subscribe to settings changes
+   * Subscribes to settings change events.
+   *
+   * @param {string} event - The event name to subscribe to
+   * @param {Function} callback - The callback function
+   * @returns {void}
    */
   onSettingsChange(event: string, callback: Function): void {
     if (!this.callbacks.has(event)) {
@@ -450,7 +561,12 @@ export class FlowSettings {
   }
 
   /**
-   * Notify callbacks of changes
+   * Notifies registered callbacks of changes.
+   *
+   * @private
+   * @param {string} event - The event name
+   * @param {any} data - The event data
+   * @returns {void}
    */
   private notifyCallbacks(event: string, data: any): void {
     const callbacks = this.callbacks.get(event);
@@ -466,14 +582,19 @@ export class FlowSettings {
   }
 
   /**
-   * Get current settings for a holon
+   * Gets current settings for a holon from cache.
+   *
+   * @param {string} holonId - The holon identifier
+   * @returns {HolonSettings | null} The settings or null if not cached
    */
   getSettings(holonId: string): HolonSettings | null {
     return this.settings.get(holonId) || null;
   }
 
   /**
-   * Clear settings cache
+   * Clears the settings cache.
+   *
+   * @returns {void}
    */
   clearCache(): void {
     this.settings.clear();

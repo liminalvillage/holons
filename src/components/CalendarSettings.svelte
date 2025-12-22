@@ -3,6 +3,7 @@
     import type { HoloSphere } from "holosphere";
     import { ID } from '../dashboard/store';
     import { isValidICalUrl } from '$lib/services/icalParser';
+    import { Plus } from 'svelte-feathers';
 
     const dispatch = createEventDispatcher();
     const holosphere = getContext('holosphere') as HoloSphere;
@@ -282,10 +283,11 @@
                         </div>
 
                         <button
-                            class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="btn btn--primary w-full"
                             on:click={addCalendar}
                             disabled={loading}
                         >
+                            <Plus size={16} />
                             {loading ? 'Adding...' : 'Add Calendar'}
                         </button>
                     </div>

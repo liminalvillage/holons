@@ -174,9 +174,9 @@
 	});
 </script>
 
-<nav class="topbar" role="navigation" aria-label="Main navigation">
+<nav class="topbar" aria-label="Main navigation">
 	<!-- Menu button to toggle sidebar -->
-	<button class="topbar__menu-btn" on:click={() => dispatch('toggleBrowser')} aria-label="Toggle sidebar">
+	<button class="topbar__menu-btn" onclick={() => dispatch('toggleBrowser')} aria-label="Toggle sidebar">
 		<Menu size="20" />
 	</button>
 
@@ -189,7 +189,7 @@
 	<div class="topbar__controls">
 		{#if !isPrimaryPage && $ID}
 			<!-- Widget Dashboard toggle -->
-			<button class="topbar__icon-btn" on:click={toggleWidgetDashboard} title="Widget Dashboard">
+			<button class="topbar__icon-btn" onclick={toggleWidgetDashboard} title="Widget Dashboard">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<rect x="3" y="3" width="7" height="7" rx="1"/>
 					<rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -199,7 +199,7 @@
 			</button>
 
 			<!-- Video Call button -->
-			<button class="topbar__icon-btn" on:click={startVideoCall} title="Video Call">
+			<button class="topbar__icon-btn" onclick={startVideoCall} title="Video Call">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
 				</svg>

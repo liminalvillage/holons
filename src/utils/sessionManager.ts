@@ -3,8 +3,30 @@ import { createDesignStreamsSession, buildRitualSnapshot } from './ritualSnapsho
 import type { HoloSphere } from "holosphere";
 
 /**
- * Session Manager for Design Streams lifecycle
- * Handles session creation, tracking, and completion
+ * Session Manager for Design Streams lifecycle.
+ *
+ * This class handles the complete lifecycle of Design Streams sessions including
+ * creation, interaction tracking, and completion with ritual snapshot generation.
+ * Sessions are persisted to HoloSphere for recovery and historical analysis.
+ *
+ * @class SessionManager
+ *
+ * @example
+ * ```typescript
+ * import { initializeSessionManager } from './sessionManager';
+ *
+ * const manager = initializeSessionManager(holosphere, 'myHolon');
+ *
+ * // Start a new session
+ * const session = manager.startSession();
+ *
+ * // Track interactions
+ * manager.trackInteraction('quest_generation', { questTree: myQuestTree });
+ * manager.trackInteraction('chat', { role: 'user', content: 'Hello' });
+ *
+ * // Complete and save
+ * const result = await manager.completeSession(seating, wish, values, userName);
+ * ```
  */
 export class SessionManager {
   private holosphere: HoloSphere | null = null;
@@ -13,14 +35,22 @@ export class SessionManager {
   private sessionStartCallback: ((session: DesignStreamsSession) => void) | null = null;
   private sessionCompleteCallback: ((session: DesignStreamsSession) => void) | null = null;
 
+  /**
+   * Creates a new SessionManager instance.
+   *
+   * @param {HoloSphere | null} holosphere - The HoloSphere instance for data persistence
+   * @param {string} holonId - The holon identifier for the session
+   */
   constructor(holosphere: HoloSphere | null, holonId: string) {
     this.holosphere = holosphere;
     this.holonId = holonId;
   }
 
   /**
-   * Initialize a new Design Streams session
-   * Called when Design Streams modal opens
+   * Initializes a new Design Streams session.
+   * Called when the Design Streams modal opens.
+   *
+   * @returns {DesignStreamsSession} The newly created session
    */
   startSession(): DesignStreamsSession {
     console.log('🚀 Starting new Design Streams session');
@@ -45,8 +75,12 @@ export class SessionManager {
   }
 
   /**
-   * Track an interaction within the session
-   * Called when user engages with any Design Streams feature
+   * Tracks an interaction within the current session.
+   * Called when user engages with any Design Streams feature.
+   *
+   * @param {'quest_generation' | 'chat' | 'backcasting' | 'wish_update' | 'values_update'} type - The type of interaction
+   * @param {any} [data] - Optional data associated with the interaction
+   * @returns {void}
    */
   trackInteraction(type: 'quest_generation' | 'chat' | 'backcasting' | 'wish_update' | 'values_update', data?: any) {
     if (!this.currentSession) {
@@ -93,8 +127,15 @@ export class SessionManager {
   }
 
   /**
-   * Mark session as complete and create ritual snapshot
-   * Called when user indicates they're done with Design Streams
+   * Marks the session as complete and creates a ritual snapshot.
+   * Called when user indicates they're done with Design Streams.
+   *
+   * @async
+   * @param {Record<string, string>} seating - The council seating arrangement
+   * @param {string} wish - The user's wish/vision
+   * @param {string[]} values - The user's values
+   * @param {string} [userName] - Optional user name
+   * @returns {Promise<{session: DesignStreamsSession, ritual: any} | null>} The completed session and ritual snapshot
    */
   async completeSession(
     seating: Record<string, string>,
@@ -173,35 +214,48 @@ export class SessionManager {
   }
 
   /**
-   * Get the current active session
+   * Gets the current active session.
+   *
+   * @returns {DesignStreamsSession | null} The current session or null if none active
    */
   getCurrentSession(): DesignStreamsSession | null {
     return this.currentSession;
   }
 
   /**
-   * Check if there's an active session
+   * Checks if there's an active session.
+   *
+   * @returns {boolean} True if there's an active session
    */
   hasActiveSession(): boolean {
     return this.currentSession !== null;
   }
 
   /**
-   * Set callback for session start events
+   * Sets a callback for session start events.
+   *
+   * @param {Function} callback - Callback function to invoke when a session starts
+   * @returns {void}
    */
   onSessionStart(callback: (session: DesignStreamsSession) => void) {
     this.sessionStartCallback = callback;
   }
 
   /**
-   * Set callback for session completion events
+   * Sets a callback for session completion events.
+   *
+   * @param {Function} callback - Callback function to invoke when a session completes
+   * @returns {void}
    */
   onSessionComplete(callback: (session: DesignStreamsSession) => void) {
     this.sessionCompleteCallback = callback;
   }
 
   /**
-   * Persist current session to holosphere
+   * Persists the current session to HoloSphere.
+   *
+   * @private
+   * @returns {void}
    */
   private persistSession() {
     if (!this.currentSession || !this.holosphere || !this.holonId) {
@@ -216,7 +270,10 @@ export class SessionManager {
   }
 
   /**
-   * Load existing incomplete session (for recovery)
+   * Loads an existing incomplete session for recovery.
+   *
+   * @async
+   * @returns {Promise<DesignStreamsSession | null>} The incomplete session or null if none found
    */
   async loadIncompleteSession(): Promise<DesignStreamsSession | null> {
     if (!this.holosphere || !this.holonId) {
@@ -236,11 +293,20 @@ export class SessionManager {
 }
 
 /**
- * Global session manager instance
- * Initialize with holosphere and holonId when available
+ * Global session manager instance.
+ * Initialize with holosphere and holonId when available.
+ *
+ * @type {SessionManager | null}
  */
 export let sessionManager: SessionManager | null = null;
 
+/**
+ * Initializes the global session manager instance.
+ *
+ * @param {HoloSphere | null} holosphere - The HoloSphere instance
+ * @param {string} holonId - The holon identifier
+ * @returns {SessionManager} The initialized session manager
+ */
 export function initializeSessionManager(holosphere: HoloSphere | null, holonId: string) {
   sessionManager = new SessionManager(holosphere, holonId);
   return sessionManager;

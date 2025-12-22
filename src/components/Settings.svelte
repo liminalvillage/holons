@@ -3,6 +3,7 @@
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
   import { clearHolonNameCache, fetchHolonName } from '../utils/holonNames';
   import TitleBar from './shared/TitleBar.svelte';
+  import { Plus } from 'svelte-feathers';
 
   // Types
   interface User {
@@ -255,6 +256,10 @@
   }
 
   function setAdmin(userId) {
+    if (userId === undefined || userId === null) {
+      console.warn('setAdmin called with undefined userId');
+      return;
+    }
     settings = {
       ...settings,
       admin: userId.toString()
@@ -303,7 +308,7 @@
 				<div class="text-4xl mb-4">⚠️</div>
 				<h3 class="text-white text-lg font-medium mb-2">Error Loading Settings</h3>
 				<p class="text-gray-400 mb-4">{error}</p>
-				<button class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors" on:click={loadSettings}>
+				<button class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors" onclick={loadSettings}>
 					🔄 Try Again
 				</button>
 			</div>
@@ -318,7 +323,7 @@
 					<span class="text-sm font-medium">{notification.message}</span>
 					<button 
 						class="ml-3 text-white hover:text-gray-200 transition-colors" 
-						on:click={() => removeNotification(notification.id)}
+						onclick={() => removeNotification(notification.id)}
 					>
 						×
 					</button>
@@ -375,7 +380,7 @@
 										id="holon-name"
 										type="text" 
 										bind:value={settings.name}
-										on:blur={() => updateSetting('name', settings.name)}
+										onblur={() => updateSetting('name', settings.name)}
 										placeholder="Enter holon name"
 										class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 									/>
@@ -387,7 +392,7 @@
 										id="holon-hex"
 										type="text" 
 										bind:value={settings.hex}
-										on:blur={() => updateSetting('hex', settings.hex)}
+										onblur={() => updateSetting('hex', settings.hex)}
 										placeholder="Enter hex address"
 										class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 									/>
@@ -409,7 +414,7 @@
 										id="language-select"
 										class="w-full p-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
 										bind:value={settings.language}
-										on:change={(e) => updateSetting('language', e.target.value)}
+										onchange={(e) => updateSetting('language', e.target.value)}
 									>
 										{#each supportedLanguages as lang}
 											<option value={lang.code}>
@@ -421,7 +426,7 @@
 
 								<div>
 									<label for="holon-timezone" class="block text-sm font-medium text-gray-300 mb-2">Timezone</label>
-									<select id="holon-timezone" bind:value={settings.timezone} on:change={() => updateSetting('timezone', settings.timezone)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+									<select id="holon-timezone" bind:value={settings.timezone} onchange={() => updateSetting('timezone', settings.timezone)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
 										<option value="">Select timezone</option>
 										{#each Object.entries(timezones) as [region, tzs]}
 											<optgroup label={region}>
@@ -444,7 +449,7 @@
 									{#each themes as theme}
 										<button 
 											class="px-4 py-3 rounded-xl border-2 transition-all duration-200 {settings.theme === theme.id ? 'border-blue-500 bg-blue-500/20 text-white' : 'border-gray-500 bg-gray-600 text-gray-300 hover:border-gray-400 hover:bg-gray-500'}"
-											on:click={() => updateSetting('theme', theme.id)}
+											onclick={() => updateSetting('theme', theme.id)}
 											title={theme.description}
 										>
 											{theme.icon} {theme.name}
@@ -460,7 +465,7 @@
 							
 							<div>
 								<label for="holon-max-tasks" class="block text-sm font-medium text-gray-300 mb-2">Maximum Tasks</label>
-								<select id="holon-max-tasks" bind:value={settings.maxTasks} on:change={() => updateSetting('maxTasks', settings.maxTasks)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+								<select id="holon-max-tasks" bind:value={settings.maxTasks} onchange={() => updateSetting('maxTasks', settings.maxTasks)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
 									{#each maxTaskOptions as option}
 										<option value={option}>
 											{option === 0 ? 'Unlimited' : option}
@@ -480,7 +485,7 @@
 							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">🎯 Purpose</h3>
 							<textarea 
 								bind:value={settings.purpose}
-								on:blur={() => updateSetting('purpose', settings.purpose)}
+								onblur={() => updateSetting('purpose', settings.purpose)}
 								placeholder="Define your holon's purpose..."
 								rows="3"
 								class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors resize-none"
@@ -496,16 +501,16 @@
 										type="text" 
 										bind:value={newItemInputs.values}
 										placeholder="Add values (comma-separated)"
-										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('values', newItemInputs.values)}
+										onkeydown={(e) => e.key === 'Enter' && addMultipleItems('values', newItemInputs.values)}
 										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 									/>
-									<button on:click={() => addMultipleItems('values', newItemInputs.values)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+									<button onclick={() => addMultipleItems('values', newItemInputs.values)} class="btn btn--primary"><Plus size={16} />Add</button>
 								</div>
 								<div class="space-y-2">
 									{#each settings.values as value, i}
 										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
 											<span class="text-white">• {value}</span>
-											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('values', i)}>❌</button>
+											<button class="text-red-400 hover:text-red-300 transition-colors" onclick={() => removeArrayItem('values', i)}>❌</button>
 										</div>
 									{/each}
 								</div>
@@ -521,16 +526,16 @@
 										type="text" 
 										bind:value={newItemInputs.domains}
 										placeholder="Add domains (comma-separated)"
-										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('domains', newItemInputs.domains)}
+										onkeydown={(e) => e.key === 'Enter' && addMultipleItems('domains', newItemInputs.domains)}
 										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 									/>
-									<button on:click={() => addMultipleItems('domains', newItemInputs.domains)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+									<button onclick={() => addMultipleItems('domains', newItemInputs.domains)} class="btn btn--primary"><Plus size={16} />Add</button>
 								</div>
 								<div class="space-y-2">
 									{#each settings.domains as domain, i}
 										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
 											<span class="text-white">• {domain}</span>
-											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('domains', i)}>❌</button>
+											<button class="text-red-400 hover:text-red-300 transition-colors" onclick={() => removeArrayItem('domains', i)}>❌</button>
 										</div>
 									{/each}
 								</div>
@@ -546,16 +551,16 @@
 										type="text" 
 										bind:value={newItemInputs.roles}
 										placeholder="Add roles (comma-separated)"
-										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('roles', newItemInputs.roles)}
+										onkeydown={(e) => e.key === 'Enter' && addMultipleItems('roles', newItemInputs.roles)}
 										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 									/>
-									<button on:click={() => addMultipleItems('roles', newItemInputs.roles)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+									<button onclick={() => addMultipleItems('roles', newItemInputs.roles)} class="btn btn--primary"><Plus size={16} />Add</button>
 								</div>
 								<div class="space-y-2">
 									{#each settings.roles as role, i}
 										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
 											<span class="text-white">• {role}</span>
-											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('roles', i)}>❌</button>
+											<button class="text-red-400 hover:text-red-300 transition-colors" onclick={() => removeArrayItem('roles', i)}>❌</button>
 										</div>
 									{/each}
 								</div>
@@ -571,16 +576,16 @@
 										type="text" 
 										bind:value={newItemInputs.currencies}
 										placeholder="Add currencies (singular form, e.g., euro, dollar)"
-										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('currencies', newItemInputs.currencies)}
+										onkeydown={(e) => e.key === 'Enter' && addMultipleItems('currencies', newItemInputs.currencies)}
 										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 									/>
-									<button on:click={() => addMultipleItems('currencies', newItemInputs.currencies)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+									<button onclick={() => addMultipleItems('currencies', newItemInputs.currencies)} class="btn btn--primary"><Plus size={16} />Add</button>
 								</div>
 								<div class="space-y-2">
 									{#each settings.currencies as currency, i}
 										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
 											<span class="text-white">• {currency}</span>
-											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('currencies', i)}>❌</button>
+											<button class="text-red-400 hover:text-red-300 transition-colors" onclick={() => removeArrayItem('currencies', i)}>❌</button>
 										</div>
 									{/each}
 								</div>
@@ -597,7 +602,7 @@
 							<!-- Admin Selection -->
 							<div class="mb-4">
 								<label for="holon-admin" class="block text-sm font-medium text-gray-300 mb-2">Administrator</label>
-								<select id="holon-admin" bind:value={settings.admin} on:change={() => updateSetting('admin', settings.admin)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+								<select id="holon-admin" bind:value={settings.admin} onchange={() => updateSetting('admin', settings.admin)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
 									<option value="">Select admin</option>
 									{#each realUsers as user}
 										<option value={user.id || user.username}>{user.first_name || user.username || `User ${user.id}`}</option>
@@ -618,7 +623,7 @@
 										</span>
 										<div class="flex gap-2">
 											{#if settings.admin !== (user.id || user.username)}
-												<button class="text-yellow-400 hover:text-yellow-300 transition-colors" on:click={() => setAdmin(user.id || user.username)} title="Make admin">👑</button>
+												<button class="text-yellow-400 hover:text-yellow-300 transition-colors" onclick={() => setAdmin(user.id || user.username)} title="Make admin">👑</button>
 											{/if}
 										</div>
 									</div>

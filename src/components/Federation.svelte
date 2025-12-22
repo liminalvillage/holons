@@ -467,17 +467,10 @@
         if (!holonId || !holosphere) return 'Unknown';
 
         try {
-            // Get settings for this holon (no dataId - gets all settings)
-            const settings = await holosphere.get(holonId, 'settings');
+            // Get settings for this holon with holonId as the key
+            const settings = await holosphere.get(holonId, 'settings', holonId);
 
-            // Settings might be an array (readAll returns array) or single object
-            if (Array.isArray(settings)) {
-                // Find the first settings object with a name
-                const settingsObj = settings.find((s: any) => s?.name);
-                if (settingsObj?.name) {
-                    return settingsObj.name;
-                }
-            } else if (settings && settings.name) {
+            if (settings && settings.name) {
                 return settings.name;
             }
         } catch (error) {

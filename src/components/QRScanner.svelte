@@ -161,8 +161,8 @@
     <div
         class="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999]"
         transition:fade
-        on:click|self={closeScanner}
-        on:keydown={(e) => e.key === 'Escape' && closeScanner()}
+        onclick={(e) => { if (e.target === e.currentTarget) closeScanner(); }}
+        onkeydown={(e) => e.key === 'Escape' && closeScanner()}
         role="dialog"
         aria-modal="true"
         tabindex="-1"
@@ -170,12 +170,16 @@
         <div
             class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4"
             transition:scale
-            on:click|stopPropagation={() => {}}
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            tabindex="-1"
         >
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-bold text-white">Scan QR Code</h3>
                 <button
-                    on:click|stopPropagation={closeScanner}
+                    onclick={(e) => { e.stopPropagation(); closeScanner(); }}
                     class="p-2 bg-gray-700 hover:bg-red-600 text-white rounded-full transition-colors"
                     aria-label="Close QR scanner"
                 >
@@ -222,14 +226,14 @@
                 <div class="flex gap-3">
                     {#if !isScanning}
                         <button
-                            on:click={startScanner}
+                            onclick={startScanner}
                             class="btn btn--primary flex-1"
                         >
                             Start Camera
                         </button>
                     {:else}
                         <button
-                            on:click={stopScanner}
+                            onclick={stopScanner}
                             class="btn btn--danger flex-1"
                         >
                             Stop Camera
@@ -237,7 +241,7 @@
                     {/if}
                     {#if isScanning}
                         <button
-                            on:click={switchCamera}
+                            onclick={switchCamera}
                             class="btn btn--secondary"
                             title="Switch Camera"
                         >
@@ -247,7 +251,7 @@
                         </button>
                     {/if}
                     <button
-                        on:click={closeScanner}
+                        onclick={closeScanner}
                         class="btn btn--secondary flex-1"
                     >
                         Cancel

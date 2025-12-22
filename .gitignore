@@ -16,3 +16,4 @@ package-lock.json
 radata/*
 holosphere.db/*
 .netlify/*
+docs/api/*

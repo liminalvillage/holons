@@ -31,6 +31,9 @@
     const depth = 30; // 3D depth
     const innerRadiusRatio = 0.3; // Donut hole ratio
 
+    // Track selected slice for touch
+    let selectedSliceData: UserData | null = null;
+
     // Beautiful color palette
     const colorPalette = [
         '#3B82F6', // Blue
@@ -70,6 +73,31 @@
             return d3.rgb(d3Color).brighter(amount).toString();
         }
         return color;
+    }
+
+    function handleSliceEnter(element: SVGPathElement | d3.BaseType, event: MouseEvent | { clientX: number; clientY: number }, d: d3.PieArcDatum<UserData>, arc: d3.Arc<any, d3.PieArcDatum<UserData>>) {
+        // Highlight effect
+        d3.select(element)
+            .transition()
+            .duration(200)
+            .attr("transform", () => {
+                const [x, y] = arc.centroid(d);
+                const angle = Math.atan2(y, x);
+                const offsetX = Math.cos(angle) * 10;
+                const offsetY = Math.sin(angle) * 10;
+                return `translate(${offsetX}, ${offsetY})`;
+            });
+
+        showTooltip(event, d.data);
+    }
+
+    function handleSliceLeave(element: SVGPathElement | d3.BaseType) {
+        d3.select(element)
+            .transition()
+            .duration(200)
+            .attr("transform", "translate(0, 0)");
+
+        hideTooltip();
     }
 
     function renderChart() {
@@ -258,30 +286,51 @@
             .style("filter", "url(#dropshadow)")
             .style("cursor", "pointer")
             .on("mouseenter", function(event, d) {
-                // Highlight effect
-                d3.select(this)
-                    .transition()
-                    .duration(200)
-                    .attr("transform", () => {
-                        const [x, y] = arc.centroid(d);
-                        const angle = Math.atan2(y, x);
-                        const offsetX = Math.cos(angle) * 10;
-                        const offsetY = Math.sin(angle) * 10;
-                        return `translate(${offsetX}, ${offsetY})`;
-                    });
-
-                showTooltip(event, d.data);
+                handleSliceEnter(this, event, d, arc);
             })
             .on("mousemove", (event, d) => {
                 moveTooltip(event);
             })
             .on("mouseleave", function(event, d) {
-                d3.select(this)
-                    .transition()
-                    .duration(200)
-                    .attr("transform", "translate(0, 0)");
-
-                hideTooltip();
+                handleSliceLeave(this);
+            })
+            .on("touchstart", function(event, d) {
+                event.preventDefault();
+                const touch = event.touches[0];
+                // If same slice is tapped again, deselect it
+                if (selectedSliceData?.id === d.data.id) {
+                    handleSliceLeave(this);
+                    selectedSliceData = null;
+                } else {
+                    // Deselect previous slice if any
+                    if (selectedSliceData) {
+                        topGroup.selectAll(".slice").each(function() {
+                            d3.select(this)
+                                .transition()
+                                .duration(200)
+                                .attr("transform", "translate(0, 0)");
+                        });
+                    }
+                    selectedSliceData = d.data;
+                    handleSliceEnter(this, { clientX: touch.clientX, clientY: touch.clientY }, d, arc);
+                }
+            })
+            .on("click", function(event, d) {
+                // Toggle selection on click (works for both mouse and touch)
+                if (selectedSliceData?.id === d.data.id) {
+                    handleSliceLeave(this);
+                    selectedSliceData = null;
+                } else {
+                    // Deselect previous slice
+                    topGroup.selectAll(".slice").each(function() {
+                        d3.select(this)
+                            .transition()
+                            .duration(200)
+                            .attr("transform", "translate(0, 0)");
+                    });
+                    selectedSliceData = d.data;
+                    handleSliceEnter(this, event, d, arc);
+                }
             });
 
         // Add percentage labels on slices
@@ -323,7 +372,7 @@
             .text("Users");
     }
 
-    function showTooltip(event: MouseEvent, user: UserData) {
+    function showTooltip(event: MouseEvent | { clientX: number; clientY: number }, user: UserData) {
         if (!tooltip) return;
 
         tooltip.innerHTML = `
@@ -414,7 +463,7 @@
         moveTooltip(event);
     }
 
-    function moveTooltip(event: MouseEvent) {
+    function moveTooltip(event: MouseEvent | { clientX: number; clientY: number }) {
         if (!tooltip) return;
 
         const padding = 15;

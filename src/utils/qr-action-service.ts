@@ -27,15 +27,52 @@ export interface QRActionResult {
 	error?: string;
 }
 
+/**
+ * Processes QR code actions for role assignment, event creation, task assignment,
+ * badge awarding, and invite processing within the Harvest ecosystem.
+ *
+ * This service handles the complete lifecycle of QR code-based actions including
+ * user management, data persistence, and audit logging.
+ *
+ * @class QRActionService
+ *
+ * @example
+ * ```typescript
+ * import { QRActionService } from './qr-action-service';
+ *
+ * const service = new QRActionService(holosphere);
+ *
+ * const result = await service.processQRAction(
+ *   { action: 'role', title: 'Facilitator', holonID: 'myHolon' },
+ *   { id: 123, first_name: 'John', auth_date: Date.now(), hash: '...' }
+ * );
+ *
+ * if (result.success) {
+ *   console.log(result.message);
+ *   window.location.href = result.redirectUrl;
+ * }
+ * ```
+ */
 export class QRActionService {
 	private holosphere: HoloSphere;
 
+	/**
+	 * Creates a new QRActionService instance.
+	 *
+	 * @param {HoloSphere} holosphere - The HoloSphere instance for data operations
+	 */
 	constructor(holosphere: HoloSphere) {
 		this.holosphere = holosphere;
 	}
 
 	/**
-	 * Process a QR code action based on the parameters
+	 * Processes a QR code action based on the provided parameters.
+	 * Routes to the appropriate handler based on action type.
+	 *
+	 * @async
+	 * @param {QRActionParams} params - The QR code action parameters
+	 * @param {TelegramUser} user - The Telegram user performing the action
+	 * @returns {Promise<QRActionResult>} The result of the action
 	 */
 	async processQRAction(
 		params: QRActionParams,
@@ -73,7 +110,14 @@ export class QRActionService {
 	}
 
 	/**
-	 * Assign a role to the user, creating it if it doesn't exist
+	 * Assigns a role to the user, creating the role if it doesn't exist.
+	 * Clears existing participants if the role already exists.
+	 *
+	 * @private
+	 * @async
+	 * @param {QRActionParams} params - The action parameters
+	 * @param {TelegramUser} user - The user to assign the role to
+	 * @returns {Promise<QRActionResult>} The result of the role assignment
 	 */
 	private async assignRole(
 		params: QRActionParams,
@@ -263,7 +307,14 @@ export class QRActionService {
 	}
 
 	/**
-	 * Join an event, creating it as a scheduled Quest in the quests collection
+	 * Joins an event by creating it as a scheduled Quest in the quests collection.
+	 * Events are scheduled for 12 hours from creation time.
+	 *
+	 * @private
+	 * @async
+	 * @param {QRActionParams} params - The action parameters
+	 * @param {TelegramUser} user - The user joining the event
+	 * @returns {Promise<QRActionResult>} The result of the event creation
 	 */
 	private async joinEvent(
 		params: QRActionParams,
@@ -363,7 +414,13 @@ export class QRActionService {
 	}
 
 	/**
-	 * Assign a task, creating it as a proper Quest in the quests collection
+	 * Assigns a task by creating it as a Quest in the quests collection.
+	 *
+	 * @private
+	 * @async
+	 * @param {QRActionParams} params - The action parameters
+	 * @param {TelegramUser} user - The user to assign the task to
+	 * @returns {Promise<QRActionResult>} The result of the task assignment
 	 */
 	private async assignTask(
 		params: QRActionParams,
@@ -448,7 +505,13 @@ export class QRActionService {
 	}
 
 	/**
-	 * Award a badge, creating it if it doesn't exist and automatically assigning to user
+	 * Awards a badge to a user, creating the badge if it doesn't exist.
+	 *
+	 * @private
+	 * @async
+	 * @param {QRActionParams} params - The action parameters
+	 * @param {TelegramUser} user - The user to award the badge to
+	 * @returns {Promise<QRActionResult>} The result of the badge award
 	 */
 	private async awardBadge(
 		params: QRActionParams,
@@ -545,7 +608,13 @@ export class QRActionService {
 	}
 
 	/**
-	 * Process an invite, creating it if it doesn't exist
+	 * Processes an invite, creating it if it doesn't exist.
+	 *
+	 * @private
+	 * @async
+	 * @param {QRActionParams} params - The action parameters
+	 * @param {TelegramUser} user - The user accepting the invite
+	 * @returns {Promise<QRActionResult>} The result of the invite processing
 	 */
 	private async processInvite(
 		params: QRActionParams,
@@ -625,7 +694,12 @@ export class QRActionService {
 	}
 
 	/**
-	 * Get available actions for a user
+	 * Gets available actions/roles for a user.
+	 *
+	 * @async
+	 * @param {string} holonID - The holon identifier
+	 * @param {TelegramUser} user - The Telegram user
+	 * @returns {Promise<string[]>} Array of available roles/actions
 	 */
 	async getAvailableActions(holonID: string, user: TelegramUser): Promise<string[]> {
 		try {
@@ -638,7 +712,10 @@ export class QRActionService {
 	}
 
 	/**
-	 * Validate QR code parameters
+	 * Validates QR code parameters before processing.
+	 *
+	 * @param {QRActionParams} params - The QR code parameters to validate
+	 * @returns {{isValid: boolean, errors: string[]}} Validation result with any errors
 	 */
 	validateQRParams(params: QRActionParams): { isValid: boolean; errors: string[] } {
 		const errors: string[] = [];

@@ -32,8 +32,8 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 				return fallbackName;
 			}
 
-			// Get settings without dataId to get all settings items
-			const settings = await holosphere.get(holonId, "settings");
+			// Get settings with holonId as the key to fetch the specific settings record
+			const settings = await holosphere.get(holonId, "settings", holonId);
 
 			// Check if settings exists and has the expected structure
 			if (!settings) {

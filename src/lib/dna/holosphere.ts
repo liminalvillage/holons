@@ -87,18 +87,18 @@ export async function getChromosomeLibrary(
     console.log('[getChromosomeLibrary] Raw data keys:', Object.keys(data).filter(k => !k.startsWith('_')));
 
     // Convert object to array of chromosomes
-    // Filter out Gun metadata (keys starting with '_')
+    // Filter out metadata (keys starting with '_')
     const chromosomes: Chromosome[] = [];
 
     for (const [key, value] of Object.entries(data)) {
-      // Skip Gun metadata keys
+      // Skip metadata keys
       if (key.startsWith('_')) continue;
       if (!value || typeof value !== 'object') continue;
 
       // Cast to Record for property access
       const v = value as Record<string, any>;
 
-      // Access properties directly from Gun object (they should load synchronously if already cached)
+      // Access properties directly from data object
       const chromosome: Chromosome = {
         id: v.id || key,
         holonId: v.holonId || holonId,
@@ -280,7 +280,7 @@ export async function getChromosome(
       return null;
     }
 
-    // Access properties directly from Gun object
+    // Access properties directly from data object
     const chromosome: Chromosome = {
       id: data.id || chromosomeId,
       holonId: data.holonId || holonId,
@@ -343,7 +343,7 @@ export function subscribeToChromosomeLibrary(
   callback: (chromosome: Chromosome | null, chromosomeId: string) => void
 ): () => void {
   const handler = (data: any, key: string) => {
-    // Skip Gun metadata keys
+    // Skip metadata keys
     if (!key || key.startsWith('_')) return;
 
     if (!data || typeof data !== 'object') {
@@ -352,7 +352,7 @@ export function subscribeToChromosomeLibrary(
     }
 
     try {
-      // Access properties directly from Gun object
+      // Access properties directly from data object
       const chromosome: Chromosome = {
         id: data.id || key,
         holonId: data.holonId || holonId,

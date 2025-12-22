@@ -15,6 +15,15 @@
     export let holosphere: any;
     export let holonId: string;
 
+    let tempTitle = '';
+    let tempDescription = '';
+
+    // Initialize temp values when role changes
+    $: if (role) {
+        tempTitle = role.title || '';
+        tempDescription = role.description || '';
+    }
+
     console.log("[RoleModal.svelte] Script run/init. Role ID:", roleId);
     console.log("[RoleModal.svelte] Initial role prop:", JSON.parse(JSON.stringify(role || {})));
     console.log("[RoleModal.svelte] Initial userStore prop:", JSON.parse(JSON.stringify(userStore || {})));
@@ -77,6 +86,18 @@
         dispatch('close');
     }
 
+    async function saveTitle() {
+        if (tempTitle.trim() !== role.title) {
+            await updateRole({ title: tempTitle.trim() });
+        }
+    }
+
+    async function saveDescription() {
+        if (tempDescription.trim() !== (role.description || '')) {
+            await updateRole({ description: tempDescription.trim() });
+        }
+    }
+
     async function removeParticipant(participantId: string) {
         const participants = role.participants.filter((p: { id: string }) => p.id !== participantId);
         await updateRole({ participants });
@@ -122,8 +143,8 @@
     }
 </script>
 
-<div 
-    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+<div
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     on:click|self={closeModal}
     on:keydown={e => e.key === 'Escape' && closeModal()}
     role="dialog"
@@ -138,8 +159,19 @@
     >
         <div class="p-6">
             <div class="flex justify-between items-start mb-6">
-                <h2 id="modal-title" class="text-2xl font-bold text-white">{role.title}</h2>
-                <button 
+                <div class="flex-1 mr-4">
+                    <input
+                        type="text"
+                        bind:value={tempTitle}
+                        on:blur={saveTitle}
+                        on:keydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                        placeholder="Role title..."
+                        class="w-full text-2xl font-bold text-white bg-transparent border-b border-transparent hover:border-gray-600 focus:border-indigo-500 outline-none transition-colors pb-1"
+                        aria-label="Role title"
+                        id="modal-title"
+                    />
+                </div>
+                <button
                     class="text-gray-400 hover:text-white"
                     on:click={closeModal}
                     aria-label="Close modal"
@@ -151,15 +183,22 @@
             </div>
 
             <div class="space-y-6 text-gray-300">
-                {#if role.description}
-                    <p class="text-sm">{role.description}</p>
-                {/if}
+                <div>
+                    <textarea
+                        bind:value={tempDescription}
+                        on:blur={saveDescription}
+                        placeholder="Add a description for this role..."
+                        rows="2"
+                        class="w-full text-sm text-gray-300 bg-gray-700/50 rounded-lg p-3 border border-transparent hover:border-gray-600 focus:border-indigo-500 outline-none transition-colors resize-none"
+                        aria-label="Role description"
+                    ></textarea>
+                </div>
 
                 <div class="space-y-4">
                     <div class="flex justify-between items-center">
                         <h3 class="text-lg font-semibold">Participants</h3>
-                        <button 
-                            class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm transition-colors"
+                        <button
+                            class="btn btn--sm {showAddParticipants ? 'btn--secondary' : 'btn--primary'}"
                             on:click={() => showAddParticipants = !showAddParticipants}
                             disabled={Object.keys(userStore || {}).length === 0 && !showAddParticipants && holosphere}
                         >
@@ -244,14 +283,14 @@
 
                 <div class="flex justify-between pt-6">
                     <button
-                        class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                        class="btn btn--danger"
                         on:click={deleteRole}
                     >
                         Delete Role
                     </button>
-                    
+
                     <button
-                        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                        class="btn btn--secondary"
                         on:click={closeModal}
                     >
                         Close

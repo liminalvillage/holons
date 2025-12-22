@@ -7,6 +7,13 @@
   import type { FederationLink } from '../../lib/holons/FlowSettings';
   import type { HoloSphere } from 'holosphere';
   import { fetchHolonName } from '../../utils/holonNames';
+  import {
+    loadEquation,
+    toAggregates,
+    calculateUserScore as calculateScore,
+    type ScoreEquation,
+    DEFAULT_EQUATION
+  } from '../../lib/scoring/ContributionScoring';
 
   import FlowHeader from './FlowHeader.svelte';
   import FlowControls from './FlowControls.svelte';
@@ -66,16 +73,8 @@
     offers?: string[];
   }
   let holosphereUsers: HolosphereUser[] = [];
-  let equation: Record<string, number> = {
-    initiated: 1,
-    completed: 2,
-    sent: 1,
-    received: 1,
-    hours: 1,
-    collaboration: 1,
-    wants: 1,
-    offers: 1
-  };
+  // Use shared equation type with same defaults as Holonsbot
+  let equation: ScoreEquation = { ...DEFAULT_EQUATION };
 
   // Reactive: detect if there are unsaved changes
   $: hasChanges = existingBundle && (
@@ -135,7 +134,7 @@
 
         // Initialize manager
         if (holosphere) {
-          manager = new HolonsManager(provider, holosphere.gun);
+          manager = new HolonsManager(provider, holosphere);
           await manager.connectWallet(signer);
           setupManagerEvents();
         }
@@ -322,15 +321,8 @@
         holosphereUsers = Object.values(users).filter((u: any) => u && u.id) as HolosphereUser[];
       }
 
-      // Load equation from settings
-      try {
-        const settings = await holosphere.getAll(holonId, 'settings');
-        if (settings && settings[0]?.equation) {
-          equation = settings[0].equation;
-        }
-      } catch (eqErr) {
-        console.log('[FlowMgmt] Using default equation');
-      }
+      // Load equation from settings (using shared service - same as Holonsbot)
+      equation = await loadEquation(holosphere, holonId);
 
       // Calculate interior members from users
       calculateInteriorMembers();
@@ -376,17 +368,10 @@
     }
   }
 
+  // Use shared scoring service (same calculation as Holonsbot)
   function calculateUserScore(user: HolosphereUser): number {
-    let score = 0;
-    if (equation.initiated > 0) score += (user.initiated?.length || 0) * equation.initiated;
-    if (equation.completed > 0) score += (user.completed?.length || 0) * equation.completed;
-    if (equation.sent > 0) score += (user.sent || 0) * equation.sent;
-    if (equation.received > 0) score += (user.received || 0) * equation.received;
-    if (equation.hours > 0) score += (user.hours || 0) * equation.hours;
-    if (equation.collaboration > 0) score += (user.collaboration || 0) * equation.collaboration;
-    if (equation.wants > 0) score += (user.wants?.length || 0) * equation.wants;
-    if (equation.offers > 0) score += (user.offers?.length || 0) * equation.offers;
-    return score;
+    const aggregates = toAggregates(user);
+    return calculateScore(aggregates, equation);
   }
 
   function calculateInteriorMembers() {
@@ -428,6 +413,12 @@
       showNotification('Please confirm the transaction in your wallet...', 'info');
 
       const contractSteepness = steepnessToContract(steepness);
+      console.log('[FlowMgmt] Deploying Bundle with:', {
+        holonId,
+        steepnessUI: steepness,
+        steepnessContract: contractSteepness.toString(),
+        nzones
+      });
       const result = await manager.createHolonBundle(holonId, holonId, contractSteepness, nzones);
       showNotification(`Transaction submitted! TX: ${result.transaction.hash.slice(0, 10)}...`, 'info');
 
@@ -512,75 +503,56 @@
     await deployBundle();
   }
 
-  // Sync changes to contract
+  // Sync changes to contract - uses single transaction via syncAll
   async function syncToContract() {
     if (!manager || !existingBundle) return;
 
     try {
       syncing = true;
-      showNotification('Please confirm transaction(s) in your wallet...', 'info');
+      showNotification('Please confirm the transaction in your wallet...', 'info');
 
-      // Sync flow split
-      if (interiorPercent !== originalInteriorPercent) {
-        await manager.updateFlowSplit(existingBundle.address, interiorPercent);
-        originalInteriorPercent = interiorPercent;
-        showNotification(`Flow split synced: ${interiorPercent}% interior`, 'success');
-      }
+      // Prepare interior members data
+      const interiorMembersData = interiorMembers.map(m => ({
+        userId: m.userId,
+        percentage: m.percentage
+      }));
 
-      // Sync steepness
-      if (steepness !== originalSteepness) {
-        const contractSteepness = steepnessToContract(steepness);
-        await manager.setSteepness(existingBundle.address, contractSteepness);
-        originalSteepness = steepness;
-        showNotification(`Steepness synced: ${steepness}%`, 'success');
-      }
-
-      // Sync nzones
-      if (nzones !== originalNzones) {
-        await manager.setNzones(existingBundle.address, nzones);
-        originalNzones = nzones;
-        showNotification(`Zones synced: ${nzones} zones`, 'success');
-      }
-
-      // Sync interior members
-      if (interiorMembers.length > 0) {
-        const userIds = interiorMembers.map(m => m.userId);
-        try {
-          await manager.addInteriorMembers(existingBundle.address, userIds);
-        } catch (e) {
-          // Members may already exist
-        }
-
-        const membersToSync = interiorMembers.map(m => ({
-          userId: m.userId,
-          sharePercent: Math.round(m.percentage)
-        }));
-        await manager.updateInteriorMembers(existingBundle.address, membersToSync);
-        showNotification(`${interiorMembers.length} member shares synced!`, 'success');
-      }
-
-      // Sync federated holon zone assignments
+      // Prepare exterior members (federated holons with zone assignments)
       const assignedHolons = federatedHolons.filter(h => h.zone >= 1);
-      if (assignedHolons.length > 0) {
-        const holonIds = assignedHolons.map(h => h.id);
-        try {
-          await manager.addInteriorMembers(existingBundle.address, holonIds);
-        } catch (e) {
-          // May already exist
-        }
+      const exteriorMembersData = assignedHolons.map(h => ({
+        userId: h.id,
+        zone: h.zone
+      }));
 
-        const zoneAssignments = assignedHolons.map(h => ({
-          userId: h.id,
-          zone: h.zone
-        }));
-        await manager.assignMembersToZones(existingBundle.address, zoneAssignments);
-        showNotification(`${assignedHolons.length} holons assigned to zones!`, 'success');
+      // Convert steepness to WAD scale
+      const contractSteepness = steepnessToContract(steepness);
 
-        // Update original assignments
-        assignedHolons.forEach(h => {
-          originalZoneAssignments.set(h.id, h.zone);
-        });
-      }
+      console.log('[FlowMgmt] Syncing all parameters:', {
+        bundleAddress: existingBundle.address,
+        interiorPercent,
+        steepness,
+        contractSteepness: contractSteepness.toString(),
+        nzones,
+        interiorMembers: interiorMembersData,
+        exteriorMembers: exteriorMembersData
+      });
+
+      // Single transaction to sync everything
+      await manager.syncAll(existingBundle.address, {
+        interiorPercent,
+        steepness: contractSteepness,
+        nzones,
+        interiorMembers: interiorMembersData,
+        exteriorMembers: exteriorMembersData
+      });
+
+      // Update original values after successful sync
+      originalInteriorPercent = interiorPercent;
+      originalSteepness = steepness;
+      originalNzones = nzones;
+      assignedHolons.forEach(h => {
+        originalZoneAssignments.set(h.id, h.zone);
+      });
 
       // Save zone assignments to holosphere
       if (holosphere) {
@@ -591,7 +563,7 @@
         await holosphere.put(holonId, 'settings', { federationZones });
       }
 
-      showNotification('All changes synced!', 'success');
+      showNotification('All changes synced in a single transaction!', 'success');
     } catch (err: any) {
       console.error('Error syncing:', err);
       if (err.code === 4001 || err.code === 'ACTION_REJECTED') {

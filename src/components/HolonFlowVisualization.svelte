@@ -30,7 +30,7 @@
   }
 
   onMount(async () => {
-    if (!holosphere?.gun) {
+    if (!holosphere) {
       error = 'HoloSphere connection not available';
       loading = false;
       return;
@@ -43,7 +43,7 @@
       canvas.height = height;
 
       // Initialize holons manager (would need proper provider)
-      // holonsManager = new HolonsManager(provider, holosphere.gun);
+      // holonsManager = new HolonsManager(provider, holosphere);
 
       // Load visualization data
       await loadVisualization();

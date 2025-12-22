@@ -8,6 +8,7 @@
     import TitleBar from "./shared/TitleBar.svelte";
     import { fetchHolonName } from "../utils/holonNames";
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
+    import { Plus } from 'svelte-feathers';
 
     interface ChecklistItem {
         text: string;
@@ -478,11 +479,9 @@
 
                             <button
                                 on:click={() => showAddInput(false)}
-                                class="add-btn"
+                                class="btn btn--primary"
                             >
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                </svg>
+                                <Plus size={16} />
                                 <span class="hidden sm:inline">Add Item</span>
                             </button>
                         </div>
@@ -596,11 +595,9 @@
                             {#if activeFilter === 'all' || activeFilter === 'standalone'}
                                 <button
                                     on:click={() => showAddInput(true)}
-                                    class="add-btn"
+                                    class="btn btn--primary"
                                 >
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                                    </svg>
+                                    <Plus size={16} />
                                     <span class="hidden sm:inline">New</span>
                                 </button>
                             {/if}

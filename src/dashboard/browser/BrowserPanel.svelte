@@ -131,23 +131,39 @@
 	async function refreshHolonNames() {
 		if (!holosphere) return;
 
-		// Always fetch names from settings for personal holons
-		for (const holon of personalHolons) {
-			const name = await fetchHolonName(holosphere, holon.id);
-			if (name) {
-				holon.name = name;
-			}
-		}
-		personalHolons = [...personalHolons];
+		// Capture current holon IDs to avoid race conditions during async operations
+		const personalIds = personalHolons.map(h => h.id);
+		const visitedIds = visitedHolons.map(h => h.id);
 
-		// Always fetch names from settings for visited holons
-		for (const holon of visitedHolons) {
-			const name = await fetchHolonName(holosphere, holon.id);
-			if (name) {
-				holon.name = name;
-			}
-		}
-		visitedHolons = [...visitedHolons];
+		// Fetch all names concurrently for personal holons
+		const personalNameResults = await Promise.all(
+			personalIds.map(async (id) => ({
+				id,
+				name: await fetchHolonName(holosphere, id)
+			}))
+		);
+
+		// Apply names atomically by matching on ID (not array position)
+		const personalNameMap = new Map(personalNameResults.map(r => [r.id, r.name]));
+		personalHolons = personalHolons.map(h => {
+			const fetchedName = personalNameMap.get(h.id);
+			return fetchedName ? { ...h, name: fetchedName } : h;
+		});
+
+		// Fetch all names concurrently for visited holons
+		const visitedNameResults = await Promise.all(
+			visitedIds.map(async (id) => ({
+				id,
+				name: await fetchHolonName(holosphere, id)
+			}))
+		);
+
+		// Apply names atomically by matching on ID
+		const visitedNameMap = new Map(visitedNameResults.map(r => [r.id, r.name]));
+		visitedHolons = visitedHolons.map(h => {
+			const fetchedName = visitedNameMap.get(h.id);
+			return fetchedName ? { ...h, name: fetchedName } : h;
+		});
 	}
 
 	async function loadFederatedHolons() {
@@ -222,8 +238,14 @@
 			visitedHolons = [...visitedHolons, { id: holonId, name: holonName, lastVisited: Date.now() }];
 		}
 
+		// Preserve current lens when switching holons
+		const currentPath = $page.url.pathname;
+		const pathParts = currentPath.split('/').filter(Boolean);
+		// Get lens (second part of path, e.g., "dashboard", "tasks", "flow")
+		const currentLens = pathParts.length > 1 ? pathParts[pathParts.length - 1] : 'dashboard';
+
 		ID.set(holonId);
-		goto(`/${holonId}/dashboard`);
+		goto(`/${holonId}/${currentLens}`);
 		dispatch('select', { holonId });
 
 		// Close browser on mobile
@@ -369,7 +391,6 @@
 <aside
 	class="browser-panel"
 	class:browser-panel--open={isOpen}
-	role="complementary"
 	aria-label="Holon browser"
 >
 	<!-- Sidebar Header: Logo, Current Holon, ID/QR -->
@@ -391,7 +412,7 @@
 			<button
 				class="browser-panel__tab"
 				class:browser-panel__tab--active={activeTab === 'personal'}
-				on:click={() => (activeTab = 'personal')}
+				onclick={() => (activeTab = 'personal')}
 			>
 				<Star size="14" />
 				<span>My Holons</span>
@@ -399,7 +420,7 @@
 			<button
 				class="browser-panel__tab"
 				class:browser-panel__tab--active={activeTab === 'visited'}
-				on:click={() => (activeTab = 'visited')}
+				onclick={() => (activeTab = 'visited')}
 			>
 				<Clock size="14" />
 				<span>Recent</span>
@@ -407,7 +428,7 @@
 			<button
 				class="browser-panel__tab"
 				class:browser-panel__tab--active={activeTab === 'federated'}
-				on:click={() => (activeTab = 'federated')}
+				onclick={() => (activeTab = 'federated')}
 			>
 				<Users size="14" />
 				<span>Federated</span>
@@ -417,7 +438,7 @@
 		<!-- Federation Management (only on federated tab) -->
 		{#if activeTab === 'federated'}
 			<div class="browser-panel__federation-header">
-				<button class="browser-panel__manage-federation-btn" on:click={() => goto(`/${currentHolonId}/federation`)}>
+				<button class="browser-panel__manage-federation-btn" onclick={() => goto(`/${currentHolonId}/federation`)}>
 					<i class="fas fa-cog"></i>
 					<span>Manage Federation</span>
 				</button>
@@ -444,21 +465,22 @@
 {#if showAddModal}
 	<div
 		class="add-modal-backdrop"
-		on:click={closeAddModal}
-		on:keydown={(e) => e.key === 'Escape' && closeAddModal()}
+		onclick={closeAddModal}
+		onkeydown={(e) => e.key === 'Escape' && closeAddModal()}
 		role="button"
 		tabindex="0"
 	>
 		<div
 			class="add-modal"
-			on:click|stopPropagation
-			on:keydown|stopPropagation
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
+			tabindex="-1"
 		>
 			<div class="add-modal__header">
 				<h3>Add Holon</h3>
-				<button class="add-modal__close" on:click={closeAddModal} aria-label="Close">×</button>
+				<button class="add-modal__close" onclick={closeAddModal} aria-label="Close">×</button>
 			</div>
 
 			<div class="add-modal__content">
@@ -477,12 +499,12 @@
 							type="text"
 							bind:value={newHolonId}
 							placeholder="Enter Holon ID"
-							on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
+							onkeydown={(e) => e.key === 'Enter' && addNewHolon()}
 						/>
 						<button
 							type="button"
 							class="add-modal__qr-btn"
-							on:click={openQRScanner}
+							onclick={openQRScanner}
 							title="Scan QR Code"
 						>
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -499,14 +521,14 @@
 						type="text"
 						bind:value={newHolonName}
 						placeholder="Custom name for display"
-						on:keydown={(e) => e.key === 'Enter' && addNewHolon()}
+						onkeydown={(e) => e.key === 'Enter' && addNewHolon()}
 					/>
 				</div>
 			</div>
 
 			<div class="add-modal__actions">
-				<button class="btn btn--primary" on:click={addNewHolon}>Add Holon</button>
-				<button class="btn btn--secondary" on:click={closeAddModal}>Cancel</button>
+				<button class="btn btn--primary" onclick={addNewHolon}>Add Holon</button>
+				<button class="btn btn--secondary" onclick={closeAddModal}>Cancel</button>
 			</div>
 		</div>
 	</div>
