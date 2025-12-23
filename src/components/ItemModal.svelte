@@ -153,12 +153,12 @@
 
     async function removeParticipant(participantId: string) {
         // Update the item directly for immediate UI update
-        item.participants = item.participants.filter((p: any) => p.id !== participantId);
-        
+        item.participants = (item.participants || []).filter((p: any) => p.id !== participantId);
+
         if (quest) {
-            quest.participants = quest.participants.filter((p: any) => p.id !== participantId);
+            quest.participants = (quest.participants || []).filter((p: any) => p.id !== participantId);
         } else if (role) {
-            role.participants = role.participants.filter((p: any) => p.id !== participantId);
+            role.participants = (role.participants || []).filter((p: any) => p.id !== participantId);
         }
         const participants = (quest || role).participants;
         await updateItem({ participants });

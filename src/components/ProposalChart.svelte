@@ -80,7 +80,7 @@
         if (!chart || !proposals) return;
 
         // Sort proposals by number of approvals (participants)
-        const sortedProposals = [...proposals].sort((a, b) => b.participants.length - a.participants.length);
+        const sortedProposals = [...proposals].sort((a, b) => (b.participants || []).length - (a.participants || []).length);
 
         // Clear previous chart
         d3.select(chart).selectAll("*").remove();
@@ -105,7 +105,7 @@
             .padding(0.2);
 
         const x = d3.scaleLinear()
-            .domain([0, Math.max(d3.max(sortedProposals, d => d.participants.length) || 0, quorum * 2)])
+            .domain([0, Math.max(d3.max(sortedProposals, d => (d.participants || []).length) || 0, quorum * 2)])
             .range([0, innerWidth]);
 
         // Add bars - now horizontal
@@ -116,7 +116,7 @@
             .attr("y", d => y(d.title) || 0)
             .attr("x", 0)
             .attr("height", y.bandwidth())
-            .attr("width", d => x(d.participants.length))
+            .attr("width", d => x((d.participants || []).length))
             .attr("fill", d => d.stoppers?.length ? "#ef4444" : "#4f46e5") // Red if blocked, indigo otherwise
             .attr("rx", 4) // Rounded corners
             .attr("ry", 4)
@@ -252,9 +252,9 @@
 
                     <div class="space-y-4">
                         <div>
-                            <h4 class="text-white font-semibold mb-2">Participants ({selectedProposal.participants.length})</h4>
+                            <h4 class="text-white font-semibold mb-2">Participants ({(selectedProposal.participants || []).length})</h4>
                             <div class="flex flex-wrap gap-2">
-                                {#each selectedProposal.participants as participant}
+                                {#each selectedProposal.participants || [] as participant}
                                     <span class="px-2 py-1 bg-green-600 text-white text-sm rounded-full">
                                         {participant}
                                     </span>

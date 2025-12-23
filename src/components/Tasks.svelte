@@ -260,7 +260,7 @@
 			if (quest.participants) {
 				quest.participants.forEach(p => {
 					if (p.id && !users.has(p.id)) {
-						const name = (p.firstName ? `${p.firstName} ${p.lastName || ''}` : p.username).trim();
+						const name = (p.firstName ? `${p.firstName} ${p.lastName || ''}` : p.username || '').trim();
 						if (name) { // Only add users with a name
 							users.set(p.id, {
 								id: p.id,

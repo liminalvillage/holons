@@ -228,7 +228,7 @@
     }
 
     async function removeParticipant(participantId: string) {
-        const participants = quest.participants.filter(
+        const participants = (quest.participants || []).filter(
             (p: { id: string }) => p.id !== participantId
         );
 

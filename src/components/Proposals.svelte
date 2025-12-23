@@ -32,7 +32,7 @@
             const dateComparison = b.date - a.date;
             // If dates are equal, sort by participant count
             if (dateComparison === 0) {
-                return b.participants.length - a.participants.length;
+                return (b.participants || []).length - (a.participants || []).length;
             }
             return dateComparison;
         });
@@ -220,12 +220,12 @@
                         </button>
                         <button
                             on:click|stopPropagation={() => toggleAgree(proposal.id)}
-                            class="px-3 py-1 rounded-full {proposal.participants.includes('current-user') 
-                                ? 'bg-green-600 hover:bg-green-700' 
+                            class="px-3 py-1 rounded-full {(proposal.participants || []).includes('current-user')
+                                ? 'bg-green-600 hover:bg-green-700'
                                 : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm"
                             disabled={proposal.stoppers?.includes('current-user')}
                         >
-                            {proposal.participants.includes('current-user') ? 'Agreed' : 'Agree'}
+                            {(proposal.participants || []).includes('current-user') ? 'Agreed' : 'Agree'}
                         </button>
                     </div>
                 </div>
@@ -233,12 +233,12 @@
                 <div class="w-full bg-gray-600 rounded-full h-2.5">
                     <div
                         class="bg-{proposal.stoppers?.length ? 'red' : 'indigo'}-600 h-2.5 rounded-full"
-                        style="width: {(proposal.participants.length / 10) * 100}%"
+                        style="width: {((proposal.participants || []).length / 10) * 100}%"
                     ></div>
                 </div>
                 <div class="flex justify-between text-sm text-gray-400 mt-2">
                     <div class="space-x-4">
-                        <span>{proposal.participants.length} agreements</span>
+                        <span>{(proposal.participants || []).length} agreements</span>
                         {#if proposal.stoppers?.length}
                             <span class="text-red-400">{proposal.stoppers.length} stoppers</span>
                         {/if}

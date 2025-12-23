@@ -787,7 +787,7 @@
 					await holosphere.delete(holonID, "participations", participationToRemove.id || participationToRemove.key);
 					
 					// Update the item in the store to remove the user from participants
-					const updatedParticipants = item.participants.filter(p => p.id !== user.id);
+					const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
 					store = {
 						...store,
 						[item.key]: {
@@ -801,7 +801,7 @@
 			}
 		} else {
 			// For local items, update normally
-			const updatedParticipants = item.participants.filter(p => p.id !== user.id);
+			const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
 			const updatedItem = {
 				...item,
 				participants: updatedParticipants

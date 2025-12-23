@@ -34,7 +34,7 @@ export function calculateCurrencyBalance(
     Object.values(expenses).forEach(expense => {
         // Add null check for expense.currency before calling toLowerCase()
         if (expense && expense.currency && expense.currency.toLowerCase() === normalizedCurrency) {
-            const splitWithList = expense.splitWith || [];
+            const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
             const amountPerPerson = expense.amount / (splitWithList.length || 1);
             const payerIndex = users.findIndex(user => user.id === parseInt(expense.paidBy));
             
@@ -70,7 +70,7 @@ export function calculateCreditMatrix(
     
     Object.values(expenses).forEach(expense => {
         if (expense && expense.currency && expense.currency.toLowerCase() === normalizedCurrency) {
-            const splitWithList = expense.splitWith || [];
+            const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
             const amountPerPerson = expense.amount / (splitWithList.length || 1);
             const payerIndex = users.findIndex(user => user.id === parseInt(expense.paidBy));
             

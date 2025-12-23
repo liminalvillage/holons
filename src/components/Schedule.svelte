@@ -248,8 +248,8 @@
 						>
 							{quest.title} <span>{quest.location || ''}</span>
 							<span>
-								<p class="mb-0 text-muted">🙋‍♂️ {quest.participants.length}</p>
-								{#each quest.participants as participant}
+								<p class="mb-0 text-muted">🙋‍♂️ {(quest.participants || []).length}</p>
+								{#each quest.participants || [] as participant}
 									<p>{@html `@${participant.username}`}</p>
 								{/each}
 							</span>

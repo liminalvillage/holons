@@ -385,7 +385,7 @@
 							<div class="expense-info">
 								<h4>{expense.description}</h4>
 								<p class="paid-by">Paid by {users.find(u => u.id === parseInt(expense.paidBy))?.first_name || expense.paidBy}</p>
-								<p class="split-with">Split: {expense.splitWith.map(id => users.find(u => u.id === parseInt(id))?.first_name || id).join(', ')}</p>
+								<p class="split-with">Split: {(Array.isArray(expense.splitWith) ? expense.splitWith : []).map(id => users.find(u => u.id === parseInt(id))?.first_name || id).join(', ')}</p>
 							</div>
 							<div class="expense-amount">
 								<span class="amount">{formatAmount(expense.amount)}</span>

@@ -193,6 +193,9 @@
 			quest.appreciation = [];
 		}
 
+		if (!quest.participants) {
+			quest.participants = [];
+		}
 		const participantIndex = quest.participants.findIndex(
 			(p) => p.id === userId
 		);
@@ -488,13 +491,12 @@
 										<div class="flex items-center gap-1">
 											<span
 												class="opacity-70 font-bold text-base"
-												>🙋‍♂️ {quest.participants
-													.length}</span
+												>🙋‍♂️ {(quest.participants || []).length}</span
 											>
 											<div
 												class="flex -space-x-2 relative group"
 											>
-												{#each quest.participants.slice(0, 3) as participant}
+												{#each (quest.participants || []).slice(0, 3) as participant}
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
@@ -508,12 +510,11 @@
 														</div>
 													</div>
 												{/each}
-												{#if quest.participants.length > 3}
+												{#if (quest.participants || []).length > 3}
 													<div
 														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300"
 													>
-														+{quest.participants
-															.length - 3}
+														+{(quest.participants || []).length - 3}
 													</div>
 												{/if}
 											</div>

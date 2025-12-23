@@ -41,8 +41,8 @@
 
     $: checklistEntries = Object.entries(checklists);
     $: selectedChecklistData = selectedChecklist ? checklists[selectedChecklist] : null;
-    $: completedItems = selectedChecklistData ? selectedChecklistData.items.filter(item => item.checked).length : 0;
-    $: totalItems = selectedChecklistData ? selectedChecklistData.items.length : 0;
+    $: completedItems = selectedChecklistData ? (selectedChecklistData.items || []).filter(item => item.checked).length : 0;
+    $: totalItems = selectedChecklistData ? (selectedChecklistData.items || []).length : 0;
     $: pendingItems = totalItems - completedItems;
 
     // Filter checklists based on active filter
@@ -285,7 +285,7 @@
         
         try {
             const checklist = { ...checklists[checklistId] };
-            checklist.items = checklist.items.map((item) => ({
+            checklist.items = (checklist.items || []).map((item) => ({
                 ...item,
                 checked: false,
             }));
@@ -380,7 +380,7 @@
         
         try {
             const checklist = { ...checklists[checklistId] };
-            checklist.items = checklist.items.filter(
+            checklist.items = (checklist.items || []).filter(
                 (_, index) => index !== itemIndex
             );
 
@@ -547,7 +547,7 @@
                             </div>
                         {/each}
 
-                        {#if selectedChecklistData.items.length === 0}
+                        {#if (selectedChecklistData.items || []).length === 0}
                             <div class="text-center py-12">
                                 <div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
                                     <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -688,7 +688,7 @@
                                                     {/if}
                                                 </div>
                                                 <p class="text-sm text-gray-400">
-                                                    {checklist.items.filter(item => item.checked).length}/{checklist.items.length} completed
+                                                    {(checklist.items || []).filter(item => item.checked).length}/{(checklist.items || []).length} completed
                                                 </p>
                                             </div>
                                         </div>

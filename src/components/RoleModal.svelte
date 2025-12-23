@@ -99,7 +99,7 @@
     }
 
     async function removeParticipant(participantId: string) {
-        const participants = role.participants.filter((p: { id: string }) => p.id !== participantId);
+        const participants = (role.participants || []).filter((p: { id: string }) => p.id !== participantId);
         await updateRole({ participants });
     }
 
