@@ -210,3 +210,46 @@ export async function text2speech(prompt, filename){
   await fs.promises.writeFile(filename, buffer);
   return buffer
 }
+
+/**
+ * Extract items from an image using GPT-4o vision API
+ * @param {Buffer} imageBuffer - The image buffer to analyze
+ * @param {string} itemType - Type hint for items (e.g., 'tools', 'books', 'any')
+ * @returns {Promise<{items: Array<{name: string, value: number}>}>} - Object with array of items with names and estimated values
+ */
+export async function extractItemsFromImage(imageBuffer, itemType = 'any') {
+  const base64Image = imageBuffer.toString('base64');
+
+  let promptText = 'List all distinct items visible in this image that could be shared or borrowed in a community library.';
+  if (itemType !== 'any') {
+    promptText = `List all ${itemType} visible in this image that could be shared or borrowed.`;
+  }
+  promptText += ' Return a JSON object with an "items" array where each item has "name" (1-3 words, for books use title only without author) and "value" (estimated second-hand value in euros as an integer). Only include clearly identifiable items.';
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: promptText },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:image/jpeg;base64,${base64Image}`,
+              detail: "low"
+            }
+          }
+        ]
+      }],
+      response_format: { type: "json_object" },
+      max_tokens: 500
+    });
+
+    const result = JSON.parse(response.choices[0].message.content);
+    return result;
+  } catch (error) {
+    console.error('Error extracting items from image:', error);
+    return { items: [] };
+  }
+}

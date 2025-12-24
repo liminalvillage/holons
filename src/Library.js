@@ -5,6 +5,25 @@
 
 import { Markup } from 'telegraf';
 import { REAEventStore, REAEventFactory, REAAggregator } from './domain/rea/index.js';
+import { extractItemsFromImage } from './AI.js';
+import { Calendar } from './Calendar.js';
+
+/**
+ * Standard library item types supported by the system.
+ * @constant {Object.<string, string>}
+ */
+const LIBRARY_TYPES = {
+    TOOL: 'tool',
+    BOOK: 'book',
+    EQUIPMENT: 'equipment',
+    OTHER: 'other'
+};
+
+/**
+ * Number of items to display per page in the library.
+ * @constant {number}
+ */
+const ITEMS_PER_PAGE = 15;
 
 /**
  * Community library for managing shared items with credit-based borrowing.
@@ -30,55 +49,158 @@ class Library {
     constructor(bot, db) {
         this.bot = bot;
         this.db = db;
+        this.expensesInstance = null;
+        this.pendingPhotoItems = new Map(); // Store pending items from photo extraction per chat
+        this.borrowLocks = new Set(); // Prevent concurrent borrows of the same item
+        this.pendingBorrows = new Map(); // Store pending borrows waiting for date selection: key=holonId:itemId, value={userId, username, item, fromKeyboard}
+
+        // Initialize Calendar for date selection (date only, no time)
+        this.calendar = new Calendar(bot, {
+            date_format: 'YYYY-MM-DD',
+            time_selector_mod: false,
+            language: 'en',
+            bot_api: 'telegraf',
+            start_date: new Date() // Can't select past dates
+        });
 
         // Initialize REA components
         this.eventStore = new REAEventStore(db);
         this.eventFactory = REAEventFactory;
         this.aggregator = new REAAggregator(this.eventStore);
 
-        this.bot.command('removeitem', (ctx) => this.removeItem(ctx));
-        this.bot.command('additem', (ctx) => this.addItem(ctx));
+        // Register commands (using lib prefix to avoid conflicts with Checklists)
+        this.bot.command('library', (ctx) => this.showLibrary(ctx));
+        this.bot.command('inventory', (ctx) => this.showLibrary(ctx)); // Alias
+        this.bot.command('libadd', (ctx) => this.addItem(ctx));
+        this.bot.command('libremove', (ctx) => this.removeItem(ctx));
         this.bot.command('borrow', (ctx) => this.borrowItem(ctx, false));
         this.bot.command('return', (ctx) => this.returnItem(ctx, false));
-        this.bot.command('inventory', (ctx) => this.inventory(ctx));
-        this.bot.command('setcredits', (ctx) => this.setItemCredits(ctx));
-        this.bot.command('mycredits', (ctx) => this.showUserCredits(ctx));
-        this.bot.action(/borrow_(.+)/, (ctx) => this.borrowItem(ctx, true));
-        this.bot.action(/return_(.+)/, (ctx) => this.returnItem(ctx, true));
-        this.bot.command('stats', (ctx) => this.showStats(ctx));
+        this.bot.command('setvalue', (ctx) => this.setItemValue(ctx));
+        this.bot.command('libstats', (ctx) => this.showStats(ctx));
+
+        // Register actions
+        this.bot.action(/library_borrow_(.+)/, (ctx) => this.borrowItem(ctx, true));
+        this.bot.action(/libret_(.+)/, (ctx) => this.returnItem(ctx, true));
+        this.bot.action('library_add_photo', (ctx) => this.promptPhotoUpload(ctx));
+        this.bot.action('library_add_manual', (ctx) => this.promptManualAdd(ctx));
+        this.bot.action('library_enter_remove_mode', (ctx) => this.enterRemoveMode(ctx));
+        this.bot.action('library_exit_remove_mode', (ctx) => this.exitRemoveMode(ctx));
+        this.bot.action(/library_remove_(.+)/, (ctx) => this.removeItemFromKeyboard(ctx));
+        this.bot.action(/library_toggle_photo_(.+)/, (ctx) => this.togglePhotoItem(ctx));
+        this.bot.action('library_confirm_photo', (ctx) => this.confirmPhotoItems(ctx));
+        this.bot.action('library_cancel_photo', (ctx) => this.cancelPhotoItems(ctx));
+
+        // Calendar date selection for library borrows
+        this.bot.action(/lb_d_(.+)/, (ctx) => this.handleBorrowDateSelected(ctx, ctx.match[1]));
+        this.bot.action(/lb_m_(.+)_(.+)/, (ctx) => this.handleCalendarNavigation(ctx));
+        this.bot.action('library_cancel_borrow', (ctx) => this.cancelPendingBorrow(ctx));
+
+        // Pagination actions
+        this.bot.action(/library_page_(\d+)/, (ctx) => {
+            const page = parseInt(ctx.match[1]);
+            this.showLibrary(ctx, { page });
+        });
+        this.bot.action(/library_page_(\d+)_rm/, (ctx) => {
+            const page = parseInt(ctx.match[1]);
+            this.showLibrary(ctx, { page, removeMode: true });
+        });
+    }
+
+    // Set expenses instance for integration
+    setExpensesInstance(expensesInstance) {
+        this.expensesInstance = expensesInstance;
+    }
+
+    // Helper method to create a standardized library item
+    createLibraryItem(id, type, options = {}) {
+        return {
+            id: id,
+            type: type || LIBRARY_TYPES.OTHER,
+            borrowed: false,
+            createdBy: options.createdBy,
+            borrower: null,
+            category: options.category || 'Uncategorized',
+            description: options.description || '',
+            value: options.value || 0,
+            created: new Date()
+        };
+    }
+
+    // Helper method to get item icon based on type
+    getItemIcon(item) {
+        if (typeof item === 'string') {
+            return '📦';
+        }
+        switch (item.type) {
+            case LIBRARY_TYPES.TOOL: return '🔧';
+            case LIBRARY_TYPES.BOOK: return '📚';
+            case LIBRARY_TYPES.EQUIPMENT: return '⚙️';
+            case LIBRARY_TYPES.OTHER:
+            default: return '📦';
+        }
+    }
+
+    // Helper method to get item display title
+    getItemDisplayTitle(item) {
+        if (typeof item === 'string') return item;
+        return item.id;
+    }
+
+    // Helper method to get type display name
+    getTypeDisplayName(type) {
+        switch (type) {
+            case LIBRARY_TYPES.TOOL: return 'tool';
+            case LIBRARY_TYPES.BOOK: return 'book';
+            case LIBRARY_TYPES.EQUIPMENT: return 'equipment';
+            case LIBRARY_TYPES.OTHER:
+            default: return 'item';
+        }
+    }
+
+    // Helper to detect item type from name
+    detectItemType(itemName) {
+        const name = itemName.toLowerCase();
+        const toolKeywords = ['hammer', 'drill', 'saw', 'screwdriver', 'wrench', 'pliers', 'shovel', 'rake', 'axe', 'knife'];
+        const bookKeywords = ['book', 'manual', 'guide', 'novel', 'textbook'];
+        const equipmentKeywords = ['camera', 'projector', 'speaker', 'tent', 'bicycle', 'ladder'];
+
+        if (toolKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.TOOL;
+        if (bookKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.BOOK;
+        if (equipmentKeywords.some(k => name.includes(k))) return LIBRARY_TYPES.EQUIPMENT;
+        return LIBRARY_TYPES.OTHER;
     }
 
     async addItem(ctx) {
         let holonId = ctx.chat.id;
-        const [_, item, credits, ...categoryWords] = ctx.message.text.split(/\s+/);
+        const [_, item, value, ...categoryWords] = ctx.message.text.split(/\s+/);
         const category = categoryWords.join(' ') || 'Uncategorized';
         if (!item) {
-            ctx.reply('Please specify an item to add and optional credits. eg: /additem hammer 5');
+            ctx.reply('Please specify an item to add. eg: /libadd hammer 10 tools');
             return;
         }
-        if(await this.db.get(holonId.toString(), 'library', item)) {
+        if (await this.db.get(holonId.toString(), 'library', item)) {
             ctx.reply(`${item} is already in the library.`);
             return;
         }
 
-        const itemCredits = parseInt(credits) || 1;
-        await this.db.put(holonId.toString(), 'library', { 
-            id: item, 
-            borrowed: false,
-            credits: itemCredits,
-            owner: ctx.from.id,
-            borrower: null,
-            totalEarned: 0,
-            category: category
+        const itemValue = parseInt(value) || 0;
+        const itemType = this.detectItemType(item);
+        const libraryItem = this.createLibraryItem(item, itemType, {
+            createdBy: ctx.from.id,
+            category: category,
+            value: itemValue
         });
-        ctx.reply(`Added ${item} to the library (${itemCredits} credits per borrow).`);
+
+        await this.db.put(holonId.toString(), 'library', libraryItem);
+        const icon = this.getItemIcon(libraryItem);
+        ctx.reply(`${icon} Added ${item} to the library${itemValue > 0 ? ` (value: ${itemValue})` : ''}.`);
     }
 
     async removeItem(ctx) {
         let holonId = ctx.chat.id;
-        const item = ctx.message.text.split('/removeitem ')[1];
+        const item = ctx.message.text.split('/libremove ')[1];
         if (!item) {
-            ctx.reply('Please specify an item to remove. eg: /removeitem hammer');
+            ctx.reply('Please specify an item to remove. eg: /libremove hammer');
             return;
         }
         await this.db.delete(holonId.toString(), 'library', item);
@@ -86,87 +208,296 @@ class Library {
     }
 
     async borrowItem(ctx, fromKeyboard = false) {
-        let holonId = ctx.chat.id;
-        const item = fromKeyboard ? ctx.match[1] : ctx.message.text.split('/borrow ')[1];
+        let holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+        let item;
+        if (fromKeyboard) {
+            item = ctx.match[1];
+        } else {
+            item = ctx.message.text.split('/borrow ')[1];
+        }
 
         if (!item) {
-            ctx.reply('Please specify an item to borrow. eg: /borrow hammer');
+            if (fromKeyboard) await ctx.answerCbQuery('No item specified').catch(() => {});
+            else ctx.reply('Please specify an item to borrow. eg: /borrow hammer');
             return;
         }
 
+        // Create a lock key to prevent concurrent borrows
+        const lockKey = `${holonId}:${item}`;
+        if (this.borrowLocks.has(lockKey)) {
+            if (fromKeyboard) await ctx.answerCbQuery('Someone else is borrowing this item, please try again.').catch(() => {});
+            else ctx.reply('Someone else is borrowing this item, please try again.');
+            return;
+        }
+
+        // Check if item exists and is available
         let currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
-            ctx.reply(`${item} is not in the library.`);
+            if (fromKeyboard) await ctx.answerCbQuery(`${item} is not in the library.`).catch(() => {});
+            else ctx.reply(`${item} is not in the library.`);
             return;
         }
-        if(currentItem.borrowed) {
-            ctx.reply(`${item} is already borrowed by ${currentItem.borrower}.`);
+        if (currentItem.borrowed) {
+            if (fromKeyboard) await ctx.answerCbQuery(`${item} is already borrowed by ${currentItem.borrower}.`).catch(() => {});
+            else ctx.reply(`${item} is already borrowed by ${currentItem.borrower}.`);
             return;
         }
 
-        // Check if it's the owner borrowing
-        const isOwner = currentItem.owner === ctx.from.id;
+        // Acquire lock to prevent others from borrowing while calendar is shown
+        this.borrowLocks.add(lockKey);
 
-        if (!isOwner) {
-            // Handle credit checks and transactions only for non-owners
-            const deposit = Math.ceil(currentItem.credits * 0.5);
-            const totalCost = currentItem.credits + deposit;
+        // Store pending borrow info with name for initials
+        const firstName = ctx.from.first_name || '';
+        const lastName = ctx.from.last_name || '';
+        this.pendingBorrows.set(lockKey, {
+            userId: ctx.from.id,
+            username: ctx.from.username,
+            firstName: firstName,
+            lastName: lastName,
+            item: currentItem,
+            itemName: item,
+            fromKeyboard: fromKeyboard
+        });
 
-            let userCredits = await this.getUserCredits(ctx.from.id, holonId);
-            if (userCredits < totalCost) {
-                ctx.reply(`You need ${currentItem.credits} credits plus ${deposit} credit deposit. You have ${userCredits} credits.`);
+        // Show calendar to select return date
+        const icon = this.getItemIcon(currentItem);
+        const calendarKeyboard = this.createLibraryCalendarKeyboard(new Date(), item);
+
+        if (fromKeyboard) {
+            await ctx.answerCbQuery().catch(() => {});
+            await ctx.editMessageText(
+                `📅 Borrowing ${icon} ${item}\n\nSelect return date:`,
+                { reply_markup: calendarKeyboard }
+            ).catch((error) => { console.log(error) });
+        } else {
+            await ctx.reply(
+                `📅 Borrowing ${icon} ${item}\n\nSelect return date:`,
+                { reply_markup: calendarKeyboard }
+            );
+        }
+    }
+
+    // Create calendar keyboard with library-specific callback prefixes
+    createLibraryCalendarKeyboard(date) {
+        const displayDate = new Date(date);
+        displayDate.setDate(1);
+        displayDate.setHours(0, 0, 0, 0);
+
+        const today = new Date();
+        const year = displayDate.getFullYear();
+        const month = displayDate.getMonth();
+        const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+        // Day names
+        const days = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        const keyboard = { inline_keyboard: [] };
+
+        // Header row: << < Month Year > >>
+        keyboard.inline_keyboard.push([
+            { text: '<<', callback_data: `lb_m_${monthStr}_yy` },  // prev year
+            { text: '<', callback_data: `lb_m_${monthStr}_mm` },   // prev month
+            { text: `${months[month]} ${year}`, callback_data: ' ' },
+            { text: '>', callback_data: `lb_m_${monthStr}_pp` },   // next month
+            { text: '>>', callback_data: `lb_m_${monthStr}_py` }   // next year
+        ]);
+
+        // Day names row
+        keyboard.inline_keyboard.push(days.map(d => ({ text: d, callback_data: ' ' })));
+
+        // Calculate days in month and first day of week
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const firstDayOfWeek = new Date(year, month, 1).getDay();
+
+        // Build day rows
+        let dayNum = 1;
+        for (let week = 0; week < 6 && dayNum <= daysInMonth; week++) {
+            const row = [];
+            for (let dow = 0; dow < 7; dow++) {
+                if ((week === 0 && dow < firstDayOfWeek) || dayNum > daysInMonth) {
+                    row.push({ text: ' ', callback_data: ' ' });
+                } else {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                    const thisDate = new Date(year, month, dayNum);
+                    const isToday = thisDate.toDateString() === today.toDateString();
+                    const isPast = thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+                    if (isPast) {
+                        row.push({ text: ' ', callback_data: ' ' });
+                    } else {
+                        const dayText = isToday ? `(${dayNum})` : `${dayNum}`;
+                        row.push({ text: dayText, callback_data: `lb_d_${dateStr}` });
+                    }
+                    dayNum++;
+                }
+            }
+            keyboard.inline_keyboard.push(row);
+        }
+
+        // Cancel button
+        keyboard.inline_keyboard.push([
+            { text: '❌ Cancel', callback_data: 'library_cancel_borrow' }
+        ]);
+
+        return keyboard;
+    }
+
+    // Handle calendar navigation
+    async handleCalendarNavigation(ctx) {
+        await ctx.answerCbQuery().catch(() => {});
+
+        // Format: lb_m_YYYY-MM_action
+        const monthStr = ctx.match[1]; // YYYY-MM
+        const action = ctx.match[2];   // mm, pp, yy, py
+
+        const [year, month] = monthStr.split('-').map(Number);
+        let date = new Date(year, month - 1, 1);
+
+        switch (action) {
+            case 'py': // next year
+                date.setFullYear(date.getFullYear() + 1);
+                break;
+            case 'yy': // prev year
+                date.setFullYear(date.getFullYear() - 1);
+                break;
+            case 'pp': // next month
+                date.setMonth(date.getMonth() + 1);
+                break;
+            case 'mm': // prev month
+                date.setMonth(date.getMonth() - 1);
+                break;
+        }
+
+        const calendarKeyboard = this.createLibraryCalendarKeyboard(date);
+        await ctx.editMessageReplyMarkup(calendarKeyboard).catch((error) => { console.log(error) });
+    }
+
+    // Handle date selection and complete the borrow
+    async handleBorrowDateSelected(ctx, dateStr) {
+        const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+
+        // Find the pending borrow for this user in this chat
+        let pendingKey = null;
+        let pendingBorrow = null;
+        for (const [key, value] of this.pendingBorrows.entries()) {
+            if (key.startsWith(`${holonId}:`) && value.userId === ctx.from.id) {
+                pendingKey = key;
+                pendingBorrow = value;
+                break;
+            }
+        }
+
+        if (!pendingBorrow) {
+            await ctx.answerCbQuery('No pending borrow found. Please try again.').catch(() => {});
+            return;
+        }
+
+        const { itemName, username, firstName, lastName } = pendingBorrow;
+        const returnDate = new Date(dateStr);
+
+        // Create initials from first name and last name
+        const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : '';
+        const lastInitial = lastName ? lastName.charAt(0).toUpperCase() : '';
+        const initials = firstInitial + lastInitial || (username ? username.charAt(0).toUpperCase() : '?');
+
+        try {
+            // Re-check item is still available
+            const freshItem = await this.db.get(holonId.toString(), 'library', itemName);
+            if (!freshItem || freshItem.borrowed) {
+                await ctx.answerCbQuery('Item is no longer available.').catch(() => {});
+                this.pendingBorrows.delete(pendingKey);
+                this.borrowLocks.delete(pendingKey);
+                await this.showLibrary(ctx);
                 return;
             }
 
-            // Deduct credits including deposit
-            await this.updateUserCredits(ctx.from.id, holonId, -totalCost);
-            await this.db.put(holonId.toString(), 'deposits', {
-                id: item,
-                amount: deposit,
-                borrower: ctx.from.id
-            });
+            // Check if it's the owner borrowing
+            const isOwner = freshItem.createdBy === ctx.from.id;
 
-            // Add credits to owner
-            await this.updateUserCredits(currentItem.owner, holonId, currentItem.credits);
-            currentItem.totalEarned += currentItem.credits;
+            // Create expense entry for borrowed item (if has value and not owner)
+            if (!isOwner && freshItem.value > 0) {
+                try {
+                    const expense = {
+                        id: Date.now(),
+                        date: Date.now(),
+                        amount: freshItem.value,
+                        currency: 'credits',
+                        description: `Borrowed: ${itemName}`,
+                        paidBy: freshItem.createdBy,
+                        splitWith: [ctx.from.id],
+                        itemId: itemName,
+                        type: 'borrow'
+                    };
+                    await this.db.put(holonId.toString(), 'expenses', expense);
 
-            // Create REA events for the borrow transaction
-            try {
-                const events = this.eventFactory.itemBorrowed(
-                    holonId,
-                    ctx.from,
-                    currentItem,
-                    currentItem.credits,
-                    deposit
-                );
-                await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
-                console.log(`Item ${item} borrowed with ${events.length} REA events`);
-            } catch (error) {
-                console.error('Error creating REA events for borrow:', error);
+                    const events = this.eventFactory.itemBorrowed(
+                        holonId,
+                        ctx.from,
+                        freshItem,
+                        freshItem.value,
+                        0
+                    );
+                    await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
+                } catch (error) {
+                    console.error('Error creating borrow expense/events:', error);
+                }
             }
-        }
 
-        currentItem.borrowed = true;
-        currentItem.borrower = ctx.from.username;
-        await this.db.put(holonId.toString(), 'library', currentItem);
+            // Update item with borrow info including return date and initials
+            freshItem.borrowed = true;
+            freshItem.borrower = username;
+            freshItem.borrowerId = ctx.from.id;
+            freshItem.borrowerInitials = initials;
+            freshItem.borrowedAt = new Date();
+            freshItem.returnBy = returnDate;
+            await this.db.put(holonId.toString(), 'library', freshItem);
 
-        if (fromKeyboard) {
+            await ctx.answerCbQuery(`Borrowed until ${dateStr}`).catch(() => {});
+
+            // Show updated library
             let list = await this.getLibraryItems(ctx);
-            ctx.editMessageText('Here is the library inventory:', this.getLibraryKeyboard(list))
-                .catch((error) => { console.log(error) });
-        } else {
-            const message = isOwner ?
-                `You borrowed your own item: ${item}` :
-                `${currentItem.borrower} borrowed ${item} for ${currentItem.credits} credits.`;
-            ctx.reply(message).catch((err) => { console.log(err) });
+            const icon = this.getItemIcon(freshItem);
+            const keyboard = this.getLibraryKeyboard(list);
+
+            // Build confirmation message with credit info if applicable
+            let confirmMsg = `${icon} ${firstName || username} borrowed ${itemName}\n📅 Return by: ${dateStr}`;
+            if (!isOwner && freshItem.value > 0) {
+                confirmMsg += `\n💳 ${freshItem.value}● charged`;
+            }
+            confirmMsg += '\n\n📦 Library:';
+
+            await ctx.editMessageText(confirmMsg, keyboard).catch(() => {});
+
+        } finally {
+            // Clean up
+            this.pendingBorrows.delete(pendingKey);
+            this.borrowLocks.delete(pendingKey);
         }
     }
 
-    async setItemCredits(ctx) {
+    // Cancel pending borrow
+    async cancelPendingBorrow(ctx) {
+        const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+
+        // Find and remove the pending borrow for this user
+        for (const [key, value] of this.pendingBorrows.entries()) {
+            if (key.startsWith(`${holonId}:`) && value.userId === ctx.from.id) {
+                this.pendingBorrows.delete(key);
+                this.borrowLocks.delete(key);
+                break;
+            }
+        }
+
+        await ctx.answerCbQuery('Borrow cancelled').catch(() => {});
+        await this.showLibrary(ctx);
+    }
+
+    async setItemValue(ctx) {
         let holonId = ctx.chat.id;
-        const [_, item, credits] = ctx.message.text.split(/\s+/);
-        if (!item || !credits) {
-            ctx.reply('Please specify item and credits. eg: /setcredits hammer 5');
+        const [_, item, value] = ctx.message.text.split(/\s+/);
+        if (!item || !value) {
+            ctx.reply('Please specify item and value. eg: /setvalue hammer 10');
             return;
         }
 
@@ -176,121 +507,427 @@ class Library {
             return;
         }
 
-        if (currentItem.owner !== ctx.from.id) {
-            ctx.reply(`Only the owner can change the credits for ${item}.`);
+        if (currentItem.createdBy !== ctx.from.id) {
+            ctx.reply(`Only the owner can change the value for ${item}.`);
             return;
         }
 
-        currentItem.credits = parseInt(credits);
+        currentItem.value = parseInt(value) || 0;
         await this.db.put(holonId.toString(), 'library', currentItem);
-        ctx.reply(`Updated ${item} to ${credits} credits per borrow.`);
-    }
-
-    async showUserCredits(ctx) {
-        let holonId = ctx.chat.id;
-        const credits = await this.getUserCredits(ctx.from.id, holonId);
-        const items = await this.getLibraryItems(ctx);
-        let earnings = 0;
-        
-        items.forEach(item => {
-            if (item.owner === ctx.from.id) {
-                earnings += item.totalEarned || 0;
-            }
-        });
-
-        ctx.reply(`Your credits: ${credits}\nTotal earnings: ${earnings}`);
-    }
-
-    async getUserCredits(userId, holonId) {
-        const credits = await this.db.get(holonId.toString(), 'credits', userId.toString());
-        return credits?.amount || 10; // New users start with 10 credits
-    }
-
-    async updateUserCredits(userId, holonId, amount) {
-        const current = await this.getUserCredits(userId, holonId);
-        await this.db.put(holonId.toString(), 'credits', {
-            id: userId.toString(),
-            amount: current + amount
-        });
+        const icon = this.getItemIcon(currentItem);
+        ctx.reply(`${icon} Updated ${item} value to ${currentItem.value}.`);
     }
 
     async returnItem(ctx, fromKeyboard = false) {
-        let holonId = ctx.chat.id;
-        const item = fromKeyboard ? ctx.match[1] : ctx.message.text.split('/return ')[1];
+        let holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+        let item;
+        if (fromKeyboard) {
+            item = ctx.match[1];
+        } else {
+            item = ctx.message.text.split('/return ')[1];
+        }
 
         if (!item) {
-            ctx.reply('Please specify an item to return. eg: /return hammer');
+            if (fromKeyboard) await ctx.answerCbQuery('No item specified').catch(() => {});
+            else ctx.reply('Please specify an item to return. eg: /return hammer');
             return;
         }
 
         let currentItem = await this.db.get(holonId.toString(), 'library', item);
         if (!currentItem) {
-            ctx.reply(`${item} is not in the library.`);
+            if (fromKeyboard) await ctx.answerCbQuery(`${item} is not in the library.`).catch(() => {});
+            else ctx.reply(`${item} is not in the library.`);
             return;
         }
-        if(!currentItem.borrowed) {
-            ctx.reply(`${item} is not borrowed.`);
-            return;
-        }
-
-        if (currentItem.borrower !== ctx.from.username) {
-            ctx.reply(`Only ${currentItem.borrower} can return this item.`);
+        if (!currentItem.borrowed) {
+            if (fromKeyboard) await ctx.answerCbQuery(`${item} is not borrowed.`).catch(() => {});
+            else ctx.reply(`${item} is not borrowed.`);
             return;
         }
 
-        // Return deposit if item is returned in good condition
-        const deposit = await this.db.get(holonId.toString(), 'deposits', currentItem.id);
-        if (deposit) {
-            await this.updateUserCredits(ctx.from.id, holonId, deposit.amount);
-            await this.db.delete(holonId.toString(), 'deposits', currentItem.id);
+        // Check by borrowerId (more reliable) or fall back to username
+        const isBorrower = currentItem.borrowerId === ctx.from.id ||
+                          currentItem.borrower === ctx.from.username;
+        if (!isBorrower) {
+            if (fromKeyboard) await ctx.answerCbQuery(`Only ${currentItem.borrower} can return this item.`).catch(() => {});
+            else ctx.reply(`Only ${currentItem.borrower} can return this item.`);
+            return;
+        }
 
-            // Create REA events for the return transaction
+        // Check if it's the owner returning (owner doesn't pay/get refunded)
+        const isOwner = currentItem.createdBy === ctx.from.id;
+
+        // Create reverse expense entry to cancel the borrow charge
+        if (!isOwner && currentItem.value > 0) {
             try {
-                const events = this.eventFactory.itemReturned(
-                    holonId,
-                    ctx.from,
-                    currentItem,
-                    deposit.amount
-                );
-                await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
-                console.log(`Item ${item} returned with ${events.length} REA events`);
+                const refundExpense = {
+                    id: Date.now(),
+                    date: Date.now(),
+                    amount: currentItem.value,
+                    currency: 'credits',
+                    description: `Returned: ${item}`,
+                    paidBy: ctx.from.id,
+                    splitWith: [currentItem.createdBy],
+                    itemId: item,
+                    type: 'return'
+                };
+                await this.db.put(holonId.toString(), 'expenses', refundExpense);
             } catch (error) {
-                console.error('Error creating REA events for return:', error);
+                console.error('Error creating return expense:', error);
             }
+        }
 
-            ctx.reply(`Deposit of ${deposit.amount} credits returned.`);
+        // Create REA events for the return transaction
+        try {
+            const events = this.eventFactory.itemReturned(
+                holonId,
+                ctx.from,
+                currentItem,
+                currentItem.value || 0
+            );
+            await Promise.all(events.map(e => this.eventStore.put(holonId, e)));
+        } catch (error) {
+            console.error('Error creating REA events for return:', error);
         }
 
         currentItem.borrowed = false;
         currentItem.borrower = null;
+        currentItem.borrowerId = null;
+        currentItem.returnedAt = new Date();
         await this.db.put(holonId.toString(), 'library', currentItem);
 
         if (fromKeyboard) {
+            const refundMsg = (!isOwner && currentItem.value > 0) ? ` (${currentItem.value}● refunded)` : '';
+            await ctx.answerCbQuery(`Returned${refundMsg}`).catch(() => {});
             let list = await this.getLibraryItems(ctx);
-            ctx.editMessageText('Here is the library inventory:', this.getLibraryKeyboard(list))
+            await ctx.editMessageText('📦 Library:', this.getLibraryKeyboard(list))
                 .catch((error) => { console.log(error) });
         } else {
-            ctx.reply(`You returned ${item}.`);
+            const icon = this.getItemIcon(currentItem);
+            const refundMsg = (!isOwner && currentItem.value > 0) ? `\n💳 ${currentItem.value}● refunded` : '';
+            ctx.reply(`${icon} You returned ${item}.${refundMsg}`);
         }
     }
 
-    async inventory(ctx) {
-        let list = await this.getLibraryItems(ctx);
-        if (list.length === 0) {
-            ctx.reply('The library is empty.');
+    // Show library with new interface
+    async showLibrary(ctx, options = {}) {
+        const removeMode = options.removeMode || false;
+        const page = options.page || 0;
+        const holonId = ctx.chat?.id || ctx.callbackQuery?.message?.chat?.id;
+
+        let list = await this.db.getAll(holonId.toString(), 'library');
+        list.sort((a, b) => a.id.localeCompare(b.id));
+
+        if (list.length === 0 && !removeMode) {
+            await ctx.reply('📦 The library is empty.\n\nUse /libadd to add items or send a photo to add items from a picture.',
+                Markup.inlineKeyboard([
+                    [Markup.button.callback('📷 Add from Photo', 'library_add_photo')],
+                    [Markup.button.callback('➕ Add Manually', 'library_add_manual')]
+                ]));
             return;
         }
-        ctx.reply('Here is the library inventory:', this.getLibraryKeyboard(list));
+
+        const totalPages = Math.ceil(list.length / ITEMS_PER_PAGE);
+        const currentPage = Math.min(Math.max(0, page), totalPages - 1);
+        const keyboard = this.getLibraryKeyboard(list, removeMode, currentPage);
+
+        const pageInfo = totalPages > 1 ? ` (${currentPage + 1}/${totalPages})` : '';
+        const headerText = `📦 Library${pageInfo}:`;
+
+        if (ctx.callbackQuery) {
+            await ctx.answerCbQuery().catch(() => {});
+            await ctx.editMessageText(headerText, keyboard)
+                .catch((error) => { console.log(error) });
+        } else {
+            await ctx.reply(headerText, keyboard);
+        }
     }
 
-    getLibraryKeyboard(list) {
-        let mu = [];
-        list.forEach(function (item) {
-            const status = item.borrowed ? `( ${item.borrower} )` : ` (${item.credits} credits)`;
-            mu.push([Markup.button.callback(item.id + status, 
-                item.borrowed ? `return_${item.id}` : `borrow_${item.id}`)]);
+    getLibraryKeyboard(list, removeMode = false, page = 0) {
+        let buttons = [];
+
+        // Calculate pagination
+        const totalPages = Math.ceil(list.length / ITEMS_PER_PAGE);
+        const startIndex = page * ITEMS_PER_PAGE;
+        const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, list.length);
+        const pageItems = list.slice(startIndex, endIndex);
+
+        // Add item buttons for current page
+        pageItems.forEach((item) => {
+            const icon = this.getItemIcon(item);
+            if (removeMode) {
+                buttons.push([Markup.button.callback(
+                    `❌ ${icon} ${item.id}`,
+                    `library_remove_${item.id}`
+                )]);
+            } else if (item.borrowed) {
+                // Borrowed item - show return button with initials and return date
+                const initials = item.borrowerInitials || (item.borrower ? item.borrower.charAt(0).toUpperCase() : '?');
+                let returnInfo = initials;
+                if (item.returnBy) {
+                    const returnDate = new Date(item.returnBy);
+                    const day = returnDate.getDate();
+                    const month = returnDate.getMonth() + 1;
+                    returnInfo = `${initials} ${day}/${month}`;
+                }
+                buttons.push([Markup.button.callback(
+                    `🔄 ${icon} ${item.id} (${returnInfo})`,
+                    `libret_${item.id}`
+                )]);
+            } else {
+                // Available item - show borrow button
+                const valueText = item.value > 0 ? ` (${item.value}●)` : '';
+                buttons.push([Markup.button.callback(
+                    `${icon} ${item.id}${valueText}`,
+                    `library_borrow_${item.id}`
+                )]);
+            }
         });
-        return Markup.inlineKeyboard(mu);
+
+        // Add pagination buttons if needed
+        if (totalPages > 1) {
+            const paginationButtons = [];
+            const suffix = removeMode ? '_rm' : '';
+
+            if (page > 0) {
+                paginationButtons.push(Markup.button.callback('⬅️ Prev', `library_page_${page - 1}${suffix}`));
+            }
+            paginationButtons.push(Markup.button.callback(`${page + 1}/${totalPages}`, ' '));
+            if (page < totalPages - 1) {
+                paginationButtons.push(Markup.button.callback('Next ➡️', `library_page_${page + 1}${suffix}`));
+            }
+
+            buttons.push(paginationButtons);
+        }
+
+        // Add control buttons
+        if (removeMode) {
+            buttons.push([
+                Markup.button.callback('🔙 Back', 'library_exit_remove_mode')
+            ]);
+        } else {
+            buttons.push([
+                Markup.button.callback('📷 Add from Photo', 'library_add_photo'),
+                Markup.button.callback('➕ Add', 'library_add_manual')
+            ]);
+            if (list.length > 0) {
+                buttons.push([
+                    Markup.button.callback('🗑️ Remove Items', 'library_enter_remove_mode')
+                ]);
+            }
+        }
+
+        return Markup.inlineKeyboard(buttons);
+    }
+
+    // Enter remove mode
+    async enterRemoveMode(ctx) {
+        await ctx.answerCbQuery().catch(() => {});
+        await this.showLibrary(ctx, { removeMode: true });
+    }
+
+    // Exit remove mode
+    async exitRemoveMode(ctx) {
+        await ctx.answerCbQuery().catch(() => {});
+        await this.showLibrary(ctx, { removeMode: false });
+    }
+
+    // Remove item from keyboard action
+    async removeItemFromKeyboard(ctx) {
+        const itemId = ctx.match[1];
+        const holonId = ctx.chat.id;
+
+        await this.db.delete(holonId.toString(), 'library', itemId);
+        await ctx.answerCbQuery(`Removed ${itemId}`);
+        await this.showLibrary(ctx, { removeMode: true });
+    }
+
+    // Prompt for photo upload
+    async promptPhotoUpload(ctx) {
+        await ctx.answerCbQuery().catch(() => {});
+        const holonId = ctx.chat.id;
+
+        this.pendingPhotoItems.set(holonId, { waiting: true, items: [], selected: new Set() });
+
+        await ctx.reply(
+            '📷 Please send a photo of the items you want to add to the library.\n\nSupported formats: JPG, PNG, WEBP\n\nI will extract the items from the photo using AI.',
+            Markup.inlineKeyboard([
+                [Markup.button.callback('❌ Cancel', 'library_cancel_photo')]
+            ])
+        );
+    }
+
+    // Handle photo upload (to be called from bot's photo handler)
+    async handlePhotoUpload(ctx) {
+        const holonId = ctx.chat.id;
+        const pending = this.pendingPhotoItems.get(holonId);
+
+        if (!pending || !pending.waiting) {
+            return false;
+        }
+
+        try {
+            // Get the highest resolution photo
+            const photo = ctx.message.photo[ctx.message.photo.length - 1];
+            const file = await ctx.telegram.getFile(photo.file_id);
+
+            // Validate file type
+            const filePath = file.file_path.toLowerCase();
+            const supportedFormats = ['.jpg', '.jpeg', '.png', '.webp'];
+            const isSupported = supportedFormats.some(ext => filePath.endsWith(ext));
+
+            if (!isSupported) {
+                await ctx.reply('❌ Unsupported image format. Please send a JPG, PNG, or WEBP image.',
+                    Markup.inlineKeyboard([
+                        [Markup.button.callback('❌ Cancel', 'library_cancel_photo')]
+                    ])
+                );
+                return true; // Handled, but invalid format
+            }
+
+            await ctx.reply('🔍 Analyzing image...');
+
+            const fileUrl = `https://api.telegram.org/file/bot${ctx.telegram.token}/${file.file_path}`;
+
+            // Download the image
+            const response = await fetch(fileUrl);
+            const imageBuffer = Buffer.from(await response.arrayBuffer());
+
+            // Extract items using AI
+            const result = await extractItemsFromImage(imageBuffer);
+            const items = result.items || [];
+
+            if (items.length === 0) {
+                await ctx.reply('No items could be identified in the image. Try with a clearer photo or add items manually.');
+                this.pendingPhotoItems.delete(holonId);
+                return true;
+            }
+
+            // Store items for selection (items are now {name, value} objects)
+            // Use indices for selection since objects can't be compared by value in Set
+            const allIndices = new Set(items.map((_, i) => i));
+            this.pendingPhotoItems.set(holonId, {
+                waiting: false,
+                items: items,
+                selected: allIndices // Select all by default
+            });
+
+            // Show items for confirmation
+            await ctx.reply(
+                `📦 Found ${items.length} items. Toggle to select which to add:`,
+                this.getPhotoItemsKeyboard(holonId)
+            );
+
+            return true;
+        } catch (error) {
+            console.error('Error processing photo:', error);
+            await ctx.reply('Error processing the image. Please try again.');
+            this.pendingPhotoItems.delete(holonId);
+            return true;
+        }
+    }
+
+    // Get keyboard for photo items selection
+    getPhotoItemsKeyboard(holonId) {
+        const pending = this.pendingPhotoItems.get(holonId);
+        if (!pending) return Markup.inlineKeyboard([]);
+
+        const buttons = pending.items.map((item, index) => {
+            const isSelected = pending.selected.has(index);
+            const itemName = typeof item === 'string' ? item : item.name;
+            const itemValue = typeof item === 'object' && item.value ? ` (${item.value}●)` : '';
+            return [Markup.button.callback(
+                `${isSelected ? '✅' : '⬜️'} ${itemName}${itemValue}`,
+                `library_toggle_photo_${index}`
+            )];
+        });
+
+        buttons.push([
+            Markup.button.callback('✅ Add Selected', 'library_confirm_photo'),
+            Markup.button.callback('❌ Cancel', 'library_cancel_photo')
+        ]);
+
+        return Markup.inlineKeyboard(buttons);
+    }
+
+    // Toggle photo item selection
+    async togglePhotoItem(ctx) {
+        const index = parseInt(ctx.match[1]);
+        const holonId = ctx.chat.id;
+        const pending = this.pendingPhotoItems.get(holonId);
+
+        if (!pending || !pending.items[index]) {
+            await ctx.answerCbQuery('Item not found');
+            return;
+        }
+
+        // Toggle by index
+        if (pending.selected.has(index)) {
+            pending.selected.delete(index);
+        } else {
+            pending.selected.add(index);
+        }
+
+        await ctx.answerCbQuery().catch(() => {});
+        await ctx.editMessageText(
+            `📦 Found ${pending.items.length} items. Toggle to select which to add:`,
+            this.getPhotoItemsKeyboard(holonId)
+        ).catch((error) => { console.log(error) });
+    }
+
+    // Confirm and add photo items
+    async confirmPhotoItems(ctx) {
+        const holonId = ctx.chat.id;
+        const pending = this.pendingPhotoItems.get(holonId);
+
+        if (!pending || pending.selected.size === 0) {
+            await ctx.answerCbQuery('No items selected');
+            return;
+        }
+
+        let added = 0;
+        for (const index of pending.selected) {
+            const item = pending.items[index];
+            // Support both old string format and new {name, value} format
+            const itemName = typeof item === 'string' ? item : item.name;
+            const itemValue = typeof item === 'object' && item.value ? item.value : 0;
+
+            // Check if item already exists
+            if (await this.db.get(holonId.toString(), 'library', itemName)) {
+                continue;
+            }
+
+            const itemType = this.detectItemType(itemName);
+            const libraryItem = this.createLibraryItem(itemName, itemType, {
+                createdBy: ctx.from.id,
+                value: itemValue
+            });
+
+            await this.db.put(holonId.toString(), 'library', libraryItem);
+            added++;
+        }
+
+        this.pendingPhotoItems.delete(holonId);
+
+        await ctx.answerCbQuery(`Added ${added} items`);
+        await this.showLibrary(ctx);
+    }
+
+    // Cancel photo items
+    async cancelPhotoItems(ctx) {
+        const holonId = ctx.chat.id;
+        this.pendingPhotoItems.delete(holonId);
+
+        await ctx.answerCbQuery('Cancelled');
+        await this.showLibrary(ctx);
+    }
+
+    // Prompt for manual add
+    async promptManualAdd(ctx) {
+        await ctx.answerCbQuery().catch(() => {});
+
+        // Simple prompt - ask user to use command
+        await ctx.reply('To add an item manually, use the command:\n\n/libadd <name> [value] [category]\n\nExample: /libadd hammer 10 tools');
     }
 
     async getLibraryItems(ctx) {
@@ -369,32 +1006,36 @@ class Library {
 
     async showStats(ctx) {
         let list = await this.getLibraryItems(ctx);
-        const stats = {
-            totalItems: list.length,
-            borrowedItems: list.filter(i => i.borrowed).length,
-            totalCreditsInSystem: 0,
-            mostBorrowedItems: {},
-            topLenders: {}
-        };
 
-        // Calculate item popularity
+        // Count items by type
+        const byType = {};
         list.forEach(item => {
-            stats.mostBorrowedItems[item.id] = item.totalEarned / item.credits;
-            stats.topLenders[item.owner] = (stats.topLenders[item.owner] || 0) + item.totalEarned;
+            const type = item.type || LIBRARY_TYPES.OTHER;
+            byType[type] = (byType[type] || 0) + 1;
         });
 
         // Format stats message
         const statsMessage = `📊 Library Statistics
-Total Items: ${stats.totalItems}
-Currently Borrowed: ${stats.borrowedItems}
-Most Popular Items: ${Object.entries(stats.mostBorrowedItems)
-    .sort(([,a], [,b]) => b - a)
-    .slice(0, 3)
-    .map(([item, borrows]) => `\n- ${item} (${borrows} borrows)`)
-    .join('')}`;
+
+📦 Total Items: ${list.length}
+🔄 Currently Borrowed: ${list.filter(i => i.borrowed).length}
+✅ Available: ${list.filter(i => !i.borrowed).length}
+
+By Type:
+${Object.entries(byType).map(([type, count]) => {
+    const icon = this.getItemIcon({ type });
+    return `${icon} ${this.getTypeDisplayName(type)}: ${count}`;
+}).join('\n')}`;
 
         ctx.reply(statsMessage);
+    }
+
+    // Check if library is waiting for a photo (for external photo handler)
+    isWaitingForPhoto(holonId) {
+        const pending = this.pendingPhotoItems.get(holonId);
+        return pending && pending.waiting;
     }
 }
 
 export default Library;
+export { LIBRARY_TYPES };
