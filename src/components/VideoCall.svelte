@@ -689,17 +689,18 @@
     leaveRoom();
   }
 
-  // Listen for window resize
-  $: if (typeof window !== 'undefined') {
-    window.addEventListener('resize', updatePosition);
-  }
-
-  // Listen for close events
+  // Listen for window resize and close events
   onMount(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', updatePosition);
+    }
     document.addEventListener('closeCall', handleCloseCall);
   });
 
   onDestroy(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', updatePosition);
+    }
     document.removeEventListener('closeCall', handleCloseCall);
   });
 </script>

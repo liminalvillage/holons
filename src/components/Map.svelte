@@ -64,6 +64,8 @@
 
 	// Keep track of movement state
 	let moveTimeout: number;
+	let initTimeout: number; // Track initialization timeout to clean up on unmount
+	let navigationTimeout: number; // Track navigation timeout for cleanup
 	let isMoving = false;
 	
 	// Keep track of last fetch time to implement throttling
@@ -76,6 +78,28 @@
 			window.clearTimeout(moveTimeout);
 			moveTimeout = 0;
 		}
+	}
+
+	// Clear initialization timeout
+	function clearInitTimeout() {
+		if (initTimeout) {
+			window.clearTimeout(initTimeout);
+			initTimeout = 0;
+		}
+	}
+
+	// Clear navigation timeout
+	function clearNavigationTimeout() {
+		if (navigationTimeout) {
+			window.clearTimeout(navigationTimeout);
+			navigationTimeout = 0;
+		}
+	}
+
+	// Schedule initialization with proper cleanup
+	function scheduleInitialization() {
+		clearInitTimeout();
+		initTimeout = window.setTimeout(initializeMap, 100);
 	}
 
 	function getResolution(zoom: number): number {
@@ -652,7 +676,13 @@
 
 	function initializeMap() {
 		if (mapInitialized || !browser) return;
-		
+
+		// Guard: ensure container exists before initializing
+		if (!mapContainer) {
+			scheduleInitialization();
+			return;
+		}
+
 		// Validate Mapbox access token
 		const accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
 		if (!accessToken || accessToken.length < 50) {
@@ -1054,14 +1084,14 @@
 			// Add global mouse move and up listeners (only when in browser)
 			window.addEventListener('mousemove', handleDrag);
 			window.addEventListener('mouseup', handleDragEnd);
-			
+
 			// Add resize listener to ensure sidebar stays visible
 			window.addEventListener('resize', adjustSidebarPosition);
-			
+
 			// Add a small delay to ensure container is properly sized
-			setTimeout(initializeMap, 100);
+			scheduleInitialization();
 		}
-		
+
 		return () => {
 			// Clean up event listeners
 			window.removeEventListener('mousemove', handleDrag);
@@ -1147,7 +1177,8 @@
 					updateSelectedHexagon($ID);
 				} else if (isVisible && !mapInitialized && browser) {
 					// If map isn't ready yet but we're visible, initialize it and then navigate
-					window.setTimeout(() => {
+					clearNavigationTimeout();
+					navigationTimeout = window.setTimeout(() => {
 						if (map && mapInitialized) {
 							updateSelectedHexagon($ID);
 						}
@@ -1182,7 +1213,7 @@
 		// Initialize or re-initialize map when becoming visible
 		if (!mapInitialized && browser) {
 			// Add a small delay to ensure container is properly sized
-			window.setTimeout(initializeMap, 100);
+			scheduleInitialization();
 		}
 	} else if (mapInitialized) {
 		// Clean up map when becoming invisible
@@ -1192,11 +1223,10 @@
 	// Comprehensive cleanup function
 	function performFinalCleanup() {
 		// Make sure all timeouts are cleared
-		if (moveTimeout) {
-			clearTimeout(moveTimeout);
-			moveTimeout = 0;
-		}
-		
+		clearMoveTimeout();
+		clearInitTimeout();
+		clearNavigationTimeout();
+
 	// Reset movement state
 	isMoving = false;
 	
