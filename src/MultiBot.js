@@ -43,17 +43,25 @@ class MultiBot extends Telegraf {
         this.telegramBot = null;
         this.discordBot = null;
         this.mattermostClient = null;
-        
+
         this.commands = {}
         this.userVoiceData = {};
+
+        // Debug: Log ALL updates at the very start
+        this.use((ctx, next) => {
+            if (ctx.callbackQuery) {
+                console.log('[MultiBot EARLY] Callback:', ctx.callbackQuery.data);
+            }
+            return next();
+        });
     }
 
     async start() {
         //---------------------------------------- TELEGRAM
         this.telegramBot = this //new Telegraf(process.env.TELEGRAM);
-        this.telegramBot.launch(); // Start the bot
         // Note: /start command is handled by Settings.js with localized messages
         this.setupTelegramCommands();
+        this.telegramBot.launch(); // Start the bot AFTER handlers are set up
 
 
         // -------------------------------------- DISCORD
@@ -88,6 +96,12 @@ class MultiBot extends Telegraf {
     setupTelegramCommands() {
         this.telegramBot.on('text', (ctx) => {
             this.handleMessage(ctx, 'telegram');
+        })
+
+        // Handle callback queries (button clicks)
+        this.telegramBot.on('callback_query', (ctx, next) => {
+            console.log('[MultiBot] Callback query received:', ctx.callbackQuery?.data);
+            return next();
         })
     }
 

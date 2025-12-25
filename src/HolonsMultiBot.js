@@ -76,7 +76,7 @@ class HolonsBot {
 
   async init(appname = 'Holons', telegramToken = null, discordToken = null, mattermostToken = null) {
     try {
-      
+
       this.bot = new MultiBot(telegramToken || process.env.TELEGRAM, discordToken|| process.env.DISCORD, mattermostToken || process.env.MATTERMOST);
 
       const holosphereName = process.env.MODE === 'development' ? `${appname}Debug` : appname;
@@ -84,54 +84,13 @@ class HolonsBot {
 
       const holosphere = createHoloSphere(holosphereName);
 
-      // Store original holosphere methods
-      const originalGet = holosphere.get.bind(holosphere);
-      const originalGetAll = holosphere.getAll.bind(holosphere);
-      const originalPut = holosphere.put.bind(holosphere);
-
-      // Add DB-compatible wrapper methods that detect calling convention
-      holosphere.get = async function(tableOrHolon, lensOrKey, key) {
-        if (key !== undefined) {
-          return await originalGet(tableOrHolon, lensOrKey, key);
-        }
-        const [hex, lens] = tableOrHolon.split('/');
-        if (lens === undefined) {
-          return await this.getGlobal(tableOrHolon, lensOrKey);
-        }
-        return await originalGet(hex, lens, lensOrKey);
-      };
-
-      holosphere.getAll = async function(tableOrHolon, lens) {
-        if (lens !== undefined && !tableOrHolon.includes('/')) {
-          return await originalGetAll(tableOrHolon, lens);
-        }
-        const [hex, parsedLens] = tableOrHolon.split('/');
-        if (parsedLens === undefined) {
-          return await this.getAllGlobal(tableOrHolon);
-        }
-        return await originalGetAll(hex, parsedLens);
-      };
-
-      holosphere.put = async function(tableOrHolon, lensOrData, dataOrOptions, options = {}) {
-        if (dataOrOptions !== undefined && typeof lensOrData === 'string' && !tableOrHolon.includes('/')) {
-          return await originalPut(tableOrHolon, lensOrData, dataOrOptions, options);
-        }
-        const [hex, lens] = tableOrHolon.split('/');
-        const data = lensOrData;
-        const opts = dataOrOptions || {};
-        if (lens === undefined) {
-          if (!data.id) {
-            data.id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          }
-          return await this.putGlobal(tableOrHolon, data);
-        }
-        return await originalPut(hex, lens, data, opts);
-      };
-
-      // Add self-reference for backward compatibility with code using db
+      // Add self-reference for backward compatibility with code using db.holosphere
       holosphere.holosphere = holosphere;
 
       this.db = holosphere;
+
+      // Setup photo handler BEFORE modules so Library can use it
+      this.setupPhotoHandler();
 
       await this.initializeModules();
 
@@ -152,7 +111,7 @@ class HolonsBot {
 
     this.lunation = new Lunation(this.bot);
     this.shopping = new Shopping(this.bot, this.db, this.settings);
-  
+
     this.bigtalk = new Bigtalk(this.bot);
     this.library = new Library(this.bot, this.db);
     this.users = new Users(this.bot, this.db);
@@ -166,7 +125,64 @@ class HolonsBot {
     this.roles = new Roles(this.bot, this.db, this.ui, this.settings);
     this.quests = new Quests(this.bot, this.db, this.users, this.settings);
     this.settings.setQuestsInstance(this.quests);
+  }
 
+  setupPhotoHandler() {
+    console.log('[HolonsMultiBot] Setting up photo handler');
+
+    // Store reference to this for the closure
+    const self = this;
+
+    // Debug: Log ALL callback queries at the top level
+    this.bot.on('callback_query', (ctx, next) => {
+      console.log('[HolonsMultiBot] CALLBACK received:', ctx.callbackQuery?.data);
+      return next();
+    });
+
+    // Debug: Log all messages to see what's coming through
+    this.bot.on('message', (ctx, next) => {
+      console.log('[HolonsMultiBot] Message received, type:', ctx.message.photo ? 'photo' : ctx.message.text ? 'text' : 'other');
+      return next();
+    });
+
+    this.bot.on('photo', async (ctx) => {
+      console.log('[HolonsMultiBot] Photo received in chat:', ctx.chat.id);
+
+      // Check if library is waiting for a photo first (library may not be initialized yet)
+      if (self.library) {
+        const isWaiting = self.library.isWaitingForPhoto(ctx.chat.id);
+        console.log('[HolonsMultiBot] Library waiting for photo:', isWaiting);
+
+        if (isWaiting) {
+          console.log('[HolonsMultiBot] Calling library.handlePhotoUpload');
+          try {
+            const handled = await self.library.handlePhotoUpload(ctx);
+            console.log('[HolonsMultiBot] Photo handled by library:', handled);
+            if (handled) return;
+          } catch (error) {
+            console.error('[HolonsMultiBot] Error in library.handlePhotoUpload:', error);
+          }
+        }
+      } else {
+        console.log('[HolonsMultiBot] Library not initialized yet');
+      }
+
+      // Handle photo captions for other modules
+      if (ctx.message.caption) {
+        const command = ctx.message.caption.split(' ')[0];
+        console.log('[HolonsMultiBot] Photo has caption, command:', command);
+
+        if (['/task', '/quest', '/todo', '/offer', '/request', '/compito', '/missione'].includes(command)) {
+          ctx.message.text = ctx.message.caption;
+          if (self.quests) self.quests.quest(command.slice(1), ctx);
+          return;
+        } else if (['/spent', '/expense', '/speso'].includes(command)) {
+          ctx.message.text = ctx.message.caption;
+          if (self.expenses) self.expenses.spent(ctx);
+          return;
+        }
+      }
+    });
   }
 
   handleProcessEvents() {

@@ -14,6 +14,7 @@ import Quests from '../src/Quests.js';
 import Shopping from '../src/Shopping.js';
 import Lunation from '../src/Lunation.js';
 import Onboarding from '../src/Onboarding.js';
+import BookingSystem from '../src/BookingSystem.js';
 import Expenses from '../src/Expenses.js';
 import Settings from '../src/Settings.js';
 import Bigtalk from '../src/Bigtalk.js';
@@ -383,6 +384,12 @@ export const serviceDefinitions = {
 
   onboarding: {
     factory: ({ telebot, database }) => new Onboarding(telebot, database),
+    singleton: true,
+    dependencies: ['telebot', 'database'],
+  },
+
+  bookingSystem: {
+    factory: ({ telebot, database }) => new BookingSystem(telebot, database, './data/booking.json'),
     singleton: true,
     dependencies: ['telebot', 'database'],
   },

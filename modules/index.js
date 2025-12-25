@@ -9,7 +9,6 @@ export { default as Bigtalk } from '../src/Bigtalk.js';
 export { default as CapitalGame } from '../src/CapitalGame.js';
 export { default as Checklists } from '../src/Checklists.js';
 export { default as Council } from '../src/Council.js';
-export { default as DB } from '../src/DB.js';
 export { default as Expenses } from '../src/Expenses.js';
 export { default as H3 } from '../src/H3.js';
 export { default as Holons } from '../src/Holons.js';
@@ -37,7 +36,6 @@ export * as Requests from '../src/Requests.js';
  * Module categories for organized access
  */
 export const coreModules = {
-  DB,
   Server,
   Settings,
   UI,

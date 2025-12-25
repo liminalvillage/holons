@@ -344,7 +344,7 @@ export class REAEventFactory {
                 unit: item.id,
                 resourceId: item.id
             },
-            provider: { id: String(item.owner), type: 'user' },
+            provider: { id: String(item.createdBy), type: 'user' },
             receiver: this.createUserAgent(borrower),
             context: {
                 holonId: String(holonId),
@@ -365,7 +365,7 @@ export class REAEventFactory {
                     unit: 'credits'
                 },
                 provider: this.createUserAgent(borrower),
-                receiver: { id: String(item.owner), type: 'user' },
+                receiver: { id: String(item.createdBy), type: 'user' },
                 context: {
                     holonId: String(holonId),
                     itemId: item.id
@@ -423,7 +423,7 @@ export class REAEventFactory {
                 resourceId: item.id
             },
             provider: this.createUserAgent(borrower),
-            receiver: { id: String(item.owner), type: 'user' },
+            receiver: { id: String(item.createdBy), type: 'user' },
             context: {
                 holonId: String(holonId),
                 itemId: item.id

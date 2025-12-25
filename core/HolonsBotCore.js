@@ -364,9 +364,37 @@ class HolonsBot {
       const telebot = await this.container.get('telebot');
       const quests = await this.container.get('quests');
       const expenses = await this.container.get('expenses');
+      const library = await this.container.get('library');
+
+      // Debug: Log all messages to see what's coming through
+      telebot.on('message', (ctx, next) => {
+        console.log('[HolonsBotCore] Message received, type:', ctx.message.photo ? 'photo' : ctx.message.text ? 'text' : 'other');
+        return next();
+      });
 
       // Setup photo handler
       telebot.on('photo', async (ctx) => {
+        console.log('[HolonsBotCore] Photo handler triggered, chat:', ctx.chat.id);
+
+        // Check if library is waiting for a photo first
+        if (library) {
+          const isWaiting = library.isWaitingForPhoto(ctx.chat.id);
+          console.log('[HolonsBotCore] Library waiting for photo:', isWaiting);
+
+          if (isWaiting) {
+            try {
+              console.log('[HolonsBotCore] Calling library.handlePhotoUpload');
+              const handled = await library.handlePhotoUpload(ctx);
+              console.log('[HolonsBotCore] Photo handled by library:', handled);
+              if (handled) return;
+            } catch (error) {
+              console.error('[HolonsBotCore] Error in library.handlePhotoUpload:', error);
+            }
+          }
+        } else {
+          console.log('[HolonsBotCore] Library not available');
+        }
+
         if (ctx.message.caption) {
           const command = ctx.message.caption.split(' ')[0];
           console.log('Photo caption command:', command, 'Full caption:', ctx.message.caption);
@@ -392,7 +420,7 @@ class HolonsBot {
         }
       });
 
-      log.debug('Photo handler setup completed');
+      console.log('[HolonsBotCore] Photo handler setup completed');
     } catch (error) {
       log.error('Failed to setup photo handlers', { error: error.message });
     }
