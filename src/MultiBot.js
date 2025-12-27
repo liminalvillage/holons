@@ -385,11 +385,46 @@ class MultiBot extends Telegraf {
     }
 
     async stop() {
+        // Clean up Discord event listeners to prevent memory leaks
+        if (this.discordBot) {
+            this.discordBot.removeAllListeners();
+        }
+
+        // Clean up Mattermost event listeners
+        if (this.mattermostClient) {
+            this.mattermostClient.removeAllListeners();
+        }
+
+        // Clear voice data to free memory
+        this.userVoiceData = {};
+
+        // Stop the bots
         await this.telegramBot.stop();
-        await this.discordBot.destroy();
+        if (this.discordBot) {
+            await this.discordBot.destroy();
+        }
     }
 
+    /**
+     * Periodic cleanup of stale voice data entries (entries older than 24 hours)
+     * Call this periodically to prevent memory leaks from missed voice events
+     */
+    cleanupStaleVoiceData() {
+        const now = Date.now();
+        const maxAge = 24 * 60 * 60 * 1000; // 24 hours
 
+        for (const [channelId, users] of Object.entries(this.userVoiceData)) {
+            for (const [userId, data] of Object.entries(users)) {
+                if (data.joinedAt && (now - new Date(data.joinedAt).getTime() > maxAge)) {
+                    delete this.userVoiceData[channelId][userId];
+                }
+            }
+            // Clean up empty channels
+            if (Object.keys(this.userVoiceData[channelId] || {}).length === 0) {
+                delete this.userVoiceData[channelId];
+            }
+        }
+    }
 }
 
 export default MultiBot;

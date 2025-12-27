@@ -2115,6 +2115,23 @@ class UI {
       this.cacheCleanupInterval = null;
     }
   }
+
+  /**
+   * Shutdown the UI module and clean up all resources
+   * This should be called when the bot is shutting down
+   */
+  async shutdown() {
+    // Stop the cache cleanup interval
+    this.stopCacheCleanup();
+
+    // Clear the holon name cache
+    this.holonNameCache.clear();
+
+    // Close the browser
+    await this.closeBrowser();
+
+    console.log('UI module shut down successfully');
+  }
 }
 
 export default UI;

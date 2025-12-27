@@ -53,6 +53,8 @@ export default class Settings {
 
         this._settingsCache = new Map();
         this._cacheTTL = 60 * 1000;
+        this._cacheCleanupInterval = null;
+        this._startCacheCleanup();
 
         this.scenes = new SettingsScenes(bot, db);
         
@@ -2151,6 +2153,38 @@ export default class Settings {
         this._settingsCache.delete(holonId);
         this._settingsCache.delete(Number(holonId));
         this._settingsCache.delete(String(holonId));
+    }
+
+    /**
+     * Start periodic cleanup of expired cache entries to prevent memory leaks
+     * @private
+     */
+    _startCacheCleanup() {
+        // Clear any existing interval
+        if (this._cacheCleanupInterval) {
+            clearInterval(this._cacheCleanupInterval);
+        }
+
+        // Clean up expired entries every minute
+        this._cacheCleanupInterval = setInterval(() => {
+            const now = Date.now();
+            for (const [key, value] of this._settingsCache.entries()) {
+                if (now - value.timestamp > this._cacheTTL) {
+                    this._settingsCache.delete(key);
+                }
+            }
+        }, 60000);
+    }
+
+    /**
+     * Stop the cache cleanup interval and clear the cache
+     */
+    shutdown() {
+        if (this._cacheCleanupInterval) {
+            clearInterval(this._cacheCleanupInterval);
+            this._cacheCleanupInterval = null;
+        }
+        this._settingsCache.clear();
     }
 
     async setValueEquation(holonId, equation) {
