@@ -67,6 +67,11 @@
 		window.dispatchEvent(new CustomEvent('toggleWidgetDashboard'));
 	}
 
+	// Handler for the custom toggleOverlayDashboard event (stored reference for cleanup)
+	function handleToggleOverlayDashboard() {
+		window.dispatchEvent(new CustomEvent('toggleWidgetDashboard'));
+	}
+
 	// Handle global keyboard shortcuts
 	function handleGlobalKeydown(event: KeyboardEvent) {
 		// Toggle overlay dashboard with Ctrl+Shift+Z or Cmd+Shift+Z
@@ -82,10 +87,7 @@
 		window.addEventListener('mousemove', handleMouseMove);
 
 		// Set up custom event listener for Overlay dashboard
-		window.addEventListener('toggleOverlayDashboard', () => {
-			// Dispatch the event to TopBar instead
-			window.dispatchEvent(new CustomEvent('toggleWidgetDashboard'));
-		});
+		window.addEventListener('toggleOverlayDashboard', handleToggleOverlayDashboard);
 
 		// Auto-switching is disabled by default - removed timer logic
 		// Users can manually enable it if needed through the store
@@ -93,9 +95,7 @@
 		// Cleanup on component destroy
 		onDestroy(() => {
 			window.removeEventListener('mousemove', handleMouseMove);
-			window.removeEventListener('toggleOverlayDashboard', () => {
-				toggleOverlayDashboard();
-			});
+			window.removeEventListener('toggleOverlayDashboard', handleToggleOverlayDashboard);
 		});
 	}
 

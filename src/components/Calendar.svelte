@@ -179,9 +179,8 @@
         // Add resize listener for orbital view
         window.addEventListener('resize', handleResize);
 
-        return () => {
-            clearInterval(currentTimeInterval);
-        };
+        // Note: resize listener is cleaned up in onDestroy
+        // currentTimeInterval is handled in a separate onMount block
     });
 
     onDestroy(() => {
