@@ -6,6 +6,8 @@
 import OpenAI from 'openai';
 import h3 from 'h3-js';
 
+const MAX_POLLING_ATTEMPTS = 150; // 5 minutes at 2-second intervals
+
 /**
  * Council perspective prompts for diverse viewpoints.
  * @type {string[]}
@@ -109,29 +111,45 @@ class Council {
         //const run = await this.openai.beta.threads.runs.retrieve(thread.id,run.id)
         const assistant = await this.openai.beta.assistants.retrieve("asst_qhk79F8wV9BDNuwfOI80TqzC")
         const thread = await this.openai.beta.threads.create()
-        const message = await this.openai.beta.threads.messages.create(thread.id, {
-            role: "user",
-            content: history
-        })
-        const run = await this.openai.beta.threads.runs.create(thread.id, {
-            assistant_id: assistant.id //,
-            //instructions: "What is the meaning of life?",
-        });
+        try {
+            const message = await this.openai.beta.threads.messages.create(thread.id, {
+                role: "user",
+                content: history
+            })
+            const run = await this.openai.beta.threads.runs.create(thread.id, {
+                assistant_id: assistant.id //,
+                //instructions: "What is the meaning of life?",
+            });
 
-        let runStatus = await this.openai.beta.threads.runs.retrieve(
-            thread.id,
-            run.id
-        );
-        // Polling mechanism to see if runStatus is completed
-        // This should be made more robust.
-        while (runStatus.status !== "completed") {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            runStatus = await this.openai.beta.threads.runs.retrieve(thread.id, run.id);
+            let runStatus = await this.openai.beta.threads.runs.retrieve(
+                thread.id,
+                run.id
+            );
+            // Polling mechanism with timeout to prevent infinite loops
+            let attempts = 0;
+            while (runStatus.status !== "completed" && attempts < MAX_POLLING_ATTEMPTS) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                runStatus = await this.openai.beta.threads.runs.retrieve(thread.id, run.id);
+                attempts++;
+                if (runStatus.status === "failed" || runStatus.status === "cancelled") {
+                    throw new Error(`Run ${runStatus.status}: ${runStatus.last_error?.message || 'Unknown error'}`);
+                }
+            }
+            if (attempts >= MAX_POLLING_ATTEMPTS) {
+                throw new Error('Polling timeout: run did not complete within 5 minutes');
+            }
+            // Get the latest messages from the thread
+            const messages = await this.openai.beta.threads.messages.list(thread.id)
+            const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+            return summary
+        } finally {
+            // Clean up thread to prevent orphaned resources
+            try {
+                await this.openai.beta.threads.del(thread.id);
+            } catch (cleanupError) {
+                console.error('Error cleaning up thread:', cleanupError.message);
+            }
         }
-        // Get the latest messages from the thread
-        const messages = await this.openai.beta.threads.messages.list(thread.id)
-        const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
-        return summary
     }
 
     async askQuestion(question, councilID) {
@@ -152,19 +170,28 @@ class Council {
             });
         }
         let runStatus;
-        // Polling mechanism to see if runStatus is completed
-        // This should be made more robust.
-        while (true) {
+        // Polling mechanism with timeout to prevent infinite loops
+        let attempts = 0;
+        while (attempts < MAX_POLLING_ATTEMPTS) {
             let returned = 0
+            let failed = 0
             await new Promise((resolve) => setTimeout(resolve, 2000));
             for (let i = 0; i < councilWisdom.threads.length; i++) {
                 runStatus = await this.openai.beta.threads.runs.retrieve(councilWisdom.threads[i].id, runs[i].id);
                 if (runStatus.status == "completed")
                     returned += 1
+                else if (runStatus.status === "failed" || runStatus.status === "cancelled")
+                    failed += 1
             }
             console.log(returned)
             if (returned == councilWisdom.threads.length)
                 break
+            if (failed > 0)
+                throw new Error(`${failed} council member(s) failed to respond`);
+            attempts++;
+        }
+        if (attempts >= MAX_POLLING_ATTEMPTS) {
+            throw new Error('Polling timeout: council did not complete within 5 minutes');
         }
         //reset wisdom array
         councilWisdom.content.wisdom = []

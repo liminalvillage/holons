@@ -38,6 +38,9 @@ class Server {
     this.serverInstance = null;
     this.isRunning = false;
     this.requestCounts = new Map(); // For rate limiting
+    this.maxRateLimitEntries = 10000; // Maximum IPs to track
+    this.rateLimitCleanupInterval = null;
+    this.signalHandlersSet = false; // Prevent duplicate signal handlers
     this.setupServer();
   }
 
@@ -111,19 +114,27 @@ class Server {
   }
 
   setupSecurityMiddleware(app) {
+    // Start periodic cleanup of rate limiting cache to prevent memory leaks
+    this.startRateLimitCleanup();
+
     // Rate limiting middleware
     app.use((req, res, next) => {
       const clientIP = req.ip || req.connection.remoteAddress;
       const now = Date.now();
-      const windowMs = 1 * 60 * 1000; // 15 minutes
+      const windowMs = 1 * 60 * 1000; // 1 minute
       const maxRequests = 100; // Max requests per window
 
       if (!this.requestCounts.has(clientIP)) {
+        // LRU eviction: remove oldest entries if we exceed the limit
+        if (this.requestCounts.size >= this.maxRateLimitEntries) {
+          const oldestKey = this.requestCounts.keys().next().value;
+          this.requestCounts.delete(oldestKey);
+        }
         this.requestCounts.set(clientIP, { count: 0, resetTime: now + windowMs });
       }
 
       const clientData = this.requestCounts.get(clientIP);
-      
+
       if (now > clientData.resetTime) {
         clientData.count = 0;
         clientData.resetTime = now + windowMs;
@@ -165,16 +176,38 @@ class Server {
       res.status(500).json({ error: 'Internal server error' });
     });
 
-    // Graceful shutdown handling
-    process.on('SIGTERM', () => {
-      console.log('SIGTERM received, shutting down gracefully');
-      this.stopServer();
-    });
+    // Graceful shutdown handling - only set up once to prevent duplicate handlers
+    if (!this.signalHandlersSet) {
+      this.signalHandlersSet = true;
 
-    process.on('SIGINT', () => {
-      console.log('SIGINT received, shutting down gracefully');
-      this.stopServer();
-    });
+      const shutdownHandler = (signal) => {
+        console.log(`${signal} received, shutting down gracefully`);
+        this.stopServer();
+      };
+
+      process.once('SIGTERM', () => shutdownHandler('SIGTERM'));
+      process.once('SIGINT', () => shutdownHandler('SIGINT'));
+    }
+  }
+
+  /**
+   * Start periodic cleanup of expired rate limit entries
+   */
+  startRateLimitCleanup() {
+    // Clear any existing interval
+    if (this.rateLimitCleanupInterval) {
+      clearInterval(this.rateLimitCleanupInterval);
+    }
+
+    // Clean up expired entries every minute
+    this.rateLimitCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [ip, data] of this.requestCounts.entries()) {
+        if (now > data.resetTime + 60000) { // Keep entries for 1 extra minute after expiry
+          this.requestCounts.delete(ip);
+        }
+      }
+    }, 60000);
   }
 
   getSSLOptions() {
@@ -240,6 +273,15 @@ class Server {
 
   // Method to gracefully stop the server
   stopServer() {
+    // Clear the rate limit cleanup interval
+    if (this.rateLimitCleanupInterval) {
+      clearInterval(this.rateLimitCleanupInterval);
+      this.rateLimitCleanupInterval = null;
+    }
+
+    // Clear the rate limit cache
+    this.requestCounts.clear();
+
     if (this.serverInstance && this.isRunning) {
       this.serverInstance.close(() => {
         console.log('Server stopped gracefully');

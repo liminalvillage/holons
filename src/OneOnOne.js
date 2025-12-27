@@ -33,6 +33,7 @@ class OneOnOne {
 
     this.conversations = {}; // To track ongoing conversations
     this.pairings = new Set(); // To track unique pairings
+    this.scheduledJobs = new Map(); // Track scheduled jobs per holon to prevent memory leaks
 
     bot.command(['round'], async (ctx) => {
       let holonId = ctx.chat.id;
@@ -42,10 +43,17 @@ class OneOnOne {
         return;
       }
 
-      // Schedule the round at regular intervals
-      schedule.scheduleJob('*/1 * * * *', async () => {
+      // Cancel any existing job for this holon to prevent accumulation
+      if (this.scheduledJobs.has(holonId)) {
+        this.scheduledJobs.get(holonId).cancel();
+        this.scheduledJobs.delete(holonId);
+      }
+
+      // Schedule the round at regular intervals and store the job reference
+      const job = schedule.scheduleJob('*/1 * * * *', async () => {
         await this.startRound(participants, holonId);
       });
+      this.scheduledJobs.set(holonId, job);
 
       ctx.reply('Scheduled speed dating rounds.');
     });
@@ -118,6 +126,32 @@ class OneOnOne {
       console.error('Error creating conversation:', error);
       this.bot.telegram.sendMessage(holonId, `An error occurred while pairing @${user1.username} and @${user2.username}.`);
     }
+  }
+
+  /**
+   * Cancel a scheduled job for a specific holon
+   * @param {string|number} holonId - The holon ID
+   * @returns {boolean} True if job was cancelled, false if no job existed
+   */
+  cancelJob(holonId) {
+    if (this.scheduledJobs.has(holonId)) {
+      this.scheduledJobs.get(holonId).cancel();
+      this.scheduledJobs.delete(holonId);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Cancel all scheduled jobs and cleanup resources
+   */
+  shutdown() {
+    for (const [holonId, job] of this.scheduledJobs) {
+      job.cancel();
+    }
+    this.scheduledJobs.clear();
+    this.conversations = {};
+    this.pairings.clear();
   }
 }
 

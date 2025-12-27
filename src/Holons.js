@@ -1456,35 +1456,59 @@ export default class Holons {
   }
   
   async waitForTransaction(tx, context, successMessage) {
+    const TRANSACTION_TIMEOUT = 5 * 60 * 1000; // 5 minute timeout for transactions
+
     try {
-      // Don't await the transaction here, instead handle it asynchronously
-      tx.wait().then(async (receipt) => {
-        if (receipt.status === 1) {
-          if (successMessage && context) {
-            context.reply(`✅ Transaction completed: ${successMessage} ${tx.hash}`);
-            // const newAddress = await this.holonsContract.toAddress(utils.getholonId(context).toString());
-            // context.reply('New holon address: ' + newAddress);
-          }
-          return receipt;
-        } else {
-          if (context) {
-            context.reply("❌ Transaction failed during execution");
-          }
-          console.error("Transaction failed with status 0");
-        }
-      }).catch(error => {
-        console.error("Transaction error:", error);
-        if (context) {
-          context.reply(`❌ Transaction failed: ${error.message}`);
-        }
+      // Create a promise that rejects after timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Transaction timeout')), TRANSACTION_TIMEOUT);
       });
-      
+
+      // Race between transaction wait and timeout
+      Promise.race([tx.wait(), timeoutPromise])
+        .then(async (receipt) => {
+          if (receipt.status === 1) {
+            if (successMessage && context) {
+              try {
+                await context.reply(`✅ Transaction completed: ${successMessage} ${tx.hash}`);
+              } catch (replyError) {
+                // Context may have become invalid, just log it
+                console.warn('Failed to send transaction success message:', replyError.message);
+              }
+            }
+            return receipt;
+          } else {
+            if (context) {
+              try {
+                await context.reply("❌ Transaction failed during execution");
+              } catch (replyError) {
+                console.warn('Failed to send transaction failure message:', replyError.message);
+              }
+            }
+            console.error("Transaction failed with status 0");
+          }
+        })
+        .catch(error => {
+          console.error("Transaction error:", error);
+          if (context) {
+            try {
+              context.reply(`❌ Transaction failed: ${error.message}`);
+            } catch (replyError) {
+              console.warn('Failed to send transaction error message:', replyError.message);
+            }
+          }
+        });
+
       // Return the transaction immediately
       return tx;
     } catch (error) {
       console.error("Error setting up transaction wait:", error);
       if (context) {
-        context.reply(`❌ Error setting up transaction: ${error.message}`);
+        try {
+          await context.reply(`❌ Error setting up transaction: ${error.message}`);
+        } catch (replyError) {
+          console.warn('Failed to send setup error message:', replyError.message);
+        }
       }
       throw error;
     }

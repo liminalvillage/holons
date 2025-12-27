@@ -48,38 +48,56 @@ export async function onboarding(thread, prompt) {
 
 }
 
+const MAX_POLLING_ATTEMPTS = 150; // 5 minutes at 2-second intervals
+
 export async function getQuestions(prompt) {
   //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
   const assistant = await openai.beta.assistants.retrieve("asst_AhWVjx7YkLFS58B7M8LsNLPN")
   const thread = await openai.beta.threads.create()
-  const message = await openai.beta.threads.messages.create(thread.id, {
-    role: "user",
-    content: prompt
-  })
-  const run = await openai.beta.threads.runs.create(thread.id, {
-    assistant_id: assistant.id //,
-    //instructions: "What is the meaning of life?",
-  });
+  try {
+    const message = await openai.beta.threads.messages.create(thread.id, {
+      role: "user",
+      content: prompt
+    })
+    const run = await openai.beta.threads.runs.create(thread.id, {
+      assistant_id: assistant.id //,
+      //instructions: "What is the meaning of life?",
+    });
 
-  let runStatus = await openai.beta.threads.runs.retrieve(
-    thread.id,
-    run.id
-  );
-  // Polling mechanism to see if runStatus is completed
-  // This should be made more robust.
-  while (runStatus.status !== "completed") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    let runStatus = await openai.beta.threads.runs.retrieve(
+      thread.id,
+      run.id
+    );
+    // Polling mechanism with timeout to prevent infinite loops
+    let attempts = 0;
+    while (runStatus.status !== "completed" && attempts < MAX_POLLING_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+      attempts++;
+      if (runStatus.status === "failed" || runStatus.status === "cancelled") {
+        throw new Error(`Run ${runStatus.status}: ${runStatus.last_error?.message || 'Unknown error'}`);
+      }
+    }
+    if (attempts >= MAX_POLLING_ATTEMPTS) {
+      throw new Error('Polling timeout: run did not complete within 5 minutes');
+    }
+    // Get the latest messages from the thread
+    const messages = await openai.beta.threads.messages.list(thread.id)
+    let json = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+    try{
+      json = JSON.parse(json)
+    } catch (e){
+      console.log(e)
+    }
+    return json
+  } finally {
+    // Clean up thread to prevent orphaned resources
+    try {
+      await openai.beta.threads.del(thread.id);
+    } catch (cleanupError) {
+      console.error('Error cleaning up thread:', cleanupError.message);
+    }
   }
-  // Get the latest messages from the thread
-  const messages = await openai.beta.threads.messages.list(thread.id)
-  let json = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
-  try{
-    json = JSON.parse(json)
-  } catch (e){
-    console.log(e)
-  }
-  return json
 }
 
 
@@ -87,58 +105,90 @@ export async function summarize(history) {
   //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
   const assistant = await openai.beta.assistants.retrieve("asst_qhk79F8wV9BDNuwfOI80TqzC")
   const thread = await openai.beta.threads.create()
-  const message = await openai.beta.threads.messages.create(thread.id, {
-    role: "user",
-    content: history
-  })
-  const run = await openai.beta.threads.runs.create(thread.id, {
-    assistant_id: assistant.id //,
-    //instructions: "What is the meaning of life?",
-  });
+  try {
+    const message = await openai.beta.threads.messages.create(thread.id, {
+      role: "user",
+      content: history
+    })
+    const run = await openai.beta.threads.runs.create(thread.id, {
+      assistant_id: assistant.id //,
+      //instructions: "What is the meaning of life?",
+    });
 
-  let runStatus = await openai.beta.threads.runs.retrieve(
-    thread.id,
-    run.id
-  );
-  // Polling mechanism to see if runStatus is completed
-  // This should be made more robust.
-  while (runStatus.status !== "completed") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    let runStatus = await openai.beta.threads.runs.retrieve(
+      thread.id,
+      run.id
+    );
+    // Polling mechanism with timeout to prevent infinite loops
+    let attempts = 0;
+    while (runStatus.status !== "completed" && attempts < MAX_POLLING_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+      attempts++;
+      if (runStatus.status === "failed" || runStatus.status === "cancelled") {
+        throw new Error(`Run ${runStatus.status}: ${runStatus.last_error?.message || 'Unknown error'}`);
+      }
+    }
+    if (attempts >= MAX_POLLING_ATTEMPTS) {
+      throw new Error('Polling timeout: run did not complete within 5 minutes');
+    }
+    // Get the latest messages from the thread
+    const messages = await openai.beta.threads.messages.list(thread.id)
+    const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+    return summary
+  } finally {
+    // Clean up thread to prevent orphaned resources
+    try {
+      await openai.beta.threads.del(thread.id);
+    } catch (cleanupError) {
+      console.error('Error cleaning up thread:', cleanupError.message);
+    }
   }
-  // Get the latest messages from the thread
-  const messages = await openai.beta.threads.messages.list(thread.id)
-  const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
-  return summary
 }
 
 export async function ontology(history) {
   //const run = await openai.beta.threads.runs.retrieve(thread.id,run.id)
   const assistant = await openai.beta.assistants.retrieve("asst_jxRYRSsU4ukVn2F3E82twHrj")
   const thread = await openai.beta.threads.create()
-  const message = await openai.beta.threads.messages.create(thread.id, {
-    role: "user",
-    content: history
-  })
-  const run = await openai.beta.threads.runs.create(thread.id, {
-    assistant_id: assistant.id //,
-    //instructions: "What is the meaning of life?",
-  });
+  try {
+    const message = await openai.beta.threads.messages.create(thread.id, {
+      role: "user",
+      content: history
+    })
+    const run = await openai.beta.threads.runs.create(thread.id, {
+      assistant_id: assistant.id //,
+      //instructions: "What is the meaning of life?",
+    });
 
-  let runStatus = await openai.beta.threads.runs.retrieve(
-    thread.id,
-    run.id
-  );
-  // Polling mechanism to see if runStatus is completed
-  // This should be made more robust.
-  while (runStatus.status !== "completed") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    let runStatus = await openai.beta.threads.runs.retrieve(
+      thread.id,
+      run.id
+    );
+    // Polling mechanism with timeout to prevent infinite loops
+    let attempts = 0;
+    while (runStatus.status !== "completed" && attempts < MAX_POLLING_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+      attempts++;
+      if (runStatus.status === "failed" || runStatus.status === "cancelled") {
+        throw new Error(`Run ${runStatus.status}: ${runStatus.last_error?.message || 'Unknown error'}`);
+      }
+    }
+    if (attempts >= MAX_POLLING_ATTEMPTS) {
+      throw new Error('Polling timeout: run did not complete within 5 minutes');
+    }
+    // Get the latest messages from the thread
+    const messages = await openai.beta.threads.messages.list(thread.id)
+    const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
+    return summary
+  } finally {
+    // Clean up thread to prevent orphaned resources
+    try {
+      await openai.beta.threads.del(thread.id);
+    } catch (cleanupError) {
+      console.error('Error cleaning up thread:', cleanupError.message);
+    }
   }
-  // Get the latest messages from the thread
-  const messages = await openai.beta.threads.messages.list(thread.id)
-  const summary = messages.data[0].content[0].text.value.replace(/\`\`\`json\n/, '').replace(/\`\`\`/, '').trim()
-  return summary
 }
 
 async function sendMessage(system, message){
