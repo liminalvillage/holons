@@ -176,9 +176,9 @@ export default class SettingsScenes {
                     return;
                 }
 
-                // Here is where the federation happens: Federate with the provided ID using holon-level API
+                // Federate using KeyManager with proper public keys
                 // console.log('Federation actually happens here, in the scenes!');
-                await this.db.federateHolon(holonId.toString(), federationID.toString(), {
+                await this.db.keyManager.setupFederation(holonId.toString(), federationID.toString(), {
                     lensConfig: { inbound: [], outbound: [] }
                 });
 

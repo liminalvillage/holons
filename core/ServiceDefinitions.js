@@ -6,7 +6,7 @@ import i18next from 'i18next';
 
 // Import all modules
 import Server from '../src/Server.js';
-import createHoloSphere from '../src/createHoloSphere.js';
+import createHoloSphere, { createKeyManager } from '../src/createHoloSphere.js';
 import UI from '../src/UI.js';
 import H3 from '../src/H3.js';
 import Holons from '../src/Holons.js';
@@ -134,20 +134,40 @@ export const serviceDefinitions = {
     dependencies: ['config', 'logger'],
   },
 
-  // Database (thin wrapper around HoloSphere)
-  database: {
+  // KeyManager - Per-holon key management for cross-author federation
+  keyManager: {
     factory: async ({ config }) => {
       const appname = config.isDevelopment ? 'HolonsDebug' : 'Holons';
-      const holosphere = createHoloSphere(appname);
+      const keyManager = createKeyManager(appname);
 
-      // Add self-reference so modules can use this.db.holosphere.xyz() consistently
-      holosphere.holosphere = holosphere;
-
-      log.debug('HoloSphere initialized', { appname });
-      return holosphere;
+      log.debug('KeyManager initialized', { appname });
+      return keyManager;
     },
     singleton: true,
     dependencies: ['config', 'logger'],
+  },
+
+  // Database (thin wrapper around HoloSphere - uses master key for backward compatibility)
+  database: {
+    factory: async ({ keyManager }) => {
+      // Return the master holosphere for backward compatibility
+      // Modules can still use this.db.put(), this.db.get(), etc.
+      const holosphere = keyManager.masterHolosphere;
+
+      // Add keyManager reference so modules can access per-holon features
+      holosphere.keyManager = keyManager;
+
+      // Helper to get per-holon holosphere for holon-specific data
+      // Usage: const hs = await this.db.forHolon(holonId);
+      holosphere.forHolon = async (holonId) => {
+        return keyManager.getHolosphere(holonId);
+      };
+
+      log.debug('Database service initialized (using master HoloSphere)');
+      return holosphere;
+    },
+    singleton: true,
+    dependencies: ['keyManager'],
   },
 
   // Settings (must be initialized early as many services depend on it)

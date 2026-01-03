@@ -454,8 +454,10 @@ export default class Events {
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
+        // Use the chat where button was clicked, not the event's source holon
+        const clickedChatId = ctx.callbackQuery.message.chat.id;
         const expandedButtons = this.getExpandedButtons(event, language);
-        await this.updateEventMessage(ctx, event, holonId, ctx.callbackQuery.message.message_id,
+        await this.updateEventMessage(ctx, event, clickedChatId, ctx.callbackQuery.message.message_id,
                                       language, { reply_markup: { inline_keyboard: expandedButtons } });
         await ctx.answerCbQuery().catch(() => {});
     }
@@ -467,7 +469,9 @@ export default class Events {
 
         if (!await this.eventExists(event, ctx, eventID)) return;
 
-        await this.updateEventMessage(ctx, event, holonId, ctx.callbackQuery.message.message_id,
+        // Use the chat where button was clicked, not the event's source holon
+        const clickedChatId = ctx.callbackQuery.message.chat.id;
+        await this.updateEventMessage(ctx, event, clickedChatId, ctx.callbackQuery.message.message_id,
                                       language, this.markup(event, language));
         await ctx.answerCbQuery().catch(() => {});
     }
@@ -751,12 +755,15 @@ export default class Events {
         if (!userId || !event?.id || !eventHolon) return;
 
         try {
+            // Use per-holon holosphere to match the keypair that wrote the data
+            const holonDB = await this.db.forHolon(eventHolon);
+
             const eventData = {
                 id: event.id.toString(),
                 ...event
             };
 
-            await this.db.propagateData(
+            await holonDB.propagateData(
                 eventData,
                 eventHolon.toString(),
                 userId.toString(),

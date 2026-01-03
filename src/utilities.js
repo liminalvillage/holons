@@ -83,7 +83,10 @@ export const underline = (text) => `<u>${text}</u>`;
 export const getUserInput = (ctx) => ctx?.update?.message?.text;
 export const getParameters = (ctx) => ctx?.update?.message?.text.split(" ").slice(1).join(" ");
 
-export const getholonId = (ctx) => ctx?.chat?.id || ctx?.update?.message?.chat?.id || ctx?.update?.callback_query?.message?.chat?.id || 0;
+export const getholonId = (ctx) => {
+    const id = ctx?.chat?.id || ctx?.update?.message?.chat?.id || ctx?.update?.callback_query?.message?.chat?.id || 0;
+    return String(id);
+};
 export const getMessageId = (ctx) => ctx?.message?.message_id || ctx?.update?.message?.message_id || ctx?.update?.callback_query?.message?.message_id || 0;
 
 export const parseList = (text) => {

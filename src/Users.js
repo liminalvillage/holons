@@ -285,7 +285,10 @@ class Users {
     }
     if (!holonId) return null;
 
-    let userinfo = await this.db.get(holonId, 'users', user.id)
+    // Ensure holonId is a string (required by holosphere)
+    const holonIdStr = String(holonId);
+
+    let userinfo = await this.db.get(holonIdStr, 'users', user.id)
     if (!userinfo || userinfo == '') {
       userinfo = {
         id: user.id,
@@ -298,7 +301,7 @@ class Users {
         needs: [],
         participated: {}
       }
-      await this.db.put(holonId, 'users', userinfo)
+      await this.db.put(holonIdStr, 'users', userinfo)
     }
     return userinfo
   }
@@ -330,11 +333,14 @@ class Users {
       return null;
     }
 
+    // Ensure holonId is a string (required by holosphere)
+    const holonIdStr = String(holonId);
+
     // Get profile data
-    const profile = await this.getUserProfile(user, holonId);
+    const profile = await this.getUserProfile(user, holonIdStr);
 
     // Get computed aggregates from REA events
-    const aggregates = await this.aggregator.getUserAggregates(holonId, user.id);
+    const aggregates = await this.aggregator.getUserAggregates(holonIdStr, user.id);
 
     // Merge profile with aggregates for backward compatibility
     return {

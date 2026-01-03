@@ -83,7 +83,19 @@ class UI {
       let holonId = ctx.message.chat.id
       const userId = ctx.from?.id
       const language = await this.settings.getLanguage(holonId)
-      const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?user=${userId}`
+
+      // Get public key from keyManager if available
+      let dashboardHolonId = holonId;
+      const keyManager = this.db.keyManager;
+      if (keyManager) {
+        try {
+          dashboardHolonId = await keyManager.getPublicKey(holonId);
+        } catch (err) {
+          console.warn('Failed to get public key for dashboard:', err.message);
+        }
+      }
+
+      const dashboardUrl = `${DASHBOARD_ADDRESS}/${dashboardHolonId}/?user=${userId}`
       
       try {
         // Generate QR code

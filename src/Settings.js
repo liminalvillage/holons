@@ -105,6 +105,11 @@ export default class Settings {
             await this.showAdminSelectionMenu(ctx, true);
         });
 
+        // Handle noop callbacks for header-only buttons (do nothing, just acknowledge)
+        this.bot.action('noop', async (ctx) => {
+            await ctx.answerCbQuery().catch(() => {});
+        });
+
         // Register back button callback at bot level
         this.bot.action('settings_back', async (ctx) => {
             await ctx.answerCbQuery().catch()
@@ -237,7 +242,20 @@ export default class Settings {
         })
 
         this.bot.command('id', async (ctx) => {
-            ctx.reply('This holon ID is ' + utils.getholonId(ctx))
+            const holonId = utils.getholonId(ctx);
+            const keyManager = this.db.keyManager;
+
+            if (keyManager) {
+                try {
+                    const publicKey = await keyManager.getPublicKey(holonId);
+                    ctx.reply(`🔑 Holon ID: ${publicKey}`);
+                } catch (err) {
+                    console.warn('Failed to get public key for holon:', err.message);
+                    ctx.reply('This holon ID is ' + holonId);
+                }
+            } else {
+                ctx.reply('This holon ID is ' + holonId);
+            }
         })
 
         this.bot.command(['federate', 'spoon'], async (ctx) => {
@@ -263,12 +281,14 @@ export default class Settings {
                     message += `This chat (${holonId}) is federated with:\n`;
                     for (const space of federatedHolons) {
                         const lensConfig = fedInfo.lensConfig?.[space] || {};
-                        const inbound = lensConfig.inbound || [];
-                        const outbound = lensConfig.outbound || [];
-                        message += `\n- ${space}`;
-                        if (inbound.length > 0) message += `\n  ↓ Receiving: ${inbound.join(', ')}`;
-                        if (outbound.length > 0) message += `\n  ↑ Sending: ${outbound.join(', ')}`;
-                        if (inbound.length === 0 && outbound.length === 0) message += ` (no lenses configured)`;
+                        const inLenses = lensConfig.inbound || [];
+                        const outLenses = lensConfig.outbound || [];
+                        // Get display name for partner (handles pubkeys)
+                        const spaceName = await this.getHolonDisplayName(space, ctx);
+                        message += `\n- ${spaceName}`;
+                        if (inLenses.length > 0) message += `\n  ↓ Receiving: ${inLenses.join(', ')}`;
+                        if (outLenses.length > 0) message += `\n  ↑ Sending: ${outLenses.join(', ')}`;
+                        if (inLenses.length === 0 && outLenses.length === 0) message += ` (no lenses configured)`;
                     }
                 }
 
@@ -808,17 +828,26 @@ export default class Settings {
             }
         });
 
-        this.bot.action(/unfederate_(.+)/, async (ctx) => {
+        this.bot.action(/unfed_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             if (utils.isAdmin(ctx)) {
                 const holonId = ctx.callbackQuery.message.chat.id;
-                const federationID = ctx.match[1];
+                const shortFederationID = ctx.match[1];
                 const language = await this.getLanguage(holonId);
 
                 try {
-                    // Use HoloSphere2 API to unfederate holons
+                    // Resolve full ID from truncated callback data using prefix match
+                    const fedData = await this.db.getFederation(holonId);
+                    const allFederated = [
+                        ...(fedData?.federated || []),
+                        ...(fedData?.inbound || []),
+                        ...(fedData?.outbound || [])
+                    ];
+                    const federationID = allFederated.find(id => String(id).startsWith(shortFederationID)) || shortFederationID;
+
+                    // Use KeyManager to unfederate with proper public keys
                     console.log(`[unfederate] Unfederating ${holonId} from ${federationID}`);
-                    const success = await this.db.unfederateHolon(holonId.toString(), federationID.toString());
+                    const success = await this.db.keyManager.teardownFederation(holonId.toString(), federationID.toString());
 
                     if (success) {
                         // Update the federation menu to reflect the removal
@@ -849,9 +878,9 @@ export default class Settings {
                 const language = await this.getLanguage(holonId);
 
                 try {
-                    // Use HoloSphere2 API to unfederate holons
+                    // Use KeyManager to unfederate with proper public keys
                     console.log(`[removeNotify] Removing inbound connection from ${notifyID} to ${holonId}`);
-                    const success = await this.db.unfederateHolon(holonId.toString(), notifyID.toString());
+                    const success = await this.db.keyManager.teardownFederation(holonId.toString(), notifyID.toString());
 
                     if (success) {
                         // Update the federation menu to reflect the removal
@@ -1107,7 +1136,19 @@ export default class Settings {
             await ctx.answerCbQuery().catch()
             const holonId = ctx.callbackQuery.message.chat.id;
             const language = await this.getLanguage(holonId);
-            const mapUrl = `${DASHBOARD_ADDRESS}/${holonId}/map`;
+
+            // Get public key from keyManager if available
+            let dashboardHolonId = holonId;
+            const keyManager = this.db.keyManager;
+            if (keyManager) {
+                try {
+                    dashboardHolonId = await keyManager.getPublicKey(holonId);
+                } catch (err) {
+                    console.warn('Failed to get public key for map:', err.message);
+                }
+            }
+
+            const mapUrl = `${DASHBOARD_ADDRESS}/${dashboardHolonId}/map`;
             await ctx.reply(i18next.t('settings_map_redirect', {
                 lng: language,
                 defaultValue: 'View this holon on the map:'
@@ -1154,7 +1195,7 @@ export default class Settings {
             // Create keyboard with options
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: title, callback_data: ' ' }],
+                    [{ text: title, callback_data: 'noop' }],
                     ...options.map(option => [{
                         text: option[displayField],
                         callback_data: `select_${field}_${option.id}`
@@ -1476,23 +1517,33 @@ export default class Settings {
         });
 
         // Action handler for viewing federation lens configuration for a specific holon
-        this.bot.action(/federation_config_(.+)/, async (ctx) => {
+        this.bot.action(/fed_cfg_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch()
             const targetholonId = ctx.match[1];
             await this.showFederationLensConfig(ctx, targetholonId, true);
         });
 
         // Action handler for toggling a specific direction (inbound/outbound) for a lens
-        this.bot.action(/toggle_lens_direction_(.+?)_(outbound|inbound)_(.+)/, async (ctx) => {
+        // Shortened pattern: tld_<id16>_o/i_<lens>
+        this.bot.action(/tld_(.+?)_(o|i)_(.+)/, async (ctx) => {
             // Answer callback query IMMEDIATELY to prevent duplicate clicks
             await ctx.answerCbQuery().catch(() => {});
 
-            const targetholonId = ctx.match[1];
-            const direction = ctx.match[2]; // 'outbound' or 'inbound'
+            const shortTargetId = ctx.match[1];
+            const directionShort = ctx.match[2]; // 'o' or 'i'
+            const direction = directionShort === 'o' ? 'outbound' : 'inbound';
             const lensNameToToggle = ctx.match[3];
             const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
             const holonIdStr = holonId.toString();
-            const targetholonIdStr = targetholonId.toString();
+
+            // Find full target holon ID from federation data using prefix match
+            const fedData = await this.db.getFederation(holonIdStr);
+            const allFederated = [
+                ...(fedData?.federated || []),
+                ...(fedData?.inbound || []),
+                ...(fedData?.outbound || [])
+            ];
+            const targetholonIdStr = allFederated.find(id => String(id).startsWith(shortTargetId)) || shortTargetId;
 
             // Create a unique lock key for this operation
             const lockKey = `${holonIdStr}_${targetholonIdStr}_${direction}_${lensNameToToggle}`;
@@ -1506,8 +1557,7 @@ export default class Settings {
             this.toggleLocks.add(lockKey);
 
             try {
-                // Get current federation config
-                const fedData = await this.db.getFederation(holonIdStr);
+                // Get current federation config (reuse fedData from above)
                 let lensConfig = fedData?.lensConfig?.[targetholonIdStr] || null;
 
                 // If no config exists, create default
@@ -1535,7 +1585,7 @@ export default class Settings {
                 }
 
                 // UPDATE UI IMMEDIATELY (optimistic update with cached config)
-                await this.showFederationLensConfig(ctx, targetholonId, true, lensConfig);
+                await this.showFederationLensConfig(ctx, targetholonIdStr, true, lensConfig);
 
                 // Check if federation should be removed (no lenses in either direction)
                 const hasAnyLenses = lensConfig.inbound.length > 0 || lensConfig.outbound.length > 0;
@@ -1544,7 +1594,7 @@ export default class Settings {
                 if (!hasAnyLenses) {
                     // No lenses enabled, remove the federation
                     try {
-                        await this.db.unfederateHolon(holonIdStr, targetholonIdStr);
+                        await this.db.keyManager.teardownFederation(holonIdStr, targetholonIdStr);
                     } catch (err) {
                         console.error('Error unfederating holon:', err);
                     }
@@ -1554,7 +1604,7 @@ export default class Settings {
 
                     // Update federation with new lens config - skip propagation by default
                     try {
-                        await this.db.federateHolon(holonIdStr, targetholonIdStr, {
+                        await this.db.keyManager.setupFederation(holonIdStr, targetholonIdStr, {
                             lensConfig: lensConfig,
                             skipPropagation: true  // Don't auto-propagate existing data
                         });
@@ -1564,6 +1614,9 @@ export default class Settings {
                         if (isEnabling) {
                             const language = await this.getLanguage(holonId);
                             const targetName = await this.getHolonDisplayName(targetholonIdStr, ctx);
+                            // Use shortened callback: prop_<id16>_o/i_<lens>
+                            const shortId = targetholonIdStr.substring(0, 16);
+                            const dirShort = direction === 'outbound' ? 'o' : 'i';
 
                             await ctx.reply(
                                 i18next.t('settings_propagate_existing_prompt', {
@@ -1577,11 +1630,11 @@ export default class Settings {
                                         inline_keyboard: [[
                                             {
                                                 text: i18next.t('yes', { lng: language, defaultValue: 'Yes' }),
-                                                callback_data: `propagate_existing_${targetholonIdStr}_${direction}_${lensNameToToggle}`
+                                                callback_data: `prop_${shortId}_${dirShort}_${lensNameToToggle}`
                                             },
                                             {
                                                 text: i18next.t('no', { lng: language, defaultValue: 'No' }),
-                                                callback_data: 'propagate_existing_dismiss'
+                                                callback_data: 'prop_dismiss'
                                             }
                                         ]]
                                     }
@@ -1619,34 +1672,76 @@ export default class Settings {
         });
 
         // Handle propagate existing data confirmation
-        this.bot.action(/propagate_existing_(.+?)_(outbound|inbound)_(.+)/, async (ctx) => {
+        // Shortened pattern: prop_<id16>_o/i_<lens>
+        this.bot.action(/prop_(.+?)_(o|i)_(.+)/, async (ctx) => {
             await ctx.answerCbQuery().catch(() => {});
 
-            const targetholonId = ctx.match[1];
-            const direction = ctx.match[2];
+            const shortTargetId = ctx.match[1];
+            const directionShort = ctx.match[2];
+            const direction = directionShort === 'o' ? 'outbound' : 'inbound';
             const lensName = ctx.match[3];
             const holonId = ctx.callbackQuery?.message?.chat?.id;
             const holonIdStr = holonId.toString();
-            const targetholonIdStr = targetholonId.toString();
+
+            // Find full target holon ID from federation data using prefix match
+            const fedData = await this.db.getFederation(holonIdStr);
+            const allFederated = [
+                ...(fedData?.federated || []),
+                ...(fedData?.inbound || []),
+                ...(fedData?.outbound || [])
+            ];
+            const targetholonIdStr = allFederated.find(id => String(id).startsWith(shortTargetId)) || shortTargetId;
             const language = await this.getLanguage(holonId);
 
             try {
                 // Delete the confirmation message
                 await ctx.deleteMessage().catch(() => {});
 
-                // Propagate existing data using holosphere's federate method
-                // For outbound: source sends to target
-                // For inbound: target sends to source
-                if (direction === 'outbound') {
-                    await this.db.federate(holonIdStr, targetholonIdStr, lensName, {
-                        direction: 'outbound',
-                        mode: 'reference'
-                    });
-                } else {
-                    await this.db.federate(targetholonIdStr, holonIdStr, lensName, {
-                        direction: 'outbound',
-                        mode: 'reference'
-                    });
+                const sourceHolonIdOrPubkey = direction === 'outbound' ? holonIdStr : targetholonIdStr;
+                const targetHolonIdOrPubkey = direction === 'outbound' ? targetholonIdStr : holonIdStr;
+
+                // Propagate existing data using KeyManager's federate method with public keys
+                await this.db.keyManager.federateHolons(sourceHolonIdOrPubkey, targetHolonIdOrPubkey, lensName, {
+                    direction: 'outbound',
+                    mode: 'reference'
+                });
+
+                // Also send Telegram messages to the target chat for quests
+                if (lensName === 'quests' && this.quests) {
+                    // Resolve pubkeys to telegram IDs for Telegram API calls
+                    const isPubkey = (id) => /^[0-9a-f]{64}$/i.test(String(id));
+                    let sourceTelegramId = sourceHolonIdOrPubkey;
+                    let targetTelegramId = targetHolonIdOrPubkey;
+
+                    if (isPubkey(sourceHolonIdOrPubkey) && this.db.keyManager) {
+                        sourceTelegramId = await this.db.keyManager.getTelegramId(sourceHolonIdOrPubkey) || sourceHolonIdOrPubkey;
+                    }
+                    if (isPubkey(targetHolonIdOrPubkey) && this.db.keyManager) {
+                        targetTelegramId = await this.db.keyManager.getTelegramId(targetHolonIdOrPubkey) || targetHolonIdOrPubkey;
+                    }
+
+                    const allQuests = await this.db.getAll(sourceTelegramId, 'quests');
+                    const targetLanguage = await this.getLanguage(targetTelegramId);
+                    let sentCount = 0;
+
+                    for (const quest of allQuests) {
+                        // Skip completed/cancelled quests
+                        if (['completed', 'cancelled', 'stopped'].includes(quest.status)) continue;
+
+                        try {
+                            // Send federated message to target chat (using resolved telegram ID)
+                            const baseMessage = await this.quests.createMessage(quest, targetLanguage);
+                            const sourceHolonName = await this.getHolonDisplayName(sourceHolonIdOrPubkey, ctx);
+                            const federatedMessage = `🌐 **Federated Quest**\n📡 From: ${sourceHolonName}\n\n${baseMessage}`;
+                            const markup = this.quests.markup(quest, targetLanguage);
+
+                            await ctx.telegram.sendMessage(targetTelegramId, federatedMessage, markup);
+                            sentCount++;
+                        } catch (err) {
+                            console.log(`[propagate] Failed to send quest ${quest.id} to ${targetTelegramId}:`, err.message);
+                        }
+                    }
+                    console.log(`[propagate] Sent ${sentCount} quest messages to ${targetTelegramId}`);
                 }
 
                 const targetName = await this.getHolonDisplayName(targetholonIdStr, ctx);
@@ -1670,7 +1765,7 @@ export default class Settings {
         });
 
         // Handle dismiss propagation prompt
-        this.bot.action('propagate_existing_dismiss', async (ctx) => {
+        this.bot.action('prop_dismiss', async (ctx) => {
             await ctx.answerCbQuery().catch(() => {});
             await ctx.deleteMessage().catch(() => {});
         });
@@ -1722,7 +1817,7 @@ export default class Settings {
     equationInlineKeyboard(weights, currencies = []) { // Added currencies parameter
         const language = i18next.language; // Or get from settings if preferred
         let inlineKeyboard = [
-            [{ text: i18next.t('settings_value_equation_weights', {lng: language} ), callback_data: ' ' }],
+            [{ text: i18next.t('settings_value_equation_weights', {lng: language} ), callback_data: 'noop' }],
             // Removed edit button as per previous structure, actions directly modify
             // [{ text: '✏️ ' + i18next.t('settings_edit', {lng: language}), callback_data: 'settings_equation_change' }],
             [
@@ -1936,10 +2031,10 @@ export default class Settings {
         }
 
         try {
-            // Use holosphere federateHolon method with empty lens config (user will configure lenses via menu)
+            // Use KeyManager to federate with proper public keys (user will configure lenses via menu)
             console.log('FEDERATING', holonId, federationID)
 
-            await this.db.federateHolon(holonId.toString(), federationID.toString(), {
+            await this.db.keyManager.setupFederation(holonId.toString(), federationID.toString(), {
                 lensConfig: { inbound: [], outbound: [] }
             });
 
@@ -1971,9 +2066,9 @@ export default class Settings {
         }
 
         try {
-            // Use HoloSphere2 API to unfederate holons
+            // Use KeyManager to unfederate with proper public keys
             console.log(`[separate] Unfederating ${holonId} from ${federationID}`);
-            const success = await this.db.unfederateHolon(holonId.toString(), federationID.toString());
+            const success = await this.db.keyManager.teardownFederation(holonId.toString(), federationID.toString());
 
             if (success) {
                 const federationName = await this.getHolonDisplayName(federationID, ctx);
@@ -2280,17 +2375,28 @@ export default class Settings {
             return;
         }
 
+        // Get public key from keyManager if available
+        let displayHolonId = holonId;
+        const keyManager = this.db.keyManager;
+        if (keyManager) {
+            try {
+                displayHolonId = await keyManager.getPublicKey(holonId);
+            } catch (err) {
+                console.warn('Failed to get public key for settings menu:', err.message);
+            }
+        }
+
         let settings = await this.getSettings(holonId);
         const language = settings.language;
-        const dashboardUrl = `${DASHBOARD_ADDRESS}/${holonId}/?user=${userId}`;
-        
+        const dashboardUrl = `${DASHBOARD_ADDRESS}/${displayHolonId}/?user=${userId}`;
+
         // Fetch federation info for the button
         const fedInfo = await this.db.getFederation(holonId);
         // Combine inbound and outbound arrays to get all federated holons (deduplicated)
         const inbound = fedInfo?.inbound || [];
         const outbound = fedInfo?.outbound || [];
         const federationCount = [...new Set([...inbound, ...outbound])].length;
-        
+
         // Create the message with Holon ID shown at the top
         let holonAddressLine = '';
         let holonNetworkLine = '';
@@ -2308,7 +2414,7 @@ export default class Settings {
                 // Ignore errors, just don't show address/network
             }
         }
-        const menuText = `${i18next.t('settings', { lng: language })}\n ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${holonId}${holonAddressLine}${holonNetworkLine}`;
+        const menuText = `${i18next.t('settings', { lng: language })}\n🔑 ${i18next.t('holon_id', { lng: language, defaultValue: 'Holon ID' })}: ${displayHolonId}${holonAddressLine}${holonNetworkLine}`;
 
         const menuMarkup = {
             reply_markup: {
@@ -2380,8 +2486,8 @@ export default class Settings {
         const language = settings.language;
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('language')} ${i18next.t('settings_language', { lng: language })}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { lng: language, value: settings.language }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('language')} ${i18next.t('settings_language', { lng: language })}`, callback_data: 'noop' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: settings.language }), callback_data: 'noop' }],
                 [
                     { text: `🇬🇧 ${i18next.t('language_native_en', { lng: language, defaultValue: 'English'})}`, callback_data: 'language_en' },
                     { text: `🇮🇹 ${i18next.t('language_native_it', { lng: language, defaultValue: 'Italian'})}`, callback_data: 'language_it' }
@@ -2404,8 +2510,8 @@ export default class Settings {
         const language = settings.language;
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme', { lng: language })}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { lng: language, value: settings.theme }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('theme')} ${i18next.t('settings_theme', { lng: language })}`, callback_data: 'noop' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: settings.theme }), callback_data: 'noop' }],
                 [
                     { text: i18next.t('settings_theme_light', { lng: language }), callback_data: 'theme_light' },
                     { text: i18next.t('settings_theme_dark', { lng: language }), callback_data: 'theme_dark' }
@@ -2420,8 +2526,8 @@ export default class Settings {
         const language = settings.language;
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('level')} ${i18next.t('settings_level', { lng: language })}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { lng: language, value: 'Level ' + settings.level }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('level')} ${i18next.t('settings_level', { lng: language })}`, callback_data: 'noop' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: 'Level ' + settings.level }), callback_data: 'noop' }],
                 [
                     { text: i18next.t('settings_level_1', { lng: language }), callback_data: 'level_1' },
                     { text: i18next.t('settings_level_2', { lng: language }), callback_data: 'level_2' },
@@ -2456,8 +2562,8 @@ export default class Settings {
             // Show regions
             return {
                 inline_keyboard: [
-                    [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}`, callback_data: ' ' }],
-                    [{ text: `${i18next.t('settings_current', { lng: language, value: currentTimezone })}`, callback_data: ' ' }],
+                    [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}`, callback_data: 'noop' }],
+                    [{ text: `${i18next.t('settings_current', { lng: language, value: currentTimezone })}`, callback_data: 'noop' }],
                     [{ text: i18next.t('settings_region_europe', { lng: language }), callback_data: 'timezone_region_Europe' }],
                     [{ text: i18next.t('settings_region_americas', { lng: language }), callback_data: 'timezone_region_Americas' }],
                     [{ text: i18next.t('settings_region_asia_pacific', { lng: language }), callback_data: 'timezone_region_Asia/Pacific' }],
@@ -2467,8 +2573,8 @@ export default class Settings {
         } else {
             // Show timezones for selected region
             const keyboard = [
-                [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}`, callback_data: ' ' }],
-                [{ text: `${i18next.t('settings_current', { lng: language, value: currentTimezone })}`, callback_data: ' ' }]
+                [{ text: `${this.getSettingIcon('timezone')} ${i18next.t('settings_timezone', { lng: language })}`, callback_data: 'noop' }],
+                [{ text: `${i18next.t('settings_current', { lng: language, value: currentTimezone })}`, callback_data: 'noop' }]
             ];
             for (let i = 0; i < timezones[region].length; i += 2) {
                 const row = [];
@@ -2539,7 +2645,7 @@ export default class Settings {
             // Add header with count
             keyboard.inline_keyboard.push([{
                 text: `${this.getSettingIcon(type)} ${i18next.t(`settings_${type}`, { lng: language })}: ${items.length}`,
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
 
             // Add items if there are any
@@ -2560,7 +2666,7 @@ export default class Settings {
             } else {
                 keyboard.inline_keyboard.push([{
                     text: i18next.t('settings_no_items', { lng: language, type: i18next.t(`settings_${type}`, { lng: language }).toLowerCase() }),
-                    callback_data: ' '
+                    callback_data: 'noop'
                 }]);
             }
 
@@ -2658,8 +2764,8 @@ export default class Settings {
         // Simplify the keyboard since we no longer need the edit button
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { lng: language, value: admin }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}`, callback_data: 'noop' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: admin }), callback_data: 'noop' }],
                 [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
         };
@@ -2671,8 +2777,8 @@ export default class Settings {
         const hex = await this.getHex({ chat: { id: holonId } });
         return {
             inline_keyboard: [
-                [{ text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}`, callback_data: ' ' }],
-                [{ text: i18next.t('settings_current', { lng: language, value: hex || i18next.t('settings_not_set', { lng: language }) }), callback_data: ' ' }],
+                [{ text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}`, callback_data: 'noop' }],
+                [{ text: i18next.t('settings_current', { lng: language, value: hex || i18next.t('settings_not_set', { lng: language }) }), callback_data: 'noop' }],
                 [{ text: i18next.t('settings_back', { lng: language }), callback_data: 'settings_back' }]
             ]
         };
@@ -2704,7 +2810,7 @@ export default class Settings {
         // Add header
         keyboard.inline_keyboard.push([{
             text: `${this.getSettingIcon('admin')} ${i18next.t('settings_admin', { lng: language })}`,
-            callback_data: ' '
+            callback_data: 'noop'
         }]);
 
         // Add each user as a button
@@ -2731,7 +2837,7 @@ export default class Settings {
         } else {
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_no_users', { lng: language }),
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
         }
 
@@ -2784,17 +2890,24 @@ export default class Settings {
         // Add header
         keyboard.inline_keyboard.push([{
             text: `${this.getSettingIcon('federation')} ${i18next.t('settings_federation', { lng: language })}`,
-            callback_data: ' '
+            callback_data: 'noop'
         }]);
 
         // Add unified federated holons list
         if (allFederatedHolons.size > 0) {
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_federated_holons', { lng: language, defaultValue: '🔗 Federated Holons' }),
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
 
             for (const space of allFederatedHolons) {
+                // Ensure space is a valid string for callback_data (max 64 bytes)
+                const spaceId = String(space).substring(0, 40);
+                if (!spaceId || spaceId === 'undefined' || spaceId === '[object Object]') {
+                    console.warn('Invalid federation space ID:', space);
+                    continue;
+                }
+
                 const holonName = await this.getHolonDisplayName(space, ctx);
 
                 // Show indicators for connection type
@@ -2812,16 +2925,16 @@ export default class Settings {
 
                 keyboard.inline_keyboard.push([{
                     text: `${indicators}${holonName}`,
-                    callback_data: `federation_config_${space}`
+                    callback_data: `fed_cfg_${spaceId}`
                 }, {
                     text: '❌',
-                    callback_data: `unfederate_${space}`
+                    callback_data: `unfed_${spaceId}`
                 }]);
             }
         } else {
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_no_federation', { lng: language, defaultValue: 'No federated holons' }),
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
         }
 
@@ -2884,12 +2997,12 @@ export default class Settings {
         if (removeMode) {
             keyboard.inline_keyboard.push([{
                 text: `🗑️ ${i18next.t('settings_remove_users', { lng: language }) || 'Remove Users'}`,
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
         } else {
             keyboard.inline_keyboard.push([{
                 text: `${this.getSettingIcon('users')} ${i18next.t('settings_users', { lng: language }) || 'Users'}`,
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
         }
 
@@ -2919,7 +3032,7 @@ export default class Settings {
                     } else {
                         keyboard.inline_keyboard.push([{
                             text: `👑 ${displayName} (admin)`,
-                            callback_data: ' '
+                            callback_data: 'noop'
                         }]);
                     }
                 } else {
@@ -2933,7 +3046,7 @@ export default class Settings {
         } else {
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_no_users', { lng: language }) || 'No users found',
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
         }
 
@@ -3346,7 +3459,7 @@ export default class Settings {
         // Add header
         keyboard.inline_keyboard.push([{
             text: `${this.getSettingIcon('hex')} ${i18next.t('settings_hex', { lng: language })}`,
-            callback_data: ' '
+            callback_data: 'noop'
         }]);
 
         // Add current hex (if any)
@@ -3358,7 +3471,7 @@ export default class Settings {
         } else {
             keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_not_set', { lng: language }),
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
         }
 
@@ -3409,23 +3522,31 @@ export default class Settings {
         }
 
         const language = await this.getLanguage(holonId);
-        const targetHolonName = await this.getHolonDisplayName(targetholonId, ctx);
+
+        // Define these upfront for use throughout the function
+        const holonIdStr = holonId.toString();
+
+        // Find full target holon ID from federation data using prefix match (targetholonId may be truncated)
+        const fedData = await this.db.getFederation(holonIdStr);
+        const allFederated = [
+            ...(fedData?.federated || []),
+            ...(fedData?.inbound || []),
+            ...(fedData?.outbound || [])
+        ];
+        const targetholonIdStr = allFederated.find(id => String(id).startsWith(String(targetholonId))) || String(targetholonId);
+
+        const targetHolonName = await this.getHolonDisplayName(targetholonIdStr, ctx);
         const title = i18next.t('settings_federation_lens_config', {
             lng: language,
             targetholonId: targetHolonName,
             defaultValue: `🔗 Federation with ${targetHolonName}`
         });
 
-        // Define these upfront for use throughout the function
-        const holonIdStr = holonId.toString();
-        const targetholonIdStr = targetholonId.toString();
-
         // Get the current lens configuration (use cached if provided for optimistic updates)
         let lensConfig;
         if (cachedLensConfig) {
             lensConfig = cachedLensConfig;
         } else {
-            const fedData = await this.db.getFederation(holonIdStr);
             lensConfig = fedData?.lensConfig?.[targetholonIdStr] || null;
         }
 
@@ -3438,12 +3559,14 @@ export default class Settings {
 
         // Add header row
         keyboard.inline_keyboard.push([
-            { text: 'Lens', callback_data: ' ' },
-            { text: '📤 Out', callback_data: ' ' },
-            { text: '📥 In', callback_data: ' ' }
+            { text: 'Lens', callback_data: 'noop' },
+            { text: '📤 Out', callback_data: 'noop' },
+            { text: '📥 In', callback_data: 'noop' }
         ]);
 
         // Add each lens with its inbound/outbound checkboxes
+        // Use shortened callback format to stay under 64 bytes: tld_<id16>_o/i_<lens>
+        const shortTargetId = targetholonIdStr.substring(0, 16);
         for (const lensName of ALL_AVAILABLE_LENSES) {
             const hasOutbound = outboundLenses.includes(lensName);
             const hasInbound = inboundLenses.includes(lensName);
@@ -3451,15 +3574,15 @@ export default class Settings {
             keyboard.inline_keyboard.push([
                 {
                     text: lensName,
-                    callback_data: ' '
+                    callback_data: 'noop'
                 },
                 {
                     text: hasOutbound ? '✅' : '🔘',
-                    callback_data: `toggle_lens_direction_${targetholonIdStr}_outbound_${lensName}`
+                    callback_data: `tld_${shortTargetId}_o_${lensName}`
                 },
                 {
                     text: hasInbound ? '✅' : '🔘',
-                    callback_data: `toggle_lens_direction_${targetholonIdStr}_inbound_${lensName}`
+                    callback_data: `tld_${shortTargetId}_i_${lensName}`
                 }
             ]);
         }
@@ -3575,7 +3698,7 @@ export default class Settings {
         if (lensesConfig.length === 0) {
              keyboard.inline_keyboard.push([{
                 text: i18next.t('settings_no_lenses_shared', { lng: language, defaultValue: 'No specific lenses configured for this link.'}),
-                callback_data: ' '
+                callback_data: 'noop'
             }]);
         }
 
@@ -3703,16 +3826,51 @@ export default class Settings {
 
     /**
      * Get display name for a holon in federation menu - shows ID when name is not known
-     * @param {string} holonId - The holon ID
+     * Handles both pubkeys and telegram IDs
+     * @param {string} holonIdOrPubkey - The holon ID or public key
      * @param {object} ctx - Telegram context
-     * @returns {Promise<string>} - Display name or ID if name is unknown
+     * @returns {Promise<string>} - Display name or truncated pubkey if name is unknown
      */
-    async getHolonDisplayName(holonId, ctx) {
-        if (!holonId) return 'Unknown Holon';
+    async getHolonDisplayName(holonIdOrPubkey, ctx) {
+        if (!holonIdOrPubkey) return 'Unknown Holon';
+
+        const idStr = String(holonIdOrPubkey);
+        const isPubkey = /^[0-9a-f]{64}$/i.test(idStr);
+
+        // If it's a pubkey, first try to get partner name from federation metadata
+        if (isPubkey && ctx) {
+            try {
+                const holonId = ctx.callbackQuery?.message?.chat?.id || ctx.chat?.id;
+                if (holonId) {
+                    const fedData = await this.db.getFederation(holonId);
+                    const partnerName = fedData?.partnerNames?.[idStr.toLowerCase()];
+                    if (partnerName) {
+                        return partnerName;
+                    }
+                }
+            } catch (error) {
+                // Partner name not found, continue
+            }
+        }
+
+        // Determine the actual holon ID to use for lookups
+        let lookupHolonId = idStr;
+
+        // If it's a pubkey, try to resolve to telegram ID
+        if (isPubkey && this.db.keyManager) {
+            try {
+                const telegramId = await this.db.keyManager.getTelegramId(idStr.toLowerCase());
+                if (telegramId) {
+                    lookupHolonId = telegramId;
+                }
+            } catch (error) {
+                // Could not resolve, continue with pubkey
+            }
+        }
 
         try {
             // Try to get the holon's settings to find its name
-            const settings = await this.db.get(holonId.toString(), 'settings', holonId.toString());
+            const settings = await this.db.get(lookupHolonId, 'settings', lookupHolonId);
             if (settings && settings.name && settings.name !== 'unknown') {
                 return settings.name;
             }
@@ -3721,9 +3879,9 @@ export default class Settings {
         }
 
         // Try to get Telegram chat name if ctx is provided
-        if (ctx) {
+        if (ctx && !isPubkey) {
             try {
-                const holonName = await utils.getChatName(ctx, holonId.toString());
+                const holonName = await utils.getChatName(ctx, lookupHolonId);
                 if (holonName && holonName !== 'unknown' && holonName !== null && holonName.trim() !== '') {
                     return holonName;
                 }
@@ -3732,7 +3890,10 @@ export default class Settings {
             }
         }
 
-        // Final fallback: show the ID itself
-        return holonId.toString();
+        // Final fallback: for pubkeys, show truncated version; otherwise show the ID
+        if (isPubkey) {
+            return `${idStr.substring(0, 8)}...${idStr.substring(56)}`;
+        }
+        return lookupHolonId;
     }
 }
