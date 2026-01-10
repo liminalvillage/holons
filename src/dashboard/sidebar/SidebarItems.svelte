@@ -2,6 +2,7 @@
 	import { data } from './data';
 	import { page } from '$app/stores';
 	import { sidebarExpanded } from '../store';
+	import { nostrPublicKey } from '$lib/stores/nostr';
 
 	const style = {
 		title: `mx-2 text-sm whitespace-pre`,
@@ -17,10 +18,11 @@
 	// Reactive statement to ensure component updates when page changes
 	$: currentPath = $page.url.pathname;
 	$: holonId = $page.params.id;
-	
+	$: homeHolonId = $nostrPublicKey;
+
 	// Check if we have a valid holon selected
 	$: hasValidHolon = holonId && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '';
-	
+
     // Filter data to only show navigation items when a holon is selected
     // But always show primary pages (standalone routes)
 	$: filteredData = data.filter(item => {
@@ -31,14 +33,17 @@
 		// Only show other items when a holon is selected
 		return hasValidHolon;
 	});
-	
+
 	// Reactive active states for each item
     $: activeStates = filteredData.map(item => {
         // Handle standalone routes (primary pages) vs holon-specific routes
         const isStandaloneRoute = item.link === '/' || item.link === '/sdgs';
-		const itemPath = isStandaloneRoute ? item.link : '/' + holonId + item.link;
+
+		// Use home holon for items marked with useHomeHolon, otherwise use current holon
+		const targetHolonId = item.useHomeHolon && homeHolonId ? homeHolonId : holonId;
+		const itemPath = isStandaloneRoute ? item.link : '/' + targetHolonId + item.link;
 		let isActive = false;
-		
+
 		// Exact match
 		if (currentPath === itemPath) {
 			isActive = true;
@@ -55,11 +60,12 @@
 		else if (!isStandaloneRoute && currentPath === itemPath) {
 			isActive = true;
 		}
-		
+
 		return {
 			...item,
 			isActive,
-			isStandaloneRoute
+			isStandaloneRoute,
+			targetHolonId
 		};
 	});
 </script>

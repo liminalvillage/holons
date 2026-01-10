@@ -6,8 +6,7 @@
 	import type { HoloSphere } from 'holosphere';
 	import { Search, Plus, X, Star, Users, Clock } from 'svelte-feathers';
 	import { nostrPublicKey } from '../../lib/stores/nostr';
-	import SidebarHeader from './SidebarHeader.svelte';
-	import KeysSection from './KeysSection.svelte';
+	import HomeHolonHeader from './HomeHolonHeader.svelte';
 	import BrowserHeader from './BrowserHeader.svelte';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
@@ -393,11 +392,8 @@
 	class:browser-panel--open={isOpen}
 	aria-label="Holon browser"
 >
-	<!-- Sidebar Header: Logo, Current Holon, ID/QR -->
-	<SidebarHeader />
-
-	<!-- Keys & Access Section (collapsible) -->
-	<KeysSection />
+	<!-- Home Holon Header: User's holon, Settings, Login/Logout -->
+	<HomeHolonHeader />
 
 	<!-- Holon Browser Section -->
 	<div class="browser-panel__browser">

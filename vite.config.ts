@@ -4,7 +4,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
 	plugins: [sveltekit()],
 	test: {
-		include: ['src/**/*.{test,spec}.{js,ts}']
+		include: ['src/**/*.{test,spec}.{js,ts}'],
+		environment: 'node',
+		testTimeout: 120000,
+		hookTimeout: 60000,
+		globals: true,
+		pool: 'forks'
 	},
 	define: {
 		// Provide global Buffer for libraries that expect Node.js environment

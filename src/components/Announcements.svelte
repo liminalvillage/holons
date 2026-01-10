@@ -4,6 +4,7 @@
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
 	import { Bell } from 'svelte-feathers';
+	import HologramBadge from "./HologramBadge.svelte";
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -19,12 +20,12 @@
 					unsubscribeFunction();
 					unsubscribeFunction = null;
 				}
-				
+
 				currentHolonID = value;
 				subscribeToAnnouncements();
 			}
 		});
-		
+
 		return () => {
 			idUnsubscribe();
 			if (unsubscribeFunction) {
@@ -42,6 +43,11 @@
 		};
 		content: string;
 		date: string;
+		_hologram?: {
+			isHologram: boolean;
+			soul: string;
+			sourceHolon: string;
+		};
 	}
 
 	let store: Record<string, Announcement> = {};
@@ -104,7 +110,7 @@
 		<div>
 			{#each announcements.reverse() as [key, announcement]}
 				<div
-					class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700"
+					class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700 {announcement._hologram?.isHologram ? 'bg-purple-900/20 border-l-2 border-l-purple-500' : ''}"
 				>
 					<img
 						src="https://telegram.holons.io/getavatar?user_id={announcement.user?.id}"
@@ -113,16 +119,19 @@
 					/>
 					<div class="pl-4 w-full">
 						<div class="flex items center justify-between w-full">
-							<div
-								class="text-white
+							<div class="flex items-center gap-2">
+								<div
+									class="text-white
                             font-medium"
-							>
-								{announcement.user?.first_name
-									? announcement.user.first_name
-									: announcement.user?.username}
-								{announcement.user?.last_name
-									? announcement.user?.last_name
-									: ""}
+								>
+									{announcement.user?.first_name
+										? announcement.user.first_name
+										: announcement.user?.username}
+									{announcement.user?.last_name
+										? announcement.user?.last_name
+										: ""}
+								</div>
+								<HologramBadge item={announcement} size="sm" />
 							</div>
 							<div
 								class="flex justify-center items-center cursor-pointer h-7 w-7"

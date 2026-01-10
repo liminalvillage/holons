@@ -150,10 +150,20 @@
 				view = 'telegram-choice';
 			}, 500);
 		} else {
-			// Default to public space - skip welcome screen
-			setTimeout(() => {
-				handlePublicSpace();
-			}, 500);
+			// Check if user explicitly wants public mode (set during logout for quick re-auth)
+			const enterPublicMode = localStorage.getItem('enter_public_mode');
+			if (enterPublicMode === 'true') {
+				// Clear the flag and show welcome screen for login options
+				localStorage.removeItem('enter_public_mode');
+				setTimeout(() => {
+					view = 'welcome';
+				}, 500);
+			} else {
+				// First-time visitor - default to public space
+				setTimeout(() => {
+					handlePublicSpace();
+				}, 500);
+			}
 		}
 	});
 
@@ -334,6 +344,21 @@
 					<div class="option-text">
 						<span class="option-title">Restore Existing</span>
 						<span class="option-desc">Import your private key</span>
+					</div>
+				</button>
+
+				<button
+					class="option-button guest"
+					on:click={handlePublicSpace}
+				>
+					<div class="option-icon">
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+					</div>
+					<div class="option-text">
+						<span class="option-title">Continue as Guest</span>
+						<span class="option-desc">Browse public holons (read-only)</span>
 					</div>
 				</button>
 			</div>
@@ -699,6 +724,21 @@
 	.option-button.secondary:hover {
 		background: rgba(100, 116, 139, 0.25);
 		border-color: rgba(100, 116, 139, 0.5);
+	}
+
+	.option-button.guest {
+		background: rgba(16, 185, 129, 0.1);
+		border-color: rgba(16, 185, 129, 0.3);
+	}
+
+	.option-button.guest:hover {
+		background: rgba(16, 185, 129, 0.2);
+		border-color: rgba(16, 185, 129, 0.5);
+	}
+
+	.option-button.guest .option-icon {
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
 	}
 
 	.option-icon {

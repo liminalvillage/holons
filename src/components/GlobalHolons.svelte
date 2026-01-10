@@ -195,7 +195,7 @@
                 try {
                     const settings = await holosphere.get($ID, 'settings', $ID);
                     if (settings?.name) {
-                        await holosphere.writeGlobal('holons_registry', {
+                        await holosphere.putGlobal('holons_registry', {
                             id: $ID,
                             name: settings.name,
                             purpose: settings.purpose || '',

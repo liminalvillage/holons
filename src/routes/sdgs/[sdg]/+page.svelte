@@ -52,17 +52,14 @@
   async function loadFederated() {
     loading = true; error = '';
     try {
-      const info = await holosphere.getFederation(sdgHolonId);
-      // Only include current federation relationships
-      const ids: string[] = [
-        ...(info?.inbound || []),
-        ...(info?.outbound || [])
-      ];
+      // Read member holons from the 'members' lens
+      const members = await holosphere.get(sdgHolonId, 'members') || [];
+      const memberArray = Array.isArray(members) ? members : [];
+      const ids = memberArray.map((m: any) => m.holonId || m.id).filter(Boolean);
       const unique = Array.from(new Set(ids));
-      // Rebuild list from source of truth each time to remove unfederated holons
       federatedHolons = await Promise.all(unique.map(async (id) => ({ id, name: await fetchHolonName(holosphere, id) })));
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load federated holons';
+      error = e instanceof Error ? e.message : 'Failed to load member holons';
     } finally {
       loading = false;
     }
@@ -73,20 +70,19 @@
     saving = true; error='';
     try {
       await ensureSdgHolon();
-      await holosphere.federate(
-        sdgHolonId,
-        newHolonId.trim(),
-        null,
-        null,
-        true,
-        { inbound: [], outbound: [] }
-      );
+      // Add as a member using simple data storage
+      const holonId = newHolonId.trim();
+      await holosphere.put(sdgHolonId, 'members', {
+        id: holonId,
+        holonId: holonId,
+        addedAt: Date.now()
+      });
       showAddDialog = false;
       newHolonName = '';
       newHolonId = '';
       await loadFederated();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to federate';
+      error = e instanceof Error ? e.message : 'Failed to add member';
     } finally {
       saving = false;
     }
@@ -99,14 +95,19 @@
   async function createHolon() {
     if (!newHolonName.trim()) return;
     const id = newHolonId.trim() || newHolonName.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,64);
-    // optionally seed a settings name
     try {
+      // Create the new holon with a name
       await holosphere.put(id, 'settings', { name: newHolonName.trim() });
-      await holosphere.federate(sdgHolonId, id, null, null, true, { inbound: [], outbound: [] });
+      // Add as a member of this SDG
+      await holosphere.put(sdgHolonId, 'members', {
+        id: id,
+        holonId: id,
+        addedAt: Date.now()
+      });
       showAddDialog = false; newHolonId = ''; newHolonName = '';
       await loadFederated();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to create and federate holon';
+      error = e instanceof Error ? e.message : 'Failed to create holon';
     }
   }
 </script>

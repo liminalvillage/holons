@@ -1,4 +1,4 @@
-import { writable, derived, type Readable } from 'svelte/store';
+import { writable } from 'svelte/store';
 import type { HoloSphere } from 'holosphere';
 
 // The main holosphere store - updated when holosphere is initialized

@@ -11,6 +11,7 @@
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
+	import { createFederationService, setFederationService } from '../services/FederationService';
 
 	// Import global design system styles
 	import '../styles/index.css';
@@ -42,12 +43,13 @@
 
 	// Initialize user's personal holon with their public key as ID
 	async function initializeUserHolon() {
-		if (!holosphere || !holosphere.client?.publicKey) return;
+		if (!holosphere || !holosphere.myHolon) return;
 
 		// For telegram-mapped sessions, use the mapped public key instead of service key
+		// Note: holosphere.myHolon is the agent's public key (1:1 agent-holon mapping)
 		const userPublicKey = isTelegramMappedSession && telegramMappedPublicKey
 			? telegramMappedPublicKey
-			: holosphere.client.publicKey;
+			: holosphere.myHolon;
 		console.log('Initializing user holon with ID:', userPublicKey, 'telegram-mapped:', isTelegramMappedSession);
 
 		try {
@@ -78,7 +80,7 @@
 				if (!existingSettings || !existingSettings.name) {
 					// First time login - create the holon with custom or default name
 					console.log('First time user - creating personal holon:', holonName);
-					await holosphere.write(userPublicKey, 'settings', {
+					await holosphere.put(userPublicKey, 'settings', {
 						id: userPublicKey,
 						name: holonName,
 						purpose: 'Personal holon',
@@ -89,7 +91,7 @@
 
 				// Always register/update holon in global registry for discovery
 				try {
-					await holosphere.writeGlobal('holons_registry', {
+					await holosphere.putGlobal('holons_registry', {
 						id: userPublicKey,
 						name: holonName,
 						purpose: existingSettings?.purpose || 'Personal holon',
@@ -106,7 +108,7 @@
 				// Always update to handle cases where user creates new identity or restores different key
 				if (pendingTelegramUserId) {
 					try {
-						await holosphere.writeGlobal('telegram_mappings', {
+						await holosphere.putGlobal('telegram_mappings', {
 							id: String(pendingTelegramUserId),
 							publicKey: userPublicKey,
 							holonName: holonName,
@@ -188,12 +190,12 @@
 		try {
 			// Get the holosphere service public key
 			const holospherePublicKey = await holosphere.getPublicKey(holospherePrivateKey);
-			const userPublicKey = holosphere.client.publicKey;
+			const userPublicKey = holosphere.myHolon;
 
 			console.log('Granting federation capability to service key:', holospherePublicKey);
 
 			// Store the holosphere service public key in global table
-			await holosphere.writeGlobal('federation_keys', {
+			await holosphere.putGlobal('federation_keys', {
 				id: 'holosphere_service',
 				publicKey: holospherePublicKey,
 				description: 'Main holosphere service key for federated community access',
@@ -209,7 +211,7 @@
 			);
 
 			// Store the capability token in federation_capabilities global table
-			await holosphere.writeGlobal('federation_capabilities', {
+			await holosphere.putGlobal('federation_capabilities', {
 				id: userPublicKey,
 				grantorPublicKey: userPublicKey,
 				recipientPublicKey: holospherePublicKey,
@@ -251,21 +253,24 @@
 			appName: environmentName,
 			privateKey: privateKey,
 			backend: 'nostr',
-			nostr: {
-				peers: ['wss://relay.holons.io'], 
-			}
+			relays: ['wss://relay.holons.io'],
 		});
 
 		// Wait for Nostr backend to be ready (async initialization)
 		await holosphere.ready();
 
-		// Log the public key for verification
-		if (holosphere.client) {
-			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
-		}
+		// Log the public key for verification (using myHolon - the agent's holon ID)
+		console.log("HoloSphere Public Key (myHolon):", holosphere.myHolon);
 
 		// Update the global store (this can be called from async callbacks)
 		holosphereStore.set(holosphere);
+
+		// Initialize and set the FederationService singleton
+		const federationService = createFederationService(holosphere);
+		setFederationService(federationService);
+		federationService.init().catch(err => {
+			console.warn('FederationService init error (non-critical):', err);
+		});
 
 		// Initialize the user's personal holon with their public key as ID
 		// But skip if on certain routes like /global
@@ -287,8 +292,8 @@
 				initializeUserHolon();
 			}
 
-			// Grant capability token to the holosphere service key for federation
-			grantFederationCapability(privateKey);
+			// Federation capability granting disabled - no automatic federation on load
+			// grantFederationCapability(privateKey);
 		} else {
 			console.log('Telegram-mapped session: skipping auto-initialization');
 		}

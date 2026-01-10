@@ -11,6 +11,7 @@ import OffersIcon from './icons/OffersIcon.svelte';
 import DashboardIcon from './icons/DashboardIcon.svelte';
 import ShoppingIcon from './icons/ShoppingIcon.svelte';
 import ChecklistIcon from './icons/ChecklistIcon.svelte';
+import LibraryIcon from './icons/LibraryIcon.svelte';
 import ExpensesIcon from './icons/ExpensesIcon.svelte';
 import FederationIcon from './icons/FederationIcon.svelte';
 import MyHolonsIcon from './icons/MyHolonsIcon.svelte';
@@ -64,6 +65,11 @@ export const data = [
 		link: '/checklists'
 	},
 	{
+		title: 'Library',
+		icon: LibraryIcon,
+		link: '/library'
+	},
+	{
 		title: 'Status',
 		icon: StatusIcon,
 		link: '/status'
@@ -71,17 +77,20 @@ export const data = [
 	{
 		title: 'Federation',
 		icon: FederationIcon,
-		link: '/federation'
+		link: '/federation',
+		useHomeHolon: true // Always use the logged-in user's home holon
 	},
 	{
 		title: 'Flow',
 		icon: FlowIcon,
-		link: '/flow'
+		link: '/flow',
+		useHomeHolon: true // Always use the logged-in user's home holon
 	},
 	{
 		title: 'Settings',
 		icon: SettingsIcon,
-		link: '/settings'
+		link: '/settings',
+		useHomeHolon: true // Always use the logged-in user's home holon
 	},
 	{
 		title: 'Database',

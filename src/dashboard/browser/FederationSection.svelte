@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { createEventDispatcher, getContext, onMount } from 'svelte';
+	import { createEventDispatcher, getContext } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { Globe, ChevronDown, Users, Settings, Bell } from 'svelte-feathers';
+	import { Globe, ChevronDown, Users, Settings } from 'svelte-feathers';
 	import { goto } from '$app/navigation';
 	import { ID } from '../store';
-	import { federationNotifications } from '$lib/stores/federationRequests';
 	import type { HoloSphere } from 'holosphere';
 
 	const dispatch = createEventDispatcher();
@@ -18,7 +17,6 @@
 
 	// Current holon from store
 	$: currentHolonId = $ID;
-	$: pendingRequests = $federationNotifications;
 
 	// Load collapse state from localStorage
 	if (typeof window !== 'undefined') {
@@ -77,9 +75,6 @@
 		<div class="federation-section__header-left">
 			<Globe size="16" />
 			<span>Federation</span>
-			{#if pendingRequests > 0}
-				<span class="federation-section__badge">{pendingRequests}</span>
-			{/if}
 		</div>
 		<div class="federation-section__header-right">
 			{#if federatedCount > 0}
@@ -107,12 +102,6 @@
 						<Users size="14" />
 						<span>{federatedCount} connected holon{federatedCount !== 1 ? 's' : ''}</span>
 					</div>
-					{#if pendingRequests > 0}
-						<div class="federation-section__status-item federation-section__status-item--pending">
-							<Bell size="14" />
-							<span>{pendingRequests} pending request{pendingRequests !== 1 ? 's' : ''}</span>
-						</div>
-					{/if}
 				</div>
 
 				<!-- Actions -->
@@ -163,20 +152,6 @@
 		gap: var(--spacing-2, 0.5rem);
 	}
 
-	.federation-section__badge {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 18px;
-		height: 18px;
-		padding: 0 5px;
-		background: #ef4444;
-		color: white;
-		font-size: 0.65rem;
-		font-weight: 600;
-		border-radius: var(--radius-full, 9999px);
-	}
-
 	.federation-section__count {
 		font-size: var(--font-size-xs, 0.75rem);
 		padding: 2px 8px;
@@ -222,10 +197,6 @@
 		gap: var(--spacing-2, 0.5rem);
 		font-size: var(--font-size-sm, 0.875rem);
 		color: var(--color-text-secondary, #d1d5db);
-	}
-
-	.federation-section__status-item--pending {
-		color: #fbbf24;
 	}
 
 	.federation-section__actions {

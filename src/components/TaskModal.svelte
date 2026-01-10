@@ -489,7 +489,7 @@
     // Only attempt if user.id is a valid holon ID (non-empty string)
     if (user.id && typeof user.id === 'string' && user.id.trim() !== '' && user.id !== holonId) {
         try {
-            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
             await holosphere.put(user.id, 'quests', hologram);
         } catch (error) {
             // Silently ignore - user may not have a personal holon
@@ -876,7 +876,7 @@
 
             // Create a hologram for the quest to propagate
             // Use the full quest data instead of just the ID reference
-            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
 
             // Determine if this is an H3 holon by checking if it's a valid H3 cell
             let isH3Holon = false;
@@ -1391,14 +1391,16 @@
 
                                         <!-- Time tracking button (only for selected users) -->
                                         {#if isSelected && !isPending}
-                                            <button
-                                                class="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30 active:bg-green-500/40 flex-shrink-0 touch-manipulation min-h-[32px] min-w-[44px]"
+                                            <span
+                                                class="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30 active:bg-green-500/40 flex-shrink-0 touch-manipulation min-h-[32px] min-w-[44px] cursor-pointer"
                                                 on:click|stopPropagation={() => updateTimeTracking(user.id, 0.25)}
+                                                on:keydown={(e) => e.key === 'Enter' && updateTimeTracking(user.id, 0.25)}
                                                 title="Add 15 minutes"
-                                                type="button"
+                                                role="button"
+                                                tabindex="0"
                                             >
                                                 +15m
-                                            </button>
+                                            </span>
                                         {/if}
                                     </button>
                                 {/each}
@@ -1541,6 +1543,7 @@
             transition:scale={{ duration: 200, start: 0.95 }}
             role="dialog"
             aria-modal="true"
+            tabindex="-1"
             on:click|stopPropagation
             on:keydown|stopPropagation
         >

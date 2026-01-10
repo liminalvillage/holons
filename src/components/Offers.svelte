@@ -673,7 +673,7 @@
 
 			// Create a hologram for the item to propagate
 			// Use the full item data instead of just the ID reference
-			const hologram = holosphere.createHologram(holonID, 'quests', item);
+			const hologram = await holosphere.createHologram(holonID, 'quests', item);
 			console.log("[Offers.svelte] Created hologram:", hologram);
 
 			// Use federation propagation to publish to federated spaces

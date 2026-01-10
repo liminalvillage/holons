@@ -5,6 +5,8 @@
 	import type { HoloSphere } from "holosphere";
 	import { calculateCreditMatrix } from "../utils/expenseCalculations";
 	import { Plus } from 'svelte-feathers';
+	import HologramBadge from "./HologramBadge.svelte";
+	import { isHologram, isResolvedHologram } from "../types/federation";
 
 	interface Expense {
 		id: string;
@@ -14,6 +16,11 @@
 		paidBy: string;
 		splitWith: string[];
 		date: string;
+		_hologram?: {
+			isHologram: boolean;
+			soul: string;
+			sourceHolon: string;
+		};
 	}
 
 	interface User {
@@ -60,7 +67,7 @@
 			const [expensesData, usersData, settingsData] = await Promise.allSettled([
 				holosphere.getAll(holonID, "expenses"),
 				holosphere.getAll(holonID, "users"),
-				holosphere.read(holonID, "settings", holonID)
+				holosphere.get(holonID, "settings", holonID)
 			]);
 
 			// Process expenses
@@ -381,9 +388,12 @@
 				<h3>Recent Expenses</h3>
 				<div class="expense-list">
 					{#each filteredExpenses as expense}
-						<div class="expense-card">
+						<div class="expense-card" class:expense-card--hologram={expense._hologram?.isHologram}>
 							<div class="expense-info">
-								<h4>{expense.description}</h4>
+								<div class="expense-title-row">
+									<h4>{expense.description}</h4>
+									<HologramBadge item={expense} size="sm" />
+								</div>
 								<p class="paid-by">Paid by {users.find(u => u.id === parseInt(expense.paidBy))?.first_name || expense.paidBy}</p>
 								<p class="split-with">Split: {(Array.isArray(expense.splitWith) ? expense.splitWith : []).map(id => users.find(u => u.id === parseInt(id))?.first_name || id).join(', ')}</p>
 							</div>
@@ -710,6 +720,18 @@
 		background: #374151;
 		padding: 1rem;
 		border-radius: 0.75rem;
+	}
+
+	.expense-card--hologram {
+		opacity: 0.85;
+		border: 2px solid #a78bfa;
+		box-shadow: 0 0 15px rgba(167, 139, 250, 0.3), inset 0 0 15px rgba(167, 139, 250, 0.1);
+	}
+
+	.expense-title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	.expense-info h4 {
