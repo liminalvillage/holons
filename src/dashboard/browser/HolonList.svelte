@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Star } from 'svelte-feathers';
+	import { Star, Home } from 'svelte-feathers';
 	import HolonItem from './HolonItem.svelte';
 
 	interface Holon {
@@ -18,6 +18,7 @@
 	export let showStarButton: boolean = false;
 	export let starredIds: string[] = [];
 	export let homeHolonId: string | null = null;
+	export let showHomeSection: boolean = true;
 
 	const dispatch = createEventDispatcher();
 
@@ -33,9 +34,15 @@
 		dispatch('star', { holonId });
 	}
 
-	// Separate pinned and unpinned holons
-	$: pinnedHolons = holons.filter((h) => h.isPinned);
-	$: unpinnedHolons = holons.filter((h) => !h.isPinned);
+	// Separate home holon from others
+	$: homeHolon = homeHolonId ? holons.find(h => h.id === homeHolonId) : null;
+
+	// Filter out home holon from the regular list
+	$: otherHolons = homeHolonId ? holons.filter(h => h.id !== homeHolonId) : holons;
+
+	// Separate pinned and unpinned holons (excluding home)
+	$: pinnedHolons = otherHolons.filter((h) => h.isPinned);
+	$: unpinnedHolons = otherHolons.filter((h) => !h.isPinned);
 </script>
 
 <div class="holon-list">
@@ -44,12 +51,34 @@
 			<div class="holon-list__spinner"></div>
 			<span>Loading holons...</span>
 		</div>
-	{:else if holons.length === 0}
+	{:else if holons.length === 0 && !homeHolonId}
 		<div class="holon-list__empty">
 			<p>No holons found</p>
 			<p class="holon-list__empty-hint">Add a holon to get started</p>
 		</div>
 	{:else}
+		<!-- Home Holon Section - Always visible at top when showHomeSection is true -->
+		{#if showHomeSection && homeHolonId}
+			<div class="holon-list__home-section">
+				<button
+					class="holon-list__home-item"
+					class:holon-list__home-item--active={currentHolonId === homeHolonId}
+					on:click={() => selectHolon(homeHolonId)}
+				>
+					<div class="holon-list__home-icon" class:holon-list__home-icon--active={currentHolonId === homeHolonId}>
+						<Home size={18} />
+					</div>
+					<div class="holon-list__home-content">
+						<span class="holon-list__home-label">Home</span>
+						<span class="holon-list__home-sublabel">Your personal space</span>
+					</div>
+					{#if currentHolonId === homeHolonId}
+						<div class="holon-list__home-indicator"></div>
+					{/if}
+				</button>
+			</div>
+		{/if}
+
 		{#if pinnedHolons.length > 0}
 			<div class="holon-list__section">
 				<span class="holon-list__section-title">
@@ -63,7 +92,7 @@
 						isActive={holon.id === currentHolonId}
 						isPinned={true}
 						isStarred={starredIds.includes(holon.id)}
-						isHome={holon.id === homeHolonId}
+						isHome={false}
 						{showPinButton}
 						{showStarButton}
 						on:select={() => selectHolon(holon.id)}
@@ -76,8 +105,8 @@
 
 		{#if unpinnedHolons.length > 0}
 			<div class="holon-list__section">
-				{#if pinnedHolons.length > 0}
-					<span class="holon-list__section-title">All</span>
+				{#if pinnedHolons.length > 0 || (showHomeSection && homeHolonId)}
+					<span class="holon-list__section-title">Holons</span>
 				{/if}
 				{#each unpinnedHolons as holon (holon.id)}
 					<HolonItem
@@ -86,7 +115,7 @@
 						isActive={holon.id === currentHolonId}
 						isPinned={false}
 						isStarred={starredIds.includes(holon.id)}
-						isHome={holon.id === homeHolonId}
+						isHome={false}
 						{showPinButton}
 						{showStarButton}
 						on:select={() => selectHolon(holon.id)}
@@ -94,6 +123,13 @@
 						on:star={() => starHolon(holon.id)}
 					/>
 				{/each}
+			</div>
+		{/if}
+
+		{#if holons.length === 0 && homeHolonId}
+			<div class="holon-list__empty holon-list__empty--with-home">
+				<p>No other holons yet</p>
+				<p class="holon-list__empty-hint">Star or add holons to see them here</p>
 			</div>
 		{/if}
 	{/if}
@@ -121,6 +157,101 @@
 
 	.holon-list::-webkit-scrollbar-thumb:hover {
 		background: var(--color-border-light, #4b5563);
+	}
+
+	/* Home Section - Anchored at top */
+	.holon-list__home-section {
+		padding: var(--spacing-2, 0.5rem);
+		margin-bottom: var(--spacing-2, 0.5rem);
+		border-bottom: 1px solid var(--color-border, #374151);
+	}
+
+	.holon-list__home-item {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-3, 0.75rem);
+		width: 100%;
+		padding: var(--spacing-3, 0.75rem);
+		background: var(--color-bg-secondary, #1f2937);
+		border: 1px solid var(--color-border, #374151);
+		border-radius: var(--radius-lg, 0.5rem);
+		cursor: pointer;
+		transition: all 150ms ease;
+		text-align: left;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.holon-list__home-item:hover {
+		background: var(--color-bg-tertiary, #374151);
+		border-color: var(--color-accent, #4f46e5);
+	}
+
+	.holon-list__home-item--active {
+		background: linear-gradient(135deg, rgba(79, 70, 229, 0.15), rgba(99, 102, 241, 0.1));
+		border-color: var(--color-accent, #4f46e5);
+		box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.3);
+	}
+
+	.holon-list__home-item--active:hover {
+		background: linear-gradient(135deg, rgba(79, 70, 229, 0.2), rgba(99, 102, 241, 0.15));
+	}
+
+	.holon-list__home-icon {
+		width: 40px;
+		height: 40px;
+		border-radius: var(--radius-md, 0.375rem);
+		background: var(--color-accent-subtle, rgba(79, 70, 229, 0.2));
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-accent-light, #818cf8);
+		flex-shrink: 0;
+		transition: all 150ms ease;
+	}
+
+	.holon-list__home-icon--active {
+		background: var(--color-accent, #4f46e5);
+		color: white;
+	}
+
+	.holon-list__home-content {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.holon-list__home-label {
+		font-size: var(--font-size-base, 1rem);
+		font-weight: var(--font-weight-semibold, 600);
+		color: var(--color-text-primary, #ffffff);
+	}
+
+	.holon-list__home-sublabel {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.holon-list__home-indicator {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--color-accent, #4f46e5);
+		box-shadow: 0 0 8px var(--color-accent, #4f46e5);
+		animation: pulse 2s infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.7;
+			transform: scale(1.1);
+		}
 	}
 
 	.holon-list__section {
@@ -183,5 +314,9 @@
 	.holon-list__empty-hint {
 		font-size: var(--font-size-xs, 0.75rem);
 		margin-top: var(--spacing-1, 0.25rem);
+	}
+
+	.holon-list__empty--with-home {
+		padding: var(--spacing-4, 1rem);
 	}
 </style>

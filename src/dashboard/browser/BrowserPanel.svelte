@@ -454,6 +454,7 @@
 			showStarButton={activeTab === 'visited'}
 			starredIds={personalHolons.map(h => h.id)}
 			homeHolonId={$nostrPublicKey}
+			showHomeSection={activeTab === 'personal'}
 			on:select={(e) => selectHolon(e.detail.holonId)}
 			on:pin={(e) => togglePin(e.detail.holonId)}
 			on:star={(e) => starHolon(e.detail.holonId)}

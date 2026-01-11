@@ -11,6 +11,7 @@
 	import Overlay from './Overlay.svelte';
 	import BrowserPanel from './browser/BrowserPanel.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
+	import Onboarding from '../components/Onboarding.svelte';
 
 	// Browser panel state (replaces sidebar for holon browsing)
 	// Default open on desktop, closed on mobile
@@ -145,6 +146,9 @@
 				</RouteTransition>
 			</main>
 		</div>
+
+		<!-- Onboarding for first-time users -->
+		<Onboarding />
 	</div>
 {/if}
 
