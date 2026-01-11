@@ -6,9 +6,6 @@
 	import type { HoloSphere } from 'holosphere';
 	import { Search, Plus, X, Star, Users, Clock } from 'svelte-feathers';
 	import { nostrPublicKey } from '../../lib/stores/nostr';
-	import SidebarHeader from './SidebarHeader.svelte';
-	import KeysSection from './KeysSection.svelte';
-	import BrowserHeader from './BrowserHeader.svelte';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
 	import { ID, sidebarExpanded } from '../store';
@@ -393,73 +390,77 @@
 	class:browser-panel--open={isOpen}
 	aria-label="Holon browser"
 >
-	<!-- Sidebar Header: Logo, Current Holon, ID/QR -->
-	<SidebarHeader />
+	<!-- Compact header with search and add -->
+	<div class="browser-panel__header">
+		<div class="browser-panel__search">
+			<Search size={14} />
+			<input
+				type="text"
+				placeholder="Search holons..."
+				bind:value={searchQuery}
+			/>
+		</div>
+		<button
+			class="browser-panel__add-btn"
+			onclick={handleAddHolon}
+			title="Add holon"
+		>
+			<Plus size={16} />
+		</button>
+	</div>
 
-	<!-- Keys & Access Section (collapsible) -->
-	<KeysSection />
+	<!-- Tabs -->
+	<div class="browser-panel__tabs">
+		<button
+			class="browser-panel__tab"
+			class:browser-panel__tab--active={activeTab === 'personal'}
+			onclick={() => (activeTab = 'personal')}
+		>
+			<Star size={12} />
+			<span>Starred</span>
+		</button>
+		<button
+			class="browser-panel__tab"
+			class:browser-panel__tab--active={activeTab === 'visited'}
+			onclick={() => (activeTab = 'visited')}
+		>
+			<Clock size={12} />
+			<span>Recent</span>
+		</button>
+		<button
+			class="browser-panel__tab"
+			class:browser-panel__tab--active={activeTab === 'federated'}
+			onclick={() => (activeTab = 'federated')}
+		>
+			<Users size={12} />
+			<span>Federated</span>
+		</button>
+	</div>
 
-	<!-- Holon Browser Section -->
-	<div class="browser-panel__browser">
-		<BrowserHeader
-			bind:searchQuery
-			on:close={handleClose}
-			on:add={handleAddHolon}
-		/>
+	<!-- Holon List - main content -->
+	<HolonList
+		holons={filteredHolons}
+		{currentHolonId}
+		{isLoading}
+		showPinButton={activeTab === 'personal'}
+		showStarButton={activeTab === 'visited'}
+		starredIds={personalHolons.map(h => h.id)}
+		homeHolonId={$nostrPublicKey}
+		showHomeSection={activeTab === 'personal'}
+		on:select={(e) => selectHolon(e.detail.holonId)}
+		on:pin={(e) => togglePin(e.detail.holonId)}
+		on:star={(e) => starHolon(e.detail.holonId)}
+	/>
 
-		<!-- Tabs -->
-		<div class="browser-panel__tabs">
-			<button
-				class="browser-panel__tab"
-				class:browser-panel__tab--active={activeTab === 'personal'}
-				onclick={() => (activeTab = 'personal')}
-			>
-				<Star size="14" />
-				<span>My Holons</span>
-			</button>
-			<button
-				class="browser-panel__tab"
-				class:browser-panel__tab--active={activeTab === 'visited'}
-				onclick={() => (activeTab = 'visited')}
-			>
-				<Clock size="14" />
-				<span>Recent</span>
-			</button>
-			<button
-				class="browser-panel__tab"
-				class:browser-panel__tab--active={activeTab === 'federated'}
-				onclick={() => (activeTab = 'federated')}
-			>
-				<Users size="14" />
-				<span>Federated</span>
+	<!-- Federation link (only on federated tab) -->
+	{#if activeTab === 'federated' && currentHolonId}
+		<div class="browser-panel__footer">
+			<button class="browser-panel__manage-btn" onclick={() => goto(`/${currentHolonId}/federation`)}>
+				<i class="fas fa-cog"></i>
+				<span>Manage Federation</span>
 			</button>
 		</div>
-
-		<!-- Federation Management (only on federated tab) -->
-		{#if activeTab === 'federated'}
-			<div class="browser-panel__federation-header">
-				<button class="browser-panel__manage-federation-btn" onclick={() => goto(`/${currentHolonId}/federation`)}>
-					<i class="fas fa-cog"></i>
-					<span>Manage Federation</span>
-				</button>
-			</div>
-		{/if}
-
-		<!-- Holon List -->
-		<HolonList
-			holons={filteredHolons}
-			{currentHolonId}
-			{isLoading}
-			showPinButton={activeTab === 'personal'}
-			showStarButton={activeTab === 'visited'}
-			starredIds={personalHolons.map(h => h.id)}
-			homeHolonId={$nostrPublicKey}
-			showHomeSection={activeTab === 'personal'}
-			on:select={(e) => selectHolon(e.detail.holonId)}
-			on:pin={(e) => togglePin(e.detail.holonId)}
-			on:star={(e) => starHolon(e.detail.holonId)}
-		/>
-	</div>
+	{/if}
 </aside>
 
 <!-- Add Holon Modal -->
@@ -546,7 +547,7 @@
 	.browser-panel {
 		display: flex;
 		flex-direction: column;
-		width: var(--browser-width-expanded, 280px);
+		width: var(--browser-width-expanded, 260px);
 		height: 100vh;
 		background: var(--color-bg-primary, #111827);
 		border-right: 1px solid var(--color-border, #374151);
@@ -558,7 +559,7 @@
 	/* Desktop: hide sidebar by shifting it off-screen */
 	@media (min-width: 1025px) {
 		.browser-panel:not(.browser-panel--open) {
-			margin-left: calc(-1 * var(--browser-width-expanded, 280px));
+			margin-left: calc(-1 * var(--browser-width-expanded, 260px));
 		}
 	}
 
@@ -569,11 +570,10 @@
 			left: 0;
 			top: 0;
 			bottom: 0;
-			width: min(85vw, 320px);
-			z-index: 50; /* High z-index to be above backdrop (25) and other content */
+			width: min(85vw, 300px);
+			z-index: 50;
 			transform: translateX(-100%);
-			box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
-			background: var(--color-bg-primary, #111827); /* Ensure solid background */
+			box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
 		}
 
 		.browser-panel--open {
@@ -581,19 +581,63 @@
 		}
 	}
 
-	/* Holon browser section - takes remaining space and scrolls */
-	.browser-panel__browser {
+	/* Compact header with search and add button */
+	.browser-panel__header {
 		display: flex;
-		flex-direction: column;
-		flex: 1;
-		min-height: 0;
-		overflow: hidden;
+		align-items: center;
+		gap: var(--spacing-2, 0.5rem);
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		border-bottom: 1px solid var(--color-border, #374151);
+		flex-shrink: 0;
 	}
 
+	.browser-panel__search {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-2, 0.5rem);
+		padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
+		background: var(--color-bg-secondary, #1f2937);
+		border-radius: var(--radius-md, 0.375rem);
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.browser-panel__search input {
+		flex: 1;
+		background: transparent;
+		border: none;
+		outline: none;
+		color: var(--color-text-primary, #ffffff);
+		font-size: var(--font-size-sm, 0.875rem);
+	}
+
+	.browser-panel__search input::placeholder {
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.browser-panel__add-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		background: var(--color-accent, #4f46e5);
+		border: none;
+		border-radius: var(--radius-md, 0.375rem);
+		color: white;
+		cursor: pointer;
+		transition: background-color 150ms ease;
+		flex-shrink: 0;
+	}
+
+	.browser-panel__add-btn:hover {
+		background: var(--color-accent-dark, #4338ca);
+	}
+
+	/* Tabs */
 	.browser-panel__tabs {
 		display: flex;
 		border-bottom: 1px solid var(--color-border, #374151);
-		padding: 0 var(--spacing-2, 0.5rem);
 		flex-shrink: 0;
 	}
 
@@ -602,13 +646,13 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: var(--spacing-1, 0.25rem);
-		padding: var(--spacing-2, 0.5rem) var(--spacing-2, 0.5rem);
+		gap: 4px;
+		padding: var(--spacing-2, 0.5rem);
 		background: transparent;
 		border: none;
 		border-bottom: 2px solid transparent;
 		color: var(--color-text-muted, #6b7280);
-		font-size: var(--font-size-xs, 0.75rem);
+		font-size: 11px;
 		font-weight: var(--font-weight-medium, 500);
 		cursor: pointer;
 		transition: color 150ms ease, border-color 150ms ease;
@@ -623,43 +667,33 @@
 		border-bottom-color: var(--color-accent, #4f46e5);
 	}
 
-	.browser-panel__tab span {
-		display: none;
-	}
-
-	@media (min-width: 400px) {
-		.browser-panel__tab span {
-			display: inline;
-		}
-	}
-
-	/* Federation Header */
-	.browser-panel__federation-header {
-		padding: var(--spacing-3, 0.75rem);
-		background: var(--color-bg-secondary, #1f2937);
-		border-bottom: 1px solid var(--color-border, #374151);
+	/* Footer */
+	.browser-panel__footer {
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		border-top: 1px solid var(--color-border, #374151);
 		flex-shrink: 0;
 	}
 
-	.browser-panel__manage-federation-btn {
+	.browser-panel__manage-btn {
 		width: 100%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: var(--spacing-2, 0.5rem);
-		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		background: var(--color-accent, #4f46e5);
-		border: none;
+		padding: var(--spacing-2, 0.5rem);
+		background: var(--color-bg-secondary, #1f2937);
+		border: 1px solid var(--color-border, #374151);
 		border-radius: var(--radius-md, 0.375rem);
-		color: white;
+		color: var(--color-text-secondary, #d1d5db);
 		font-size: var(--font-size-sm, 0.875rem);
-		font-weight: var(--font-weight-medium, 500);
 		cursor: pointer;
-		transition: background-color 150ms ease;
+		transition: all 150ms ease;
 	}
 
-	.browser-panel__manage-federation-btn:hover {
-		background: var(--color-accent-light, #6366f1);
+	.browser-panel__manage-btn:hover {
+		background: var(--color-bg-tertiary, #374151);
+		border-color: var(--color-accent, #4f46e5);
+		color: var(--color-text-primary, #ffffff);
 	}
 
 	/* Add Holon Modal */
