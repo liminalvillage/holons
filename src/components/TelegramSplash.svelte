@@ -95,6 +95,18 @@
 		await nostrStore.init();
 		telegramStore.init();
 
+		// Check if user just logged out (show welcome screen to allow re-login)
+		const justLoggedOut = localStorage.getItem('enter_public_mode') === 'true';
+		if (justLoggedOut) {
+			// Clear the flag
+			localStorage.removeItem('enter_public_mode');
+			// Show welcome screen with login options
+			setTimeout(() => {
+				view = 'welcome';
+			}, 300);
+			return;
+		}
+
 		// Check Telegram context
 		const telegramState = telegramStore.getState();
 		isTelegramWebApp = telegramState.isTelegramWebApp;
@@ -337,6 +349,22 @@
 					</div>
 				</button>
 			</div>
+
+			<!-- Guest mode option -->
+			<div class="guest-divider">
+				<span>or</span>
+			</div>
+
+			<button
+				class="guest-button"
+				on:click={handlePublicSpace}
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+				</svg>
+				Continue as Guest
+			</button>
+			<p class="guest-hint">Browse in read-only mode without an identity</p>
 		</div>
 
 		<div class="bottom-branding">
@@ -365,10 +393,8 @@
 					</div>
 				{/if}
 				<span class="telegram-name">
-					{telegramUser?.first_name || 'User'}
-					{#if telegramUser?.username}
-						<span class="telegram-username">@{telegramUser.username}</span>
-					{/if}
+					{telegramUser?.first_name || 'User'}{telegramUser?.last_name ? ` ${telegramUser.last_name}` : ''}
+					<span class="telegram-id">ID: {String(telegramUser?.id || '')}</span>
 				</span>
 			</div>
 
@@ -928,6 +954,13 @@
 		font-weight: 400;
 	}
 
+	.telegram-id {
+		color: #64748b;
+		font-size: 0.75rem;
+		font-weight: 400;
+		font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+	}
+
 	.holon-name-badge {
 		display: inline-block;
 		background: rgba(79, 70, 229, 0.2);
@@ -943,5 +976,56 @@
 	.info-text.highlight {
 		color: #fbbf24;
 		font-size: 0.85rem;
+	}
+
+	/* Guest Mode */
+	.guest-divider {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin: 1.25rem 0;
+	}
+
+	.guest-divider::before,
+	.guest-divider::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: rgba(100, 116, 139, 0.3);
+	}
+
+	.guest-divider span {
+		color: #64748b;
+		font-size: 0.85rem;
+		text-transform: lowercase;
+	}
+
+	.guest-button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.75rem 1rem;
+		background: transparent;
+		border: 1px solid rgba(100, 116, 139, 0.3);
+		border-radius: 0.5rem;
+		color: #94a3b8;
+		font-size: 0.95rem;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.guest-button:hover {
+		background: rgba(100, 116, 139, 0.1);
+		border-color: rgba(100, 116, 139, 0.5);
+		color: #cbd5e1;
+	}
+
+	.guest-hint {
+		color: #64748b;
+		font-size: 0.75rem;
+		text-align: center;
+		margin-top: 0.5rem;
 	}
 </style>
