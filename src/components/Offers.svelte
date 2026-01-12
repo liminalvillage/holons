@@ -10,6 +10,8 @@
 	import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { Gift, Plus } from 'svelte-feathers';
+	import { nostrPublicKey } from "../lib/stores/nostr";
+	import { telegramStore } from "../lib/stores/telegram";
 
 	// Add offer/request modal state
 	let showAddModal = false;
@@ -79,13 +81,48 @@
 		return false;
 	}
 
+	// Function to add current logged-in user to userStore if not already present
+	function ensureCurrentUserInStore(store: any): any {
+		const telegramState = telegramStore.getState();
+		const telegramUser = telegramState.user;
+		let pubKey: string | null = null;
+		nostrPublicKey.subscribe(v => pubKey = v)();
+
+		// Check if Telegram user is logged in
+		if (telegramUser) {
+			const telegramId = String(telegramUser.id);
+			if (!store[telegramId]) {
+				store[telegramId] = {
+					id: telegramId,
+					first_name: telegramUser.first_name,
+					last_name: telegramUser.last_name,
+					username: telegramUser.username || telegramId
+				};
+			}
+		}
+		// Check if Nostr user is logged in
+		else if (pubKey) {
+			if (!store[pubKey]) {
+				const shortKey = `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
+				store[pubKey] = {
+					id: pubKey,
+					first_name: 'You',
+					last_name: '',
+					username: shortKey
+				};
+			}
+		}
+
+		return store;
+	}
+
 	// Fetch and subscribe to users for the current holon
 	async function fetchAndSubscribeUsers() {
 		if (!holosphere || !holonID) {
 			userStore = {};
 			return;
 		}
-		
+
 		try {
 			const initialUsers = await holosphere.getAll(holonID, "users");
 			let usersKeyedById = {};
@@ -98,9 +135,10 @@
 					if (user && user.id) usersKeyedById[user.id] = user;
 				});
 			}
-			userStore = usersKeyedById;
+			// Ensure current user is in the store
+			userStore = ensureCurrentUserInStore(usersKeyedById);
 		} catch (e) {
-			userStore = {};
+			userStore = ensureCurrentUserInStore({});
 		}
 
 		// Subscribe to user updates with error handling

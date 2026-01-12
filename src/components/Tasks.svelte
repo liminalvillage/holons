@@ -33,6 +33,8 @@
 		subscribeToHolon,
 		unsubscribeFromHolon
 	} from "../lib/holonCache";
+	import { nostrPublicKey } from "../lib/stores/nostr";
+	import { telegramStore } from "../lib/stores/telegram";
 
 	// State for quick completion
 	let showCompleterModal = $state(false);
@@ -252,10 +254,27 @@
 		),
 	]);
 
-	// Compute unique users from quests
+	// Compute unique users from quests, including current logged-in user
 	let allUsers = $derived.by(() => {
 		const users = new Map<string, { id: string; name: string }>();
 
+		// Add current logged-in user first
+		const telegramState = telegramStore.getState();
+		const telegramUser = telegramState.user;
+		const pubKey = $nostrPublicKey;
+
+		if (telegramUser) {
+			const telegramId = String(telegramUser.id);
+			const name = `${telegramUser.first_name} ${telegramUser.last_name || ''}`.trim();
+			if (name) {
+				users.set(telegramId, { id: telegramId, name: name });
+			}
+		} else if (pubKey) {
+			const shortKey = `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
+			users.set(pubKey, { id: pubKey, name: `You (${shortKey})` });
+		}
+
+		// Add users from quest participants
 		Object.values(store).forEach(quest => {
 			if (quest.participants) {
 				quest.participants.forEach(p => {

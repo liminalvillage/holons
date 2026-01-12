@@ -18,6 +18,8 @@
         subscribeToHolon,
         isSubscribed
     } from "../lib/holonCache";
+    import { nostrPublicKey } from "../lib/stores/nostr";
+    import { telegramStore } from "../lib/stores/telegram";
 
     export let quest: any;
     export let questId: string;
@@ -40,8 +42,50 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
+    // Function to add current logged-in user to userStore if not already present
+    function ensureCurrentUserInStore(store: UserStore): UserStore {
+        const telegramState = telegramStore.getState();
+        const telegramUser = telegramState.user;
+        const pubKey = $nostrPublicKey;
+
+        // Check if Telegram user is logged in
+        if (telegramUser) {
+            const telegramId = String(telegramUser.id);
+            // Check if user already exists in store (by telegram ID)
+            const existsById = Object.values(store).some(u => String(u.id) === telegramId);
+            if (!existsById) {
+                // Add telegram user to store
+                const userKey = telegramUser.username || telegramId;
+                store[userKey] = {
+                    id: telegramId,
+                    first_name: telegramUser.first_name,
+                    last_name: telegramUser.last_name,
+                    username: telegramUser.username || telegramId,
+                    picture: telegramUser.photo_url
+                };
+            }
+        }
+        // Check if Nostr user is logged in (and not already covered by telegram)
+        else if (pubKey) {
+            // Check if user already exists in store (by pubKey)
+            const existsByPubKey = Object.values(store).some(u => u.id === pubKey);
+            if (!existsByPubKey) {
+                // Add nostr user to store with pubKey as ID
+                const shortKey = `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
+                store[pubKey] = {
+                    id: pubKey,
+                    first_name: 'You',
+                    last_name: '',
+                    username: shortKey
+                };
+            }
+        }
+
+        return store;
+    }
+
     // Use cached data immediately for instant display
-    let userStore: UserStore = getCachedUsersObject(holonId);
+    let userStore: UserStore = ensureCurrentUserInStore(getCachedUsersObject(holonId));
     let equation: ScoreEquation = getCachedEquation(holonId);
 
     let showDatePicker = false;
@@ -117,8 +161,8 @@
 
             // Preload in background (will refresh cache if stale)
             preloadHolon(holosphere, holonId).then(() => {
-                // Update local state from refreshed cache
-                userStore = getCachedUsersObject(holonId);
+                // Update local state from refreshed cache, ensuring current user is included
+                userStore = ensureCurrentUserInStore(getCachedUsersObject(holonId));
                 equation = getCachedEquation(holonId);
                 usersLoading = false;
             });
