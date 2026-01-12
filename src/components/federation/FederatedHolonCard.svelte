@@ -8,7 +8,6 @@
         id: string;
         name: string;
         pubKey?: string;
-        npub?: string;
         status: 'connected' | 'pending' | 'rejected' | 'error';
         lensConfig: {
             inbound: string[];
@@ -56,9 +55,9 @@
         return icons[normalizeLensName(lens)] || '📦';
     }
 
-    function shortenNpub(npub: string): string {
-        if (!npub || npub.length < 20) return npub;
-        return `${npub.slice(0, 10)}...${npub.slice(-6)}`;
+    function shortenPubKey(pubKey: string): string {
+        if (!pubKey || pubKey.length < 16) return pubKey;
+        return `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
     }
 
     function toggleExpanded() {
@@ -77,10 +76,10 @@
         }
     }
 
-    async function handleCopyNpub(e: MouseEvent) {
+    async function handleCopyPubKey(e: MouseEvent) {
         e.stopPropagation();
-        if (holon.npub) {
-            await navigator.clipboard.writeText(holon.npub);
+        if (holon.pubKey) {
+            await navigator.clipboard.writeText(holon.pubKey);
             copied = true;
             setTimeout(() => copied = false, 2000);
         }
@@ -117,8 +116,8 @@
         <!-- Info -->
         <div class="holon-card__info">
             <span class="holon-card__name">{holon.name || holon.id}</span>
-            {#if holon.npub}
-                <span class="holon-card__npub">{shortenNpub(holon.npub)}</span>
+            {#if holon.pubKey}
+                <span class="holon-card__npub">{shortenPubKey(holon.pubKey)}</span>
             {/if}
         </div>
 
@@ -149,7 +148,7 @@
         <div class="holon-card__content" transition:slide={{ duration: 200 }}>
             <!-- Actions bar -->
             <div class="holon-card__actions">
-                <button class="holon-card__action" on:click={handleCopyNpub} title="Copy ID">
+                <button class="holon-card__action" on:click={handleCopyPubKey} title="Copy Public Key">
                     {#if copied}
                         <Check size={14} />
                         <span>Copied</span>
