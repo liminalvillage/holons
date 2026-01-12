@@ -505,16 +505,27 @@
         // When updating user data (actions), use the canonical ID that holosphere.get/put expects for users.
         // This might be user.id (the original UUID-like ID) if it exists and is different from username.
         const canonicalUserIdForHolosphere = user.id || user.username; // Choose appropriately
-        const userData = (await holosphere.get(holonId, "users", canonicalUserIdForHolosphere)) || {
+        const existingUserData = await holosphere.get(holonId, "users", canonicalUserIdForHolosphere);
+
+        // Build full user data, ensuring all fields are saved to database
+        const userData = {
             id: user.id,
-            actions: [],
+            first_name: user.first_name,
+            last_name: user.last_name || '',
+            username: user.username,
+            actions: Array.isArray(existingUserData?.actions) ? existingUserData.actions : [],
+            // Preserve any other existing fields
+            ...(existingUserData || {})
         };
 
         await holosphere.put(holonId, "users", {
             ...userData,
-            id: user.id,
+            id: user.id,  // Ensure ID is set correctly
+            first_name: user.first_name,
+            last_name: user.last_name || '',
+            username: user.username,
             actions: [
-                ...(Array.isArray(userData.actions) ? userData.actions : []),
+                ...userData.actions,
                 {
                     type: "joined",
                     action: quest.title,
