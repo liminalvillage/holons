@@ -270,8 +270,7 @@
 				users.set(telegramId, { id: telegramId, name: name });
 			}
 		} else if (pubKey) {
-			const shortKey = `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
-			users.set(pubKey, { id: pubKey, name: `You (${shortKey})` });
+			users.set(pubKey, { id: pubKey, name: 'You' });
 		}
 
 		// Add users from quest participants

@@ -70,13 +70,12 @@
             // Check if user already exists in store (by pubKey)
             const existsByPubKey = Object.values(store).some(u => u.id === pubKey);
             if (!existsByPubKey) {
-                // Add nostr user to store with pubKey as ID
-                const shortKey = `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
+                // Add nostr user to store with pubKey as ID (similar structure to telegram)
                 store[pubKey] = {
                     id: pubKey,
                     first_name: 'You',
                     last_name: '',
-                    username: shortKey
+                    username: pubKey  // Use full pubKey as username (like telegram ID)
                 };
             }
         }

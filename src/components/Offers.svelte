@@ -103,12 +103,12 @@
 		// Check if Nostr user is logged in
 		else if (pubKey) {
 			if (!store[pubKey]) {
-				const shortKey = `${pubKey.slice(0, 8)}...${pubKey.slice(-6)}`;
+				// Use similar structure to telegram user
 				store[pubKey] = {
 					id: pubKey,
 					first_name: 'You',
 					last_name: '',
-					username: shortKey
+					username: pubKey  // Use full pubKey as username (like telegram ID)
 				};
 			}
 		}
