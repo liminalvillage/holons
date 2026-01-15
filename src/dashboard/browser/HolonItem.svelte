@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { Star, Copy, Check, MoreVertical, Key, LogOut, Home, ChevronDown } from 'svelte-feathers';
+	import { Star, Copy, Check, MoreVertical, Key, LogOut, Home, ChevronDown, X } from 'svelte-feathers';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
 
 	export let id: string;
@@ -12,6 +12,7 @@
 	export let isHome: boolean = false;
 	export let showPinButton: boolean = false;
 	export let showStarButton: boolean = false;
+	export let showRemoveButton: boolean = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -51,6 +52,11 @@
 	function handleStar(event: MouseEvent) {
 		event.stopPropagation();
 		dispatch('star', { id });
+	}
+
+	function handleRemove(event: MouseEvent) {
+		event.stopPropagation();
+		dispatch('remove', { id });
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -163,14 +169,10 @@
 	<!-- Content -->
 	<div class="holon-item__content">
 		<span class="holon-item__name">
-			{isHome ? 'Home' : name}
+			{name}
 		</span>
 		<span class="holon-item__id">
-			{#if isHome && isPublicMode}
-				Guest Mode
-			{:else}
-				{shortId}
-			{/if}
+			{shortId}
 		</span>
 	</div>
 
@@ -259,6 +261,16 @@
 					title={isStarred ? 'Remove from My Holons' : 'Add to My Holons'}
 				>
 					<Star size={14} fill={isStarred ? 'currentColor' : 'none'} />
+				</button>
+			{/if}
+
+			{#if showRemoveButton}
+				<button
+					class="holon-item__action-btn holon-item__action-btn--remove"
+					on:click={handleRemove}
+					title="Remove from list"
+				>
+					<X size={14} />
 				</button>
 			{/if}
 		{/if}
@@ -399,6 +411,11 @@
 
 	.holon-item__action-btn--active {
 		color: var(--color-warning, #f59e0b);
+	}
+
+	.holon-item__action-btn--remove:hover {
+		background: rgba(239, 68, 68, 0.2);
+		color: #ef4444;
 	}
 
 	.holon-item__action-btn--key {

@@ -130,7 +130,7 @@
 		<div class="keys-section__content" transition:slide={{ duration: 200 }}>
 			{#if currentView === 'main'}
 				<!-- Identity Status -->
-				<div class="keys-section__identity">
+				<div class="keys-section__identity" class:keys-section__identity--public={isPublicMode}>
 					<div class="keys-section__identity-icon" class:keys-section__identity-icon--public={isPublicMode}>
 						{#if isPublicMode}
 							<i class="fas fa-globe"></i>
@@ -140,9 +140,13 @@
 					</div>
 					<div class="keys-section__identity-info">
 						<div class="keys-section__identity-mode">
-							{isPublicMode ? 'Public Space' : 'Private Identity'}
+							{isPublicMode ? 'Guest Mode' : 'Private Identity'}
 						</div>
-						{#if $nostrPublicKey}
+						{#if isPublicMode}
+							<div class="keys-section__identity-hint">
+								Read-only access
+							</div>
+						{:else if $nostrPublicKey}
 							<div class="keys-section__identity-key">
 								{shortenedPubKey}
 								<button
@@ -164,13 +168,14 @@
 				<!-- Actions -->
 				<div class="keys-section__actions">
 					{#if isPublicMode}
-						<button class="keys-section__action" on:click={generateNewKey} disabled={isProcessing}>
+						<p class="keys-section__login-prompt">Sign in to create and edit holons</p>
+						<button class="keys-section__action keys-section__action--primary" on:click={generateNewKey} disabled={isProcessing}>
 							<i class="fas fa-plus"></i>
-							<span>Create Identity</span>
+							<span>Create New Identity</span>
 						</button>
 						<button class="keys-section__action" on:click={() => currentView = 'import'}>
 							<Upload size="14" />
-							<span>Import Key</span>
+							<span>Import Private Key</span>
 						</button>
 					{:else}
 						<button class="keys-section__action" on:click={() => showPrivateKey = !showPrivateKey}>
@@ -426,6 +431,31 @@
 
 	.keys-section__action--danger:hover {
 		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.keys-section__action--primary {
+		background: var(--color-accent, #4f46e5);
+		color: white;
+	}
+
+	.keys-section__action--primary:hover {
+		background: var(--color-accent-dark, #4338ca);
+	}
+
+	.keys-section__identity--public {
+		border: 1px dashed rgba(16, 185, 129, 0.3);
+	}
+
+	.keys-section__identity-hint {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: #10b981;
+	}
+
+	.keys-section__login-prompt {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: var(--color-text-muted, #6b7280);
+		margin: 0 0 var(--spacing-2, 0.5rem) 0;
+		text-align: center;
 	}
 
 	.keys-section__private-key {

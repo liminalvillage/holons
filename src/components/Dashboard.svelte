@@ -38,7 +38,15 @@
 	const isValidItem = (item: any) => {
 		if (!item || !item.id) return false;
 		if (item._deleted) return false;
-		if (item.hologram === true) return false;
+		if (item.hologram === true) {
+			// Log unresolved holograms - these should have been resolved by HoloSphere
+			console.warn('[Dashboard] ⚠️ Unresolved hologram filtered:', {
+				id: item.id,
+				target: item.target,
+				hasCapability: !!item.capability
+			});
+			return false;
+		}
 		return true;
 	};
 

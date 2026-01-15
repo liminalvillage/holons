@@ -4,8 +4,10 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import type { HoloSphere } from 'holosphere';
-	import { Search, Plus, X, Star, Users, Clock } from 'svelte-feathers';
-	import { nostrPublicKey } from '../../lib/stores/nostr';
+	import { Search, Plus, X, Star, Users, Upload, Key } from 'svelte-feathers';
+	import { nostrPublicKey, nostrPrivateKey, nostrStore } from '../../lib/stores/nostr';
+	import { schnorr } from '@noble/curves/secp256k1';
+	import { bytesToHex } from '@noble/hashes/utils';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
 	import { ID, sidebarExpanded } from '../store';
@@ -20,11 +22,11 @@
 
 	// State
 	let searchQuery: string = '';
-	let activeTab: 'personal' | 'visited' | 'federated' = 'personal';
-	let personalHolons: Array<{ id: string; name: string; isPinned?: boolean }> = [];
-	let visitedHolons: Array<{ id: string; name: string; lastVisited?: number }> = [];
+	let activeTab: 'holons' | 'federated' = 'holons';
+	let visitedHolons: Array<{ id: string; name: string; lastVisited?: number; isStarred?: boolean }> = [];
 	let federatedHolons: Array<{ id: string; name: string }> = [];
 	let isLoading: boolean = false;
+	let homeHolonName: string = '';
 
 	// Add Holon Modal state
 	let showAddModal: boolean = false;
@@ -34,33 +36,40 @@
 	let addSuccess: string = '';
 	let showQRScanner: boolean = false;
 
+	// Identity Modal state (for public mode)
+	let showIdentityModal: boolean = false;
+	let identityView: 'menu' | 'create' | 'import' = 'menu';
+	let newIdentityName: string = '';
+	let importKeyInput: string = '';
+	let identityError: string = '';
+	let isProcessingIdentity: boolean = false;
+
+	// Check if using public/holosphere key
+	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
+	function getHolospherePublicKey(): string | null {
+		if (!HOLOSPHERE_PRIVATE_KEY) return null;
+		try {
+			const pubKeyBytes = schnorr.getPublicKey(HOLOSPHERE_PRIVATE_KEY);
+			return bytesToHex(pubKeyBytes);
+		} catch {
+			return null;
+		}
+	}
+	$: holospherePublicKey = getHolospherePublicKey();
+	$: isPublicMode = $nostrPublicKey === holospherePublicKey || !$nostrPrivateKey;
+
 	// Current holon from route
 	$: currentHolonId = $ID;
 
-	// Filtered holons based on search - include all holon arrays as dependencies
-	$: filteredHolons = getFilteredHolons(activeTab, searchQuery, personalHolons, visitedHolons, federatedHolons);
+	// Filtered holons based on search and active tab
+	$: filteredHolons = activeTab === 'holons'
+		? getFilteredHolons(searchQuery, visitedHolons)
+		: getFilteredHolons(searchQuery, federatedHolons);
 
 	function getFilteredHolons(
-		tab: string,
 		query: string,
-		personal: typeof personalHolons,
-		visited: typeof visitedHolons,
-		federated: typeof federatedHolons
+		holons: Array<{ id: string; name: string; lastVisited?: number; isStarred?: boolean }>
 	) {
-		let holons: Array<{ id: string; name: string; isPinned?: boolean; lastVisited?: number }> = [];
-
-		switch (tab) {
-			case 'personal':
-				holons = personal;
-				break;
-			case 'visited':
-				holons = visited;
-				break;
-			case 'federated':
-				holons = federated;
-				break;
-		}
-
 		if (!query.trim()) return holons;
 
 		const lowerQuery = query.toLowerCase();
@@ -71,21 +80,29 @@
 		);
 	}
 
+	// Get starred holon IDs
+	$: starredIds = visitedHolons.filter(h => h.isStarred).map(h => h.id);
+
+	// Load federated holons when tab changes or holon changes
+	$: if (activeTab === 'federated' && currentHolonId && holosphere) {
+		loadFederatedHolons();
+	}
+
 	// Load holons on mount
 	onMount(async () => {
 		if (browser) {
 			await loadHolons();
+			// Fetch home holon name if not in public mode
+			if (!isPublicMode && $nostrPublicKey && holosphere) {
+				const name = await fetchHolonName(holosphere, $nostrPublicKey);
+				homeHolonName = name || '';
+			}
 		}
 
 		// Listen for holon updates
 		window.addEventListener('holonCreated', handleHolonCreated as EventListener);
 		window.addEventListener('holonNavigated', handleHolonNavigated as EventListener);
 	});
-
-	// Load federated holons when tab changes or holon changes
-	$: if (activeTab === 'federated' && currentHolonId && holosphere) {
-		loadFederatedHolons();
-	}
 
 	onDestroy(() => {
 		if (browser) {
@@ -100,21 +117,41 @@
 		try {
 			const walletAddress = getWalletAddress();
 
-			// Load personal holons from localStorage (starred holons)
+			// Load personal holons from localStorage (these are starred)
 			const savedPersonal = loadPersonalHolons();
-			personalHolons = savedPersonal.map((h: any) => ({
-				id: h.id,
-				name: h.name || `Holon ${h.id.slice(0, 6)}...`,
-				isPinned: h.isPinned || false
-			}));
+			const starredIds = new Set(savedPersonal.map((h: any) => h.id));
 
 			// Load visited holons from localStorage
 			const savedVisited = loadVisitedHolons(walletAddress);
-			visitedHolons = savedVisited.map((h: any) => ({
+
+			// Merge: visited holons + personal holons that aren't in visited
+			const visitedMap = new Map(savedVisited.map((h: any) => [h.id, h]));
+
+			// Add personal holons that aren't in visited
+			for (const h of savedPersonal) {
+				if (!visitedMap.has(h.id)) {
+					visitedMap.set(h.id, {
+						id: h.id,
+						name: h.name,
+						lastVisited: h.lastVisited || Date.now()
+					});
+				}
+			}
+
+			// Convert to array and mark starred status
+			visitedHolons = Array.from(visitedMap.values()).map((h: any) => ({
 				id: h.id,
 				name: h.name || `Holon ${h.id.slice(0, 6)}...`,
-				lastVisited: h.lastVisited || Date.now()
+				lastVisited: h.lastVisited || Date.now(),
+				isStarred: starredIds.has(h.id)
 			}));
+
+			// Sort: starred first, then by lastVisited
+			visitedHolons.sort((a, b) => {
+				if (a.isStarred && !b.isStarred) return -1;
+				if (!a.isStarred && b.isStarred) return 1;
+				return (b.lastVisited || 0) - (a.lastVisited || 0);
+			});
 
 			// Fetch names for holons that need updating
 			await refreshHolonNames();
@@ -129,23 +166,7 @@
 		if (!holosphere) return;
 
 		// Capture current holon IDs to avoid race conditions during async operations
-		const personalIds = personalHolons.map(h => h.id);
 		const visitedIds = visitedHolons.map(h => h.id);
-
-		// Fetch all names concurrently for personal holons
-		const personalNameResults = await Promise.all(
-			personalIds.map(async (id) => ({
-				id,
-				name: await fetchHolonName(holosphere, id)
-			}))
-		);
-
-		// Apply names atomically by matching on ID (not array position)
-		const personalNameMap = new Map(personalNameResults.map(r => [r.id, r.name]));
-		personalHolons = personalHolons.map(h => {
-			const fetchedName = personalNameMap.get(h.id);
-			return fetchedName ? { ...h, name: fetchedName } : h;
-		});
 
 		// Fetch all names concurrently for visited holons
 		const visitedNameResults = await Promise.all(
@@ -197,9 +218,14 @@
 
 	function handleHolonCreated(event: CustomEvent) {
 		const { holonId, holonName } = event.detail;
-		// Add to personal holons if not already there
-		if (!personalHolons.find((h) => h.id === holonId)) {
-			personalHolons = [{ id: holonId, name: holonName, isPinned: false }, ...personalHolons];
+		// Add to visited holons as starred if not already there
+		if (!visitedHolons.find((h) => h.id === holonId)) {
+			visitedHolons = [{ id: holonId, name: holonName, lastVisited: Date.now(), isStarred: true }, ...visitedHolons];
+			// Persist starred status
+			const personal = loadPersonalHolons();
+			if (!personal.find((h: any) => h.id === holonId)) {
+				savePersonalHolons([{ id: holonId, name: holonName, isPinned: false, isPersonal: true, order: 0, lastVisited: Date.now() }, ...personal]);
+			}
 		}
 	}
 
@@ -211,15 +237,13 @@
 			visitedHolons[existingIndex].lastVisited = Date.now();
 			visitedHolons = [...visitedHolons];
 		} else {
-			visitedHolons = [...visitedHolons, { id: holonId, name: holonName, lastVisited: Date.now() }];
+			visitedHolons = [...visitedHolons, { id: holonId, name: holonName, lastVisited: Date.now(), isStarred: false }];
 		}
 	}
 
 	function selectHolon(holonId: string) {
-		// Find holon name from any list
-		const holon = personalHolons.find(h => h.id === holonId)
-			|| visitedHolons.find(h => h.id === holonId)
-			|| federatedHolons.find(h => h.id === holonId);
+		// Find holon name from visited list
+		const holon = visitedHolons.find(h => h.id === holonId);
 		const holonName = holon?.name || `Holon ${holonId.slice(0, 6)}...`;
 
 		// Add to visited list
@@ -232,7 +256,7 @@
 			visitedHolons[existingIndex].lastVisited = Date.now();
 			visitedHolons = [...visitedHolons];
 		} else {
-			visitedHolons = [...visitedHolons, { id: holonId, name: holonName, lastVisited: Date.now() }];
+			visitedHolons = [...visitedHolons, { id: holonId, name: holonName, lastVisited: Date.now(), isStarred: false }];
 		}
 
 		// Preserve current lens when switching holons
@@ -251,50 +275,64 @@
 		}
 	}
 
-	function togglePin(holonId: string) {
-		const index = personalHolons.findIndex((h) => h.id === holonId);
-		if (index >= 0) {
-			personalHolons[index].isPinned = !personalHolons[index].isPinned;
-			personalHolons = [...personalHolons];
-			savePersonalHolons(personalHolons.map(h => ({
-				id: h.id,
-				name: h.name,
-				lastVisited: Date.now(),
-				isPinned: h.isPinned || false,
-				isPersonal: true,
-				order: 0
-			})));
-		}
-	}
-
-	function starHolon(holonId: string) {
+	function toggleStar(holonId: string) {
 		// Find holon in visited list
-		const holon = visitedHolons.find(h => h.id === holonId);
-		if (!holon) return;
+		const index = visitedHolons.findIndex(h => h.id === holonId);
+		if (index < 0) return;
 
-		// Check if already in personal holons
-		const existingIndex = personalHolons.findIndex(h => h.id === holonId);
-		if (existingIndex >= 0) {
-			// Remove from personal holons (unstar)
-			personalHolons = personalHolons.filter(h => h.id !== holonId);
-		} else {
-			// Add to personal holons (star)
-			personalHolons = [{ id: holon.id, name: holon.name, isPinned: false }, ...personalHolons];
-		}
+		// Toggle starred status
+		visitedHolons[index].isStarred = !visitedHolons[index].isStarred;
+		visitedHolons = [...visitedHolons];
 
-		// Save to localStorage
-		savePersonalHolons(personalHolons.map(h => ({
+		// Resort: starred first
+		visitedHolons.sort((a, b) => {
+			if (a.isStarred && !b.isStarred) return -1;
+			if (!a.isStarred && b.isStarred) return 1;
+			return (b.lastVisited || 0) - (a.lastVisited || 0);
+		});
+
+		// Update personal holons (starred) in storage
+		const starredHolons = visitedHolons.filter(h => h.isStarred);
+		savePersonalHolons(starredHolons.map(h => ({
 			id: h.id,
 			name: h.name,
-			lastVisited: Date.now(),
-			isPinned: h.isPinned || false,
+			lastVisited: h.lastVisited || Date.now(),
+			isPinned: false,
 			isPersonal: true,
 			order: 0
 		})));
+
+		// Save visited holons
+		const walletAddress = getWalletAddress();
+		saveVisitedHolons(walletAddress, visitedHolons.map(h => ({
+			id: h.id,
+			name: h.name,
+			lastVisited: h.lastVisited || Date.now()
+		})));
 	}
 
-	function isStarred(holonId: string): boolean {
-		return personalHolons.some(h => h.id === holonId);
+	function removeHolon(holonId: string) {
+		// Remove from visited holons
+		visitedHolons = visitedHolons.filter(h => h.id !== holonId);
+
+		// Update personal holons (starred) in storage
+		const starredHolons = visitedHolons.filter(h => h.isStarred);
+		savePersonalHolons(starredHolons.map(h => ({
+			id: h.id,
+			name: h.name,
+			lastVisited: h.lastVisited || Date.now(),
+			isPinned: false,
+			isPersonal: true,
+			order: 0
+		})));
+
+		// Save visited holons
+		const walletAddress = getWalletAddress();
+		saveVisitedHolons(walletAddress, visitedHolons.map(h => ({
+			id: h.id,
+			name: h.name,
+			lastVisited: h.lastVisited || Date.now()
+		})));
 	}
 
 	function handleClose() {
@@ -307,6 +345,79 @@
 		newHolonName = '';
 		addError = '';
 		addSuccess = '';
+	}
+
+	// Handle + button click - different behavior for public vs private mode
+	function handlePlusButton() {
+		if (isPublicMode) {
+			showIdentityModal = true;
+			identityView = 'menu';
+			importKeyInput = '';
+			identityError = '';
+		} else {
+			handleAddHolon();
+		}
+	}
+
+	function closeIdentityModal() {
+		showIdentityModal = false;
+		identityView = 'menu';
+		newIdentityName = '';
+		importKeyInput = '';
+		identityError = '';
+	}
+
+	async function createNewIdentity() {
+		if (!newIdentityName.trim()) {
+			identityError = 'Please enter a name for your holon';
+			return;
+		}
+
+		isProcessingIdentity = true;
+		identityError = '';
+		try {
+			const result = await nostrStore.generateKey();
+			if (result?.publicKey) {
+				// Store the holon name to be used after reload
+				localStorage.setItem('pending_holon_name', newIdentityName.trim());
+				localStorage.setItem('pending_holon_id', result.publicKey);
+				// Navigate to the new holon
+				goto(`/${result.publicKey}/dashboard`);
+				// Reload to reinitialize with new key
+				setTimeout(() => window.location.reload(), 100);
+			}
+		} catch (error: any) {
+			identityError = error.message || 'Failed to create identity';
+			isProcessingIdentity = false;
+		}
+	}
+
+	async function importIdentity() {
+		if (!importKeyInput.trim()) {
+			identityError = 'Please enter your private key';
+			return;
+		}
+
+		const key = importKeyInput.trim().toLowerCase();
+		if (!/^[0-9a-f]{64}$/.test(key)) {
+			identityError = 'Invalid key format. Must be 64 hex characters.';
+			return;
+		}
+
+		isProcessingIdentity = true;
+		identityError = '';
+		try {
+			const result = await nostrStore.importKey(key);
+			if (result?.publicKey) {
+				// Navigate to the holon
+				goto(`/${result.publicKey}/dashboard`);
+				// Reload to reinitialize with new key
+				setTimeout(() => window.location.reload(), 100);
+			}
+		} catch (error: any) {
+			identityError = error.message || 'Failed to import key';
+			isProcessingIdentity = false;
+		}
 	}
 
 	function closeAddModal() {
@@ -365,12 +476,29 @@
 				name = `Holon ${holonId.slice(0, 8)}...`;
 			}
 
-			// Add to personal holons (starred)
-			const exists = personalHolons.some(h => h.id === holonId);
+			// Add to visited holons as starred (manually added = auto-starred)
+			const exists = visitedHolons.some(h => h.id === holonId);
 			if (!exists) {
-				personalHolons = [{ id: holonId, name, isPinned: false }, ...personalHolons];
-				savePersonalHolons(personalHolons);
+				visitedHolons = [{ id: holonId, name, lastVisited: Date.now(), isStarred: true }, ...visitedHolons];
+			} else {
+				// If exists, mark as starred
+				const index = visitedHolons.findIndex(h => h.id === holonId);
+				if (index >= 0) {
+					visitedHolons[index].isStarred = true;
+					visitedHolons = [...visitedHolons];
+				}
 			}
+
+			// Persist starred status to personal holons
+			const starredHolons = visitedHolons.filter(h => h.isStarred);
+			savePersonalHolons(starredHolons.map(h => ({
+				id: h.id,
+				name: h.name,
+				lastVisited: h.lastVisited || Date.now(),
+				isPinned: false,
+				isPersonal: true,
+				order: 0
+			})));
 
 			addSuccess = 'Holon added successfully!';
 
@@ -402,10 +530,15 @@
 		</div>
 		<button
 			class="browser-panel__add-btn"
-			onclick={handleAddHolon}
-			title="Add holon"
+			class:browser-panel__add-btn--identity={isPublicMode}
+			onclick={handlePlusButton}
+			title={isPublicMode ? "Sign in" : "Add holon"}
 		>
-			<Plus size={16} />
+			{#if isPublicMode}
+				<Key size={16} />
+			{:else}
+				<Plus size={16} />
+			{/if}
 		</button>
 	</div>
 
@@ -413,19 +546,11 @@
 	<div class="browser-panel__tabs">
 		<button
 			class="browser-panel__tab"
-			class:browser-panel__tab--active={activeTab === 'personal'}
-			onclick={() => (activeTab = 'personal')}
+			class:browser-panel__tab--active={activeTab === 'holons'}
+			onclick={() => (activeTab = 'holons')}
 		>
 			<Star size={12} />
-			<span>Starred</span>
-		</button>
-		<button
-			class="browser-panel__tab"
-			class:browser-panel__tab--active={activeTab === 'visited'}
-			onclick={() => (activeTab = 'visited')}
-		>
-			<Clock size={12} />
-			<span>Recent</span>
+			<span>Holons</span>
 		</button>
 		<button
 			class="browser-panel__tab"
@@ -437,30 +562,32 @@
 		</button>
 	</div>
 
-	<!-- Holon List - main content -->
-	<HolonList
-		holons={filteredHolons}
-		{currentHolonId}
-		{isLoading}
-		showPinButton={activeTab === 'personal'}
-		showStarButton={activeTab === 'visited'}
-		starredIds={personalHolons.map(h => h.id)}
-		homeHolonId={$nostrPublicKey}
-		showHomeSection={activeTab === 'personal'}
-		on:select={(e) => selectHolon(e.detail.holonId)}
-		on:pin={(e) => togglePin(e.detail.holonId)}
-		on:star={(e) => starHolon(e.detail.holonId)}
-	/>
-
-	<!-- Federation link (only on federated tab) -->
+	<!-- Manage Federation link - only in federated tab -->
 	{#if activeTab === 'federated' && currentHolonId}
-		<div class="browser-panel__footer">
-			<button class="browser-panel__manage-btn" onclick={() => goto(`/${currentHolonId}/federation`)}>
-				<i class="fas fa-cog"></i>
+		<div class="browser-panel__federation">
+			<button class="browser-panel__federation-btn" onclick={() => goto(`/${currentHolonId}/federation`)}>
+				<Users size={14} />
 				<span>Manage Federation</span>
 			</button>
 		</div>
 	{/if}
+
+	<!-- Holon List - main content with starred support -->
+	<HolonList
+		holons={filteredHolons}
+		{currentHolonId}
+		{isLoading}
+		showPinButton={false}
+		showStarButton={activeTab === 'holons'}
+		showRemoveButton={activeTab === 'holons'}
+		{starredIds}
+		homeHolonId={isPublicMode ? null : $nostrPublicKey}
+		{homeHolonName}
+		showHomeSection={activeTab === 'holons' && !isPublicMode}
+		on:select={(e) => selectHolon(e.detail.holonId)}
+		on:star={(e) => toggleStar(e.detail.holonId)}
+		on:remove={(e) => removeHolon(e.detail.holonId)}
+	/>
 </aside>
 
 <!-- Add Holon Modal -->
@@ -542,6 +669,156 @@
 	on:scan={handleQRScan}
 	on:close={() => showQRScanner = false}
 />
+
+<!-- Identity Modal (for public mode) -->
+{#if showIdentityModal}
+	<div
+		class="add-modal-backdrop"
+		onclick={closeIdentityModal}
+		onkeydown={(e) => e.key === 'Escape' && closeIdentityModal()}
+		role="button"
+		tabindex="0"
+	>
+		<div
+			class="add-modal identity-modal"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="dialog"
+			aria-modal="true"
+			tabindex="-1"
+		>
+			{#if identityView === 'menu'}
+				<div class="identity-modal__header">
+					<div class="identity-modal__icon">
+						<Key size={24} />
+					</div>
+					<h3>Sign In</h3>
+					<p class="identity-modal__subtitle">Create or restore your identity to start collaborating</p>
+				</div>
+
+				<div class="identity-modal__options">
+					<button
+						class="identity-modal__option identity-modal__option--primary"
+						onclick={() => identityView = 'create'}
+						disabled={isProcessingIdentity}
+					>
+						<div class="identity-modal__option-icon">
+							<Plus size={20} />
+						</div>
+						<div class="identity-modal__option-text">
+							<span class="identity-modal__option-title">Create New Identity</span>
+							<span class="identity-modal__option-desc">Generate a new private key</span>
+						</div>
+					</button>
+
+					<button
+						class="identity-modal__option"
+						onclick={() => identityView = 'import'}
+						disabled={isProcessingIdentity}
+					>
+						<div class="identity-modal__option-icon">
+							<Upload size={20} />
+						</div>
+						<div class="identity-modal__option-text">
+							<span class="identity-modal__option-title">Import Private Key</span>
+							<span class="identity-modal__option-desc">Restore an existing identity</span>
+						</div>
+					</button>
+				</div>
+
+				<button class="identity-modal__cancel" onclick={closeIdentityModal}>
+					Continue as Guest
+				</button>
+
+			{:else if identityView === 'create'}
+				<!-- Create view with name input -->
+				<div class="add-modal__header">
+					<h3>Name Your Holon</h3>
+					<button class="add-modal__close" onclick={closeIdentityModal} aria-label="Close">×</button>
+				</div>
+
+				<div class="add-modal__content">
+					<button class="identity-modal__back" onclick={() => identityView = 'menu'}>
+						<i class="fas fa-arrow-left"></i> Back
+					</button>
+
+					{#if identityError}
+						<div class="add-modal__error">{identityError}</div>
+					{/if}
+
+					<div class="add-modal__field">
+						<label for="holon-name-input">What would you like to call your holon?</label>
+						<input
+							id="holon-name-input"
+							type="text"
+							bind:value={newIdentityName}
+							placeholder="My Holon"
+							onkeydown={(e) => e.key === 'Enter' && createNewIdentity()}
+						/>
+						<p class="identity-modal__name-hint">This will be your personal space for tasks, notes, and more</p>
+					</div>
+				</div>
+
+				<div class="add-modal__actions">
+					<button
+						class="btn btn--primary"
+						onclick={createNewIdentity}
+						disabled={isProcessingIdentity || !newIdentityName.trim()}
+					>
+						{#if isProcessingIdentity}
+							<i class="fas fa-spinner fa-spin"></i>
+						{/if}
+						Create Holon
+					</button>
+					<button class="btn btn--secondary" onclick={() => identityView = 'menu'}>Back</button>
+				</div>
+
+			{:else}
+				<!-- Import view -->
+				<div class="add-modal__header">
+					<h3>Import Private Key</h3>
+					<button class="add-modal__close" onclick={closeIdentityModal} aria-label="Close">×</button>
+				</div>
+
+				<div class="add-modal__content">
+					<button class="identity-modal__back" onclick={() => identityView = 'menu'}>
+						<i class="fas fa-arrow-left"></i> Back
+					</button>
+
+					{#if identityError}
+						<div class="add-modal__error">{identityError}</div>
+					{/if}
+
+					<div class="add-modal__field">
+						<label for="import-key-input">Enter your 64-character private key</label>
+						<input
+							id="import-key-input"
+							type="password"
+							bind:value={importKeyInput}
+							placeholder="Private key..."
+							onkeydown={(e) => e.key === 'Enter' && importIdentity()}
+						/>
+						<p class="identity-modal__key-hint">{importKeyInput.length}/64 characters</p>
+					</div>
+				</div>
+
+				<div class="add-modal__actions">
+					<button
+						class="btn btn--primary"
+						onclick={importIdentity}
+						disabled={isProcessingIdentity || importKeyInput.length !== 64}
+					>
+						{#if isProcessingIdentity}
+							<i class="fas fa-spinner fa-spin"></i>
+						{/if}
+						Import Key
+					</button>
+					<button class="btn btn--secondary" onclick={() => identityView = 'menu'}>Back</button>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}
 
 <style>
 	.browser-panel {
@@ -667,21 +944,20 @@
 		border-bottom-color: var(--color-accent, #4f46e5);
 	}
 
-	/* Footer */
-	.browser-panel__footer {
+	/* Federation link */
+	.browser-panel__federation {
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		border-top: 1px solid var(--color-border, #374151);
+		border-bottom: 1px solid var(--color-border, #374151);
 		flex-shrink: 0;
 	}
 
-	.browser-panel__manage-btn {
+	.browser-panel__federation-btn {
 		width: 100%;
 		display: flex;
 		align-items: center;
-		justify-content: center;
 		gap: var(--spacing-2, 0.5rem);
-		padding: var(--spacing-2, 0.5rem);
-		background: var(--color-bg-secondary, #1f2937);
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		background: transparent;
 		border: 1px solid var(--color-border, #374151);
 		border-radius: var(--radius-md, 0.375rem);
 		color: var(--color-text-secondary, #d1d5db);
@@ -690,7 +966,7 @@
 		transition: all 150ms ease;
 	}
 
-	.browser-panel__manage-btn:hover {
+	.browser-panel__federation-btn:hover {
 		background: var(--color-bg-tertiary, #374151);
 		border-color: var(--color-accent, #4f46e5);
 		color: var(--color-text-primary, #ffffff);
@@ -841,5 +1117,165 @@
 
 	.add-modal__actions .btn {
 		flex: 1;
+	}
+
+	/* Identity button styling */
+	.browser-panel__add-btn--identity {
+		background: #10b981;
+	}
+
+	.browser-panel__add-btn--identity:hover {
+		background: #059669;
+	}
+
+	/* Identity Modal */
+	.identity-modal {
+		text-align: center;
+	}
+
+	.identity-modal__header {
+		margin-bottom: var(--spacing-4, 1rem);
+	}
+
+	.identity-modal__header h3 {
+		font-size: var(--font-size-lg, 1.125rem);
+		font-weight: var(--font-weight-semibold, 600);
+		color: var(--color-text-primary, #ffffff);
+		margin: 0 0 var(--spacing-2, 0.5rem) 0;
+	}
+
+	.identity-modal__icon {
+		width: 56px;
+		height: 56px;
+		border-radius: 50%;
+		background: linear-gradient(135deg, #10b981, #059669);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		margin: 0 auto var(--spacing-3, 0.75rem);
+	}
+
+	.identity-modal__subtitle {
+		color: var(--color-text-muted, #6b7280);
+		font-size: var(--font-size-sm, 0.875rem);
+		margin: 0;
+	}
+
+	.identity-modal__options {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-2, 0.5rem);
+		margin-bottom: var(--spacing-4, 1rem);
+	}
+
+	.identity-modal__option {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-3, 0.75rem);
+		padding: var(--spacing-3, 0.75rem);
+		background: var(--color-bg-primary, #111827);
+		border: 1px solid var(--color-border, #374151);
+		border-radius: var(--radius-md, 0.375rem);
+		color: var(--color-text-primary, #ffffff);
+		cursor: pointer;
+		transition: all 150ms ease;
+		text-align: left;
+		width: 100%;
+	}
+
+	.identity-modal__option:hover:not(:disabled) {
+		border-color: var(--color-accent, #4f46e5);
+		background: var(--color-bg-tertiary, #374151);
+	}
+
+	.identity-modal__option--primary {
+		border-color: var(--color-accent, #4f46e5);
+		background: rgba(79, 70, 229, 0.1);
+	}
+
+	.identity-modal__option--primary:hover:not(:disabled) {
+		background: rgba(79, 70, 229, 0.2);
+	}
+
+	.identity-modal__option:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.identity-modal__option-icon {
+		width: 40px;
+		height: 40px;
+		border-radius: var(--radius-md, 0.375rem);
+		background: var(--color-bg-secondary, #1f2937);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--color-accent-light, #818cf8);
+		flex-shrink: 0;
+	}
+
+	.identity-modal__option--primary .identity-modal__option-icon {
+		background: var(--color-accent, #4f46e5);
+		color: white;
+	}
+
+	.identity-modal__option-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.identity-modal__option-title {
+		font-weight: var(--font-weight-medium, 500);
+		font-size: var(--font-size-sm, 0.875rem);
+	}
+
+	.identity-modal__option-desc {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.identity-modal__cancel {
+		background: transparent;
+		border: none;
+		color: var(--color-text-muted, #6b7280);
+		font-size: var(--font-size-sm, 0.875rem);
+		cursor: pointer;
+		padding: var(--spacing-2, 0.5rem);
+	}
+
+	.identity-modal__cancel:hover {
+		color: var(--color-text-secondary, #d1d5db);
+	}
+
+	.identity-modal__back {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-2, 0.5rem);
+		background: transparent;
+		border: none;
+		color: var(--color-text-muted, #6b7280);
+		font-size: var(--font-size-sm, 0.875rem);
+		cursor: pointer;
+		padding: 0;
+		margin-bottom: var(--spacing-2, 0.5rem);
+	}
+
+	.identity-modal__back:hover {
+		color: var(--color-text-primary, #ffffff);
+	}
+
+	.identity-modal__key-hint {
+		color: var(--color-text-muted, #6b7280);
+		font-size: var(--font-size-xs, 0.75rem);
+		text-align: right;
+		margin: var(--spacing-1, 0.25rem) 0 0 0;
+	}
+
+	.identity-modal__name-hint {
+		color: var(--color-text-muted, #6b7280);
+		font-size: var(--font-size-xs, 0.75rem);
+		margin: var(--spacing-1, 0.25rem) 0 0 0;
 	}
 </style>

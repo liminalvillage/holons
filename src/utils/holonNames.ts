@@ -1,4 +1,5 @@
 import type { HoloSphere } from "holosphere";
+import { lookupName as hnsLookup } from "../lib/hns";
 
 // Global cache for holon names
 const holonNameCache = new Map<string, string>();
@@ -7,7 +8,7 @@ const holonNameCache = new Map<string, string>();
 const fetchPromises = new Map<string, Promise<string>>();
 
 /**
- * Fetch holon name from settings with caching
+ * Fetch holon name - tries HNS first, then falls back to local settings
  */
 export async function fetchHolonName(holosphere: HoloSphere, holonId: string): Promise<string> {
 	// Return cached name if available
@@ -26,18 +27,28 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 		try {
 			// Check if holosphere is available
 			if (!holosphere) {
-				// Cache and return fallback name
 				const fallbackName = `Holon ${holonId}`;
 				holonNameCache.set(holonId, fallbackName);
 				return fallbackName;
 			}
 
-			// Get settings with holonId as the key to fetch the specific settings record
+			// Try HNS (Holon Name Service) first - global public registry
+			try {
+				const hnsName = await hnsLookup(holosphere, holonId);
+				if (hnsName && hnsName.trim() !== '') {
+					holonNameCache.set(holonId, hnsName);
+					return hnsName;
+				}
+			} catch (hnsError) {
+				// HNS lookup failed, continue to fallback
+				console.debug('HNS lookup failed, trying local settings:', hnsError);
+			}
+
+			// Fallback: Get settings from the holon itself (requires federation)
 			const settings = await holosphere.get(holonId, "settings", holonId);
 
 			// Check if settings exists and has the expected structure
 			if (!settings) {
-				// Cache and return fallback name when no settings
 				const fallbackName = `Holon ${holonId}`;
 				holonNameCache.set(holonId, fallbackName);
 				return fallbackName;
@@ -46,7 +57,6 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 			// Settings might be an array (readAll returns array) or single object
 			let holonName: string | undefined;
 			if (Array.isArray(settings)) {
-				// Find the first settings object with a name
 				const settingsObj = settings.find((s: any) => s?.name);
 				holonName = settingsObj?.name;
 			} else {
@@ -58,18 +68,15 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 				holonNameCache.set(holonId, holonName);
 				return holonName;
 			} else {
-				// Cache and return fallback name when name is empty
 				const fallbackName = `Holon ${holonId}`;
 				holonNameCache.set(holonId, fallbackName);
 				return fallbackName;
 			}
 		} catch (error) {
-			// Cache and return fallback name on error
 			const fallbackName = `Holon ${holonId}`;
 			holonNameCache.set(holonId, fallbackName);
 			return fallbackName;
 		} finally {
-			// Remove from promises cache when done
 			fetchPromises.delete(holonId);
 		}
 	})();

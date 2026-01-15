@@ -16,8 +16,10 @@
 	export let isLoading: boolean = false;
 	export let showPinButton: boolean = false;
 	export let showStarButton: boolean = false;
+	export let showRemoveButton: boolean = false;
 	export let starredIds: string[] = [];
 	export let homeHolonId: string | null = null;
+	export let homeHolonName: string = '';
 	export let showHomeSection: boolean = true;
 
 	const dispatch = createEventDispatcher();
@@ -26,20 +28,20 @@
 		dispatch('select', { holonId });
 	}
 
-	function pinHolon(holonId: string) {
-		dispatch('pin', { holonId });
-	}
-
 	function starHolon(holonId: string) {
 		dispatch('star', { holonId });
+	}
+
+	function removeHolon(holonId: string) {
+		dispatch('remove', { holonId });
 	}
 
 	// Filter out home holon from the regular list
 	$: otherHolons = homeHolonId ? holons.filter(h => h.id !== homeHolonId) : holons;
 
-	// Separate pinned and unpinned holons (excluding home)
-	$: pinnedHolons = otherHolons.filter((h) => h.isPinned);
-	$: unpinnedHolons = otherHolons.filter((h) => !h.isPinned);
+	// Separate starred and recent holons (excluding home)
+	$: starredHolons = otherHolons.filter((h) => starredIds.includes(h.id));
+	$: recentHolons = otherHolons.filter((h) => !starredIds.includes(h.id));
 </script>
 
 <div class="holon-list">
@@ -54,7 +56,7 @@
 			<div class="holon-list__home">
 				<HolonItem
 					id={homeHolonId}
-					name="Home"
+					name={homeHolonName || 'My Holon'}
 					isActive={currentHolonId === homeHolonId}
 					isPinned={false}
 					isStarred={false}
@@ -66,50 +68,50 @@
 			</div>
 		{/if}
 
-		<!-- Pinned holons -->
-		{#if pinnedHolons.length > 0}
+		<!-- Starred holons -->
+		{#if starredHolons.length > 0}
 			<div class="holon-list__section">
 				<span class="holon-list__section-title">
 					<Star size={10} />
-					Pinned
+					Starred
 				</span>
-				{#each pinnedHolons as holon (holon.id)}
-					<HolonItem
-						id={holon.id}
-						name={holon.name}
-						isActive={holon.id === currentHolonId}
-						isPinned={true}
-						isStarred={starredIds.includes(holon.id)}
-						isHome={false}
-						{showPinButton}
-						{showStarButton}
-						on:select={() => selectHolon(holon.id)}
-						on:pin={() => pinHolon(holon.id)}
-						on:star={() => starHolon(holon.id)}
-					/>
-				{/each}
-			</div>
-		{/if}
-
-		<!-- Unpinned holons -->
-		{#if unpinnedHolons.length > 0}
-			<div class="holon-list__section">
-				{#if pinnedHolons.length > 0}
-					<span class="holon-list__section-title">Holons</span>
-				{/if}
-				{#each unpinnedHolons as holon (holon.id)}
+				{#each starredHolons as holon (holon.id)}
 					<HolonItem
 						id={holon.id}
 						name={holon.name}
 						isActive={holon.id === currentHolonId}
 						isPinned={false}
-						isStarred={starredIds.includes(holon.id)}
+						isStarred={true}
 						isHome={false}
 						{showPinButton}
 						{showStarButton}
+						{showRemoveButton}
 						on:select={() => selectHolon(holon.id)}
-						on:pin={() => pinHolon(holon.id)}
 						on:star={() => starHolon(holon.id)}
+						on:remove={() => removeHolon(holon.id)}
+					/>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- Recent holons -->
+		{#if recentHolons.length > 0}
+			<div class="holon-list__section">
+				<span class="holon-list__section-title">Recent</span>
+				{#each recentHolons as holon (holon.id)}
+					<HolonItem
+						id={holon.id}
+						name={holon.name}
+						isActive={holon.id === currentHolonId}
+						isPinned={false}
+						isStarred={false}
+						isHome={false}
+						{showPinButton}
+						{showStarButton}
+						{showRemoveButton}
+						on:select={() => selectHolon(holon.id)}
+						on:star={() => starHolon(holon.id)}
+						on:remove={() => removeHolon(holon.id)}
 					/>
 				{/each}
 			</div>

@@ -11,6 +11,7 @@
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
+	import { registerName as hnsRegister } from '$lib/hns';
 
 	// Import global design system styles
 	import '../styles/index.css';
@@ -35,6 +36,16 @@
 	// Store holon name from onboarding (if provided)
 	let pendingHolonName: string | null = null;
 	let pendingTelegramUserId: number | null = null;
+
+	// Check for pending holon name from localStorage (set by BrowserPanel identity creation)
+	if (browser) {
+		const storedName = localStorage.getItem('pending_holon_name');
+		if (storedName) {
+			pendingHolonName = storedName;
+			localStorage.removeItem('pending_holon_name');
+			localStorage.removeItem('pending_holon_id');
+		}
+	}
 
 	// Track if this is a telegram-mapped session (user without local key)
 	let isTelegramMappedSession = false;
@@ -87,7 +98,18 @@
 					});
 				}
 
-				// Always register/update holon in global registry for discovery
+				// Register name in HNS (Holon Name Service) - signed public registry
+				try {
+					const privateKey = $nostrPrivateKey;
+					if (privateKey) {
+						await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
+						console.log('Registered holon name in HNS:', holonName);
+					}
+				} catch (error) {
+					console.warn('Failed to register holon name in HNS:', error);
+				}
+
+				// Also register in legacy global registry for discovery
 				try {
 					await holosphere.writeGlobal('holons_registry', {
 						id: userPublicKey,
