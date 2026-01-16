@@ -4,7 +4,7 @@
  * A decentralized name registry for holons using cryptographic signatures
  * to ensure only holon owners can register/update their names.
  *
- * Uses the service key's holon as the public registry that anyone can read.
+ * Uses a global table for public accessibility (no federation required to read).
  */
 
 import { schnorr } from '@noble/curves/secp256k1';
@@ -80,6 +80,7 @@ export function verifyEntry(entry: HNSEntry): boolean {
 
 /**
  * Register or update a holon name in HNS
+ * Uses global table for public accessibility
  */
 export async function registerName(
   holosphere: HoloSphere,
@@ -87,13 +88,23 @@ export async function registerName(
   name: string,
   privateKey: string
 ): Promise<boolean> {
-  const registryId = getRegistryHolonId();
-  if (!registryId) {
-    console.error('HNS: Registry holon ID not available');
-    return false;
-  }
-
   try {
+    // Validate name before registration
+    const RESERVED_NAMES = new Set(['no', 'yes', 'true', 'false', 'null', 'undefined', 'none', 'n/a', 'na', 'nil']);
+    if (!name || typeof name !== 'string') {
+      console.warn('HNS: Invalid name type, skipping registration');
+      return false;
+    }
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2) {
+      console.warn('HNS: Name too short, skipping registration:', trimmedName);
+      return false;
+    }
+    if (RESERVED_NAMES.has(trimmedName.toLowerCase())) {
+      console.warn('HNS: Reserved word as name, skipping registration:', trimmedName);
+      return false;
+    }
+
     // Verify the private key matches the holon ID
     const derivedPubKey = bytesToHex(schnorr.getPublicKey(privateKey));
     if (derivedPubKey !== holonId) {
@@ -102,23 +113,23 @@ export async function registerName(
     }
 
     const timestamp = Date.now();
-    const signature = signEntry(holonId, name, timestamp, privateKey);
+    const signature = signEntry(holonId, trimmedName, timestamp, privateKey);
 
-    const entry: HNSEntry = {
+    const entry: HNSEntry & { id: string } = {
+      id: holonId, // Required for global table keying
       holonId,
-      name,
+      name: trimmedName,
       timestamp,
       signature
     };
 
-    // Write to the registry holon's HNS lens
-    // Use holonId as the key so each holon has one entry
-    await holosphere.put(registryId, HNS_LENS, entry);
+    // Write to global HNS table (publicly readable, no federation needed)
+    await holosphere.writeGlobal(HNS_LENS, entry);
 
     // Update local cache
     hnsCache.set(holonId, entry);
 
-    console.log(`HNS: Registered name "${name}" for holon ${holonId.slice(0, 8)}...`);
+    console.log(`HNS: Registered name "${trimmedName}" for holon ${holonId.slice(0, 8)}...`);
     return true;
   } catch (error) {
     console.error('HNS: Failed to register name:', error);
@@ -128,6 +139,7 @@ export async function registerName(
 
 /**
  * Lookup a holon name from HNS
+ * Reads from global table (publicly accessible)
  */
 export async function lookupName(
   holosphere: HoloSphere,
@@ -145,25 +157,13 @@ export async function lookupName(
     return entry?.name || null;
   }
 
-  const registryId = getRegistryHolonId();
-  if (!registryId) {
-    return null;
-  }
-
   // Create fetch promise
   const fetchPromise = (async (): Promise<HNSEntry | null> => {
     try {
-      // Read from the registry holon's HNS lens
-      const entries = await holosphere.getAll(registryId, HNS_LENS);
+      // Read from global HNS table (no federation needed)
+      const entry = await holosphere.getGlobal(HNS_LENS, holonId);
 
-      if (!entries || !Array.isArray(entries)) {
-        return null;
-      }
-
-      // Find entry for this holon
-      const entry = entries.find((e: any) => e?.holonId === holonId) as HNSEntry | undefined;
-
-      if (!entry) {
+      if (!entry || !entry.name) {
         return null;
       }
 
@@ -177,7 +177,7 @@ export async function lookupName(
       hnsCache.set(holonId, entry);
       return entry;
     } catch (error) {
-      console.error('HNS: Lookup failed:', error);
+      // Silent fail - HNS lookup is optional
       return null;
     } finally {
       fetchPromises.delete(holonId);
@@ -191,21 +191,17 @@ export async function lookupName(
 
 /**
  * Batch lookup multiple holon names
+ * Uses global table for public accessibility
  */
 export async function lookupNames(
   holosphere: HoloSphere,
   holonIds: string[]
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
-  const registryId = getRegistryHolonId();
-
-  if (!registryId) {
-    return results;
-  }
 
   try {
-    // Read all entries from registry
-    const entries = await holosphere.getAll(registryId, HNS_LENS);
+    // Read all entries from global HNS table
+    const entries = await holosphere.getAllGlobal(HNS_LENS);
 
     if (!entries || !Array.isArray(entries)) {
       return results;
@@ -228,7 +224,7 @@ export async function lookupNames(
       }
     }
   } catch (error) {
-    console.error('HNS: Batch lookup failed:', error);
+    // Silent fail - batch lookup is optional
   }
 
   return results;

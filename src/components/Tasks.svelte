@@ -10,6 +10,7 @@
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
+	import KanbanView from "./kanban/KanbanView.svelte";
 	import { writable } from 'svelte/store';
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
@@ -35,6 +36,7 @@
 	} from "../lib/holonCache";
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { telegramStore } from "../lib/stores/telegram";
+	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
 	// State for quick completion
 	let showCompleterModal = $state(false);
@@ -179,7 +181,7 @@
 	}
 
 	// Initialize with safe defaults
-	let viewMode: 'list' | 'canvas' = $state('list');
+	let viewMode: 'list' | 'canvas' | 'kanban' = $state('list');
 	let showCompleted = $state(false);
 	let showHolograms = $state(true);
 	let sortedQuests: [string, Quest][] = [];
@@ -538,8 +540,12 @@
 
 			// Force update
 			// updateTrigger.update(n => n + 1); // Removed
-		} catch (error) {
-			console.error('Error adding task:', error);
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error adding task:', error);
+			}
 		}
 	}
 
@@ -635,8 +641,12 @@
 				questsUnsubscribe = tempQuestsUnsub;
 				// Immutable store update for Svelte reactivity
 				store = { ...store, ...storeUpdates };
-			} catch (error) {
-				console.error('Error updating quest orderIndex after drop:', error);
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error('Error updating quest orderIndex after drop:', error);
+				}
 				// Re-enable subscription even on error
 				questsUnsubscribe = tempQuestsUnsub;
 			}
@@ -698,8 +708,12 @@
 				await holosphere.put(currentHolonID, 'quests', draggedQuest);
 				// Immutable store update for Svelte reactivity
 				store = { ...store, [sourceKey]: draggedQuest };
-			} catch (error) {
-				console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
+				}
 			}
 		}
 
@@ -763,9 +777,13 @@
 
 			// Close import modal
 			showImportModal = false;
-		} catch (error) {
-			console.error('Error importing quests:', error);
-			alert("Error importing quests. Please check the console for details.");
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error importing quests:', error);
+				alert("Error importing quests. Please check the console for details.");
+			}
 		}
 	}
 
@@ -920,9 +938,17 @@
 
 		// If already completed, just toggle back to ongoing
 		if (quest.status === 'completed') {
-			const updatedQuest = { ...quest, id: key, status: 'ongoing', completed_at: null };
-			await holosphere.put(holonID, 'quests', updatedQuest);
-			store = { ...store, [key]: updatedQuest };
+			try {
+				const updatedQuest = { ...quest, id: key, status: 'ongoing', completed_at: null };
+				await holosphere.put(holonID, 'quests', updatedQuest);
+				store = { ...store, [key]: updatedQuest };
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error('Error updating task status:', error);
+				}
+			}
 			return;
 		}
 
@@ -1133,8 +1159,12 @@
 								fromTimeTracking: true,
 								questId: key
 							});
-						} catch (error) {
-							console.error(`Error adding time tracking expense for user ${userID}:`, error);
+						} catch (error: any) {
+							if (error?.name === 'AuthorizationError') {
+								notifyWriteDenied('Unable to save - no write permission for this holon');
+							} else {
+								console.error(`Error adding time tracking expense for user ${userID}:`, error);
+							}
 						}
 					}
 				}
@@ -1157,8 +1187,12 @@
 			setTimeout(() => { showFireworks = false; }, 2500);
 			setTimeout(() => { showConfetti = false; }, 10000);
 
-		} catch (error) {
-			console.error('Error completing task with accounting:', error);
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error completing task with accounting:', error);
+			}
 		}
 	}
 
@@ -1337,8 +1371,8 @@
 		// Load preferences
 		try {
 			const storedViewMode = localStorage.getItem('taskViewMode');
-			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
-				viewMode = storedViewMode as 'list' | 'canvas';
+			if (storedViewMode === 'list' || storedViewMode === 'canvas' || storedViewMode === 'kanban') {
+				viewMode = storedViewMode as 'list' | 'canvas' | 'kanban';
 			}
 			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
 			const storedShowHolograms = localStorage.getItem("taskShowHolograms");
@@ -1410,6 +1444,13 @@
 		}
 	});
 
+	// Save viewMode preference to localStorage
+	$effect(() => {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem("taskViewMode", viewMode);
+		}
+	});
+
 	// Handler for optimistic position updates from CanvasView
 	function handleCanvasQuestPositionChange(event: CustomEvent) {
 		const { key, position } = event.detail;
@@ -1447,12 +1488,25 @@
 		if (!holosphere || !holonID) return;
 
 		try {
-			const federationInfo = await holosphere.getFederation(holonID);
+			// Federation relationships are stored on the home holon, not on federated partner holons
+			// Use the user's home holon ID (nostrPublicKey) to fetch federation data
+			const federationSourceId = $nostrPublicKey || holonID;
+			const federationInfo = await holosphere.getFederation(federationSourceId);
 			if (federationInfo?.federated && Array.isArray(federationInfo.federated)) {
 				const holons: Array<{ id: string; name: string }> = [];
 				for (const id of federationInfo.federated) {
-					const name = await fetchHolonName(holosphere, id);
-					holons.push({ id, name });
+					// Try HNS first (authoritative), then fall back to stored partner name
+					let name = await fetchHolonName(holosphere, id);
+
+					// If HNS returned a fallback name, use stored partnerName instead
+					if (!name || name.startsWith('Holon ')) {
+						const storedName = federationInfo.partnerNames?.[id];
+						if (storedName && storedName !== id) {
+							name = storedName;
+						}
+					}
+
+					holons.push({ id, name: name || `Holon ${id.slice(0, 8)}...` });
 				}
 				federatedHolons = holons;
 			} else {
@@ -1583,6 +1637,18 @@
 								</svg>
 							</button>
 							<button
+								class="view-toggle__btn {viewMode === 'kanban' ? 'view-toggle__btn--active' : ''}"
+								onclick={() => (viewMode = 'kanban')}
+								aria-label="Kanban view"
+								title="Kanban view"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<rect x="4" y="3" width="4" height="18" rx="1"></rect>
+									<rect x="10" y="3" width="4" height="12" rx="1"></rect>
+									<rect x="16" y="3" width="4" height="15" rx="1"></rect>
+								</svg>
+							</button>
+							<button
 								class="view-toggle__btn {viewMode === 'canvas' ? 'view-toggle__btn--active' : ''}"
 								onclick={() => (viewMode = 'canvas')}
 								aria-label="Canvas view"
@@ -1687,11 +1753,27 @@
 							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
 							on:questPositionChanged={handleCanvasQuestPositionChange}
 						/>
-					{:else} 
+					{:else}
 						<div class="flex items-center justify-center py-12">
 							<div class="text-center">
 								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
 								<p class="text-gray-400">Loading canvas...</p>
+							</div>
+						</div>
+					{/if}
+				{:else if viewMode === "kanban"}
+					{#if holonID}
+						<KanbanView
+							{filteredQuests}
+							{holonID}
+							{showCompleted}
+							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
+						/>
+					{:else}
+						<div class="flex items-center justify-center py-12">
+							<div class="text-center">
+								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+								<p class="text-gray-400">Loading board...</p>
 							</div>
 						</div>
 					{/if}

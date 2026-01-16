@@ -581,10 +581,21 @@
                 console.log('processFederationResponse result:', result);
 
                 // Also store the federation relationship in holosphere (for UI display)
+                // IMPORTANT: If using response.lensConfig, swap from responder's perspective to initiator's
+                // Responder's outbound (what they share) = Initiator's inbound (what I receive)
+                // Responder's inbound (what they receive) = Initiator's outbound (what I share)
+                // If no response.lensConfig, use original request.lensConfig which is already initiator's perspective
                 if (response.responderHolonId) {
-                    console.log('Storing federation with holon:', response.responderHolonId);
+                    const initiatorLensConfig = response.lensConfig
+                        ? {
+                            inbound: response.lensConfig.outbound || [],
+                            outbound: response.lensConfig.inbound || []
+                        }
+                        : request.lensConfig;
+                    console.log('Storing federation with holon:', response.responderHolonId, 'lensConfig:', initiatorLensConfig);
                     await holosphere.federateHolon(currentHolonId, response.responderHolonId, {
-                        lensConfig: response.lensConfig || request.lensConfig
+                        lensConfig: initiatorLensConfig,
+                        partnerName: response.responderHolonName
                     });
                 }
             }

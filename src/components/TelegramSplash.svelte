@@ -117,7 +117,7 @@
 
 		if (state.privateKey) {
 			// Returning user - key exists, proceed to app
-			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey }), 300);
+			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' }), 300);
 		} else if (telegramUser && isTelegramWebApp) {
 			// Telegram Mini App user - check for existing mapping and auto-login
 			isProcessing = true;

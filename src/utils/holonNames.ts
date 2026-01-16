@@ -1,5 +1,5 @@
 import type { HoloSphere } from "holosphere";
-import { lookupName as hnsLookup } from "../lib/hns";
+import { lookupName as hnsLookup, clearHNSCache } from "../lib/hns";
 
 // Global cache for holon names
 const holonNameCache = new Map<string, string>();
@@ -8,7 +8,26 @@ const holonNameCache = new Map<string, string>();
 const fetchPromises = new Map<string, Promise<string>>();
 
 /**
- * Fetch holon name - tries HNS first, then falls back to local settings
+ * Reserved words that should not be used as holon names
+ */
+const RESERVED_NAMES = new Set([
+  'no', 'yes', 'true', 'false', 'null', 'undefined', 'none', 'n/a',
+  'na', 'nil', 'empty', 'blank', 'unknown', 'anonymous', 'default'
+]);
+
+/**
+ * Validate that a holon name is acceptable
+ */
+export function isValidHolonName(name: unknown): name is string {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (trimmed.length < 2) return false;
+  if (RESERVED_NAMES.has(trimmed.toLowerCase())) return false;
+  return true;
+}
+
+/**
+ * Fetch holon name - tries HNS first (signed), then local settings, then legacy registry
  */
 export async function fetchHolonName(holosphere: HoloSphere, holonId: string): Promise<string> {
 	// Return cached name if available
@@ -32,7 +51,7 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 				return fallbackName;
 			}
 
-			// Try HNS (Holon Name Service) first - global public registry
+			// 1. Try HNS (Holon Name Service) first - signed public registry (authoritative)
 			try {
 				const hnsName = await hnsLookup(holosphere, holonId);
 				if (hnsName && hnsName.trim() !== '') {
@@ -40,40 +59,48 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 					return hnsName;
 				}
 			} catch (hnsError) {
-				// HNS lookup failed, continue to fallback
-				console.debug('HNS lookup failed, trying local settings:', hnsError);
+				// HNS lookup failed, continue to local settings
 			}
 
-			// Fallback: Get settings from the holon itself (requires federation)
-			const settings = await holosphere.get(holonId, "settings", holonId);
+			// 2. Try local settings from the holon itself (requires federation)
+			try {
+				const settings = await holosphere.get(holonId, "settings", holonId);
 
-			// Check if settings exists and has the expected structure
-			if (!settings) {
-				const fallbackName = `Holon ${holonId}`;
-				holonNameCache.set(holonId, fallbackName);
-				return fallbackName;
+				// Settings might be an array (readAll returns array) or single object
+				let holonName: string | undefined;
+				if (Array.isArray(settings)) {
+					const settingsObj = settings.find((s: any) => s?.name);
+					holonName = settingsObj?.name;
+				} else if (settings) {
+					holonName = settings?.name;
+				}
+
+				// Check if we got a real name (not empty, not undefined)
+				if (holonName && holonName.trim() !== '') {
+					holonNameCache.set(holonId, holonName);
+					return holonName;
+				}
+			} catch (settingsError) {
+				// Settings lookup failed, continue to legacy registry
 			}
 
-			// Settings might be an array (readAll returns array) or single object
-			let holonName: string | undefined;
-			if (Array.isArray(settings)) {
-				const settingsObj = settings.find((s: any) => s?.name);
-				holonName = settingsObj?.name;
-			} else {
-				holonName = settings?.name;
+			// 3. Try legacy holons_registry (deprecated fallback, unsigned)
+			try {
+				const registryEntry = await holosphere.getGlobal('holons_registry', holonId);
+				if (registryEntry && registryEntry.name && registryEntry.name.trim() !== '') {
+					holonNameCache.set(holonId, registryEntry.name);
+					return registryEntry.name;
+				}
+			} catch (registryError) {
+				// Legacy registry lookup failed, use fallback
 			}
 
-			// Check if we got a real name (not empty, not undefined)
-			if (holonName && holonName.trim() !== '') {
-				holonNameCache.set(holonId, holonName);
-				return holonName;
-			} else {
-				const fallbackName = `Holon ${holonId}`;
-				holonNameCache.set(holonId, fallbackName);
-				return fallbackName;
-			}
+			// All lookups failed - use truncated ID as fallback
+			const fallbackName = `Holon ${holonId.slice(0, 8)}...`;
+			holonNameCache.set(holonId, fallbackName);
+			return fallbackName;
 		} catch (error) {
-			const fallbackName = `Holon ${holonId}`;
+			const fallbackName = `Holon ${holonId.slice(0, 8)}...`;
 			holonNameCache.set(holonId, fallbackName);
 			return fallbackName;
 		} finally {
@@ -97,7 +124,7 @@ export function getCachedHolonName(holonId: string): string {
 		return cachedName;
 	}
 	// Return fallback (not cached here since it should be fetched properly)
-	return `Holon ${holonId}`;
+	return `Holon ${holonId.slice(0, 8)}...`;
 }
 
 /**
@@ -164,9 +191,11 @@ export function clearHolonNameCache(holonId?: string): void {
 	if (holonId) {
 		holonNameCache.delete(holonId);
 		fetchPromises.delete(holonId);
+		clearHNSCache(holonId);  // Also clear HNS cache
 	} else {
 		holonNameCache.clear();
 		fetchPromises.clear();
+		clearHNSCache();  // Clear all HNS cache
 	}
 }
 
@@ -177,14 +206,12 @@ export function clearHolonNameCache(holonId?: string): void {
  */
 export function clearFallbackNames(): void {
 	const holonIds = Array.from(holonNameCache.keys());
-	let clearedCount = 0;
 
 	for (const id of holonIds) {
 		const cachedName = holonNameCache.get(id);
-		// Clear fallback names to allow retry
-		if (cachedName === `Holon ${id}`) {
+		// Clear fallback names to allow retry (check both old and new format)
+		if (cachedName === `Holon ${id}` || cachedName === `Holon ${id.slice(0, 8)}...`) {
 			holonNameCache.delete(id);
-			clearedCount++;
 		}
 	}
 }

@@ -1,14 +1,26 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Star } from 'svelte-feathers';
+	import { Users, Bell } from 'svelte-feathers';
 	import HolonItem from './HolonItem.svelte';
+	import FederationRequestCard from './FederationRequestCard.svelte';
+
+	type FederationStatus = 'none' | 'pending_outgoing' | 'pending_incoming' | 'accepted';
 
 	interface Holon {
 		id: string;
 		name: string;
-		isPinned?: boolean;
-		isStarred?: boolean;
-		lastVisited?: number;
+		federationStatus?: FederationStatus;
+		lensConfig?: { inbound: string[]; outbound: string[] };
+	}
+
+	interface IncomingRequest {
+		id: string;
+		senderPubKey: string;
+		senderHolonName: string;
+		senderHolonId?: string;
+		lensConfig: { inbound: string[]; outbound: string[] };
+		message?: string;
+		type?: 'federation_request' | 'lens_update';
 	}
 
 	export let holons: Holon[] = [];
@@ -21,6 +33,8 @@
 	export let homeHolonId: string | null = null;
 	export let homeHolonName: string = '';
 	export let showHomeSection: boolean = true;
+	export let incomingRequests: IncomingRequest[] = [];
+	export let processingRequestId: string | null = null;
 
 	const dispatch = createEventDispatcher();
 
@@ -36,12 +50,32 @@
 		dispatch('remove', { holonId });
 	}
 
+	function handleAccept(event: CustomEvent<{ id: string; senderPubKey: string }>) {
+		const request = incomingRequests.find(r => r.id === event.detail.id);
+		if (request) {
+			dispatch('acceptRequest', request);
+		}
+	}
+
+	function handleDecline(event: CustomEvent<{ id: string; senderPubKey: string }>) {
+		const request = incomingRequests.find(r => r.id === event.detail.id);
+		if (request) {
+			dispatch('declineRequest', request);
+		}
+	}
+
 	// Filter out home holon from the regular list
 	$: otherHolons = homeHolonId ? holons.filter(h => h.id !== homeHolonId) : holons;
 
-	// Separate starred and recent holons (excluding home)
-	$: starredHolons = otherHolons.filter((h) => starredIds.includes(h.id));
-	$: recentHolons = otherHolons.filter((h) => !starredIds.includes(h.id));
+	// Split into accepted and pending federation holons
+	$: acceptedHolons = otherHolons.filter((h) => h.federationStatus === 'accepted');
+	$: pendingHolons = otherHolons.filter((h) =>
+		h.federationStatus === 'pending_outgoing' || h.federationStatus === 'pending_incoming'
+	);
+
+	// Separate federation requests from lens update requests
+	$: federationRequests = incomingRequests.filter(r => r.type !== 'lens_update');
+	$: lensUpdateRequests = incomingRequests.filter(r => r.type === 'lens_update');
 </script>
 
 <div class="holon-list">
@@ -51,6 +85,54 @@
 			<span>Loading...</span>
 		</div>
 	{:else}
+		<!-- Incoming Federation Requests -->
+		{#if federationRequests.length > 0}
+			<div class="holon-list__section holon-list__section--requests">
+				<span class="holon-list__section-title holon-list__section-title--notification">
+					<Bell size={10} />
+					Federation Requests ({federationRequests.length})
+				</span>
+				{#each federationRequests as request (request.id)}
+					<FederationRequestCard
+						id={request.id}
+						senderPubKey={request.senderPubKey}
+						senderHolonName={request.senderHolonName}
+						type="federation_request"
+						message={request.message || ''}
+						theirOutbound={request.lensConfig?.outbound || []}
+						theirInbound={request.lensConfig?.inbound || []}
+						isProcessing={processingRequestId === request.id}
+						on:accept={handleAccept}
+						on:decline={handleDecline}
+					/>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- Lens Update Requests -->
+		{#if lensUpdateRequests.length > 0}
+			<div class="holon-list__section holon-list__section--updates">
+				<span class="holon-list__section-title holon-list__section-title--update">
+					<Bell size={10} />
+					Lens Updates ({lensUpdateRequests.length})
+				</span>
+				{#each lensUpdateRequests as request (request.id)}
+					<FederationRequestCard
+						id={request.id}
+						senderPubKey={request.senderPubKey}
+						senderHolonName={request.senderHolonName}
+						type="lens_update"
+						message={request.message || ''}
+						theirOutbound={request.lensConfig?.outbound || []}
+						theirInbound={request.lensConfig?.inbound || []}
+						isProcessing={processingRequestId === request.id}
+						on:accept={handleAccept}
+						on:decline={handleDecline}
+					/>
+				{/each}
+			</div>
+		{/if}
+
 		<!-- Home Holon - Always at top, uses HolonItem with key management -->
 		{#if showHomeSection && homeHolonId}
 			<div class="holon-list__home">
@@ -68,37 +150,14 @@
 			</div>
 		{/if}
 
-		<!-- Starred holons -->
-		{#if starredHolons.length > 0}
+		<!-- Federated holons (accepted) -->
+		{#if acceptedHolons.length > 0}
 			<div class="holon-list__section">
 				<span class="holon-list__section-title">
-					<Star size={10} />
-					Starred
+					<Users size={10} />
+					Federated
 				</span>
-				{#each starredHolons as holon (holon.id)}
-					<HolonItem
-						id={holon.id}
-						name={holon.name}
-						isActive={holon.id === currentHolonId}
-						isPinned={false}
-						isStarred={true}
-						isHome={false}
-						{showPinButton}
-						{showStarButton}
-						{showRemoveButton}
-						on:select={() => selectHolon(holon.id)}
-						on:star={() => starHolon(holon.id)}
-						on:remove={() => removeHolon(holon.id)}
-					/>
-				{/each}
-			</div>
-		{/if}
-
-		<!-- Recent holons -->
-		{#if recentHolons.length > 0}
-			<div class="holon-list__section">
-				<span class="holon-list__section-title">Recent</span>
-				{#each recentHolons as holon (holon.id)}
+				{#each acceptedHolons as holon (holon.id)}
 					<HolonItem
 						id={holon.id}
 						name={holon.name}
@@ -106,11 +165,39 @@
 						isPinned={false}
 						isStarred={false}
 						isHome={false}
+						federationStatus={holon.federationStatus || 'none'}
+						inboundLenses={holon.lensConfig?.inbound || []}
+						outboundLenses={holon.lensConfig?.outbound || []}
 						{showPinButton}
-						{showStarButton}
+						showStarButton={false}
 						{showRemoveButton}
 						on:select={() => selectHolon(holon.id)}
-						on:star={() => starHolon(holon.id)}
+						on:remove={() => removeHolon(holon.id)}
+						on:lensConfigUpdate
+					/>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- Pending federation requests -->
+		{#if pendingHolons.length > 0}
+			<div class="holon-list__section">
+				<span class="holon-list__section-title">Pending</span>
+				{#each pendingHolons as holon (holon.id)}
+					<HolonItem
+						id={holon.id}
+						name={holon.name}
+						isActive={holon.id === currentHolonId}
+						isPinned={false}
+						isStarred={false}
+						isHome={false}
+						federationStatus={holon.federationStatus || 'none'}
+						inboundLenses={holon.lensConfig?.inbound || []}
+						outboundLenses={holon.lensConfig?.outbound || []}
+						showPinButton={false}
+						showStarButton={false}
+						{showRemoveButton}
+						on:select={() => selectHolon(holon.id)}
 						on:remove={() => removeHolon(holon.id)}
 					/>
 				{/each}
@@ -120,12 +207,12 @@
 		<!-- Empty state -->
 		{#if holons.length === 0 && !homeHolonId}
 			<div class="holon-list__empty">
-				<p>No holons yet</p>
-				<p class="holon-list__empty-hint">Add a holon with the + button</p>
+				<p>No federated holons yet</p>
+				<p class="holon-list__empty-hint">Add a holon with the + button to federate</p>
 			</div>
 		{:else if otherHolons.length === 0 && homeHolonId}
 			<div class="holon-list__empty holon-list__empty--compact">
-				<p class="holon-list__empty-hint">Star holons to see them here</p>
+				<p class="holon-list__empty-hint">Federate with other holons using the + button</p>
 			</div>
 		{/if}
 	{/if}
@@ -224,5 +311,40 @@
 
 	.holon-list__empty--compact {
 		padding: var(--spacing-4, 1rem);
+	}
+
+	/* Incoming Requests Section */
+	.holon-list__section--requests {
+		background: rgba(79, 70, 229, 0.05);
+		border-bottom: 1px solid var(--color-border, #374151);
+		padding-bottom: var(--spacing-2, 0.5rem);
+		margin-bottom: var(--spacing-2, 0.5rem);
+	}
+
+	.holon-list__section-title--notification {
+		color: var(--color-accent, #4f46e5);
+	}
+
+	/* Lens Updates Section */
+	.holon-list__section--updates {
+		background: rgba(245, 158, 11, 0.05);
+		border-bottom: 1px solid var(--color-border, #374151);
+		padding-bottom: var(--spacing-2, 0.5rem);
+		margin-bottom: var(--spacing-2, 0.5rem);
+	}
+
+	.holon-list__section-title--update {
+		color: var(--color-warning, #f59e0b);
+	}
+
+	/* Legacy request styles - kept for backwards compatibility */
+	.holon-list__request-btn--decline {
+		background: var(--color-bg-tertiary, #374151);
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.holon-list__request-btn--decline:hover {
+		background: var(--color-error, #ef4444);
+		color: white;
 	}
 </style>

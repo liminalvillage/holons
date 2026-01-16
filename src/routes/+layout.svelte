@@ -3,15 +3,16 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-	import { HoloSphere } from "holosphere"
+	import { HoloSphere, handshake } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
 	import TelegramSplash from '../components/TelegramSplash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
-	import { nostrStore, nostrPrivateKey } from '$lib/stores/nostr';
+	import { nostrStore } from '$lib/stores/nostr';
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
 	import { registerName as hnsRegister } from '$lib/hns';
+	import { isValidHolonName } from '../utils/holonNames';
 
 	// Import global design system styles
 	import '../styles/index.css';
@@ -33,6 +34,9 @@
 	// GC interval reference
 	let gcInterval: ReturnType<typeof setInterval>;
 
+	// Federation DM subscription
+	let dmUnsubscribe: (() => void) | null = null;
+
 	// Store holon name from onboarding (if provided)
 	let pendingHolonName: string | null = null;
 	let pendingTelegramUserId: number | null = null;
@@ -52,7 +56,7 @@
 	let telegramMappedPublicKey: string | null = null;
 
 	// Initialize user's personal holon with their public key as ID
-	async function initializeUserHolon() {
+	async function initializeUserHolon(privateKey: string) {
 		if (!holosphere || !holosphere.client?.publicKey) return;
 
 		// For telegram-mapped sessions, use the mapped public key instead of service key
@@ -82,11 +86,22 @@
 			}
 
 			// Determine the holon name (from pending or existing settings or default)
-			const holonName = pendingHolonName || existingSettings?.name || 'My Holon';
+			const existingName = existingSettings?.name;
+			const existingNameValid = isValidHolonName(existingName);
+			const holonName = pendingHolonName || (existingNameValid ? existingName : null) || 'My Holon';
+
+			// Log name resolution
+			if (existingName && !existingNameValid) {
+				console.log('Existing name invalid, using fallback:', existingName, '->', holonName);
+			}
+
+			// Track if this is a first-time user (for navigation decisions later)
+			// Also treat users with invalid names as first-time (they need settings corrected)
+			const isFirstTimeUser = !existingSettings || !existingNameValid;
 
 			// Skip write operations in telegram-mapped mode (read-only access with service key)
 			if (!isTelegramMappedSession) {
-				if (!existingSettings || !existingSettings.name) {
+				if (isFirstTimeUser) {
 					// First time login - create the holon with custom or default name
 					console.log('First time user - creating personal holon:', holonName);
 					await holosphere.write(userPublicKey, 'settings', {
@@ -99,29 +114,17 @@
 				}
 
 				// Register name in HNS (Holon Name Service) - signed public registry
-				try {
-					const privateKey = $nostrPrivateKey;
-					if (privateKey) {
+				// Only register if first-time user OR name is changing
+				const nameIsChanging = pendingHolonName && pendingHolonName !== existingName;
+				if (isFirstTimeUser || nameIsChanging) {
+					try {
 						await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
 						console.log('Registered holon name in HNS:', holonName);
+					} catch (error) {
+						console.warn('Failed to register holon name in HNS:', error);
 					}
-				} catch (error) {
-					console.warn('Failed to register holon name in HNS:', error);
-				}
-
-				// Also register in legacy global registry for discovery
-				try {
-					await holosphere.writeGlobal('holons_registry', {
-						id: userPublicKey,
-						name: holonName,
-						purpose: existingSettings?.purpose || 'Personal holon',
-						createdAt: existingSettings?.createdAt || Date.now(),
-						lastSeen: Date.now(),
-						type: 'personal'
-					});
-					console.log('Registered holon in global registry:', holonName);
-				} catch (error) {
-					console.warn('Failed to register holon in global registry:', error);
+				} else {
+					console.log('Returning user with existing name, skipping HNS registration');
 				}
 
 				// Store/update Telegram mapping if this came from Telegram
@@ -161,9 +164,15 @@
 				? pathParts[0]
 				: null;
 
-			// Only set ID to user's public key if no holon ID in URL
-			if (holonIdInUrl) {
-				// Respect the holon ID in the URL
+			// First-time users should always go to their own holon
+			// Returning users can respect the URL if they're viewing another holon
+			if (isFirstTimeUser) {
+				// New user - always redirect to their personal holon
+				ID.set(userPublicKey);
+				console.log('First time user - redirecting to personal holon:', userPublicKey);
+				goto(`/${userPublicKey}/dashboard`);
+			} else if (holonIdInUrl) {
+				// Returning user - respect the holon ID in the URL
 				ID.set(holonIdInUrl);
 				console.log('Using holon ID from URL:', holonIdInUrl);
 			} else {
@@ -248,6 +257,106 @@
 		}
 	}
 
+	// Set up global federation DM subscription for receiving requests/responses
+	function setupFederationDMSubscription(privateKey: string) {
+		if (!holosphere || dmUnsubscribe) return;
+
+		const publicKey = holosphere.client?.publicKey;
+		if (!publicKey) {
+			console.warn('Cannot set up federation DM subscription: no public key');
+			return;
+		}
+
+		console.log('Setting up global federation DM subscription...');
+
+		dmUnsubscribe = handshake.subscribeToFederationDMs(
+			holosphere,
+			privateKey,
+			publicKey,
+			{
+				onRequest: async (request: any, senderPubKey: string) => {
+					console.log('[Global DM] Federation request received from:', senderPubKey?.slice(0, 8));
+					// Dispatch event for UI components to handle
+					if (browser) {
+						window.dispatchEvent(new CustomEvent('federationRequest', {
+							detail: { request, senderPubKey }
+						}));
+					}
+				},
+				onResponse: async (response: any, senderPubKey: string) => {
+					console.log('[Global DM] Federation response received:', response?.status, 'from:', senderPubKey?.slice(0, 8));
+
+					// Process the response (creates federation on our side)
+					if (response.status === 'accepted') {
+						try {
+							const currentHolonId = holosphere.client?.publicKey;
+							if (currentHolonId) {
+								// Process the response to complete federation on our side
+								const result = await handshake.processFederationResponse(
+									holosphere,
+									response,
+									senderPubKey,
+									{
+										holonId: currentHolonId,
+										inboundLenses: response.lensConfig?.outbound || []
+									}
+								);
+								console.log('[Global DM] processFederationResponse result:', result);
+
+								// Store federation relationship
+								// IMPORTANT: Swap lensConfig from responder's perspective to initiator's
+								// Responder's outbound (what they share) = Initiator's inbound (what I receive)
+								// Responder's inbound (what they receive) = Initiator's outbound (what I share)
+								if (response.responderHolonId) {
+									const initiatorLensConfig = {
+										inbound: response.lensConfig?.outbound || [],
+										outbound: response.lensConfig?.inbound || []
+									};
+									await holosphere.federateHolon(currentHolonId, response.responderHolonId, {
+										lensConfig: initiatorLensConfig,
+										partnerName: response.responderHolonName,
+										skipPropagation: true // Data already propagated by processFederationResponse
+									});
+									console.log('[Global DM] Federation stored with:', response.responderHolonId, 'lensConfig:', initiatorLensConfig);
+								}
+							}
+						} catch (error) {
+							console.error('[Global DM] Failed to process federation response:', error);
+						}
+					}
+
+					// Dispatch event for UI refresh
+					if (browser) {
+						window.dispatchEvent(new CustomEvent('federationResponse', {
+							detail: { response, senderPubKey }
+						}));
+					}
+				},
+				onUpdate: async (update: any, senderPubKey: string) => {
+					console.log('[Global DM] Federation update received from:', senderPubKey?.slice(0, 8), update);
+
+					// DON'T auto-accept - dispatch event for UI to show approval dialog
+					// The update contains: newLensConfig (with capabilities), senderHolonId, senderHolonName, message
+					if (browser) {
+						window.dispatchEvent(new CustomEvent('federationUpdate', {
+							detail: { update, senderPubKey }
+						}));
+					}
+				},
+				onUpdateResponse: (response: any, senderPubKey: string) => {
+					console.log('[Global DM] Federation update response received from:', senderPubKey?.slice(0, 8));
+					if (browser) {
+						window.dispatchEvent(new CustomEvent('federationUpdateResponse', {
+							detail: { response, senderPubKey }
+						}));
+					}
+				}
+			}
+		);
+
+		console.log('Global federation DM subscription active');
+	}
+
 	// Initialize HoloSphere with the given private key
 	async function initHoloSphere(privateKey: string) {
 		if (holosphere) {
@@ -289,6 +398,9 @@
 		// Update the global store (this can be called from async callbacks)
 		holosphereStore.set(holosphere);
 
+		// Set up global federation DM subscription
+		setupFederationDMSubscription(privateKey);
+
 		// Initialize the user's personal holon with their public key as ID
 		// But skip if on certain routes like /global
 		// Also skip for telegram-mapped sessions (read-only)
@@ -301,12 +413,12 @@
 				    !currentPath.startsWith('/navigator') &&
 				    !currentPath.startsWith('/sdgs')) {
 					console.log('Calling initializeUserHolon...');
-					initializeUserHolon();
+					await initializeUserHolon(privateKey);
 				} else {
 					console.log('Skipping initializeUserHolon for protected route:', currentPath);
 				}
 			} else {
-				initializeUserHolon();
+				await initializeUserHolon(privateKey);
 			}
 
 			// Grant capability token to the holosphere service key for federation
@@ -332,6 +444,10 @@
 	onDestroy(() => {
 		if (gcInterval) {
 			clearInterval(gcInterval);
+		}
+		if (dmUnsubscribe) {
+			dmUnsubscribe();
+			dmUnsubscribe = null;
 		}
 	});
 

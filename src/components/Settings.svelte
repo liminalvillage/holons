@@ -2,6 +2,8 @@
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
   import { clearHolonNameCache, fetchHolonName } from '../utils/holonNames';
+  import { registerName as hnsRegister } from '$lib/hns';
+  import { nostrStore } from '$lib/stores/nostr';
   import TitleBar from './shared/TitleBar.svelte';
   import { Plus } from 'svelte-feathers';
 
@@ -160,6 +162,17 @@
       console.log('Saving settings to holosphere:', settingsToSave);
 
       await holosphere.put(holonId, 'settings', settingsToSave);
+
+      // Update HNS if user owns this holon (has matching private key)
+      const state = nostrStore.getState();
+      if (state.privateKey && state.publicKey === holonId && settings.name) {
+        try {
+          await hnsRegister(holosphere, holonId, settings.name, state.privateKey);
+          console.log('Updated HNS with new name:', settings.name);
+        } catch (error) {
+          console.warn('Failed to update HNS (local settings saved):', error);
+        }
+      }
 
       // Clear the cached holon name to force refresh with the new name
       clearHolonNameCache(holonId);

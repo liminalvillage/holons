@@ -12,6 +12,8 @@
 	import BrowserPanel from './browser/BrowserPanel.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
 	import Onboarding from '../components/Onboarding.svelte';
+	import WriteNotificationToast from '../components/WriteNotificationToast.svelte';
+
 
 	// Browser panel state (replaces sidebar for holon browsing)
 	// Default open on desktop, closed on mobile
@@ -149,6 +151,9 @@
 
 		<!-- Onboarding for first-time users -->
 		<Onboarding />
+
+		<!-- Write permission denied notifications -->
+		<WriteNotificationToast />
 	</div>
 {/if}
 
@@ -237,4 +242,5 @@
 	:global(*) {
 		-ms-overflow-style: none; /* Internet Explorer 10+ */
 	}
+
 </style>

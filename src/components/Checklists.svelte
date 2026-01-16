@@ -9,6 +9,7 @@
     import { fetchHolonName } from "../utils/holonNames";
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
     import { Plus } from 'svelte-feathers';
+    import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
     interface ChecklistItem {
         text: string;
@@ -256,10 +257,10 @@
     }
 
     async function toggleItemStatus(checklistId: string, itemIndex: number): Promise<void> {
-        if (!checklists[checklistId] || !holonID) return;
-        
+        if (!allChecklists[checklistId] || !holonID) return;
+
         try {
-            const checklist = { ...checklists[checklistId] };
+            const checklist = { ...allChecklists[checklistId] };
             checklist.items = [...checklist.items];
             checklist.items[itemIndex] = {
                 ...checklist.items[itemIndex],
@@ -267,12 +268,23 @@
             };
 
             await holosphere.put(holonID, "checklists", checklist);
-        } catch (error) {
-            console.error("Failed to toggle checklist item:", error);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to toggle checklist item:", error);
+            }
         }
     }
 
     function selectChecklist(checklistId: string): void {
+        // Special case: redirect "shopping" checklist to dedicated shopping page
+        const shoppingKeywords = ['shopping', 'shopping list', 'groceries', 'grocery'];
+        if (shoppingKeywords.some(keyword => checklistId.toLowerCase().includes(keyword))) {
+            goto(`/${holonID}/shopping`);
+            return;
+        }
+
         selectedChecklist = checklistId;
         // Update URL with checklist parameter
         const url = new URL(window.location.href);
@@ -281,18 +293,22 @@
     }
 
     async function clearChecklist(checklistId: string | null): Promise<void> {
-        if (!checklistId || !checklists[checklistId] || !holonID) return;
-        
+        if (!checklistId || !allChecklists[checklistId] || !holonID) return;
+
         try {
-            const checklist = { ...checklists[checklistId] };
+            const checklist = { ...allChecklists[checklistId] };
             checklist.items = (checklist.items || []).map((item) => ({
                 ...item,
                 checked: false,
             }));
 
             await holosphere.put(holonID, "checklists", checklist);
-        } catch (error) {
-            console.error("Failed to clear checklist:", error);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to clear checklist:", error);
+            }
         }
     }
 
@@ -315,8 +331,8 @@
                     created: new Date().toISOString(),
                 };
                 await holosphere.put(holonID, "checklists", newChecklist);
-            } else if (selectedChecklist && checklists[selectedChecklist]) {
-                const checklist = { ...checklists[selectedChecklist] };
+            } else if (selectedChecklist && allChecklists[selectedChecklist]) {
+                const checklist = { ...allChecklists[selectedChecklist] };
                 checklist.items = [
                     ...checklist.items,
                     {
@@ -329,8 +345,12 @@
 
             showInput = false;
             inputText = "";
-        } catch (error) {
-            console.error("Failed to add item:", error);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to add item:", error);
+            }
         }
     }
 
@@ -360,33 +380,45 @@
             }
             
             console.log(`Created checklist for task ${taskId}: ${newChecklistId}`);
-        } catch (error) {
-            console.error("Error creating checklist for task:", error);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Error creating checklist for task:", error);
+            }
         }
     }
 
     async function deleteChecklist(checklistId: string): Promise<void> {
         if (!holonID) return;
-        
+
         try {
             await holosphere.delete(holonID, "checklists", checklistId);
-        } catch (error) {
-            console.error("Failed to delete checklist:", error);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to delete - no write permission for this holon');
+            } else {
+                console.error("Failed to delete checklist:", error);
+            }
         }
     }
 
     async function removeItem(checklistId: string, itemIndex: number): Promise<void> {
-        if (!checklistId || !checklists[checklistId] || !holonID) return;
-        
+        if (!checklistId || !allChecklists[checklistId] || !holonID) return;
+
         try {
-            const checklist = { ...checklists[checklistId] };
+            const checklist = { ...allChecklists[checklistId] };
             checklist.items = (checklist.items || []).filter(
                 (_, index) => index !== itemIndex
             );
 
             await holosphere.put(holonID, "checklists", checklist);
-        } catch (error) {
-            console.error("Failed to remove item:", error);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to remove item:", error);
+            }
         }
     }
 
@@ -395,14 +427,19 @@
         if (checklist.roleId && roles[checklist.roleId]) {
             return roles[checklist.roleId].title || checklist.id;
         }
-        
+
         // If checklist is associated with a quest, use the quest title
         if (checklist.questId && quests[checklist.questId]) {
             return quests[checklist.questId].title || checklist.id;
         }
-        
+
         // Fallback to checklist ID
         return checklist.id;
+    }
+
+    function isShoppingChecklist(checklistId: string): boolean {
+        const shoppingKeywords = ['shopping', 'shopping list', 'groceries', 'grocery'];
+        return shoppingKeywords.some(keyword => checklistId.toLowerCase().includes(keyword));
     }
 </script>
 
@@ -668,11 +705,19 @@
                                     <div class="flex items-center justify-between gap-3">
                                         <div class="flex items-center gap-3 flex-1 min-w-0">
                                             <!-- Checklist Icon -->
-                                            <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-600/20 flex items-center justify-center">
-                                                <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
-                                                </svg>
-                                            </div>
+                                            {#if isShoppingChecklist(key)}
+                                                <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-emerald-600/20 flex items-center justify-center">
+                                                    <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                                    </svg>
+                                                </div>
+                                            {:else}
+                                                <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-indigo-600/20 flex items-center justify-center">
+                                                    <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                                                    </svg>
+                                                </div>
+                                            {/if}
 
                                             <!-- Main Content -->
                                             <div class="flex-1 min-w-0">
@@ -680,6 +725,14 @@
                                                     <h3 class="text-base font-bold text-white truncate">
                                                         {getChecklistDisplayTitle(checklist)}
                                                     </h3>
+                                                    {#if isShoppingChecklist(key)}
+                                                        <span class="px-2 py-1 bg-emerald-600 text-white text-xs rounded-full flex items-center gap-1">
+                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                                            </svg>
+                                                            Shopping
+                                                        </span>
+                                                    {/if}
                                                     {#if checklist.roleId}
                                                         <span class="px-2 py-1 bg-cyan-600 text-white text-xs rounded-full">Role</span>
                                                     {/if}
@@ -688,7 +741,11 @@
                                                     {/if}
                                                 </div>
                                                 <p class="text-sm text-gray-400">
-                                                    {(checklist.items || []).filter(item => item.checked).length}/{(checklist.items || []).length} completed
+                                                    {#if isShoppingChecklist(key)}
+                                                        Opens dedicated shopping list
+                                                    {:else}
+                                                        {(checklist.items || []).filter(item => item.checked).length}/{(checklist.items || []).length} completed
+                                                    {/if}
                                                 </p>
                                             </div>
                                         </div>

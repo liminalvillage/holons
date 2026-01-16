@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { Star, Copy, Check, MoreVertical, Key, LogOut, Home, ChevronDown, X } from 'svelte-feathers';
+	import { goto } from '$app/navigation';
+	import { Star, Copy, Check, MoreVertical, Key, LogOut, Home, ChevronDown, X, Settings } from 'svelte-feathers';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
+
+	type FederationStatus = 'none' | 'pending_outgoing' | 'pending_incoming' | 'accepted';
 
 	export let id: string;
 	export let name: string;
@@ -13,12 +16,16 @@
 	export let showPinButton: boolean = false;
 	export let showStarButton: boolean = false;
 	export let showRemoveButton: boolean = false;
+	export let federationStatus: FederationStatus = 'none';
+	export let inboundLenses: string[] = [];
+	export let outboundLenses: string[] = [];
 
 	const dispatch = createEventDispatcher();
 
 	// State
 	let showMenu: boolean = false;
 	let showKeyMenu: boolean = false;
+	let showLensConfig: boolean = false;
 	let copied: boolean = false;
 	let showPrivateKey: boolean = false;
 
@@ -89,6 +96,21 @@
 	function closeMenus() {
 		showMenu = false;
 		showKeyMenu = false;
+		showLensConfig = false;
+	}
+
+	function toggleLensConfig(event: MouseEvent) {
+		event.stopPropagation();
+		showLensConfig = !showLensConfig;
+		if (showLensConfig) {
+			showMenu = false;
+			showKeyMenu = false;
+		}
+	}
+
+	function openSettings(event: MouseEvent) {
+		event.stopPropagation();
+		goto(`/${id}/settings`);
 	}
 
 	async function generateNewKey(event: MouseEvent) {
@@ -131,166 +153,294 @@
 		return colors[Math.abs(hash) % colors.length];
 	}
 
+	// Available lenses for federation (same as Federation component)
+	const AVAILABLE_LENSES = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
+
+	function getLensIcon(lens: string): string {
+		const icons: Record<string, string> = {
+			'quests': '🎯',
+			'offers': '🤝',
+			'tags': '🏷️',
+			'expenses': '💰',
+			'announcements': '📢',
+			'users': '👥',
+			'shopping': '🛒',
+			'recurring': '🔄'
+		};
+		return icons[lens] || '📦';
+	}
+
+	function toggleLens(lens: string, direction: 'inbound' | 'outbound') {
+		const currentList = direction === 'inbound' ? inboundLenses : outboundLenses;
+		const newList = currentList.includes(lens)
+			? currentList.filter(l => l !== lens)
+			: [...currentList, lens];
+
+		dispatch('lensConfigUpdate', {
+			holonId: id,
+			lensConfig: {
+				inbound: direction === 'inbound' ? newList : inboundLenses,
+				outbound: direction === 'outbound' ? newList : outboundLenses
+			}
+		});
+	}
+
 	$: initials = isHome ? '' : getInitials(name);
 	$: avatarColor = getAvatarColor(id);
 	$: shortId = `${id.slice(0, 6)}...${id.slice(-4)}`;
+	$: isPending = federationStatus === 'pending_outgoing' || federationStatus === 'pending_incoming';
+	$: isFederated = federationStatus === 'accepted';
 </script>
 
 <svelte:window on:click={closeMenus} />
 
-<div
-	class="holon-item"
-	class:holon-item--active={isActive}
-	class:holon-item--home={isHome}
-	role="button"
-	tabindex="0"
-	on:click={handleSelect}
-	on:keydown={handleKeydown}
->
-	<!-- Active indicator that connects to content -->
-	{#if isActive}
-		<div class="holon-item__active-bar"></div>
-	{/if}
-
-	<!-- Avatar -->
+<div class="holon-item-wrapper" class:holon-item-wrapper--expanded={showLensConfig}>
 	<div
-		class="holon-item__avatar"
-		class:holon-item__avatar--home={isHome}
-		class:holon-item__avatar--public={isHome && isPublicMode}
-		style="background-color: {isActive ? 'var(--color-accent)' : isHome ? '' : avatarColor}"
+		class="holon-item"
+		class:holon-item--active={isActive}
+		class:holon-item--home={isHome}
+		class:holon-item--pending={isPending}
+		class:holon-item--expanded={showLensConfig}
+		role="button"
+		tabindex="0"
+		on:click={handleSelect}
+		on:keydown={handleKeydown}
 	>
-		{#if isHome}
-			<Home size={16} />
-		{:else}
-			{initials}
+		<!-- Active indicator that connects to content -->
+		{#if isActive}
+			<div class="holon-item__active-bar"></div>
 		{/if}
-	</div>
 
-	<!-- Content -->
-	<div class="holon-item__content">
-		<span class="holon-item__name">
-			{name}
-		</span>
-		<span class="holon-item__id">
-			{shortId}
-		</span>
-	</div>
-
-	<!-- Utility buttons -->
-	<div class="holon-item__actions">
-		<!-- Copy ID button -->
-		<button
-			class="holon-item__action-btn"
-			on:click={copyId}
-			title="Copy ID"
+		<!-- Avatar -->
+		<div
+			class="holon-item__avatar"
+			class:holon-item__avatar--home={isHome}
+			class:holon-item__avatar--public={isHome && isPublicMode}
+			style="background-color: {isActive ? 'var(--color-accent)' : isHome ? '' : avatarColor}"
 		>
-			{#if copied}
-				<Check size={14} />
+			{#if isHome}
+				<Home size={16} />
 			{:else}
-				<Copy size={14} />
+				{initials}
 			{/if}
-		</button>
+		</div>
 
-		<!-- Home holon: Key management dropdown -->
-		{#if isHome}
-			<div class="holon-item__dropdown-container">
-				<button
-					class="holon-item__action-btn holon-item__action-btn--key"
-					class:holon-item__action-btn--public={isPublicMode}
-					on:click={toggleKeyMenu}
-					title="Identity & Keys"
-				>
-					<Key size={14} />
-					<ChevronDown size={10} />
-				</button>
-
-				{#if showKeyMenu}
-					<div class="holon-item__dropdown" transition:slide={{ duration: 150 }} on:click|stopPropagation>
-						<div class="holon-item__dropdown-header">
-							<span class="holon-item__dropdown-status" class:holon-item__dropdown-status--public={isPublicMode}>
-								{isPublicMode ? 'Public' : 'Private'}
-							</span>
-							<span class="holon-item__dropdown-label">
-								{isPublicMode ? 'Guest Mode' : 'Your Identity'}
-							</span>
-						</div>
-
-						{#if isPublicMode}
-							<button class="holon-item__dropdown-action" on:click={generateNewKey}>
-								<i class="fas fa-plus"></i>
-								<span>Create Identity</span>
-							</button>
-						{:else}
-							<button class="holon-item__dropdown-action" on:click={() => showPrivateKey = !showPrivateKey}>
-								<i class="fas {showPrivateKey ? 'fa-eye-slash' : 'fa-eye'}"></i>
-								<span>{showPrivateKey ? 'Hide Key' : 'Export Key'}</span>
-							</button>
-
-							{#if showPrivateKey}
-								<div class="holon-item__dropdown-key">
-									<code>{$nostrPrivateKey}</code>
-								</div>
-							{/if}
-
-							<button class="holon-item__dropdown-action holon-item__dropdown-action--danger" on:click={exitToPublic}>
-								<LogOut size={14} />
-								<span>Logout</span>
-							</button>
-						{/if}
-					</div>
+		<!-- Content -->
+		<div class="holon-item__content">
+			<span class="holon-item__name" title={name}>
+				{name || `Holon ${id.slice(0, 8)}...`}
+			</span>
+			<span class="holon-item__id">
+				{shortId}
+				{#if isPending}
+					<span class="holon-item__status holon-item__status--pending">
+						{federationStatus === 'pending_outgoing' ? 'Pending...' : 'Incoming'}
+					</span>
 				{/if}
-			</div>
-		{:else}
-			<!-- Regular holons: Pin/Star buttons -->
-			{#if showPinButton}
-				<button
-					class="holon-item__action-btn"
-					class:holon-item__action-btn--active={isPinned}
-					on:click={handlePin}
-					title={isPinned ? 'Unpin' : 'Pin'}
-				>
-					<Star size={14} fill={isPinned ? 'currentColor' : 'none'} />
-				</button>
-			{/if}
+			</span>
+		</div>
 
-			{#if showStarButton}
-				<button
-					class="holon-item__action-btn"
-					class:holon-item__action-btn--active={isStarred}
-					on:click={handleStar}
-					title={isStarred ? 'Remove from My Holons' : 'Add to My Holons'}
-				>
-					<Star size={14} fill={isStarred ? 'currentColor' : 'none'} />
-				</button>
-			{/if}
+		<!-- Utility buttons -->
+		<div class="holon-item__actions">
+			<!-- Copy ID button -->
+			<button
+				class="holon-item__action-btn"
+				on:click={copyId}
+				title="Copy ID"
+			>
+				{#if copied}
+					<Check size={14} />
+				{:else}
+					<Copy size={14} />
+				{/if}
+			</button>
 
-			{#if showRemoveButton}
+			<!-- Home holon: Settings and Key management -->
+			{#if isHome}
+				<!-- Settings button -->
 				<button
-					class="holon-item__action-btn holon-item__action-btn--remove"
-					on:click={handleRemove}
-					title="Remove from list"
+					class="holon-item__action-btn holon-item__action-btn--settings"
+					on:click={openSettings}
+					title="Holon Settings"
 				>
-					<X size={14} />
+					<Settings size={14} />
 				</button>
+
+				<!-- Key management dropdown -->
+				<div class="holon-item__dropdown-container">
+					<button
+						class="holon-item__action-btn holon-item__action-btn--key"
+						class:holon-item__action-btn--public={isPublicMode}
+						on:click={toggleKeyMenu}
+						title="Identity & Keys"
+					>
+						<Key size={14} />
+						<ChevronDown size={10} />
+					</button>
+
+					{#if showKeyMenu}
+						<div class="holon-item__dropdown" transition:slide={{ duration: 150 }} on:click|stopPropagation>
+							<div class="holon-item__dropdown-header">
+								<span class="holon-item__dropdown-status" class:holon-item__dropdown-status--public={isPublicMode}>
+									{isPublicMode ? 'Public' : 'Private'}
+								</span>
+								<span class="holon-item__dropdown-label">
+									{isPublicMode ? 'Guest Mode' : 'Your Identity'}
+								</span>
+							</div>
+
+							{#if isPublicMode}
+								<button class="holon-item__dropdown-action" on:click={generateNewKey}>
+									<i class="fas fa-plus"></i>
+									<span>Create Identity</span>
+								</button>
+							{:else}
+								<button class="holon-item__dropdown-action" on:click={() => showPrivateKey = !showPrivateKey}>
+									<i class="fas {showPrivateKey ? 'fa-eye-slash' : 'fa-eye'}"></i>
+									<span>{showPrivateKey ? 'Hide Key' : 'Export Key'}</span>
+								</button>
+
+								{#if showPrivateKey}
+									<div class="holon-item__dropdown-key">
+										<code>{$nostrPrivateKey}</code>
+									</div>
+								{/if}
+
+								<button class="holon-item__dropdown-action holon-item__dropdown-action--danger" on:click={exitToPublic}>
+									<LogOut size={14} />
+									<span>Logout</span>
+								</button>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<!-- Regular holons: Settings (for federated), Pin/Star buttons -->
+				{#if isFederated}
+					<!-- Federated holon: Settings button (toggles inline panel) -->
+					<button
+						class="holon-item__action-btn holon-item__action-btn--settings"
+						class:holon-item__action-btn--active={showLensConfig}
+						on:click={toggleLensConfig}
+						title="Lens Configuration"
+					>
+						<Settings size={14} />
+					</button>
+				{/if}
+
+				{#if showPinButton}
+					<button
+						class="holon-item__action-btn"
+						class:holon-item__action-btn--active={isPinned}
+						on:click={handlePin}
+						title={isPinned ? 'Unpin' : 'Pin'}
+					>
+						<Star size={14} fill={isPinned ? 'currentColor' : 'none'} />
+					</button>
+				{/if}
+
+				{#if showStarButton}
+					<button
+						class="holon-item__action-btn"
+						class:holon-item__action-btn--active={isStarred}
+						on:click={handleStar}
+						title={isStarred ? 'Remove from My Holons' : 'Add to My Holons'}
+					>
+						<Star size={14} fill={isStarred ? 'currentColor' : 'none'} />
+					</button>
+				{/if}
+
+				{#if showRemoveButton}
+					<button
+						class="holon-item__action-btn holon-item__action-btn--remove"
+						on:click={handleRemove}
+						title="Remove from list"
+					>
+						<X size={14} />
+					</button>
+				{/if}
 			{/if}
-		{/if}
+		</div>
 	</div>
+
+	<!-- Inline lens config panel (expands below the holon item) -->
+	{#if showLensConfig && isFederated}
+		<div class="holon-item__inline-config" transition:slide={{ duration: 150 }} on:click|stopPropagation>
+			<!-- Legend -->
+			<div class="holon-item__config-legend">
+				<span class="holon-item__config-legend-item holon-item__config-legend-item--in">↓ Receive</span>
+				<span class="holon-item__config-legend-item holon-item__config-legend-item--out">↑ Share</span>
+			</div>
+
+			<!-- Lens rows -->
+			<div class="holon-item__lens-list">
+				{#each AVAILABLE_LENSES as lens}
+					{@const inboundEnabled = inboundLenses.includes(lens)}
+					{@const outboundEnabled = outboundLenses.includes(lens)}
+					<div class="holon-item__lens-row" class:holon-item__lens-row--active={inboundEnabled || outboundEnabled}>
+						<div class="holon-item__lens-info">
+							<span class="holon-item__lens-icon">{getLensIcon(lens)}</span>
+							<span class="holon-item__lens-name">{lens}</span>
+						</div>
+						<div class="holon-item__lens-toggles">
+							<button
+								class="holon-item__lens-btn holon-item__lens-btn--in"
+								class:holon-item__lens-btn--active={inboundEnabled}
+								title="{inboundEnabled ? 'Stop receiving' : 'Receive'} {lens}"
+								on:click={() => toggleLens(lens, 'inbound')}
+							>
+								↓
+							</button>
+							<button
+								class="holon-item__lens-btn holon-item__lens-btn--out"
+								class:holon-item__lens-btn--active={outboundEnabled}
+								title="{outboundEnabled ? 'Stop sharing' : 'Share'} {lens}"
+								on:click={() => toggleLens(lens, 'outbound')}
+							>
+								↑
+							</button>
+						</div>
+					</div>
+				{/each}
+			</div>
+
+			<button class="holon-item__config-remove" on:click={handleRemove}>
+				<X size={12} />
+				Remove Federation
+			</button>
+		</div>
+	{/if}
 </div>
 
 <style>
+	/* Wrapper for holon item + inline config */
+	.holon-item-wrapper {
+		margin: 0 var(--spacing-2, 0.5rem);
+	}
+
+	.holon-item-wrapper--expanded {
+		background: var(--color-bg-secondary, #1f2937);
+		border-radius: var(--radius-md, 0.375rem);
+		margin-bottom: var(--spacing-1, 0.25rem);
+	}
+
 	.holon-item {
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-2, 0.5rem);
 		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		margin: 0 var(--spacing-2, 0.5rem);
 		border-radius: var(--radius-md, 0.375rem);
 		cursor: pointer;
 		transition: all 150ms ease;
 		position: relative;
 	}
 
-	.holon-item:hover {
+	.holon-item--expanded {
+		border-bottom-left-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+
+	.holon-item-wrapper:not(.holon-item-wrapper--expanded) .holon-item:hover {
 		background: var(--color-bg-secondary, #1f2937);
 	}
 
@@ -299,8 +449,11 @@
 		border-right: none;
 		border-top-right-radius: 0;
 		border-bottom-right-radius: 0;
-		margin-right: 0;
 		padding-right: calc(var(--spacing-3, 0.75rem) + var(--spacing-2, 0.5rem));
+	}
+
+	.holon-item-wrapper:has(.holon-item--active) {
+		margin-right: 0;
 	}
 
 	.holon-item--active:hover {
@@ -323,6 +476,17 @@
 		margin-top: var(--spacing-1, 0.25rem);
 		margin-bottom: var(--spacing-1, 0.25rem);
 	}
+
+	/* Pending federation styling */
+	.holon-item--pending {
+		opacity: 0.6;
+		border: 1px dashed var(--color-border, #374151);
+	}
+
+	.holon-item--pending:hover {
+		opacity: 0.8;
+	}
+
 
 	.holon-item__avatar {
 		width: 32px;
@@ -367,6 +531,21 @@
 		font-size: 10px;
 		color: var(--color-text-muted, #6b7280);
 		font-family: var(--font-family-mono, monospace);
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.holon-item__status {
+		font-size: 9px;
+		padding: 1px 4px;
+		border-radius: var(--radius-sm, 0.25rem);
+		font-family: var(--font-family-sans, sans-serif);
+	}
+
+	.holon-item__status--pending {
+		background: rgba(245, 158, 11, 0.2);
+		color: var(--color-warning, #f59e0b);
 	}
 
 	/* Actions container */
@@ -416,6 +595,15 @@
 	.holon-item__action-btn--remove:hover {
 		background: rgba(239, 68, 68, 0.2);
 		color: #ef4444;
+	}
+
+	.holon-item__action-btn--settings {
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.holon-item__action-btn--settings:hover {
+		background: var(--color-bg-tertiary, #374151);
+		color: var(--color-text-primary, #ffffff);
 	}
 
 	.holon-item__action-btn--key {
@@ -523,5 +711,136 @@
 		color: var(--color-text-muted, #6b7280);
 		word-break: break-all;
 		display: block;
+	}
+
+	/* Inline config panel (expands below holon item) */
+	.holon-item__inline-config {
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		padding-top: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-2, 0.5rem);
+		border-top: 1px solid var(--color-border, #374151);
+	}
+
+	/* Legend row */
+	.holon-item__config-legend {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--spacing-2, 0.5rem);
+		padding-bottom: var(--spacing-1, 0.25rem);
+		margin-bottom: var(--spacing-1, 0.25rem);
+		border-bottom: 1px solid var(--color-border, #374151);
+	}
+
+	.holon-item__config-legend-item {
+		font-size: 9px;
+		font-weight: var(--font-weight-medium, 500);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.holon-item__config-legend-item--in {
+		color: var(--color-info, #3b82f6);
+	}
+
+	.holon-item__config-legend-item--out {
+		color: var(--color-success, #22c55e);
+	}
+
+	/* Lens list */
+	.holon-item__lens-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.holon-item__lens-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 3px 4px;
+		border-radius: var(--radius-sm, 0.25rem);
+		transition: background-color 150ms ease;
+	}
+
+	.holon-item__lens-row:hover {
+		background: var(--color-bg-primary, #111827);
+	}
+
+	.holon-item__lens-row--active {
+		background: rgba(79, 70, 229, 0.1);
+	}
+
+	.holon-item__lens-info {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.holon-item__lens-icon {
+		font-size: 12px;
+	}
+
+	.holon-item__lens-name {
+		font-size: 11px;
+		color: var(--color-text-secondary, #d1d5db);
+		text-transform: capitalize;
+	}
+
+	.holon-item__lens-toggles {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.holon-item__lens-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		border: none;
+		border-radius: var(--radius-sm, 0.25rem);
+		font-size: 11px;
+		cursor: pointer;
+		transition: all 150ms ease;
+		background: var(--color-bg-primary, #111827);
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.holon-item__lens-btn:hover {
+		background: var(--color-bg-tertiary, #374151);
+	}
+
+	.holon-item__lens-btn--in.holon-item__lens-btn--active {
+		background: var(--color-info, #3b82f6);
+		color: white;
+	}
+
+	.holon-item__lens-btn--out.holon-item__lens-btn--active {
+		background: var(--color-success, #22c55e);
+		color: white;
+	}
+
+	.holon-item__config-remove {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-1, 0.25rem);
+		padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
+		background: transparent;
+		border: 1px solid transparent;
+		border-radius: var(--radius-sm, 0.25rem);
+		color: var(--color-error, #ef4444);
+		font-size: 11px;
+		cursor: pointer;
+		transition: all 150ms ease;
+		align-self: flex-start;
+		margin-top: var(--spacing-1, 0.25rem);
+	}
+
+	.holon-item__config-remove:hover {
+		background: rgba(239, 68, 68, 0.1);
+		border-color: var(--color-error, #ef4444);
 	}
 </style>
