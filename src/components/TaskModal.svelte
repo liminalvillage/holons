@@ -569,7 +569,7 @@
     // Only attempt if user.id is a valid holon ID (non-empty string)
     if (user.id && typeof user.id === 'string' && user.id.trim() !== '' && user.id !== holonId) {
         try {
-            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
             await holosphere.put(user.id, 'quests', hologram);
         } catch (error: any) {
             // Silently ignore AuthorizationError for holograms - user may not have write access
@@ -975,7 +975,7 @@
 
             // Create a hologram for the quest to propagate
             // Use the full quest data instead of just the ID reference
-            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
 
             // Determine if this is an H3 holon by checking if it's a valid H3 cell
             let isH3Holon = false;

@@ -690,6 +690,23 @@
       <span>Loading flow configuration...</span>
     </div>
   {:else}
+    <!-- Controls at the top -->
+    <FlowControls
+      {steepness}
+      {nzones}
+      {interiorPercent}
+      hasChanges={!!hasChanges}
+      syncing={syncing || deploying}
+      hasBundleDeployed={!!existingBundle}
+      on:steepnessChange={handleSteepnessChange}
+      on:nzonesChange={handleNzonesChange}
+      on:interiorChange={handleInteriorChange}
+      on:sync={syncToContract}
+      on:reset={resetChanges}
+      on:deploy={deployBundle}
+      on:redeploy={redeployBundle}
+    />
+
     <!-- Main content -->
     <div class="main-content">
       <!-- Chart area -->
@@ -712,23 +729,6 @@
         on:toggle={() => drawerOpen = !drawerOpen}
       />
     </div>
-
-    <!-- Controls -->
-    <FlowControls
-      {steepness}
-      {nzones}
-      {interiorPercent}
-      hasChanges={!!hasChanges}
-      syncing={syncing || deploying}
-      hasBundleDeployed={!!existingBundle}
-      on:steepnessChange={handleSteepnessChange}
-      on:nzonesChange={handleNzonesChange}
-      on:interiorChange={handleInteriorChange}
-      on:sync={syncToContract}
-      on:reset={resetChanges}
-      on:deploy={deployBundle}
-      on:redeploy={redeployBundle}
-    />
   {/if}
 </div>
 

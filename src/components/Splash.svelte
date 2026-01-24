@@ -8,11 +8,15 @@
 	import { HoloSphere } from 'holosphere';
 	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
 
+	// Props
+	export let skipLoading = false; // Skip loading animation (for modal usage)
+	export let isModal = false; // Display as modal overlay instead of full-screen
+
 	const dispatch = createEventDispatcher();
 
 	// View states
 	type View = 'loading' | 'welcome' | 'create' | 'restore' | 'telegram-choice';
-	let view: View = 'loading';
+	let view: View = skipLoading ? 'welcome' : 'loading';
 
 	// Form state
 	let holonName = '';
@@ -94,6 +98,16 @@
 		// Initialize stores
 		await nostrStore.init();
 		telegramStore.init();
+
+		// In modal mode (skipLoading), skip all auto-login logic and just show welcome
+		if (skipLoading) {
+			// Check Telegram context for display purposes but don't auto-login
+			const telegramState = telegramStore.getState();
+			isTelegramWebApp = telegramState.isTelegramWebApp;
+			telegramUser = telegramState.user;
+			// View is already set to 'welcome' via the initial value
+			return;
+		}
 
 		// Check if user just logged out (show welcome screen to allow re-login)
 		const justLoggedOut = localStorage.getItem('enter_public_mode') === 'true';
@@ -285,12 +299,40 @@
 
 	// Go back to welcome screen
 	function goBack() {
-		view = 'welcome';
+		if (isModal) {
+			// In modal mode, going back from create/restore closes the modal
+			dispatch('close');
+		} else {
+			view = 'welcome';
+		}
 		error = '';
 		holonName = '';
 		privateKeyInput = '';
 	}
+
+	// Handle closing the modal (only in modal mode)
+	function handleClose() {
+		if (isModal) {
+			dispatch('close');
+		}
+	}
+
+	// Handle backdrop click
+	function handleBackdropClick(event: MouseEvent) {
+		if (isModal && event.target === event.currentTarget) {
+			dispatch('close');
+		}
+	}
+
+	// Handle escape key
+	function handleKeydown(event: KeyboardEvent) {
+		if (isModal && event.key === 'Escape') {
+			dispatch('close');
+		}
+	}
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 {#if view === 'loading'}
 	<!-- Loading View -->
@@ -307,7 +349,14 @@
 
 {:else if view === 'welcome'}
 	<!-- Welcome View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<!-- Logo -->
 			<div class="logo-small">
@@ -374,7 +423,14 @@
 
 {:else if view === 'telegram-choice'}
 	<!-- Telegram User Choice View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<!-- Logo -->
 			<div class="logo-small">
@@ -509,7 +565,14 @@
 
 {:else if view === 'create'}
 	<!-- Create View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<button class="back-button" on:click={goBack}>
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -564,7 +627,14 @@
 
 {:else if view === 'restore'}
 	<!-- Restore View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<button class="back-button" on:click={goBack}>
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -632,6 +702,16 @@
 		justify-content: center;
 		z-index: 9999;
 		padding: 1rem;
+	}
+
+	/* Modal variant - displays as overlay with backdrop */
+	.splash-container--modal {
+		background: rgba(0, 0, 0, 0.7);
+		z-index: 100;
+	}
+
+	.splash-container--modal .bottom-branding {
+		display: none;
 	}
 
 	/* Loading View */

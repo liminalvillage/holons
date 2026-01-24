@@ -406,18 +406,18 @@
             on:mousemove={(e) => showMemberTooltip(e, member)}
           />
         {/each}
-        <text class="center-count" text-anchor="middle" dominant-baseline="middle" y="-5">
-          {processedMembers.length}
+        <text class="center-percent" text-anchor="middle" dominant-baseline="middle" y="-5">
+          {interiorPercent}%
         </text>
         <text class="center-label" text-anchor="middle" dominant-baseline="middle" y="12">
-          members
+          received
         </text>
       {:else}
-        <text class="empty-text" text-anchor="middle" dominant-baseline="middle" y="-5">
-          No members
+        <text class="center-percent" text-anchor="middle" dominant-baseline="middle" y="-5">
+          {interiorPercent}%
         </text>
-        <text class="empty-hint" text-anchor="middle" dominant-baseline="middle" y="12">
-          Add users to holon
+        <text class="center-label" text-anchor="middle" dominant-baseline="middle" y="12">
+          received
         </text>
       {/if}
 
@@ -634,9 +634,9 @@
     font-size: 10px;
   }
 
-  .center-count {
+  .center-percent {
     fill: #e2e8f0;
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
   }
 

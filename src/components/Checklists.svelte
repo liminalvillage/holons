@@ -404,15 +404,22 @@
     }
 
     async function removeItem(checklistId: string, itemIndex: number): Promise<void> {
-        if (!checklistId || !allChecklists[checklistId] || !holonID) return;
+        console.log('removeItem called:', { checklistId, itemIndex, holonID, hasChecklist: !!allChecklists[checklistId] });
+        if (!checklistId || !allChecklists[checklistId] || !holonID) {
+            console.log('removeItem early return - missing data');
+            return;
+        }
 
         try {
             const checklist = { ...allChecklists[checklistId] };
+            const originalLength = (checklist.items || []).length;
             checklist.items = (checklist.items || []).filter(
                 (_, index) => index !== itemIndex
             );
+            console.log('Items before:', originalLength, 'after:', checklist.items.length);
 
             await holosphere.put(holonID, "checklists", checklist);
+            console.log('removeItem: put succeeded');
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');

@@ -5,7 +5,7 @@
 	import { browser } from '$app/environment';
 	import { HoloSphere, handshake } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
-	import TelegramSplash from '../components/TelegramSplash.svelte';
+	import Splash from '../components/Splash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import { nostrStore } from '$lib/stores/nostr';
 	import { holosphereStore } from '$lib/stores/holosphere';
@@ -38,18 +38,9 @@
 	let dmUnsubscribe: (() => void) | null = null;
 
 	// Store holon name from onboarding (if provided)
+	// These are set by handleAuthenticated or read from localStorage in initializeUserHolon
 	let pendingHolonName: string | null = null;
 	let pendingTelegramUserId: number | null = null;
-
-	// Check for pending holon name from localStorage (set by BrowserPanel identity creation)
-	if (browser) {
-		const storedName = localStorage.getItem('pending_holon_name');
-		if (storedName) {
-			pendingHolonName = storedName;
-			localStorage.removeItem('pending_holon_name');
-			localStorage.removeItem('pending_holon_id');
-		}
-	}
 
 	// Track if this is a telegram-mapped session (user without local key)
 	let isTelegramMappedSession = false;
@@ -85,13 +76,36 @@
 				}
 			}
 
+			// Check for pending holon name from localStorage (set by BrowserPanel identity creation)
+			// We read this INSIDE initializeUserHolon to ensure fresh data after navigation/reload
+			let pendingHolonId: string | null = null;
+			let pendingHolonNameFromStorage: string | null = null;
+			if (browser) {
+				pendingHolonNameFromStorage = localStorage.getItem('pending_holon_name');
+				pendingHolonId = localStorage.getItem('pending_holon_id');
+			}
+
 			// Determine the holon name (from pending or existing settings or default)
+			// Only use pending name if pendingHolonId matches this user's public key
 			const existingName = existingSettings?.name;
 			const existingNameValid = isValidHolonName(existingName);
-			const holonName = pendingHolonName || (existingNameValid ? existingName : null) || 'My Holon';
+			// Use pending name from localStorage OR from handleAuthenticated callback
+			const pendingNameForThisUser = (pendingHolonId === userPublicKey)
+				? pendingHolonNameFromStorage
+				: pendingHolonName; // pendingHolonName is set by handleAuthenticated for splash-based creation
+			const holonName = pendingNameForThisUser || (existingNameValid ? existingName : null) || 'My Holon';
+
+			// Clear pending holon data from localStorage ONLY if we used the pending name
+			if (browser && pendingHolonId && pendingHolonId === userPublicKey) {
+				localStorage.removeItem('pending_holon_name');
+				localStorage.removeItem('pending_holon_id');
+				console.log('Cleared pending holon data from localStorage after using name:', pendingHolonNameFromStorage);
+			}
 
 			// Log name resolution
-			if (existingName && !existingNameValid) {
+			if (pendingNameForThisUser) {
+				console.log('Using pending holon name for new identity:', pendingNameForThisUser);
+			} else if (existingName && !existingNameValid) {
 				console.log('Existing name invalid, using fallback:', existingName, '->', holonName);
 			}
 
@@ -115,7 +129,8 @@
 
 				// Register name in HNS (Holon Name Service) - signed public registry
 				// Only register if first-time user OR name is changing
-				const nameIsChanging = pendingHolonName && pendingHolonName !== existingName;
+				// Note: we use holonName comparison since pendingNameForThisUser was already applied
+				const nameIsChanging = holonName !== existingName;
 				if (isFirstTimeUser || nameIsChanging) {
 					try {
 						await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
@@ -371,7 +386,7 @@
 		// 	privateKey: privateKey,
 		// 	backend: 'gundb',
 		// 	gundb: {
-		// 		peers: ['https://gun.holons.io/gun'],  // Gun relay server
+		// 		peers: ['https://gun.holons.io/gun'],
 		// 		radisk: true,
 		// 		localStorage: true
 		// 	}
@@ -383,7 +398,7 @@
 			privateKey: privateKey,
 			backend: 'nostr',
 			nostr: {
-				peers: ['wss://relay.holons.io'], 
+				peers: ['wss://relay.holons.io'],
 			}
 		});
 
@@ -526,7 +541,7 @@
 
 <!-- Show splash screen for identity setup -->
 {#if showSplash}
-	<TelegramSplash on:authenticated={handleAuthenticated} on:skip={handleSkip} />
+	<Splash on:authenticated={handleAuthenticated} on:skip={handleSkip} />
 {/if}
 
 <!-- Main app content (hidden while splash is showing) -->

@@ -124,7 +124,8 @@ export async function registerName(
     };
 
     // Write to global HNS table (publicly readable, no federation needed)
-    await holosphere.writeGlobal(HNS_LENS, entry);
+    // writeGlobal expects (lens, key, value) - use holonId as the key
+    await holosphere.writeGlobal(HNS_LENS, holonId, entry);
 
     // Update local cache
     hnsCache.set(holonId, entry);

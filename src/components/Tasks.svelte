@@ -185,6 +185,10 @@
 	let showCompleted = $state(false);
 	let showHolograms = $state(true);
 	let sortedQuests: [string, Quest][] = [];
+
+	// Federated tasks toggle
+	let includeFederatedTasks = $state(false);
+	let loadingFederated = $state(false);
 	// filteredQuests is now defined as a $derived value below
 
 	// Initialize preferences with default values
@@ -469,37 +473,76 @@
 
 		try {
 			let initiatorInfo;
+
+			// Get current user's identity from Nostr or Telegram
+			const telegramState = telegramStore.getState();
+			const telegramUser = telegramState.user;
+			const nostrPubKey = $nostrPublicKey;
+
+			// Determine user ID - prefer Telegram user if available, then Nostr
+			const currentUserId = telegramUser?.id?.toString() || nostrPubKey || holonID;
+
 			try {
-				// Attempt to get user data
-				const userData = await holosphere.get(holonID, 'users', holonID);
+				// Attempt to get user data using the current user's ID
+				const userData = await holosphere.get(holonID, 'users', currentUserId);
 
 				if (userData && typeof userData === 'object' && userData !== null) {
 					initiatorInfo = {
-						id: holonID,
-						username: userData.username || "Unknown User",
-						firstName: userData.first_name || "",
-						lastName: userData.last_name || ""
+						id: currentUserId,
+						username: userData.username || telegramUser?.username || "Unknown User",
+						firstName: userData.first_name || telegramUser?.first_name || "",
+						lastName: userData.last_name || telegramUser?.last_name || ""
+					};
+				} else if (telegramUser) {
+					// Use Telegram user info directly
+					initiatorInfo = {
+						id: telegramUser.id.toString(),
+						username: telegramUser.username || "Telegram User",
+						firstName: telegramUser.first_name || "",
+						lastName: telegramUser.last_name || ""
+					};
+				} else if (nostrPubKey) {
+					// Use Nostr identity
+					initiatorInfo = {
+						id: nostrPubKey,
+						username: nostrPubKey.slice(0, 8) + "...",
+						firstName: "Nostr",
+						lastName: "User"
 					};
 				} else {
-					// User data not found or not in expected format, use default
-					console.warn(`User data not found or in unexpected format for holonID: ${holonID}. Using default "Dashboard User" as initiator.`);
+					// Fallback to default
 					initiatorInfo = {
-						id: holonID, 
+						id: holonID,
 						username: "Dashboard User",
-						firstName: "Dashboard", 
-						lastName: "User"      
+						firstName: "Dashboard",
+						lastName: "User"
 					};
 				}
 			} catch (fetchError) {
-				// Error during fetch, use default
+				// Error during fetch, use available identity info
 				console.error('Error fetching user data:', fetchError);
-				console.warn(`Using default "Dashboard User" as initiator due to fetch error for holonID: ${holonID}.`);
-				initiatorInfo = {
-					id: holonID,
-					username: "Dashboard User",
-					firstName: "Dashboard",
-					lastName: "User"
-				};
+				if (telegramUser) {
+					initiatorInfo = {
+						id: telegramUser.id.toString(),
+						username: telegramUser.username || "Telegram User",
+						firstName: telegramUser.first_name || "",
+						lastName: telegramUser.last_name || ""
+					};
+				} else if (nostrPubKey) {
+					initiatorInfo = {
+						id: nostrPubKey,
+						username: nostrPubKey.slice(0, 8) + "...",
+						firstName: "Nostr",
+						lastName: "User"
+					};
+				} else {
+					initiatorInfo = {
+						id: holonID,
+						username: "Dashboard User",
+						firstName: "Dashboard",
+						lastName: "User"
+					};
+				}
 			}
 
 			const newOrderIndex = filteredQuests.length > 0 
@@ -1196,6 +1239,145 @@
 		}
 	}
 
+	// Fetch federated tasks from connected holons
+	async function fetchFederatedTasks() {
+		if (!holosphere || !holonID) return;
+
+		loadingFederated = true;
+		try {
+			console.log("[Tasks.svelte] Fetching federated tasks...");
+			console.log("[Tasks.svelte] Current holonID:", holonID);
+
+			// First, get local data
+			console.log("[Tasks.svelte] Checking local data first...");
+			const localData = await holosphere.getAll(holonID, "quests");
+			console.log("[Tasks.svelte] Local data:", localData);
+
+			// Get federated data from connected holons
+			const federatedData = await holosphere.getFederated(holonID, "quests", {
+				includeLocal: true,
+				includeFederated: true,
+				resolveReferences: true,
+				aggregate: false
+			});
+
+			console.log("[Tasks.svelte] Federated data result:", federatedData);
+
+			// Convert array to keyed object for consistency with subscription format
+			const newStore: Store = {};
+
+			// Handle federated data
+			if (Array.isArray(federatedData)) {
+				federatedData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						const key = quest.key || quest.id || `federated_${index}`;
+
+						// Filter by type to only include tasks/quests (not offers/requests)
+						const questType = quest.type || 'task';
+						if (questType === 'offer' || questType === 'request' || questType === 'need') {
+							return; // Skip offers and requests
+						}
+
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+
+						// Preserve hologram metadata
+						const processedQuest: Quest = {
+							...quest,
+							id: quest.id
+						};
+
+						// If this item has federation/hologram metadata, preserve it
+						if (quest._federation) {
+							(processedQuest as any)._federation = quest._federation;
+						}
+						if (quest._hologram) {
+							processedQuest._hologram = quest._hologram;
+						}
+
+						newStore[key] = processedQuest;
+						console.log(`[Tasks.svelte] Added federated item to store with key ${key}:`, processedQuest);
+					}
+				});
+			}
+
+			// If no federated data was found, fall back to local data only
+			if (Object.keys(newStore).length === 0 && Array.isArray(localData) && localData.length > 0) {
+				console.log("[Tasks.svelte] No federated data found, using local data only");
+				localData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						const key = quest.id || `local_${index}`;
+
+						// Filter by type to only include tasks/quests
+						const questType = quest.type || 'task';
+						if (questType === 'offer' || questType === 'request' || questType === 'need') {
+							return; // Skip offers and requests
+						}
+
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+
+						newStore[key] = quest as Quest;
+					}
+				});
+			}
+
+			store = newStore;
+			updateStats();
+
+			// Pre-resolve hologram names in background
+			preResolveHologramNames(Object.entries(store));
+
+			console.log(`[Tasks.svelte] Fetched ${Object.keys(store).length} total items (local + federated)`);
+		} catch (error) {
+			console.error("[Tasks.svelte] Error fetching federated data:", error);
+			// Fallback to local data only
+			try {
+				console.log("[Tasks.svelte] Falling back to local data only...");
+				const localData = await holosphere.getAll(holonID, "quests");
+				const newStore: Store = {};
+				if (Array.isArray(localData)) {
+					localData.forEach((quest: any, index) => {
+						if (quest && quest.id) {
+							const key = quest.id || `local_${index}`;
+
+							// Filter by type
+							const questType = quest.type || 'task';
+							if (questType === 'offer' || questType === 'request' || questType === 'need') {
+								return;
+							}
+
+							if (!quest.participants) quest.participants = [];
+							if (!quest.appreciation) quest.appreciation = [];
+
+							newStore[key] = quest as Quest;
+						}
+					});
+				}
+				store = newStore;
+				updateStats();
+				console.log(`[Tasks.svelte] Fallback: Loaded ${Object.keys(store).length} local items`);
+			} catch (fallbackError) {
+				console.error("[Tasks.svelte] Error in fallback to local data:", fallbackError);
+				store = {};
+			}
+		} finally {
+			loadingFederated = false;
+		}
+	}
+
+	// Handle federated toggle change
+	async function handleFederatedToggle() {
+		includeFederatedTasks = !includeFederatedTasks;
+		if (includeFederatedTasks) {
+			await fetchFederatedTasks();
+		} else {
+			await fetchData();
+		}
+	}
+
 	// Add fetchData function with retry logic
 	async function fetchData(retryCount = 0) {
 		if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
@@ -1723,6 +1905,15 @@
 							<span class="toggle-chip__label">Holograms</span>
 						</label>
 
+						<label class="toggle-chip" title="Include federated tasks from connected holons">
+							<input type="checkbox" checked={includeFederatedTasks} onchange={handleFederatedToggle} class="sr-only" />
+							<span class="toggle-chip__dot" class:toggle-chip__dot--active={includeFederatedTasks}></span>
+							<span class="toggle-chip__label">Federated</span>
+							{#if loadingFederated}
+								<div class="w-3 h-3 ml-1 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+							{/if}
+						</label>
+
 						<button
 							onclick={() => showImportModal = true}
 							class="import-btn"
@@ -1735,6 +1926,18 @@
 						</button>
 					</div>
 				</div>
+
+				<!-- Federated Status Indicator -->
+				{#if includeFederatedTasks}
+					<div class="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
+						<div class="flex items-center gap-2 text-blue-300">
+							<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+							</svg>
+							<span class="text-sm font-medium">Showing federated tasks from connected holons</span>
+						</div>
+					</div>
+				{/if}
 
 				<!-- Task Content -->
 				{#if isLoading}

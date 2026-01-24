@@ -6,16 +6,18 @@
 	import type { HoloSphere } from 'holosphere';
 	import { Search, Plus, X, Upload, Key } from 'svelte-feathers';
 	import { nostrPublicKey, nostrPrivateKey, nostrStore } from '../../lib/stores/nostr';
-	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest } from '../../lib/stores/federationRequests';
+	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
 	import { useFederationHandshake } from '../../lib/federation/useFederationHandshake';
 	import { handshake } from 'holosphere';
 	import { schnorr } from '@noble/curves/secp256k1';
 	import { bytesToHex } from '@noble/hashes/utils';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
+	import Splash from '../../components/Splash.svelte';
 	import { ID, sidebarExpanded } from '../store';
 	// localStorage imports removed - holons list is managed by federation only
 	import { fetchHolonName, forceRefreshHolonName } from '../../utils/holonNames';
+	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
 
 	// Props
 	export let isOpen: boolean = true;
@@ -31,7 +33,7 @@
 		id: string;
 		name: string;
 		federationStatus: FederationStatus;
-		lensConfig?: { inbound: string[]; outbound: string[] };
+		lensConfig?: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] };
 		pendingRequestId?: string;
 	}
 
@@ -55,13 +57,8 @@
 	let selectedInboundLenses: Set<string> = new Set(['quests', 'offers', 'users']);
 	let selectedOutboundLenses: Set<string> = new Set(['quests', 'offers', 'users']);
 
-	// Identity Modal state (for public mode)
+	// Identity Modal state (for public mode) - uses unified Splash component
 	let showIdentityModal: boolean = false;
-	let identityView: 'menu' | 'create' | 'import' = 'menu';
-	let newIdentityName: string = '';
-	let importKeyInput: string = '';
-	let identityError: string = '';
-	let isProcessingIdentity: boolean = false;
 
 	// Check if using public/holosphere key
 	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
@@ -103,30 +100,39 @@
 	// Load holons on mount
 	onMount(async () => {
 		if (browser) {
-			// Check for pending holon name (from identity creation)
-			const pendingName = localStorage.getItem('pending_holon_name');
-			const pendingId = localStorage.getItem('pending_holon_id');
-
-			if (pendingName && pendingId && $nostrPublicKey === pendingId) {
-				// This is a newly created holon - use the pending name immediately
-				homeHolonName = pendingName;
-				// Clear the pending data
-				localStorage.removeItem('pending_holon_name');
-				localStorage.removeItem('pending_holon_id');
-			}
+			// Initialize active holon identity store
+			activeHolonIdentityStore.init();
 
 			await loadHolons();
 
-			// Fetch home holon name if not already set and not in public mode
-			if (!homeHolonName && !isPublicMode && $nostrPublicKey && holosphere) {
-				const name = await fetchHolonName(holosphere, $nostrPublicKey);
+			// Always fetch home holon name from HNS (single source of truth)
+			// Use forceRefreshHolonName to ensure we get fresh data from HNS
+			if (!isPublicMode && $nostrPublicKey && holosphere) {
+				const name = await forceRefreshHolonName(holosphere, $nostrPublicKey);
 				homeHolonName = name || '';
+				// If we got a fallback/default name, the HNS entry might not be ready yet
+				// Retry once after a short delay
+				const isFallbackName = name?.startsWith('Holon ') || name === 'My Holon';
+				if (isFallbackName) {
+					console.log('[BrowserPanel] Got fallback name, will retry:', name);
+					setTimeout(async () => {
+						const retryName = await forceRefreshHolonName(holosphere, $nostrPublicKey);
+						const isStillFallback = retryName?.startsWith('Holon ') || retryName === 'My Holon';
+						if (retryName && !isStillFallback) {
+							homeHolonName = retryName;
+							console.log('[BrowserPanel] Retried HNS lookup, got name:', retryName);
+						}
+					}, 1000);
+				}
 			}
 
 			// Initialize federation requests store
 			if ($nostrPublicKey) {
 				pendingFederationRequests.init($nostrPublicKey);
 			}
+
+			// Update user holons for the identity selector
+			updateUserHolons();
 		}
 
 		// Listen for holon updates
@@ -200,18 +206,27 @@
 
 		// Add to pending requests store for UI display (as a lens_update type)
 		if (update && senderPubKey) {
+			// Extract lens config including write permissions
+			const newLensConfig = update.newLensConfig || { inbound: [], outbound: [] };
+			const lensConfig = {
+				inbound: newLensConfig.inbound || [],
+				outbound: newLensConfig.outbound || [],
+				writeInbound: newLensConfig.writeInbound || [],
+				writeOutbound: newLensConfig.writeOutbound || []
+			};
+
 			const pendingRequest = createIncomingRequest(
 				update.updateId || `update-${Date.now()}`,
 				senderPubKey,
 				'', // npub
 				update.senderHolonId || senderPubKey,
 				update.senderHolonName || 'Unknown Holon',
-				update.newLensConfig || { inbound: [], outbound: [] },
-				update.newLensConfig?.capabilities || [],
+				lensConfig,
+				newLensConfig.capabilities || [],
 				update.message
 			);
-			// Add type to distinguish from federation requests
-			(pendingRequest as any).type = 'lens_update';
+			// Add requestKind to distinguish from federation requests (keep type as 'incoming' for store filtering)
+			(pendingRequest as any).requestKind = 'lens_update';
 			(pendingRequest as any).updateData = update; // Store full update data for processing
 			pendingFederationRequests.add(pendingRequest);
 		}
@@ -250,11 +265,17 @@
 								}
 							}
 
+							const storedLensConfig = federationInfo.lensConfig?.[holonId];
 							holonList.push({
 								id: holonId,
 								name: name || `Holon ${holonId.slice(0, 8)}...`,
 								federationStatus: 'accepted',
-								lensConfig: federationInfo.lensConfig?.[holonId] || { inbound: [], outbound: [] }
+								lensConfig: {
+									inbound: storedLensConfig?.inbound || [],
+									outbound: storedLensConfig?.outbound || [],
+									writeInbound: storedLensConfig?.writeInbound || [],
+									writeOutbound: storedLensConfig?.writeOutbound || []
+								}
 							});
 						}
 					}
@@ -316,6 +337,43 @@
 		}
 	}
 
+	// Update the user holons store with the current user's holons
+	function updateUserHolons() {
+		if (!$nostrPublicKey) return;
+
+		const memberships = [
+			// User's own holon (they are always the owner of their pubkey holon)
+			{ id: $nostrPublicKey, name: homeHolonName || 'My Holon', isOwner: true }
+		];
+
+		// Add federated holons where user might have write access
+		// (membership in other holons is determined by the users lens)
+		for (const holon of holons) {
+			if (holon.federationStatus === 'accepted') {
+				// For now, add all federated holons as potential identities
+				// In practice, the server-side canWrite() will verify actual membership
+				memberships.push({
+					id: holon.id,
+					name: holon.name,
+					isOwner: false
+				});
+			}
+		}
+
+		activeHolonIdentityStore.setUserHolons(memberships);
+	}
+
+	// Handle changing the active holon identity
+	function handleIdentityChange(event: Event) {
+		const select = event.target as HTMLSelectElement;
+		activeHolonIdentityStore.setActiveHolon(select.value);
+	}
+
+	// Update user holons whenever the holons list changes
+	$: if (holons.length >= 0 && $nostrPublicKey) {
+		updateUserHolons();
+	}
+
 	async function refreshHolonNames() {
 		if (!holosphere) return;
 
@@ -339,7 +397,13 @@
 	}
 
 
-	function handleHolonCreated(event: CustomEvent) {
+	function handleHolonCreated(event: CustomEvent<{ holonId: string; holonName: string }>) {
+		const { holonId, holonName } = event.detail;
+		// Update home holon name if this is our holon
+		if (holonId === $nostrPublicKey && holonName) {
+			homeHolonName = holonName;
+			console.log('[BrowserPanel] Updated home holon name from event:', holonName);
+		}
 		// Reload federation list when a new holon is created
 		loadHolons();
 	}
@@ -394,15 +458,24 @@
 		holons = holons.filter(h => h.id !== holonId);
 	}
 
-	async function handleLensConfigUpdate(event: CustomEvent<{ holonId: string; lensConfig: { inbound: string[]; outbound: string[] } }>) {
+	async function handleLensConfigUpdate(event: CustomEvent<{ holonId: string; lensConfig: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] } }>) {
 		const { holonId, lensConfig } = event.detail;
 
 		// Get old lens config to determine what's new
 		const index = holons.findIndex(h => h.id === holonId);
-		const oldLensConfig = index >= 0 ? holons[index].lensConfig : { inbound: [], outbound: [] };
+		const oldLensConfig = index >= 0 ? holons[index].lensConfig : { inbound: [], outbound: [], writeInbound: [], writeOutbound: [] };
 		const newOutboundLenses = lensConfig.outbound.filter(
 			lens => !oldLensConfig?.outbound?.includes(lens)
 		);
+
+		// Check for write permission changes
+		const oldWriteInbound = oldLensConfig?.writeInbound || [];
+		const oldWriteOutbound = oldLensConfig?.writeOutbound || [];
+		const newWriteInbound = lensConfig.writeInbound || [];
+		const newWriteOutbound = lensConfig.writeOutbound || [];
+
+		const writeInboundChanged = JSON.stringify([...oldWriteInbound].sort()) !== JSON.stringify([...newWriteInbound].sort());
+		const writeOutboundChanged = JSON.stringify([...oldWriteOutbound].sort()) !== JSON.stringify([...newWriteOutbound].sort());
 
 		// Update the holon's lens config in the list immediately for UI responsiveness
 		if (index >= 0) {
@@ -423,11 +496,27 @@
 				});
 				console.log('[BrowserPanel] Lens config saved for:', holonId.slice(0, 12) + '...', lensConfig);
 
-				// Issue new capabilities for newly added outbound lenses
-				if (newOutboundLenses.length > 0 && $nostrPrivateKey) {
-					console.log('[BrowserPanel] Issuing capabilities for new outbound lenses:', newOutboundLenses);
+				// Check if we need to send a handshake request
+				// Send handshake whenever lens config changes so partner is notified
+				const inboundChanged = JSON.stringify([...lensConfig.inbound].sort()) !== JSON.stringify([...(oldLensConfig?.inbound || [])].sort());
+				const outboundChanged = JSON.stringify([...lensConfig.outbound].sort()) !== JSON.stringify([...(oldLensConfig?.outbound || [])].sort());
+				const needsHandshake = inboundChanged || outboundChanged || writeInboundChanged || writeOutboundChanged;
+
+				if (needsHandshake && $nostrPrivateKey) {
+					console.log('[BrowserPanel] Lens config changed, preparing handshake request');
+					if (newOutboundLenses.length > 0) {
+						console.log('[BrowserPanel] New outbound lenses:', newOutboundLenses);
+					}
+					if (writeInboundChanged) {
+						console.log('[BrowserPanel] Write inbound changed:', oldWriteInbound, '->', newWriteInbound);
+					}
+					if (writeOutboundChanged) {
+						console.log('[BrowserPanel] Write outbound changed:', oldWriteOutbound, '->', newWriteOutbound);
+					}
 
 					const newCapabilities = [];
+
+					// Issue read capabilities for newly added outbound lenses
 					for (const lensName of newOutboundLenses) {
 						try {
 							const token = await holosphere.issueCapability(
@@ -445,36 +534,83 @@
 								scope: { holonId: homeHolonId, lensName },
 								permissions: ['read']
 							});
-							console.log(`[BrowserPanel] Issued capability for lens "${lensName}"`);
+							console.log(`[BrowserPanel] Issued read capability for lens "${lensName}"`);
 						} catch (err) {
-							console.warn(`[BrowserPanel] Failed to issue capability for lens "${lensName}":`, err);
+							console.warn(`[BrowserPanel] Failed to issue read capability for lens "${lensName}":`, err);
 						}
 					}
 
-					// Send the new capabilities to the partner via DM
-					if (newCapabilities.length > 0) {
+					// Issue write capabilities for newly added writeOutbound lenses
+					const newWriteOutboundLenses = newWriteOutbound.filter(
+						lens => !oldWriteOutbound.includes(lens)
+					);
+					for (const lensName of newWriteOutboundLenses) {
 						try {
-							// Use the federation update protocol to notify partner of new lenses
-							// Include capabilities in the lensConfig so partner can store them
-							const lensConfigWithCapabilities = {
-								...lensConfig,
-								capabilities: newCapabilities // Include capabilities for partner to store
-							};
-							const result = await handshake.requestFederationUpdate(holosphere, $nostrPrivateKey, {
-								partnerPubKey: holonId,
-								holonId: homeHolonId,
-								holonName: homeHolonName || 'My Holon',
-								newLensConfig: lensConfigWithCapabilities,
-								message: `Updated lens configuration. New capabilities issued for: ${newOutboundLenses.join(', ')}`
+							const token = await holosphere.issueCapability(
+								['read', 'write'],
+								{ holonId: homeHolonId, lensName, dataId: '*' },
+								holonId, // recipient is the partner
+								{
+									expiresIn: 365 * 24 * 60 * 60 * 1000, // 1 year
+									issuer: homeHolonId,
+									issuerKey: $nostrPrivateKey
+								}
+							);
+							newCapabilities.push({
+								token,
+								scope: { holonId: homeHolonId, lensName },
+								permissions: ['read', 'write']
 							});
-							if (result.success) {
-								console.log('[BrowserPanel] Sent lens update notification to partner with capabilities');
-							} else {
-								console.warn('[BrowserPanel] Failed to notify partner of lens update:', result.error);
-							}
+							console.log(`[BrowserPanel] Issued write capability for lens "${lensName}"`);
 						} catch (err) {
-							console.warn('[BrowserPanel] Failed to send lens update notification:', err);
+							console.warn(`[BrowserPanel] Failed to issue write capability for lens "${lensName}":`, err);
 						}
+					}
+
+					// Build the message describing the changes
+					const changeDescriptions = [];
+					if (newOutboundLenses.length > 0) {
+						changeDescriptions.push(`New shared lenses: ${newOutboundLenses.join(', ')}`);
+					}
+					if (newWriteOutboundLenses.length > 0) {
+						changeDescriptions.push(`New write access granted for: ${newWriteOutboundLenses.join(', ')}`);
+					}
+					if (writeInboundChanged) {
+						const requestedWriteLenses = newWriteInbound.filter(l => !oldWriteInbound.includes(l));
+						const revokedWriteLenses = oldWriteInbound.filter(l => !newWriteInbound.includes(l));
+						if (requestedWriteLenses.length > 0) {
+							changeDescriptions.push(`Requesting write access for: ${requestedWriteLenses.join(', ')}`);
+						}
+						if (revokedWriteLenses.length > 0) {
+							changeDescriptions.push(`Removed write access request for: ${revokedWriteLenses.join(', ')}`);
+						}
+					}
+					const message = changeDescriptions.length > 0
+						? changeDescriptions.join('. ')
+						: 'Updated lens configuration';
+
+					// Send the handshake request to the partner via DM
+					try {
+						// Use the federation update protocol to notify partner of changes
+						// Include capabilities in the lensConfig so partner can store them
+						const lensConfigWithCapabilities = {
+							...lensConfig,
+							capabilities: newCapabilities.length > 0 ? newCapabilities : undefined
+						};
+						const result = await handshake.requestFederationUpdate(holosphere, $nostrPrivateKey, {
+							partnerPubKey: holonId,
+							holonId: homeHolonId,
+							holonName: homeHolonName || 'My Holon',
+							newLensConfig: lensConfigWithCapabilities,
+							message
+						});
+						if (result.success) {
+							console.log('[BrowserPanel] Sent lens update notification to partner:', message);
+						} else {
+							console.warn('[BrowserPanel] Failed to notify partner of lens update:', result.error);
+						}
+					} catch (err) {
+						console.warn('[BrowserPanel] Failed to send lens update notification:', err);
 					}
 				}
 			} catch (err) {
@@ -518,66 +654,22 @@
 
 	function closeIdentityModal() {
 		showIdentityModal = false;
-		identityView = 'menu';
-		newIdentityName = '';
-		importKeyInput = '';
-		identityError = '';
 	}
 
-	async function createNewIdentity() {
-		if (!newIdentityName.trim()) {
-			identityError = 'Please enter a name for your holon';
-			return;
+	// Handle authentication from Splash component
+	function handleSplashAuthenticated(event: CustomEvent) {
+		const { publicKey, holonName } = event.detail;
+		showIdentityModal = false;
+
+		// Store the holon name to be used after reload
+		if (holonName) {
+			localStorage.setItem('pending_holon_name', holonName);
+			localStorage.setItem('pending_holon_id', publicKey);
 		}
 
-		isProcessingIdentity = true;
-		identityError = '';
-		try {
-			const result = await nostrStore.generateKey();
-			if (result?.publicKey) {
-				const holonName = newIdentityName.trim();
-
-				// Store the holon name to be used after reload (temporary flag, cleared on next load)
-				localStorage.setItem('pending_holon_name', holonName);
-				localStorage.setItem('pending_holon_id', result.publicKey);
-
-				// Navigate to the new holon
-				goto(`/${result.publicKey}/dashboard`);
-				// Reload to reinitialize with new key
-				setTimeout(() => window.location.reload(), 100);
-			}
-		} catch (error: any) {
-			identityError = error.message || 'Failed to create identity';
-			isProcessingIdentity = false;
-		}
-	}
-
-	async function importIdentity() {
-		if (!importKeyInput.trim()) {
-			identityError = 'Please enter your private key';
-			return;
-		}
-
-		const key = importKeyInput.trim().toLowerCase();
-		if (!/^[0-9a-f]{64}$/.test(key)) {
-			identityError = 'Invalid key format. Must be 64 hex characters.';
-			return;
-		}
-
-		isProcessingIdentity = true;
-		identityError = '';
-		try {
-			const result = await nostrStore.importKey(key);
-			if (result?.publicKey) {
-				// Navigate to the holon
-				goto(`/${result.publicKey}/dashboard`);
-				// Reload to reinitialize with new key
-				setTimeout(() => window.location.reload(), 100);
-			}
-		} catch (error: any) {
-			identityError = error.message || 'Failed to import key';
-			isProcessingIdentity = false;
-		}
+		// Navigate to the new holon and reload to reinitialize
+		goto(`/${publicKey}/dashboard`);
+		setTimeout(() => window.location.reload(), 100);
 	}
 
 	function closeAddModal() {
@@ -618,7 +710,7 @@
 
 		try {
 			// Check if this is a lens update request or a federation request
-			const isLensUpdate = (request as any).type === 'lens_update';
+			const isLensUpdate = (request as any).requestKind === 'lens_update';
 
 			if (isLensUpdate) {
 				// Handle lens update request
@@ -688,9 +780,13 @@
 		// Swap the lens config from partner's perspective to our perspective
 		// Partner's outbound (what they share) = Our inbound (what we receive)
 		// Partner's inbound (what they receive) = Our outbound (what we share)
+		// Partner's writeOutbound (write access they grant) = Our writeInbound (write access we receive)
+		// Partner's writeInbound (write access they request) = Our writeOutbound (write access we grant)
 		const ourLensConfig = {
 			inbound: request.lensConfig?.outbound || [],
-			outbound: request.lensConfig?.inbound || []
+			outbound: request.lensConfig?.inbound || [],
+			writeInbound: request.lensConfig?.writeOutbound || [],
+			writeOutbound: request.lensConfig?.writeInbound || []
 		};
 
 		// Store capabilities from the partner for the new inbound lenses
@@ -910,6 +1006,28 @@
 		</button>
 	</div>
 
+	<!-- Acting As holon selector (only shown when user has multiple holons) -->
+	{#if $userHolons.length > 1}
+		<div class="browser-panel__identity-selector">
+			<label for="identity-selector">
+				<span class="browser-panel__identity-label">Acting as:</span>
+			</label>
+			<select
+				id="identity-selector"
+				class="browser-panel__identity-select"
+				value={$activeHolonIdentity}
+				onchange={handleIdentityChange}
+			>
+				{#each $userHolons as holon}
+					<option value={holon.id}>
+						{holon.name}
+						{#if holon.isOwner}(you){/if}
+					</option>
+				{/each}
+			</select>
+		</div>
+	{/if}
+
 	<!-- Holon List - unified view with federation status -->
 	<HolonList
 		holons={filteredHolons}
@@ -1063,154 +1181,14 @@
 	on:close={() => showQRScanner = false}
 />
 
-<!-- Identity Modal (for public mode) -->
+<!-- Identity Modal (for public mode) - uses unified Splash component -->
 {#if showIdentityModal}
-	<div
-		class="add-modal-backdrop"
-		onclick={closeIdentityModal}
-		onkeydown={(e) => e.key === 'Escape' && closeIdentityModal()}
-		role="button"
-		tabindex="0"
-	>
-		<div
-			class="add-modal identity-modal"
-			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
-			role="dialog"
-			aria-modal="true"
-			tabindex="-1"
-		>
-			{#if identityView === 'menu'}
-				<div class="identity-modal__header">
-					<div class="identity-modal__icon">
-						<Key size={24} />
-					</div>
-					<h3>Sign In</h3>
-					<p class="identity-modal__subtitle">Create or restore your identity to start collaborating</p>
-				</div>
-
-				<div class="identity-modal__options">
-					<button
-						class="identity-modal__option identity-modal__option--primary"
-						onclick={() => identityView = 'create'}
-						disabled={isProcessingIdentity}
-					>
-						<div class="identity-modal__option-icon">
-							<Plus size={20} />
-						</div>
-						<div class="identity-modal__option-text">
-							<span class="identity-modal__option-title">Create New Identity</span>
-							<span class="identity-modal__option-desc">Generate a new private key</span>
-						</div>
-					</button>
-
-					<button
-						class="identity-modal__option"
-						onclick={() => identityView = 'import'}
-						disabled={isProcessingIdentity}
-					>
-						<div class="identity-modal__option-icon">
-							<Upload size={20} />
-						</div>
-						<div class="identity-modal__option-text">
-							<span class="identity-modal__option-title">Import Private Key</span>
-							<span class="identity-modal__option-desc">Restore an existing identity</span>
-						</div>
-					</button>
-				</div>
-
-				<button class="identity-modal__cancel" onclick={closeIdentityModal}>
-					Continue as Guest
-				</button>
-
-			{:else if identityView === 'create'}
-				<!-- Create view with name input -->
-				<div class="add-modal__header">
-					<h3>Name Your Holon</h3>
-					<button class="add-modal__close" onclick={closeIdentityModal} aria-label="Close">×</button>
-				</div>
-
-				<div class="add-modal__content">
-					<button class="identity-modal__back" onclick={() => identityView = 'menu'}>
-						<i class="fas fa-arrow-left"></i> Back
-					</button>
-
-					{#if identityError}
-						<div class="add-modal__error">{identityError}</div>
-					{/if}
-
-					<div class="add-modal__field">
-						<label for="holon-name-input">What would you like to call your holon?</label>
-						<input
-							id="holon-name-input"
-							type="text"
-							bind:value={newIdentityName}
-							placeholder="My Holon"
-							onkeydown={(e) => e.key === 'Enter' && createNewIdentity()}
-						/>
-						<p class="identity-modal__name-hint">This will be your personal space for tasks, notes, and more</p>
-					</div>
-				</div>
-
-				<div class="add-modal__actions">
-					<button
-						class="btn btn--primary"
-						onclick={createNewIdentity}
-						disabled={isProcessingIdentity || !newIdentityName.trim()}
-					>
-						{#if isProcessingIdentity}
-							<i class="fas fa-spinner fa-spin"></i>
-						{/if}
-						Create Holon
-					</button>
-					<button class="btn btn--secondary" onclick={() => identityView = 'menu'}>Back</button>
-				</div>
-
-			{:else}
-				<!-- Import view -->
-				<div class="add-modal__header">
-					<h3>Import Private Key</h3>
-					<button class="add-modal__close" onclick={closeIdentityModal} aria-label="Close">×</button>
-				</div>
-
-				<div class="add-modal__content">
-					<button class="identity-modal__back" onclick={() => identityView = 'menu'}>
-						<i class="fas fa-arrow-left"></i> Back
-					</button>
-
-					{#if identityError}
-						<div class="add-modal__error">{identityError}</div>
-					{/if}
-
-					<div class="add-modal__field">
-						<label for="import-key-input">Enter your 64-character private key</label>
-						<input
-							id="import-key-input"
-							type="password"
-							bind:value={importKeyInput}
-							placeholder="Private key..."
-							onkeydown={(e) => e.key === 'Enter' && importIdentity()}
-						/>
-						<p class="identity-modal__key-hint">{importKeyInput.length}/64 characters</p>
-					</div>
-				</div>
-
-				<div class="add-modal__actions">
-					<button
-						class="btn btn--primary"
-						onclick={importIdentity}
-						disabled={isProcessingIdentity || importKeyInput.length !== 64}
-					>
-						{#if isProcessingIdentity}
-							<i class="fas fa-spinner fa-spin"></i>
-						{/if}
-						Import Key
-					</button>
-					<button class="btn btn--secondary" onclick={() => identityView = 'menu'}>Back</button>
-				</div>
-			{/if}
-		</div>
-	</div>
+	<Splash
+		skipLoading={true}
+		isModal={true}
+		on:authenticated={handleSplashAuthenticated}
+		on:close={closeIdentityModal}
+	/>
 {/if}
 
 <style>
@@ -1302,6 +1280,44 @@
 
 	.browser-panel__add-btn:hover {
 		background: var(--color-accent-dark, #4338ca);
+	}
+
+	/* Identity selector (Acting As dropdown) */
+	.browser-panel__identity-selector {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-2, 0.5rem);
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		border-bottom: 1px solid var(--color-border, #374151);
+		background: rgba(168, 85, 247, 0.1);
+	}
+
+	.browser-panel__identity-label {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: var(--color-text-muted, #6b7280);
+		white-space: nowrap;
+	}
+
+	.browser-panel__identity-select {
+		flex: 1;
+		padding: var(--spacing-1, 0.25rem) var(--spacing-2, 0.5rem);
+		background: var(--color-bg-secondary, #1f2937);
+		border: 1px solid var(--color-border, #374151);
+		border-radius: var(--radius-sm, 0.25rem);
+		color: var(--color-text-primary, #ffffff);
+		font-size: var(--font-size-xs, 0.75rem);
+		cursor: pointer;
+	}
+
+	.browser-panel__identity-select:focus {
+		outline: none;
+		border-color: #a855f7;
+		box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+	}
+
+	.browser-panel__identity-select option {
+		background: var(--color-bg-secondary, #1f2937);
+		color: var(--color-text-primary, #ffffff);
 	}
 
 
@@ -1528,156 +1544,5 @@
 
 	.browser-panel__add-btn--identity:hover {
 		background: #059669;
-	}
-
-	/* Identity Modal */
-	.identity-modal {
-		text-align: center;
-	}
-
-	.identity-modal__header {
-		margin-bottom: var(--spacing-4, 1rem);
-	}
-
-	.identity-modal__header h3 {
-		font-size: var(--font-size-lg, 1.125rem);
-		font-weight: var(--font-weight-semibold, 600);
-		color: var(--color-text-primary, #ffffff);
-		margin: 0 0 var(--spacing-2, 0.5rem) 0;
-	}
-
-	.identity-modal__icon {
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		background: linear-gradient(135deg, #10b981, #059669);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		margin: 0 auto var(--spacing-3, 0.75rem);
-	}
-
-	.identity-modal__subtitle {
-		color: var(--color-text-muted, #6b7280);
-		font-size: var(--font-size-sm, 0.875rem);
-		margin: 0;
-	}
-
-	.identity-modal__options {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-2, 0.5rem);
-		margin-bottom: var(--spacing-4, 1rem);
-	}
-
-	.identity-modal__option {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-3, 0.75rem);
-		padding: var(--spacing-3, 0.75rem);
-		background: var(--color-bg-primary, #111827);
-		border: 1px solid var(--color-border, #374151);
-		border-radius: var(--radius-md, 0.375rem);
-		color: var(--color-text-primary, #ffffff);
-		cursor: pointer;
-		transition: all 150ms ease;
-		text-align: left;
-		width: 100%;
-	}
-
-	.identity-modal__option:hover:not(:disabled) {
-		border-color: var(--color-accent, #4f46e5);
-		background: var(--color-bg-tertiary, #374151);
-	}
-
-	.identity-modal__option--primary {
-		border-color: var(--color-accent, #4f46e5);
-		background: rgba(79, 70, 229, 0.1);
-	}
-
-	.identity-modal__option--primary:hover:not(:disabled) {
-		background: rgba(79, 70, 229, 0.2);
-	}
-
-	.identity-modal__option:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.identity-modal__option-icon {
-		width: 40px;
-		height: 40px;
-		border-radius: var(--radius-md, 0.375rem);
-		background: var(--color-bg-secondary, #1f2937);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--color-accent-light, #818cf8);
-		flex-shrink: 0;
-	}
-
-	.identity-modal__option--primary .identity-modal__option-icon {
-		background: var(--color-accent, #4f46e5);
-		color: white;
-	}
-
-	.identity-modal__option-text {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.identity-modal__option-title {
-		font-weight: var(--font-weight-medium, 500);
-		font-size: var(--font-size-sm, 0.875rem);
-	}
-
-	.identity-modal__option-desc {
-		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
-	}
-
-	.identity-modal__cancel {
-		background: transparent;
-		border: none;
-		color: var(--color-text-muted, #6b7280);
-		font-size: var(--font-size-sm, 0.875rem);
-		cursor: pointer;
-		padding: var(--spacing-2, 0.5rem);
-	}
-
-	.identity-modal__cancel:hover {
-		color: var(--color-text-secondary, #d1d5db);
-	}
-
-	.identity-modal__back {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-2, 0.5rem);
-		background: transparent;
-		border: none;
-		color: var(--color-text-muted, #6b7280);
-		font-size: var(--font-size-sm, 0.875rem);
-		cursor: pointer;
-		padding: 0;
-		margin-bottom: var(--spacing-2, 0.5rem);
-	}
-
-	.identity-modal__back:hover {
-		color: var(--color-text-primary, #ffffff);
-	}
-
-	.identity-modal__key-hint {
-		color: var(--color-text-muted, #6b7280);
-		font-size: var(--font-size-xs, 0.75rem);
-		text-align: right;
-		margin: var(--spacing-1, 0.25rem) 0 0 0;
-	}
-
-	.identity-modal__name-hint {
-		color: var(--color-text-muted, #6b7280);
-		font-size: var(--font-size-xs, 0.75rem);
-		margin: var(--spacing-1, 0.25rem) 0 0 0;
 	}
 </style>

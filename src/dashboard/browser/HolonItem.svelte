@@ -19,6 +19,9 @@
 	export let federationStatus: FederationStatus = 'none';
 	export let inboundLenses: string[] = [];
 	export let outboundLenses: string[] = [];
+	export let writeInboundLenses: string[] = [];
+	export let writeOutboundLenses: string[] = [];
+	export let accessLevel: 'none' | 'read' | 'write' | 'member' = 'none';
 
 	const dispatch = createEventDispatcher();
 
@@ -28,6 +31,16 @@
 	let showLensConfig: boolean = false;
 	let copied: boolean = false;
 	let showPrivateKey: boolean = false;
+
+	// Pending lens config changes (tracked locally before sending)
+	let pendingLensConfig: {
+		inbound: string[];
+		outbound: string[];
+		writeInbound: string[];
+		writeOutbound: string[];
+	} | null = null;
+
+	$: hasPendingChanges = pendingLensConfig !== null;
 
 	// Check if using public/holosphere key
 	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
@@ -93,7 +106,14 @@
 		if (showKeyMenu) showMenu = false;
 	}
 
-	function closeMenus() {
+	// Reference to component root element
+	let componentElement: HTMLDivElement;
+
+	function closeMenus(event?: MouseEvent) {
+		// Only close if click is outside this component
+		if (event && componentElement && componentElement.contains(event.target as Node)) {
+			return;
+		}
 		showMenu = false;
 		showKeyMenu = false;
 		showLensConfig = false;
@@ -171,19 +191,97 @@
 	}
 
 	function toggleLens(lens: string, direction: 'inbound' | 'outbound') {
-		const currentList = direction === 'inbound' ? inboundLenses : outboundLenses;
-		const newList = currentList.includes(lens)
-			? currentList.filter(l => l !== lens)
-			: [...currentList, lens];
+		// Initialize pending config from current if not already pending
+		if (!pendingLensConfig) {
+			pendingLensConfig = {
+				inbound: [...inboundLenses],
+				outbound: [...outboundLenses],
+				writeInbound: [...writeInboundLenses],
+				writeOutbound: [...writeOutboundLenses]
+			};
+		}
+
+		const currentList = direction === 'inbound' ? pendingLensConfig.inbound : pendingLensConfig.outbound;
+
+		if (currentList.includes(lens)) {
+			if (direction === 'inbound') {
+				pendingLensConfig.inbound = currentList.filter(l => l !== lens);
+			} else {
+				pendingLensConfig.outbound = currentList.filter(l => l !== lens);
+			}
+		} else {
+			if (direction === 'inbound') {
+				pendingLensConfig.inbound = [...currentList, lens];
+			} else {
+				pendingLensConfig.outbound = [...currentList, lens];
+			}
+		}
+
+		// Trigger reactivity
+		pendingLensConfig = { ...pendingLensConfig };
+	}
+
+	function toggleWriteLens(lens: string, direction: 'writeInbound' | 'writeOutbound') {
+		// Initialize pending config from current if not already pending
+		if (!pendingLensConfig) {
+			pendingLensConfig = {
+				inbound: [...inboundLenses],
+				outbound: [...outboundLenses],
+				writeInbound: [...writeInboundLenses],
+				writeOutbound: [...writeOutboundLenses]
+			};
+		}
+
+		const currentList = direction === 'writeInbound' ? pendingLensConfig.writeInbound : pendingLensConfig.writeOutbound;
+
+		if (currentList.includes(lens)) {
+			if (direction === 'writeInbound') {
+				pendingLensConfig.writeInbound = currentList.filter(l => l !== lens);
+			} else {
+				pendingLensConfig.writeOutbound = currentList.filter(l => l !== lens);
+			}
+		} else {
+			if (direction === 'writeInbound') {
+				pendingLensConfig.writeInbound = [...currentList, lens];
+			} else {
+				pendingLensConfig.writeOutbound = [...currentList, lens];
+			}
+		}
+
+		// Trigger reactivity
+		pendingLensConfig = { ...pendingLensConfig };
+	}
+
+	function requestLensUpdate() {
+		if (!pendingLensConfig) return;
 
 		dispatch('lensConfigUpdate', {
 			holonId: id,
-			lensConfig: {
-				inbound: direction === 'inbound' ? newList : inboundLenses,
-				outbound: direction === 'outbound' ? newList : outboundLenses
-			}
+			lensConfig: pendingLensConfig
 		});
+
+		pendingLensConfig = null;
 	}
+
+	function cancelPendingChanges() {
+		pendingLensConfig = null;
+	}
+
+	// Get access badge info
+	function getAccessBadge(level: string): { icon: string; color: string; label: string } | null {
+		switch (level) {
+			case 'member':
+				return { icon: '👤', color: '#a855f7', label: 'Member' };
+			case 'write':
+				return { icon: '✏️', color: '#22c55e', label: 'Read+Write' };
+			case 'read':
+				return { icon: '👁️', color: '#3b82f6', label: 'Read' };
+			default:
+				return null;
+		}
+	}
+
+	$: accessBadge = getAccessBadge(accessLevel);
 
 	$: initials = isHome ? '' : getInitials(name);
 	$: avatarColor = getAvatarColor(id);
@@ -192,9 +290,9 @@
 	$: isFederated = federationStatus === 'accepted';
 </script>
 
-<svelte:window on:click={closeMenus} />
+<svelte:window on:click={(e) => closeMenus(e)} />
 
-<div class="holon-item-wrapper" class:holon-item-wrapper--expanded={showLensConfig}>
+<div class="holon-item-wrapper" class:holon-item-wrapper--expanded={showLensConfig} bind:this={componentElement}>
 	<div
 		class="holon-item"
 		class:holon-item--active={isActive}
@@ -229,6 +327,15 @@
 		<div class="holon-item__content">
 			<span class="holon-item__name" title={name}>
 				{name || `Holon ${id.slice(0, 8)}...`}
+				{#if accessBadge && isFederated}
+					<span
+						class="holon-item__access-badge"
+						style="background-color: {accessBadge.color}20; color: {accessBadge.color};"
+						title={accessBadge.label}
+					>
+						{accessBadge.icon}
+					</span>
+				{/if}
 			</span>
 			<span class="holon-item__id">
 				{shortId}
@@ -368,41 +475,78 @@
 		<div class="holon-item__inline-config" transition:slide={{ duration: 150 }} on:click|stopPropagation>
 			<!-- Legend -->
 			<div class="holon-item__config-legend">
-				<span class="holon-item__config-legend-item holon-item__config-legend-item--in">↓ Receive</span>
-				<span class="holon-item__config-legend-item holon-item__config-legend-item--out">↑ Share</span>
+				<span class="holon-item__config-legend-item holon-item__config-legend-item--in" title="Receive (Read)">↓R</span>
+				<span class="holon-item__config-legend-item holon-item__config-legend-item--write-in" title="Receive (Write)">↓W</span>
+				<span class="holon-item__config-legend-item holon-item__config-legend-item--out" title="Share (Read)">↑R</span>
+				<span class="holon-item__config-legend-item holon-item__config-legend-item--write-out" title="Share (Write)">↑W</span>
 			</div>
 
 			<!-- Lens rows -->
 			<div class="holon-item__lens-list">
 				{#each AVAILABLE_LENSES as lens}
-					{@const inboundEnabled = inboundLenses.includes(lens)}
-					{@const outboundEnabled = outboundLenses.includes(lens)}
-					<div class="holon-item__lens-row" class:holon-item__lens-row--active={inboundEnabled || outboundEnabled}>
+					{@const effectiveConfig = pendingLensConfig || { inbound: inboundLenses, outbound: outboundLenses, writeInbound: writeInboundLenses, writeOutbound: writeOutboundLenses }}
+					{@const inboundEnabled = effectiveConfig.inbound.includes(lens)}
+					{@const outboundEnabled = effectiveConfig.outbound.includes(lens)}
+					{@const writeInboundEnabled = effectiveConfig.writeInbound.includes(lens)}
+					{@const writeOutboundEnabled = effectiveConfig.writeOutbound.includes(lens)}
+					{@const hasAnyEnabled = inboundEnabled || outboundEnabled || writeInboundEnabled || writeOutboundEnabled}
+					<div class="holon-item__lens-row" class:holon-item__lens-row--active={hasAnyEnabled}>
 						<div class="holon-item__lens-info">
 							<span class="holon-item__lens-icon">{getLensIcon(lens)}</span>
 							<span class="holon-item__lens-name">{lens}</span>
 						</div>
 						<div class="holon-item__lens-toggles">
+							<!-- Inbound Read -->
 							<button
 								class="holon-item__lens-btn holon-item__lens-btn--in"
 								class:holon-item__lens-btn--active={inboundEnabled}
-								title="{inboundEnabled ? 'Stop receiving' : 'Receive'} {lens}"
+								title="{inboundEnabled ? 'Stop receiving' : 'Receive'} {lens} (read)"
 								on:click={() => toggleLens(lens, 'inbound')}
 							>
 								↓
 							</button>
+							<!-- Inbound Write -->
+							<button
+								class="holon-item__lens-btn holon-item__lens-btn--write-in"
+								class:holon-item__lens-btn--active={writeInboundEnabled}
+								title="{writeInboundEnabled ? 'Revoke' : 'Request'} write access to {lens}"
+								on:click={() => toggleWriteLens(lens, 'writeInbound')}
+							>
+								✏️
+							</button>
+							<!-- Outbound Read -->
 							<button
 								class="holon-item__lens-btn holon-item__lens-btn--out"
 								class:holon-item__lens-btn--active={outboundEnabled}
-								title="{outboundEnabled ? 'Stop sharing' : 'Share'} {lens}"
+								title="{outboundEnabled ? 'Stop sharing' : 'Share'} {lens} (read)"
 								on:click={() => toggleLens(lens, 'outbound')}
 							>
 								↑
+							</button>
+							<!-- Outbound Write -->
+							<button
+								class="holon-item__lens-btn holon-item__lens-btn--write-out"
+								class:holon-item__lens-btn--active={writeOutboundEnabled}
+								title="{writeOutboundEnabled ? 'Revoke' : 'Grant'} write access for {lens}"
+								on:click={() => toggleWriteLens(lens, 'writeOutbound')}
+							>
+								✏️
 							</button>
 						</div>
 					</div>
 				{/each}
 			</div>
+
+			{#if hasPendingChanges}
+				<div class="holon-item__config-actions">
+					<button class="holon-item__config-btn holon-item__config-btn--cancel" on:click={cancelPendingChanges}>
+						Cancel
+					</button>
+					<button class="holon-item__config-btn holon-item__config-btn--request" on:click={requestLensUpdate}>
+						Request Update
+					</button>
+				</div>
+			{/if}
 
 			<button class="holon-item__config-remove" on:click={handleRemove}>
 				<X size={12} />
@@ -744,8 +888,16 @@
 		color: var(--color-info, #3b82f6);
 	}
 
+	.holon-item__config-legend-item--write-in {
+		color: #a855f7;
+	}
+
 	.holon-item__config-legend-item--out {
 		color: var(--color-success, #22c55e);
+	}
+
+	.holon-item__config-legend-item--write-out {
+		color: #f97316;
 	}
 
 	/* Lens list */
@@ -818,9 +970,39 @@
 		color: white;
 	}
 
+	.holon-item__lens-btn--write-in {
+		font-size: 9px;
+	}
+
+	.holon-item__lens-btn--write-in.holon-item__lens-btn--active {
+		background: #a855f7;
+		color: white;
+	}
+
 	.holon-item__lens-btn--out.holon-item__lens-btn--active {
 		background: var(--color-success, #22c55e);
 		color: white;
+	}
+
+	.holon-item__lens-btn--write-out {
+		font-size: 9px;
+	}
+
+	.holon-item__lens-btn--write-out.holon-item__lens-btn--active {
+		background: #f97316;
+		color: white;
+	}
+
+	/* Access badge */
+	.holon-item__access-badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 10px;
+		padding: 1px 4px;
+		border-radius: var(--radius-sm, 0.25rem);
+		margin-left: 4px;
+		vertical-align: middle;
 	}
 
 	.holon-item__config-remove {
@@ -842,5 +1024,48 @@
 	.holon-item__config-remove:hover {
 		background: rgba(239, 68, 68, 0.1);
 		border-color: var(--color-error, #ef4444);
+	}
+
+	/* Config actions (Request Update / Cancel) */
+	.holon-item__config-actions {
+		display: flex;
+		gap: var(--spacing-2, 0.5rem);
+		margin-top: var(--spacing-2, 0.5rem);
+		padding-top: var(--spacing-2, 0.5rem);
+		border-top: 1px solid var(--color-border, #374151);
+	}
+
+	.holon-item__config-btn {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--spacing-1, 0.25rem);
+		padding: var(--spacing-2, 0.5rem);
+		border: none;
+		border-radius: var(--radius-sm, 0.25rem);
+		font-size: 11px;
+		font-weight: var(--font-weight-medium, 500);
+		cursor: pointer;
+		transition: all 150ms ease;
+	}
+
+	.holon-item__config-btn--cancel {
+		background: var(--color-bg-primary, #111827);
+		color: var(--color-text-muted, #6b7280);
+	}
+
+	.holon-item__config-btn--cancel:hover {
+		background: var(--color-bg-tertiary, #374151);
+		color: var(--color-text-primary, #ffffff);
+	}
+
+	.holon-item__config-btn--request {
+		background: var(--color-accent, #4f46e5);
+		color: white;
+	}
+
+	.holon-item__config-btn--request:hover {
+		background: var(--color-accent-dark, #4338ca);
 	}
 </style>

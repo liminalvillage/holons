@@ -70,8 +70,53 @@
     let newPartnerHexPubKey = '';
     let npubError = '';
     let federationMessage = '';
-    let selectedInboundLenses: string[] = [];
-    let selectedOutboundLenses: string[] = [];
+
+    // Unified permissions per lens (v2.0 format)
+    // permissions[lensName] = { receive: ['read', 'write'], share: ['read', 'write'] }
+    type LensPermissions = { receive: ('read' | 'write')[]; share: ('read' | 'write')[] };
+    let permissions: Record<string, LensPermissions> = {};
+
+    // Initialize permissions for all lenses
+    function initializePermissions() {
+        const initial: Record<string, LensPermissions> = {};
+        for (const lens of AVAILABLE_LENSES) {
+            initial[lens] = { receive: [], share: [] };
+        }
+        permissions = initial;
+    }
+
+    // Toggle a permission for a lens
+    function togglePermission(lens: string, direction: 'receive' | 'share', perm: 'read' | 'write') {
+        const current = permissions[lens][direction];
+        if (current.includes(perm)) {
+            permissions[lens][direction] = current.filter(p => p !== perm);
+        } else {
+            permissions[lens][direction] = [...current, perm];
+        }
+        permissions = permissions; // Trigger reactivity
+    }
+
+    // Check if a permission is set
+    function hasPermission(lens: string, direction: 'receive' | 'share', perm: 'read' | 'write'): boolean {
+        return permissions[lens]?.[direction]?.includes(perm) ?? false;
+    }
+
+    // Convert unified permissions to legacy lensConfig for backward compatibility
+    function permissionsToLegacyConfig() {
+        const inbound: string[] = [];
+        const outbound: string[] = [];
+        const writeInbound: string[] = [];
+        const writeOutbound: string[] = [];
+
+        for (const [lens, perms] of Object.entries(permissions)) {
+            if (perms.receive.includes('read')) inbound.push(lens);
+            if (perms.share.includes('read')) outbound.push(lens);
+            if (perms.receive.includes('write')) writeInbound.push(lens);
+            if (perms.share.includes('write')) writeOutbound.push(lens);
+        }
+
+        return { inbound, outbound, writeInbound, writeOutbound };
+    }
 
     // QR Scanner
     let showQRScanner = false;
@@ -215,10 +260,8 @@
 
             if ($nostrPrivateKey && $nostrPublicKey) {
                 const ourNpub = nostrUtils.hexToNpub($nostrPublicKey);
-                const lensConfig = {
-                    inbound: selectedInboundLenses,
-                    outbound: selectedOutboundLenses
-                };
+                // Convert unified permissions to legacy format for backward compatibility
+                const lensConfig = permissionsToLegacyConfig();
 
                 // Use retry with exponential backoff for DM sends
                 const result = await withRetry(async () => {
@@ -426,9 +469,11 @@
         newPartnerHexPubKey = '';
         npubError = '';
         federationMessage = '';
-        selectedInboundLenses = [];
-        selectedOutboundLenses = [];
+        initializePermissions();
     }
+
+    // Initialize permissions on component mount
+    initializePermissions();
 
     function validateNpub() {
         if (!newPartnerNpub.trim()) {
@@ -566,7 +611,8 @@
                 console.log('Processing federation response - storing capabilities and registering holon');
 
                 // Get our inbound lenses to receive data from the responder
-                const ourInboundLenses = request.lensConfig?.inbound || [];
+                // Use response.lensConfig.outbound (what responder is sharing) not request.lensConfig.inbound
+                const ourInboundLenses = response.lensConfig?.outbound || [];
 
                 const result = await handshake.processFederationResponse(
                     holosphere,
@@ -634,9 +680,55 @@
                 });
             }, 3, 1000);
 
+            // IMPORTANT: Set up data replication for the responder side
+            // The responder needs to also process the federation to receive holograms
+            // from the initiator. Without this, only the initiator gets data replication.
+            //
+            // From the initiator's lensConfig:
+            // - initiator's outbound = what initiator shares = responder's inbound (what we receive)
+            // - initiator's inbound = what initiator wants = responder's outbound (what we share)
+            //
+            // So responder's perspective:
+            const responderLensConfig = {
+                inbound: request.lensConfig?.outbound || [],  // What we receive from initiator
+                outbound: request.lensConfig?.inbound || []   // What we share to initiator
+            };
+
+            // Build a synthetic response to process (as if we received it from ourselves)
+            // This sets up the capability and data replication for the responder
+            const syntheticResponse = {
+                requestId: request.id,
+                status: 'accepted',
+                responderHolonId: request.senderHolonId,
+                responderHolonName: request.senderHolonName,
+                lensConfig: request.lensConfig,
+                capabilities: request.capabilities || []
+            };
+
+            console.log('[Federation] Responder setting up data replication:', {
+                responderLensConfig,
+                initiatorHolonId: request.senderHolonId,
+                ourInboundLenses: responderLensConfig.inbound
+            });
+
+            // Process to store capabilities and register for inbound data
+            // Note: We use responder's inbound lenses to receive holograms from initiator
+            const result = await handshake.processFederationResponse(
+                holosphere,
+                syntheticResponse,
+                request.senderPubKey,
+                {
+                    holonId: currentHolonId,
+                    inboundLenses: responderLensConfig.inbound
+                }
+            );
+            console.log('[Federation] Responder processFederationResponse result:', result);
+
             // Actually store the federation relationship in holosphere
+            // Use responder's perspective for lensConfig
             await holosphere.federateHolon(currentHolonId, request.senderHolonId, {
-                lensConfig: request.lensConfig
+                lensConfig: responderLensConfig,
+                partnerName: request.senderHolonName
             });
 
             pendingFederationRequests.updateStatus(requestId, 'accepted');
@@ -1126,56 +1218,57 @@
                     ></textarea>
                 </div>
 
-                <!-- Lens Selection -->
-                <div class="federation__lens-selection">
-                    <div class="federation__lens-group">
-                        <label class="federation__lens-group-label">
-                            <span class="federation__lens-direction federation__lens-direction--receive">↓</span>
-                            Receive (what you want from them)
-                        </label>
-                        <div class="federation__lens-chips">
-                            {#each AVAILABLE_LENSES as lens}
-                                <button
-                                    type="button"
-                                    class="federation__lens-chip"
-                                    class:federation__lens-chip--selected={selectedInboundLenses.includes(lens)}
-                                    on:click={() => {
-                                        if (selectedInboundLenses.includes(lens)) {
-                                            selectedInboundLenses = selectedInboundLenses.filter(l => l !== lens);
-                                        } else {
-                                            selectedInboundLenses = [...selectedInboundLenses, lens];
-                                        }
-                                    }}
-                                >
-                                    {lens}
-                                </button>
-                            {/each}
+                <!-- Unified Lens Permissions -->
+                <div class="federation__permissions">
+                    <div class="federation__permissions-header">
+                        <span class="federation__permissions-label">Lens</span>
+                        <div class="federation__permissions-cols">
+                            <span class="federation__permissions-col" title="Request to read their data">↓R</span>
+                            <span class="federation__permissions-col" title="Request to write their data">↓W</span>
+                            <span class="federation__permissions-col" title="Share your data for reading">↑R</span>
+                            <span class="federation__permissions-col" title="Share your data for writing">↑W</span>
                         </div>
                     </div>
-
-                    <div class="federation__lens-group">
-                        <label class="federation__lens-group-label">
-                            <span class="federation__lens-direction federation__lens-direction--share">↑</span>
-                            Share (what you'll give them)
-                        </label>
-                        <div class="federation__lens-chips">
-                            {#each AVAILABLE_LENSES as lens}
-                                <button
-                                    type="button"
-                                    class="federation__lens-chip"
-                                    class:federation__lens-chip--selected={selectedOutboundLenses.includes(lens)}
-                                    on:click={() => {
-                                        if (selectedOutboundLenses.includes(lens)) {
-                                            selectedOutboundLenses = selectedOutboundLenses.filter(l => l !== lens);
-                                        } else {
-                                            selectedOutboundLenses = [...selectedOutboundLenses, lens];
-                                        }
-                                    }}
-                                >
-                                    {lens}
-                                </button>
-                            {/each}
+                    {#each AVAILABLE_LENSES as lens}
+                        <div class="federation__permissions-row">
+                            <span class="federation__permissions-lens">{lens}</span>
+                            <div class="federation__permissions-checkboxes">
+                                <label class="federation__perm-check federation__perm-check--receive" title="Request to read their {lens}">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'receive', 'read')}
+                                        on:change={() => togglePermission(lens, 'receive', 'read')}
+                                    />
+                                </label>
+                                <label class="federation__perm-check federation__perm-check--receive-write" title="Request to write their {lens}">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'receive', 'write')}
+                                        on:change={() => togglePermission(lens, 'receive', 'write')}
+                                    />
+                                </label>
+                                <label class="federation__perm-check federation__perm-check--share" title="Share your {lens} for reading">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'share', 'read')}
+                                        on:change={() => togglePermission(lens, 'share', 'read')}
+                                    />
+                                </label>
+                                <label class="federation__perm-check federation__perm-check--share-write" title="Share your {lens} for writing">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'share', 'write')}
+                                        on:change={() => togglePermission(lens, 'share', 'write')}
+                                    />
+                                </label>
+                            </div>
                         </div>
+                    {/each}
+                    <div class="federation__permissions-legend">
+                        <span><span class="federation__legend-icon federation__legend-icon--receive">↓</span> Receive from them</span>
+                        <span><span class="federation__legend-icon federation__legend-icon--share">↑</span> Share with them</span>
+                        <span><strong>R</strong> = Read</span>
+                        <span><strong>W</strong> = Write</span>
                     </div>
                 </div>
             </div>
@@ -1729,84 +1822,136 @@
         color: var(--color-text-muted, #6b7280);
     }
 
-    /* Lens Selection in Add Dialog */
-    .federation__lens-selection {
+    /* Unified Permissions Table */
+    .federation__permissions {
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-3, 0.75rem);
         margin-top: var(--spacing-4, 1rem);
         padding-top: var(--spacing-3, 0.75rem);
         border-top: 1px solid var(--color-border, #374151);
     }
 
-    .federation__lens-group {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-2, 0.5rem);
-    }
-
-    .federation__lens-group-label {
+    .federation__permissions-header {
         display: flex;
         align-items: center;
-        gap: var(--spacing-2, 0.5rem);
+        justify-content: space-between;
+        padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+        background: var(--color-bg-primary, #111827);
+        border-radius: var(--radius-md, 0.375rem) var(--radius-md, 0.375rem) 0 0;
+        border: 1px solid var(--color-border, #374151);
+        border-bottom: none;
+    }
+
+    .federation__permissions-label {
         font-size: var(--font-size-sm, 0.875rem);
-        font-weight: var(--font-weight-medium, 500);
+        font-weight: var(--font-weight-semibold, 600);
         color: var(--color-text-secondary, #d1d5db);
     }
 
-    .federation__lens-direction {
+    .federation__permissions-cols {
+        display: flex;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__permissions-col {
+        width: 28px;
+        text-align: center;
+        font-size: 11px;
+        font-weight: var(--font-weight-semibold, 600);
+        color: var(--color-text-muted, #6b7280);
+        cursor: help;
+    }
+
+    .federation__permissions-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+        background: var(--color-bg-primary, #111827);
+        border-left: 1px solid var(--color-border, #374151);
+        border-right: 1px solid var(--color-border, #374151);
+        border-bottom: 1px solid var(--color-border, #374151);
+    }
+
+    .federation__permissions-row:last-of-type {
+        border-radius: 0 0 var(--radius-md, 0.375rem) var(--radius-md, 0.375rem);
+    }
+
+    .federation__permissions-row:hover {
+        background: rgba(79, 70, 229, 0.05);
+    }
+
+    .federation__permissions-lens {
+        font-size: var(--font-size-sm, 0.875rem);
+        color: var(--color-text-primary, #ffffff);
+        text-transform: capitalize;
+    }
+
+    .federation__permissions-checkboxes {
+        display: flex;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__perm-check {
+        width: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+    .federation__perm-check input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: var(--color-accent, #4f46e5);
+    }
+
+    .federation__perm-check--receive input[type="checkbox"]:checked {
+        accent-color: #22c55e;
+    }
+
+    .federation__perm-check--receive-write input[type="checkbox"]:checked {
+        accent-color: #a855f7;
+    }
+
+    .federation__perm-check--share input[type="checkbox"]:checked {
+        accent-color: #3b82f6;
+    }
+
+    .federation__perm-check--share-write input[type="checkbox"]:checked {
+        accent-color: #f97316;
+    }
+
+    .federation__permissions-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-3, 0.75rem);
+        margin-top: var(--spacing-3, 0.75rem);
+        font-size: 11px;
+        color: var(--color-text-muted, #6b7280);
+    }
+
+    .federation__legend-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 20px;
-        height: 20px;
-        border-radius: var(--radius-sm, 0.25rem);
-        font-size: 12px;
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        font-size: 10px;
         font-weight: bold;
+        margin-right: 2px;
     }
 
-    .federation__lens-direction--receive {
+    .federation__legend-icon--receive {
         background: rgba(34, 197, 94, 0.2);
         color: #86efac;
     }
 
-    .federation__lens-direction--share {
+    .federation__legend-icon--share {
         background: rgba(59, 130, 246, 0.2);
         color: #93c5fd;
-    }
-
-    .federation__lens-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--spacing-1, 0.25rem);
-    }
-
-    .federation__lens-chip {
-        padding: 4px 10px;
-        font-size: 11px;
-        font-weight: var(--font-weight-medium, 500);
-        background: var(--color-bg-primary, #111827);
-        border: 1px solid var(--color-border, #374151);
-        border-radius: var(--radius-full, 9999px);
-        color: var(--color-text-muted, #6b7280);
-        cursor: pointer;
-        transition: all 150ms ease;
-    }
-
-    .federation__lens-chip:hover {
-        border-color: var(--color-accent, #4f46e5);
-        color: var(--color-text-secondary, #d1d5db);
-    }
-
-    .federation__lens-chip--selected {
-        background: var(--color-accent, #4f46e5);
-        border-color: var(--color-accent, #4f46e5);
-        color: white;
-    }
-
-    .federation__lens-chip--selected:hover {
-        background: var(--color-accent-dark, #4338ca);
-        border-color: var(--color-accent-dark, #4338ca);
     }
 
     /* Update section styles */

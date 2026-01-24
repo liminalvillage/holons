@@ -27,6 +27,8 @@ export interface PendingRequest {
   lensConfig: {
     inbound: string[];
     outbound: string[];
+    writeInbound?: string[];
+    writeOutbound?: string[];
   };
   capabilities: CapabilityInfo[];
   timestamp: number;
@@ -294,7 +296,7 @@ export function createIncomingRequest(
   senderNpub: string,
   senderHolonId: string,
   senderHolonName: string,
-  lensConfig: { inbound: string[]; outbound: string[] },
+  lensConfig: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] },
   capabilities: CapabilityInfo[],
   message?: string
 ): PendingRequest {

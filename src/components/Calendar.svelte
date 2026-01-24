@@ -502,14 +502,38 @@
         return style;
     }
 
-    function loadTasks() {
+    async function loadTasks() {
         if (!holosphere || !$ID) return;
 
+        // First, load initial data (subscription only gets updates, not existing data)
+        try {
+            const initialData = await holosphere.getAll($ID, 'quests');
+            if (initialData) {
+                // Handle both array and object formats
+                const items = Array.isArray(initialData) ? initialData : Object.values(initialData);
+                const newTasks: Record<string, any> = {};
+
+                items.forEach((task: any) => {
+                    if (task && task.id && task.when) {
+                        // Include any quest/task with a date, regardless of type
+                        newTasks[task.id] = task;
+                    }
+                });
+
+                tasks = newTasks;
+                console.log(`[Calendar] Loaded ${Object.keys(tasks).length} scheduled items`);
+            }
+        } catch (error) {
+            console.error('[Calendar] Error loading initial tasks:', error);
+        }
+
+        // Then subscribe for real-time updates
         holosphere.subscribe($ID, 'quests', (newTask: any, key?: string) => {
             if (!key) return; // Skip if no key
             if (newTask) {
                 const task = newTask;
                 if (task.when) {
+                    // Include any quest/task with a date, regardless of type
                     tasks[key] = task;
                     tasks = tasks;
                 } else {

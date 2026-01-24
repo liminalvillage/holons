@@ -3,6 +3,7 @@
 	import { Users, Bell } from 'svelte-feathers';
 	import HolonItem from './HolonItem.svelte';
 	import FederationRequestCard from './FederationRequestCard.svelte';
+	import LensUpdateNotification from './LensUpdateNotification.svelte';
 
 	type FederationStatus = 'none' | 'pending_outgoing' | 'pending_incoming' | 'accepted';
 
@@ -10,7 +11,13 @@
 		id: string;
 		name: string;
 		federationStatus?: FederationStatus;
-		lensConfig?: { inbound: string[]; outbound: string[] };
+		lensConfig?: {
+			inbound: string[];
+			outbound: string[];
+			writeInbound?: string[];
+			writeOutbound?: string[];
+		};
+		accessLevel?: 'none' | 'read' | 'write' | 'member';
 	}
 
 	interface IncomingRequest {
@@ -18,9 +25,9 @@
 		senderPubKey: string;
 		senderHolonName: string;
 		senderHolonId?: string;
-		lensConfig: { inbound: string[]; outbound: string[] };
+		lensConfig: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] };
 		message?: string;
-		type?: 'federation_request' | 'lens_update';
+		requestKind?: 'lens_update';  // If set, it's a lens update; otherwise it's a federation request
 	}
 
 	export let holons: Holon[] = [];
@@ -74,8 +81,8 @@
 	);
 
 	// Separate federation requests from lens update requests
-	$: federationRequests = incomingRequests.filter(r => r.type !== 'lens_update');
-	$: lensUpdateRequests = incomingRequests.filter(r => r.type === 'lens_update');
+	$: federationRequests = incomingRequests.filter(r => r.requestKind !== 'lens_update');
+	$: lensUpdateRequests = incomingRequests.filter(r => r.requestKind === 'lens_update');
 </script>
 
 <div class="holon-list">
@@ -109,30 +116,6 @@
 			</div>
 		{/if}
 
-		<!-- Lens Update Requests -->
-		{#if lensUpdateRequests.length > 0}
-			<div class="holon-list__section holon-list__section--updates">
-				<span class="holon-list__section-title holon-list__section-title--update">
-					<Bell size={10} />
-					Lens Updates ({lensUpdateRequests.length})
-				</span>
-				{#each lensUpdateRequests as request (request.id)}
-					<FederationRequestCard
-						id={request.id}
-						senderPubKey={request.senderPubKey}
-						senderHolonName={request.senderHolonName}
-						type="lens_update"
-						message={request.message || ''}
-						theirOutbound={request.lensConfig?.outbound || []}
-						theirInbound={request.lensConfig?.inbound || []}
-						isProcessing={processingRequestId === request.id}
-						on:accept={handleAccept}
-						on:decline={handleDecline}
-					/>
-				{/each}
-			</div>
-		{/if}
-
 		<!-- Home Holon - Always at top, uses HolonItem with key management -->
 		{#if showHomeSection && homeHolonId}
 			<div class="holon-list__home">
@@ -151,13 +134,33 @@
 		{/if}
 
 		<!-- Federated holons (accepted) -->
-		{#if acceptedHolons.length > 0}
+		{#if acceptedHolons.length > 0 || lensUpdateRequests.length > 0}
 			<div class="holon-list__section">
 				<span class="holon-list__section-title">
 					<Users size={10} />
 					Federated
+					{#if lensUpdateRequests.length > 0}
+						<span class="holon-list__update-badge">{lensUpdateRequests.length}</span>
+					{/if}
 				</span>
+
+				<!-- Lens Update Notifications (compact, inline with federation) -->
+				{#each lensUpdateRequests as request (request.id)}
+					<LensUpdateNotification
+						id={request.id}
+						senderPubKey={request.senderPubKey}
+						senderHolonName={request.senderHolonName}
+						theirOutbound={request.lensConfig?.outbound || []}
+						theirInbound={request.lensConfig?.inbound || []}
+						message={request.message || ''}
+						isProcessing={processingRequestId === request.id}
+						on:accept={handleAccept}
+						on:decline={handleDecline}
+					/>
+				{/each}
+
 				{#each acceptedHolons as holon (holon.id)}
+					{@const hasWriteAccess = (holon.lensConfig?.writeInbound?.length ?? 0) > 0}
 					<HolonItem
 						id={holon.id}
 						name={holon.name}
@@ -168,6 +171,9 @@
 						federationStatus={holon.federationStatus || 'none'}
 						inboundLenses={holon.lensConfig?.inbound || []}
 						outboundLenses={holon.lensConfig?.outbound || []}
+						writeInboundLenses={holon.lensConfig?.writeInbound || []}
+						writeOutboundLenses={holon.lensConfig?.writeOutbound || []}
+						accessLevel={hasWriteAccess ? 'write' : 'read'}
 						{showPinButton}
 						showStarButton={false}
 						{showRemoveButton}
@@ -194,6 +200,9 @@
 						federationStatus={holon.federationStatus || 'none'}
 						inboundLenses={holon.lensConfig?.inbound || []}
 						outboundLenses={holon.lensConfig?.outbound || []}
+						writeInboundLenses={holon.lensConfig?.writeInbound || []}
+						writeOutboundLenses={holon.lensConfig?.writeOutbound || []}
+						accessLevel="none"
 						showPinButton={false}
 						showStarButton={false}
 						{showRemoveButton}
@@ -325,16 +334,14 @@
 		color: var(--color-accent, #4f46e5);
 	}
 
-	/* Lens Updates Section */
-	.holon-list__section--updates {
-		background: rgba(245, 158, 11, 0.05);
-		border-bottom: 1px solid var(--color-border, #374151);
-		padding-bottom: var(--spacing-2, 0.5rem);
-		margin-bottom: var(--spacing-2, 0.5rem);
-	}
-
-	.holon-list__section-title--update {
-		color: var(--color-warning, #f59e0b);
+	/* Update badge in section title */
+	.holon-list__update-badge {
+		background: var(--color-warning, #f59e0b);
+		color: white;
+		font-size: 9px;
+		padding: 1px 5px;
+		border-radius: var(--radius-full, 9999px);
+		margin-left: var(--spacing-1, 0.25rem);
 	}
 
 	/* Legacy request styles - kept for backwards compatibility */
