@@ -9,11 +9,15 @@
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
 	import RoleModal from "./RoleModal.svelte";
+	import RoleWeekView from "./RoleWeekView.svelte";
+	import PermanentAssignmentNotification from "./PermanentAssignmentNotification.svelte";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import StatCard from "./shared/StatCard.svelte";
 	import StatGrid from "./shared/StatGrid.svelte";
-	import { Users, UserCheck, UserX, Plus } from 'svelte-feathers';
+	import { Users, UserCheck, UserX, Plus, Calendar } from 'svelte-feathers';
 	import { fetchHolonName } from "../utils/holonNames";
+	import { getWeekKey, toISODateString } from "../utils/weekUtils";
+	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
 	/**
 	 * @type {Record<string, any>}
@@ -33,12 +37,18 @@
 
 	// Initialize preferences with default values
 	let isListView = false;
+	let viewMode: 'cards' | 'week' = 'cards';
+	let notification: { roleName: string; userName: string } | null = null;
 
 	// Load preferences only in browser environment
 	onMount(() => {
 		if (browser) {
 			isListView =
 				localStorage.getItem("rolesViewMode") === "list" || false;
+			const savedViewMode = localStorage.getItem("rolesViewModeType");
+			if (savedViewMode === 'week') {
+				viewMode = 'week';
+			}
 		}
 	});
 
@@ -46,7 +56,38 @@
 	$: {
 		if (browser) {
 			localStorage.setItem("rolesViewMode", isListView ? "list" : "grid");
+			localStorage.setItem("rolesViewModeType", viewMode);
 		}
+	}
+
+	// Get today's assigned user for a role (from week schedule or permanent)
+	function getTodayAssignment(role: any): { id: string; username: string } | null {
+		// Check for permanent assignment first
+		if (role.participants?.some((p: any) => p.isPermanent)) {
+			const permanent = role.participants.find((p: any) => p.isPermanent);
+			return permanent || role.participants[0];
+		}
+
+		// Check week schedule for today
+		const today = new Date();
+		const todayStr = toISODateString(today);
+		const currentWeekKey = getWeekKey(today);
+
+		if (role.weekSchedule?.weekKey === currentWeekKey) {
+			const todayAssignment = role.weekSchedule.assignments?.find(
+				(a: any) => a.date === todayStr
+			);
+			if (todayAssignment?.users?.length > 0) {
+				return todayAssignment.users[0];
+			}
+		}
+
+		// Fall back to first participant
+		return role.participants?.[0] || null;
+	}
+
+	function handlePermanentAssignment(event: CustomEvent<{ roleName: string; userName: string }>) {
+		notification = event.detail;
 	}
 
 	let idStoreUnsubscribe: (() => void) | undefined;
@@ -384,27 +425,15 @@
 	}
 
 	function getRoleColor(role) {
-		if (!role.participants || role.participants.length === 0) {
+		// Check if there's an assignment for today (from week schedule or permanent)
+		const todayAssignment = getTodayAssignment(role);
+
+		if (!todayAssignment) {
 			return "#553333"; // Red tint for unassigned roles
 		}
-		if (role.when) {
-			const roleDate = new Date(role.when);
-			const today = new Date();
 
-			// If the role is in the past
-			if (roleDate < today) {
-				return "#553355"; // Purple tint for past roles
-			}
-
-			// If the role is today
-			if (roleDate.toDateString() === today.toDateString()) {
-				return "#335533"; // Green tint for today's roles
-			}
-
-			// If the role is in the future
-			return "#333355"; // Blue tint for future roles
-		}
-		return "#555555"; // Default gray for roles without dates
+		// Role has someone assigned for today - show as active/green
+		return "#335533"; // Green tint for assigned roles
 	}
 
 	let selectedRole = null;
@@ -423,10 +452,18 @@
 			participants: [],
 			created_at: new Date().toISOString()
 		};
-		// Save the new role to HoloSphere
-		await holosphere.put(activeHolonId, 'roles', newRole);
-		// Open the modal for editing
-		selectedRole = { key: newRoleId, role: newRole };
+		try {
+			// Save the new role to HoloSphere
+			await holosphere.put(activeHolonId, 'roles', newRole);
+			// Open the modal for editing
+			selectedRole = { key: newRoleId, role: newRole };
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error adding new role:', error);
+			}
+		}
 	}
 </script>
 
@@ -468,9 +505,9 @@
 			<div class="controls-row__right">
 				<div class="view-toggle">
 					<button
-						class="view-toggle__btn {isListView ? 'view-toggle__btn--active' : ''}"
+						class="view-toggle__btn {viewMode === 'cards' && isListView ? 'view-toggle__btn--active' : ''}"
 						title="List View"
-						on:click={() => (isListView = true)}
+						on:click={() => { viewMode = 'cards'; isListView = true; }}
 						aria-label="Switch to list view"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -483,9 +520,9 @@
 						</svg>
 					</button>
 					<button
-						class="view-toggle__btn {!isListView ? 'view-toggle__btn--active' : ''}"
+						class="view-toggle__btn {viewMode === 'cards' && !isListView ? 'view-toggle__btn--active' : ''}"
 						title="Grid View"
-						on:click={() => (isListView = false)}
+						on:click={() => { viewMode = 'cards'; isListView = false; }}
 						aria-label="Switch to grid view"
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -495,13 +532,37 @@
 							<rect x="3" y="14" width="7" height="7" />
 						</svg>
 					</button>
+					<button
+						class="view-toggle__btn {viewMode === 'week' ? 'view-toggle__btn--active' : ''}"
+						title="Week View"
+						on:click={() => viewMode = 'week'}
+						aria-label="Switch to week view"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+							<line x1="16" y1="2" x2="16" y2="6"></line>
+							<line x1="8" y1="2" x2="8" y2="6"></line>
+							<line x1="3" y1="10" x2="21" y2="10"></line>
+						</svg>
+					</button>
 				</div>
 			</div>
 		</div>
 
-		{#if isListView}
+		{#if viewMode === 'week'}
+			<RoleWeekView
+				roles={store}
+				{userStore}
+				{holosphere}
+				holonId={activeHolonId}
+				on:scheduleUpdated={() => {
+					console.log('[Roles.svelte] Week schedule updated');
+				}}
+			/>
+		{:else if isListView}
 			<div class="space-y-3">
 				{#each roles as [key, role]}
+					{@const todayAssignment = getTodayAssignment(role)}
 					<div
 						id={key}
 						class="w-full task-card relative cursor-pointer"
@@ -523,9 +584,9 @@
 								<div class="flex items-center gap-4 flex-1 min-w-0">
 									<!-- Role Icon -->
 									<div class="flex-shrink-0 w-12 h-12 rounded-xl bg-black/20 flex items-center justify-center text-2xl">
-										{role.participants?.length > 0 ? '👥' : '👤'}
+										{todayAssignment ? '👥' : '👤'}
 									</div>
-									
+
 									<!-- Main Content -->
 									<div class="flex-1 min-w-0">
 										<h3 class="text-lg font-bold text-white mb-1 line-clamp-2">
@@ -540,53 +601,35 @@
 								</div>
 
 								<div class="flex items-center gap-4 text-sm whitespace-nowrap">
-									{#if role.when}
-										<div class="text-sm font-medium text-white/90">
-											{formatDate(role.when)} @ {formatTime(role.when)}
-											{#if role.ends}- {formatTime(role.ends)}{/if}
-										</div>
-									{/if}
+									<!-- Show "Today" indicator -->
+									<div class="text-xs text-white/60 font-medium uppercase tracking-wide">
+										Today
+									</div>
 
-									{#if role.participants?.length > 0}
+									{#if todayAssignment}
 										<div class="flex items-center gap-3">
-											<!-- Participant Names -->
+											<!-- Participant Name -->
 											<div class="text-white/90 text-sm font-medium">
-												{#if role.participants.length === 1}
-													{role.participants[0].username?.split(' ')[0] || role.participants[0].username}
-												{:else if role.participants.length <= 3}
-													{role.participants.map(p => p.username?.split(' ')[0] || p.username).join(", ")}
-												{:else}
-													{role.participants.slice(0, 3).map(p => p.username?.split(' ')[0] || p.username).join(", ")}
-													<span class="text-white/70"> +{role.participants.length - 3} more</span>
-												{/if}
+												{todayAssignment.username?.split(' ')[0] || todayAssignment.username}
 											</div>
-											
-											<!-- Participant Icons -->
-											<div class="flex -space-x-2 relative group">
-												{#each role.participants.slice(0, 3) as participant}
-													<div class="relative">
-														<img
-															class="w-8 h-8 rounded-full border-2 border-white/30 object-cover"
-															src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-															alt={participant.username}
-															on:error={(e) => {
-																e.currentTarget.style.display = 'none';
-																e.currentTarget.nextElementSibling.style.display = 'flex';
-															}}
-														/>
-														<div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-sm font-bold border-2 border-white/30" style="display: none;">
-															{participant.username ? participant.username[0] : '?'}
-														</div>
-														<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
-															{participant.username}
-														</div>
-													</div>
-												{/each}
-												{#if role.participants.length > 3}
-													<div class="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center text-xs text-white font-bold border-2 border-white/30">
-														+{role.participants.length - 3}
-													</div>
-												{/if}
+
+											<!-- Participant Icon -->
+											<div class="relative group">
+												<img
+													class="w-8 h-8 rounded-full border-2 border-white/30 object-cover"
+													src={`https://telegram.holons.io/getavatar?user_id=${todayAssignment.id}`}
+													alt={todayAssignment.username}
+													on:error={(e) => {
+														e.currentTarget.style.display = 'none';
+														e.currentTarget.nextElementSibling.style.display = 'flex';
+													}}
+												/>
+												<div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-sm font-bold border-2 border-white/30" style="display: none;">
+													{todayAssignment.username ? todayAssignment.username[0] : '?'}
+												</div>
+												<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+													{todayAssignment.username}
+												</div>
 											</div>
 										</div>
 									{:else}
@@ -603,6 +646,7 @@
 		{:else}
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 				{#each roles as [key, role]}
+					{@const todayAssignment = getTodayAssignment(role)}
 					<div
 						id={key}
 						class="task-card relative cursor-pointer"
@@ -620,67 +664,43 @@
 							class="p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005] h-full flex flex-col"
 							style="background-color: {getRoleColor(role)}; color: white;"
 						>
-							<!-- Header with date/time -->
-							{#if role.when}
-								<div class="text-center mb-2">
-									<div class="text-xs text-white/80 font-medium">
-										{formatDate(role.when)} @ {formatTime(role.when)}
-										{#if role.ends}- {formatTime(role.ends)}{/if}
-									</div>
+							<!-- Header with "Today" indicator -->
+							<div class="text-center mb-2">
+								<div class="text-xs text-white/60 font-medium uppercase tracking-wide">
+									Today
 								</div>
-							{/if}
+							</div>
 
-							<!-- Participants Section - Prominent and Centered -->
+							<!-- Today's Assignment Section - Prominent and Centered -->
 							<div class="flex-grow flex flex-col items-center justify-center mb-3">
-								{#if role.participants?.length > 0}
+								{#if todayAssignment}
 									<div class="text-center mb-4">
-										<!-- Participant Icons - Centered -->
-										<div class="flex -space-x-3 relative group mb-3">
-											{#each role.participants.slice(0, 4) as participant}
-												<div class="relative">
-													<img
-														class="w-16 h-16 rounded-full border-4 border-white/30 object-cover"
-														src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-														alt={participant.username}
-														on:error={(e) => {
-															e.currentTarget.style.display = 'none';
-															e.currentTarget.nextElementSibling.style.display = 'flex';
-														}}
-													/>
-													<div class="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-white text-xl font-bold border-4 border-white/30" style="display: none;">
-														{participant.username ? participant.username[0] : '?'}
-													</div>
-													<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-sm rounded py-2 px-3 bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
-														{participant.username}
-													</div>
+										<!-- Today's Assigned User Icon -->
+										<div class="relative group mb-3 flex justify-center">
+											<div class="relative">
+												<img
+													class="w-16 h-16 rounded-full border-4 border-white/30 object-cover"
+													src={`https://telegram.holons.io/getavatar?user_id=${todayAssignment.id}`}
+													alt={todayAssignment.username}
+													on:error={(e) => {
+														e.currentTarget.style.display = 'none';
+														e.currentTarget.nextElementSibling.style.display = 'flex';
+													}}
+												/>
+												<div class="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-white text-xl font-bold border-4 border-white/30" style="display: none;">
+													{todayAssignment.username ? todayAssignment.username[0] : '?'}
 												</div>
-											{/each}
-											{#if role.participants.length > 4}
-												<div class="w-16 h-16 rounded-full bg-white/30 flex items-center justify-center text-lg font-bold border-4 border-white/30 relative group">
-													<span>+{role.participants.length - 4}</span>
-													<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-sm rounded py-2 px-3 bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
-														{role.participants.slice(4).map((p) => p.username).join(", ")}
-													</div>
+												<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-sm rounded py-2 px-3 bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+													{todayAssignment.username}
 												</div>
-											{/if}
+											</div>
 										</div>
-										
-										<!-- Participant Names - Below Icons -->
+
+										<!-- Today's Assigned User Name -->
 										<div class="text-center">
-											{#if role.participants.length === 1}
-												<div class="text-sm text-white/90 font-medium">
-													{role.participants[0].username?.split(' ')[0] || role.participants[0].username}
-												</div>
-											{:else if role.participants.length <= 3}
-												<div class="text-sm text-white/90 font-medium">
-													{role.participants.map(p => p.username?.split(' ')[0] || p.username).join(", ")}
-												</div>
-											{:else}
-												<div class="text-sm text-white/90 font-medium">
-													{role.participants.slice(0, 3).map(p => p.username?.split(' ')[0] || p.username).join(", ")}
-													<span class="text-white/70"> +{role.participants.length - 3} more</span>
-												</div>
-											{/if}
+											<div class="text-sm text-white/90 font-medium">
+												{todayAssignment.username?.split(' ')[0] || todayAssignment.username}
+											</div>
 										</div>
 									</div>
 								{:else}
@@ -737,6 +757,7 @@
 			}
 			selectedRole = null;
 		}}
+		on:permanentAssignment={handlePermanentAssignment}
 	/>
 {:else if selectedRole && !isUserStoreReady}
 	<div class="fixed inset-0 bg-black bg-opacity-70 z-[60] flex items-center justify-center p-4" aria-live="polite" aria-busy="true">
@@ -748,6 +769,14 @@
 			<span>Loading user data for modal...</span>
 		</div>
 	</div>
+{/if}
+
+{#if notification}
+	<PermanentAssignmentNotification
+		roleName={notification.roleName}
+		userName={notification.userName}
+		on:dismiss={() => notification = null}
+	/>
 {/if}
 
 <style>

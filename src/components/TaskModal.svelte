@@ -18,6 +18,9 @@
         subscribeToHolon,
         isSubscribed
     } from "../lib/holonCache";
+    import { nostrPublicKey } from "../lib/stores/nostr";
+    import { telegramStore } from "../lib/stores/telegram";
+    import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
     export let quest: any;
     export let questId: string;
@@ -40,8 +43,49 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
+    // Function to add current logged-in user to userStore if not already present
+    function ensureCurrentUserInStore(store: UserStore): UserStore {
+        const telegramState = telegramStore.getState();
+        const telegramUser = telegramState.user;
+        const pubKey = $nostrPublicKey;
+
+        // Check if Telegram user is logged in
+        if (telegramUser) {
+            const telegramId = String(telegramUser.id);
+            // Check if user already exists in store (by telegram ID)
+            const existsById = Object.values(store).some(u => String(u.id) === telegramId);
+            if (!existsById) {
+                // Add telegram user to store
+                const userKey = telegramUser.username || telegramId;
+                store[userKey] = {
+                    id: telegramId,
+                    first_name: telegramUser.first_name,
+                    last_name: telegramUser.last_name,
+                    username: telegramUser.username || telegramId,
+                    picture: telegramUser.photo_url
+                };
+            }
+        }
+        // Check if Nostr user is logged in (and not already covered by telegram)
+        else if (pubKey) {
+            // Check if user already exists in store (by pubKey)
+            const existsByPubKey = Object.values(store).some(u => u.id === pubKey);
+            if (!existsByPubKey) {
+                // Add nostr user to store with pubKey as ID (similar structure to telegram)
+                store[pubKey] = {
+                    id: pubKey,
+                    first_name: 'You',
+                    last_name: '',
+                    username: pubKey  // Use full pubKey as username (like telegram ID)
+                };
+            }
+        }
+
+        return store;
+    }
+
     // Use cached data immediately for instant display
-    let userStore: UserStore = getCachedUsersObject(holonId);
+    let userStore: UserStore = ensureCurrentUserInStore(getCachedUsersObject(holonId));
     let equation: ScoreEquation = getCachedEquation(holonId);
 
     let showDatePicker = false;
@@ -117,8 +161,8 @@
 
             // Preload in background (will refresh cache if stale)
             preloadHolon(holosphere, holonId).then(() => {
-                // Update local state from refreshed cache
-                userStore = getCachedUsersObject(holonId);
+                // Update local state from refreshed cache, ensuring current user is included
+                userStore = ensureCurrentUserInStore(getCachedUsersObject(holonId));
                 equation = getCachedEquation(holonId);
                 usersLoading = false;
             });
@@ -195,12 +239,20 @@
 
         const updatedQuest = { ...quest, ...updates };
 
-        // holosphere.put() is optimistic - caches locally and returns immediately
-        await holosphere.put(holonId, "quests", updatedQuest);
-        quest = updatedQuest;
+        try {
+            // holosphere.put() is optimistic - caches locally and returns immediately
+            await holosphere.put(holonId, "quests", updatedQuest);
+            quest = updatedQuest;
 
-        if (shouldClose) {
-            dispatch("close");
+            if (shouldClose) {
+                dispatch("close");
+            }
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("[TaskModal.svelte] Error updating quest:", error);
+            }
         }
     }
 
@@ -217,8 +269,12 @@
             try {
                 await holosphere.delete(holonId, "quests", questId);
                 dispatch("close", { deleted: true, questId });
-            } catch (error) {
-                console.error("Error deleting quest:", error);
+            } catch (error: any) {
+                if (error?.name === 'AuthorizationError') {
+                    notifyWriteDenied('Unable to delete - no write permission for this holon');
+                } else {
+                    console.error("Error deleting quest:", error);
+                }
             }
         }
     }
@@ -421,8 +477,12 @@
                                 fromTimeTracking: true, // Flag to identify expenses from time tracking
                                 questId: questId
                             });
-                        } catch (error) {
-                            console.error(`Error adding time tracking expense for user ${userID}:`, error);
+                        } catch (error: any) {
+                            if (error?.name === 'AuthorizationError') {
+                                notifyWriteDenied('Unable to save - no write permission for this holon');
+                            } else {
+                                console.error(`Error adding time tracking expense for user ${userID}:`, error);
+                            }
                         }
                     }
                 }
@@ -462,25 +522,45 @@
         // When updating user data (actions), use the canonical ID that holosphere.get/put expects for users.
         // This might be user.id (the original UUID-like ID) if it exists and is different from username.
         const canonicalUserIdForHolosphere = user.id || user.username; // Choose appropriately
-        const userData = (await holosphere.get(holonId, "users", canonicalUserIdForHolosphere)) || {
+        const existingUserData = await holosphere.get(holonId, "users", canonicalUserIdForHolosphere);
+
+        // Build full user data, ensuring all fields are saved to database
+        const userData = {
             id: user.id,
-            actions: [],
+            first_name: user.first_name,
+            last_name: user.last_name || '',
+            username: user.username,
+            actions: Array.isArray(existingUserData?.actions) ? existingUserData.actions : [],
+            // Preserve any other existing fields
+            ...(existingUserData || {})
         };
 
-        await holosphere.put(holonId, "users", {
-            ...userData,
-            id: user.id,
-            actions: [
-                ...(Array.isArray(userData.actions) ? userData.actions : []),
-                {
-                    type: "joined",
-                    action: quest.title,
-                    category: quest.category || "",
-                    amount: 1,
-                    timestamp: Date.now(),
-                },
-            ],
-        });
+        try {
+            await holosphere.put(holonId, "users", {
+                ...userData,
+                id: user.id,  // Ensure ID is set correctly
+                first_name: user.first_name,
+                last_name: user.last_name || '',
+                username: user.username,
+                actions: [
+                    ...userData.actions,
+                    {
+                        type: "joined",
+                        action: quest.title,
+                        category: quest.category || "",
+                        amount: 1,
+                        timestamp: Date.now(),
+                    },
+                ],
+            });
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+                return;
+            } else {
+                console.error("[TaskModal.svelte] Error saving user data:", error);
+            }
+        }
 
             // Update quest with new participants
     await updateQuest({ participants: newParticipantsArray });
@@ -489,11 +569,13 @@
     // Only attempt if user.id is a valid holon ID (non-empty string)
     if (user.id && typeof user.id === 'string' && user.id.trim() !== '' && user.id !== holonId) {
         try {
-            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
             await holosphere.put(user.id, 'quests', hologram);
-        } catch (error) {
-            // Silently ignore - user may not have a personal holon
-            console.debug(`[TaskModal.svelte] Could not create hologram in participant's holon (${user.id}):`, error);
+        } catch (error: any) {
+            // Silently ignore AuthorizationError for holograms - user may not have write access
+            if (error?.name !== 'AuthorizationError') {
+                console.debug(`[TaskModal.svelte] Could not create hologram in participant's holon (${user.id}):`, error);
+            }
         }
     }
     }
@@ -622,9 +704,13 @@
                         ...updatedQuest,
                         id: card.key,
                     })
-                    .catch((error) =>
-                        console.error("Error updating quest position:", error),
-                    );
+                    .catch((error: any) => {
+                        if (error?.name === 'AuthorizationError') {
+                            notifyWriteDenied('Unable to save - no write permission for this holon');
+                        } else {
+                            console.error("Error updating quest position:", error);
+                        }
+                    });
             }
             touchedCard = null;
         }
@@ -807,13 +893,17 @@
             };
 
             await holosphere.put(holonId, "checklists", newChecklist);
-            
+
             // Update the quest to include the checklist ID
             await updateQuest({ checklistId: newChecklist.id });
-            
+
             console.log(`Created checklist for task ${questId}: ${newChecklist.id}`);
-        } catch (error) {
-            console.error("Error creating checklist for task:", error);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Error creating checklist for task:", error);
+            }
         }
     }
 
@@ -858,10 +948,19 @@
             }
 
             // First check if there are any federated chats available
-            const fedInfo = await holosphere.getFederation(holonId);
+            // Federation relationships are stored on the home holon, not on federated partner holons
+            const federationSourceId = $nostrPublicKey || holonId;
+            const fedInfo = await holosphere.getFederation(federationSourceId);
+            console.log('[TaskModal] Federation info:', {
+                hasFederated: !!(fedInfo?.federated?.length),
+                federatedCount: fedInfo?.federated?.length || 0,
+                outboundCount: fedInfo?.outbound?.length || 0,
+                federated: fedInfo?.federated
+            });
 
             // Check if we have federated holons
-            const hasFederatedHolons = fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0;
+            // Use federated array (all partners) since propagate() uses federated || outbound
+            const hasFederatedHolons = fedInfo && fedInfo.federated && fedInfo.federated.length > 0;
 
             // If we have neither federation nor settings hex, show error
             if (!hasFederatedHolons && !settingsHex) {
@@ -876,7 +975,7 @@
 
             // Create a hologram for the quest to propagate
             // Use the full quest data instead of just the ID reference
-            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
 
             // Determine if this is an H3 holon by checking if it's a valid H3 cell
             let isH3Holon = false;
@@ -898,8 +997,12 @@
                     await holosphere.put(settingsHex, 'quests', hologram);
                     totalPublished++;
                     console.log('[TaskModal] Successfully published to settings hex');
-                } catch (error) {
-                    console.error('[TaskModal] Failed to publish to settings hex:', error);
+                } catch (error: any) {
+                    if (error?.name === 'AuthorizationError') {
+                        notifyWriteDenied('Unable to publish - no write permission for target holon');
+                    } else {
+                        console.error('[TaskModal] Failed to publish to settings hex:', error);
+                    }
                     publishErrors.push(`Settings hex: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 }
             }

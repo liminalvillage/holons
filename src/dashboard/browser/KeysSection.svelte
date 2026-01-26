@@ -97,15 +97,26 @@
 	}
 </script>
 
-<div class="keys-section">
+<div class="keys-section" class:keys-section--public={isPublicMode}>
 	<button
 		class="keys-section__header"
 		on:click={toggleExpanded}
 		aria-expanded={isExpanded}
 	>
 		<div class="keys-section__header-left">
-			<Key size="16" />
-			<span>Keys & Access</span>
+			<div class="keys-section__icon" class:keys-section__icon--public={isPublicMode}>
+				{#if isPublicMode}
+					<i class="fas fa-globe"></i>
+				{:else}
+					<Key size="16" />
+				{/if}
+			</div>
+			<div class="keys-section__header-info">
+				<span class="keys-section__header-title">{isPublicMode ? 'Guest Mode' : 'Identity'}</span>
+				<span class="keys-section__header-subtitle">
+					{isPublicMode ? 'Click to sign in' : shortenedPubKey}
+				</span>
+			</div>
 		</div>
 		<div class="keys-section__header-right">
 			<span class="keys-section__status" class:keys-section__status--public={isPublicMode}>
@@ -119,7 +130,7 @@
 		<div class="keys-section__content" transition:slide={{ duration: 200 }}>
 			{#if currentView === 'main'}
 				<!-- Identity Status -->
-				<div class="keys-section__identity">
+				<div class="keys-section__identity" class:keys-section__identity--public={isPublicMode}>
 					<div class="keys-section__identity-icon" class:keys-section__identity-icon--public={isPublicMode}>
 						{#if isPublicMode}
 							<i class="fas fa-globe"></i>
@@ -129,9 +140,13 @@
 					</div>
 					<div class="keys-section__identity-info">
 						<div class="keys-section__identity-mode">
-							{isPublicMode ? 'Public Space' : 'Private Identity'}
+							{isPublicMode ? 'Guest Mode' : 'Private Identity'}
 						</div>
-						{#if $nostrPublicKey}
+						{#if isPublicMode}
+							<div class="keys-section__identity-hint">
+								Read-only access
+							</div>
+						{:else if $nostrPublicKey}
 							<div class="keys-section__identity-key">
 								{shortenedPubKey}
 								<button
@@ -153,13 +168,14 @@
 				<!-- Actions -->
 				<div class="keys-section__actions">
 					{#if isPublicMode}
-						<button class="keys-section__action" on:click={generateNewKey} disabled={isProcessing}>
+						<p class="keys-section__login-prompt">Sign in to create and edit holons</p>
+						<button class="keys-section__action keys-section__action--primary" on:click={generateNewKey} disabled={isProcessing}>
 							<i class="fas fa-plus"></i>
-							<span>Create Identity</span>
+							<span>Create New Identity</span>
 						</button>
 						<button class="keys-section__action" on:click={() => currentView = 'import'}>
 							<Upload size="14" />
-							<span>Import Key</span>
+							<span>Import Private Key</span>
 						</button>
 					{:else}
 						<button class="keys-section__action" on:click={() => showPrivateKey = !showPrivateKey}>
@@ -225,6 +241,11 @@
 <style>
 	.keys-section {
 		border-bottom: 1px solid var(--color-border, #374151);
+		background: var(--color-bg-primary, #111827);
+	}
+
+	.keys-section--public {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), transparent);
 	}
 
 	.keys-section__header {
@@ -247,9 +268,43 @@
 	.keys-section__header-left {
 		display: flex;
 		align-items: center;
-		gap: var(--spacing-2, 0.5rem);
+		gap: var(--spacing-3, 0.75rem);
+	}
+
+	.keys-section__icon {
+		width: 36px;
+		height: 36px;
+		border-radius: var(--radius-md, 0.375rem);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--color-accent-subtle, rgba(79, 70, 229, 0.2));
+		color: var(--color-accent-light, #818cf8);
+		flex-shrink: 0;
+	}
+
+	.keys-section__icon--public {
+		background: rgba(16, 185, 129, 0.2);
+		color: #10b981;
+	}
+
+	.keys-section__header-info {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 2px;
+	}
+
+	.keys-section__header-title {
 		font-size: var(--font-size-sm, 0.875rem);
-		font-weight: var(--font-weight-medium, 500);
+		font-weight: var(--font-weight-semibold, 600);
+		color: var(--color-text-primary, #ffffff);
+	}
+
+	.keys-section__header-subtitle {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: var(--color-text-muted, #6b7280);
+		font-family: monospace;
 	}
 
 	.keys-section__header-right {
@@ -376,6 +431,31 @@
 
 	.keys-section__action--danger:hover {
 		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.keys-section__action--primary {
+		background: var(--color-accent, #4f46e5);
+		color: white;
+	}
+
+	.keys-section__action--primary:hover {
+		background: var(--color-accent-dark, #4338ca);
+	}
+
+	.keys-section__identity--public {
+		border: 1px dashed rgba(16, 185, 129, 0.3);
+	}
+
+	.keys-section__identity-hint {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: #10b981;
+	}
+
+	.keys-section__login-prompt {
+		font-size: var(--font-size-xs, 0.75rem);
+		color: var(--color-text-muted, #6b7280);
+		margin: 0 0 var(--spacing-2, 0.5rem) 0;
+		text-align: center;
 	}
 
 	.keys-section__private-key {

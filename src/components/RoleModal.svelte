@@ -8,7 +8,8 @@
 
     import { createEventDispatcher, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
-    
+    import { notifyWriteDenied } from '../lib/stores/writeNotifications';
+
     export let role: any;
     export let roleId: string;
     export let userStore: Record<string, any>;
@@ -70,15 +71,31 @@
 
     async function updateRole(updates: any) {
         const updatedRole = { ...role, ...updates };
-        await holosphere.put(holonId, 'roles', updatedRole);
-        role = updatedRole;
+        try {
+            await holosphere.put(holonId, 'roles', updatedRole);
+            role = updatedRole;
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error('[RoleModal.svelte] Error updating role:', error);
+            }
+        }
     }
 
     async function deleteRole() {
         if (confirm('Are you sure you want to delete this role?')) {
-            await holosphere.delete(holonId, 'roles', roleId);
-            dispatch('deleted', { roleId: roleId });
-            dispatch('close');
+            try {
+                await holosphere.delete(holonId, 'roles', roleId);
+                dispatch('deleted', { roleId: roleId });
+                dispatch('close');
+            } catch (error: any) {
+                if (error?.name === 'AuthorizationError') {
+                    notifyWriteDenied('Unable to delete - no write permission for this holon');
+                } else {
+                    console.error('[RoleModal.svelte] Error deleting role:', error);
+                }
+            }
         }
     }
 
@@ -107,26 +124,35 @@
         console.log(`[RoleModal.svelte] addParticipant called with userId: '${userId}'`);
         console.log(`[RoleModal.svelte] userStore keys:`, Object.keys(userStore || {}));
         console.log(`[RoleModal.svelte] Looking for user with key: '${userId}'`);
-        
+
         const user = userStore[userId];
         console.log(`[RoleModal.svelte] Found user:`, user);
-        
+
         if (!user) {
             console.error(`[RoleModal.svelte] User not found in userStore with key '${userId}'`);
             return;
         }
-        
+
         const participants = [...(role.participants || [])];
-        
+
         if (!participants.some((p: { id: string }) => p.id === userId)) {
+            const username = user.first_name + (user.last_name ? ' ' + user.last_name : '');
             const newParticipant = {
                 id: userId,
-                username: user.first_name + (user.last_name ? ' ' + user.last_name : '')
+                username,
+                isPermanent: true,
+                assigned_at: new Date().toISOString()
             };
-            console.log(`[RoleModal.svelte] Adding new participant:`, newParticipant);
-            
+            console.log(`[RoleModal.svelte] Adding new participant as permanent:`, newParticipant);
+
             participants.push(newParticipant);
             await updateRole({ participants });
+
+            // Dispatch event to show notification about permanent assignment
+            dispatch('permanentAssignment', {
+                roleName: role.title,
+                userName: username
+            });
         } else {
             console.log(`[RoleModal.svelte] User '${userId}' is already a participant`);
         }
@@ -210,6 +236,16 @@
                                 + Add Participant
                             {/if}
                         </button>
+                    </div>
+
+                    <!-- Permanent assignment notice -->
+                    <div class="flex items-start gap-2 p-3 bg-amber-900/30 border border-amber-700/50 rounded-lg text-sm">
+                        <svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <span class="text-amber-200/90">Assignments made here are <strong>permanent</strong> and will override the weekly schedule for all days.</span>
                     </div>
 
                     <!-- Current Participants List -->

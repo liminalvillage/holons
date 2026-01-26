@@ -53,27 +53,32 @@
 </script>
 
 <div class="flow-controls">
-  <div class="control-section">
-    <div class="control-group">
-      <label class="control-label">
-        Interior / Exterior Split
-        <span class="control-value">{interiorPercent}% / {exteriorPercent}%</span>
-      </label>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        value={interiorPercent}
-        on:input={handleInteriorChange}
-        class="slider interior-slider"
-      />
-      <div class="slider-labels">
-        <span>Interior</span>
-        <span>Exterior</span>
+  <!-- Prominent Flow Distribution Bar -->
+  <div class="flow-distribution-bar">
+    <div class="distribution-header">
+      <span class="distribution-title">Flow Distribution</span>
+      <span class="distribution-values">{interiorPercent}% Internal / {exteriorPercent}% External</span>
+    </div>
+    <div class="distribution-track">
+      <div class="distribution-interior" style="width: {interiorPercent}%;">
+        <span class="distribution-segment-label">Interior</span>
+      </div>
+      <div class="distribution-exterior" style="width: {exteriorPercent}%;">
+        <span class="distribution-segment-label">Exterior</span>
       </div>
     </div>
+    <input
+      type="range"
+      min="0"
+      max="100"
+      step="1"
+      value={interiorPercent}
+      on:input={handleInteriorChange}
+      class="distribution-slider"
+    />
+  </div>
 
+  <div class="control-section">
     <div class="control-group">
       <label class="control-label">
          Exterior Reward Sharing        <span class="control-value">{steepness}%</span>
@@ -122,21 +127,21 @@
         </button>
       </div>
     </div>
-  </div>
 
-  <div class="zone-bar-chart">
-    {#each zonePercentages as percent, i}
-      <div class="bar-column">
-        <div class="bar-track">
-          <div
-            class="bar-fill"
-            style="height: {percent}%; background: {ZONE_COLORS[i % ZONE_COLORS.length]};"
-          ></div>
+    <div class="zone-bar-chart">
+      {#each zonePercentages as percent, i}
+        <div class="bar-column">
+          <div class="bar-track">
+            <div
+              class="bar-fill"
+              style="height: {percent}%; background: {ZONE_COLORS[i % ZONE_COLORS.length]};"
+            ></div>
+          </div>
+          <span class="bar-label">Z{i + 1}</span>
+          <span class="bar-value">{percent.toFixed(1)}%</span>
         </div>
-        <span class="bar-label">Z{i + 1}</span>
-        <span class="bar-value">{percent.toFixed(1)}%</span>
-      </div>
-    {/each}
+      {/each}
+    </div>
   </div>
 
   <div class="action-buttons">
@@ -195,10 +200,112 @@
     border-radius: 0.5rem;
   }
 
+  /* Prominent Flow Distribution Bar */
+  .flow-distribution-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 0.5rem;
+    border: 1px solid rgba(71, 85, 105, 0.5);
+  }
+
+  .distribution-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .distribution-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+
+  .distribution-values {
+    font-size: 0.875rem;
+    font-family: monospace;
+    color: #60a5fa;
+    font-weight: 500;
+  }
+
+  .distribution-track {
+    display: flex;
+    height: 32px;
+    border-radius: 0.375rem;
+    overflow: hidden;
+    background: #1e293b;
+  }
+
+  .distribution-interior {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #475569 0%, #64748b 100%);
+    transition: width 0.2s ease;
+    min-width: 40px;
+  }
+
+  .distribution-exterior {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    transition: width 0.2s ease;
+    min-width: 40px;
+  }
+
+  .distribution-segment-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.9;
+  }
+
+  .distribution-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: transparent;
+    appearance: none;
+    cursor: pointer;
+    margin-top: 0.25rem;
+  }
+
+  .distribution-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    cursor: pointer;
+    border: 3px solid #1e293b;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s;
+  }
+
+  .distribution-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+
+  .distribution-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    cursor: pointer;
+    border: 3px solid #1e293b;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
   .control-section {
     display: flex;
     gap: 1.5rem;
     flex-wrap: wrap;
+    align-items: flex-start;
   }
 
   .control-group {
@@ -327,11 +434,13 @@
 
   .zone-bar-chart {
     display: flex;
-    gap: 0.125rem;
-    padding: 0.75rem 0;
-    border-top: 1px solid rgba(71, 85, 105, 0.5);
-    height: 200px;
-    max-width: 50%;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    background: rgba(15, 23, 42, 0.4);
+    border-radius: 0.375rem;
+    height: 120px;
+    flex: 1;
+    min-width: 180px;
   }
 
   .bar-column {

@@ -1,7 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher, onMount, onDestroy, getContext } from "svelte";
     import { fade, slide, fly } from "svelte/transition";
-    import { flip } from "svelte/animate";
     import { goto } from "$app/navigation";
     import { page } from "$app/stores";
     import type { HoloSphere } from "holosphere";
@@ -12,162 +11,139 @@
     import { addVisitedHolon } from "../utils/localStorage";
     import TitleBar from "./shared/TitleBar.svelte";
     import QRScanner from "./QRScanner.svelte";
-    import ExpirationPicker from "./ExpirationPicker.svelte";
     import FederatedHolonCard from "./federation/FederatedHolonCard.svelte";
-    import {
-        type LensCapabilityToken,
-        type ExpirationPreset,
-        type Direction,
-        shortenNpub,
-        getExpirationTimestamp,
-        formatExpiration,
-        getExpirationDescription,
-        isCapabilityValid,
-        generateCapabilityId,
-        generateNonce,
-        getPermissionsForDirection,
-        createCapabilityRecord
-    } from "../lib/capabilities/lensCapability";
-    import {
-        type FederationRequestDM,
-        type FederationResponseDM
-    } from "../lib/federation/nostrDM";
+    import { shortenPubKey } from "../lib/capabilities/lensCapability";
     import {
         pendingFederationRequests,
-        federationNotifications,
         incomingRequests,
+        outgoingRequests,
         createIncomingRequest,
         createOutgoingRequest,
-        type PendingRequest
+        pendingUpdates,
+        incomingUpdates,
+        outgoingUpdates,
+        createIncomingUpdate,
+        createOutgoingUpdate,
+        type PendingRequest,
+        type PendingUpdate
     } from "../lib/stores/federationRequests";
 
     const dispatch = createEventDispatcher();
     const holosphere = getContext("holosphere") as HoloSphere;
 
-    // Default small set of commonly federated lenses
-    const DEFAULT_AVAILABLE_LENSES = ['quests', 'offers', 'announcements'];
-    
-    // All possible lenses that could be federated
-    const ALL_POSSIBLE_LENSES = [
-        'quests', 'offers', 'tags', 'expenses', 
+    // Available lenses for federation
+    const AVAILABLE_LENSES = [
+        'quests', 'offers', 'tags', 'expenses',
         'announcements', 'users', 'shopping', 'recurring'
     ];
-    
-    // User-configurable available lenses (starts with all possible lenses)
-    let availableLenses: string[] = [...ALL_POSSIBLE_LENSES];
-    let customLenses: string[] = [];
-    let showAddCustomLens = false;
-    let newCustomLens = '';
-    
-    // Helper function to normalize lens names for comparison
-    function normalizeLensName(lensName: string): string {
-        return lensName.toLowerCase();
-    }
-    
-    // Helper function to check if a lens is in a lens array (case-insensitive)
-    function isLensInArray(lens: string, lensArray: string[] | undefined): boolean {
-        if (!lensArray || !Array.isArray(lensArray)) return false;
-        const normalizedLens = normalizeLensName(lens);
-        return lensArray.some(l => normalizeLensName(l) === normalizedLens);
-    }
-
-    // Helper function to get canonical lens name (always lowercase)
-    function getCanonicalLensName(lensName: string): string {
-        return lensName.toLowerCase();
-    }
 
     interface FederationInfo {
         id: string;
         name: string;
         federated: string[];
-        inbound: string[];
-        outbound: string[];
-        lensConfig?: Record<string, {
-            inbound: string[];
-            outbound: string[];
-            timestamp: number;
-        }>;
-        partnerNames?: Record<string, string>;  // Maps partner pubkey/id to their holon name from handshake
+        lensConfig?: Record<string, { inbound: string[]; outbound: string[]; timestamp: number }>;
+        partnerNames?: Record<string, string>;
         timestamp: number;
     }
 
     interface FederatedHolon {
         id: string;
         name: string;
-        pubKey?: string;  // Nostr public key (hex format)
-        npub?: string;    // Nostr public key (npub format)
+        pubKey?: string;
         status: 'connected' | 'pending' | 'rejected' | 'error';
-        pendingRequestId?: string;  // Track which federation request this corresponds to
-        lensConfig: {
-            inbound: string[];
-            outbound: string[];
-        };
-        capabilities?: Record<string, {
-            inbound?: LensCapabilityToken;
-            outbound?: LensCapabilityToken;
-        }>;
+        lensConfig: { inbound: string[]; outbound: string[] };
     }
 
-    let currentHolonId: string = '';
-    let holonName: string = 'Federation';
+    // State
+    let currentHolonId = '';
+    let holonName = 'Federation';
     let federationInfo: FederationInfo | null = null;
     let federatedHolons: FederatedHolon[] = [];
     let loading = true;
     let saving = false;
-    let showAddDialog = false;
-    let newHolonId = '';
-    let newHolonName = '';
-    // Remove modal state and logic
-    // Remove: let selectedHolon: FederatedHolon | null = null;
     let error = '';
     let success = '';
-    let showNetworkView = false;
 
-    // Nostr pubkey input for federation
+    // Add dialog state
+    let showAddDialog = false;
     let newPartnerNpub = '';
     let newPartnerHexPubKey = '';
-    let npubValidationError = '';
+    let npubError = '';
+    let federationMessage = '';
+
+    // Unified permissions per lens (v2.0 format)
+    // permissions[lensName] = { receive: ['read', 'write'], share: ['read', 'write'] }
+    type LensPermissions = { receive: ('read' | 'write')[]; share: ('read' | 'write')[] };
+    let permissions: Record<string, LensPermissions> = {};
+
+    // Initialize permissions for all lenses
+    function initializePermissions() {
+        const initial: Record<string, LensPermissions> = {};
+        for (const lens of AVAILABLE_LENSES) {
+            initial[lens] = { receive: [], share: [] };
+        }
+        permissions = initial;
+    }
+
+    // Toggle a permission for a lens
+    function togglePermission(lens: string, direction: 'receive' | 'share', perm: 'read' | 'write') {
+        const current = permissions[lens][direction];
+        if (current.includes(perm)) {
+            permissions[lens][direction] = current.filter(p => p !== perm);
+        } else {
+            permissions[lens][direction] = [...current, perm];
+        }
+        permissions = permissions; // Trigger reactivity
+    }
+
+    // Check if a permission is set
+    function hasPermission(lens: string, direction: 'receive' | 'share', perm: 'read' | 'write'): boolean {
+        return permissions[lens]?.[direction]?.includes(perm) ?? false;
+    }
+
+    // Convert unified permissions to legacy lensConfig for backward compatibility
+    function permissionsToLegacyConfig() {
+        const inbound: string[] = [];
+        const outbound: string[] = [];
+        const writeInbound: string[] = [];
+        const writeOutbound: string[] = [];
+
+        for (const [lens, perms] of Object.entries(permissions)) {
+            if (perms.receive.includes('read')) inbound.push(lens);
+            if (perms.share.includes('read')) outbound.push(lens);
+            if (perms.receive.includes('write')) writeInbound.push(lens);
+            if (perms.share.includes('write')) writeOutbound.push(lens);
+        }
+
+        return { inbound, outbound, writeInbound, writeOutbound };
+    }
 
     // QR Scanner
     let showQRScanner = false;
 
-    // Expiration selection
-    let selectedExpiration: ExpirationPreset = 'permanent';
-    let customExpirationDate = '';
-    let showExpirationPicker = false;
-    let pendingLensGrant: {
-        holonId: string;
-        pubKey: string;
-        lensName: string;
-        direction: Direction;
-    } | null = null;
+    // Track expanded cards
+    let expandedCards: Set<string> = new Set();
 
-    // Capability tracking per partner
-    let partnerCapabilities: Map<string, Record<string, { inbound?: LensCapabilityToken; outbound?: LensCapabilityToken }>> = new Map();
-
-    // Subscribe to current holon ID
-    let idStoreUnsubscribe: (() => void) | undefined;
+    // Subscriptions
+    let idUnsubscribe: (() => void) | undefined;
     let federationSubscription: any = null;
     let dmUnsubscribe: (() => void) | undefined;
 
     onMount(() => {
-        // Initialize pending federation requests store
-        pendingFederationRequests.init();
+        // Initialize with user's public key for scoped storage
+        pendingFederationRequests.init($nostrPublicKey || undefined);
+        pendingUpdates.init($nostrPublicKey || undefined);
 
-        idStoreUnsubscribe = ID.subscribe(async (newId) => {
+        idUnsubscribe = ID.subscribe(async (newId) => {
             if (newId !== currentHolonId) {
-                // Unsubscribe from previous federation data
                 if (federationSubscription) {
                     federationSubscription.unsubscribe();
                     federationSubscription = null;
                 }
-
                 currentHolonId = newId || '';
                 if (currentHolonId) {
                     await loadFederationData();
-                    // Subscribe to federation data changes
                     await subscribeFederationChanges();
-                    // Load holon name for TitleBar
                     const name = await fetchHolonName(holosphere, currentHolonId);
                     holonName = name || 'Federation';
                 } else {
@@ -178,58 +154,48 @@
             }
         });
 
-        // Subscribe to federation DMs if we have a private key
         if ($nostrPrivateKey && $nostrPublicKey) {
             subscribeToDMs();
         }
     });
 
+    // Reactively subscribe to DMs when Nostr keys become available
+    $: if (holosphere && $nostrPrivateKey && $nostrPublicKey && !dmUnsubscribe) {
+        subscribeToDMs();
+    }
+
+    // Update request stores when user changes
+    $: if ($nostrPublicKey) {
+        pendingFederationRequests.setUser($nostrPublicKey);
+        pendingUpdates.setUser($nostrPublicKey);
+    }
+
     onDestroy(() => {
-        if (idStoreUnsubscribe) {
-            idStoreUnsubscribe();
-        }
-        if (federationSubscription) {
-            federationSubscription.unsubscribe();
-        }
-        if (dmUnsubscribe) {
-            dmUnsubscribe();
-        }
+        idUnsubscribe?.();
+        federationSubscription?.unsubscribe();
+        dmUnsubscribe?.();
     });
 
-    // Helper to validate holon ID
     const isValidHolonId = (id: string | undefined | null): id is string =>
         !!id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
 
-    // Reactive block: when page ID changes (different holon), reload federation data
     $: if ($page.params.id && $page.params.id !== currentHolonId && isValidHolonId($page.params.id) && holosphere) {
-        // Unsubscribe from previous federation data
         if (federationSubscription) {
             federationSubscription.unsubscribe();
             federationSubscription = null;
         }
-
         currentHolonId = $page.params.id;
         ID.set(currentHolonId);
         loading = true;
-        loadFederationData().then(() => {
-            subscribeFederationChanges();
-        });
+        loadFederationData().then(() => subscribeFederationChanges());
     }
 
     async function subscribeFederationChanges() {
         if (!holosphere || !currentHolonId) return;
-
         try {
-            // Subscribe to the global federation data for this holon
-            // Use subscribeGlobal to subscribe to global table path: appname/federation/holonId
             federationSubscription = await holosphere.subscribeGlobal(
-                'federation',
-                currentHolonId,
-                async (data, itemId) => {
-                    console.log('Federation data changed:', data, itemId);
-                    // Reload federation data when changes occur
-                    await loadFederationData();
-                },
+                'federation', currentHolonId,
+                async () => { await loadFederationData(); },
                 { realtimeOnly: true }
             );
         } catch (err) {
@@ -239,89 +205,52 @@
 
     async function loadFederationData() {
         if (!holosphere || !currentHolonId) return;
-        
+
         loading = true;
         error = '';
-        
-        try {
-            // Get federation info
-            federationInfo = await holosphere.getFederation(currentHolonId);
-            console.log('Federation info loaded:', federationInfo);
-            
-            if (federationInfo) {
-                // Build federated holons list using a temporary array
-                const tempHolons: FederatedHolon[] = [];
 
-                // Process federated list (all federated holons)
+        try {
+            federationInfo = await holosphere.getFederation(currentHolonId);
+
+            if (federationInfo) {
+                const tempHolons: FederatedHolon[] = [];
                 const federatedList = federationInfo.federated || [];
 
                 for (const holonId of federatedList) {
-                    const rawLensConfig = federationInfo.lensConfig?.[holonId];
+                    const rawConfig = federationInfo.lensConfig?.[holonId];
                     const lensConfig = {
-                        inbound: Array.isArray(rawLensConfig?.inbound) ? rawLensConfig.inbound : [],
-                        outbound: Array.isArray(rawLensConfig?.outbound) ? rawLensConfig.outbound : []
+                        inbound: Array.isArray(rawConfig?.inbound) ? rawConfig.inbound : [],
+                        outbound: Array.isArray(rawConfig?.outbound) ? rawConfig.outbound : []
                     };
 
-                    console.log(`Lens config for ${holonId}:`, lensConfig);
+                    // Always resolve holon name
+                    const partnerName = federationInfo.partnerNames?.[holonId];
+                    const name = partnerName && partnerName !== holonId
+                        ? partnerName
+                        : await fetchHolonName(holosphere, holonId);
 
-                    // Use partner name from handshake (stored in partnerNames) - we can't read their settings
-                    const holonName = federationInfo.partnerNames?.[holonId] || holonId;
-
-                    // Check if holonId is a valid Nostr public key (hex format)
                     let pubKey: string | undefined;
-                    let npub: string | undefined;
+
                     if (/^[0-9a-fA-F]{64}$/.test(holonId)) {
                         pubKey = holonId;
-                        npub = nostrUtils.hexToNpub(holonId);
                     }
 
-                    const federatedHolon: FederatedHolon = {
-                        id: holonId,
-                        name: holonName,
-                        pubKey,
-                        npub,
-                        status: 'connected',
-                        lensConfig
-                    };
-
-                    tempHolons.push(federatedHolon);
+                    tempHolons.push({ id: holonId, name, pubKey, status: 'connected', lensConfig });
                 }
 
-                // Assign to trigger reactivity in Svelte 5
                 federatedHolons = tempHolons;
-
-                // Load capabilities for all partners with pubKeys (in parallel)
-                const capabilityLoads = tempHolons
-                    .filter(h => h.pubKey)
-                    .map(h => loadPartnerCapabilities(h.pubKey!));
-                await Promise.all(capabilityLoads);
-
-                console.log('Final federated holons:', federatedHolons);
             } else {
                 federatedHolons = [];
-                console.log('No federation info found');
             }
         } catch (err) {
             error = err instanceof Error ? err.message : 'Failed to load federation data';
-            console.error('Federation load error:', err);
         } finally {
             loading = false;
         }
     }
 
     async function addFederation() {
-        // Determine the federation target: prefer npub/hex pubkey, fallback to holon ID
-        let federationTarget = '';
-
-        if (newPartnerHexPubKey) {
-            // Use the validated hex public key as the federation target
-            federationTarget = newPartnerHexPubKey;
-        } else if (newHolonId.trim()) {
-            // Fallback to holon ID for backward compatibility
-            federationTarget = newHolonId.trim();
-        }
-
-        if (!federationTarget || !holosphere || !currentHolonId) return;
+        if (!newPartnerHexPubKey || !holosphere || !currentHolonId) return;
 
         saving = true;
         error = '';
@@ -329,1617 +258,1751 @@
         try {
             const ourHolonName = await getHolonName(currentHolonId);
 
-            // If federating with a Nostr pubkey, use the handshake protocol
-            if (newPartnerHexPubKey && $nostrPrivateKey && $nostrPublicKey) {
+            if ($nostrPrivateKey && $nostrPublicKey) {
                 const ourNpub = nostrUtils.hexToNpub($nostrPublicKey);
+                // Convert unified permissions to legacy format for backward compatibility
+                const lensConfig = permissionsToLegacyConfig();
 
-                // Use holosphere2's handshake - creates local record AND sends DM in one atomic operation
-                const result = await handshake.initiateFederationHandshake(holosphere, $nostrPrivateKey, {
-                    partnerPubKey: newPartnerHexPubKey,
-                    holonId: currentHolonId,
-                    holonName: ourHolonName,
-                    lensConfig: { inbound: [], outbound: [] }
-                });
+                // Use retry with exponential backoff for DM sends
+                const result = await withRetry(async () => {
+                    const res = await handshake.initiateFederationHandshake(holosphere, $nostrPrivateKey, {
+                        partnerPubKey: newPartnerHexPubKey,
+                        holonId: currentHolonId,
+                        holonName: ourHolonName,
+                        lensConfig,
+                        message: federationMessage.trim() || undefined
+                    });
+                    if (!res.success) {
+                        throw new Error(res.error || 'Failed to send request');
+                    }
+                    return res;
+                }, 3, 1000);
 
                 if (result.success && result.requestId) {
-                    // Track as outgoing request
-                    const outgoingRequest = createOutgoingRequest(
-                        result.requestId,
-                        $nostrPublicKey,
-                        ourNpub,
-                        currentHolonId,
-                        ourHolonName,
-                        newPartnerHexPubKey,
-                        newPartnerNpub || nostrUtils.hexToNpub(newPartnerHexPubKey),
-                        { inbound: [], outbound: [] },
-                        []
+                    // Try to resolve recipient holon name
+                    const recipientHolonName = await fetchHolonName(holosphere, newPartnerHexPubKey);
+                    const outgoing = createOutgoingRequest(
+                        result.requestId, $nostrPublicKey, ourNpub,
+                        currentHolonId, ourHolonName,
+                        newPartnerHexPubKey, newPartnerNpub || nostrUtils.hexToNpub(newPartnerHexPubKey),
+                        lensConfig, [],
+                        federationMessage.trim() || undefined,
+                        recipientHolonName
                     );
-                    pendingFederationRequests.add(outgoingRequest);
-                    showSuccess('Federation request sent - waiting for partner to accept');
-                } else {
-                    error = result.error || 'Failed to initiate federation handshake';
-                    return;
+                    pendingFederationRequests.add(outgoing);
+                    showSuccess('Federation request sent');
                 }
             } else {
-                // Fallback: just create local federation record (no DM for non-Nostr targets)
-                const success = await holosphere.federateHolon(
-                    currentHolonId,
-                    federationTarget,
-                    { lensConfig: { inbound: [], outbound: [] } }
-                );
-
+                const success = await holosphere.federateHolon(currentHolonId, newPartnerHexPubKey, {
+                    lensConfig: { inbound: [], outbound: [] }
+                });
                 if (!success) {
                     error = 'Failed to create federation';
                     return;
                 }
-                showSuccess('Federation created successfully');
+                showSuccess('Federation created');
             }
 
-            showAddDialog = false;
-            newHolonId = '';
-            newHolonName = '';
-            newPartnerNpub = '';
-            newPartnerHexPubKey = '';
-            npubValidationError = '';
-            selectedExpiration = 'permanent';
-            customExpirationDate = '';
-
-            // Wait a bit for changes to propagate
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Force reload of federation data
+            closeAddDialog();
+            await new Promise(r => setTimeout(r, 300));
             await loadFederationData();
         } catch (err) {
             error = err instanceof Error ? err.message : 'Failed to create federation';
-            console.error('Federation creation error:', err);
         } finally {
             saving = false;
         }
     }
 
     async function removeFederation(holonId: string) {
-        console.log('removeFederation called with holonId:', holonId);
-
-        if (!holosphere || !currentHolonId) {
-            console.log('Early return: missing holosphere or currentHolonId', { holosphere: !!holosphere, currentHolonId });
-            return;
-        }
+        if (!holosphere || !currentHolonId) return;
 
         saving = true;
-        error = '';
-
         try {
-            console.log('Calling holosphere.unfederateHolon...', { currentHolonId, holonId });
-            const success = await holosphere.unfederateHolon(currentHolonId, holonId);
-            console.log('unfederateHolon result:', success);
-
-            if (success) {
-                console.log('Federation removed successfully, reloading data...');
-
-                // Wait a bit for GunDB to propagate the changes
-                await new Promise(resolve => setTimeout(resolve, 300));
-
-                // Force reload of federation data
+            const result = await holosphere.unfederateHolon(currentHolonId, holonId);
+            if (result) {
+                // Optimistic update
+                federatedHolons = federatedHolons.filter(h => h.id !== holonId);
+                expandedCards.delete(holonId);
+                expandedCards = expandedCards;
+                showSuccess('Federation removed');
+                await new Promise(r => setTimeout(r, 300));
                 await loadFederationData();
-                showSuccess('Federation removed successfully');
             } else {
-                console.error('unfederateHolon returned false');
                 error = 'Failed to remove federation';
             }
         } catch (err) {
-            console.error('Federation removal error:', err);
             error = err instanceof Error ? err.message : 'Failed to remove federation';
         } finally {
             saving = false;
         }
     }
 
-    async function updateLensConfig(holonId: string, inboundLenses: string[], outboundLenses: string[]) {
-        if (!holosphere || !currentHolonId) return;
+    async function updateLensConfig(holonId: string, inbound: string[], outbound: string[]) {
+        if (!holosphere || !currentHolonId || !$nostrPrivateKey) return;
+
+        // Find the current federation
+        const holon = federatedHolons.find(h => h.id === holonId);
+        if (!holon) return;
+
+        const currentLensConfig = holon.lensConfig;
+        const newLensConfig = { inbound, outbound };
+
+        // Check if there's actually a change
+        const inboundChanged = JSON.stringify([...currentLensConfig.inbound].sort()) !== JSON.stringify([...newLensConfig.inbound].sort());
+        const outboundChanged = JSON.stringify([...currentLensConfig.outbound].sort()) !== JSON.stringify([...newLensConfig.outbound].sort());
+
+        if (!inboundChanged && !outboundChanged) {
+            return; // No change
+        }
+
+        // Get the partner's public key (holonId should be the pubkey for federated holons)
+        const partnerPubKey = holon.pubKey || holonId;
+
+        // Check if we already have a pending update for this partner
+        if (pendingUpdates.hasPendingForPartner(partnerPubKey)) {
+            error = 'Already have a pending update for this partner';
+            return;
+        }
 
         saving = true;
-
         try {
-            // Re-federate with updated lens config
-            const success = await holosphere.federateHolon(
-                currentHolonId,
-                holonId,
-                {
-                    lensConfig: { inbound: inboundLenses, outbound: outboundLenses }
+            const ourName = await getHolonName(currentHolonId);
+
+            // Send update request DM
+            const result = await withRetry(async () => {
+                const res = await handshake.requestFederationUpdate(holosphere, $nostrPrivateKey, {
+                    partnerPubKey,
+                    holonId: currentHolonId,
+                    holonName: ourName,
+                    newLensConfig
+                });
+                if (!res.success) {
+                    throw new Error(res.error || 'Failed to send update request');
                 }
-            );
+                return res;
+            }, 3, 1000);
 
-            if (success) {
-                // Wait a bit for GunDB to propagate the changes
-                await new Promise(resolve => setTimeout(resolve, 300));
-
-                // Force reload of federation data
-                await loadFederationData();
+            if (result.success && result.updateId) {
+                // Track the pending update
+                const pending = createOutgoingUpdate(
+                    result.updateId,
+                    partnerPubKey,
+                    partnerPubKey, // Use pubKey instead of npub
+                    holonId,
+                    holon.name,
+                    currentLensConfig,
+                    newLensConfig
+                );
+                pendingUpdates.add(pending);
+                showSuccess('Update request sent - awaiting approval');
             }
         } catch (err) {
-            console.error('Lens config update error:', err);
+            error = err instanceof Error ? err.message : 'Failed to send update request';
         } finally {
             saving = false;
         }
     }
 
-    async function getHolonName(holonId: string): Promise<string> {
-        if (!holonId || !holosphere) return 'Unknown';
+    function handleToggleLens(event: CustomEvent<{ holonId: string; lens: string; direction: 'inbound' | 'outbound'; currentlyEnabled: boolean }>) {
+        const { holonId, lens, direction, currentlyEnabled } = event.detail;
+        const holon = federatedHolons.find(h => h.id === holonId);
+        if (!holon) return;
 
-        try {
-            // Get settings for this holon with holonId as the key
-            const settings = await holosphere.get(holonId, 'settings', holonId);
+        const normalizedLens = lens.toLowerCase();
+        let newInbound = [...holon.lensConfig.inbound];
+        let newOutbound = [...holon.lensConfig.outbound];
 
-            if (settings && settings.name) {
-                return settings.name;
+        if (direction === 'inbound') {
+            if (currentlyEnabled) {
+                newInbound = newInbound.filter(l => l.toLowerCase() !== normalizedLens);
+            } else {
+                newInbound.push(normalizedLens);
             }
-        } catch (error) {
-            console.warn(`Could not fetch settings name for holon ${holonId}:`, error);
+        } else {
+            if (currentlyEnabled) {
+                newOutbound = newOutbound.filter(l => l.toLowerCase() !== normalizedLens);
+            } else {
+                newOutbound.push(normalizedLens);
+            }
         }
 
-        // Fallback to holon ID
-        return holonId;
+        updateLensConfig(holonId, newInbound, newOutbound);
     }
 
-    function showSuccess(message: string) {
-        success = message;
-        setTimeout(() => {
-            success = '';
-        }, 3000);
+    async function getHolonName(id: string): Promise<string> {
+        if (!id || !holosphere) return 'Unknown';
+        try {
+            const settings = await holosphere.get(id, 'settings', id);
+            return settings?.name || id;
+        } catch { return id; }
     }
 
-    function getLensIcon(lens: string): string {
-        const normalizedLens = normalizeLensName(lens);
-        const icons: Record<string, string> = {
-            'quests': '🎯',
-            'offers': '🤝',
-            'tags': '🏷️',
-            'expenses': '💰',
-            'announcements': '📢',
-            'users': '👥',
-            'shopping': '🛒',
-            'recurring': '🔄'
-        };
-        return icons[normalizedLens] || '📦';
+    function showSuccess(msg: string) {
+        success = msg;
+        setTimeout(() => success = '', 3000);
     }
 
-    function getStatusColor(status: string): string {
-        switch (status) {
-            case 'connected': return 'text-green-400';
-            case 'pending': return 'text-yellow-400';
-            case 'error': return 'text-red-400';
-            default: return 'text-gray-400';
+    // Retry helper with exponential backoff
+    async function withRetry<T>(
+        fn: () => Promise<T>,
+        maxAttempts = 3,
+        baseDelay = 1000
+    ): Promise<T> {
+        let lastError: Error | null = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await fn();
+            } catch (err) {
+                lastError = err instanceof Error ? err : new Error(String(err));
+                if (attempt < maxAttempts) {
+                    const delay = baseDelay * Math.pow(2, attempt - 1);
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
         }
+        throw lastError;
     }
 
-    function closeDialog() {
+    function closeAddDialog() {
         showAddDialog = false;
-        newHolonId = '';
-        newHolonName = '';
         newPartnerNpub = '';
         newPartnerHexPubKey = '';
-        npubValidationError = '';
-        selectedExpiration = 'permanent';
-        customExpirationDate = '';
-        error = '';
+        npubError = '';
+        federationMessage = '';
+        initializePermissions();
     }
 
-    function navigateToHolon(holonId: string) {
-        ID.set(holonId);
-        
-        // Track this visit if wallet is connected
-        if ($walletAddress) {
-            addVisitedHolonToSeparateList(holonId);
-        }
-        
-        goto(`/${holonId}/dashboard`);
-    }
-
-    async function addVisitedHolonToSeparateList(holonId: string) {
-        if (!$walletAddress) return;
-        
-        try {
-            const holonName = await fetchHolonName(holosphere, holonId);
-            
-            // Use the centralized function to add visited holon
-            addVisitedHolon($walletAddress, holonId, holonName, 'federation');
-            
-        } catch (err) {
-            console.warn('Failed to add visited holon:', err);
-        }
-    }
-
-    function addCustomLens() {
-        const lensName = newCustomLens.trim().toLowerCase();
-        if (lensName && !availableLenses.includes(lensName) && !customLenses.includes(lensName)) {
-            customLenses = [...customLenses, lensName];
-            availableLenses = [...availableLenses, lensName];
-            newCustomLens = '';
-            showAddCustomLens = false;
-        }
-    }
-
-    function removeCustomLens(lens: string) {
-        customLenses = customLenses.filter(l => l !== lens);
-        availableLenses = availableLenses.filter(l => l !== lens);
-    }
-
-    // ============================================================================
-    // Nostr Public Key Validation
-    // ============================================================================
+    // Initialize permissions on component mount
+    initializePermissions();
 
     function validateNpub() {
         if (!newPartnerNpub.trim()) {
-            npubValidationError = '';
+            npubError = '';
             newPartnerHexPubKey = '';
             return;
         }
-
         const result = nostrUtils.parseNpubOrHex(newPartnerNpub);
         if (result.valid && result.hexPubKey) {
-            npubValidationError = '';
+            npubError = '';
             newPartnerHexPubKey = result.hexPubKey;
         } else {
-            npubValidationError = result.error || 'Invalid public key';
+            npubError = result.error || 'Invalid public key';
             newPartnerHexPubKey = '';
         }
     }
 
     function handleQRScan(event: CustomEvent<{ decodedText: string }>) {
-        const scannedText = event.detail.decodedText;
-
-        // Check if it's a Nostr URI
-        if (scannedText.startsWith('nostr:')) {
-            newPartnerNpub = scannedText.replace('nostr:', '');
-        } else if (scannedText.startsWith('npub1') || /^[0-9a-fA-F]{64}$/.test(scannedText)) {
-            newPartnerNpub = scannedText;
-        } else {
-            // Try to parse as JSON (might be a Harvest federation invite)
-            try {
-                const parsed = JSON.parse(scannedText);
-                if (parsed.npub) newPartnerNpub = parsed.npub;
-                if (parsed.pubKey) newPartnerNpub = parsed.pubKey;
-                if (parsed.holonId) newHolonId = parsed.holonId;
-            } catch {
-                error = 'QR code does not contain a valid Nostr public key';
-            }
+        const text = event.detail.decodedText;
+        if (text.startsWith('nostr:')) {
+            newPartnerNpub = text.replace('nostr:', '');
+        } else if (text.startsWith('npub1') || /^[0-9a-fA-F]{64}$/.test(text)) {
+            newPartnerNpub = text;
         }
-
         validateNpub();
         showQRScanner = false;
     }
 
-    // ============================================================================
-    // Capability Grant/Revoke Functions
-    // ============================================================================
-
-    async function grantLensCapability(
-        recipientPubKey: string,
-        holonId: string,
-        lensName: string,
-        direction: Direction,
-        expiration: ExpirationPreset,
-        customExpiration?: string
-    ): Promise<boolean> {
-        if (!holosphere || !currentHolonId) return false;
-
-        const permissions = getPermissionsForDirection(direction);
-        const expiresAt = getExpirationTimestamp(expiration, customExpiration);
-        const expiresIn = expiresAt ? expiresAt - Date.now() : 365 * 24 * 60 * 60 * 1000;
-
-        try {
-            // Get issuer's public key
-            const issuerPubKey = holosphere.client?.publicKey;
-            if (!issuerPubKey) {
-                error = 'No public key available';
-                return false;
-            }
-
-            // Issue the capability token using holosphere
-            const token = await holosphere.issueCapability(
-                permissions,
-                { holonId, lensName },
-                recipientPubKey,
-                {
-                    issuerKey: $nostrPrivateKey,
-                    expiresIn
-                }
-            );
-
-            // Create capability record
-            const capabilityRecord: LensCapabilityToken = {
-                id: generateCapabilityId(issuerPubKey, recipientPubKey, holonId, lensName, direction),
-                type: 'lens_capability',
-                issuerPubKey,
-                recipientPubKey,
-                holonId,
-                lensName,
-                permissions,
-                direction,
-                issuedAt: Date.now(),
-                expiresAt,
-                expirationPreset: expiration,
-                nonce: generateNonce(),
-                signature: typeof token === 'string' ? token : ''
-            };
-
-            // Store in global lens_capabilities table
-            try {
-                await holosphere.writeGlobal('lens_capabilities', capabilityRecord);
-                console.log('Capability stored in global table:', capabilityRecord.id);
-            } catch (storeErr) {
-                console.warn('Failed to store capability in global table, using local storage:', storeErr);
-                // Fallback to localStorage
-                const stored = localStorage.getItem('lens_capabilities') || '{}';
-                const caps = JSON.parse(stored);
-                caps[capabilityRecord.id] = capabilityRecord;
-                localStorage.setItem('lens_capabilities', JSON.stringify(caps));
-            }
-
-            // Update local tracking
-            updatePartnerCapabilities(recipientPubKey, lensName, direction, capabilityRecord);
-
-            showSuccess(`${direction === 'inbound' ? 'Read' : 'Write'} capability granted for ${lensName}`);
-            return true;
-        } catch (err) {
-            error = `Failed to grant capability: ${err instanceof Error ? err.message : 'Unknown error'}`;
-            console.error('Grant capability error:', err);
-            return false;
+    function navigateToHolon(holonId: string) {
+        ID.set(holonId);
+        if ($walletAddress) {
+            fetchHolonName(holosphere, holonId).then(name => {
+                addVisitedHolon($walletAddress, holonId, name || holonId, 'federation');
+            });
         }
+        goto(`/${holonId}/dashboard`);
     }
 
-    async function revokeLensCapability(
-        recipientPubKey: string,
-        holonId: string,
-        lensName: string,
-        direction: Direction
-    ): Promise<boolean> {
-        if (!holosphere) return false;
-
-        const issuerPubKey = holosphere.client?.publicKey;
-        if (!issuerPubKey) return false;
-
-        const capabilityId = generateCapabilityId(issuerPubKey, recipientPubKey, holonId, lensName, direction);
-
-        try {
-            // Mark as revoked in global table
-            try {
-                const existing = await holosphere.getGlobal('lens_capabilities', capabilityId);
-                if (existing) {
-                    existing.revokedAt = Date.now();
-                    await holosphere.writeGlobal('lens_capabilities', existing);
-                }
-            } catch (globalErr) {
-                console.warn('Failed to revoke in global table:', globalErr);
-            }
-
-            // Also update localStorage
-            try {
-                const stored = localStorage.getItem('lens_capabilities') || '{}';
-                const caps = JSON.parse(stored);
-                if (caps[capabilityId]) {
-                    caps[capabilityId].revokedAt = Date.now();
-                    localStorage.setItem('lens_capabilities', JSON.stringify(caps));
-                }
-            } catch (localErr) {
-                console.warn('Failed to revoke in localStorage:', localErr);
-            }
-
-            // Remove from local tracking
-            removePartnerCapability(recipientPubKey, lensName, direction);
-
-            showSuccess(`${direction === 'inbound' ? 'Read' : 'Write'} capability revoked for ${lensName}`);
-            return true;
-        } catch (err) {
-            error = `Failed to revoke capability: ${err instanceof Error ? err.message : 'Unknown error'}`;
-            console.error('Revoke capability error:', err);
-            return false;
-        }
-    }
-
-    function updatePartnerCapabilities(
-        pubKey: string,
-        lensName: string,
-        direction: Direction,
-        capability: LensCapabilityToken
-    ) {
-        const existing = partnerCapabilities.get(pubKey) || {};
-        if (!existing[lensName]) {
-            existing[lensName] = {};
-        }
-        existing[lensName][direction] = capability;
-        partnerCapabilities.set(pubKey, existing);
-        partnerCapabilities = new Map(partnerCapabilities); // Trigger reactivity
-    }
-
-    function removePartnerCapability(pubKey: string, lensName: string, direction: Direction) {
-        const existing = partnerCapabilities.get(pubKey);
-        if (existing && existing[lensName]) {
-            delete existing[lensName][direction];
-            partnerCapabilities.set(pubKey, existing);
-            partnerCapabilities = new Map(partnerCapabilities);
-        }
-    }
-
-    function getCapabilityForLens(
-        pubKey: string | undefined,
-        lensName: string,
-        direction: Direction
-    ): LensCapabilityToken | null {
-        if (!pubKey) return null;
-        const partnerCaps = partnerCapabilities.get(pubKey);
-        if (!partnerCaps || !partnerCaps[lensName]) return null;
-        const cap = partnerCaps[lensName][direction];
-        return cap && isCapabilityValid(cap) ? cap : null;
-    }
-
-    async function loadPartnerCapabilities(pubKey: string) {
-        if (!pubKey) return;
-
-        const issuerPubKey = holosphere?.client?.publicKey;
-        if (!issuerPubKey) {
-            console.warn('No issuer public key available');
-            return;
-        }
-
-        const caps: Record<string, { inbound?: LensCapabilityToken; outbound?: LensCapabilityToken }> = {};
-
-        try {
-            // Try to load from holosphere global table first
-            let allCaps: Record<string, any> | any[] | null = null;
-
-            if (holosphere && typeof holosphere.getAllGlobal === 'function') {
-                allCaps = await holosphere.getAllGlobal('lens_capabilities');
-            }
-
-            // Also check localStorage as fallback/supplement
-            const localStored = localStorage.getItem('lens_capabilities');
-            if (localStored) {
-                const localCaps = JSON.parse(localStored);
-                if (!allCaps) {
-                    allCaps = localCaps;
-                } else if (typeof allCaps === 'object' && !Array.isArray(allCaps)) {
-                    // Merge local with global
-                    allCaps = { ...allCaps, ...localCaps };
-                }
-            }
-
-            if (!allCaps || typeof allCaps !== 'object') {
-                console.log('No capabilities found');
-                return;
-            }
-
-            const capValues = Array.isArray(allCaps) ? allCaps : Object.values(allCaps);
-
-            for (const cap of capValues as LensCapabilityToken[]) {
-                if (!cap || typeof cap !== 'object') continue;
-                if (cap.type !== 'lens_capability') continue;
-
-                if (cap.issuerPubKey === issuerPubKey &&
-                    cap.recipientPubKey === pubKey &&
-                    !cap.revokedAt &&
-                    isCapabilityValid(cap)) {
-                    if (!caps[cap.lensName]) {
-                        caps[cap.lensName] = {};
-                    }
-                    caps[cap.lensName][cap.direction] = cap;
-                    console.log(`Loaded capability for ${cap.lensName} (${cap.direction}):`, cap.expiresAt ? new Date(cap.expiresAt).toLocaleDateString() : 'permanent');
-                }
-            }
-
-            partnerCapabilities.set(pubKey, caps);
-            partnerCapabilities = new Map(partnerCapabilities);
-            console.log('Partner capabilities loaded for', pubKey.slice(0, 8), ':', Object.keys(caps));
-        } catch (err) {
-            console.warn('Failed to load partner capabilities:', err);
-        }
-    }
-
-    // ============================================================================
-    // Lens Toggle with Capability Support
-    // ============================================================================
-
-    async function toggleLensCapability(
-        federatedHolonId: string,
-        lensName: string,
-        direction: Direction,
-        currentlyEnabled: boolean
-    ) {
-        // Get the partner's public key
-        const partner = federatedHolons.find(h => h.id === federatedHolonId);
-
-        if (currentlyEnabled) {
-            // Revoke capability if partner has pubKey
-            if (partner?.pubKey) {
-                await revokeLensCapability(partner.pubKey, currentHolonId, lensName, direction);
-            }
-
-            // Update lens config
-            const newInbound = direction === 'inbound'
-                ? partner?.lensConfig.inbound.filter(l => normalizeLensName(l) !== normalizeLensName(lensName)) || []
-                : partner?.lensConfig.inbound || [];
-            const newOutbound = direction === 'outbound'
-                ? partner?.lensConfig.outbound.filter(l => normalizeLensName(l) !== normalizeLensName(lensName)) || []
-                : partner?.lensConfig.outbound || [];
-
-            await updateLensConfig(federatedHolonId, newInbound, newOutbound);
+    function toggleCardExpanded(holonId: string) {
+        if (expandedCards.has(holonId)) {
+            expandedCards.delete(holonId);
         } else {
-            // If partner has pubKey, show expiration picker
-            if (partner?.pubKey) {
-                pendingLensGrant = {
-                    holonId: federatedHolonId,
-                    pubKey: partner.pubKey,
-                    lensName,
-                    direction
-                };
-                showExpirationPicker = true;
-            } else {
-                // No pubKey, just update lens config without capability token
-                const newInbound = direction === 'inbound'
-                    ? [...(partner?.lensConfig.inbound || []), getCanonicalLensName(lensName)]
-                    : partner?.lensConfig.inbound || [];
-                const newOutbound = direction === 'outbound'
-                    ? [...(partner?.lensConfig.outbound || []), getCanonicalLensName(lensName)]
-                    : partner?.lensConfig.outbound || [];
-
-                await updateLensConfig(federatedHolonId, newInbound, newOutbound);
-            }
+            expandedCards.add(holonId);
         }
+        expandedCards = expandedCards;
     }
 
-    async function confirmLensGrant(event: CustomEvent<{ preset: ExpirationPreset; customDate?: string }>) {
-        if (!pendingLensGrant) return;
-
-        const { holonId, pubKey, lensName, direction } = pendingLensGrant;
-        const { preset, customDate } = event.detail;
-
-        const success = await grantLensCapability(
-            pubKey,
-            currentHolonId,
-            lensName,
-            direction,
-            preset,
-            customDate
-        );
-
-        if (success) {
-            // Update lens config
-            const partner = federatedHolons.find(h => h.id === holonId);
-            if (partner) {
-                const newInbound = direction === 'inbound'
-                    ? [...partner.lensConfig.inbound, getCanonicalLensName(lensName)]
-                    : partner.lensConfig.inbound;
-                const newOutbound = direction === 'outbound'
-                    ? [...partner.lensConfig.outbound, getCanonicalLensName(lensName)]
-                    : partner.lensConfig.outbound;
-
-                await updateLensConfig(holonId, newInbound, newOutbound);
-            }
-        }
-
-        showExpirationPicker = false;
-        pendingLensGrant = null;
-        selectedExpiration = 'permanent';
-        customExpirationDate = '';
-    }
-
-    function cancelLensGrant() {
-        showExpirationPicker = false;
-        pendingLensGrant = null;
-        selectedExpiration = 'permanent';
-        customExpirationDate = '';
-    }
-
-    // ============================================================================
-    // Nostr DM Federation Protocol
-    // ============================================================================
-
+    // DM subscription for federation requests
     function subscribeToDMs() {
         if (!holosphere || !$nostrPrivateKey || !$nostrPublicKey) return;
-
+        // Clean up existing subscription first
+        if (dmUnsubscribe) {
+            dmUnsubscribe();
+            dmUnsubscribe = undefined;
+        }
+        console.log('Setting up federation DM subscription for pubkey:', $nostrPublicKey);
         try {
-            // Use holosphere2's handshake subscription
+            // Get appname from holosphere config for persistent DM tracking
+            const appname = holosphere.config?.appName || 'Holons';
+
             dmUnsubscribe = handshake.subscribeToFederationDMs(
                 holosphere,
                 $nostrPrivateKey,
                 $nostrPublicKey,
                 {
-                    onRequest: handleIncomingFederationRequest,
-                    onResponse: handleFederationResponse
-                }
+                    onRequest: (request: any, senderPubKey: string) => {
+                        console.log('DM onRequest callback triggered:', request?.type, 'from:', senderPubKey?.slice(0, 8));
+                        handleIncomingRequest(request, senderPubKey);
+                    },
+                    onResponse: (response: any, senderPubKey: string) => {
+                        console.log('DM onResponse callback triggered:', response?.status, 'from:', senderPubKey?.slice(0, 8));
+                        handleFederationResponse(response, senderPubKey);
+                    },
+                    onUpdate: (update: any, senderPubKey: string) => {
+                        console.log('DM onUpdate callback triggered:', update?.updateId, 'from:', senderPubKey?.slice(0, 8));
+                        handleIncomingUpdate(update, senderPubKey);
+                    },
+                    onUpdateResponse: (response: any, senderPubKey: string) => {
+                        console.log('DM onUpdateResponse callback triggered:', response?.status, 'from:', senderPubKey?.slice(0, 8));
+                        handleUpdateResponse(response, senderPubKey);
+                    }
+                },
+                { appname } // Pass appname for persistent DM tracking
             );
-            console.log('Subscribed to federation DMs');
+            console.log('Federation DM subscription established with appname:', appname);
         } catch (err) {
-            console.error('Failed to subscribe to federation DMs:', err);
+            console.error('DM subscription error:', err);
         }
     }
 
-    async function handleIncomingFederationRequest(
-        request: FederationRequestDM,
-        senderPubKey: string
-    ) {
-        console.log('Received federation request from:', senderPubKey.substring(0, 8) + '...');
+    async function handleIncomingRequest(request: any, senderPubKey: string) {
+        console.log('handleIncomingRequest called:', { requestId: request?.requestId, senderPubKey: senderPubKey?.slice(0, 8), myPubKey: $nostrPublicKey?.slice(0, 8) });
 
-        // Check if we already have this request
+        // Ignore our own requests (echoed back from Nostr)
+        if (senderPubKey === $nostrPublicKey) {
+            console.log('Ignoring own request echo');
+            return;
+        }
+        // Ignore if we already have a pending request from this pubkey
         if (pendingFederationRequests.hasPendingForPubKey(senderPubKey)) {
             console.log('Already have pending request from this pubkey');
             return;
         }
 
-        // Create incoming request record
-        const pendingRequest = createIncomingRequest(
-            request.requestId,
-            senderPubKey,
-            request.senderNpub,
-            request.senderHolonId,
-            request.senderHolonName,
-            request.lensConfig,
-            request.capabilities,
-            request.message
+        console.log('Creating incoming request from:', request.senderHolonName);
+        const pending = createIncomingRequest(
+            request.requestId, senderPubKey, request.senderNpub,
+            request.senderHolonId, request.senderHolonName,
+            request.lensConfig, request.capabilities, request.message
         );
-
-        // Add to store
-        pendingFederationRequests.add(pendingRequest);
-        showSuccess(`Federation request received from ${request.senderHolonName}`);
+        pendingFederationRequests.add(pending);
+        showSuccess(`Request from ${request.senderHolonName}`);
     }
 
-    async function handleFederationResponse(
-        response: FederationResponseDM,
-        senderPubKey: string
-    ) {
-        console.log('Received federation response:', response.status, 'from:', senderPubKey.substring(0, 8) + '...');
+    async function handleFederationResponse(response: any, senderPubKey: string) {
+        console.log('Federation response received:', response, 'from:', senderPubKey);
 
-        // Find the outgoing request this response is for
+        // Ignore our own responses (echoed back from Nostr)
+        if (senderPubKey === $nostrPublicKey) {
+            console.log('Ignoring own response echo');
+            return;
+        }
+
         const request = pendingFederationRequests.getById(response.requestId);
         if (!request) {
-            console.warn('Received response for unknown request:', response.requestId);
+            console.log('No matching request found for response ID:', response.requestId);
+            return;
+        }
+
+        console.log('Found matching request:', request);
+
+        if (response.status === 'accepted') {
+            // Process the response - this stores capabilities, registers holon, and receives holograms
+            if (holosphere && currentHolonId && $nostrPrivateKey) {
+                console.log('Processing federation response - storing capabilities and registering holon');
+
+                // Get our inbound lenses to receive data from the responder
+                // Use response.lensConfig.outbound (what responder is sharing) not request.lensConfig.inbound
+                const ourInboundLenses = response.lensConfig?.outbound || [];
+
+                const result = await handshake.processFederationResponse(
+                    holosphere,
+                    response,
+                    senderPubKey,
+                    {
+                        holonId: currentHolonId,
+                        inboundLenses: ourInboundLenses
+                    }
+                );
+
+                console.log('processFederationResponse result:', result);
+
+                // Also store the federation relationship in holosphere (for UI display)
+                // IMPORTANT: If using response.lensConfig, swap from responder's perspective to initiator's
+                // Responder's outbound (what they share) = Initiator's inbound (what I receive)
+                // Responder's inbound (what they receive) = Initiator's outbound (what I share)
+                // If no response.lensConfig, use original request.lensConfig which is already initiator's perspective
+                if (response.responderHolonId) {
+                    const initiatorLensConfig = response.lensConfig
+                        ? {
+                            inbound: response.lensConfig.outbound || [],
+                            outbound: response.lensConfig.inbound || []
+                        }
+                        : request.lensConfig;
+                    console.log('Storing federation with holon:', response.responderHolonId, 'lensConfig:', initiatorLensConfig);
+                    await holosphere.federateHolon(currentHolonId, response.responderHolonId, {
+                        lensConfig: initiatorLensConfig,
+                        partnerName: response.responderHolonName
+                    });
+                }
+            }
+            pendingFederationRequests.updateStatus(response.requestId, 'accepted');
+            showSuccess('Federation accepted!');
+            await loadFederationData();
+        } else {
+            pendingFederationRequests.updateStatus(response.requestId, 'rejected');
+            showSuccess('Federation declined');
+        }
+    }
+
+    async function acceptRequest(requestId: string) {
+        const request = pendingFederationRequests.getById(requestId);
+        // Only accept incoming requests (not our own outgoing requests)
+        if (!request || request.type !== 'incoming' || !holosphere || !$nostrPrivateKey || !currentHolonId) return;
+
+        saving = true;
+        try {
+            const ourName = await getHolonName(currentHolonId);
+            // Use retry with exponential backoff for DM sends
+            await withRetry(async () => {
+                // Map PendingRequest to the format expected by handshake function
+                const requestPayload = {
+                    requestId: request.id,  // PendingRequest uses 'id', handshake expects 'requestId'
+                    senderHolonId: request.senderHolonId,
+                    senderHolonName: request.senderHolonName,
+                    capabilities: request.capabilities || []
+                };
+                await handshake.acceptFederationRequest(holosphere, $nostrPrivateKey, {
+                    request: requestPayload,
+                    senderPubKey: request.senderPubKey,
+                    holonId: currentHolonId,
+                    holonName: ourName,
+                    lensConfig: request.lensConfig
+                });
+            }, 3, 1000);
+
+            // IMPORTANT: Set up data replication for the responder side
+            // The responder needs to also process the federation to receive holograms
+            // from the initiator. Without this, only the initiator gets data replication.
+            //
+            // From the initiator's lensConfig:
+            // - initiator's outbound = what initiator shares = responder's inbound (what we receive)
+            // - initiator's inbound = what initiator wants = responder's outbound (what we share)
+            //
+            // So responder's perspective:
+            const responderLensConfig = {
+                inbound: request.lensConfig?.outbound || [],  // What we receive from initiator
+                outbound: request.lensConfig?.inbound || []   // What we share to initiator
+            };
+
+            // Build a synthetic response to process (as if we received it from ourselves)
+            // This sets up the capability and data replication for the responder
+            const syntheticResponse = {
+                requestId: request.id,
+                status: 'accepted',
+                responderHolonId: request.senderHolonId,
+                responderHolonName: request.senderHolonName,
+                lensConfig: request.lensConfig,
+                capabilities: request.capabilities || []
+            };
+
+            console.log('[Federation] Responder setting up data replication:', {
+                responderLensConfig,
+                initiatorHolonId: request.senderHolonId,
+                ourInboundLenses: responderLensConfig.inbound
+            });
+
+            // Process to store capabilities and register for inbound data
+            // Note: We use responder's inbound lenses to receive holograms from initiator
+            const result = await handshake.processFederationResponse(
+                holosphere,
+                syntheticResponse,
+                request.senderPubKey,
+                {
+                    holonId: currentHolonId,
+                    inboundLenses: responderLensConfig.inbound
+                }
+            );
+            console.log('[Federation] Responder processFederationResponse result:', result);
+
+            // Actually store the federation relationship in holosphere
+            // Use responder's perspective for lensConfig
+            await holosphere.federateHolon(currentHolonId, request.senderHolonId, {
+                lensConfig: responderLensConfig,
+                partnerName: request.senderHolonName
+            });
+
+            pendingFederationRequests.updateStatus(requestId, 'accepted');
+            showSuccess('Federation accepted');
+            await loadFederationData();
+        } catch (err) {
+            error = err instanceof Error ? err.message : 'Failed to accept';
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function rejectRequest(requestId: string) {
+        const request = pendingFederationRequests.getById(requestId);
+        if (!request || !holosphere || !$nostrPrivateKey) return;
+
+        saving = true;
+        try {
+            // Use retry with exponential backoff for DM sends
+            await withRetry(async () => {
+                await handshake.rejectFederationRequest(holosphere, $nostrPrivateKey, {
+                    requestId,
+                    senderPubKey: request.senderPubKey,
+                    message: 'Declined'
+                });
+            }, 3, 1000);
+            pendingFederationRequests.updateStatus(requestId, 'rejected');
+            showSuccess('Request declined');
+        } catch (err) {
+            error = err instanceof Error ? err.message : 'Failed to decline';
+        } finally {
+            saving = false;
+        }
+    }
+
+    // Handle incoming federation update (lens config change request)
+    async function handleIncomingUpdate(update: any, senderPubKey: string) {
+        console.log('handleIncomingUpdate called:', { updateId: update?.updateId, senderPubKey: senderPubKey?.slice(0, 8) });
+
+        // Ignore our own updates
+        if (senderPubKey === $nostrPublicKey) {
+            console.log('Ignoring own update echo');
+            return;
+        }
+
+        // Ignore if we already have a pending update from this pubkey
+        if (pendingUpdates.hasPendingForPartner(senderPubKey)) {
+            console.log('Already have pending update from this partner');
+            return;
+        }
+
+        // Find the current federation to get current lens config
+        const existingFederation = federatedHolons.find(h => h.pubKey === senderPubKey || h.id === senderPubKey);
+        const currentLensConfig = existingFederation?.lensConfig || { inbound: [], outbound: [] };
+
+        console.log('Creating incoming update from:', update.senderHolonName);
+        const pending = createIncomingUpdate(
+            update.updateId,
+            senderPubKey,
+            update.senderNpub,
+            update.senderHolonId,
+            update.senderHolonName,
+            currentLensConfig,
+            update.newLensConfig,
+            update.message
+        );
+        pendingUpdates.add(pending);
+        showSuccess(`Update request from ${update.senderHolonName}`);
+    }
+
+    // Handle federation update response
+    async function handleUpdateResponse(response: any, senderPubKey: string) {
+        console.log('Update response received:', response, 'from:', senderPubKey);
+
+        // Ignore our own responses
+        if (senderPubKey === $nostrPublicKey) {
+            console.log('Ignoring own update response echo');
+            return;
+        }
+
+        const update = pendingUpdates.getById(response.updateId);
+        if (!update) {
+            console.log('No matching update found for response ID:', response.updateId);
             return;
         }
 
         if (response.status === 'accepted') {
-            // Update request status
-            pendingFederationRequests.updateStatus(response.requestId, 'accepted');
-
-            // Create the actual federation record now that it's accepted
-            // Store the responder's name so we can display it without reading their settings
+            // Apply the lens config change locally
             if (holosphere && currentHolonId) {
-                await holosphere.federateHolon(currentHolonId, senderPubKey, {
-                    lensConfig: response.lensConfig || { inbound: [], outbound: [] },
-                    partnerName: response.responderHolonName
+                await holosphere.federateHolon(currentHolonId, update.partnerPubKey, {
+                    lensConfig: update.newLensConfig
                 });
             }
-
-            // Update the federation status to connected
-            federatedHolons = federatedHolons.map(h =>
-                h.pendingRequestId === response.requestId
-                    ? { ...h, status: 'connected' as const, pendingRequestId: undefined }
-                    : h
-            );
-
-            showSuccess(`Federation accepted by ${response.responderHolonName || 'partner'}`);
+            pendingUpdates.updateStatus(response.updateId, 'accepted');
+            showSuccess('Update accepted!');
             await loadFederationData();
         } else {
-            // Update request status
-            pendingFederationRequests.updateStatus(response.requestId, 'rejected');
-
-            // Update the federation status
-            federatedHolons = federatedHolons.map(h =>
-                h.pendingRequestId === response.requestId
-                    ? { ...h, status: 'rejected' as const }
-                    : h
-            );
-
-            showSuccess(`Federation rejected by ${response.responderHolonName || 'partner'}`);
+            pendingUpdates.updateStatus(response.updateId, 'rejected');
+            showSuccess('Update declined');
         }
     }
 
-    async function acceptFederationRequest(requestId: string) {
-        const pendingRequest = pendingFederationRequests.getById(requestId);
-        if (!pendingRequest || !$nostrPrivateKey) return;
+    // Accept a lens config update
+    async function acceptUpdate(updateId: string) {
+        const update = pendingUpdates.getById(updateId);
+        if (!update || update.type !== 'incoming_update' || !holosphere || !$nostrPrivateKey || !currentHolonId) return;
 
         saving = true;
         try {
-            const ourHolonName = await getHolonName(currentHolonId);
+            await withRetry(async () => {
+                await handshake.acceptFederationUpdate(holosphere, $nostrPrivateKey, {
+                    updateId,
+                    senderPubKey: update.partnerPubKey,
+                    holonId: currentHolonId,
+                    newLensConfig: update.newLensConfig
+                });
+            }, 3, 1000);
 
-            // Use holosphere2's handshake - creates local record AND sends response in one atomic operation
-            const result = await handshake.acceptFederationRequest(holosphere, $nostrPrivateKey, {
-                request: { requestId: pendingRequest.id },
-                senderPubKey: pendingRequest.senderPubKey,
-                holonId: currentHolonId,
-                holonName: ourHolonName,
-                lensConfig: { inbound: [], outbound: [] }
-            });
-
-            if (result.success) {
-                // Update request status
-                pendingFederationRequests.updateStatus(requestId, 'accepted');
-                // Reload federation data
-                await loadFederationData();
-                showSuccess('Federation accepted');
-            } else {
-                error = result.error || 'Failed to accept federation';
-            }
+            pendingUpdates.updateStatus(updateId, 'accepted');
+            showSuccess('Update accepted');
+            await loadFederationData();
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to accept federation';
-            console.error('Accept federation error:', err);
+            error = err instanceof Error ? err.message : 'Failed to accept update';
         } finally {
             saving = false;
         }
     }
 
-    async function rejectFederationRequest(requestId: string) {
-        const pendingRequest = pendingFederationRequests.getById(requestId);
-        if (!pendingRequest || !$nostrPrivateKey) return;
+    // Reject a lens config update
+    async function rejectUpdate(updateId: string) {
+        const update = pendingUpdates.getById(updateId);
+        if (!update || !holosphere || !$nostrPrivateKey) return;
 
         saving = true;
         try {
-            // Use holosphere2's handshake to send rejection
-            const result = await handshake.rejectFederationRequest(holosphere, $nostrPrivateKey, {
-                requestId: pendingRequest.id,
-                senderPubKey: pendingRequest.senderPubKey
-            });
-
-            if (result.success) {
-                // Update request status and remove
-                pendingFederationRequests.updateStatus(requestId, 'rejected');
-                showSuccess('Federation request rejected');
-            } else {
-                error = result.error || 'Failed to reject federation';
-            }
+            await withRetry(async () => {
+                await handshake.rejectFederationUpdate(holosphere, $nostrPrivateKey, {
+                    updateId,
+                    senderPubKey: update.partnerPubKey,
+                    message: 'Declined'
+                });
+            }, 3, 1000);
+            pendingUpdates.updateStatus(updateId, 'rejected');
+            showSuccess('Update declined');
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to reject federation';
-            console.error('Reject federation error:', err);
+            error = err instanceof Error ? err.message : 'Failed to decline update';
         } finally {
             saving = false;
         }
     }
 
-    $: totalFederations = federatedHolons.length;
-    $: activeLenses = federatedHolons.reduce((acc, holon) => {
-        if (holon && holon.lensConfig && Array.isArray(holon.lensConfig.inbound)) {
-            holon.lensConfig.inbound.forEach(lens => acc.add(lens));
-        }
-        return acc;
-    }, new Set<string>()).size;
+    // Cancel an outgoing update request
+    function cancelOutgoingUpdate(updateId: string) {
+        pendingUpdates.remove(updateId);
+        showSuccess('Update request cancelled');
+    }
+
+    // Stats
+    $: totalPartners = federatedHolons.length;
+    $: connectedCount = federatedHolons.filter(h => h.status === 'connected').length;
+    $: pendingCount = $incomingRequests.length;
+    $: outgoingCount = $outgoingRequests.length;
+    $: incomingUpdateCount = $incomingUpdates.length;
+    $: outgoingUpdateCount = $outgoingUpdates.length;
+
+    // Cancel an outgoing request
+    function cancelOutgoingRequest(requestId: string) {
+        pendingFederationRequests.remove(requestId);
+        showSuccess('Request cancelled');
+    }
 </script>
 
-<div class="space-y-4">
+<div class="federation">
     <TitleBar {holonName} title="Federation" />
 
-    <!-- Controls Section -->
-    <div class="bg-gray-800 rounded-2xl p-4 sm:p-6">
-        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
-            <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                <button
-                    on:click={() => showNetworkView = !showNetworkView}
-                    class="flex-1 lg:flex-none bg-gray-700/50 hover:bg-gray-600/50 border border-gray-600/50 px-3 py-2 rounded-lg transition-all flex items-center justify-center space-x-2 text-sm text-gray-200 font-medium hover:border-gray-500/50"
-                    title="Toggle network view"
-                >
-                    {#if showNetworkView}
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
-                        </svg>
-                        <span>List</span>
-                    {:else}
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path>
-                        </svg>
-                        <span>Network</span>
-                    {/if}
-                </button>
-                <button
-                    on:click={() => showAddCustomLens = true}
-                    class="flex-1 lg:flex-none bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/50 px-3 py-2 rounded-lg transition-all flex items-center justify-center space-x-2 text-sm text-purple-300 font-medium hover:border-purple-400/50"
-                    title="Add custom lens"
-                >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                    </svg>
-                    <span>Add Lens</span>
-                </button>
-                <button
-                    on:click={() => showAddDialog = true}
-                    class="flex-1 lg:flex-none bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-4 py-2 rounded-lg transition-all flex items-center justify-center space-x-2 text-white font-medium shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-                    disabled={!currentHolonId || saving}
-                    title={!currentHolonId ? 'Select a holon first' : 'Add new federation'}
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                    </svg>
-                    <span>Add Partner</span>
-                </button>
-            </div>
+    <!-- Header with Add button -->
+    <div class="federation__header">
+        <div class="federation__stats">
+            <span class="federation__stat">
+                <strong>{totalPartners}</strong> partners
+            </span>
+            {#if pendingCount > 0}
+                <span class="federation__stat federation__stat--pending">
+                    <strong>{pendingCount}</strong> incoming
+                </span>
+            {/if}
+            {#if outgoingCount > 0}
+                <span class="federation__stat federation__stat--outgoing">
+                    <strong>{outgoingCount}</strong> sent
+                </span>
+            {/if}
         </div>
+        <button
+            class="federation__add-btn"
+            on:click={() => showAddDialog = true}
+            disabled={!currentHolonId || saving}
+        >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+            </svg>
+            Add Partner
+        </button>
     </div>
 
-    <!-- Status Messages (floating) -->
+    <!-- Status messages -->
     {#if error}
-        <div class="fixed top-4 right-4 z-50 max-w-md" transition:fly={{ x: 100, duration: 300 }}>
-            <div class="bg-red-900/95 border border-red-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
-                <div class="flex items-start gap-3">
-                    <div class="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
-                        <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </div>
-                    <div class="flex-1">
-                        <p class="text-red-200 font-medium text-sm">Error</p>
-                        <p class="text-red-300/80 text-sm mt-0.5">{error}</p>
-                    </div>
-                    <button on:click={() => error = ''} class="text-red-400 hover:text-red-300" aria-label="Dismiss error">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+        <div class="federation__toast federation__toast--error" transition:fly={{ y: -10 }}>
+            <span>{error}</span>
+            <button on:click={() => error = ''}>×</button>
         </div>
     {/if}
 
     {#if success}
-        <div class="fixed top-4 right-4 z-50 max-w-md" transition:fly={{ x: 100, duration: 300 }}>
-            <div class="bg-green-900/95 border border-green-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
-                <div class="flex items-start gap-3">
-                    <div class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
-                        <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                        </svg>
-                    </div>
-                    <div class="flex-1">
-                        <p class="text-green-200 font-medium text-sm">Success</p>
-                        <p class="text-green-300/80 text-sm mt-0.5">{success}</p>
-                    </div>
-                    <button on:click={() => success = ''} class="text-green-400 hover:text-green-300" aria-label="Dismiss success message">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
-                </div>
-            </div>
+        <div class="federation__toast federation__toast--success" transition:fly={{ y: -10 }}>
+            <span>{success}</span>
         </div>
     {/if}
 
-    <!-- Stats Bar -->
-    {#if !loading && currentHolonId && federatedHolons.length > 0}
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" transition:slide>
-            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                    <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                    </svg>
-                </div>
-                <div>
-                    <div class="text-xl font-bold text-white">{totalFederations}</div>
-                    <div class="text-xs text-gray-400">Partners</div>
-                </div>
-            </div>
-            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                    </svg>
-                </div>
-                <div>
-                    <div class="text-xl font-bold text-white">{activeLenses}</div>
-                    <div class="text-xs text-gray-400">Active Lenses</div>
-                </div>
-            </div>
-            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-                    <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                </div>
-                <div>
-                    <div class="text-xl font-bold text-white">{federatedHolons.filter(h => h.status === 'connected').length}</div>
-                    <div class="text-xs text-gray-400">Connected</div>
-                </div>
-            </div>
-            <div class="bg-gray-800/80 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                    <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                </div>
-                <div>
-                    <div class="text-xl font-bold text-white">{$incomingRequests.length}</div>
-                    <div class="text-xs text-gray-400">Pending</div>
-                </div>
-            </div>
-        </div>
-    {/if}
-
-    <!-- Main Content Container -->
-    <div class="bg-gray-800/50 rounded-2xl border border-gray-700/50 min-h-[500px]">
-        <div class="p-6">
-
-            <!-- Incoming Federation Requests -->
-            {#if $incomingRequests.length > 0}
-                <div class="mb-6" transition:slide>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-                            </svg>
+    <!-- Incoming Pending requests -->
+    {#if $incomingRequests.length > 0}
+        <div class="federation__section" transition:slide>
+            <h3 class="federation__section-title">
+                Incoming Requests
+                <span class="federation__badge">{$incomingRequests.length}</span>
+            </h3>
+            <div class="federation__requests">
+                {#each $incomingRequests as request (request.id)}
+                    <div class="federation__request federation__request--incoming" transition:slide>
+                        <div class="federation__request-info">
+                            <div class="federation__request-avatar">
+                                {request.senderHolonName?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div class="federation__request-details">
+                                <span class="federation__request-name">{request.senderHolonName}</span>
+                                <span class="federation__request-npub">{shortenPubKey(request.senderPubKey)}</span>
+                                {#if request.lensConfig && (request.lensConfig.inbound?.length > 0 || request.lensConfig.outbound?.length > 0)}
+                                    <span class="federation__request-lenses">
+                                        {#if request.lensConfig.inbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--inbound" title="They want to receive">↓ {request.lensConfig.inbound.join(', ')}</span>
+                                        {/if}
+                                        {#if request.lensConfig.outbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--outbound" title="They want to share">↑ {request.lensConfig.outbound.join(', ')}</span>
+                                        {/if}
+                                    </span>
+                                {/if}
+                                {#if request.message}
+                                    <span class="federation__request-message">"{request.message}"</span>
+                                {/if}
+                            </div>
                         </div>
-                        <h3 class="text-base font-semibold text-white">Pending Requests</h3>
-                        <span class="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
-                            {$incomingRequests.length}
-                        </span>
+                        <div class="federation__request-actions">
+                            <button class="federation__request-btn federation__request-btn--reject" on:click={() => rejectRequest(request.id)} disabled={saving}>
+                                Decline
+                            </button>
+                            <button class="federation__request-btn federation__request-btn--accept" on:click={() => acceptRequest(request.id)} disabled={saving}>
+                                Accept
+                            </button>
+                        </div>
                     </div>
+                {/each}
+            </div>
+        </div>
+    {/if}
 
-                    <div class="space-y-3">
-                        {#each $incomingRequests as request (request.id)}
-                            <div class="bg-gradient-to-r from-amber-900/20 to-orange-900/10 rounded-xl p-4 border border-amber-500/30 hover:border-amber-500/50 transition-all" transition:slide>
-                                <div class="flex flex-col sm:flex-row sm:items-center gap-4">
-                                    <!-- Avatar and Info -->
-                                    <div class="flex items-center gap-3 flex-1 min-w-0">
-                                        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0 shadow-lg">
-                                            {request.senderHolonName?.charAt(0)?.toUpperCase() || '?'}
-                                        </div>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="text-white font-semibold truncate">{request.senderHolonName}</p>
-                                            <p class="text-amber-300/70 text-xs font-mono truncate">{shortenNpub(request.senderNpub)}</p>
-                                            {#if request.lensConfig.outbound.length > 0}
-                                                <div class="flex flex-wrap gap-1 mt-1.5">
-                                                    {#each request.lensConfig.outbound.slice(0, 3) as lens}
-                                                        <span class="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">{lens}</span>
-                                                    {/each}
-                                                    {#if request.lensConfig.outbound.length > 3}
-                                                        <span class="text-xs text-amber-400">+{request.lensConfig.outbound.length - 3} more</span>
-                                                    {/if}
-                                                </div>
-                                            {/if}
-                                        </div>
+    <!-- Outgoing Pending requests -->
+    {#if $outgoingRequests.length > 0}
+        <div class="federation__section federation__section--outgoing" transition:slide>
+            <h3 class="federation__section-title">
+                Sent Requests
+                <span class="federation__badge federation__badge--outgoing">{$outgoingRequests.length}</span>
+            </h3>
+            <div class="federation__requests">
+                {#each $outgoingRequests as request (request.id)}
+                    <div class="federation__request federation__request--outgoing" transition:slide>
+                        <div class="federation__request-info">
+                            <div class="federation__request-avatar federation__request-avatar--outgoing">
+                                {(request.recipientHolonName || request.recipientPubKey || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <div class="federation__request-details">
+                                <span class="federation__request-name">{request.recipientHolonName || 'Unknown'}</span>
+                                <span class="federation__request-npub">{shortenPubKey(request.recipientPubKey)}</span>
+                                <span class="federation__request-status">Awaiting response...</span>
+                                {#if request.message}
+                                    <span class="federation__request-message">"{request.message}"</span>
+                                {/if}
+                            </div>
+                        </div>
+                        <div class="federation__request-actions">
+                            <button class="federation__request-btn federation__request-btn--cancel" on:click={() => cancelOutgoingRequest(request.id)} disabled={saving}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        </div>
+    {/if}
+
+    <!-- Incoming Update Requests (lens config changes) -->
+    {#if $incomingUpdates.length > 0}
+        <div class="federation__section federation__section--update" transition:slide>
+            <h3 class="federation__section-title">
+                Incoming Updates
+                <span class="federation__badge federation__badge--update">{$incomingUpdates.length}</span>
+            </h3>
+            <div class="federation__requests">
+                {#each $incomingUpdates as update (update.id)}
+                    <div class="federation__request federation__request--update" transition:slide>
+                        <div class="federation__request-info">
+                            <div class="federation__request-avatar federation__request-avatar--update">
+                                {update.partnerHolonName?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div class="federation__request-details">
+                                <span class="federation__request-name">{update.partnerHolonName}</span>
+                                <span class="federation__request-npub">{shortenPubKey(update.partnerPubKey)}</span>
+                                <span class="federation__request-subtitle">Wants to change lens config:</span>
+                                <div class="federation__update-diff">
+                                    <div class="federation__update-from">
+                                        <span class="federation__update-label">Current:</span>
+                                        {#if update.currentLensConfig.inbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.currentLensConfig.inbound.join(', ')}</span>
+                                        {/if}
+                                        {#if update.currentLensConfig.outbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.currentLensConfig.outbound.join(', ')}</span>
+                                        {/if}
+                                        {#if !update.currentLensConfig.inbound?.length && !update.currentLensConfig.outbound?.length}
+                                            <span class="federation__lens-tag">None</span>
+                                        {/if}
                                     </div>
-
-                                    <!-- Message (if any) -->
-                                    {#if request.message}
-                                        <div class="hidden sm:block w-px h-10 bg-amber-500/30"></div>
-                                        <div class="flex-1 max-w-xs">
-                                            <p class="text-amber-200/80 text-sm italic line-clamp-2">"{request.message}"</p>
-                                        </div>
-                                    {/if}
-
-                                    <!-- Actions -->
-                                    <div class="flex gap-2 flex-shrink-0">
-                                        <button
-                                            on:click={() => rejectFederationRequest(request.id)}
-                                            disabled={saving}
-                                            class="px-4 py-2.5 rounded-lg transition-all text-red-400 hover:text-white hover:bg-red-600 border border-red-500/50 hover:border-red-500 text-sm font-medium disabled:opacity-50"
-                                        >
-                                            Decline
-                                        </button>
-                                        <button
-                                            on:click={() => acceptFederationRequest(request.id)}
-                                            disabled={saving}
-                                            class="px-5 py-2.5 rounded-lg transition-all bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-sm font-medium shadow-lg shadow-green-500/25 disabled:opacity-50 disabled:shadow-none flex items-center gap-2"
-                                        >
-                                            {#if saving}
-                                                <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                                                </svg>
-                                            {:else}
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                                </svg>
-                                            {/if}
-                                            Accept
-                                        </button>
+                                    <div class="federation__update-to">
+                                        <span class="federation__update-label">New:</span>
+                                        {#if update.newLensConfig.inbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.newLensConfig.inbound.join(', ')}</span>
+                                        {/if}
+                                        {#if update.newLensConfig.outbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.newLensConfig.outbound.join(', ')}</span>
+                                        {/if}
+                                        {#if !update.newLensConfig.inbound?.length && !update.newLensConfig.outbound?.length}
+                                            <span class="federation__lens-tag">None</span>
+                                        {/if}
                                     </div>
-                                </div>
-
-                                <!-- Timestamp -->
-                                <div class="mt-3 pt-3 border-t border-amber-500/20 flex items-center justify-between text-xs text-gray-500">
-                                    <span>Received {new Date(request.timestamp).toLocaleDateString()}</span>
-                                    <span>{new Date(request.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                 </div>
                             </div>
-                        {/each}
+                        </div>
+                        <div class="federation__request-actions">
+                            <button class="federation__request-btn federation__request-btn--reject" on:click={() => rejectUpdate(update.id)} disabled={saving}>
+                                Decline
+                            </button>
+                            <button class="federation__request-btn federation__request-btn--accept" on:click={() => acceptUpdate(update.id)} disabled={saving}>
+                                Accept
+                            </button>
+                        </div>
                     </div>
-                </div>
-            {/if}
+                {/each}
+            </div>
+        </div>
+    {/if}
 
+    <!-- Outgoing Update Requests -->
+    {#if $outgoingUpdates.length > 0}
+        <div class="federation__section federation__section--outgoing-update" transition:slide>
+            <h3 class="federation__section-title">
+                Sent Updates
+                <span class="federation__badge federation__badge--outgoing">{$outgoingUpdates.length}</span>
+            </h3>
+            <div class="federation__requests">
+                {#each $outgoingUpdates as update (update.id)}
+                    <div class="federation__request federation__request--outgoing" transition:slide>
+                        <div class="federation__request-info">
+                            <div class="federation__request-avatar federation__request-avatar--outgoing">
+                                {update.partnerHolonName?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div class="federation__request-details">
+                                <span class="federation__request-name">{update.partnerHolonName}</span>
+                                <span class="federation__request-status">Awaiting approval for lens change...</span>
+                                <div class="federation__update-diff">
+                                    <div class="federation__update-from">
+                                        <span class="federation__update-label">Current:</span>
+                                        {#if update.currentLensConfig.inbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.currentLensConfig.inbound.join(', ')}</span>
+                                        {/if}
+                                        {#if update.currentLensConfig.outbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.currentLensConfig.outbound.join(', ')}</span>
+                                        {/if}
+                                    </div>
+                                    <div class="federation__update-to">
+                                        <span class="federation__update-label">Requested:</span>
+                                        {#if update.newLensConfig.inbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.newLensConfig.inbound.join(', ')}</span>
+                                        {/if}
+                                        {#if update.newLensConfig.outbound?.length > 0}
+                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.newLensConfig.outbound.join(', ')}</span>
+                                        {/if}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="federation__request-actions">
+                            <button class="federation__request-btn federation__request-btn--cancel" on:click={() => cancelOutgoingUpdate(update.id)} disabled={saving}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        </div>
+    {/if}
+
+    <!-- Main content -->
+    <div class="federation__content">
         {#if loading}
-            <!-- Skeleton Loading State -->
-            <div class="space-y-4 animate-pulse">
-                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {#each [1, 2, 3] as _}
-                        <div class="bg-gray-700/30 rounded-xl p-5 border border-gray-700/50">
-                            <div class="flex items-center gap-3 mb-4">
-                                <div class="w-12 h-12 rounded-full bg-gray-600/50"></div>
-                                <div class="flex-1">
-                                    <div class="h-4 bg-gray-600/50 rounded w-2/3 mb-2"></div>
-                                    <div class="h-3 bg-gray-600/30 rounded w-1/2"></div>
-                                </div>
-                                <div class="w-8 h-8 rounded-lg bg-gray-600/30"></div>
-                            </div>
-                            <div class="space-y-2">
-                                <div class="h-3 bg-gray-600/30 rounded w-full"></div>
-                                <div class="h-3 bg-gray-600/30 rounded w-3/4"></div>
-                            </div>
-                        </div>
-                    {/each}
-                </div>
+            <div class="federation__loading">
+                <div class="federation__spinner"></div>
+                <span>Loading...</span>
             </div>
         {:else if !currentHolonId}
-            <!-- No Holon Selected -->
-            <div class="flex flex-col items-center justify-center py-16">
-                <div class="w-20 h-20 rounded-2xl bg-gray-700/50 flex items-center justify-center mb-6">
-                    <svg class="w-10 h-10 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-                    </svg>
-                </div>
-                <h3 class="text-xl font-semibold text-gray-300 mb-2">No Holon Selected</h3>
-                <p class="text-gray-500 text-center max-w-sm">Select a holon from the sidebar to configure its federation settings.</p>
+            <div class="federation__empty">
+                <p>Select a holon to configure federation</p>
             </div>
         {:else if federatedHolons.length === 0}
-            <!-- Empty State -->
-            <div class="flex flex-col items-center justify-center py-16">
-                <!-- Illustration -->
-                <div class="relative mb-8">
-                    <div class="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500/20 to-indigo-500/20 flex items-center justify-center">
-                        <svg class="w-12 h-12 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-                        </svg>
-                    </div>
-                    <!-- Decorative dots -->
-                    <div class="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-blue-500/30"></div>
-                    <div class="absolute -bottom-1 -left-3 w-3 h-3 rounded-full bg-purple-500/30"></div>
-                    <div class="absolute top-1/2 -right-6 w-2 h-2 rounded-full bg-indigo-500/30"></div>
-                </div>
-
-                <h3 class="text-xl font-semibold text-white mb-2">Start Federating</h3>
-                <p class="text-gray-400 text-center max-w-md mb-8">
-                    Connect with other holons to share data and collaborate. Federation enables real-time data sync across communities.
-                </p>
-
-                <div class="flex flex-col sm:flex-row gap-3">
-                    <button
-                        on:click={() => showAddDialog = true}
-                        class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 px-6 py-3 rounded-xl transition-all inline-flex items-center justify-center gap-2 text-white font-medium shadow-lg shadow-purple-500/25"
-                    >
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                        </svg>
-                        Add Federation Partner
-                    </button>
-                    <button
-                        on:click={() => {/* TODO: Show help/docs */}}
-                        class="px-6 py-3 rounded-xl transition-all inline-flex items-center justify-center gap-2 text-gray-300 font-medium border border-gray-600 hover:border-gray-500 hover:bg-gray-700/50"
-                    >
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        Learn More
-                    </button>
-                </div>
+            <div class="federation__empty">
+                <div class="federation__empty-icon">🔗</div>
+                <h3>No Partners Yet</h3>
+                <p>Add a partner to start sharing data</p>
+                <button class="federation__empty-btn" on:click={() => showAddDialog = true}>
+                    Add Partner
+                </button>
             </div>
         {:else}
-            {#if !showNetworkView}
-                <!-- Federation List -->
-                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {#each federatedHolons as holon (holon.id)}
-                        <FederatedHolonCard
-                            {holon}
-                            {availableLenses}
-                            {saving}
-                            on:navigate={(e) => navigateToHolon(e.detail.holonId)}
-                            on:remove={(e) => removeFederation(e.detail.holonId)}
-                            on:toggleLens={(e) => toggleLensCapability(e.detail.holonId, e.detail.lens, e.detail.direction, e.detail.currentlyEnabled)}
-                            on:copyNpub={(e) => {
-                                navigator.clipboard.writeText(e.detail.npub);
-                                showSuccess('Copied npub');
-                            }}
-                        />
-                    {/each}
-                </div>
-            {:else}
-                <!-- Network View -->
-                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                    <div class="text-center mb-6">
-                        <h3 class="text-lg font-semibold text-white mb-2">Federation Network</h3>
-                        <p class="text-gray-400 text-sm">Interactive visualization of holon connections</p>
-                    </div>
-                    
-                    <div class="flex justify-center">
-                        <svg width="800" height="600" class="rounded-lg bg-gradient-to-br from-gray-900 to-gray-800 border border-gray-600">
-                            <!-- Background Grid -->
-                            <defs>
-                                <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#374151" stroke-width="0.5" opacity="0.3"/>
-                                </pattern>
-                                <filter id="glow">
-                                    <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                                    <feMerge> 
-                                        <feMergeNode in="coloredBlur"/>
-                                        <feMergeNode in="SourceGraphic"/>
-                                    </feMerge>
-                                </filter>
-                            </defs>
-                            
-                            <rect width="100%" height="100%" fill="url(#grid)"/>
-                            
-                            <!-- Connection Lines -->
-                            {#each federatedHolons as holon, index}
-                                {@const angle = (index / federatedHolons.length) * 2 * Math.PI - Math.PI/2}
-                                {@const radius = 200}
-                                {@const x = 400 + Math.cos(angle) * radius}
-                                {@const y = 300 + Math.sin(angle) * radius}
-                                
-                                <!-- Connection Line -->
-                                <line 
-                                    x1="400" 
-                                    y1="300" 
-                                    x2={x} 
-                                    y2={y} 
-                                    stroke={(holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? '#10B981' : '#6B7280'}
-                                    stroke-width={(holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? '3' : '2'}
-                                    stroke-dasharray={(holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? 'none' : '5,5'}
-                                    opacity="0.7"
-                                    class="transition-all duration-300"
-                                />
-                            {/each}
-                            
-                            <!-- Current Holon (Center) -->
-                            <g class="current-holon">
-                                <circle 
-                                    cx="400" 
-                                    cy="300" 
-                                    r="40" 
-                                    fill="#3B82F6" 
-                                    stroke="#60A5FA" 
-                                    stroke-width="3"
-                                    class="cursor-pointer hover:fill-blue-500 transition-all duration-300"
-                                    on:click={() => navigateToHolon(currentHolonId)}
-                                    on:keydown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                            navigateToHolon(currentHolonId);
-                                        }
-                                    }}
-                                    role="button"
-                                    tabindex="0"
-                                    aria-label="Navigate to current holon"
-                                    style="filter: url(#glow)"
-                                />
-                                <text 
-                                    x="400" 
-                                    y="300" 
-                                    text-anchor="middle" 
-                                    dy="0.35em" 
-                                    fill="white" 
-                                    font-size="18" 
-                                    font-weight="bold"
-                                    class="pointer-events-none"
-                                >
-                                    ⬢
-                                </text>
-                                <text 
-                                    x="400" 
-                                    y="350" 
-                                    text-anchor="middle" 
-                                    fill="white" 
-                                    font-size="12" 
-                                    font-weight="600"
-                                    class="pointer-events-none"
-                                >
-                                    Current
-                                </text>
-                            </g>
-                            
-                            <!-- Federated Holons -->
-                            {#each federatedHolons as holon, index}
-                                {@const angle = (index / federatedHolons.length) * 2 * Math.PI - Math.PI/2}
-                                {@const radius = 200}
-                                {@const x = 400 + Math.cos(angle) * radius}
-                                {@const y = 300 + Math.sin(angle) * radius}
-                                {@const nodeColor = (holon.lensConfig.inbound.length > 0 && holon.lensConfig.outbound.length > 0) ? '#10B981' : '#6B7280'}
-                                
-                                <g class="federated-holon">
-                                    <!-- Main Node -->
-                                    <circle 
-                                        cx={x} 
-                                        cy={y} 
-                                        r="30" 
-                                        fill={nodeColor}
-                                        stroke="white"
-                                        stroke-width="2"
-                                        class="cursor-pointer hover:r-35 transition-all duration-300"
-                                        on:click={() => navigateToHolon(holon.id)}
-                                        on:keydown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                navigateToHolon(holon.id);
-                                            }
-                                        }}
-                                        role="button"
-                                        tabindex="0"
-                                        aria-label="Navigate to {holon.name || holon.id}"
-                                        style="filter: url(#glow)"
-                                    />
-                                    
-                                    <!-- Avatar Letter -->
-                                    <text 
-                                        x={x} 
-                                        y={y} 
-                                        text-anchor="middle" 
-                                        dy="0.35em" 
-                                        fill="white" 
-                                        font-size="16" 
-                                        font-weight="bold"
-                                        class="pointer-events-none"
-                                    >
-                                        {(holon.name && typeof holon.name === 'string') ? holon.name.charAt(0).toUpperCase() : '?'}
-                                    </text>
-                                    
-                                    <!-- Status Indicator -->
-                                    <circle 
-                                        cx={x + 20} 
-                                        cy={y - 20} 
-                                        r="6" 
-                                        fill={holon.status === 'connected' ? '#10B981' : holon.status === 'pending' ? '#F59E0B' : '#EF4444'}
-                                        stroke="white"
-                                        stroke-width="2"
-                                        class="pointer-events-none"
-                                    />
-                                    
-                                    <!-- Lens Count Badge -->
-                                    {#if holon.lensConfig.inbound.length > 0}
-                                        <circle
-                                            cx={x - 20}
-                                            cy={y + 20}
-                                            r="8"
-                                            fill="#3B82F6"
-                                            stroke="white"
-                                            stroke-width="1"
-                                            class="pointer-events-none"
-                                        />
-                                        <text
-                                            x={x - 20}
-                                            y={y + 20}
-                                            text-anchor="middle"
-                                            dy="0.35em"
-                                            fill="white"
-                                            font-size="10"
-                                            font-weight="bold"
-                                            class="pointer-events-none"
-                                        >
-                                            {holon.lensConfig.inbound.length}
-                                        </text>
-                                    {/if}
-                                </g>
-                                
-                                <!-- Holon Name Label -->
-                                <text 
-                                    x={x} 
-                                    y={y + 50} 
-                                    text-anchor="middle" 
-                                    fill="white" 
-                                    font-size="11" 
-                                    font-weight="500"
-                                    class="pointer-events-none"
-                                >
-                                    {holon.name || holon.id}
-                                </text>
-                            {/each}
-                            
-                            <!-- Legend -->
-                            <g class="legend" transform="translate(20, 20)">
-                                <rect x="0" y="0" width="180" height="120" fill="rgba(0,0,0,0.8)" stroke="#374151" stroke-width="1" rx="8"/>
-                                <text x="10" y="20" fill="white" font-size="12" font-weight="bold">Network Legend</text>
-                                
-                                <circle cx="15" cy="40" r="4" fill="#10B981"/>
-                                <text x="25" y="40" dy="0.35em" fill="white" font-size="10">Bidirectional</text>
-                                
-                                <circle cx="15" cy="60" r="4" fill="#6B7280"/>
-                                <text x="25" y="60" dy="0.35em" fill="white" font-size="10">Notify Only</text>
-                                
-                                <circle cx="15" cy="80" r="4" fill="#10B981"/>
-                                <text x="25" y="80" dy="0.35em" fill="white" font-size="10">Connected</text>
-                                
-                                <circle cx="15" cy="100" r="4" fill="#3B82F6"/>
-                                <text x="25" y="100" dy="0.35em" fill="white" font-size="10">Lens Count</text>
-                            </g>
-                            
-                            <!-- Stats -->
-                            <g class="stats" transform="translate(600, 20)">
-                                <rect x="0" y="0" width="160" height="80" fill="rgba(0,0,0,0.8)" stroke="#374151" stroke-width="1" rx="8"/>
-                                <text x="10" y="20" fill="white" font-size="12" font-weight="bold">Network Stats</text>
-                                
-                                <text x="10" y="40" fill="#60A5FA" font-size="10">Connections:</text>
-                                <text x="120" y="40" fill="white" font-size="10" font-weight="bold">{federatedHolons.length}</text>
-                                
-                                <text x="10" y="60" fill="#10B981" font-size="10">Active Lenses:</text>
-                                <text x="120" y="60" fill="white" font-size="10" font-weight="bold">{activeLenses}</text>
-                            </g>
-                        </svg>
-                    </div>
-                    
-                    {#if federatedHolons.length === 0}
-                        <div class="text-center mt-6">
-                            <div class="bg-gray-700 rounded-lg p-8 border border-gray-600">
-                                <div class="text-6xl mb-4">🌐</div>
-                                <h4 class="text-xl font-semibold text-white mb-2">No Network Connections</h4>
-                                <p class="text-gray-400">Create your first federation to see the network visualization</p>
-                            </div>
-                        </div>
-                    {/if}
-                </div>
-            {/if}
+            <div class="federation__grid">
+                {#each federatedHolons as holon (holon.id)}
+                    <FederatedHolonCard
+                        {holon}
+                        availableLenses={AVAILABLE_LENSES}
+                        {saving}
+                        expanded={expandedCards.has(holon.id)}
+                        on:remove={(e) => removeFederation(e.detail.holonId)}
+                        on:navigate={(e) => navigateToHolon(e.detail.holonId)}
+                        on:toggleLens={handleToggleLens}
+                    />
+                {/each}
+            </div>
         {/if}
-        </div>
     </div>
 </div>
 
-<!-- Add Federation Dialog -->
+<!-- Add Partner Dialog -->
 {#if showAddDialog}
-    <div 
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-        on:click={(e) => e.target === e.currentTarget && closeDialog()}
-        on:keydown={(e) => {
-            if (e.key === 'Escape') {
-                closeDialog();
-            }
-        }}
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-        transition:fade={{ duration: 200 }}
-    >
-        <div 
-            class="bg-gray-800 rounded-xl p-6 w-full max-w-md"
-            transition:fly={{ y: -50, duration: 300 }}
-        >
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xl font-semibold text-white">Add Federation</h2>
-                <button 
-                    on:click={closeDialog}
-                    class="text-gray-400 hover:text-white transition-colors"
-                    aria-label="Close dialog"
-                >
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </button>
+    <div class="federation__dialog-backdrop" on:click={closeAddDialog} transition:fade={{ duration: 150 }}>
+        <div class="federation__dialog" on:click|stopPropagation transition:fly={{ y: 20, duration: 200 }}>
+            <div class="federation__dialog-header">
+                <h3>Add Partner</h3>
+                <button class="federation__dialog-close" on:click={closeAddDialog}>×</button>
             </div>
 
-            <form on:submit|preventDefault={addFederation} class="space-y-4">
-                <!-- Nostr Public Key Input -->
-                <div>
-                    <label for="partnerNpub" class="block text-sm font-medium text-gray-300 mb-2">
-                        Partner's Nostr Public Key *
-                    </label>
-                    <div class="flex space-x-2">
+            <div class="federation__dialog-content">
+                <div class="federation__field">
+                    <label>Partner's Nostr Public Key</label>
+                    <div class="federation__input-row">
                         <input
-                            id="partnerNpub"
                             type="text"
+                            placeholder="npub1... or hex key"
                             bind:value={newPartnerNpub}
                             on:input={validateNpub}
-                            placeholder="npub1... or hex public key"
-                            class="flex-1 bg-gray-700 border rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            class:border-gray-600={!npubValidationError}
-                            class:border-red-500={npubValidationError}
                         />
-                        <button
-                            type="button"
-                            on:click={() => showQRScanner = true}
-                            class="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-lg transition-colors flex items-center justify-center"
-                            title="Scan QR Code"
-                        >
+                        <button class="federation__qr-btn" on:click={() => showQRScanner = true} title="Scan QR">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path>
                             </svg>
                         </button>
                     </div>
-                    {#if npubValidationError}
-                        <p class="text-red-400 text-sm mt-1">{npubValidationError}</p>
+                    {#if npubError}
+                        <span class="federation__field-error">{npubError}</span>
                     {/if}
-                    {#if newPartnerHexPubKey && !npubValidationError}
-                        <p class="text-green-400 text-sm mt-1 flex items-center">
-                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                            </svg>
-                            Valid public key detected
-                        </p>
+                    {#if newPartnerHexPubKey}
+                        <span class="federation__field-success">Valid key</span>
                     {/if}
                 </div>
 
-                <!-- OR divider -->
-                <div class="relative">
-                    <div class="absolute inset-0 flex items-center">
-                        <div class="w-full border-t border-gray-600"></div>
-                    </div>
-                    <div class="relative flex justify-center text-sm">
-                        <span class="px-2 bg-gray-800 text-gray-400">OR use Holon ID</span>
-                    </div>
+                <div class="federation__field" style="margin-top: 1rem;">
+                    <label>Message (optional)</label>
+                    <textarea
+                        class="federation__textarea"
+                        placeholder="Add a note for the partner..."
+                        bind:value={federationMessage}
+                        rows="2"
+                    ></textarea>
                 </div>
 
-                <!-- Holon ID Input (fallback) -->
-                <div>
-                    <label for="holonId" class="block text-sm font-medium text-gray-300 mb-2">
-                        Holon ID (legacy)
-                    </label>
-                    <input
-                        id="holonId"
-                        type="text"
-                        bind:value={newHolonId}
-                        placeholder="Enter holon ID..."
-                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        disabled={!!newPartnerHexPubKey}
-                    />
-                    <p class="text-gray-500 text-xs mt-1">Use this for backward compatibility with non-Nostr holons</p>
-                </div>
-
-                <!-- Default Expiration Selection -->
-                <div>
-                    <p class="block text-sm font-medium text-gray-300 mb-2">
-                        Default Capability Expiration
-                    </p>
-                    <ExpirationPicker
-                        bind:selectedPreset={selectedExpiration}
-                        bind:customDate={customExpirationDate}
-                        showModal={false}
-                    />
-                </div>
-
-                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3">
-                    <div class="flex items-start space-x-2">
-                        <svg class="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <div class="text-sm text-blue-300">
-                            <p class="font-medium mb-1">Federation with Capability Tokens</p>
-                            <p>Using a Nostr public key enables per-lens capability tokens with configurable expiration. You can grant or revoke read/write access for each lens independently.</p>
+                <!-- Unified Lens Permissions -->
+                <div class="federation__permissions">
+                    <div class="federation__permissions-header">
+                        <span class="federation__permissions-label">Lens</span>
+                        <div class="federation__permissions-cols">
+                            <span class="federation__permissions-col" title="Request to read their data">↓R</span>
+                            <span class="federation__permissions-col" title="Request to write their data">↓W</span>
+                            <span class="federation__permissions-col" title="Share your data for reading">↑R</span>
+                            <span class="federation__permissions-col" title="Share your data for writing">↑W</span>
                         </div>
                     </div>
+                    {#each AVAILABLE_LENSES as lens}
+                        <div class="federation__permissions-row">
+                            <span class="federation__permissions-lens">{lens}</span>
+                            <div class="federation__permissions-checkboxes">
+                                <label class="federation__perm-check federation__perm-check--receive" title="Request to read their {lens}">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'receive', 'read')}
+                                        on:change={() => togglePermission(lens, 'receive', 'read')}
+                                    />
+                                </label>
+                                <label class="federation__perm-check federation__perm-check--receive-write" title="Request to write their {lens}">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'receive', 'write')}
+                                        on:change={() => togglePermission(lens, 'receive', 'write')}
+                                    />
+                                </label>
+                                <label class="federation__perm-check federation__perm-check--share" title="Share your {lens} for reading">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'share', 'read')}
+                                        on:change={() => togglePermission(lens, 'share', 'read')}
+                                    />
+                                </label>
+                                <label class="federation__perm-check federation__perm-check--share-write" title="Share your {lens} for writing">
+                                    <input
+                                        type="checkbox"
+                                        checked={hasPermission(lens, 'share', 'write')}
+                                        on:change={() => togglePermission(lens, 'share', 'write')}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    {/each}
+                    <div class="federation__permissions-legend">
+                        <span><span class="federation__legend-icon federation__legend-icon--receive">↓</span> Receive from them</span>
+                        <span><span class="federation__legend-icon federation__legend-icon--share">↑</span> Share with them</span>
+                        <span><strong>R</strong> = Read</span>
+                        <span><strong>W</strong> = Write</span>
+                    </div>
                 </div>
-
-                <div class="flex space-x-3 pt-4">
-                    <button
-                        type="button"
-                        on:click={closeDialog}
-                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 rounded-lg transition-colors"
-                        disabled={saving}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-                        disabled={saving || (!newPartnerHexPubKey && !newHolonId.trim())}
-                    >
-                        {#if saving}
-                            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                            </svg>
-                        {/if}
-                        <span>{saving ? 'Creating...' : 'Create Federation'}</span>
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-{/if}
-
-<!-- Add Custom Lens Dialog -->
-{#if showAddCustomLens}
-    <div 
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-        on:click={(e) => e.target === e.currentTarget && (showAddCustomLens = false)}
-        on:keydown={(e) => {
-            if (e.key === 'Escape') {
-                showAddCustomLens = false;
-            }
-        }}
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-        transition:fade={{ duration: 200 }}
-    >
-        <div 
-            class="bg-gray-800 rounded-xl p-6 w-full max-w-sm"
-            transition:fly={{ y: -50, duration: 300 }}
-        >
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xl font-semibold text-white">Add Custom Lens</h2>
-                <button 
-                    on:click={() => showAddCustomLens = false}
-                    class="text-gray-400 hover:text-white transition-colors"
-                    aria-label="Close custom lens dialog"
-                >
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </button>
             </div>
 
-            <form on:submit|preventDefault={addCustomLens} class="space-y-4">
-                <div>
-                    <label for="customLensName" class="block text-sm font-medium text-gray-300 mb-2">
-                        Lens Name *
-                    </label>
-                    <input 
-                        id="customLensName"
-                        type="text" 
-                        bind:value={newCustomLens}
-                        placeholder="Enter lens name..."
-                        class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        required
-
-                    />
-                </div>
-
-                <div class="bg-purple-900/30 border border-purple-700 rounded-lg p-3">
-                    <div class="flex items-start space-x-2">
-                        <svg class="w-5 h-5 text-purple-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <div class="text-sm text-purple-300">
-                            <p class="font-medium mb-1">Custom Lens</p>
-                            <p>Add a custom lens type for federation. Use descriptive names like "Events", "Projects", etc.</p>
-                        </div>
-                    </div>
-                </div>
-
-                {#if customLenses.length > 0}
-                    <div>
-                        <h3 class="text-sm font-medium text-gray-300 mb-2">Custom Lenses</h3>
-                        <div class="space-y-1">
-                            {#each customLenses as lens}
-                                <div class="flex items-center justify-between p-2 bg-gray-700 rounded text-sm">
-                                    <span class="text-gray-300">{lens}</span>
-                                    <button 
-                                        type="button"
-                                        on:click={() => removeCustomLens(lens)}
-                                        class="text-red-400 hover:text-red-300 transition-colors"
-                                        title="Remove custom lens"
-                                        aria-label="Remove custom lens {lens}"
-                                    >
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                        </svg>
-                                    </button>
-                                </div>
-                            {/each}
-                        </div>
-                    </div>
-                {/if}
-
-                <div class="flex space-x-3 pt-4">
-                    <button
-                        type="button"
-                        on:click={() => showAddCustomLens = false}
-                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 rounded-lg transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        class="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!newCustomLens.trim()}
-                    >
-                        Add Lens
-                    </button>
-                </div>
-            </form>
+            <div class="federation__dialog-actions">
+                <button class="federation__btn federation__btn--secondary" on:click={closeAddDialog}>
+                    Cancel
+                </button>
+                <button
+                    class="federation__btn federation__btn--primary"
+                    on:click={addFederation}
+                    disabled={!newPartnerHexPubKey || saving}
+                >
+                    {saving ? 'Sending...' : 'Send Request'}
+                </button>
+            </div>
         </div>
     </div>
 {/if}
 
-<!-- QR Scanner Modal -->
+<!-- QR Scanner -->
 <QRScanner
     bind:showScanner={showQRScanner}
     on:scan={handleQRScan}
     on:close={() => showQRScanner = false}
 />
 
-<!-- Expiration Picker Modal for Lens Grant -->
-<ExpirationPicker
-    bind:selectedPreset={selectedExpiration}
-    bind:customDate={customExpirationDate}
-    showModal={showExpirationPicker}
-    on:select={confirmLensGrant}
-    on:cancel={cancelLensGrant}
-/>
+<style>
+    .federation {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-4, 1rem);
+    }
+
+    .federation__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+        background: var(--color-bg-secondary, #1f2937);
+        border-radius: var(--radius-lg, 0.5rem);
+        border: 1px solid var(--color-border, #374151);
+    }
+
+    .federation__stats {
+        display: flex;
+        gap: var(--spacing-4, 1rem);
+    }
+
+    .federation__stat {
+        font-size: var(--font-size-sm, 0.875rem);
+        color: var(--color-text-secondary, #d1d5db);
+    }
+
+    .federation__stat strong {
+        color: var(--color-text-primary, #ffffff);
+    }
+
+    .federation__stat--pending {
+        color: #f59e0b;
+    }
+
+    .federation__stat--outgoing {
+        color: #60a5fa;
+    }
+
+    .federation__add-btn {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2, 0.5rem);
+        padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
+        background: var(--color-accent, #4f46e5);
+        border: none;
+        border-radius: var(--radius-md, 0.375rem);
+        color: white;
+        font-size: var(--font-size-sm, 0.875rem);
+        font-weight: var(--font-weight-medium, 500);
+        cursor: pointer;
+        transition: background-color 150ms ease;
+    }
+
+    .federation__add-btn:hover:not(:disabled) {
+        background: var(--color-accent-dark, #4338ca);
+    }
+
+    .federation__add-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Toast messages */
+    .federation__toast {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
+        border-radius: var(--radius-md, 0.375rem);
+        font-size: var(--font-size-sm, 0.875rem);
+    }
+
+    .federation__toast--error {
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #fca5a5;
+    }
+
+    .federation__toast--success {
+        background: rgba(34, 197, 94, 0.15);
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        color: #86efac;
+    }
+
+    .federation__toast button {
+        background: none;
+        border: none;
+        color: inherit;
+        font-size: 1.25rem;
+        cursor: pointer;
+        opacity: 0.7;
+    }
+
+    /* Section */
+    .federation__section {
+        background: var(--color-bg-secondary, #1f2937);
+        border-radius: var(--radius-lg, 0.5rem);
+        border: 1px solid var(--color-border, #374151);
+        padding: var(--spacing-4, 1rem);
+    }
+
+    .federation__section-title {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2, 0.5rem);
+        font-size: var(--font-size-sm, 0.875rem);
+        font-weight: var(--font-weight-semibold, 600);
+        color: var(--color-text-primary, #ffffff);
+        margin-bottom: var(--spacing-3, 0.75rem);
+    }
+
+    .federation__badge {
+        background: #f59e0b;
+        color: white;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 9999px;
+    }
+
+    .federation__badge--outgoing {
+        background: #3b82f6;
+    }
+
+    .federation__section--outgoing {
+        border-color: rgba(59, 130, 246, 0.3);
+    }
+
+    /* Requests */
+    .federation__requests {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__request {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--spacing-3, 0.75rem);
+        padding: var(--spacing-3, 0.75rem);
+        background: var(--color-bg-primary, #111827);
+        border-radius: var(--radius-md, 0.375rem);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    .federation__request--outgoing {
+        border-color: rgba(59, 130, 246, 0.2);
+    }
+
+    .federation__request-info {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-3, 0.75rem);
+        flex: 1;
+        min-width: 0;
+    }
+
+    .federation__request-avatar {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        border-radius: var(--radius-md, 0.375rem);
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+    }
+
+    .federation__request-avatar--outgoing {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+    }
+
+    .federation__request-details {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .federation__request-name {
+        font-size: var(--font-size-sm, 0.875rem);
+        font-weight: var(--font-weight-medium, 500);
+        color: var(--color-text-primary, #ffffff);
+    }
+
+    .federation__request-npub {
+        font-size: 10px;
+        font-family: monospace;
+        color: var(--color-text-muted, #6b7280);
+    }
+
+    .federation__request-status {
+        font-size: 11px;
+        color: #60a5fa;
+        font-style: italic;
+    }
+
+    .federation__request-message {
+        font-size: 11px;
+        color: var(--color-text-muted, #6b7280);
+        font-style: italic;
+        margin-top: 2px;
+    }
+
+    .federation__request-lenses {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 4px;
+    }
+
+    .federation__lens-tag {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+    }
+
+    .federation__lens-tag--inbound {
+        background: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+    }
+
+    .federation__lens-tag--outbound {
+        background: rgba(59, 130, 246, 0.2);
+        color: #93c5fd;
+    }
+
+    .federation__request-actions {
+        display: flex;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__request-btn {
+        padding: var(--spacing-1, 0.25rem) var(--spacing-3, 0.75rem);
+        border-radius: var(--radius-md, 0.375rem);
+        font-size: var(--font-size-sm, 0.875rem);
+        font-weight: var(--font-weight-medium, 500);
+        cursor: pointer;
+        transition: all 150ms ease;
+    }
+
+    .federation__request-btn--reject {
+        background: transparent;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #f87171;
+    }
+
+    .federation__request-btn--reject:hover {
+        background: rgba(239, 68, 68, 0.1);
+    }
+
+    .federation__request-btn--accept {
+        background: #22c55e;
+        border: none;
+        color: white;
+    }
+
+    .federation__request-btn--accept:hover {
+        background: #16a34a;
+    }
+
+    .federation__request-btn--cancel {
+        background: transparent;
+        border: 1px solid rgba(107, 114, 128, 0.3);
+        color: #9ca3af;
+    }
+
+    .federation__request-btn--cancel:hover {
+        background: rgba(107, 114, 128, 0.1);
+    }
+
+    .federation__request-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Content */
+    .federation__content {
+        background: var(--color-bg-secondary, #1f2937);
+        border-radius: var(--radius-lg, 0.5rem);
+        border: 1px solid var(--color-border, #374151);
+        min-height: 300px;
+        padding: var(--spacing-4, 1rem);
+    }
+
+    .federation__loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-3, 0.75rem);
+        padding: var(--spacing-8, 2rem);
+        color: var(--color-text-muted, #6b7280);
+    }
+
+    .federation__spinner {
+        width: 24px;
+        height: 24px;
+        border: 2px solid var(--color-border, #374151);
+        border-top-color: var(--color-accent, #4f46e5);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .federation__empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-8, 2rem);
+        text-align: center;
+        color: var(--color-text-muted, #6b7280);
+    }
+
+    .federation__empty-icon {
+        font-size: 3rem;
+        margin-bottom: var(--spacing-4, 1rem);
+    }
+
+    .federation__empty h3 {
+        font-size: var(--font-size-lg, 1.125rem);
+        color: var(--color-text-primary, #ffffff);
+        margin-bottom: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__empty p {
+        margin-bottom: var(--spacing-4, 1rem);
+    }
+
+    .federation__empty-btn {
+        padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
+        background: var(--color-accent, #4f46e5);
+        border: none;
+        border-radius: var(--radius-md, 0.375rem);
+        color: white;
+        font-weight: var(--font-weight-medium, 500);
+        cursor: pointer;
+    }
+
+    .federation__grid {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-3, 0.75rem);
+    }
+
+    /* Dialog */
+    .federation__dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        padding: var(--spacing-4, 1rem);
+    }
+
+    .federation__dialog {
+        background: var(--color-bg-secondary, #1f2937);
+        border-radius: var(--radius-xl, 1rem);
+        border: 1px solid var(--color-border, #374151);
+        max-width: 400px;
+        width: 100%;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .federation__dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--spacing-4, 1rem);
+        border-bottom: 1px solid var(--color-border, #374151);
+    }
+
+    .federation__dialog-header h3 {
+        font-size: var(--font-size-lg, 1.125rem);
+        font-weight: var(--font-weight-semibold, 600);
+        color: var(--color-text-primary, #ffffff);
+    }
+
+    .federation__dialog-close {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        color: var(--color-text-muted, #6b7280);
+        font-size: 1.25rem;
+        cursor: pointer;
+        border-radius: var(--radius-md, 0.375rem);
+    }
+
+    .federation__dialog-close:hover {
+        background: var(--color-bg-tertiary, #374151);
+    }
+
+    .federation__dialog-content {
+        padding: var(--spacing-4, 1rem);
+    }
+
+    .federation__field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__field label {
+        font-size: var(--font-size-sm, 0.875rem);
+        font-weight: var(--font-weight-medium, 500);
+        color: var(--color-text-secondary, #d1d5db);
+    }
+
+    .federation__input-row {
+        display: flex;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__field input {
+        flex: 1;
+        padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+        background: var(--color-bg-primary, #111827);
+        border: 1px solid var(--color-border, #374151);
+        border-radius: var(--radius-md, 0.375rem);
+        color: var(--color-text-primary, #ffffff);
+        font-size: var(--font-size-sm, 0.875rem);
+    }
+
+    .federation__field input:focus {
+        outline: none;
+        border-color: var(--color-accent, #4f46e5);
+    }
+
+    .federation__qr-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        background: #22c55e;
+        border: none;
+        border-radius: var(--radius-md, 0.375rem);
+        color: white;
+        cursor: pointer;
+    }
+
+    .federation__field-error {
+        font-size: var(--font-size-xs, 0.75rem);
+        color: #f87171;
+    }
+
+    .federation__field-success {
+        font-size: var(--font-size-xs, 0.75rem);
+        color: #86efac;
+    }
+
+    .federation__dialog-actions {
+        display: flex;
+        gap: var(--spacing-3, 0.75rem);
+        padding: var(--spacing-4, 1rem);
+        border-top: 1px solid var(--color-border, #374151);
+    }
+
+    .federation__btn {
+        flex: 1;
+        padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
+        border-radius: var(--radius-md, 0.375rem);
+        font-size: var(--font-size-sm, 0.875rem);
+        font-weight: var(--font-weight-medium, 500);
+        cursor: pointer;
+        transition: all 150ms ease;
+    }
+
+    .federation__btn--secondary {
+        background: transparent;
+        border: 1px solid var(--color-border, #374151);
+        color: var(--color-text-secondary, #d1d5db);
+    }
+
+    .federation__btn--secondary:hover {
+        background: var(--color-bg-tertiary, #374151);
+    }
+
+    .federation__btn--primary {
+        background: var(--color-accent, #4f46e5);
+        border: none;
+        color: white;
+    }
+
+    .federation__btn--primary:hover:not(:disabled) {
+        background: var(--color-accent-dark, #4338ca);
+    }
+
+    .federation__btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .federation__textarea {
+        width: 100%;
+        padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+        background: var(--color-bg-primary, #111827);
+        border: 1px solid var(--color-border, #374151);
+        border-radius: var(--radius-md, 0.375rem);
+        color: var(--color-text-primary, #ffffff);
+        font-size: var(--font-size-sm, 0.875rem);
+        font-family: inherit;
+        resize: vertical;
+        min-height: 60px;
+    }
+
+    .federation__textarea:focus {
+        outline: none;
+        border-color: var(--color-accent, #4f46e5);
+    }
+
+    .federation__textarea::placeholder {
+        color: var(--color-text-muted, #6b7280);
+    }
+
+    /* Unified Permissions Table */
+    .federation__permissions {
+        display: flex;
+        flex-direction: column;
+        margin-top: var(--spacing-4, 1rem);
+        padding-top: var(--spacing-3, 0.75rem);
+        border-top: 1px solid var(--color-border, #374151);
+    }
+
+    .federation__permissions-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+        background: var(--color-bg-primary, #111827);
+        border-radius: var(--radius-md, 0.375rem) var(--radius-md, 0.375rem) 0 0;
+        border: 1px solid var(--color-border, #374151);
+        border-bottom: none;
+    }
+
+    .federation__permissions-label {
+        font-size: var(--font-size-sm, 0.875rem);
+        font-weight: var(--font-weight-semibold, 600);
+        color: var(--color-text-secondary, #d1d5db);
+    }
+
+    .federation__permissions-cols {
+        display: flex;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__permissions-col {
+        width: 28px;
+        text-align: center;
+        font-size: 11px;
+        font-weight: var(--font-weight-semibold, 600);
+        color: var(--color-text-muted, #6b7280);
+        cursor: help;
+    }
+
+    .federation__permissions-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+        background: var(--color-bg-primary, #111827);
+        border-left: 1px solid var(--color-border, #374151);
+        border-right: 1px solid var(--color-border, #374151);
+        border-bottom: 1px solid var(--color-border, #374151);
+    }
+
+    .federation__permissions-row:last-of-type {
+        border-radius: 0 0 var(--radius-md, 0.375rem) var(--radius-md, 0.375rem);
+    }
+
+    .federation__permissions-row:hover {
+        background: rgba(79, 70, 229, 0.05);
+    }
+
+    .federation__permissions-lens {
+        font-size: var(--font-size-sm, 0.875rem);
+        color: var(--color-text-primary, #ffffff);
+        text-transform: capitalize;
+    }
+
+    .federation__permissions-checkboxes {
+        display: flex;
+        gap: var(--spacing-2, 0.5rem);
+    }
+
+    .federation__perm-check {
+        width: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+    .federation__perm-check input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+        accent-color: var(--color-accent, #4f46e5);
+    }
+
+    .federation__perm-check--receive input[type="checkbox"]:checked {
+        accent-color: #22c55e;
+    }
+
+    .federation__perm-check--receive-write input[type="checkbox"]:checked {
+        accent-color: #a855f7;
+    }
+
+    .federation__perm-check--share input[type="checkbox"]:checked {
+        accent-color: #3b82f6;
+    }
+
+    .federation__perm-check--share-write input[type="checkbox"]:checked {
+        accent-color: #f97316;
+    }
+
+    .federation__permissions-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-3, 0.75rem);
+        margin-top: var(--spacing-3, 0.75rem);
+        font-size: 11px;
+        color: var(--color-text-muted, #6b7280);
+    }
+
+    .federation__legend-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: bold;
+        margin-right: 2px;
+    }
+
+    .federation__legend-icon--receive {
+        background: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+    }
+
+    .federation__legend-icon--share {
+        background: rgba(59, 130, 246, 0.2);
+        color: #93c5fd;
+    }
+
+    /* Update section styles */
+    .federation__section--update {
+        border-color: rgba(168, 85, 247, 0.3);
+    }
+
+    .federation__section--outgoing-update {
+        border-color: rgba(59, 130, 246, 0.3);
+    }
+
+    .federation__badge--update {
+        background: #a855f7;
+    }
+
+    .federation__request--update {
+        border-color: rgba(168, 85, 247, 0.3);
+    }
+
+    .federation__request-avatar--update {
+        background: linear-gradient(135deg, #a855f7, #7c3aed);
+    }
+
+    .federation__request-subtitle {
+        font-size: 11px;
+        color: var(--color-text-muted, #6b7280);
+        margin-top: 2px;
+    }
+
+    .federation__update-diff {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 6px;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: var(--radius-sm, 0.25rem);
+    }
+
+    .federation__update-from,
+    .federation__update-to {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .federation__update-label {
+        font-size: 10px;
+        font-weight: var(--font-weight-medium, 500);
+        color: var(--color-text-muted, #6b7280);
+        min-width: 50px;
+    }
+</style>

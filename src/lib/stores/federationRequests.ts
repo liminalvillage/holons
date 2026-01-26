@@ -15,6 +15,7 @@ import type { CapabilityInfo } from '../federation/nostrDM';
 
 export type RequestStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
 export type RequestType = 'incoming' | 'outgoing';
+export type UpdateType = 'incoming_update' | 'outgoing_update';
 
 export interface PendingRequest {
   id: string;
@@ -26,6 +27,8 @@ export interface PendingRequest {
   lensConfig: {
     inbound: string[];
     outbound: string[];
+    writeInbound?: string[];
+    writeOutbound?: string[];
   };
   capabilities: CapabilityInfo[];
   timestamp: number;
@@ -34,13 +37,34 @@ export interface PendingRequest {
   // For outgoing requests, track the recipient
   recipientPubKey?: string;
   recipientNpub?: string;
+  recipientHolonName?: string;
+}
+
+export interface PendingUpdate {
+  id: string;  // updateId
+  type: UpdateType;
+  partnerPubKey: string;
+  partnerNpub: string;
+  partnerHolonId: string;
+  partnerHolonName: string;
+  currentLensConfig: {
+    inbound: string[];
+    outbound: string[];
+  };
+  newLensConfig: {
+    inbound: string[];
+    outbound: string[];
+  };
+  timestamp: number;
+  status: RequestStatus;
+  message?: string;
 }
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const STORAGE_KEY = 'federation_requests';
+const STORAGE_KEY_PREFIX = 'federation_requests_';
 const EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // ============================================================================
@@ -50,12 +74,23 @@ const EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 function createFederationRequestsStore() {
   const { subscribe, set, update } = writable<PendingRequest[]>([]);
 
+  // Track current user's public key for scoped storage
+  let currentUserPubKey: string | null = null;
+
+  // Get the storage key for the current user
+  const getStorageKey = (): string | null => {
+    if (!currentUserPubKey) return null;
+    return `${STORAGE_KEY_PREFIX}${currentUserPubKey}`;
+  };
+
   // Load from localStorage on init
   const loadFromStorage = (): PendingRequest[] => {
     if (!browser) return [];
+    const storageKey = getStorageKey();
+    if (!storageKey) return [];
 
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(storageKey);
       if (stored) {
         const requests = JSON.parse(stored) as PendingRequest[];
         // Filter out expired requests
@@ -74,9 +109,11 @@ function createFederationRequestsStore() {
   // Save to localStorage
   const saveToStorage = (requests: PendingRequest[]) => {
     if (!browser) return;
+    const storageKey = getStorageKey();
+    if (!storageKey) return;
 
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(requests));
+      localStorage.setItem(storageKey, JSON.stringify(requests));
     } catch (error) {
       console.error('Error saving federation requests to storage:', error);
     }
@@ -86,9 +123,22 @@ function createFederationRequestsStore() {
     subscribe,
 
     /**
-     * Initialize the store from localStorage
+     * Initialize the store with user's public key for scoped storage
      */
-    init: () => {
+    init: (userPubKey?: string) => {
+      if (userPubKey) {
+        currentUserPubKey = userPubKey;
+      }
+      const requests = loadFromStorage();
+      set(requests);
+    },
+
+    /**
+     * Set the current user and reload requests
+     */
+    setUser: (userPubKey: string) => {
+      if (userPubKey === currentUserPubKey) return;
+      currentUserPubKey = userPubKey;
       const requests = loadFromStorage();
       set(requests);
     },
@@ -195,8 +245,9 @@ function createFederationRequestsStore() {
      */
     clear: () => {
       set([]);
-      if (browser) {
-        localStorage.removeItem(STORAGE_KEY);
+      const storageKey = getStorageKey();
+      if (browser && storageKey) {
+        localStorage.removeItem(storageKey);
       }
     }
   };
@@ -245,7 +296,7 @@ export function createIncomingRequest(
   senderNpub: string,
   senderHolonId: string,
   senderHolonName: string,
-  lensConfig: { inbound: string[]; outbound: string[] },
+  lensConfig: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] },
   capabilities: CapabilityInfo[],
   message?: string
 ): PendingRequest {
@@ -277,7 +328,8 @@ export function createOutgoingRequest(
   recipientNpub: string,
   lensConfig: { inbound: string[]; outbound: string[] },
   capabilities: CapabilityInfo[],
-  message?: string
+  message?: string,
+  recipientHolonName?: string
 ): PendingRequest {
   return {
     id: requestId,
@@ -288,8 +340,204 @@ export function createOutgoingRequest(
     senderHolonName,
     recipientPubKey,
     recipientNpub,
+    recipientHolonName,
     lensConfig,
     capabilities,
+    timestamp: Date.now(),
+    status: 'pending',
+    message
+  };
+}
+
+// ============================================================================
+// Pending Updates Store (for lens config renegotiation)
+// ============================================================================
+
+const UPDATES_STORAGE_KEY_PREFIX = 'federation_updates_';
+
+function createPendingUpdatesStore() {
+  const { subscribe, set, update } = writable<PendingUpdate[]>([]);
+  let currentUserPubKey: string | null = null;
+
+  const getStorageKey = (): string | null => {
+    if (!currentUserPubKey) return null;
+    return `${UPDATES_STORAGE_KEY_PREFIX}${currentUserPubKey}`;
+  };
+
+  const loadFromStorage = (): PendingUpdate[] => {
+    if (!browser) return [];
+    const storageKey = getStorageKey();
+    if (!storageKey) return [];
+
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const updates = JSON.parse(stored) as PendingUpdate[];
+        const now = Date.now();
+        return updates.filter((u) => {
+          if (u.status !== 'pending') return true;
+          return now - u.timestamp < EXPIRATION_MS;
+        });
+      }
+    } catch (error) {
+      console.error('Error loading pending updates from storage:', error);
+    }
+    return [];
+  };
+
+  const saveToStorage = (updates: PendingUpdate[]) => {
+    if (!browser) return;
+    const storageKey = getStorageKey();
+    if (!storageKey) return;
+
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(updates));
+    } catch (error) {
+      console.error('Error saving pending updates to storage:', error);
+    }
+  };
+
+  return {
+    subscribe,
+
+    init: (userPubKey?: string) => {
+      if (userPubKey) {
+        currentUserPubKey = userPubKey;
+      }
+      const updates = loadFromStorage();
+      set(updates);
+    },
+
+    setUser: (userPubKey: string) => {
+      if (userPubKey === currentUserPubKey) return;
+      currentUserPubKey = userPubKey;
+      const updates = loadFromStorage();
+      set(updates);
+    },
+
+    add: (pendingUpdate: PendingUpdate) => {
+      update((updates) => {
+        if (updates.some((u) => u.id === pendingUpdate.id)) {
+          console.warn('Duplicate update request ignored:', pendingUpdate.id);
+          return updates;
+        }
+        const updated = [...updates, pendingUpdate];
+        saveToStorage(updated);
+        return updated;
+      });
+    },
+
+    updateStatus: (updateId: string, status: RequestStatus) => {
+      update((updates) => {
+        const updated = updates.map((u) =>
+          u.id === updateId ? { ...u, status } : u
+        );
+        saveToStorage(updated);
+        return updated;
+      });
+    },
+
+    remove: (updateId: string) => {
+      update((updates) => {
+        const updated = updates.filter((u) => u.id !== updateId);
+        saveToStorage(updated);
+        return updated;
+      });
+    },
+
+    getById: (updateId: string): PendingUpdate | undefined => {
+      const updates = get({ subscribe });
+      return updates.find((u) => u.id === updateId);
+    },
+
+    getByPartnerPubKey: (partnerPubKey: string): PendingUpdate | undefined => {
+      const updates = get({ subscribe });
+      return updates.find((u) => u.partnerPubKey === partnerPubKey && u.status === 'pending');
+    },
+
+    hasPendingForPartner: (partnerPubKey: string): boolean => {
+      const updates = get({ subscribe });
+      return updates.some((u) => u.partnerPubKey === partnerPubKey && u.status === 'pending');
+    },
+
+    clear: () => {
+      set([]);
+      const storageKey = getStorageKey();
+      if (browser && storageKey) {
+        localStorage.removeItem(storageKey);
+      }
+    }
+  };
+}
+
+export const pendingUpdates = createPendingUpdatesStore();
+
+/**
+ * Incoming update requests only
+ */
+export const incomingUpdates = derived(
+  pendingUpdates,
+  ($updates) => $updates.filter((u) => u.type === 'incoming_update' && u.status === 'pending')
+);
+
+/**
+ * Outgoing update requests only
+ */
+export const outgoingUpdates = derived(
+  pendingUpdates,
+  ($updates) => $updates.filter((u) => u.type === 'outgoing_update' && u.status === 'pending')
+);
+
+/**
+ * Create a new incoming update request
+ */
+export function createIncomingUpdate(
+  updateId: string,
+  partnerPubKey: string,
+  partnerNpub: string,
+  partnerHolonId: string,
+  partnerHolonName: string,
+  currentLensConfig: { inbound: string[]; outbound: string[] },
+  newLensConfig: { inbound: string[]; outbound: string[] },
+  message?: string
+): PendingUpdate {
+  return {
+    id: updateId,
+    type: 'incoming_update',
+    partnerPubKey,
+    partnerNpub,
+    partnerHolonId,
+    partnerHolonName,
+    currentLensConfig,
+    newLensConfig,
+    timestamp: Date.now(),
+    status: 'pending',
+    message
+  };
+}
+
+/**
+ * Create a new outgoing update request
+ */
+export function createOutgoingUpdate(
+  updateId: string,
+  partnerPubKey: string,
+  partnerNpub: string,
+  partnerHolonId: string,
+  partnerHolonName: string,
+  currentLensConfig: { inbound: string[]; outbound: string[] },
+  newLensConfig: { inbound: string[]; outbound: string[] },
+  message?: string
+): PendingUpdate {
+  return {
+    id: updateId,
+    type: 'outgoing_update',
+    partnerPubKey,
+    partnerNpub,
+    partnerHolonId,
+    partnerHolonName,
+    currentLensConfig,
+    newLensConfig,
     timestamp: Date.now(),
     status: 'pending',
     message

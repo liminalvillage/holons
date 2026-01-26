@@ -10,6 +10,9 @@
 	import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { Gift, Plus } from 'svelte-feathers';
+	import { nostrPublicKey } from "../lib/stores/nostr";
+	import { telegramStore } from "../lib/stores/telegram";
+	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
 	// Add offer/request modal state
 	let showAddModal = false;
@@ -79,13 +82,48 @@
 		return false;
 	}
 
+	// Function to add current logged-in user to userStore if not already present
+	function ensureCurrentUserInStore(store: any): any {
+		const telegramState = telegramStore.getState();
+		const telegramUser = telegramState.user;
+		let pubKey: string | null = null;
+		nostrPublicKey.subscribe(v => pubKey = v)();
+
+		// Check if Telegram user is logged in
+		if (telegramUser) {
+			const telegramId = String(telegramUser.id);
+			if (!store[telegramId]) {
+				store[telegramId] = {
+					id: telegramId,
+					first_name: telegramUser.first_name,
+					last_name: telegramUser.last_name,
+					username: telegramUser.username || telegramId
+				};
+			}
+		}
+		// Check if Nostr user is logged in
+		else if (pubKey) {
+			if (!store[pubKey]) {
+				// Use similar structure to telegram user
+				store[pubKey] = {
+					id: pubKey,
+					first_name: 'You',
+					last_name: '',
+					username: pubKey  // Use full pubKey as username (like telegram ID)
+				};
+			}
+		}
+
+		return store;
+	}
+
 	// Fetch and subscribe to users for the current holon
 	async function fetchAndSubscribeUsers() {
 		if (!holosphere || !holonID) {
 			userStore = {};
 			return;
 		}
-		
+
 		try {
 			const initialUsers = await holosphere.getAll(holonID, "users");
 			let usersKeyedById = {};
@@ -98,9 +136,10 @@
 					if (user && user.id) usersKeyedById[user.id] = user;
 				});
 			}
-			userStore = usersKeyedById;
+			// Ensure current user is in the store
+			userStore = ensureCurrentUserInStore(usersKeyedById);
 		} catch (e) {
-			userStore = {};
+			userStore = ensureCurrentUserInStore({});
 		}
 
 		// Subscribe to user updates with error handling
@@ -597,21 +636,37 @@
 			};
 			
 			// Store participation locally
-			await holosphere.put(holonID, 'participations', participationData);
-			
-			// Update the item in the store to show the user as a participant
-			// This is just for UI display - the actual item remains federated
-			store = {
-				...store,
-				[item.key]: updatedItem
-			};
-			
-			console.log("[Offers.svelte] Stored participation for federated item:", participationData);
+			try {
+				await holosphere.put(holonID, 'participations', participationData);
+
+				// Update the item in the store to show the user as a participant
+				// This is just for UI display - the actual item remains federated
+				store = {
+					...store,
+					[item.key]: updatedItem
+				};
+
+				console.log("[Offers.svelte] Stored participation for federated item:", participationData);
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error('[Offers.svelte] Error storing participation:', error);
+				}
+			}
 		} else {
 			// For local items, update normally - the subscription will handle the store update
-			await holosphere.put(holonID, 'quests', updatedItem);
+			try {
+				await holosphere.put(holonID, 'quests', updatedItem);
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error('[Offers.svelte] Error updating quest:', error);
+				}
+			}
 		}
-		
+
 		showDropdownFor = null;
 	}
 
@@ -657,11 +712,17 @@
 			console.log("[Offers.svelte] Publishing item to federated chats:", { itemId: item.id, holonID });
 
 			// First check if there are any federated chats available
-			const fedInfo = await holosphere.getFederation(holonID);
-			console.log("[Offers.svelte] Federation info:", fedInfo);
-			
-			// Check if we have either federated chats OR if this is a hex-based holon that can propagate to parents
-			const hasFederatedChats = fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0;
+			// Federation relationships are stored on the home holon, not on federated partner holons
+			const federationSourceId = $nostrPublicKey || holonID;
+			const fedInfo = await holosphere.getFederation(federationSourceId);
+			console.log("[Offers.svelte] Federation info:", {
+				hasFederated: !!(fedInfo?.federated?.length),
+				federatedCount: fedInfo?.federated?.length || 0,
+				federated: fedInfo?.federated
+			});
+
+			// Check if we have federated holons (use federated array since propagate uses federated || outbound)
+			const hasFederatedChats = fedInfo && fedInfo.federated && fedInfo.federated.length > 0;
 			
 			// For hex-based holons, we can still propagate to parents even without federation
 			// Let's proceed with propagation regardless of federation status
@@ -673,7 +734,7 @@
 
 			// Create a hologram for the item to propagate
 			// Use the full item data instead of just the ID reference
-			const hologram = holosphere.createHologram(holonID, 'quests', item);
+			const hologram = await holosphere.createHologram(holonID, 'quests', item);
 			console.log("[Offers.svelte] Created hologram:", hologram);
 
 			// Use federation propagation to publish to federated spaces
@@ -755,10 +816,18 @@
 			created_at: new Date().toISOString()
 		};
 
-		await holosphere.put(holonID, 'quests', newItem);
-		showAddModal = false;
-		newItemTitle = '';
-		newItemDescription = '';
+		try {
+			await holosphere.put(holonID, 'quests', newItem);
+			showAddModal = false;
+			newItemTitle = '';
+			newItemDescription = '';
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('[Offers.svelte] Error creating item:', error);
+			}
+		}
 	}
 
 	// Remove a user's participation from an offer or need
@@ -774,29 +843,37 @@
 		// If this is a federated item, remove from participations
 		if (item._federation || item._hologram?.isHologram) {
 			console.log("[Offers.svelte] Removing participation from federated item:", item.id);
-			
+
 			// Find and remove the participation record
 			const participationData = await holosphere.getAll(holonID, "participations");
 			if (Array.isArray(participationData)) {
-				const participationToRemove = participationData.find(p => 
+				const participationToRemove = participationData.find(p =>
 					p.itemId === item.id && p.participant.id === user.id
 				);
-				
+
 				if (participationToRemove) {
-					// Delete the participation record
-					await holosphere.delete(holonID, "participations", participationToRemove.id || participationToRemove.key);
-					
-					// Update the item in the store to remove the user from participants
-					const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
-					store = {
-						...store,
-						[item.key]: {
-							...item,
-							participants: updatedParticipants
+					try {
+						// Delete the participation record
+						await holosphere.delete(holonID, "participations", participationToRemove.id || participationToRemove.key);
+
+						// Update the item in the store to remove the user from participants
+						const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
+						store = {
+							...store,
+							[item.key]: {
+								...item,
+								participants: updatedParticipants
+							}
+						};
+
+						console.log("[Offers.svelte] Removed participation for federated item:", item.id);
+					} catch (error: any) {
+						if (error?.name === 'AuthorizationError') {
+							notifyWriteDenied('Unable to delete - no write permission for this holon');
+						} else {
+							console.error('[Offers.svelte] Error deleting participation:', error);
 						}
-					};
-					
-					console.log("[Offers.svelte] Removed participation for federated item:", item.id);
+					}
 				}
 			}
 		} else {
@@ -806,8 +883,16 @@
 				...item,
 				participants: updatedParticipants
 			};
-			
-			await holosphere.put(holonID, 'quests', updatedItem);
+
+			try {
+				await holosphere.put(holonID, 'quests', updatedItem);
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error('[Offers.svelte] Error updating quest:', error);
+				}
+			}
 		}
 	}
 </script>

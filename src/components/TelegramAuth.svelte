@@ -289,9 +289,7 @@
 					<div class="user-name">
 						{currentUser.first_name} {currentUser.last_name || ''}
 					</div>
-					{#if currentUser.username}
-						<div class="user-username">@{currentUser.username}</div>
-					{/if}
+					<div class="user-id">ID: {String(currentUser.id)}</div>
 					<div class="auth-status">
 						Successfully authenticated
 					</div>
@@ -438,20 +436,24 @@
 			font-weight: 600;
 			font-size: 1.125rem;
 		}
-		
+
 		.user-username {
 			font-size: 0.875rem;
 			opacity: 0.9;
 		}
 
-			.auth-status {
-		font-size: 0.75rem;
-		opacity: 0.8;
-		margin-top: 0.25rem;
-		font-style: italic;
-	}
+		.user-id {
+			font-size: 0.75rem;
+			opacity: 0.8;
+			font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+		}
 
-
+		.auth-status {
+			font-size: 0.75rem;
+			opacity: 0.8;
+			margin-top: 0.25rem;
+			font-style: italic;
+		}
 	}
 
 	.logout-btn {

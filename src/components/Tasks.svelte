@@ -10,6 +10,7 @@
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
+	import KanbanView from "./kanban/KanbanView.svelte";
 	import { writable } from 'svelte/store';
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
@@ -33,6 +34,10 @@
 		subscribeToHolon,
 		unsubscribeFromHolon
 	} from "../lib/holonCache";
+	import { nostrPublicKey } from "../lib/stores/nostr";
+	import { telegramStore } from "../lib/stores/telegram";
+	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
+	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
 
 	// State for quick completion
 	let showCompleterModal = $state(false);
@@ -177,10 +182,14 @@
 	}
 
 	// Initialize with safe defaults
-	let viewMode: 'list' | 'canvas' = $state('list');
+	let viewMode: 'list' | 'canvas' | 'kanban' = $state('list');
 	let showCompleted = $state(false);
 	let showHolograms = $state(true);
 	let sortedQuests: [string, Quest][] = [];
+
+	// Federated tasks toggle
+	let includeFederatedTasks = $state(false);
+	let loadingFederated = $state(false);
 	// filteredQuests is now defined as a $derived value below
 
 	// Initialize preferences with default values
@@ -252,10 +261,26 @@
 		),
 	]);
 
-	// Compute unique users from quests
+	// Compute unique users from quests, including current logged-in user
 	let allUsers = $derived.by(() => {
 		const users = new Map<string, { id: string; name: string }>();
 
+		// Add current logged-in user first
+		const telegramState = telegramStore.getState();
+		const telegramUser = telegramState.user;
+		const pubKey = $nostrPublicKey;
+
+		if (telegramUser) {
+			const telegramId = String(telegramUser.id);
+			const name = `${telegramUser.first_name} ${telegramUser.last_name || ''}`.trim();
+			if (name) {
+				users.set(telegramId, { id: telegramId, name: name });
+			}
+		} else if (pubKey) {
+			users.set(pubKey, { id: pubKey, name: 'You' });
+		}
+
+		// Add users from quest participants
 		Object.values(store).forEach(quest => {
 			if (quest.participants) {
 				quest.participants.forEach(p => {
@@ -449,37 +474,76 @@
 
 		try {
 			let initiatorInfo;
+
+			// Get current user's identity from Nostr or Telegram
+			const telegramState = telegramStore.getState();
+			const telegramUser = telegramState.user;
+			const nostrPubKey = $nostrPublicKey;
+
+			// Determine user ID - prefer Telegram user if available, then Nostr
+			const currentUserId = telegramUser?.id?.toString() || nostrPubKey || holonID;
+
 			try {
-				// Attempt to get user data
-				const userData = await holosphere.get(holonID, 'users', holonID);
+				// Attempt to get user data using the current user's ID
+				const userData = await holosphere.get(holonID, 'users', currentUserId);
 
 				if (userData && typeof userData === 'object' && userData !== null) {
 					initiatorInfo = {
-						id: holonID,
-						username: userData.username || "Unknown User",
-						firstName: userData.first_name || "",
-						lastName: userData.last_name || ""
+						id: currentUserId,
+						username: userData.username || telegramUser?.username || "Unknown User",
+						firstName: userData.first_name || telegramUser?.first_name || "",
+						lastName: userData.last_name || telegramUser?.last_name || ""
+					};
+				} else if (telegramUser) {
+					// Use Telegram user info directly
+					initiatorInfo = {
+						id: telegramUser.id.toString(),
+						username: telegramUser.username || "Telegram User",
+						firstName: telegramUser.first_name || "",
+						lastName: telegramUser.last_name || ""
+					};
+				} else if (nostrPubKey) {
+					// Use Nostr identity
+					initiatorInfo = {
+						id: nostrPubKey,
+						username: nostrPubKey.slice(0, 8) + "...",
+						firstName: "Nostr",
+						lastName: "User"
 					};
 				} else {
-					// User data not found or not in expected format, use default
-					console.warn(`User data not found or in unexpected format for holonID: ${holonID}. Using default "Dashboard User" as initiator.`);
+					// Fallback to default
 					initiatorInfo = {
-						id: holonID, 
+						id: holonID,
 						username: "Dashboard User",
-						firstName: "Dashboard", 
-						lastName: "User"      
+						firstName: "Dashboard",
+						lastName: "User"
 					};
 				}
 			} catch (fetchError) {
-				// Error during fetch, use default
+				// Error during fetch, use available identity info
 				console.error('Error fetching user data:', fetchError);
-				console.warn(`Using default "Dashboard User" as initiator due to fetch error for holonID: ${holonID}.`);
-				initiatorInfo = {
-					id: holonID,
-					username: "Dashboard User",
-					firstName: "Dashboard",
-					lastName: "User"
-				};
+				if (telegramUser) {
+					initiatorInfo = {
+						id: telegramUser.id.toString(),
+						username: telegramUser.username || "Telegram User",
+						firstName: telegramUser.first_name || "",
+						lastName: telegramUser.last_name || ""
+					};
+				} else if (nostrPubKey) {
+					initiatorInfo = {
+						id: nostrPubKey,
+						username: nostrPubKey.slice(0, 8) + "...",
+						firstName: "Nostr",
+						lastName: "User"
+					};
+				} else {
+					initiatorInfo = {
+						id: holonID,
+						username: "Dashboard User",
+						firstName: "Dashboard",
+						lastName: "User"
+					};
+				}
 			}
 
 			const newOrderIndex = filteredQuests.length > 0 
@@ -520,8 +584,12 @@
 
 			// Force update
 			// updateTrigger.update(n => n + 1); // Removed
-		} catch (error) {
-			console.error('Error adding task:', error);
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error adding task:', error);
+			}
 		}
 	}
 
@@ -617,8 +685,12 @@
 				questsUnsubscribe = tempQuestsUnsub;
 				// Immutable store update for Svelte reactivity
 				store = { ...store, ...storeUpdates };
-			} catch (error) {
-				console.error('Error updating quest orderIndex after drop:', error);
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error('Error updating quest orderIndex after drop:', error);
+				}
 				// Re-enable subscription even on error
 				questsUnsubscribe = tempQuestsUnsub;
 			}
@@ -680,8 +752,12 @@
 				await holosphere.put(currentHolonID, 'quests', draggedQuest);
 				// Immutable store update for Svelte reactivity
 				store = { ...store, [sourceKey]: draggedQuest };
-			} catch (error) {
-				console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
+				}
 			}
 		}
 
@@ -745,9 +821,13 @@
 
 			// Close import modal
 			showImportModal = false;
-		} catch (error) {
-			console.error('Error importing quests:', error);
-			alert("Error importing quests. Please check the console for details.");
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error importing quests:', error);
+				alert("Error importing quests. Please check the console for details.");
+			}
 		}
 	}
 
@@ -902,9 +982,17 @@
 
 		// If already completed, just toggle back to ongoing
 		if (quest.status === 'completed') {
-			const updatedQuest = { ...quest, id: key, status: 'ongoing', completed_at: null };
-			await holosphere.put(holonID, 'quests', updatedQuest);
-			store = { ...store, [key]: updatedQuest };
+			try {
+				const updatedQuest = { ...quest, id: key, status: 'ongoing', completed_at: null };
+				await holosphere.put(holonID, 'quests', updatedQuest);
+				store = { ...store, [key]: updatedQuest };
+			} catch (error: any) {
+				if (error?.name === 'AuthorizationError') {
+					notifyWriteDenied('Unable to save - no write permission for this holon');
+				} else {
+					console.error('Error updating task status:', error);
+				}
+			}
 			return;
 		}
 
@@ -1115,8 +1203,12 @@
 								fromTimeTracking: true,
 								questId: key
 							});
-						} catch (error) {
-							console.error(`Error adding time tracking expense for user ${userID}:`, error);
+						} catch (error: any) {
+							if (error?.name === 'AuthorizationError') {
+								notifyWriteDenied('Unable to save - no write permission for this holon');
+							} else {
+								console.error(`Error adding time tracking expense for user ${userID}:`, error);
+							}
 						}
 					}
 				}
@@ -1139,8 +1231,151 @@
 			setTimeout(() => { showFireworks = false; }, 2500);
 			setTimeout(() => { showConfetti = false; }, 10000);
 
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error completing task with accounting:', error);
+			}
+		}
+	}
+
+	// Fetch federated tasks from connected holons
+	async function fetchFederatedTasks() {
+		if (!holosphere || !holonID) return;
+
+		loadingFederated = true;
+		try {
+			console.log("[Tasks.svelte] Fetching federated tasks...");
+			console.log("[Tasks.svelte] Current holonID:", holonID);
+
+			// First, get local data
+			console.log("[Tasks.svelte] Checking local data first...");
+			const localData = await holosphere.getAll(holonID, "quests");
+			console.log("[Tasks.svelte] Local data:", localData);
+
+			// Get federated data from connected holons
+			const federatedData = await holosphere.getFederated(holonID, "quests", {
+				includeLocal: true,
+				includeFederated: true,
+				resolveReferences: true,
+				aggregate: false
+			});
+
+			console.log("[Tasks.svelte] Federated data result:", federatedData);
+
+			// Convert array to keyed object for consistency with subscription format
+			const newStore: Store = {};
+
+			// Handle federated data
+			if (Array.isArray(federatedData)) {
+				federatedData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						const key = quest.key || quest.id || `federated_${index}`;
+
+						// Filter by type to only include tasks/quests (not offers/requests)
+						const questType = quest.type || 'task';
+						if (questType === 'offer' || questType === 'request' || questType === 'need') {
+							return; // Skip offers and requests
+						}
+
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+
+						// Preserve hologram metadata
+						const processedQuest: Quest = {
+							...quest,
+							id: quest.id
+						};
+
+						// If this item has federation/hologram metadata, preserve it
+						if (quest._federation) {
+							(processedQuest as any)._federation = quest._federation;
+						}
+						if (quest._hologram) {
+							processedQuest._hologram = quest._hologram;
+						}
+
+						newStore[key] = processedQuest;
+						console.log(`[Tasks.svelte] Added federated item to store with key ${key}:`, processedQuest);
+					}
+				});
+			}
+
+			// If no federated data was found, fall back to local data only
+			if (Object.keys(newStore).length === 0 && Array.isArray(localData) && localData.length > 0) {
+				console.log("[Tasks.svelte] No federated data found, using local data only");
+				localData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						const key = quest.id || `local_${index}`;
+
+						// Filter by type to only include tasks/quests
+						const questType = quest.type || 'task';
+						if (questType === 'offer' || questType === 'request' || questType === 'need') {
+							return; // Skip offers and requests
+						}
+
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+
+						newStore[key] = quest as Quest;
+					}
+				});
+			}
+
+			store = newStore;
+			updateStats();
+
+			// Pre-resolve hologram names in background
+			preResolveHologramNames(Object.entries(store));
+
+			console.log(`[Tasks.svelte] Fetched ${Object.keys(store).length} total items (local + federated)`);
 		} catch (error) {
-			console.error('Error completing task with accounting:', error);
+			console.error("[Tasks.svelte] Error fetching federated data:", error);
+			// Fallback to local data only
+			try {
+				console.log("[Tasks.svelte] Falling back to local data only...");
+				const localData = await holosphere.getAll(holonID, "quests");
+				const newStore: Store = {};
+				if (Array.isArray(localData)) {
+					localData.forEach((quest: any, index) => {
+						if (quest && quest.id) {
+							const key = quest.id || `local_${index}`;
+
+							// Filter by type
+							const questType = quest.type || 'task';
+							if (questType === 'offer' || questType === 'request' || questType === 'need') {
+								return;
+							}
+
+							if (!quest.participants) quest.participants = [];
+							if (!quest.appreciation) quest.appreciation = [];
+
+							newStore[key] = quest as Quest;
+						}
+					});
+				}
+				store = newStore;
+				updateStats();
+				console.log(`[Tasks.svelte] Fallback: Loaded ${Object.keys(store).length} local items`);
+			} catch (fallbackError) {
+				console.error("[Tasks.svelte] Error in fallback to local data:", fallbackError);
+				store = {};
+			}
+		} finally {
+			loadingFederated = false;
+		}
+	}
+
+	// Handle federated toggle change
+	async function handleFederatedToggle() {
+		includeFederatedTasks = !includeFederatedTasks;
+		if (includeFederatedTasks) {
+			await fetchFederatedTasks();
+		} else {
+			await fetchData();
 		}
 	}
 
@@ -1247,13 +1482,29 @@
 
 		// Capture the holon ID at subscription time to verify in callbacks
 		const subscribedHolonID = holonID;
+		const userPubKey = $nostrPublicKey;
+		const isFederated = holonID !== userPubKey;
+
+		console.log('[Tasks] Setting up subscription:', {
+			holonID,
+			userPubKey,
+			isOwnHolon: holonID === userPubKey,
+			isFederated
+		});
 
 		try {
 			// Update subscription state
 			subscriptionState.currentHolonID = holonID;
 
-			// Set up subscription for future updates (initial data already loaded by fetchData)
-			const off = holosphere.subscribe(holonID, "quests", async (newquest: Quest | null, key?: string) => {
+			// Callback handler for subscription updates
+			const handleQuestUpdate = async (newquest: Quest | null, key?: string) => {
+				console.log('[Tasks] Subscription callback fired:', {
+					holonID: subscribedHolonID,
+					isFederated,
+					questId: newquest?.id || key,
+					questTitle: newquest?.title,
+					isDeleted: !newquest || newquest._deleted
+				});
 				// IMPORTANT: Verify this callback is still for the current holon
 				// Old subscriptions may fire after we've switched holons
 				if (holonID !== subscribedHolonID) {
@@ -1294,12 +1545,17 @@
 					!hologramSourceNames.has(newquest._hologram.soul)) {
 					await preResolveHologramNames([[questKey, newquest]]);
 				}
-			});
+			};
 
-			// Ensure the unsubscribe handler is callable and typed correctly
-			if (typeof off === 'function') {
-				questsUnsubscribe = off as unknown as () => void;
-			}
+			// Use subscription helper for all holons (provides consistent logging)
+			const off = await subscribeWithFederationSupport(
+				holosphere,
+				userPubKey || holonID,
+				holonID,
+				"quests",
+				handleQuestUpdate
+			);
+			questsUnsubscribe = off;
 		} catch (error) {
 			console.error('Error setting up quest subscription:', error);
 			subscriptionState.currentHolonID = null; // Reset on error
@@ -1319,8 +1575,8 @@
 		// Load preferences
 		try {
 			const storedViewMode = localStorage.getItem('taskViewMode');
-			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
-				viewMode = storedViewMode as 'list' | 'canvas';
+			if (storedViewMode === 'list' || storedViewMode === 'canvas' || storedViewMode === 'kanban') {
+				viewMode = storedViewMode as 'list' | 'canvas' | 'kanban';
 			}
 			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
 			const storedShowHolograms = localStorage.getItem("taskShowHolograms");
@@ -1392,6 +1648,13 @@
 		}
 	});
 
+	// Save viewMode preference to localStorage
+	$effect(() => {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem("taskViewMode", viewMode);
+		}
+	});
+
 	// Handler for optimistic position updates from CanvasView
 	function handleCanvasQuestPositionChange(event: CustomEvent) {
 		const { key, position } = event.detail;
@@ -1429,12 +1692,25 @@
 		if (!holosphere || !holonID) return;
 
 		try {
-			const federationInfo = await holosphere.getFederation(holonID);
+			// Federation relationships are stored on the home holon, not on federated partner holons
+			// Use the user's home holon ID (nostrPublicKey) to fetch federation data
+			const federationSourceId = $nostrPublicKey || holonID;
+			const federationInfo = await holosphere.getFederation(federationSourceId);
 			if (federationInfo?.federated && Array.isArray(federationInfo.federated)) {
 				const holons: Array<{ id: string; name: string }> = [];
 				for (const id of federationInfo.federated) {
-					const name = await fetchHolonName(holosphere, id);
-					holons.push({ id, name });
+					// Try HNS first (authoritative), then fall back to stored partner name
+					let name = await fetchHolonName(holosphere, id);
+
+					// If HNS returned a fallback name, use stored partnerName instead
+					if (!name || name.startsWith('Holon ')) {
+						const storedName = federationInfo.partnerNames?.[id];
+						if (storedName && storedName !== id) {
+							name = storedName;
+						}
+					}
+
+					holons.push({ id, name: name || `Holon ${id.slice(0, 8)}...` });
 				}
 				federatedHolons = holons;
 			} else {
@@ -1565,6 +1841,18 @@
 								</svg>
 							</button>
 							<button
+								class="view-toggle__btn {viewMode === 'kanban' ? 'view-toggle__btn--active' : ''}"
+								onclick={() => (viewMode = 'kanban')}
+								aria-label="Kanban view"
+								title="Kanban view"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<rect x="4" y="3" width="4" height="18" rx="1"></rect>
+									<rect x="10" y="3" width="4" height="12" rx="1"></rect>
+									<rect x="16" y="3" width="4" height="15" rx="1"></rect>
+								</svg>
+							</button>
+							<button
 								class="view-toggle__btn {viewMode === 'canvas' ? 'view-toggle__btn--active' : ''}"
 								onclick={() => (viewMode = 'canvas')}
 								aria-label="Canvas view"
@@ -1639,6 +1927,15 @@
 							<span class="toggle-chip__label">Holograms</span>
 						</label>
 
+						<label class="toggle-chip" title="Include federated tasks from connected holons">
+							<input type="checkbox" checked={includeFederatedTasks} onchange={handleFederatedToggle} class="sr-only" />
+							<span class="toggle-chip__dot" class:toggle-chip__dot--active={includeFederatedTasks}></span>
+							<span class="toggle-chip__label">Federated</span>
+							{#if loadingFederated}
+								<div class="w-3 h-3 ml-1 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+							{/if}
+						</label>
+
 						<button
 							onclick={() => showImportModal = true}
 							class="import-btn"
@@ -1651,6 +1948,18 @@
 						</button>
 					</div>
 				</div>
+
+				<!-- Federated Status Indicator -->
+				{#if includeFederatedTasks}
+					<div class="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
+						<div class="flex items-center gap-2 text-blue-300">
+							<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+							</svg>
+							<span class="text-sm font-medium">Showing federated tasks from connected holons</span>
+						</div>
+					</div>
+				{/if}
 
 				<!-- Task Content -->
 				{#if isLoading}
@@ -1669,11 +1978,27 @@
 							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
 							on:questPositionChanged={handleCanvasQuestPositionChange}
 						/>
-					{:else} 
+					{:else}
 						<div class="flex items-center justify-center py-12">
 							<div class="text-center">
 								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
 								<p class="text-gray-400">Loading canvas...</p>
+							</div>
+						</div>
+					{/if}
+				{:else if viewMode === "kanban"}
+					{#if holonID}
+						<KanbanView
+							{filteredQuests}
+							{holonID}
+							{showCompleted}
+							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
+						/>
+					{:else}
+						<div class="flex items-center justify-center py-12">
+							<div class="text-center">
+								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+								<p class="text-gray-400">Loading board...</p>
 							</div>
 						</div>
 					{/if}

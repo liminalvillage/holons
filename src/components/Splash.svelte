@@ -8,11 +8,15 @@
 	import { HoloSphere } from 'holosphere';
 	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
 
+	// Props
+	export let skipLoading = false; // Skip loading animation (for modal usage)
+	export let isModal = false; // Display as modal overlay instead of full-screen
+
 	const dispatch = createEventDispatcher();
 
 	// View states
 	type View = 'loading' | 'welcome' | 'create' | 'restore' | 'telegram-choice';
-	let view: View = 'loading';
+	let view: View = skipLoading ? 'welcome' : 'loading';
 
 	// Form state
 	let holonName = '';
@@ -95,6 +99,28 @@
 		await nostrStore.init();
 		telegramStore.init();
 
+		// In modal mode (skipLoading), skip all auto-login logic and just show welcome
+		if (skipLoading) {
+			// Check Telegram context for display purposes but don't auto-login
+			const telegramState = telegramStore.getState();
+			isTelegramWebApp = telegramState.isTelegramWebApp;
+			telegramUser = telegramState.user;
+			// View is already set to 'welcome' via the initial value
+			return;
+		}
+
+		// Check if user just logged out (show welcome screen to allow re-login)
+		const justLoggedOut = localStorage.getItem('enter_public_mode') === 'true';
+		if (justLoggedOut) {
+			// Clear the flag
+			localStorage.removeItem('enter_public_mode');
+			// Show welcome screen with login options
+			setTimeout(() => {
+				view = 'welcome';
+			}, 300);
+			return;
+		}
+
 		// Check Telegram context
 		const telegramState = telegramStore.getState();
 		isTelegramWebApp = telegramState.isTelegramWebApp;
@@ -105,7 +131,7 @@
 
 		if (state.privateKey) {
 			// Returning user - key exists, proceed to app
-			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey }), 300);
+			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' }), 300);
 		} else if (telegramUser && isTelegramWebApp) {
 			// Telegram Mini App user - check for existing mapping and auto-login
 			isProcessing = true;
@@ -273,12 +299,40 @@
 
 	// Go back to welcome screen
 	function goBack() {
-		view = 'welcome';
+		if (isModal) {
+			// In modal mode, going back from create/restore closes the modal
+			dispatch('close');
+		} else {
+			view = 'welcome';
+		}
 		error = '';
 		holonName = '';
 		privateKeyInput = '';
 	}
+
+	// Handle closing the modal (only in modal mode)
+	function handleClose() {
+		if (isModal) {
+			dispatch('close');
+		}
+	}
+
+	// Handle backdrop click
+	function handleBackdropClick(event: MouseEvent) {
+		if (isModal && event.target === event.currentTarget) {
+			dispatch('close');
+		}
+	}
+
+	// Handle escape key
+	function handleKeydown(event: KeyboardEvent) {
+		if (isModal && event.key === 'Escape') {
+			dispatch('close');
+		}
+	}
 </script>
+
+<svelte:window on:keydown={handleKeydown} />
 
 {#if view === 'loading'}
 	<!-- Loading View -->
@@ -295,7 +349,14 @@
 
 {:else if view === 'welcome'}
 	<!-- Welcome View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<!-- Logo -->
 			<div class="logo-small">
@@ -337,6 +398,22 @@
 					</div>
 				</button>
 			</div>
+
+			<!-- Guest mode option -->
+			<div class="guest-divider">
+				<span>or</span>
+			</div>
+
+			<button
+				class="guest-button"
+				on:click={handlePublicSpace}
+			>
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+				</svg>
+				Continue as Guest
+			</button>
+			<p class="guest-hint">Browse in read-only mode without an identity</p>
 		</div>
 
 		<div class="bottom-branding">
@@ -346,7 +423,14 @@
 
 {:else if view === 'telegram-choice'}
 	<!-- Telegram User Choice View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<!-- Logo -->
 			<div class="logo-small">
@@ -365,10 +449,8 @@
 					</div>
 				{/if}
 				<span class="telegram-name">
-					{telegramUser?.first_name || 'User'}
-					{#if telegramUser?.username}
-						<span class="telegram-username">@{telegramUser.username}</span>
-					{/if}
+					{telegramUser?.first_name || 'User'}{telegramUser?.last_name ? ` ${telegramUser.last_name}` : ''}
+					<span class="telegram-id">ID: {String(telegramUser?.id || '')}</span>
 				</span>
 			</div>
 
@@ -483,7 +565,14 @@
 
 {:else if view === 'create'}
 	<!-- Create View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<button class="back-button" on:click={goBack}>
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -538,7 +627,14 @@
 
 {:else if view === 'restore'}
 	<!-- Restore View -->
-	<div class="splash-container" transition:fade={{ duration: 300 }}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
 		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
 			<button class="back-button" on:click={goBack}>
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -606,6 +702,16 @@
 		justify-content: center;
 		z-index: 9999;
 		padding: 1rem;
+	}
+
+	/* Modal variant - displays as overlay with backdrop */
+	.splash-container--modal {
+		background: rgba(0, 0, 0, 0.7);
+		z-index: 100;
+	}
+
+	.splash-container--modal .bottom-branding {
+		display: none;
 	}
 
 	/* Loading View */
@@ -928,6 +1034,13 @@
 		font-weight: 400;
 	}
 
+	.telegram-id {
+		color: #64748b;
+		font-size: 0.75rem;
+		font-weight: 400;
+		font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+	}
+
 	.holon-name-badge {
 		display: inline-block;
 		background: rgba(79, 70, 229, 0.2);
@@ -943,5 +1056,56 @@
 	.info-text.highlight {
 		color: #fbbf24;
 		font-size: 0.85rem;
+	}
+
+	/* Guest Mode */
+	.guest-divider {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin: 1.25rem 0;
+	}
+
+	.guest-divider::before,
+	.guest-divider::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: rgba(100, 116, 139, 0.3);
+	}
+
+	.guest-divider span {
+		color: #64748b;
+		font-size: 0.85rem;
+		text-transform: lowercase;
+	}
+
+	.guest-button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.75rem 1rem;
+		background: transparent;
+		border: 1px solid rgba(100, 116, 139, 0.3);
+		border-radius: 0.5rem;
+		color: #94a3b8;
+		font-size: 0.95rem;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.guest-button:hover {
+		background: rgba(100, 116, 139, 0.1);
+		border-color: rgba(100, 116, 139, 0.5);
+		color: #cbd5e1;
+	}
+
+	.guest-hint {
+		color: #64748b;
+		font-size: 0.75rem;
+		text-align: center;
+		margin-top: 0.5rem;
 	}
 </style>

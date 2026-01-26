@@ -17,7 +17,7 @@
 	}
 
 	interface User {
-		id: number;
+		id: number | string;
 		first_name: string;
 	}
 
@@ -36,7 +36,13 @@
 	let isLoading = true;
 	let connectionReady = false;
 
-	$: users = Object.values(store);
+	// Real users from store (excluding the holon)
+	$: realUsers = Object.values(store);
+	// Include "This Holon" as a virtual participant
+	$: thisHolonUser = holonID ? { id: holonID as any, first_name: 'This Holon' } : null;
+	$: users = thisHolonUser
+		? [thisHolonUser, ...realUsers]
+		: realUsers;
 
 	// Subscription cleanup
 	let unsubscribeFunctions: (() => void)[] = [];
@@ -253,10 +259,11 @@
 
 	function openAddExpense() {
 		showAddExpense = true;
+		// Default to first real user as payer, include all participants in split
 		newExpense = {
 			amount: 0,
 			description: '',
-			paidBy: users[0]?.id?.toString() || '',
+			paidBy: realUsers[0]?.id?.toString() || '',
 			splitWith: users.map(u => u.id.toString())
 		};
 	}
@@ -310,7 +317,7 @@
 		<div class="stats-bar mb-4">
 			<div class="stats-bar__item">
 				<span class="stats-bar__value">{users.length}</span>
-				<span class="stats-bar__label">Users</span>
+				<span class="stats-bar__label">Participants</span>
 			</div>
 			<div class="stats-bar__divider"></div>
 			<div class="stats-bar__item stats-bar__item--info">
@@ -384,8 +391,8 @@
 						<div class="expense-card">
 							<div class="expense-info">
 								<h4>{expense.description}</h4>
-								<p class="paid-by">Paid by {users.find(u => u.id === parseInt(expense.paidBy))?.first_name || expense.paidBy}</p>
-								<p class="split-with">Split: {(Array.isArray(expense.splitWith) ? expense.splitWith : []).map(id => users.find(u => u.id === parseInt(id))?.first_name || id).join(', ')}</p>
+								<p class="paid-by">Paid by {users.find(u => String(u.id) === String(expense.paidBy))?.first_name || expense.paidBy}</p>
+								<p class="split-with">Split: {(Array.isArray(expense.splitWith) ? expense.splitWith : []).map(id => users.find(u => String(u.id) === String(id))?.first_name || id).join(', ')}</p>
 							</div>
 							<div class="expense-amount">
 								<span class="amount">{formatAmount(expense.amount)}</span>

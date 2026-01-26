@@ -146,8 +146,7 @@
                             <h1 class="text-3xl font-bold text-white">
                                 {user.first_name} {user.last_name || ''}
                             </h1>
-                            <p class="text-gray-300">@{user.username}</p>
-                            <p class="text-gray-400 text-sm">ID: {user.id}</p>
+                            <p class="text-gray-400 text-sm">ID: {String(user.id)}</p>
                         </div>
                     </div>
                     <button 

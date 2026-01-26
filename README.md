@@ -2,6 +2,15 @@
 
 A decentralized holonic platform for organizational governance, resource distribution, and wisdom aggregation.
 
+[![Documentation](https://img.shields.io/badge/docs-GitBook-blue)](https://liminalvillage.gitbook.io/harvest)
+[![License](https://img.shields.io/badge/license-AGPL-green)](LICENSE)
+
+> **Full Documentation**: [https://liminalvillage.gitbook.io/harvest](https://liminalvillage.gitbook.io/harvest)
+>
+> **User Guide**: See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) for detailed user journeys and tutorials.
+
+---
+
 ## Overview
 
 Harvest is an advanced, decentralized holonic platform built on Svelte 5 and TypeScript that enables organizations to manage themselves as **holons** - self-organizing units that are simultaneously whole and part of larger wholes.
@@ -187,6 +196,29 @@ src/
 | Splitter | Flow distribution contract for payment splitting |
 | Appreciative | Appreciative-based resource allocation |
 
+## Quick Start for Users
+
+1. **Visit the App**: Open Harvest in your browser
+2. **Create Identity**: Click "Keys & Access" in the sidebar, then "Create Identity"
+3. **Explore Your Home**: Your personal holon is created automatically
+4. **Add Holons**: Use the "+" button to add other holons by ID or QR code
+5. **Navigate**: Use the top tabs to access Tasks, Schedule, Expenses, and more
+
+For detailed user journeys, see the [User Guide](docs/USER_GUIDE.md).
+
+---
+
+## Documentation
+
+| Resource | Description |
+|----------|-------------|
+| [GitBook Documentation](https://liminalvillage.gitbook.io/harvest) | Full platform documentation |
+| [User Guide](docs/USER_GUIDE.md) | User journeys and tutorials |
+| [Architecture Guide](docs/ARCHITECTURE.md) | Technical architecture details |
+| [Quick Reference](docs/QUICK_REFERENCE.md) | Key files and data flow |
+
+---
+
 ## License
 
 AGPL License - See LICENSE file for details.
@@ -198,3 +230,11 @@ Roberto Valenti
 ## Contributing
 
 Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+
+---
+
+## Support
+
+- **Documentation**: [GitBook](https://liminalvillage.gitbook.io/harvest)
+- **Issues**: [GitHub Issues](https://github.com/liminalvillage/harvest/issues)
+- **User Guide**: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)

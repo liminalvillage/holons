@@ -9,41 +9,41 @@ interface Expense {
 }
 
 interface User {
-    id: number;
+    id: number | string;
     first_name: string;
 }
 
 export function calculateCurrencyBalance(
-    userId: string | number, 
-    currency: string, 
-    expenses: Record<string, Expense>, 
+    userId: string | number,
+    currency: string,
+    expenses: Record<string, Expense>,
     users: User[]
 ): number {
     if (!currency || !userId || users.length === 0) return 0;
-    
+
     // Normalize currency exactly like Expenses.svelte does
     const normalizedCurrency = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
-    
-    // Find the user index - match exactly how Expenses.svelte does it
-    const userIndex = users.findIndex(user => user.id === parseInt(userId.toString()));
+
+    // Find the user index - use string comparison for consistency
+    const userIndex = users.findIndex(user => String(user.id) === String(userId));
     if (userIndex === -1) return 0;
-    
+
     // Create credit matrix using the exact same logic as Expenses.svelte
     const creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
-    
+
     Object.values(expenses).forEach(expense => {
         // Add null check for expense.currency before calling toLowerCase()
         if (expense && expense.currency && expense.currency.toLowerCase() === normalizedCurrency) {
             const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
             const amountPerPerson = expense.amount / (splitWithList.length || 1);
-            const payerIndex = users.findIndex(user => user.id === parseInt(expense.paidBy));
-            
+            const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
+
             if (payerIndex === -1) return; // Skip if payer not found
-            
+
             splitWithList.forEach(memberId => {
-                const memberIndex = users.findIndex(user => user.id === parseInt(memberId));
+                const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
                 if (memberIndex === -1) return; // Skip if member not found
-                
+
                 if (payerIndex !== memberIndex) {
                     // Different people: payer is owed, member owes
                     creditMatrix[payerIndex][memberIndex] += amountPerPerson;
@@ -53,33 +53,33 @@ export function calculateCurrencyBalance(
             });
         }
     });
-    
+
     // Calculate balance by summing the user's row in the credit matrix
     return creditMatrix[userIndex].reduce((sum, val) => sum + val, 0);
 }
 
 export function calculateCreditMatrix(
-    currency: string, 
-    expenses: Record<string, Expense>, 
+    currency: string,
+    expenses: Record<string, Expense>,
     users: User[]
 ): number[][] {
     if (!currency || users.length === 0) return [];
-    
+
     const normalizedCurrency = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
     const creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
-    
+
     Object.values(expenses).forEach(expense => {
         if (expense && expense.currency && expense.currency.toLowerCase() === normalizedCurrency) {
             const splitWithList = Array.isArray(expense.splitWith) ? expense.splitWith : [];
             const amountPerPerson = expense.amount / (splitWithList.length || 1);
-            const payerIndex = users.findIndex(user => user.id === parseInt(expense.paidBy));
-            
+            const payerIndex = users.findIndex(user => String(user.id) === String(expense.paidBy));
+
             if (payerIndex === -1) return;
-            
+
             splitWithList.forEach(memberId => {
-                const memberIndex = users.findIndex(user => user.id === parseInt(memberId));
+                const memberIndex = users.findIndex(user => String(user.id) === String(memberId));
                 if (memberIndex === -1) return;
-                
+
                 if (payerIndex !== memberIndex) {
                     creditMatrix[payerIndex][memberIndex] += amountPerPerson;
                     creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
@@ -87,6 +87,6 @@ export function calculateCreditMatrix(
             });
         }
     });
-    
+
     return creditMatrix;
 } 

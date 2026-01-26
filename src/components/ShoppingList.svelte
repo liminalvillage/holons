@@ -3,148 +3,116 @@
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
-    import { formatDate, formatTime } from "../utils/date";
     import type { HoloSphere } from "holosphere";
-    import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
+    import { fetchHolonName } from "../utils/holonNames";
     import TitleBar from "./shared/TitleBar.svelte";
     import { ShoppingCart, Plus } from 'svelte-feathers';
+    import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
-    interface ShoppingItem {
+    interface ChecklistItem {
+        text: string;
+        checked: boolean;
+    }
+
+    interface Checklist {
         id: string;
-        quantity: number;
-        done: boolean;
-        from: string;
-        addedOn: string;
-        _deleted?: boolean;
-        _hologram?: {
-            isHologram: boolean;
-            soul: string;
-            sourceHolon: string;
-            localOverrides?: string[];
-        };
+        items: ChecklistItem[];
+        creator?: string;
+        created?: Date;
+    }
+
+    // Display format for shopping items (derived from checklist items)
+    interface ShoppingDisplayItem {
+        text: string;
+        checked: boolean;
+        index: number;
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
     let holonID: string = '';
     let holonName: string = 'Shopping List';
-    let store: Record<string, ShoppingItem> = {};
-    $: shoppingItems = Object.entries(store);
-    $: filteredItems = shoppingItems.filter(([_, item]: [string, any]) => {
-        // Filter out deleted items and holograms if showHolograms is false
-        if (item._deleted) return false;
-        if (!showHolograms && item._hologram?.isHologram) return false;
-        return true;
-    });
+    let shoppingChecklist: Checklist | null = null;
+    let shoppingChecklistId: string | null = null;
+    let checklistsUnsubscribe: (() => void) | undefined;
+
+    // Derived shopping items from checklist
+    $: shoppingItems = shoppingChecklist?.items?.map((item, index) => ({
+        text: item.text,
+        checked: item.checked,
+        index
+    })) || [];
+
+    $: pendingItems = shoppingItems.filter(item => !item.checked);
+    $: completedItems = shoppingItems.filter(item => item.checked);
 
     let showInput = false;
     let inputText = "";
-    let showHolograms = true;
-    let shoppingItemsUnsubscribe: (() => void) | undefined;
-    let hologramSourceNames = new Map<string, string>();
 
-    async function preResolveHologramNames(items: ShoppingItem[]) {
-		const hologramSouls = new Set<string>();
-		
-		items.forEach(item => {
-			if (item._hologram?.isHologram && item._hologram.soul) {
-				if (!hologramSourceNames.has(item._hologram.soul)) {
-					hologramSouls.add(item._hologram.soul);
-				}
-			}
-		});
-		
-		if (hologramSouls.size === 0) return;
-		
-		const promises = Array.from(hologramSouls).map(async (hologramSoul) => {
-			try {
-				const match = hologramSoul.match(/Holons\/([^\/]+)/);
-				if (match) {
-					const holonId = match[1];
-					const { fetchHolonName } = await import('../utils/holonNames');
-					const realName = await fetchHolonName(holosphere, holonId);
-					hologramSourceNames.set(hologramSoul, realName);
-				}
-			} catch (error) {
-				const match = hologramSoul.match(/Holons\/([^\/]+)/);
-				if (match) {
-					hologramSourceNames.set(hologramSoul, `Holon ${match[1]}`);
-				}
-			}
-		});
-		
-		await Promise.allSettled(promises);
-		
-		if (hologramSouls.size > 0) {
-			hologramSourceNames = new Map(hologramSourceNames);
-            shoppingItems = [...shoppingItems]; // trigger update
-		}
-	}
+    const SHOPPING_KEYWORDS = ['shopping', 'shopping list', 'groceries', 'grocery'];
+
+    function isShoppingChecklist(checklistId: string): boolean {
+        return SHOPPING_KEYWORDS.some(keyword => checklistId.toLowerCase().includes(keyword));
+    }
 
     async function fetchData() {
         if (!holosphere || !holonID) return;
 
         // Clean up previous subscription
-        if (shoppingItemsUnsubscribe) {
-            shoppingItemsUnsubscribe();
-            shoppingItemsUnsubscribe = undefined;
+        if (checklistsUnsubscribe) {
+            checklistsUnsubscribe();
+            checklistsUnsubscribe = undefined;
         }
 
         try {
-            const initialData = await holosphere.getAll(holonID, "shopping");
+            // Fetch all checklists and find the shopping one
+            const allChecklists = await holosphere.getAll(holonID, "checklists") as Record<string, Checklist>;
 
-            // Filter out metadata objects
-            const newStore: Record<string, ShoppingItem> = {};
-            if (typeof initialData === 'object' && initialData !== null) {
-                Object.entries(initialData).forEach(([key, item]: [string, any]) => {
-                    // Only include valid shopping items
-                    // Filter out deleted items and unresolved holograms (hologram === true)
-                    // Resolved holograms have _hologram metadata but hologram !== true
-                    if (item && item.id && !item._deleted && item.hologram !== true) {
-                        newStore[key] = item as ShoppingItem;
+            // Find a checklist with shopping keywords
+            let foundChecklist: Checklist | null = null;
+            let foundId: string | null = null;
+
+            if (allChecklists && typeof allChecklists === 'object') {
+                for (const [key, checklist] of Object.entries(allChecklists)) {
+                    if (isShoppingChecklist(key)) {
+                        foundChecklist = checklist;
+                        foundId = key;
+                        break;
                     }
-                });
+                }
             }
-            store = newStore;
 
-            await preResolveHologramNames(Object.values(store));
+            shoppingChecklist = foundChecklist;
+            shoppingChecklistId = foundId;
 
             // Set up subscription for real-time updates
-            const off = holosphere.subscribe(holonID, "shopping", (newItem: any, key?: string) => {
-                // Filter out deleted items and unresolved holograms
-                // Resolved holograms have _hologram metadata but hologram !== true
-                if (newItem && key && !newItem._deleted && newItem.hologram !== true) {
-                    store = { ...store, [key]: newItem as ShoppingItem };
-                    if (newItem._hologram?.isHologram) {
-                        preResolveHologramNames([newItem]);
+            const subscription = await holosphere.subscribe(
+                holonID,
+                "checklists",
+                (newItem: Checklist | null, key?: string) => {
+                    if (key && isShoppingChecklist(key)) {
+                        if (newItem) {
+                            shoppingChecklist = newItem;
+                            shoppingChecklistId = key;
+                        } else {
+                            // Checklist was deleted
+                            shoppingChecklist = null;
+                            shoppingChecklistId = null;
+                        }
                     }
-                } else if (!newItem && key) {
-                    const { [key]: _, ...rest } = store;
-                    store = rest;
                 }
-            });
+            );
 
-            if (typeof off === 'function') {
-                shoppingItemsUnsubscribe = off as unknown as () => void;
-            }
+            checklistsUnsubscribe = subscription.unsubscribe;
+
         } catch (error) {
-            console.error('Error fetching shopping list:', error);
+            console.error('Error fetching shopping checklist:', error);
         }
     }
 
     onMount(() => {
-        // Load preferences
-        try {
-            const storedShowHolograms = localStorage.getItem("shoppingShowHolograms");
-            if (storedShowHolograms !== null) {
-                showHolograms = storedShowHolograms === "true";
-            }
-        } catch (error) {
-            console.error('Error loading preferences:', error);
-        }
-
         return () => {
-            if (shoppingItemsUnsubscribe) shoppingItemsUnsubscribe();
+            if (checklistsUnsubscribe) checklistsUnsubscribe();
         };
     });
 
@@ -165,32 +133,24 @@
         }
     }
 
-    // Save showHolograms preference to localStorage
-    $: if (typeof localStorage !== 'undefined') {
-        localStorage.setItem("shoppingShowHolograms", showHolograms.toString());
-    }
+    async function toggleItemStatus(itemIndex: number): Promise<void> {
+        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
 
-    // Function to get hologram source name using centralized service
-    function getHologramSource(hologramSoul: string | undefined): string {
-        if (!hologramSoul) return '';
-        
-        if (hologramSourceNames.has(hologramSoul)) {
-            return hologramSourceNames.get(hologramSoul)!;
-        }
-        
-        const match = hologramSoul.match(/Holons\/([^\/]+)/);
-        return match ? `Holon ${match[1]}` : 'External Source';
-    }
+        try {
+            const updatedChecklist = { ...shoppingChecklist };
+            updatedChecklist.items = [...updatedChecklist.items];
+            updatedChecklist.items[itemIndex] = {
+                ...updatedChecklist.items[itemIndex],
+                checked: !updatedChecklist.items[itemIndex].checked
+            };
 
-    function toggleItemStatus(key: string): void {
-        if (store[key] && holonID) {
-            const item = { ...store[key], done: !store[key].done };
-
-            holosphere.put(
-                holonID,
-                "shopping",
-                item
-            );
+            await holosphere.put(holonID, "checklists", updatedChecklist);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to toggle item:", error);
+            }
         }
     }
 
@@ -199,92 +159,104 @@
         showInput = true;
     }
 
-    function handleAdd() {
+    async function handleAdd(): Promise<void> {
         if (!inputText.trim() || !holonID) return;
-        
-        const newItem: ShoppingItem = {
-            id: inputText.trim(),
-            quantity: 1,
-            done: false,
-            from: 'Dashboard User',
-            addedOn: new Date().toISOString()
-        };
-
-        store = { ...store, [newItem.id]: newItem };
-
-        holosphere.put(
-            holonID,
-            "shopping",
-            newItem
-        ).catch(err => {
-            console.error("Failed to add item", err);
-            const {[newItem.id]: _, ...rest} = store;
-            store = rest;
-        });;
-        
-        showInput = false;
-        inputText = "";
-    }
-
-    async function removeChecked(holonId: string): Promise<void> {
-        if (!holonId) return;
-        const checkedItemsKeys = Object.entries(store)
-            .filter(([_, item]) => item.done)
-            .map(([key]) => key);
-
-        if (checkedItemsKeys.length === 0) return;
-
-        // Store original state in case we need to revert
-        const originalStore = { ...store };
 
         try {
-            // Update local store optimistically
-            const newStore = { ...store };
-            checkedItemsKeys.forEach(key => {
-                delete newStore[key];
-            });
-            store = newStore;
+            if (shoppingChecklist && shoppingChecklistId) {
+                // Add to existing shopping checklist
+                const updatedChecklist = { ...shoppingChecklist };
+                updatedChecklist.items = [
+                    ...updatedChecklist.items,
+                    { text: inputText.trim(), checked: false }
+                ];
 
-            // Delete from backend - wait for all deletions to complete
-            const deletePromises = checkedItemsKeys.map(key => 
-                holosphere.delete(holonId, "shopping", key)
-            );
-            
-            await Promise.all(deletePromises);
-            
-        } catch (error) {
-            console.error("Failed to remove checked items:", error);
-            // Revert local changes if backend deletion failed
-            store = originalStore;
-            
-            // Optional: Show user-friendly error notification
-            alert("Failed to remove items. Please try again.");
+                await holosphere.put(holonID, "checklists", updatedChecklist);
+            } else {
+                // Create new shopping checklist
+                const newChecklist: Checklist = {
+                    id: "Shopping List",
+                    items: [{ text: inputText.trim(), checked: false }],
+                    creator: "Dashboard User",
+                    created: new Date()
+                };
+
+                await holosphere.put(holonID, "checklists", newChecklist);
+                shoppingChecklistId = "Shopping List";
+            }
+
+            showInput = false;
+            inputText = "";
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to add item:", error);
+            }
+        }
+    }
+
+    async function removeItem(itemIndex: number): Promise<void> {
+        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
+
+        try {
+            const updatedChecklist = { ...shoppingChecklist };
+            updatedChecklist.items = updatedChecklist.items.filter((_, index) => index !== itemIndex);
+
+            await holosphere.put(holonID, "checklists", updatedChecklist);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to remove item:", error);
+            }
+        }
+    }
+
+    async function removeChecked(): Promise<void> {
+        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
+
+        const checkedCount = shoppingChecklist.items.filter(item => item.checked).length;
+        if (checkedCount === 0) return;
+
+        try {
+            const updatedChecklist = { ...shoppingChecklist };
+            updatedChecklist.items = updatedChecklist.items.filter(item => !item.checked);
+
+            await holosphere.put(holonID, "checklists", updatedChecklist);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to remove checked items:", error);
+            }
+        }
+    }
+
+    async function clearAll(): Promise<void> {
+        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
+
+        try {
+            const updatedChecklist = { ...shoppingChecklist };
+            updatedChecklist.items = updatedChecklist.items.map(item => ({
+                ...item,
+                checked: false
+            }));
+
+            await holosphere.put(holonID, "checklists", updatedChecklist);
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to clear checklist:", error);
+            }
         }
     }
 </script>
 
 <div class="space-y-4">
     <!-- TitleBar -->
-    <TitleBar {holonName} title="Shopping List" icon={ShoppingCart}>
-        <label slot="actions" class="flex items-center cursor-pointer">
-            <div class="relative">
-                <input
-                    type="checkbox"
-                    class="sr-only"
-                    bind:checked={showHolograms}
-                />
-                <div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-                <div
-                    class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
-                    class:translate-x-5={showHolograms}
-                ></div>
-            </div>
-            <div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-                <span class="hidden sm:inline">Show Holograms</span>
-                <span class="sm:hidden" aria-label="Show hologram items">🔮</span>
-            </div>
-        </label>
-    </TitleBar>
+    <TitleBar {holonName} title="Shopping List" icon={ShoppingCart} />
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
@@ -292,17 +264,17 @@
             <!-- Stats Bar -->
             <div class="stats-bar mb-4">
                 <div class="stats-bar__item">
-                    <span class="stats-bar__value">{filteredItems.filter(([_, item]) => !item.done).length}</span>
+                    <span class="stats-bar__value">{pendingItems.length}</span>
                     <span class="stats-bar__label">Pending</span>
                 </div>
                 <div class="stats-bar__divider"></div>
                 <div class="stats-bar__item stats-bar__item--success">
-                    <span class="stats-bar__value">{filteredItems.filter(([_, item]) => item.done).length}</span>
+                    <span class="stats-bar__value">{completedItems.length}</span>
                     <span class="stats-bar__label">Done</span>
                 </div>
                 <div class="stats-bar__divider"></div>
                 <div class="stats-bar__item">
-                    <span class="stats-bar__value">{filteredItems.length}</span>
+                    <span class="stats-bar__value">{shoppingItems.length}</span>
                     <span class="stats-bar__label">Total</span>
                 </div>
             </div>
@@ -322,15 +294,25 @@
 
                 <div class="controls-row__right">
                     <button
-                        on:click={async () => {
-                            if (holonID) {
-                                await removeChecked(holonID);
-                            }
-                        }}
+                        on:click={clearAll}
+                        class="btn btn--secondary"
+                        aria-label="Clear all checkmarks"
+                        title="Uncheck all items"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        <span class="hidden sm:inline">Clear All</span>
+                    </button>
+
+                    <button
+                        on:click={removeChecked}
                         class="btn btn--secondary"
                         aria-label="Remove checked items"
                     >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
                         <span class="hidden sm:inline">Remove Checked</span>
                     </button>
                 </div>
@@ -338,101 +320,65 @@
 
             <!-- Shopping Items -->
             <div class="space-y-3">
-                {#each filteredItems as [key, item]}
-                    <div id={key} class="w-full">
-                        <button
-                            class="w-full text-left group relative"
-                            on:click={() => toggleItemStatus(item.id)}
-                            aria-label={`Toggle ${item.id} - ${item.done ? 'completed' : 'pending'}`}
+                {#each shoppingItems as item (item.index)}
+                    <div class="w-full">
+                        <div
+                            class="p-4 rounded-xl transition-all duration-300 border hover:shadow-md cursor-pointer transform hover:scale-[1.002]"
+                            class:bg-gray-800={item.checked}
+                            class:border-gray-700={item.checked}
+                            class:opacity-70={item.checked}
+                            class:bg-gray-700={!item.checked}
+                            class:border-transparent={!item.checked}
+                            class:hover:bg-gray-600={!item.checked}
+                            class:hover:border-gray-500={!item.checked}
+                            on:click={() => toggleItemStatus(item.index)}
+                            on:keydown={(e) => e.key === 'Enter' && toggleItemStatus(item.index)}
+                            role="button"
+                            tabindex="0"
+                            aria-label={`Toggle ${item.text} - ${item.checked ? 'completed' : 'pending'}`}
                         >
-                            <div
-                                class="p-4 rounded-xl transition-all duration-300 border hover:shadow-md transform hover:scale-[1.005]"
-                                class:bg-gray-800={item.done}
-                                class:border-gray-700={item.done}
-                                class:opacity-70={item.done}
-                                class:bg-gray-700={!item.done}
-                                class:border-transparent={!item._hologram?.isHologram}
-                                class:hover:bg-gray-600={!item.done}
-                                class:hover:border-gray-500={!item.done}
-                                class:opacity-75={!item.done && item._hologram?.isHologram}
-                                class:border-2={item._hologram?.isHologram}
-                                class:border-indigo-500={item._hologram?.isHologram}
-                                style="{item._hologram?.isHologram ? 'box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 20px rgba(99, 102, 241, 0.1);' : ''}"
-                            >
-                                <div class="flex items-center justify-between gap-3">
-                                    <div class="flex items-center gap-3 flex-1 min-w-0">
-                                        <!-- Item Icon -->
-                                        <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center">
-                                            <span class="text-sm">{item.done ? '✅' : '🛒'}</span>
-                                        </div>
-
-                                        <!-- Main Content -->
-                                        <div class="flex-1 min-w-0">
-                                            <div class="flex items-center gap-2 mb-1">
-                                                {#if item.quantity && item.quantity > 1}
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-black/10 {item.done ? 'text-gray-400' : 'text-gray-200'} flex-shrink-0">
-                                                        {item.quantity}×
-                                                    </span>
-                                                {/if}
-                                                <h3 class="text-base font-bold truncate" class:text-gray-400={item.done} class:line-through={item.done} class:text-white={!item.done}>
-                                                    {item.id}
-                                                </h3>
-                                                {#if item._hologram?.isHologram}
-                                                    <div 
-                                                        class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 flex-shrink-0 hover:bg-indigo-500/30 transition-colors cursor-pointer" 
-                                                        title="Navigate to source holon: {getHologramSource(item._hologram.soul)}"
-                                                        on:click|stopPropagation={() => {
-                                                            const match = item._hologram?.soul?.match(/Holons\/([^\/]+)/);
-                                                            if (match) {
-                                                                goto(`/${match[1]}/shopping`);
-                                                            }
-                                                        }}
-                                                        role="button"
-                                                        tabindex="0"
-                                                        on:keydown|stopPropagation={(e) => {
-                                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                                const match = item._hologram?.soul?.match(/Holons\/([^\/]+)/);
-                                                                if (match) {
-                                                                    goto(`/${match[1]}/shopping`);
-                                                                }
-                                                            }
-                                                        }}
-                                                    >
-                                                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                                        </svg>
-                                                        {getHologramSource(item._hologram.soul)}
-                                                        <svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                                        </svg>
-                                                    </div>
-                                                {/if}
-                                            </div>
-                                            <p class="text-sm" class:text-gray-500={item.done} class:text-gray-400={!item.done}>
-                                                Added by: {item.from}
-                                            </p>
-                                        </div>
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-3 flex-1 min-w-0">
+                                    <!-- Item Icon -->
+                                    <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center">
+                                        <span class="text-sm">{item.checked ? '✅' : '🛒'}</span>
                                     </div>
 
-                                    <!-- Right Side - Checkbox -->
-                                    <div class="flex items-center gap-3 flex-shrink-0">
-                                        <div class="flex items-center">
-                                            <input
-                                                type="checkbox"
-                                                checked={item.done}
-                                                on:click|stopPropagation
-                                                on:change={() => toggleItemStatus(item.id)}
-                                                class="w-5 h-5 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500 focus:ring-2"
-                                            />
-                                        </div>
+                                    <!-- Main Content -->
+                                    <div class="flex-1 min-w-0">
+                                        <h3 class="text-base font-bold truncate" class:text-gray-400={item.checked} class:line-through={item.checked} class:text-white={!item.checked}>
+                                            {item.text}
+                                        </h3>
                                     </div>
                                 </div>
+
+                                <!-- Right Side - Actions -->
+                                <div class="flex items-center gap-3 flex-shrink-0">
+                                    <div class="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={item.checked}
+                                            readonly
+                                            class="w-5 h-5 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500 focus:ring-2 pointer-events-none"
+                                        />
+                                    </div>
+                                    <button
+                                        on:click|stopPropagation={() => removeItem(item.index)}
+                                        class="text-gray-300 hover:text-red-400 hover:bg-red-500/20 p-2 rounded-lg transition-all duration-200 bg-gray-600/50"
+                                        aria-label="Remove item"
+                                        title="Delete item"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
-                        </button>
+                        </div>
                     </div>
                 {/each}
 
-                {#if filteredItems.length === 0}
+                {#if shoppingItems.length === 0}
                     <div class="text-center py-12">
                         <div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
                             <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -455,7 +401,7 @@
 </div>
 
 {#if showInput}
-    <div 
+    <div
         class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
         on:click|self={() => showInput = false}
         on:keydown|self={(e) => e.key === 'Escape' && (showInput = false)}
@@ -463,7 +409,7 @@
         aria-modal="true"
         tabindex="-1"
     >
-        <div 
+        <div
             class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700"
             aria-labelledby="item-input-title"
         >
@@ -480,11 +426,9 @@
                         </svg>
                     </button>
                 </div>
-                
-                <form 
-                    on:submit|preventDefault={async (e) => {
-                        handleAdd();
-                    }}
+
+                <form
+                    on:submit|preventDefault={handleAdd}
                     class="space-y-4"
                 >
                     <div>
@@ -521,10 +465,3 @@
         </div>
     </div>
 {/if}
-
-<style>
-    /* Toggle switch styling */
-    .dot {
-        transition: transform 0.3s ease-in-out;
-    }
-</style>
