@@ -145,8 +145,31 @@ class QueryManager {
 		if (!item.target) {
 			return 'Missing target - hologram has no source reference';
 		}
-		// If we have both, it likely failed during resolution
-		return 'Resolution failed - network issue, permission denied, or source unavailable';
+
+		// Check for capability structure issues
+		const cap = item.capability;
+		if (typeof cap === 'string') {
+			// Token is a string - check basic structure
+			if (!cap.includes('.')) {
+				return 'Invalid capability format - missing signature (should be base64.signature)';
+			}
+		} else if (typeof cap === 'object') {
+			// Check if capability token is wrapped
+			if (cap.token && !cap.token.includes('.')) {
+				return 'Invalid capability format - token missing signature';
+			}
+		}
+
+		// Check authorPubKey presence (required for issuer verification)
+		if (!item.authorPubKey && !item.target?.authorPubKey) {
+			return 'Missing authorPubKey - cannot verify capability issuer matches data author';
+		}
+
+		// If we have both capability and target, resolution likely failed due to:
+		// - Issuer mismatch (capability signed by different key than claimed issuer)
+		// - Network issue fetching source data
+		// - Permission denied at source
+		return 'Resolution failed - possible issuer/signature mismatch, network issue, or permission denied';
 	}
 
 	/**

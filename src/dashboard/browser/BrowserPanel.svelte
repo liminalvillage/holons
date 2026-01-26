@@ -525,7 +525,7 @@
 								holonId, // recipient is the partner
 								{
 									expiresIn: 365 * 24 * 60 * 60 * 1000, // 1 year
-									issuer: homeHolonId,
+									issuer: $nostrPublicKey,  // Must be signer's public key for signature verification
 									issuerKey: $nostrPrivateKey
 								}
 							);
@@ -552,7 +552,7 @@
 								holonId, // recipient is the partner
 								{
 									expiresIn: 365 * 24 * 60 * 60 * 1000, // 1 year
-									issuer: homeHolonId,
+									issuer: $nostrPublicKey,  // Must be signer's public key for signature verification
 									issuerKey: $nostrPrivateKey
 								}
 							);
@@ -802,6 +802,8 @@
 		}
 
 		// Update our local federation with the swapped lens config
+		// Note: acceptFederationUpdate may also call federateHolon internally, but this call
+		// ensures we have the updated config locally before sending the acceptance DM
 		await holosphere.federateHolon(homeHolonId, senderPubKey, {
 			lensConfig: ourLensConfig,
 			skipPropagation: true

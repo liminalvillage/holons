@@ -17,6 +17,9 @@
 	// Import global design system styles
 	import '../styles/index.css';
 
+	// Accept data from layout load function (includes URL private key parameter)
+	export let data: { urlPrivateKey: string | null };
+
 	// Track if user has passed the splash screen
 	let showSplash = true;
 	let splashComplete = false;
@@ -251,7 +254,11 @@
 				['read', 'write', 'delete'],
 				{ holonId: '*', lensName: '*' },
 				holospherePublicKey,
-				{ issuerKey: privateKey, expiresIn: 365 * 24 * 60 * 60 * 1000 }
+				{
+					issuer: userPublicKey,  // Must be signer's public key for signature verification
+					issuerKey: privateKey,
+					expiresIn: 365 * 24 * 60 * 60 * 1000
+				}
 			);
 
 			// Store the capability token in federation_capabilities global table
@@ -318,10 +325,12 @@
 								);
 								console.log('[Global DM] processFederationResponse result:', result);
 
-								// Store federation relationship
+								// Store federation relationship with lens config
 								// IMPORTANT: Swap lensConfig from responder's perspective to initiator's
 								// Responder's outbound (what they share) = Initiator's inbound (what I receive)
 								// Responder's inbound (what they receive) = Initiator's outbound (what I share)
+								// Note: processFederationResponse already calls addFederatedPartner internally,
+								// but federateHolon also sets up lens config which may not be done by addFederatedPartner
 								if (response.responderHolonId) {
 									const initiatorLensConfig = {
 										inbound: response.lensConfig?.outbound || [],
@@ -533,6 +542,42 @@
 		showSplash = false;
 		splashComplete = true;
 	}
+
+	// Check for URL private key parameter on mount (for direct access from safe environments)
+	onMount(async () => {
+		if (!browser) return;
+
+		const urlPrivateKey = data?.urlPrivateKey;
+		if (urlPrivateKey) {
+			// Validate key format (64 hex characters)
+			if (/^[0-9a-fA-F]{64}$/.test(urlPrivateKey)) {
+				console.log('URL private key detected, auto-authenticating...');
+				try {
+					// Import the key into the nostr store
+					await nostrStore.importKey(urlPrivateKey);
+
+					// Initialize HoloSphere with the imported key
+					await initHoloSphere(urlPrivateKey.toLowerCase());
+
+					// Skip splash screen
+					showSplash = false;
+					splashComplete = true;
+
+					// Clear the key from URL for security (replace current history entry)
+					const cleanUrl = new URL(window.location.href);
+					cleanUrl.searchParams.delete('key');
+					window.history.replaceState({}, '', cleanUrl.toString());
+
+					console.log('Auto-authenticated via URL parameter');
+				} catch (error) {
+					console.error('Failed to authenticate with URL private key:', error);
+					// Fall through to show splash screen on error
+				}
+			} else {
+				console.warn('Invalid private key format in URL parameter');
+			}
+		}
+	});
 </script>
 
 <svelte:head>
