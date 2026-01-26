@@ -29,7 +29,7 @@ export function buildQRUrl(card: Card, config: DeckConfig): string {
 		cardId: card.id,
 		deckId: config.deckId,
 		title: card.title,
-		type: card.type
+		action: card.type
 	});
 	const baseUrl = config.qrBaseUrl || DEFAULT_QR_BASE_URL;
 	return `${baseUrl}?${params.toString()}`;
