@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import QRCode from 'qrcode';
+import JSZip from 'jszip';
 import type { Card, DeckConfig, PDFGeneratorOptions } from './types';
 import { renderCardFront, renderCardBack, CARD_WIDTH_PX, CARD_HEIGHT_PX } from './CardRenderer';
 
@@ -21,6 +22,8 @@ const CARD_SLOT_HEIGHT_PX = 370;
 const MARGIN_X_PX = (A4_WIDTH_PX - COLS * CARD_SLOT_WIDTH_PX) / 2;
 const MARGIN_Y_PX = (A4_HEIGHT_PX - ROWS * CARD_SLOT_HEIGHT_PX) / 2;
 
+const DEFAULT_QR_BASE_URL = 'https://dashboard.holons.io/qr';
+
 export function buildQRUrl(card: Card, config: DeckConfig): string {
 	const params = new URLSearchParams({
 		cardId: card.id,
@@ -28,7 +31,8 @@ export function buildQRUrl(card: Card, config: DeckConfig): string {
 		title: card.title,
 		type: card.type
 	});
-	return `https://dashboard.holons.io/qr?${params.toString()}`;
+	const baseUrl = config.qrBaseUrl || DEFAULT_QR_BASE_URL;
+	return `${baseUrl}?${params.toString()}`;
 }
 
 export async function generateQRDataUrl(url: string): Promise<string> {
@@ -37,6 +41,91 @@ export async function generateQRDataUrl(url: string): Promise<string> {
 		margin: 1,
 		errorCorrectionLevel: 'M'
 	});
+}
+
+/**
+ * Generate a transparent PNG QR code as a data URL
+ */
+export async function generateTransparentQRDataUrl(url: string): Promise<string> {
+	return await QRCode.toDataURL(url, {
+		width: 800,
+		margin: 1,
+		errorCorrectionLevel: 'M',
+		color: {
+			dark: '#000000',
+			light: '#00000000' // Transparent background
+		}
+	});
+}
+
+/**
+ * Convert a data URL to a Blob
+ */
+function dataUrlToBlob(dataUrl: string): Blob {
+	const parts = dataUrl.split(',');
+	const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+	const bstr = atob(parts[1]);
+	const n = bstr.length;
+	const u8arr = new Uint8Array(n);
+	for (let i = 0; i < n; i++) {
+		u8arr[i] = bstr.charCodeAt(i);
+	}
+	return new Blob([u8arr], { type: mime });
+}
+
+/**
+ * Sanitize a filename by removing/replacing invalid characters
+ */
+function sanitizeFilename(name: string): string {
+	return name
+		.replace(/[<>:"/\\|?*]/g, '_') // Replace invalid characters
+		.replace(/\s+/g, '_') // Replace spaces with underscores
+		.replace(/_+/g, '_') // Collapse multiple underscores
+		.replace(/^_|_$/g, '') // Remove leading/trailing underscores
+		.substring(0, 100); // Limit length
+}
+
+export interface QRZipOptions {
+	cards: Card[];
+	config: DeckConfig;
+	onProgress?: (current: number, total: number) => void;
+}
+
+/**
+ * Generate a zip file containing transparent PNG QR codes for all cards
+ */
+export async function generateQRZip(options: QRZipOptions): Promise<Blob> {
+	const { cards, config, onProgress } = options;
+	const zip = new JSZip();
+
+	for (let i = 0; i < cards.length; i++) {
+		const card = cards[i];
+		const qrUrl = buildQRUrl(card, config);
+		const qrDataUrl = await generateTransparentQRDataUrl(qrUrl);
+		const qrBlob = dataUrlToBlob(qrDataUrl);
+
+		// Create filename from card title
+		const filename = `${sanitizeFilename(card.title)}.png`;
+		zip.file(filename, qrBlob);
+
+		onProgress?.(i + 1, cards.length);
+	}
+
+	return await zip.generateAsync({ type: 'blob' });
+}
+
+/**
+ * Download a zip file
+ */
+export function downloadZip(blob: Blob, filename: string): void {
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement('a');
+	link.href = url;
+	link.download = filename;
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
 }
 
 

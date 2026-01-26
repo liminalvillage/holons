@@ -1,15 +1,29 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { getContext } from 'svelte';
+	import type { HoloSphere } from 'holosphere';
 	import { parseCSV, generateSampleCSV } from '$lib/card-generator/csv-parser';
-	import { generatePDF, downloadPDF, buildQRUrl, generateQRDataUrl } from '$lib/card-generator/pdf-generator';
+	import { generatePDF, downloadPDF, buildQRUrl, generateQRDataUrl, generateQRZip, downloadZip } from '$lib/card-generator/pdf-generator';
 	import { renderCardFront, renderCardBack, renderCardBackPlaceholder, CARD_WIDTH_PX, CARD_HEIGHT_PX } from '$lib/card-generator/CardRenderer';
 	import type { Card, DeckConfig, CardStyle } from '$lib/card-generator/types';
 	import { CARD_TYPE_COLORS, DEFAULT_CARD_STYLE, FONT_OPTIONS } from '$lib/card-generator/types';
+	import { registerDeck } from '$lib/deck-registry';
+
+	// Get holosphere context at component initialization (required by Svelte)
+	const holosphere = getContext<HoloSphere>('holosphere');
 
 	$: holonId = $page.params.id || '';
 
+	// Generate unique deck ID based on timestamp
+	function generateDeckId(): string {
+		const now = new Date();
+		const timestamp = now.toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDHHMMSS
+		return `deck-${timestamp}`;
+	}
+
 	// State
-	let deckId = '';
+	let deckId = generateDeckId();
+	let qrBaseUrl = 'https://dashboard.holons.io/qr';
 	let csvFile: File | null = null;
 	let backgroundImageFile: File | null = null;
 	let foregroundImageFile: File | null = null;
@@ -36,13 +50,13 @@
 			previewQRDataUrl = null;
 			return;
 		}
-		const config: DeckConfig = { deckId, holonId, cardStyle };
+		const config: DeckConfig = { deckId, holonId, qrBaseUrl, cardStyle };
 		const qrUrl = buildQRUrl(previewCard, config);
 		previewQRDataUrl = await generateQRDataUrl(qrUrl);
 	}
 
-	// Reactive: regenerate QR when preview card or deck changes
-	$: if (previewCard && deckId) {
+	// Reactive: regenerate QR when preview card, deck, or base URL changes
+	$: if (previewCard && deckId && qrBaseUrl) {
 		updatePreviewQR();
 	}
 
@@ -136,10 +150,22 @@
 			const config: DeckConfig = {
 				deckId,
 				holonId,
+				qrBaseUrl,
 				backgroundImage: backgroundImageUrl || undefined,
 				foregroundImage: foregroundImageUrl || undefined,
 				cardStyle
 			};
+
+			// Register deck in global registry before generating PDF
+			if (holosphere) {
+				try {
+					await registerDeck(holosphere, deckId, holonId, csvFile?.name);
+					console.log(`[Card Generator] Registered deck ${deckId} for holon ${holonId}`);
+				} catch (err) {
+					console.warn('[Card Generator] Failed to register deck:', err);
+					// Continue with PDF generation even if registration fails
+				}
+			}
 
 			pdfBlob = await generatePDF({
 				cards,
@@ -159,6 +185,32 @@
 	function handleDownloadPDF() {
 		if (!pdfBlob) return;
 		downloadPDF(pdfBlob, `${deckId}-cards.pdf`);
+	}
+
+	let isGeneratingQRZip = false;
+	let qrZipProgress = { current: 0, total: 0 };
+
+	async function handleDownloadQRZip() {
+		if (cards.length === 0 || !deckId || isGeneratingQRZip) return;
+		isGeneratingQRZip = true;
+		qrZipProgress = { current: 0, total: cards.length };
+
+		try {
+			const config = { deckId, holonId, qrBaseUrl, cardStyle };
+			const zipBlob = await generateQRZip({
+				cards,
+				config,
+				onProgress: (current, total) => {
+					qrZipProgress = { current, total };
+				}
+			});
+			downloadZip(zipBlob, `${deckId}-qrcodes.zip`);
+		} catch (error) {
+			console.error('QR zip generation failed:', error);
+			parseErrors = [`QR zip generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`];
+		} finally {
+			isGeneratingQRZip = false;
+		}
 	}
 
 	function nextPreviewCard() {
@@ -204,8 +256,13 @@
 						<input type="text" value={holonId} disabled class="w-full px-3 py-2 rounded-lg bg-gray-700 text-gray-400 border border-gray-600 text-sm" />
 					</div>
 					<div>
-						<label class="block text-sm text-gray-300 mb-1">Deck ID *</label>
-						<input type="text" bind:value={deckId} placeholder="e.g., main-deck" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
+						<label class="block text-sm text-gray-300 mb-1">Deck ID</label>
+						<input type="text" bind:value={deckId} placeholder="Auto-generated" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
+					</div>
+					<div>
+						<label class="block text-sm text-gray-300 mb-1">QR Base URL</label>
+						<input type="text" bind:value={qrBaseUrl} placeholder="https://example.com/qr" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
+						<p class="text-xs text-gray-500 mt-1">Where the QR codes will link to</p>
 					</div>
 				</div>
 			</div>
@@ -474,17 +531,27 @@
 					{#if isGenerating}
 						<div class="flex-1 min-w-48">
 							<div class="flex justify-between text-xs text-gray-400 mb-1">
-								<span>Generating...</span>
+								<span>Generating PDF...</span>
 								<span>{Math.round(progressPercent)}%</span>
 							</div>
 							<div class="h-2 bg-gray-700 rounded-full overflow-hidden">
 								<div class="h-full bg-blue-500 transition-all" style="width: {progressPercent}%"></div>
 							</div>
 						</div>
+					{:else if isGeneratingQRZip}
+						<div class="flex-1 min-w-48">
+							<div class="flex justify-between text-xs text-gray-400 mb-1">
+								<span>Generating QR codes...</span>
+								<span>{qrZipProgress.current}/{qrZipProgress.total}</span>
+							</div>
+							<div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+								<div class="h-full bg-purple-500 transition-all" style="width: {qrZipProgress.total > 0 ? (qrZipProgress.current / qrZipProgress.total) * 100 : 0}%"></div>
+							</div>
+						</div>
 					{:else}
 						<button
 							on:click={handleGeneratePDF}
-							disabled={!canGenerate || isGenerating}
+							disabled={!canGenerate || isGenerating || isGeneratingQRZip}
 							class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium"
 						>
 							Generate PDF
@@ -501,6 +568,17 @@
 								Download PDF
 							</button>
 						{/if}
+
+						<button
+							on:click={handleDownloadQRZip}
+							disabled={!canGenerate || isGenerating || isGeneratingQRZip}
+							class="px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium flex items-center gap-1"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+							</svg>
+							Download QR Codes
+						</button>
 
 						{#if !canGenerate}
 							<span class="text-xs text-gray-500">

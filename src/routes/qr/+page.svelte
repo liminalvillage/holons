@@ -4,10 +4,11 @@
 	import { onMount, getContext } from 'svelte';
 	import type { HoloSphere } from "holosphere";
 	import { goto } from '$app/navigation';
+	import { getHolonIdForDeck } from '$lib/deck-registry';
 
 	export let data: any;
 
-	$: ({ action, title, desc, holonID, deckId, cardId, hasValidParams } = data);
+	$: ({ action, title, desc, holonID, deckId, cardId, hasValidParams, needsHolonLookup } = data);
 
 	let holosphere: HoloSphere;
 	let qrActionService: QRActionService;
@@ -111,17 +112,28 @@
 		errorMessage = '';
 
 		try {
-			// Keep original holon ID from QR code
-			const finalHolonID = holonID;
-			
-			console.log(`[QR Page] Processing QR action for user ${userData.id}:`, { 
-				action, 
-				title, 
-				desc, 
-				holonID: finalHolonID, 
-				deckId, 
+			// Look up holonID from deckId if not provided directly
+			let finalHolonID = holonID;
+			if (!finalHolonID && deckId && holosphere) {
+				console.log(`[QR Page] Looking up holonID for deckId: ${deckId}`);
+				finalHolonID = await getHolonIdForDeck(holosphere, deckId);
+				if (!finalHolonID) {
+					errorMessage = 'Could not find holon for this deck. The deck may not be registered.';
+					isProcessingAction = false;
+					return;
+				}
+				console.log(`[QR Page] Found holonID: ${finalHolonID} for deckId: ${deckId}`);
+			}
+
+			console.log(`[QR Page] Processing QR action for user ${userData.id}:`, {
+				action,
+				title,
+				desc,
+				holonID: finalHolonID,
+				deckId,
 				cardId,
-				isDebugMode 
+				isDebugMode,
+				needsHolonLookup
 			});
 			
 			const finalParams = {

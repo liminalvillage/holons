@@ -33,6 +33,7 @@ export interface CardStyle {
 export interface DeckConfig {
 	deckId: string;
 	holonId: string;
+	qrBaseUrl?: string; // Custom base URL for QR codes (default: https://dashboard.holons.io/qr)
 	backgroundImage?: string;
 	foregroundImage?: string;
 	cardStyle: CardStyle;

@@ -92,6 +92,10 @@ export class QRActionService {
 					return await this.awardBadge(params, user);
 				case 'invite':
 					return await this.processInvite(params, user);
+				case 'resource':
+					return await this.createResource(params, user);
+				case 'vibe':
+					return await this.recordVibe(params, user);
 				default:
 					return {
 						success: false,
@@ -694,6 +698,160 @@ export class QRActionService {
 	}
 
 	/**
+	 * Creates a resource entry for sharing/tracking resources.
+	 *
+	 * @private
+	 * @async
+	 * @param {QRActionParams} params - The action parameters
+	 * @param {TelegramUser} user - The user creating/claiming the resource
+	 * @returns {Promise<QRActionResult>} The result of the resource creation
+	 */
+	private async createResource(
+		params: QRActionParams,
+		user: TelegramUser
+	): Promise<QRActionResult> {
+		try {
+			console.log(`[QRActionService] Starting resource creation for user ${user.id}: ${params.title}`);
+
+			// Get or create user record
+			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
+
+			const userData = existingUser || {
+				id: user.id.toString(),
+				username: user.username || `user_${user.id}`,
+				first_name: user.first_name,
+				last_name: user.last_name || '',
+				joined_at: new Date().toISOString(),
+				last_active: new Date().toISOString()
+			};
+
+			userData.last_active = new Date().toISOString();
+			await this.holosphere.put(params.holonID, 'users', userData);
+
+			// Generate a unique resource ID
+			const resourceId = `resource_${params.title.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}`;
+
+			// Create resource entry
+			const resourceData = {
+				id: resourceId,
+				title: params.title,
+				description: params.desc || `Resource created via QR code`,
+				status: 'available' as const,
+				type: 'resource' as const,
+				created_at: new Date().toISOString(),
+				created_by: {
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					first_name: user.first_name,
+					last_name: user.last_name || ''
+				},
+				claimed_by: [],
+				holonID: params.holonID,
+				deckId: params.deckId,
+				cardId: params.cardId,
+				_meta: {
+					source: 'qr_code',
+					qr_params: params,
+					created_via: 'qr_action_service'
+				}
+			};
+
+			await this.holosphere.put(params.holonID, 'resources', resourceData);
+
+			console.log(`[QRActionService] Resource created successfully: ${params.title}`);
+
+			return {
+				success: true,
+				message: `Successfully created resource: ${params.title}`,
+				redirectUrl: `/${params.holonID}/resources`
+			};
+		} catch (error) {
+			console.error(`[QRActionService] Error creating resource:`, error);
+			return {
+				success: false,
+				message: 'Failed to create resource. Please try again.',
+				error: error instanceof Error ? error.message : 'RESOURCE_CREATION_ERROR'
+			};
+		}
+	}
+
+	/**
+	 * Records a vibe/mood/energy check-in for the user.
+	 *
+	 * @private
+	 * @async
+	 * @param {QRActionParams} params - The action parameters
+	 * @param {TelegramUser} user - The user recording the vibe
+	 * @returns {Promise<QRActionResult>} The result of the vibe recording
+	 */
+	private async recordVibe(
+		params: QRActionParams,
+		user: TelegramUser
+	): Promise<QRActionResult> {
+		try {
+			console.log(`[QRActionService] Recording vibe for user ${user.id}: ${params.title}`);
+
+			// Get or create user record
+			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
+
+			const userData = existingUser || {
+				id: user.id.toString(),
+				username: user.username || `user_${user.id}`,
+				first_name: user.first_name,
+				last_name: user.last_name || '',
+				joined_at: new Date().toISOString(),
+				last_active: new Date().toISOString()
+			};
+
+			userData.last_active = new Date().toISOString();
+			await this.holosphere.put(params.holonID, 'users', userData);
+
+			// Generate a unique vibe ID
+			const vibeId = `vibe_${user.id}_${Date.now()}`;
+
+			// Create vibe entry
+			const vibeData = {
+				id: vibeId,
+				title: params.title,
+				description: params.desc || '',
+				type: 'vibe' as const,
+				recorded_at: new Date().toISOString(),
+				recorded_by: {
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					first_name: user.first_name,
+					last_name: user.last_name || ''
+				},
+				holonID: params.holonID,
+				deckId: params.deckId,
+				cardId: params.cardId,
+				_meta: {
+					source: 'qr_code',
+					qr_params: params,
+					created_via: 'qr_action_service'
+				}
+			};
+
+			await this.holosphere.put(params.holonID, 'vibes', vibeData);
+
+			console.log(`[QRActionService] Vibe recorded successfully: ${params.title}`);
+
+			return {
+				success: true,
+				message: `Successfully recorded vibe: ${params.title}`,
+				redirectUrl: `/${params.holonID}/vibes`
+			};
+		} catch (error) {
+			console.error(`[QRActionService] Error recording vibe:`, error);
+			return {
+				success: false,
+				message: 'Failed to record vibe. Please try again.',
+				error: error instanceof Error ? error.message : 'VIBE_RECORDING_ERROR'
+			};
+		}
+	}
+
+	/**
 	 * Gets available actions/roles for a user.
 	 *
 	 * @async
@@ -724,8 +882,8 @@ export class QRActionService {
 		if (!params.title) errors.push('Title is required');
 		if (!params.holonID) errors.push('Holon ID is required');
 
-		// Validate action types (including 'action' as alias for 'task')
-		const validActions = ['role', 'event', 'task', 'action', 'badge', 'invite'];
+		// Validate action types (including 'action' as alias for 'task', and card-generator types)
+		const validActions = ['role', 'event', 'task', 'action', 'badge', 'invite', 'resource', 'vibe'];
 		if (params.action && !validActions.includes(params.action.toLowerCase())) {
 			errors.push(`Invalid action type. Must be one of: ${validActions.join(', ')}`);
 		}
