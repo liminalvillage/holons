@@ -22,11 +22,18 @@ export interface QRStyle {
 	transparentBackground: boolean; // hide white background behind QR
 }
 
+export interface ImageStyle {
+	size: number; // percentage of card width
+	top: number; // percentage from top (0-100)
+	left: number; // percentage from left (0-100)
+}
+
 export interface CardStyle {
 	typeBadge: TextStyle;
 	title: TextStyle;
 	description: TextStyle;
 	qrCode: QRStyle;
+	cardImage: ImageStyle;
 	margin: number; // card content margin in pixels
 }
 
@@ -74,6 +81,11 @@ export const DEFAULT_CARD_STYLE: CardStyle = {
 		size: 70,
 		top: 50,
 		transparentBackground: false
+	},
+	cardImage: {
+		size: 60,
+		top: 50,
+		left: 50
 	},
 	margin: 20
 };

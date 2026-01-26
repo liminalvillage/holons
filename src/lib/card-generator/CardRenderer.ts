@@ -37,14 +37,15 @@ export function renderCardFront(
 	const descHeight = contentAreaHeight - titleHeight;
 
 	// Card image overlay (from CSV imageUrl field)
+	const imageStyle = style.cardImage || { size: 60, top: 50, left: 50 };
 	const cardImageOverlay = card.imageUrl
 		? `<img src="${card.imageUrl}" style="
 				position: absolute;
-				top: 50%;
-				left: 50%;
+				top: ${imageStyle.top}%;
+				left: ${imageStyle.left}%;
 				transform: translate(-50%, -50%);
-				max-width: 60%;
-				max-height: 40%;
+				max-width: ${imageStyle.size}%;
+				max-height: ${imageStyle.size}%;
 				object-fit: contain;
 				z-index: 1;
 			" crossorigin="anonymous" />`

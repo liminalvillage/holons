@@ -520,6 +520,29 @@
 							</div>
 						</div>
 					</div>
+
+					<!-- Card Image -->
+					<div>
+						<h4 class="text-sm font-medium text-gray-300 mb-2">Card Image</h4>
+						<p class="text-xs text-gray-500 mb-2">Position of imageUrl from CSV</p>
+						<div class="space-y-2">
+							<div class="flex items-center gap-3">
+								<label class="text-xs text-gray-400 w-24">Size</label>
+								<input type="range" min="20" max="100" bind:value={cardStyle.cardImage.size} class="flex-1 accent-blue-500" />
+								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.cardImage.size}%</span>
+							</div>
+							<div class="flex items-center gap-3">
+								<label class="text-xs text-gray-400 w-24">Top Position</label>
+								<input type="range" min="0" max="100" bind:value={cardStyle.cardImage.top} class="flex-1 accent-blue-500" />
+								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.cardImage.top}%</span>
+							</div>
+							<div class="flex items-center gap-3">
+								<label class="text-xs text-gray-400 w-24">Left Position</label>
+								<input type="range" min="0" max="100" bind:value={cardStyle.cardImage.left} class="flex-1 accent-blue-500" />
+								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.cardImage.left}%</span>
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
