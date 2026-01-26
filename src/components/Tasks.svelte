@@ -37,6 +37,7 @@
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { telegramStore } from "../lib/stores/telegram";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
+	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
 
 	// State for quick completion
 	let showCompleterModal = $state(false);
@@ -1481,13 +1482,29 @@
 
 		// Capture the holon ID at subscription time to verify in callbacks
 		const subscribedHolonID = holonID;
+		const userPubKey = $nostrPublicKey;
+		const isFederated = holonID !== userPubKey;
+
+		console.log('[Tasks] Setting up subscription:', {
+			holonID,
+			userPubKey,
+			isOwnHolon: holonID === userPubKey,
+			isFederated
+		});
 
 		try {
 			// Update subscription state
 			subscriptionState.currentHolonID = holonID;
 
-			// Set up subscription for future updates (initial data already loaded by fetchData)
-			const off = holosphere.subscribe(holonID, "quests", async (newquest: Quest | null, key?: string) => {
+			// Callback handler for subscription updates
+			const handleQuestUpdate = async (newquest: Quest | null, key?: string) => {
+				console.log('[Tasks] Subscription callback fired:', {
+					holonID: subscribedHolonID,
+					isFederated,
+					questId: newquest?.id || key,
+					questTitle: newquest?.title,
+					isDeleted: !newquest || newquest._deleted
+				});
 				// IMPORTANT: Verify this callback is still for the current holon
 				// Old subscriptions may fire after we've switched holons
 				if (holonID !== subscribedHolonID) {
@@ -1528,12 +1545,17 @@
 					!hologramSourceNames.has(newquest._hologram.soul)) {
 					await preResolveHologramNames([[questKey, newquest]]);
 				}
-			});
+			};
 
-			// Ensure the unsubscribe handler is callable and typed correctly
-			if (typeof off === 'function') {
-				questsUnsubscribe = off as unknown as () => void;
-			}
+			// Use subscription helper for all holons (provides consistent logging)
+			const off = await subscribeWithFederationSupport(
+				holosphere,
+				userPubKey || holonID,
+				holonID,
+				"quests",
+				handleQuestUpdate
+			);
+			questsUnsubscribe = off;
 		} catch (error) {
 			console.error('Error setting up quest subscription:', error);
 			subscriptionState.currentHolonID = null; // Reset on error

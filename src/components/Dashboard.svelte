@@ -3,6 +3,7 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
+	import { get } from "svelte/store";
 	import Announcements from "./Announcements.svelte";
 	import TitleBar from "./shared/TitleBar.svelte";
 	import StatCard from "./shared/StatCard.svelte";
@@ -10,6 +11,8 @@
 	import { Users, CheckSquare, Calendar, ShoppingCart, Gift, Clipboard, UserPlus, Grid } from 'svelte-feathers';
 	import type { HoloSphere } from "holosphere";
 	import { fetchHolonName } from "../utils/holonNames";
+	import { nostrPublicKey } from "../lib/stores/nostr";
+	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
 
 	const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -132,45 +135,93 @@
 		isLoading = false;
 
 		// Set up subscriptions for live updates
-		const questsSub = holosphere.subscribe(holonID, "quests", (item: any) => {
-			if (isValidItem(item)) {
-				questsMap.set(item.id, item);
-				questsMap = questsMap;
-			}
-		});
-		subscriptions.push(questsSub);
+		const userPubKey = get(nostrPublicKey);
+		const isFederated = holonID !== userPubKey;
 
-		const usersSub = holosphere.subscribe(holonID, "users", (item: any) => {
-			if (isValidItem(item)) {
-				usersMap.set(item.id, item);
-				usersMap = usersMap;
-			}
+		console.log('[Dashboard] Setting up subscriptions:', {
+			holonID,
+			userPubKey,
+			isOwnHolon: holonID === userPubKey,
+			isFederated
 		});
-		subscriptions.push(usersSub);
 
-		const shoppingSub = holosphere.subscribe(holonID, "shopping", (item: any) => {
-			if (isValidItem(item)) {
-				shoppingMap.set(item.id, item);
-				shoppingMap = shoppingMap;
+		// Helper to set up a subscription (federation-aware for federated holons)
+		const setupSubscription = async (lens: string, callback: (item: any) => void) => {
+			if (isFederated && userPubKey) {
+				const unsub = await subscribeWithFederationSupport(
+					holosphere,
+					userPubKey,
+					holonID,
+					lens,
+					callback
+				);
+				return { unsubscribe: unsub };
+			} else {
+				return holosphere.subscribe(holonID, lens, callback);
 			}
-		});
-		subscriptions.push(shoppingSub);
+		};
 
-		const checklistsSub = holosphere.subscribe(holonID, "checklists", (item: any) => {
-			if (isValidItem(item)) {
-				checklistsMap.set(item.id, item);
-				checklistsMap = checklistsMap;
-			}
-		});
-		subscriptions.push(checklistsSub);
+		// Set up subscriptions in parallel
+		const [questsSub, usersSub, shoppingSub, checklistsSub, rolesSub] = await Promise.all([
+			setupSubscription("quests", (item: any) => {
+				console.log('[Dashboard] Quests subscription callback:', {
+					holonID,
+					isFederated,
+					itemId: item?.id,
+					isDeleted: item?._deleted
+				});
+				if (isValidItem(item)) {
+					questsMap.set(item.id, item);
+					questsMap = questsMap;
+				}
+			}),
+			setupSubscription("users", (item: any) => {
+				console.log('[Dashboard] Users subscription callback:', {
+					holonID,
+					isFederated,
+					itemId: item?.id
+				});
+				if (isValidItem(item)) {
+					usersMap.set(item.id, item);
+					usersMap = usersMap;
+				}
+			}),
+			setupSubscription("shopping", (item: any) => {
+				console.log('[Dashboard] Shopping subscription callback:', {
+					holonID,
+					isFederated,
+					itemId: item?.id
+				});
+				if (isValidItem(item)) {
+					shoppingMap.set(item.id, item);
+					shoppingMap = shoppingMap;
+				}
+			}),
+			setupSubscription("checklists", (item: any) => {
+				console.log('[Dashboard] Checklists subscription callback:', {
+					holonID,
+					isFederated,
+					itemId: item?.id
+				});
+				if (isValidItem(item)) {
+					checklistsMap.set(item.id, item);
+					checklistsMap = checklistsMap;
+				}
+			}),
+			setupSubscription("roles", (item: any) => {
+				console.log('[Dashboard] Roles subscription callback:', {
+					holonID,
+					isFederated,
+					itemId: item?.id
+				});
+				if (isValidItem(item)) {
+					rolesMap.set(item.id, item);
+					rolesMap = rolesMap;
+				}
+			})
+		]);
 
-		const rolesSub = holosphere.subscribe(holonID, "roles", (item: any) => {
-			if (isValidItem(item)) {
-				rolesMap.set(item.id, item);
-				rolesMap = rolesMap;
-			}
-		});
-		subscriptions.push(rolesSub);
+		subscriptions.push(questsSub, usersSub, shoppingSub, checklistsSub, rolesSub);
 	}
 
 	// React to holon ID changes (different holon)
