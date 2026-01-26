@@ -52,11 +52,12 @@
 		}
 		const config: DeckConfig = { deckId, holonId, qrBaseUrl, cardStyle };
 		const qrUrl = buildQRUrl(previewCard, config);
-		previewQRDataUrl = await generateQRDataUrl(qrUrl);
+		const useTransparentQR = cardStyle.qrCode.transparentBackground;
+		previewQRDataUrl = await generateQRDataUrl(qrUrl, useTransparentQR);
 	}
 
-	// Reactive: regenerate QR when preview card, deck, or base URL changes
-	$: if (previewCard && deckId && qrBaseUrl) {
+	// Reactive: regenerate QR when preview card, deck, base URL, or QR transparency changes
+	$: if (previewCard && deckId && qrBaseUrl !== undefined && cardStyle.qrCode.transparentBackground !== undefined) {
 		updatePreviewQR();
 	}
 

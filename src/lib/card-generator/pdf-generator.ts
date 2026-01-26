@@ -35,11 +35,15 @@ export function buildQRUrl(card: Card, config: DeckConfig): string {
 	return `${baseUrl}?${params.toString()}`;
 }
 
-export async function generateQRDataUrl(url: string): Promise<string> {
+export async function generateQRDataUrl(url: string, transparent: boolean = false): Promise<string> {
 	return await QRCode.toDataURL(url, {
 		width: 400,
 		margin: 1,
-		errorCorrectionLevel: 'M'
+		errorCorrectionLevel: 'M',
+		color: transparent ? {
+			dark: '#000000',
+			light: '#00000000' // Transparent background
+		} : undefined
 	});
 }
 
@@ -226,7 +230,8 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
 
 		for (const card of pageCards) {
 			const qrUrl = buildQRUrl(card, config);
-			const qrDataUrl = await generateQRDataUrl(qrUrl);
+			const useTransparentQR = config.cardStyle.qrCode.transparentBackground;
+			const qrDataUrl = await generateQRDataUrl(qrUrl, useTransparentQR);
 			backHTMLs.push(renderCardBack(qrDataUrl, config.cardStyle, config.backgroundImage));
 			frontHTMLs.push(renderCardFront(card, config.cardStyle, config.foregroundImage));
 		}

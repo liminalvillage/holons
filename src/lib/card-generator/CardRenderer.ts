@@ -36,6 +36,20 @@ export function renderCardFront(
 	const titleHeight = Math.round(contentAreaHeight * 0.35);
 	const descHeight = contentAreaHeight - titleHeight;
 
+	// Card image overlay (from CSV imageUrl field)
+	const cardImageOverlay = card.imageUrl
+		? `<img src="${card.imageUrl}" style="
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				max-width: 60%;
+				max-height: 40%;
+				object-fit: contain;
+				z-index: 1;
+			" crossorigin="anonymous" />`
+		: '';
+
 	return `
 		<div style="
 			width: ${CARD_WIDTH_PX}px;
@@ -46,7 +60,9 @@ export function renderCardFront(
 			box-sizing: border-box;
 			display: flex;
 			flex-direction: column;
+			position: relative;
 		">
+			${cardImageOverlay}
 			<!-- Top spacer with badge -->
 			<div style="
 				height: ${badgeAreaHeight}px;
@@ -55,6 +71,8 @@ export function renderCardFront(
 				justify-content: center;
 				padding-top: ${Math.round((style.typeBadge.top / 100) * CARD_HEIGHT_PX)}px;
 				flex-shrink: 0;
+				position: relative;
+				z-index: 2;
 			">
 				<div style="
 					background: ${badgeBg};
@@ -78,6 +96,8 @@ export function renderCardFront(
 				justify-content: flex-end;
 				padding: 0 ${margin}px ${margin}px ${margin}px;
 				overflow: hidden;
+				position: relative;
+				z-index: 2;
 			">
 				<!-- Title -->
 				<div style="
@@ -159,7 +179,14 @@ export function renderCardBack(
 				transform: translate(-50%, -50%);
 				${qrBgStyle}
 			">
-				<img src="${qrDataUrl}" style="width: ${qrSize}px; height: ${qrSize}px; display: block;" />
+				<img src="${qrDataUrl}" style="
+					width: ${qrSize}px;
+					height: ${qrSize}px;
+					max-width: ${qrSize}px;
+					max-height: ${qrSize}px;
+					object-fit: contain;
+					display: block;
+				" />
 			</div>
 		</div>
 	`;
