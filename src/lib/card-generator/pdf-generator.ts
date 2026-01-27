@@ -28,6 +28,7 @@ export function buildQRUrl(card: Card, config: DeckConfig): string {
 	const params = new URLSearchParams({
 		cardId: card.id,
 		deckId: config.deckId,
+		holonID: config.holonId,
 		title: card.title,
 		action: card.type
 	});
