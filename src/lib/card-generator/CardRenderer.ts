@@ -12,7 +12,8 @@ export const CARD_HEIGHT_PX = 370;
 export function renderCardFront(
 	card: Card,
 	style: CardStyle,
-	foregroundImage?: string
+	foregroundImage?: string,
+	pdfMode: boolean = false
 ): string {
 	const colors = CARD_TYPE_COLORS[card.type];
 	const desc = card.description || '';
@@ -78,7 +79,8 @@ export function renderCardFront(
 				<div style="
 					background: ${badgeBg};
 					color: ${badgeColor};
-					padding: 10px 24px;
+					padding: 0 24px;
+					height: 36px;
 					border-radius: 24px;
 					font-size: ${style.typeBadge.fontSize}px;
 					font-family: ${style.typeBadge.fontFamily};
@@ -86,7 +88,11 @@ export function renderCardFront(
 					text-transform: uppercase;
 					letter-spacing: 1px;
 					white-space: nowrap;
-				">${card.type}</div>
+					display: flex;
+					align-items: center;
+					justify-content: center;
+					box-sizing: border-box;
+				">${pdfMode ? `<span style="margin-top: -15px;">${card.type}</span>` : card.type}</div>
 			</div>
 
 			<!-- Content area: title + description -->
@@ -155,7 +161,7 @@ export function renderCardBack(
 ): string {
 	const bgStyle = backgroundImage
 		? `background-image: url('${backgroundImage}'); background-size: cover; background-position: center;`
-		: 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);';
+		: 'background: #ffffff;';
 
 	// Scale QR based on card width (smaller dimension) to ensure it fits
 	const qrSize = (style.qrCode.size / 100) * CARD_WIDTH_PX;
@@ -203,7 +209,7 @@ export function renderCardBackPlaceholder(
 ): string {
 	const bgStyle = backgroundImage
 		? `background-image: url('${backgroundImage}'); background-size: cover; background-position: center;`
-		: 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);';
+		: 'background: #ffffff;';
 
 	// Scale QR based on card width (smaller dimension) to ensure it fits
 	const qrSize = (style.qrCode.size / 100) * CARD_WIDTH_PX;

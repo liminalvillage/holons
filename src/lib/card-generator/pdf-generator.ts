@@ -186,6 +186,11 @@ async function renderPageToCanvas(pageHTML: string): Promise<HTMLCanvasElement> 
 	container.innerHTML = pageHTML;
 	document.body.appendChild(container);
 
+	// Wait for all fonts to be loaded
+	if (document.fonts && document.fonts.ready) {
+		await document.fonts.ready;
+	}
+
 	const images = container.querySelectorAll('img');
 	await Promise.all(Array.from(images).map(img => {
 		if (img.complete) return Promise.resolve();
@@ -195,13 +200,15 @@ async function renderPageToCanvas(pageHTML: string): Promise<HTMLCanvasElement> 
 		});
 	}));
 
-	await new Promise(r => setTimeout(r, 100));
+	// Give browser time to apply fonts and layout
+	await new Promise(r => setTimeout(r, 200));
 
 	const canvas = await html2canvas(container.firstElementChild as HTMLElement, {
 		scale: 2,
 		useCORS: true,
 		allowTaint: true,
 		backgroundColor: '#ffffff',
+		logging: false,
 	});
 
 	document.body.removeChild(container);
@@ -234,7 +241,7 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
 			const useTransparentQR = config.cardStyle.qrCode.transparentBackground;
 			const qrDataUrl = await generateQRDataUrl(qrUrl, useTransparentQR);
 			backHTMLs.push(renderCardBack(qrDataUrl, config.cardStyle, config.backgroundImage));
-			frontHTMLs.push(renderCardFront(card, config.cardStyle, config.foregroundImage));
+			frontHTMLs.push(renderCardFront(card, config.cardStyle, config.foregroundImage, true));
 		}
 
 		if (pageGroup > 0) pdf.addPage();
