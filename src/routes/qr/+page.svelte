@@ -5,10 +5,11 @@
 	import type { HoloSphere } from "holosphere";
 	import { goto } from '$app/navigation';
 	import { getHolonIdForDeck } from '$lib/deck-registry';
+	import type { QRCapabilityToken } from '$lib/capabilities/qrCapability';
 
 	export let data: any;
 
-	$: ({ action, title, desc, holonID, deckId, cardId, hasValidParams, needsHolonLookup } = data);
+	$: ({ action, title, desc, holonID, deckId, cardId, hasValidParams, needsHolonLookup, capability, capabilityStatus, capabilityExpiration } = data);
 
 	let holosphere: HoloSphere;
 	let qrActionService: QRActionService;
@@ -42,17 +43,19 @@
 			qrActionService = new QRActionService(holosphere);
 		}
 		
-		// If in debug mode and we have valid params, automatically process the action
-		if (isDebugMode && hasValidParams && qrActionService) {
+		// If in debug mode and we have valid params with valid capability, automatically process the action
+		if (isDebugMode && hasValidParams && capabilityStatus === 'valid' && qrActionService) {
 			console.log(`[QR Page] Debug mode active - processing QR action automatically`);
 			// Keep original holon ID from QR, but use debug user
 			processQRAction(createDebugUser());
+		} else if (isDebugMode && hasValidParams && capabilityStatus !== 'valid') {
+			console.log(`[QR Page] Debug mode but capability not valid: ${capabilityStatus}`);
 		} else if (isLocalhost && !hasValidParams) {
 			console.log(`[QR Page] Running on localhost but no valid QR parameters - debug mode inactive`);
 		}
-		
-		// Check if user is already authenticated (for smooth UX)
-		if (!isDebugMode && hasValidParams && qrActionService) {
+
+		// Check if user is already authenticated (for smooth UX) - only if capability is valid
+		if (!isDebugMode && hasValidParams && capabilityStatus === 'valid' && qrActionService) {
 			checkExistingAuth();
 		}
 	});
@@ -133,16 +136,19 @@
 				deckId,
 				cardId,
 				isDebugMode,
-				needsHolonLookup
+				needsHolonLookup,
+				hasCapability: !!capability,
+				capabilityStatus
 			});
-			
+
 			const finalParams = {
 				action,
 				title,
 				desc,
 				holonID: finalHolonID,
 				deckId,
-				cardId
+				cardId,
+				capability
 			};
 
 			// Validate parameters
@@ -207,6 +213,57 @@
 			</div>
 		{/if}
 
+		<!-- Capability Status -->
+		{#if capabilityStatus === 'valid'}
+			<div class="mb-6 bg-green-900 bg-opacity-30 border border-green-500 rounded-lg p-4">
+				<div class="flex items-center gap-2 text-green-400 font-semibold mb-1">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+					</svg>
+					Verified Capability
+				</div>
+				<p class="text-green-200 text-sm">
+					This QR code is authorized by the holon owner. {capabilityExpiration}
+				</p>
+			</div>
+		{:else if capabilityStatus === 'expired'}
+			<div class="mb-6 bg-orange-900 bg-opacity-30 border border-orange-500 rounded-lg p-4">
+				<div class="flex items-center gap-2 text-orange-400 font-semibold mb-1">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+					</svg>
+					Capability Expired
+				</div>
+				<p class="text-orange-200 text-sm">
+					This QR code has expired and can no longer be used.
+				</p>
+			</div>
+		{:else if capabilityStatus === 'invalid'}
+			<div class="mb-6 bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4">
+				<div class="flex items-center gap-2 text-red-400 font-semibold mb-1">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+					</svg>
+					Invalid Capability
+				</div>
+				<p class="text-red-200 text-sm">
+					This QR code has an invalid or tampered capability token.
+				</p>
+			</div>
+		{:else if capabilityStatus === 'none' && hasValidParams}
+			<div class="mb-6 bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4">
+				<div class="flex items-center gap-2 text-red-400 font-semibold mb-1">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+					</svg>
+					Unauthorized QR Code
+				</div>
+				<p class="text-red-200 text-sm">
+					This QR code is not authorized. It requires a valid capability token signed by the holon owner.
+				</p>
+			</div>
+		{/if}
+
 		<!-- Parameter Validation -->
 		{#if !hasValidParams}
 			<div class="bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4 mb-6">
@@ -218,8 +275,8 @@
 		{/if}
 
 		<!-- Main Content -->
-		{#if hasValidParams}
-			<!-- Authentication Section - Only show if not in debug mode -->
+		{#if hasValidParams && capabilityStatus === 'valid'}
+			<!-- Authentication Section - Only show if not in debug mode and capability is valid -->
 			{#if !isDebugMode}
 				<div class="bg-gray-800 rounded-2xl p-6">
 					<h2 class="text-xl font-semibold text-white mb-4 text-center">🔐 Login Required</h2>
@@ -293,6 +350,25 @@
 					</div>
 				</div>
 			{/if}
+		{:else if hasValidParams && capabilityStatus !== 'valid'}
+			<!-- Has params but capability is not valid - message already shown above -->
+			<div class="bg-gray-800 rounded-2xl p-6 text-center">
+				<div class="text-gray-400 mb-4">
+					<svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+					</svg>
+				</div>
+				<h3 class="text-lg font-semibold text-white mb-2">Cannot Execute Action</h3>
+				<p class="text-gray-400 text-sm">
+					{#if capabilityStatus === 'expired'}
+						This QR code has expired. Please request a new one from the holon owner.
+					{:else if capabilityStatus === 'invalid'}
+						This QR code has been tampered with or is corrupted.
+					{:else}
+						This QR code requires authorization. Please use a QR code with a valid capability token.
+					{/if}
+				</p>
+			</div>
 		{:else}
 			<!-- Invalid Parameters -->
 			<div class="bg-gray-800 rounded-2xl p-6 text-center">

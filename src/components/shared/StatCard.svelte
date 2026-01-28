@@ -33,7 +33,7 @@
 	class:stat-card--compact={compact}
 	class:stat-card--clickable={clickable}
 	role={clickable ? 'button' : undefined}
-	tabindex={clickable ? 0 : undefined}
+	tabindex={clickable ? 0 : -1}
 	on:click={handleClick}
 	on:keydown={handleKeydown}
 >

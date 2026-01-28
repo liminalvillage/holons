@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Html5Qrcode } from 'html5-qrcode';
+
+	const QR_BASE_URL = import.meta.env.VITE_QR_BASE_URL || 'https://dashboard.holons.io/qr';
 
 	export let action: string = '';
 	export let title: string = '';
@@ -27,7 +28,7 @@
 
 		// Create the URL that the QR code should point to
 		// Using the new URL structure with holonID, deckId, and cardId
-		const qrUrl = `https://dashboard.holons.io/qr?action=${encodeURIComponent(normalizedAction)}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}&holonID=${encodeURIComponent(holonID)}&deckId=${encodeURIComponent(deckId)}&cardId=${encodeURIComponent(cardId)}`;
+		const qrUrl = `${QR_BASE_URL}?action=${encodeURIComponent(normalizedAction)}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}&holonID=${encodeURIComponent(holonID)}&deckId=${encodeURIComponent(deckId)}&cardId=${encodeURIComponent(cardId)}`;
 		
 		// Generate SVG QR code using a reliable service
 		// SVG format provides better quality and scalability

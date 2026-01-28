@@ -4,6 +4,8 @@ import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import type { Card, DeckConfig, PDFGeneratorOptions } from './types';
 import { renderCardFront, renderCardBack, CARD_WIDTH_PX, CARD_HEIGHT_PX } from './CardRenderer';
+import type { QRCapabilityToken } from '$lib/capabilities/qrCapability';
+import { encodeCapabilityForUrl } from '$lib/capabilities/qrCapability';
 
 // A4 dimensions in pixels at 96 DPI (landscape orientation)
 const A4_WIDTH_PX = 1123;
@@ -22,9 +24,10 @@ const CARD_SLOT_HEIGHT_PX = 370;
 const MARGIN_X_PX = (A4_WIDTH_PX - COLS * CARD_SLOT_WIDTH_PX) / 2;
 const MARGIN_Y_PX = (A4_HEIGHT_PX - ROWS * CARD_SLOT_HEIGHT_PX) / 2;
 
-const DEFAULT_QR_BASE_URL = 'https://dashboard.holons.io/qr';
+// QR Base URL from environment
+const QR_BASE_URL = import.meta.env.VITE_QR_BASE_URL || 'https://dashboard.holons.io/qr';
 
-export function buildQRUrl(card: Card, config: DeckConfig): string {
+export function buildQRUrl(card: Card, config: DeckConfig, capability?: QRCapabilityToken): string {
 	const params = new URLSearchParams({
 		cardId: card.id,
 		deckId: config.deckId,
@@ -32,34 +35,29 @@ export function buildQRUrl(card: Card, config: DeckConfig): string {
 		title: card.title,
 		action: card.type
 	});
-	const baseUrl = config.qrBaseUrl || DEFAULT_QR_BASE_URL;
+
+	// Embed capability token if provided
+	if (capability) {
+		params.set('cap', encodeCapabilityForUrl(capability));
+	}
+
+	const baseUrl = config.qrBaseUrl || QR_BASE_URL;
 	return `${baseUrl}?${params.toString()}`;
 }
 
-export async function generateQRDataUrl(url: string, transparent: boolean = false): Promise<string> {
+export async function generateQRDataUrl(
+	url: string,
+	transparent: boolean = false,
+	width: number = 400
+): Promise<string> {
 	return await QRCode.toDataURL(url, {
-		width: 400,
+		width,
 		margin: 1,
 		errorCorrectionLevel: 'M',
 		color: transparent ? {
 			dark: '#000000',
 			light: '#00000000' // Transparent background
 		} : undefined
-	});
-}
-
-/**
- * Generate a transparent PNG QR code as a data URL
- */
-export async function generateTransparentQRDataUrl(url: string): Promise<string> {
-	return await QRCode.toDataURL(url, {
-		width: 800,
-		margin: 1,
-		errorCorrectionLevel: 'M',
-		color: {
-			dark: '#000000',
-			light: '#00000000' // Transparent background
-		}
 	});
 }
 
@@ -93,6 +91,8 @@ function sanitizeFilename(name: string): string {
 export interface QRZipOptions {
 	cards: Card[];
 	config: DeckConfig;
+	/** Optional map of cardId -> capability token */
+	capabilities?: Map<string, QRCapabilityToken>;
 	onProgress?: (current: number, total: number) => void;
 }
 
@@ -100,13 +100,14 @@ export interface QRZipOptions {
  * Generate a zip file containing transparent PNG QR codes for all cards
  */
 export async function generateQRZip(options: QRZipOptions): Promise<Blob> {
-	const { cards, config, onProgress } = options;
+	const { cards, config, capabilities, onProgress } = options;
 	const zip = new JSZip();
 
 	for (let i = 0; i < cards.length; i++) {
 		const card = cards[i];
-		const qrUrl = buildQRUrl(card, config);
-		const qrDataUrl = await generateTransparentQRDataUrl(qrUrl);
+		const capability = capabilities?.get(card.id);
+		const qrUrl = buildQRUrl(card, config, capability);
+		const qrDataUrl = await generateQRDataUrl(qrUrl, true, 800);
 		const qrBlob = dataUrlToBlob(qrDataUrl);
 
 		// Create filename from card title
@@ -216,7 +217,7 @@ async function renderPageToCanvas(pageHTML: string): Promise<HTMLCanvasElement> 
 }
 
 export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
-	const { cards, config, onProgress } = options;
+	const { cards, config, capabilities, onProgress } = options;
 
 	const pdf = new jsPDF({
 		orientation: 'landscape',
@@ -237,7 +238,8 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
 		const frontHTMLs: string[] = [];
 
 		for (const card of pageCards) {
-			const qrUrl = buildQRUrl(card, config);
+			const capability = capabilities?.get(card.id);
+			const qrUrl = buildQRUrl(card, config, capability);
 			const useTransparentQR = config.cardStyle.qrCode.transparentBackground;
 			const qrDataUrl = await generateQRDataUrl(qrUrl, useTransparentQR);
 			backHTMLs.push(renderCardBack(qrDataUrl, config.cardStyle, config.backgroundImage));

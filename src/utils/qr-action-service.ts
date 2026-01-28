@@ -1,4 +1,6 @@
 import type { HoloSphere } from "holosphere";
+import type { QRCapabilityToken, CapabilityValidationResult } from '$lib/capabilities/qrCapability';
+import { validateCapability, isCapabilityValid } from '$lib/capabilities/qrCapability';
 
 export interface TelegramUser {
 	id: number;
@@ -17,6 +19,8 @@ export interface QRActionParams {
 	holonID: string;
 	deckId?: string;
 	cardId?: string;
+	/** Optional capability token for authorization */
+	capability?: QRCapabilityToken | null;
 }
 
 export interface QRActionResult {
@@ -66,8 +70,46 @@ export class QRActionService {
 	}
 
 	/**
+	 * Verifies a capability token for the requested action.
+	 * Returns a validation result indicating if the action is authorized.
+	 * Capability tokens are REQUIRED - actions without valid capabilities are rejected.
+	 *
+	 * @private
+	 * @param {QRActionParams} params - The action parameters including capability
+	 * @returns {CapabilityValidationResult} The validation result
+	 */
+	private verifyCapability(params: QRActionParams): CapabilityValidationResult {
+		// Capability is required - reject if not provided
+		if (!params.capability) {
+			console.error(`[QRActionService] No capability token provided for action: ${params.action}. Action rejected.`);
+			return {
+				valid: false,
+				reason: 'Capability token required. This QR code is not authorized.',
+				code: 'MALFORMED'
+			};
+		}
+
+		// Validate the capability token
+		const validation = validateCapability(
+			params.capability,
+			params.holonID,
+			params.action,
+			params.title // itemId restriction
+		);
+
+		if (!validation.valid) {
+			console.error(`[QRActionService] Capability validation failed:`, validation);
+		} else {
+			console.log(`[QRActionService] Capability verified successfully for action: ${params.action}`);
+		}
+
+		return validation;
+	}
+
+	/**
 	 * Processes a QR code action based on the provided parameters.
 	 * Routes to the appropriate handler based on action type.
+	 * Verifies capability token before allowing any write operations.
 	 *
 	 * @async
 	 * @param {QRActionParams} params - The QR code action parameters
@@ -79,6 +121,17 @@ export class QRActionService {
 		user: TelegramUser
 	): Promise<QRActionResult> {
 		try {
+			// Verify capability token before processing any action
+			const capabilityValidation = this.verifyCapability(params);
+			if (!capabilityValidation.valid) {
+				console.error(`[QRActionService] Action blocked - capability validation failed:`, capabilityValidation);
+				return {
+					success: false,
+					message: capabilityValidation.reason || 'Authorization failed',
+					error: capabilityValidation.code || 'UNAUTHORIZED'
+				};
+			}
+
 			const normalizedAction = params.action.toLowerCase();
 			switch (normalizedAction) {
 				case 'role':
@@ -271,15 +324,20 @@ export class QRActionService {
 					holonID: params.holonID,
 					deckId: params.deckId,
 					cardId: params.cardId,
-					description: isNewRole ? 
-						`Role assigned via QR code` : 
+					description: isNewRole ?
+						`Role assigned via QR code` :
 						`Role participant replaced via QR code - previous participants cleared`,
 					source: 'qr_code',
 					metadata: {
 						qr_params: params,
 						user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
 						operation_type: isNewRole ? 'new_role_creation' : 'participant_replacement',
-						previous_participants_count: isNewRole ? 0 : (roleData.participants?.length || 0)
+						previous_participants_count: isNewRole ? 0 : (roleData.participants?.length || 0),
+						// Capability audit info
+						capability_used: !!params.capability,
+						capability_id: params.capability?.id || null,
+						capability_issuer: params.capability?.issuerPubKey?.substring(0, 16) || null,
+						capability_expires: params.capability?.expiresAt || null
 					}
 				};
 
@@ -873,9 +931,9 @@ export class QRActionService {
 	 * Validates QR code parameters before processing.
 	 *
 	 * @param {QRActionParams} params - The QR code parameters to validate
-	 * @returns {{isValid: boolean, errors: string[]}} Validation result with any errors
+	 * @returns {{isValid: boolean, errors: string[], capabilityStatus: string}} Validation result with any errors
 	 */
-	validateQRParams(params: QRActionParams): { isValid: boolean; errors: string[] } {
+	validateQRParams(params: QRActionParams): { isValid: boolean; errors: string[]; capabilityStatus?: string } {
 		const errors: string[] = [];
 
 		if (!params.action) errors.push('Action is required');
@@ -888,9 +946,24 @@ export class QRActionService {
 			errors.push(`Invalid action type. Must be one of: ${validActions.join(', ')}`);
 		}
 
+		// Capability is required
+		let capabilityStatus = 'none';
+		if (!params.capability) {
+			errors.push('Capability token is required');
+		} else if (isCapabilityValid(params.capability)) {
+			capabilityStatus = 'valid';
+		} else if (params.capability.expiresAt <= Date.now()) {
+			capabilityStatus = 'expired';
+			errors.push('Capability token has expired');
+		} else {
+			capabilityStatus = 'invalid';
+			errors.push('Capability token is invalid');
+		}
+
 		return {
 			isValid: errors.length === 0,
-			errors
+			errors,
+			capabilityStatus
 		};
 	}
 }

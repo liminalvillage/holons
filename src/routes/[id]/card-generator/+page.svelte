@@ -23,10 +23,7 @@
 
 	// State
 	let deckId = generateDeckId();
-	let qrBaseUrl = 'https://dashboard.holons.io/qr';
 	let csvFile: File | null = null;
-	let backgroundImageFile: File | null = null;
-	let foregroundImageFile: File | null = null;
 	let backgroundImageUrl: string | null = null;
 	let foregroundImageUrl: string | null = null;
 	let cards: Card[] = [];
@@ -50,14 +47,14 @@
 			previewQRDataUrl = null;
 			return;
 		}
-		const config: DeckConfig = { deckId, holonId, qrBaseUrl, cardStyle };
+		const config: DeckConfig = { deckId, holonId, cardStyle };
 		const qrUrl = buildQRUrl(previewCard, config);
 		const useTransparentQR = cardStyle.qrCode.transparentBackground;
 		previewQRDataUrl = await generateQRDataUrl(qrUrl, useTransparentQR);
 	}
 
-	// Reactive: regenerate QR when preview card, deck, base URL, or QR transparency changes
-	$: if (previewCard && deckId && qrBaseUrl !== undefined && cardStyle.qrCode.transparentBackground !== undefined) {
+	// Reactive: regenerate QR when preview card, deck, or QR transparency changes
+	$: if (previewCard && deckId && cardStyle.qrCode.transparentBackground !== undefined) {
 		updatePreviewQR();
 	}
 
@@ -105,11 +102,9 @@
 			const url = URL.createObjectURL(file);
 			if (type === 'background') {
 				if (backgroundImageUrl) URL.revokeObjectURL(backgroundImageUrl);
-				backgroundImageFile = file;
 				backgroundImageUrl = url;
 			} else {
 				if (foregroundImageUrl) URL.revokeObjectURL(foregroundImageUrl);
-				foregroundImageFile = file;
 				foregroundImageUrl = url;
 			}
 			pdfBlob = null;
@@ -119,11 +114,9 @@
 	function clearImage(type: 'background' | 'foreground') {
 		if (type === 'background') {
 			if (backgroundImageUrl) URL.revokeObjectURL(backgroundImageUrl);
-			backgroundImageFile = null;
 			backgroundImageUrl = null;
 		} else {
 			if (foregroundImageUrl) URL.revokeObjectURL(foregroundImageUrl);
-			foregroundImageFile = null;
 			foregroundImageUrl = null;
 		}
 		pdfBlob = null;
@@ -151,7 +144,6 @@
 			const config: DeckConfig = {
 				deckId,
 				holonId,
-				qrBaseUrl,
 				backgroundImage: backgroundImageUrl || undefined,
 				foregroundImage: foregroundImageUrl || undefined,
 				cardStyle
@@ -171,7 +163,7 @@
 			pdfBlob = await generatePDF({
 				cards,
 				config,
-				onProgress: (current, total) => {
+				onProgress: (current: number, total: number) => {
 					progress = { current, total };
 				}
 			});
@@ -197,11 +189,11 @@
 		qrZipProgress = { current: 0, total: cards.length };
 
 		try {
-			const config = { deckId, holonId, qrBaseUrl, cardStyle };
+			const config = { deckId, holonId, cardStyle };
 			const zipBlob = await generateQRZip({
 				cards,
 				config,
-				onProgress: (current, total) => {
+				onProgress: (current: number, total: number) => {
 					qrZipProgress = { current, total };
 				}
 			});
@@ -253,17 +245,12 @@
 				<h2 class="text-lg font-semibold mb-3">Deck Config</h2>
 				<div class="space-y-3">
 					<div>
-						<label class="block text-sm text-gray-300 mb-1">Holon ID</label>
-						<input type="text" value={holonId} disabled class="w-full px-3 py-2 rounded-lg bg-gray-700 text-gray-400 border border-gray-600 text-sm" />
+						<label for="holon-id" class="block text-sm text-gray-300 mb-1">Holon ID</label>
+						<input id="holon-id" type="text" value={holonId} disabled class="w-full px-3 py-2 rounded-lg bg-gray-700 text-gray-400 border border-gray-600 text-sm" />
 					</div>
 					<div>
-						<label class="block text-sm text-gray-300 mb-1">Deck ID</label>
-						<input type="text" bind:value={deckId} placeholder="Auto-generated" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
-					</div>
-					<div>
-						<label class="block text-sm text-gray-300 mb-1">QR Base URL</label>
-						<input type="text" bind:value={qrBaseUrl} placeholder="https://example.com/qr" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
-						<p class="text-xs text-gray-500 mt-1">Where the QR codes will link to</p>
+						<label for="deck-id" class="block text-sm text-gray-300 mb-1">Deck ID</label>
+						<input id="deck-id" type="text" bind:value={deckId} placeholder="Auto-generated" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
 					</div>
 				</div>
 			</div>
@@ -286,7 +273,7 @@
 						<div class="flex items-center justify-center gap-2">
 							<span class="text-green-400 text-sm">{csvFile.name}</span>
 							<span class="text-gray-400 text-xs">({cards.length} cards)</span>
-							<button on:click={() => { csvFile = null; cards = []; }} class="text-gray-400 hover:text-red-400 ml-2">
+							<button on:click={() => { csvFile = null; cards = []; }} class="text-gray-400 hover:text-red-400 ml-2" aria-label="Remove CSV file">
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
 							</button>
 						</div>
@@ -307,11 +294,11 @@
 				<h2 class="text-lg font-semibold mb-3">Card Images</h2>
 				<div class="grid grid-cols-2 gap-3">
 					<div>
-						<label class="block text-xs text-gray-400 mb-1">Back (QR side)</label>
+						<span class="block text-xs text-gray-400 mb-1">Back (QR side)</span>
 						{#if backgroundImageUrl}
 							<div class="relative">
 								<img src={backgroundImageUrl} alt="Back" class="w-full h-16 object-cover rounded-lg" />
-								<button on:click={() => clearImage('background')} class="absolute top-0 right-0 p-1 bg-red-500 rounded-full text-white text-xs">×</button>
+								<button on:click={() => clearImage('background')} class="absolute top-0 right-0 p-1 bg-red-500 rounded-full text-white text-xs" aria-label="Remove background image">×</button>
 							</div>
 						{:else}
 							<label class="cursor-pointer block border border-dashed border-gray-600 rounded-lg p-3 text-center hover:border-gray-500">
@@ -321,11 +308,11 @@
 						{/if}
 					</div>
 					<div>
-						<label class="block text-xs text-gray-400 mb-1">Front (text side)</label>
+						<span class="block text-xs text-gray-400 mb-1">Front (text side)</span>
 						{#if foregroundImageUrl}
 							<div class="relative">
 								<img src={foregroundImageUrl} alt="Front" class="w-full h-16 object-cover rounded-lg" />
-								<button on:click={() => clearImage('foreground')} class="absolute top-0 right-0 p-1 bg-red-500 rounded-full text-white text-xs">×</button>
+								<button on:click={() => clearImage('foreground')} class="absolute top-0 right-0 p-1 bg-red-500 rounded-full text-white text-xs" aria-label="Remove foreground image">×</button>
 							</div>
 						{:else}
 							<label class="cursor-pointer block border border-dashed border-gray-600 rounded-lg p-3 text-center hover:border-gray-500">
@@ -346,11 +333,11 @@
 					<h2 class="text-lg font-semibold">Preview</h2>
 					{#if cards.length > 0}
 						<div class="flex items-center gap-2">
-							<button on:click={prevPreviewCard} disabled={previewCardIndex === 0} class="p-1 rounded hover:bg-gray-700 disabled:opacity-50">
+							<button on:click={prevPreviewCard} disabled={previewCardIndex === 0} class="p-1 rounded hover:bg-gray-700 disabled:opacity-50" aria-label="Previous card">
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
 							</button>
 							<span class="text-xs text-gray-400">{previewCardIndex + 1}/{cards.length}</span>
-							<button on:click={nextPreviewCard} disabled={previewCardIndex >= cards.length - 1} class="p-1 rounded hover:bg-gray-700 disabled:opacity-50">
+							<button on:click={nextPreviewCard} disabled={previewCardIndex >= cards.length - 1} class="p-1 rounded hover:bg-gray-700 disabled:opacity-50" aria-label="Next card">
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
 							</button>
 						</div>
@@ -394,7 +381,7 @@
 					<div class="border-b border-gray-700 pb-4">
 						<h4 class="text-sm font-medium text-gray-300 mb-2">Margins</h4>
 						<div class="flex items-center gap-3">
-							<label class="text-xs text-gray-400 w-24">Content Margin</label>
+							<span class="text-xs text-gray-400 w-24">Content Margin</span>
 							<input type="range" min="10" max="40" bind:value={cardStyle.margin} class="flex-1 accent-blue-500" />
 							<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.margin}px</span>
 						</div>
@@ -405,17 +392,17 @@
 						<h4 class="text-sm font-medium text-gray-300 mb-2">Type Badge</h4>
 						<div class="space-y-2">
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Font Size</label>
+								<span class="text-xs text-gray-400 w-24">Font Size</span>
 								<input type="range" min="8" max="32" bind:value={cardStyle.typeBadge.fontSize} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.typeBadge.fontSize}px</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Top Position</label>
+								<span class="text-xs text-gray-400 w-24">Top Position</span>
 								<input type="range" min="2" max="40" bind:value={cardStyle.typeBadge.top} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.typeBadge.top}%</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Font</label>
+								<span class="text-xs text-gray-400 w-24">Font</span>
 								<select bind:value={cardStyle.typeBadge.fontFamily} class="flex-1 px-2 py-1 bg-gray-700 rounded text-sm border border-gray-600">
 									{#each FONT_OPTIONS as font}
 										<option value={font}>{font.split(',')[0]}</option>
@@ -423,12 +410,12 @@
 								</select>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Text Color</label>
+								<span class="text-xs text-gray-400 w-24">Text Color</span>
 								<input type="color" bind:value={cardStyle.typeBadge.color} class="w-10 h-8 bg-gray-700 rounded border border-gray-600 cursor-pointer" />
 								<span class="text-xs text-gray-500">(empty = use type color)</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Background</label>
+								<span class="text-xs text-gray-400 w-24">Background</span>
 								<input type="color" bind:value={cardStyle.typeBadge.backgroundColor} class="w-10 h-8 bg-gray-700 rounded border border-gray-600 cursor-pointer" />
 								<span class="text-xs text-gray-500">(empty = use type color)</span>
 								{#if cardStyle.typeBadge.backgroundColor}
@@ -443,17 +430,17 @@
 						<h4 class="text-sm font-medium text-gray-300 mb-2">Title</h4>
 						<div class="space-y-2">
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Font Size</label>
+								<span class="text-xs text-gray-400 w-24">Font Size</span>
 								<input type="range" min="10" max="48" bind:value={cardStyle.title.fontSize} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.title.fontSize}px</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Top Position</label>
+								<span class="text-xs text-gray-400 w-24">Top Position</span>
 								<input type="range" min="40" max="95" bind:value={cardStyle.title.top} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.title.top}%</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Font</label>
+								<span class="text-xs text-gray-400 w-24">Font</span>
 								<select bind:value={cardStyle.title.fontFamily} class="flex-1 px-2 py-1 bg-gray-700 rounded text-sm border border-gray-600">
 									{#each FONT_OPTIONS as font}
 										<option value={font}>{font.split(',')[0]}</option>
@@ -461,7 +448,7 @@
 								</select>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Color</label>
+								<span class="text-xs text-gray-400 w-24">Color</span>
 								<input type="color" bind:value={cardStyle.title.color} class="w-10 h-8 bg-gray-700 rounded border border-gray-600 cursor-pointer" />
 							</div>
 						</div>
@@ -472,17 +459,17 @@
 						<h4 class="text-sm font-medium text-gray-300 mb-2">Description</h4>
 						<div class="space-y-2">
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Font Size</label>
+								<span class="text-xs text-gray-400 w-24">Font Size</span>
 								<input type="range" min="8" max="24" bind:value={cardStyle.description.fontSize} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.description.fontSize}px</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Top Position</label>
+								<span class="text-xs text-gray-400 w-24">Top Position</span>
 								<input type="range" min="50" max="98" bind:value={cardStyle.description.top} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.description.top}%</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Font</label>
+								<span class="text-xs text-gray-400 w-24">Font</span>
 								<select bind:value={cardStyle.description.fontFamily} class="flex-1 px-2 py-1 bg-gray-700 rounded text-sm border border-gray-600">
 									{#each FONT_OPTIONS as font}
 										<option value={font}>{font.split(',')[0]}</option>
@@ -490,7 +477,7 @@
 								</select>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Color</label>
+								<span class="text-xs text-gray-400 w-24">Color</span>
 								<input type="color" bind:value={cardStyle.description.color} class="w-10 h-8 bg-gray-700 rounded border border-gray-600 cursor-pointer" />
 							</div>
 						</div>
@@ -501,17 +488,17 @@
 						<h4 class="text-sm font-medium text-gray-300 mb-2">QR Code</h4>
 						<div class="space-y-2">
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Size</label>
+								<span class="text-xs text-gray-400 w-24">Size</span>
 								<input type="range" min="30" max="80" bind:value={cardStyle.qrCode.size} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.qrCode.size}%</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Top Position</label>
+								<span class="text-xs text-gray-400 w-24">Top Position</span>
 								<input type="range" min="20" max="80" bind:value={cardStyle.qrCode.top} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.qrCode.top}%</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Transparent</label>
+								<span class="text-xs text-gray-400 w-24">Transparent</span>
 								<label class="relative inline-flex items-center cursor-pointer">
 									<input type="checkbox" bind:checked={cardStyle.qrCode.transparentBackground} class="sr-only peer" />
 									<div class="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
@@ -527,17 +514,17 @@
 						<p class="text-xs text-gray-500 mb-2">Position of imageUrl from CSV</p>
 						<div class="space-y-2">
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Size</label>
+								<span class="text-xs text-gray-400 w-24">Size</span>
 								<input type="range" min="20" max="100" bind:value={cardStyle.cardImage.size} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.cardImage.size}%</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Top Position</label>
+								<span class="text-xs text-gray-400 w-24">Top Position</span>
 								<input type="range" min="0" max="100" bind:value={cardStyle.cardImage.top} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.cardImage.top}%</span>
 							</div>
 							<div class="flex items-center gap-3">
-								<label class="text-xs text-gray-400 w-24">Left Position</label>
+								<span class="text-xs text-gray-400 w-24">Left Position</span>
 								<input type="range" min="0" max="100" bind:value={cardStyle.cardImage.left} class="flex-1 accent-blue-500" />
 								<span class="text-xs text-gray-400 w-12 text-right">{cardStyle.cardImage.left}%</span>
 							</div>
