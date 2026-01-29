@@ -225,61 +225,6 @@
 		}
 	}
 
-	// Grant capability token to the holosphere service key for federation
-	async function grantFederationCapability(privateKey: string) {
-		if (!holosphere) return;
-
-		const holospherePrivateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-		if (!holospherePrivateKey) {
-			console.log('No holosphere service key configured, skipping federation capability grant');
-			return;
-		}
-
-		try {
-			// Get the holosphere service public key
-			const holospherePublicKey = await holosphere.getPublicKey(holospherePrivateKey);
-			const userPublicKey = holosphere.client.publicKey;
-
-			console.log('Granting federation capability to service key:', holospherePublicKey);
-
-			// Store the holosphere service public key in global table
-			await holosphere.writeGlobal('federation_keys', {
-				id: 'holosphere_service',
-				publicKey: holospherePublicKey,
-				description: 'Main holosphere service key for federated community access',
-				updatedAt: Date.now()
-			});
-
-			// Issue capability token with full permissions for all holons/lenses
-			const capabilityToken = await holosphere.issueCapability(
-				['read', 'write', 'delete'],
-				{ holonId: '*', lensName: '*' },
-				holospherePublicKey,
-				{
-					issuer: userPublicKey,  // Must be signer's public key for signature verification
-					issuerKey: privateKey,
-					expiresIn: 365 * 24 * 60 * 60 * 1000
-				}
-			);
-
-			// Store the capability token in federation_capabilities global table
-			await holosphere.writeGlobal('federation_capabilities', {
-				id: userPublicKey,
-				grantorPublicKey: userPublicKey,
-				recipientPublicKey: holospherePublicKey,
-				token: capabilityToken,
-				permissions: ['read', 'write', 'delete'],
-				scope: { holonId: '*', lensName: '*' },
-				grantedAt: Date.now(),
-				expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000
-			});
-
-			console.log('Federation capability granted and stored successfully');
-		} catch (error) {
-			console.error('Failed to grant federation capability:', error);
-		}
-	}
-
 	// Set up global federation DM subscription for receiving requests/responses
 	function setupFederationDMSubscription(privateKey: string) {
 		if (!holosphere || dmUnsubscribe) return;
@@ -446,8 +391,6 @@
 				await initializeUserHolon(privateKey);
 			}
 
-			// Grant capability token to the holosphere service key for federation
-			grantFederationCapability(privateKey);
 		} else {
 			console.log('Telegram-mapped session: skipping auto-initialization');
 		}
