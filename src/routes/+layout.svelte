@@ -4,6 +4,7 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import { HoloSphere, handshake } from "holosphere"
+	import { hexToBytes } from '@noble/hashes/utils';
 	import Layout from '../dashboard/Layout.svelte';
 	import Splash from '../components/Splash.svelte';
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
@@ -404,7 +405,7 @@
 		// -=-=-=-=-=-=-=-=- USE NOSTR
 		holosphere = new HoloSphere({
 			appName: environmentName,
-			privateKey: privateKey,
+			privateKey: hexToBytes(privateKey),
 			backend: 'nostr',
 			nostr: {
 				peers: ['wss://relay.holons.io'],
