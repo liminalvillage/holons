@@ -46,7 +46,6 @@
 		}
 	];
 
-	$: isGuestMode = !$nostrPrivateKey;
 	$: currentStepData = steps[currentStep];
 
 	onMount(() => {

@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
-	import { Key, ChevronDown, Copy, Check, LogOut, Download, Upload } from 'svelte-feathers';
+	import { Key, ChevronDown, Copy, Check, LogOut } from 'svelte-feathers';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
-	import { schnorr } from '@noble/curves/secp256k1';
-	import { bytesToHex } from '@noble/hashes/utils';
 
 	const dispatch = createEventDispatcher();
 
@@ -17,22 +15,6 @@
 	let keyCopied: boolean = false;
 	let showPrivateKey: boolean = false;
 
-	// Check if using public/holosphere key
-	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-	const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'HolonsBot';
-
-	function getHolospherePublicKey(): string | null {
-		if (!HOLOSPHERE_PRIVATE_KEY) return null;
-		try {
-			const pubKeyBytes = schnorr.getPublicKey(HOLOSPHERE_PRIVATE_KEY);
-			return bytesToHex(pubKeyBytes);
-		} catch {
-			return null;
-		}
-	}
-
-	$: holospherePublicKey = getHolospherePublicKey();
-	$: isPublicMode = $nostrPublicKey === holospherePublicKey || !$nostrPrivateKey;
 	$: shortenedPubKey = $nostrPublicKey ? `${$nostrPublicKey.slice(0, 8)}...${$nostrPublicKey.slice(-6)}` : 'Not set';
 
 	// Load collapse state from localStorage
@@ -83,8 +65,8 @@
 		}
 	}
 
-	function exitToPublic() {
-		localStorage.setItem('enter_public_mode', 'true');
+	function logout() {
+		localStorage.setItem('just_logged_out', 'true');
 		nostrStore.clearKey();
 		dispatch('keyChanged', { action: 'exit' });
 		window.location.reload();
@@ -97,30 +79,26 @@
 	}
 </script>
 
-<div class="keys-section" class:keys-section--public={isPublicMode}>
+<div class="keys-section">
 	<button
 		class="keys-section__header"
 		on:click={toggleExpanded}
 		aria-expanded={isExpanded}
 	>
 		<div class="keys-section__header-left">
-			<div class="keys-section__icon" class:keys-section__icon--public={isPublicMode}>
-				{#if isPublicMode}
-					<i class="fas fa-globe"></i>
-				{:else}
-					<Key size="16" />
-				{/if}
+			<div class="keys-section__icon">
+				<Key size="16" />
 			</div>
 			<div class="keys-section__header-info">
-				<span class="keys-section__header-title">{isPublicMode ? 'Guest Mode' : 'Identity'}</span>
+				<span class="keys-section__header-title">Identity</span>
 				<span class="keys-section__header-subtitle">
-					{isPublicMode ? 'Click to sign in' : shortenedPubKey}
+					{shortenedPubKey}
 				</span>
 			</div>
 		</div>
 		<div class="keys-section__header-right">
-			<span class="keys-section__status" class:keys-section__status--public={isPublicMode}>
-				{isPublicMode ? 'Public' : 'Private'}
+			<span class="keys-section__status">
+				Private
 			</span>
 			<ChevronDown size="16" class="keys-section__chevron {isExpanded ? 'keys-section__chevron--up' : ''}" />
 		</div>
@@ -130,23 +108,15 @@
 		<div class="keys-section__content" transition:slide={{ duration: 200 }}>
 			{#if currentView === 'main'}
 				<!-- Identity Status -->
-				<div class="keys-section__identity" class:keys-section__identity--public={isPublicMode}>
-					<div class="keys-section__identity-icon" class:keys-section__identity-icon--public={isPublicMode}>
-						{#if isPublicMode}
-							<i class="fas fa-globe"></i>
-						{:else}
-							<i class="fas fa-user"></i>
-						{/if}
+				<div class="keys-section__identity">
+					<div class="keys-section__identity-icon">
+						<i class="fas fa-user"></i>
 					</div>
 					<div class="keys-section__identity-info">
 						<div class="keys-section__identity-mode">
-							{isPublicMode ? 'Guest Mode' : 'Private Identity'}
+							Private Identity
 						</div>
-						{#if isPublicMode}
-							<div class="keys-section__identity-hint">
-								Read-only access
-							</div>
-						{:else if $nostrPublicKey}
+						{#if $nostrPublicKey}
 							<div class="keys-section__identity-key">
 								{shortenedPubKey}
 								<button
@@ -167,38 +137,26 @@
 
 				<!-- Actions -->
 				<div class="keys-section__actions">
-					{#if isPublicMode}
-						<p class="keys-section__login-prompt">Sign in to create and edit holons</p>
-						<button class="keys-section__action keys-section__action--primary" on:click={generateNewKey} disabled={isProcessing}>
-							<i class="fas fa-plus"></i>
-							<span>Create New Identity</span>
-						</button>
-						<button class="keys-section__action" on:click={() => currentView = 'import'}>
-							<Upload size="14" />
-							<span>Import Private Key</span>
-						</button>
-					{:else}
-						<button class="keys-section__action" on:click={() => showPrivateKey = !showPrivateKey}>
-							<i class="fas {showPrivateKey ? 'fa-eye-slash' : 'fa-eye'}"></i>
-							<span>{showPrivateKey ? 'Hide Key' : 'Export Key'}</span>
-						</button>
+					<button class="keys-section__action" on:click={() => showPrivateKey = !showPrivateKey}>
+						<i class="fas {showPrivateKey ? 'fa-eye-slash' : 'fa-eye'}"></i>
+						<span>{showPrivateKey ? 'Hide Key' : 'Export Key'}</span>
+					</button>
 
-						{#if showPrivateKey}
-							<div class="keys-section__private-key" transition:slide>
-								<p class="keys-section__private-key-label">Private Key (keep secret!)</p>
-								<code class="keys-section__private-key-value">{$nostrPrivateKey}</code>
-							</div>
-						{/if}
-
-						<button class="keys-section__action" on:click={() => currentView = 'import'}>
-							<i class="fas fa-exchange-alt"></i>
-							<span>Switch Identity</span>
-						</button>
-						<button class="keys-section__action keys-section__action--danger" on:click={exitToPublic}>
-							<LogOut size="14" />
-							<span>Logout</span>
-						</button>
+					{#if showPrivateKey}
+						<div class="keys-section__private-key" transition:slide>
+							<p class="keys-section__private-key-label">Private Key (keep secret!)</p>
+							<code class="keys-section__private-key-value">{$nostrPrivateKey}</code>
+						</div>
 					{/if}
+
+					<button class="keys-section__action" on:click={() => currentView = 'import'}>
+						<i class="fas fa-exchange-alt"></i>
+						<span>Switch Identity</span>
+					</button>
+					<button class="keys-section__action keys-section__action--danger" on:click={logout}>
+						<LogOut size="14" />
+						<span>Logout</span>
+					</button>
 				</div>
 
 			{:else if currentView === 'import'}
@@ -244,10 +202,6 @@
 		background: var(--color-bg-primary, #111827);
 	}
 
-	.keys-section--public {
-		background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), transparent);
-	}
-
 	.keys-section__header {
 		display: flex;
 		align-items: center;
@@ -283,11 +237,6 @@
 		flex-shrink: 0;
 	}
 
-	.keys-section__icon--public {
-		background: rgba(16, 185, 129, 0.2);
-		color: #10b981;
-	}
-
 	.keys-section__header-info {
 		display: flex;
 		flex-direction: column;
@@ -321,10 +270,6 @@
 		color: white;
 	}
 
-	.keys-section__status--public {
-		background: #10b981;
-	}
-
 	.keys-section__content {
 		padding: var(--spacing-3, 0.75rem) var(--spacing-4, 1rem);
 		background: var(--color-bg-secondary, #1f2937);
@@ -350,10 +295,6 @@
 		background: var(--color-accent, #4f46e5);
 		color: white;
 		font-size: 0.875rem;
-	}
-
-	.keys-section__identity-icon--public {
-		background: #10b981;
 	}
 
 	.keys-section__identity-info {
@@ -440,22 +381,6 @@
 
 	.keys-section__action--primary:hover {
 		background: var(--color-accent-dark, #4338ca);
-	}
-
-	.keys-section__identity--public {
-		border: 1px dashed rgba(16, 185, 129, 0.3);
-	}
-
-	.keys-section__identity-hint {
-		font-size: var(--font-size-xs, 0.75rem);
-		color: #10b981;
-	}
-
-	.keys-section__login-prompt {
-		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
-		margin: 0 0 var(--spacing-2, 0.5rem) 0;
-		text-align: center;
 	}
 
 	.keys-section__private-key {

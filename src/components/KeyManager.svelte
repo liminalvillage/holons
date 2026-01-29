@@ -2,8 +2,6 @@
 	import { createEventDispatcher } from 'svelte';
 	import { fade, slide } from 'svelte/transition';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
-	import { schnorr } from '@noble/curves/secp256k1';
-	import { bytesToHex } from '@noble/hashes/utils';
 
 	const dispatch = createEventDispatcher();
 
@@ -19,20 +17,6 @@
 	let keyCopied = false;
 	let showPrivateKey = false;
 
-	// Check if using public/holosphere key
-	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-	function getHolospherePublicKey(): string | null {
-		if (!HOLOSPHERE_PRIVATE_KEY) return null;
-		try {
-			const pubKeyBytes = schnorr.getPublicKey(HOLOSPHERE_PRIVATE_KEY);
-			return bytesToHex(pubKeyBytes);
-		} catch {
-			return null;
-		}
-	}
-
-	$: holospherePublicKey = getHolospherePublicKey();
-	$: isPublicMode = $nostrPublicKey === holospherePublicKey || !$nostrPrivateKey;
 	$: shortenedKey = $nostrPublicKey ? `${$nostrPublicKey.slice(0, 8)}...${$nostrPublicKey.slice(-8)}` : 'Not set';
 
 	function toggleDropdown() {
@@ -49,21 +33,6 @@
 		currentView = 'menu';
 		importKeyInput = '';
 		importError = '';
-	}
-
-	async function generateNewKey() {
-		isProcessing = true;
-		try {
-			await nostrStore.generateKey();
-			dispatch('keyChanged', { action: 'generate' });
-			closeDropdown();
-			// Reload to apply the new key
-			window.location.reload();
-		} catch (error) {
-			console.error('Error generating key:', error);
-		} finally {
-			isProcessing = false;
-		}
 	}
 
 	async function importKey() {
@@ -98,10 +67,8 @@
 		}
 	}
 
-	function exitToPublic() {
-		// Set flag to enter public mode on reload
-		localStorage.setItem('enter_public_mode', 'true');
-		// Clear the stored key and reload
+	function logout() {
+		localStorage.setItem('just_logged_out', 'true');
 		nostrStore.clearKey();
 		dispatch('keyChanged', { action: 'exit' });
 		window.location.reload();
@@ -163,12 +130,12 @@
 	<button
 		on:click|stopPropagation={toggleDropdown}
 		class="flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-200
-			   {isPublicMode ? 'bg-green-600/20 hover:bg-green-600/30 text-green-400' : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400'}"
-		title={isPublicMode ? 'Public Mode - Click to manage identity' : 'Private Mode - Click to manage identity'}
+			   bg-blue-600/20 hover:bg-blue-600/30 text-blue-400"
+		title="Click to manage identity"
 	>
-		<i class="fas {isPublicMode ? 'fa-globe' : 'fa-key'} text-sm"></i>
+		<i class="fas fa-key text-sm"></i>
 		<span class="text-xs font-medium hidden sm:inline">
-			{isPublicMode ? 'Public' : shortenedKey}
+			{shortenedKey}
 		</span>
 		<i class="fas fa-chevron-down text-xs transition-transform {isOpen ? 'rotate-180' : ''}"></i>
 	</button>
@@ -196,14 +163,12 @@
 				<!-- Current Identity Status -->
 				<div class="p-4 border-b border-gray-700">
 					<div class="flex items-center gap-3 mb-3">
-						<div class="w-10 h-10 rounded-full flex items-center justify-center
-									{isPublicMode ? 'bg-green-600/20' : 'bg-blue-600/20'}">
-							<i class="fas {isPublicMode ? 'fa-globe' : 'fa-user'}
-								  {isPublicMode ? 'text-green-400' : 'text-blue-400'}"></i>
+						<div class="w-10 h-10 rounded-full flex items-center justify-center bg-blue-600/20">
+							<i class="fas fa-user text-blue-400"></i>
 						</div>
 						<div class="flex-1 min-w-0">
 							<div class="text-sm font-medium text-white">
-								{isPublicMode ? 'Public Space' : 'Private Identity'}
+								Private Identity
 							</div>
 							<div class="text-xs text-gray-400 truncate font-mono">
 								{$nostrPublicKey || 'No key'}
@@ -211,7 +176,7 @@
 						</div>
 					</div>
 
-					{#if !isPublicMode && $nostrPublicKey}
+					{#if $nostrPublicKey}
 						<div class="flex gap-2">
 							<button
 								on:click={copyPublicKey}
@@ -226,50 +191,7 @@
 
 				<!-- Actions -->
 				<div class="p-2">
-					{#if isPublicMode}
-						<!-- Options when in public mode -->
-						<button
-							on:click={generateNewKey}
-							disabled={isProcessing}
-							class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-700 transition-colors text-left"
-						>
-							<div class="w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center">
-								<i class="fas fa-plus text-blue-400"></i>
-							</div>
-							<div>
-								<div class="text-sm font-medium text-white">Create New Identity</div>
-								<div class="text-xs text-gray-400">Generate a new private key</div>
-							</div>
-						</button>
-
-						<button
-							on:click={() => currentView = 'import'}
-							class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-700 transition-colors text-left"
-						>
-							<div class="w-8 h-8 rounded-lg bg-amber-600/20 flex items-center justify-center">
-								<i class="fas fa-file-import text-amber-400"></i>
-							</div>
-							<div>
-								<div class="text-sm font-medium text-white">Import Key</div>
-								<div class="text-xs text-gray-400">Use an existing private key</div>
-							</div>
-						</button>
-
-						<button
-							on:click={() => currentView = 'telegram'}
-							class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-700 transition-colors text-left"
-						>
-							<div class="w-8 h-8 rounded-lg bg-sky-600/20 flex items-center justify-center">
-								<i class="fab fa-telegram text-sky-400"></i>
-							</div>
-							<div>
-								<div class="text-sm font-medium text-white">Login with Telegram</div>
-								<div class="text-xs text-gray-400">Authenticate via Telegram</div>
-							</div>
-						</button>
-					{:else}
-						<!-- Options when logged in with private key -->
-						<button
+					<button
 							on:click={() => showPrivateKey = !showPrivateKey}
 							class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-700 transition-colors text-left"
 						>
@@ -312,19 +234,18 @@
 
 						<div class="border-t border-gray-700 mt-2 pt-2">
 							<button
-								on:click={exitToPublic}
+								on:click={logout}
 								class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-900/30 transition-colors text-left"
 							>
 								<div class="w-8 h-8 rounded-lg bg-red-600/20 flex items-center justify-center">
 									<i class="fas fa-sign-out-alt text-red-400"></i>
 								</div>
 								<div>
-									<div class="text-sm font-medium text-red-400">Exit to Public Space</div>
-									<div class="text-xs text-gray-400">Browse anonymously</div>
+									<div class="text-sm font-medium text-red-400">Logout</div>
+									<div class="text-xs text-gray-400">Sign out of your identity</div>
 								</div>
 							</button>
 						</div>
-					{/if}
 				</div>
 
 			{:else if currentView === 'import'}

@@ -4,16 +4,14 @@
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
 	import type { HoloSphere } from 'holosphere';
-	import { Search, Plus, X, Upload, Key } from 'svelte-feathers';
+	import { Search, Plus, X, Upload } from 'svelte-feathers';
 	import { nostrPublicKey, nostrPrivateKey, nostrStore } from '../../lib/stores/nostr';
 	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
 	import { useFederationHandshake } from '../../lib/federation/useFederationHandshake';
 	import { handshake } from 'holosphere';
-	import { schnorr } from '@noble/curves/secp256k1';
-	import { bytesToHex } from '@noble/hashes/utils';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
-	import Splash from '../../components/Splash.svelte';
+
 	import { ID, sidebarExpanded } from '../store';
 	// localStorage imports removed - holons list is managed by federation only
 	import { fetchHolonName, forceRefreshHolonName } from '../../utils/holonNames';
@@ -57,22 +55,6 @@
 	let selectedInboundLenses: Set<string> = new Set(['quests', 'offers', 'users']);
 	let selectedOutboundLenses: Set<string> = new Set(['quests', 'offers', 'users']);
 
-	// Identity Modal state (for public mode) - uses unified Splash component
-	let showIdentityModal: boolean = false;
-
-	// Check if using public/holosphere key
-	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-	function getHolospherePublicKey(): string | null {
-		if (!HOLOSPHERE_PRIVATE_KEY) return null;
-		try {
-			const pubKeyBytes = schnorr.getPublicKey(HOLOSPHERE_PRIVATE_KEY);
-			return bytesToHex(pubKeyBytes);
-		} catch {
-			return null;
-		}
-	}
-	$: holospherePublicKey = getHolospherePublicKey();
-	$: isPublicMode = $nostrPublicKey === holospherePublicKey || !$nostrPrivateKey;
 
 	// Current holon from route
 	$: currentHolonId = $ID;
@@ -107,7 +89,7 @@
 
 			// Always fetch home holon name from HNS (single source of truth)
 			// Use forceRefreshHolonName to ensure we get fresh data from HNS
-			if (!isPublicMode && $nostrPublicKey && holosphere) {
+			if ($nostrPublicKey && holosphere) {
 				const name = await forceRefreshHolonName(holosphere, $nostrPublicKey);
 				homeHolonName = name || '';
 				// If we got a fallback/default name, the HNS entry might not be ready yet
@@ -640,37 +622,6 @@
 		selectedOutboundLenses = new Set(['quests', 'offers', 'users']);
 	}
 
-	// Handle + button click - different behavior for public vs private mode
-	function handlePlusButton() {
-		if (isPublicMode) {
-			showIdentityModal = true;
-			identityView = 'menu';
-			importKeyInput = '';
-			identityError = '';
-		} else {
-			handleAddHolon();
-		}
-	}
-
-	function closeIdentityModal() {
-		showIdentityModal = false;
-	}
-
-	// Handle authentication from Splash component
-	function handleSplashAuthenticated(event: CustomEvent) {
-		const { publicKey, holonName } = event.detail;
-		showIdentityModal = false;
-
-		// Store the holon name to be used after reload
-		if (holonName) {
-			localStorage.setItem('pending_holon_name', holonName);
-			localStorage.setItem('pending_holon_id', publicKey);
-		}
-
-		// Navigate to the new holon and reload to reinitialize
-		goto(`/${publicKey}/dashboard`);
-		setTimeout(() => window.location.reload(), 100);
-	}
 
 	function closeAddModal() {
 		showAddModal = false;
@@ -996,15 +947,10 @@
 		</div>
 		<button
 			class="browser-panel__add-btn"
-			class:browser-panel__add-btn--identity={isPublicMode}
-			onclick={handlePlusButton}
-			title={isPublicMode ? "Sign in" : "Add holon"}
+			onclick={handleAddHolon}
+			title="Add holon"
 		>
-			{#if isPublicMode}
-				<Key size={16} />
-			{:else}
-				<Plus size={16} />
-			{/if}
+			<Plus size={16} />
 		</button>
 	</div>
 
@@ -1039,9 +985,9 @@
 		showStarButton={true}
 		showRemoveButton={true}
 		{starredIds}
-		homeHolonId={isPublicMode ? null : $nostrPublicKey}
+		homeHolonId={$nostrPublicKey}
 		{homeHolonName}
-		showHomeSection={!isPublicMode}
+		showHomeSection={true}
 		incomingRequests={$incomingRequests}
 		{processingRequestId}
 		on:select={(e) => selectHolon(e.detail.holonId)}
@@ -1182,16 +1128,6 @@
 	on:scan={handleQRScan}
 	on:close={() => showQRScanner = false}
 />
-
-<!-- Identity Modal (for public mode) - uses unified Splash component -->
-{#if showIdentityModal}
-	<Splash
-		skipLoading={true}
-		isModal={true}
-		on:authenticated={handleSplashAuthenticated}
-		on:close={closeIdentityModal}
-	/>
-{/if}
 
 <style>
 	.browser-panel {
@@ -1539,12 +1475,4 @@
 		color: var(--color-text-secondary, #d1d5db);
 	}
 
-	/* Identity button styling */
-	.browser-panel__add-btn--identity {
-		background: #10b981;
-	}
-
-	.browser-panel__add-btn--identity:hover {
-		background: #059669;
-	}
 </style>

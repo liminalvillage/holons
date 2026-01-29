@@ -435,11 +435,7 @@
 		// Determine which private key to use
 		let privateKey: string | null = null;
 
-		if (mode === 'public') {
-			// Public space mode - use the holosphere key from .env (now writable)
-			privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-			console.log('Using holosphere env key for public space');
-		} else if (mode === 'telegram-mapped') {
+		if (mode === 'telegram-mapped') {
 			// Telegram Mini App user with existing mapping but no local key
 			// Use holosphere service key for backend operations
 			// But set the ID to the user's mapped public key

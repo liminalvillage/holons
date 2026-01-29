@@ -42,23 +42,6 @@
 
 	$: hasPendingChanges = pendingLensConfig !== null;
 
-	// Check if using public/holosphere key
-	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-
-	function getHolospherePublicKey(): string | null {
-		if (!HOLOSPHERE_PRIVATE_KEY) return null;
-		try {
-			const { schnorr } = require('@noble/curves/secp256k1');
-			const { bytesToHex } = require('@noble/hashes/utils');
-			const pubKeyBytes = schnorr.getPublicKey(HOLOSPHERE_PRIVATE_KEY);
-			return bytesToHex(pubKeyBytes);
-		} catch {
-			return null;
-		}
-	}
-
-	$: holospherePublicKey = getHolospherePublicKey();
-	$: isPublicMode = isHome && ($nostrPublicKey === holospherePublicKey || !$nostrPrivateKey);
 
 	function handleSelect() {
 		dispatch('select', { id });
@@ -133,19 +116,9 @@
 		goto(`/${id}/settings`);
 	}
 
-	async function generateNewKey(event: MouseEvent) {
+	function logout(event: MouseEvent) {
 		event.stopPropagation();
-		try {
-			await nostrStore.generateKey();
-			window.location.reload();
-		} catch (error) {
-			console.error('Error generating key:', error);
-		}
-	}
-
-	function exitToPublic(event: MouseEvent) {
-		event.stopPropagation();
-		localStorage.setItem('enter_public_mode', 'true');
+		localStorage.setItem('just_logged_out', 'true');
 		nostrStore.clearKey();
 		window.location.reload();
 	}
@@ -313,7 +286,6 @@
 		<div
 			class="holon-item__avatar"
 			class:holon-item__avatar--home={isHome}
-			class:holon-item__avatar--public={isHome && isPublicMode}
 			style="background-color: {isActive ? 'var(--color-accent)' : isHome ? '' : avatarColor}"
 		>
 			{#if isHome}
@@ -377,7 +349,6 @@
 				<div class="holon-item__dropdown-container">
 					<button
 						class="holon-item__action-btn holon-item__action-btn--key"
-						class:holon-item__action-btn--public={isPublicMode}
 						on:click={toggleKeyMenu}
 						title="Identity & Keys"
 					>
@@ -388,36 +359,29 @@
 					{#if showKeyMenu}
 						<div class="holon-item__dropdown" transition:slide={{ duration: 150 }} on:click|stopPropagation>
 							<div class="holon-item__dropdown-header">
-								<span class="holon-item__dropdown-status" class:holon-item__dropdown-status--public={isPublicMode}>
-									{isPublicMode ? 'Public' : 'Private'}
+								<span class="holon-item__dropdown-status">
+									Private
 								</span>
 								<span class="holon-item__dropdown-label">
-									{isPublicMode ? 'Guest Mode' : 'Your Identity'}
+									Your Identity
 								</span>
 							</div>
 
-							{#if isPublicMode}
-								<button class="holon-item__dropdown-action" on:click={generateNewKey}>
-									<i class="fas fa-plus"></i>
-									<span>Create Identity</span>
-								</button>
-							{:else}
-								<button class="holon-item__dropdown-action" on:click={() => showPrivateKey = !showPrivateKey}>
-									<i class="fas {showPrivateKey ? 'fa-eye-slash' : 'fa-eye'}"></i>
-									<span>{showPrivateKey ? 'Hide Key' : 'Export Key'}</span>
-								</button>
+							<button class="holon-item__dropdown-action" on:click={() => showPrivateKey = !showPrivateKey}>
+								<i class="fas {showPrivateKey ? 'fa-eye-slash' : 'fa-eye'}"></i>
+								<span>{showPrivateKey ? 'Hide Key' : 'Export Key'}</span>
+							</button>
 
-								{#if showPrivateKey}
-									<div class="holon-item__dropdown-key">
-										<code>{$nostrPrivateKey}</code>
-									</div>
-								{/if}
-
-								<button class="holon-item__dropdown-action holon-item__dropdown-action--danger" on:click={exitToPublic}>
-									<LogOut size={14} />
-									<span>Logout</span>
-								</button>
+							{#if showPrivateKey}
+								<div class="holon-item__dropdown-key">
+									<code>{$nostrPrivateKey}</code>
+								</div>
 							{/if}
+
+							<button class="holon-item__dropdown-action holon-item__dropdown-action--danger" on:click={logout}>
+								<LogOut size={14} />
+								<span>Logout</span>
+							</button>
 						</div>
 					{/if}
 				</div>
@@ -650,10 +614,6 @@
 		background: var(--color-accent, #4f46e5);
 	}
 
-	.holon-item__avatar--public {
-		background: #10b981;
-	}
-
 	.holon-item__content {
 		flex: 1;
 		min-width: 0;
@@ -762,16 +722,6 @@
 		color: white;
 	}
 
-	.holon-item__action-btn--public {
-		background: rgba(16, 185, 129, 0.2);
-		color: #10b981;
-	}
-
-	.holon-item__action-btn--public:hover {
-		background: #10b981;
-		color: white;
-	}
-
 	/* Dropdown container */
 	.holon-item__dropdown-container {
 		position: relative;
@@ -806,10 +756,6 @@
 		background: var(--color-accent, #4f46e5);
 		color: white;
 		font-weight: var(--font-weight-medium, 500);
-	}
-
-	.holon-item__dropdown-status--public {
-		background: #10b981;
 	}
 
 	.holon-item__dropdown-label {

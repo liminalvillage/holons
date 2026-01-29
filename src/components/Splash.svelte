@@ -3,8 +3,6 @@
 	import { fade, fly, slide } from 'svelte/transition';
 	import { nostrStore } from '$lib/stores/nostr';
 	import { telegramStore } from '$lib/stores/telegram';
-	import { schnorr } from '@noble/curves/secp256k1';
-	import { bytesToHex } from '@noble/hashes/utils';
 	import { HoloSphere } from 'holosphere';
 	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
 
@@ -29,17 +27,8 @@
 	let isTelegramWebApp = false;
 	let existingTelegramMapping: { publicKey: string; holonName: string } | null = null;
 
-	// Holosphere public key from .env (for public space fallback)
+	// Holosphere service key from .env (for Telegram mapping lookups)
 	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
-	function getHolospherePublicKey(): string | null {
-		if (!HOLOSPHERE_PRIVATE_KEY) return null;
-		try {
-			const pubKeyBytes = schnorr.getPublicKey(HOLOSPHERE_PRIVATE_KEY);
-			return bytesToHex(pubKeyBytes);
-		} catch {
-			return null;
-		}
-	}
 
 	// Check if Telegram user already has a mapped public key
 	async function checkTelegramMapping(telegramUserId: number): Promise<{ publicKey: string; holonName: string } | null> {
@@ -80,20 +69,6 @@
 		}
 	}
 
-	// Handle entering public space (default mode)
-	function handlePublicSpace() {
-		const publicKey = getHolospherePublicKey();
-		if (publicKey) {
-			dispatch('authenticated', {
-				publicKey,
-				mode: 'public'
-			});
-		} else {
-			error = 'Public space not available. Please create or restore an identity.';
-			view = 'welcome';
-		}
-	}
-
 	onMount(async () => {
 		// Initialize stores
 		await nostrStore.init();
@@ -110,10 +85,10 @@
 		}
 
 		// Check if user just logged out (show welcome screen to allow re-login)
-		const justLoggedOut = localStorage.getItem('enter_public_mode') === 'true';
+		const justLoggedOut = localStorage.getItem('just_logged_out') === 'true';
 		if (justLoggedOut) {
 			// Clear the flag
-			localStorage.removeItem('enter_public_mode');
+			localStorage.removeItem('just_logged_out');
 			// Show welcome screen with login options
 			setTimeout(() => {
 				view = 'welcome';
@@ -176,9 +151,9 @@
 				view = 'telegram-choice';
 			}, 500);
 		} else {
-			// Default to public space - skip welcome screen
+			// No key, no telegram - show welcome screen
 			setTimeout(() => {
-				handlePublicSpace();
+				view = 'welcome';
 			}, 500);
 		}
 	});
@@ -399,21 +374,6 @@
 				</button>
 			</div>
 
-			<!-- Guest mode option -->
-			<div class="guest-divider">
-				<span>or</span>
-			</div>
-
-			<button
-				class="guest-button"
-				on:click={handlePublicSpace}
-			>
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-				</svg>
-				Continue as Guest
-			</button>
-			<p class="guest-hint">Browse in read-only mode without an identity</p>
 		</div>
 
 		<div class="bottom-branding">
@@ -1058,54 +1018,4 @@
 		font-size: 0.85rem;
 	}
 
-	/* Guest Mode */
-	.guest-divider {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		margin: 1.25rem 0;
-	}
-
-	.guest-divider::before,
-	.guest-divider::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		background: rgba(100, 116, 139, 0.3);
-	}
-
-	.guest-divider span {
-		color: #64748b;
-		font-size: 0.85rem;
-		text-transform: lowercase;
-	}
-
-	.guest-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5rem;
-		width: 100%;
-		padding: 0.75rem 1rem;
-		background: transparent;
-		border: 1px solid rgba(100, 116, 139, 0.3);
-		border-radius: 0.5rem;
-		color: #94a3b8;
-		font-size: 0.95rem;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-
-	.guest-button:hover {
-		background: rgba(100, 116, 139, 0.1);
-		border-color: rgba(100, 116, 139, 0.5);
-		color: #cbd5e1;
-	}
-
-	.guest-hint {
-		color: #64748b;
-		font-size: 0.75rem;
-		text-align: center;
-		margin-top: 0.5rem;
-	}
 </style>
