@@ -71,10 +71,25 @@ export class QRActionService {
 
 	/**
 	 * Writes data using the capability token for authorization.
-	 * Wraps holosphere.put() with the capabilityToken option.
+	 * Converts the QR capability (already validated via Schnorr signature in verifyCapability)
+	 * into a holosphere-native capability format that holosphere.put() understands.
 	 */
 	private async putWithCapability(holonID: string, lens: string, data: any, capability: QRCapabilityToken | null | undefined): Promise<void> {
-		await (this.holosphere as any).put(holonID, lens, data, { capabilityToken: capability });
+		let capabilityToken: string | undefined;
+		if (capability) {
+			const holoCap = {
+				type: 'capability',
+				permissions: ['read', 'write'],
+				scope: { holonId: holonID, lensName: lens },
+				expires: capability.expiresAt,
+				issued: capability.issuedAt,
+				nonce: capability.nonce,
+				issuer: capability.issuerPubKey,
+				recipient: '*'
+			};
+			capabilityToken = btoa(JSON.stringify(holoCap));
+		}
+		await (this.holosphere as any).put(holonID, lens, data, { capabilityToken });
 	}
 
 	/**
