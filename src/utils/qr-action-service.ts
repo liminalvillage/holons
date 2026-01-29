@@ -70,6 +70,14 @@ export class QRActionService {
 	}
 
 	/**
+	 * Writes data using the capability token for authorization.
+	 * Wraps holosphere.put() with the capabilityToken option.
+	 */
+	private async putWithCapability(holonID: string, lens: string, data: any, capability: QRCapabilityToken | null | undefined): Promise<void> {
+		await (this.holosphere as any).put(holonID, lens, data, { capabilityToken: capability });
+	}
+
+	/**
 	 * Verifies a capability token for the requested action.
 	 * Returns a validation result indicating if the action is authorized.
 	 * Capability tokens are REQUIRED - actions without valid capabilities are rejected.
@@ -199,7 +207,7 @@ export class QRActionService {
 
 			// Save user data (without roles - roles are managed separately in roles collection)
 			console.log(`[QRActionService] Saving user data for user ${user.id}`);
-			await this.holosphere.put(params.holonID, 'users', userData);
+			await this.putWithCapability(params.holonID, 'users', userData, params.capability);
 			console.log(`[QRActionService] User data saved successfully`);
 
 			// Check if role exists, create it if it doesn't exist
@@ -273,7 +281,7 @@ export class QRActionService {
 			console.log(`[QRActionService] Role participants length:`, roleData.participants?.length || 0);
 			console.log(`[QRActionService] Saving role data for role: ${roleData.title} with key: ${roleKey}`);
 			console.log(`[QRActionService] Put parameters - HolonID: ${params.holonID}, Collection: roles, Data:`, roleData);
-			await this.holosphere.put(params.holonID, 'roles', roleData);
+			await this.putWithCapability(params.holonID, 'roles', roleData, params.capability);
 			console.log(`[QRActionService] Role data saved successfully with key: ${roleKey}`);
 			
 			// Verify the role was saved correctly by retrieving it
@@ -341,7 +349,7 @@ export class QRActionService {
 					}
 				};
 
-				await this.holosphere.put(params.holonID, 'audit_logs', auditLog);
+				await this.putWithCapability(params.holonID, 'audit_logs', auditLog, params.capability);
 				console.log(`[QRActionService] Audit log created for role assignment`);
 			} catch (auditError) {
 				console.warn(`[QRActionService] Failed to create audit log:`, auditError);
@@ -401,7 +409,7 @@ export class QRActionService {
 			userData.last_active = new Date().toISOString();
 
 			// Save user data
-			await this.holosphere.put(params.holonID, 'users', userData);
+			await this.putWithCapability(params.holonID, 'users', userData, params.capability);
 
 			// Calculate event time - 12 hours from now
 			const eventTime = new Date();
@@ -447,7 +455,7 @@ export class QRActionService {
 			console.log(`[QRActionService] Creating new scheduled Quest for event: ${params.title} at ${eventTime.toISOString()}`);
 
 			// Save quest data using the event ID as key
-			await this.holosphere.put(params.holonID, 'quests', questData);
+			await this.putWithCapability(params.holonID, 'quests', questData, params.capability);
 
 			console.log(`[QRActionService] Event Quest created successfully for user ${user.id} to event ${params.title}`);
 
@@ -507,7 +515,7 @@ export class QRActionService {
 			userData.last_active = new Date().toISOString();
 
 			// Save user data
-			await this.holosphere.put(params.holonID, 'users', userData);
+			await this.putWithCapability(params.holonID, 'users', userData, params.capability);
 
 			// Generate a unique task ID
 			const taskId = `task_${params.title.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}`;
@@ -547,7 +555,7 @@ export class QRActionService {
 			console.log(`[QRActionService] Creating new Quest for task: ${params.title} with data:`, questData);
 
 			// Save quest data using the task ID as key
-			await this.holosphere.put(params.holonID, 'quests', questData);
+			await this.putWithCapability(params.holonID, 'quests', questData, params.capability);
 
 			console.log(`[QRActionService] Task Quest created successfully for user ${user.id} to task ${params.title}`);
 
@@ -598,7 +606,7 @@ export class QRActionService {
 			userData.last_active = new Date().toISOString();
 
 			// Save user data
-			await this.holosphere.put(params.holonID, 'users', userData);
+			await this.putWithCapability(params.holonID, 'users', userData, params.capability);
 
 			// Check if badge exists, create it if it doesn't
 			const badgeKey = params.title; // Use title as consistent key
@@ -648,7 +656,7 @@ export class QRActionService {
 			badgeData.last_modified_by = user.id.toString();
 
 			// Save badge data
-			await this.holosphere.put(params.holonID, 'badges', badgeData);
+			await this.putWithCapability(params.holonID, 'badges', badgeData, params.capability);
 
 			console.log(`[QRActionService] Badge award completed successfully for user ${user.id} to badge ${params.title}`);
 
@@ -706,7 +714,7 @@ export class QRActionService {
 			});
 
 			// Save user data
-			await this.holosphere.put(params.holonID, 'users', userData);
+			await this.putWithCapability(params.holonID, 'users', userData, params.capability);
 
 			// Check if invite exists, create it if it doesn't
 			let inviteData = await this.holosphere.get(params.holonID, 'invites', params.title);
@@ -738,7 +746,7 @@ export class QRActionService {
 			}
 
 			// Save invite data
-			await this.holosphere.put(params.holonID, 'invites', inviteData);
+			await this.putWithCapability(params.holonID, 'invites', inviteData, params.capability);
 
 			return {
 				success: true,
@@ -784,7 +792,7 @@ export class QRActionService {
 			};
 
 			userData.last_active = new Date().toISOString();
-			await this.holosphere.put(params.holonID, 'users', userData);
+			await this.putWithCapability(params.holonID, 'users', userData, params.capability);
 
 			// Generate a unique resource ID
 			const resourceId = `resource_${params.title.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}`;
@@ -814,7 +822,7 @@ export class QRActionService {
 				}
 			};
 
-			await this.holosphere.put(params.holonID, 'resources', resourceData);
+			await this.putWithCapability(params.holonID, 'resources', resourceData, params.capability);
 
 			console.log(`[QRActionService] Resource created successfully: ${params.title}`);
 
@@ -862,7 +870,7 @@ export class QRActionService {
 			};
 
 			userData.last_active = new Date().toISOString();
-			await this.holosphere.put(params.holonID, 'users', userData);
+			await this.putWithCapability(params.holonID, 'users', userData, params.capability);
 
 			// Generate a unique vibe ID
 			const vibeId = `vibe_${user.id}_${Date.now()}`;
@@ -890,7 +898,7 @@ export class QRActionService {
 				}
 			};
 
-			await this.holosphere.put(params.holonID, 'vibes', vibeData);
+			await this.putWithCapability(params.holonID, 'vibes', vibeData, params.capability);
 
 			console.log(`[QRActionService] Vibe recorded successfully: ${params.title}`);
 

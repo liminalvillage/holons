@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { getHolonIdForDeck } from '$lib/deck-registry';
 	import type { QRCapabilityToken } from '$lib/capabilities/qrCapability';
+	import { nostrPublicKey } from '$lib/stores/nostr';
 
 	export let data: any;
 
@@ -15,6 +16,9 @@
 	let qrActionService: QRActionService;
 	let isProcessingAction = false;
 	let errorMessage = '';
+	let actionResult: QRActionResult | null = null;
+	let actionComplete = false;
+	let resolvedHolonID: string | null = null;
 	
 	// Debug mode detection
 	let isDebugMode = false;
@@ -162,15 +166,13 @@
 			console.log(`[QR Page] Calling QRActionService.processQRAction with params:`, finalParams);
 			const result = await qrActionService.processQRAction(finalParams, userData);
 			console.log(`[QR Page] Action result:`, result);
-			
-			// If successful and there's a redirect URL, navigate immediately
-			if (result.success && result.redirectUrl) {
-				console.log(`[QR Page] Action successful, redirecting to: ${result.redirectUrl}`);
-				goto(result.redirectUrl);
-			} else if (result.success) {
-				// If successful but no redirect, go to the holon dashboard
-				console.log(`[QR Page] Action successful, redirecting to holon dashboard`);
-				goto(`/${finalHolonID}`);
+
+			resolvedHolonID = finalHolonID;
+
+			if (result.success) {
+				actionResult = result;
+				actionComplete = true;
+				console.log(`[QR Page] Action successful, showing confirmation`);
 			} else {
 				// If failed, show error
 				errorMessage = result.message || 'Action failed';
@@ -276,8 +278,8 @@
 
 		<!-- Main Content -->
 		{#if hasValidParams && capabilityStatus === 'valid'}
-			<!-- Authentication Section - Only show if not in debug mode and capability is valid -->
-			{#if !isDebugMode}
+			<!-- Authentication Section - Only show if not in debug mode, capability is valid, and action not complete -->
+			{#if !isDebugMode && !actionComplete}
 				<div class="bg-gray-800 rounded-2xl p-6">
 					<h2 class="text-xl font-semibold text-white mb-4 text-center">🔐 Login Required</h2>
 					<p class="text-gray-400 mb-6 text-center">
@@ -329,8 +331,34 @@
 							{/if}
 						</p>
 						<p class="text-xs text-blue-300">
-							You will be redirected automatically when complete.
+							Please wait...
 						</p>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Action Complete Confirmation -->
+			{#if actionComplete && actionResult}
+				<div class="mt-6 bg-green-900 bg-opacity-30 border border-green-500 rounded-lg p-6">
+					<div class="text-center">
+						<div class="w-16 h-16 mx-auto mb-4 bg-green-600/20 rounded-full flex items-center justify-center">
+							<svg class="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+							</svg>
+						</div>
+						<h3 class="text-lg font-semibold text-white mb-2">Action Completed</h3>
+						<p class="text-green-200 text-sm mb-4">{actionResult.message}</p>
+
+						{#if $nostrPublicKey && resolvedHolonID && $nostrPublicKey === resolvedHolonID}
+							<button
+								on:click={() => goto(actionResult?.redirectUrl || `/${resolvedHolonID}`)}
+								class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
+							>
+								Go to Holon
+							</button>
+						{:else}
+							<p class="text-gray-400 text-sm">You can close this page.</p>
+						{/if}
 					</div>
 				</div>
 			{/if}
