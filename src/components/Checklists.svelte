@@ -268,6 +268,8 @@
             };
 
             await holosphere.put(holonID, "checklists", checklist);
+            allChecklists[checklistId] = checklist;
+            allChecklists = allChecklists;
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -303,6 +305,8 @@
             }));
 
             await holosphere.put(holonID, "checklists", checklist);
+            allChecklists[checklistId] = checklist;
+            allChecklists = allChecklists;
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -394,6 +398,11 @@
 
         try {
             await holosphere.delete(holonID, "checklists", checklistId);
+            delete allChecklists[checklistId];
+            allChecklists = allChecklists;
+            if (selectedChecklist === checklistId) {
+                selectedChecklist = null;
+            }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to delete - no write permission for this holon');
@@ -419,6 +428,8 @@
             console.log('Items before:', originalLength, 'after:', checklist.items.length);
 
             await holosphere.put(holonID, "checklists", checklist);
+            allChecklists[checklistId] = checklist;
+            allChecklists = allChecklists;
             console.log('removeItem: put succeeded');
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
