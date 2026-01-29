@@ -9,6 +9,8 @@
 [build.environment]
   # Node.js version for builds
   NODE_VERSION = "20"
+  # Force clean install to avoid stale cached node_modules
+  NPM_FLAGS = "--prefer-online"
 
 # Build settings for SvelteKit
 [build.processing]
