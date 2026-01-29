@@ -8,6 +8,9 @@
 	import type { Card, DeckConfig, CardStyle } from '$lib/card-generator/types';
 	import { CARD_TYPE_COLORS, DEFAULT_CARD_STYLE, FONT_OPTIONS } from '$lib/card-generator/types';
 	import { registerDeck } from '$lib/deck-registry';
+	import { nostrPrivateKey } from '$lib/stores/nostr';
+	import { createQRCapability, createCapabilitiesForCards, getLensForAction } from '$lib/capabilities/qrCapability';
+	import type { QRCapabilityToken, CapabilityExpiration } from '$lib/capabilities/qrCapability';
 
 	// Get holosphere context at component initialization (required by Svelte)
 	const holosphere = getContext<HoloSphere>('holosphere');
@@ -22,6 +25,8 @@
 	}
 
 	// State
+	let qrBaseUrl = import.meta.env.VITE_QR_BASE_URL || 'https://dashboard.holons.io/qr';
+	let capExpiration: CapabilityExpiration = 'permanent';
 	let deckId = generateDeckId();
 	let csvFile: File | null = null;
 	let backgroundImageUrl: string | null = null;
@@ -41,22 +46,52 @@
 	// Preview state
 	let previewQRDataUrl: string | null = null;
 
+	// Generate a capability token for a card using the selected expiration
+	function createCardCapability(card: Card, privKey: string | null): QRCapabilityToken | undefined {
+		if (!privKey || !holonId) return undefined;
+		try {
+			const lens = getLensForAction(card.type);
+			if (!lens) return undefined;
+			return createQRCapability({
+				holonId,
+				issuerPrivateKey: privKey,
+				allowedLenses: [lens],
+				allowedActions: [card.type.toLowerCase()],
+				itemId: card.title,
+				expiration: capExpiration,
+				metadata: { deckId, cardId: card.id, cardTitle: card.title, cardType: card.type }
+			});
+		} catch (e) {
+			console.warn('[Card Generator] Failed to create capability:', e);
+			return undefined;
+		}
+	}
+
 	// Generate QR code for preview when card or config changes
-	async function updatePreviewQR() {
+	async function updatePreviewQR(privKey: string | null) {
 		if (!previewCard || !deckId) {
 			previewQRDataUrl = null;
 			return;
 		}
-		const config: DeckConfig = { deckId, holonId, cardStyle };
-		const qrUrl = buildQRUrl(previewCard, config);
+		const config: DeckConfig = { deckId, holonId, qrBaseUrl, cardStyle };
+		const cap = createCardCapability(previewCard, privKey);
+		const qrUrl = buildQRUrl(previewCard, config, cap);
 		const useTransparentQR = cardStyle.qrCode.transparentBackground;
 		previewQRDataUrl = await generateQRDataUrl(qrUrl, useTransparentQR);
 	}
 
-	// Reactive: regenerate QR when preview card, deck, or QR transparency changes
-	$: if (previewCard && deckId && cardStyle.qrCode.transparentBackground !== undefined) {
-		updatePreviewQR();
+	// Reactive: regenerate QR when preview card, deck, base URL, key, expiration, or QR transparency changes
+	$: if (previewCard && deckId && qrBaseUrl && cardStyle.qrCode.transparentBackground !== undefined) {
+		// Reference these so Svelte tracks them as dependencies
+		$nostrPrivateKey;
+		capExpiration;
+		updatePreviewQR($nostrPrivateKey);
 	}
+
+	// Reactive: compute the QR target URL for the clickable test link (with capability)
+	$: previewQRTargetUrl = previewCard
+		? buildQRUrl(previewCard, { deckId, holonId, qrBaseUrl, cardStyle }, createCardCapability(previewCard, $nostrPrivateKey))
+		: '';
 
 	// Reactive: generate preview HTML
 	$: previewFrontHTML = previewCard
@@ -144,6 +179,7 @@
 			const config: DeckConfig = {
 				deckId,
 				holonId,
+				qrBaseUrl,
 				backgroundImage: backgroundImageUrl || undefined,
 				foregroundImage: foregroundImageUrl || undefined,
 				cardStyle
@@ -160,9 +196,19 @@
 				}
 			}
 
+			// Generate capability tokens for all cards
+			let capabilities: Map<string, QRCapabilityToken> | undefined;
+			if ($nostrPrivateKey) {
+				capabilities = createCapabilitiesForCards(cards, holonId, $nostrPrivateKey, capExpiration, deckId);
+				console.log(`[Card Generator] Generated ${capabilities.size} capabilities for PDF`);
+			} else {
+				console.warn('[Card Generator] No private key available — QR codes will have no capability tokens');
+			}
+
 			pdfBlob = await generatePDF({
 				cards,
 				config,
+				capabilities,
 				onProgress: (current: number, total: number) => {
 					progress = { current, total };
 				}
@@ -189,10 +235,21 @@
 		qrZipProgress = { current: 0, total: cards.length };
 
 		try {
-			const config = { deckId, holonId, cardStyle };
+			const config = { deckId, holonId, qrBaseUrl, cardStyle };
+
+			// Generate capability tokens for all cards
+			let capabilities: Map<string, QRCapabilityToken> | undefined;
+			if ($nostrPrivateKey) {
+				capabilities = createCapabilitiesForCards(cards, holonId, $nostrPrivateKey, capExpiration, deckId);
+				console.log(`[Card Generator] Generated ${capabilities.size} capabilities for QR zip`);
+			} else {
+				console.warn('[Card Generator] No private key available — QR codes will have no capability tokens');
+			}
+
 			const zipBlob = await generateQRZip({
 				cards,
 				config,
+				capabilities,
 				onProgress: (current: number, total: number) => {
 					qrZipProgress = { current, total };
 				}
@@ -251,6 +308,22 @@
 					<div>
 						<label for="deck-id" class="block text-sm text-gray-300 mb-1">Deck ID</label>
 						<input id="deck-id" type="text" bind:value={deckId} placeholder="Auto-generated" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
+					</div>
+					<div>
+						<label for="qr-base-url" class="block text-sm text-gray-300 mb-1">QR Base URL</label>
+						<input id="qr-base-url" type="text" bind:value={qrBaseUrl} placeholder="https://example.com/qr" class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
+						<p class="text-xs text-gray-500 mt-1">Where the QR codes will link to</p>
+					</div>
+					<div>
+						<label for="cap-expiration" class="block text-sm text-gray-300 mb-1">Card Validity</label>
+						<select id="cap-expiration" bind:value={capExpiration} class="w-full px-3 py-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm">
+							<option value="permanent">Unlimited</option>
+							<option value="1year">1 Year</option>
+							<option value="30d">30 Days</option>
+							<option value="7d">7 Days</option>
+							<option value="24h">24 Hours</option>
+						</select>
+						<p class="text-xs text-gray-500 mt-1">How long the QR codes remain valid</p>
 					</div>
 				</div>
 			</div>
@@ -362,6 +435,15 @@
 						</div>
 					</div>
 					<p class="text-xs text-gray-500 text-center mt-2">Actual size: {CARD_WIDTH_PX}×{CARD_HEIGHT_PX}px (scroll to see full card)</p>
+					{#if previewQRTargetUrl}
+						<a
+							href={previewQRTargetUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="block text-center mt-2 text-xs text-blue-400 hover:text-blue-300 underline truncate"
+							title={previewQRTargetUrl}
+						>Test scan: {previewQRTargetUrl}</a>
+					{/if}
 				{:else}
 					<div class="flex items-center justify-center h-48 text-gray-500 text-sm">
 						Upload CSV to preview

@@ -2,8 +2,9 @@ import type { HoloSphere } from 'holosphere';
 
 /**
  * Set up a subscription to a holon's lens with enhanced logging for debugging.
- * Works for both owned and federated holons - the underlying Nostr subscription
- * will receive events from any pubkey.
+ * For owned holons, subscribes to real-time updates.
+ * For federated holons, skips real-time subscription (defense-in-depth);
+ * federated data is loaded via getAll() which has proper authorization checks.
  *
  * @param holosphere - The HoloSphere instance
  * @param userPubKey - The current user's public key (for logging)
@@ -20,6 +21,19 @@ export async function subscribeWithFederationSupport(
   callback: (item: any, key?: string) => void
 ): Promise<() => void> {
   const isFederated = targetHolonId !== userPubKey;
+
+  // Defense-in-depth: skip real-time subscriptions for non-owned holons.
+  // holosphere.subscribe() now has its own authorization check, but this
+  // provides an additional guard at the client layer.
+  // Federated data is still loaded via getAll() which has proper auth.
+  if (isFederated) {
+    console.log('[SubscriptionHelper] Skipping subscription for federated holon (defense-in-depth):', {
+      targetHolonId: targetHolonId.slice(0, 12),
+      lens,
+      userPubKey: userPubKey?.slice(0, 12)
+    });
+    return () => {};
+  }
 
   console.log('[SubscriptionHelper] Setting up subscription:', {
     targetHolonId: targetHolonId.slice(0, 12),
@@ -41,8 +55,7 @@ export async function subscribeWithFederationSupport(
     callback(item, key);
   };
 
-  // Use regular subscription for all holons
-  // The Nostr subscription will receive events from the target holon's pubkey
+  // Subscribe to real-time updates for owned holon
   const sub = holosphere.subscribe(targetHolonId, lens, wrappedCallback) as { unsubscribe?: () => void } | (() => void);
 
   console.log('[SubscriptionHelper] Subscription created for:', {
