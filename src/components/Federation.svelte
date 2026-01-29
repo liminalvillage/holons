@@ -1177,8 +1177,8 @@
 
 <!-- Add Partner Dialog -->
 {#if showAddDialog}
-    <div class="federation__dialog-backdrop" on:click={closeAddDialog} transition:fade={{ duration: 150 }}>
-        <div class="federation__dialog" on:click|stopPropagation transition:fly={{ y: 20, duration: 200 }}>
+    <div class="federation__dialog-backdrop" on:click={closeAddDialog} on:keydown={(e) => e.key === 'Escape' && closeAddDialog()} role="button" tabindex="0" transition:fade={{ duration: 150 }}>
+        <div class="federation__dialog" on:click|stopPropagation on:keydown|stopPropagation role="presentation" transition:fly={{ y: 20, duration: 200 }}>
             <div class="federation__dialog-header">
                 <h3>Add Partner</h3>
                 <button class="federation__dialog-close" on:click={closeAddDialog}>×</button>
@@ -1186,9 +1186,10 @@
 
             <div class="federation__dialog-content">
                 <div class="federation__field">
-                    <label>Partner's Nostr Public Key</label>
+                    <label for="partner-npub-input">Partner's Nostr Public Key</label>
                     <div class="federation__input-row">
                         <input
+                            id="partner-npub-input"
                             type="text"
                             placeholder="npub1... or hex key"
                             bind:value={newPartnerNpub}
@@ -1209,8 +1210,9 @@
                 </div>
 
                 <div class="federation__field" style="margin-top: 1rem;">
-                    <label>Message (optional)</label>
+                    <label for="federation-message-input">Message (optional)</label>
                     <textarea
+                        id="federation-message-input"
                         class="federation__textarea"
                         placeholder="Add a note for the partner..."
                         bind:value={federationMessage}

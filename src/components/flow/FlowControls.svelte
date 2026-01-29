@@ -80,10 +80,11 @@
 
   <div class="control-section">
     <div class="control-group">
-      <label class="control-label">
+      <label class="control-label" for="steepness-slider">
          Exterior Reward Sharing        <span class="control-value">{steepness}%</span>
       </label>
       <input
+        id="steepness-slider"
         type="range"
         min="0"
         max="100"
@@ -99,7 +100,7 @@
     </div>
 
     <div class="control-group zones-group">
-      <label class="control-label">
+      <label class="control-label" for="zones-number">
         Number of Zones
       </label>
       <div class="zones-input">
@@ -111,6 +112,7 @@
           −
         </button>
         <input
+          id="zones-number"
           type="number"
           min="1"
           max="10"

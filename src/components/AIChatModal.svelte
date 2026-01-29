@@ -145,9 +145,11 @@
     on:click={() => onClose()}
     on:keydown={(e) => e.key === 'Escape' && onClose()}
   >
-    <div 
+    <div
       class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] relative border border-gray-700 flex flex-col"
       on:click|stopPropagation={() => {}}
+      on:keydown|stopPropagation
+      role="presentation"
     >
       <!-- Header -->
       <div class="flex items-center justify-between p-6 border-b border-gray-700 {currentTheme.header} rounded-t-2xl">

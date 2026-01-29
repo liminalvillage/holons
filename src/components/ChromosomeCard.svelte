@@ -57,6 +57,7 @@
   const typeColor = $derived(typeColors[chromosome.type]);
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="card"
   class:selected

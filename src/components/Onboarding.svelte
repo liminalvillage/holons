@@ -127,7 +127,7 @@
 
 				<div class="onboarding-nav">
 					{#if currentStep > 0}
-						<button class="onboarding-btn onboarding-btn--nav" on:click={prevStep}>
+						<button class="onboarding-btn onboarding-btn--nav" on:click={prevStep} aria-label="Previous step">
 							<i class="fas fa-arrow-left"></i>
 						</button>
 					{/if}

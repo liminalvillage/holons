@@ -652,6 +652,9 @@
         <div
           class="notification notification-{notification.type}"
           on:click={() => removeNotification(notification.id)}
+          on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') removeNotification(notification.id); }}
+          role="button"
+          tabindex="0"
         >
           {notification.message}
         </div>

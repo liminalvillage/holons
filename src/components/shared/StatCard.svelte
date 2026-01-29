@@ -28,12 +28,13 @@
 	}
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="stat-card"
 	class:stat-card--compact={compact}
 	class:stat-card--clickable={clickable}
 	role={clickable ? 'button' : undefined}
-	tabindex={clickable ? 0 : -1}
+	tabindex={clickable ? 0 : undefined}
 	on:click={handleClick}
 	on:keydown={handleKeydown}
 >

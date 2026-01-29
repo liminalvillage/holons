@@ -6,16 +6,22 @@ import type { RequestHandler } from './$types';
 import { generateICalFeed } from '$lib/services/icalGenerator';
 import { HoloSphere } from 'holosphere';
 
-// Initialize HoloSphere instance for server-side data access
-// Default to production environment for iCal feed endpoint
-const holosphere = new HoloSphere({
-    appName: 'Holons',
-    backend: 'nostr',
-    nostr: {
-        relays: ['wss://relay.holons.io'],
-        persistence: true
+// Lazy-initialized HoloSphere instance to avoid running during SvelteKit build analysis
+let holosphere: InstanceType<typeof HoloSphere>;
+
+function getHolosphere() {
+    if (!holosphere) {
+        holosphere = new HoloSphere({
+            appName: 'Holons',
+            backend: 'nostr',
+            nostr: {
+                relays: ['wss://relay.holons.io'],
+                persistence: true
+            }
+        });
     }
-});
+    return holosphere;
+}
 
 export const GET: RequestHandler = async ({ params }) => {
     const holonId = params.id;
@@ -25,12 +31,14 @@ export const GET: RequestHandler = async ({ params }) => {
     }
 
     try {
+        const holo = getHolosphere();
+
         // Fetch holon data to get the name
-        const holonData = await holosphere.get(holonId, 'profile', holonId);
+        const holonData = await holo.get(holonId, 'profile', holonId);
         const holonName = holonData?.name || holonData?.title || 'Holon Calendar';
 
         // Fetch all quests/events from the holon
-        const quests = await holosphere.getAll(holonId, 'quests');
+        const quests = await holo.getAll(holonId, 'quests');
 
         // Filter events that have a 'when' field (are scheduled)
         const scheduledEvents = (quests || []).filter((quest: any) => quest.when);

@@ -406,12 +406,12 @@
             <div class="create-form">
               <h4>Create New Holon Bundle</h4>
               <div class="form-group">
-                <label>Creator User ID:</label>
-                <input type="text" bind:value={creatorUserId} placeholder="Your user ID">
+                <label for="creator-user-id">Creator User ID:</label>
+                <input id="creator-user-id" type="text" bind:value={creatorUserId} placeholder="Your user ID">
               </div>
               <div class="form-group">
-                <label>Holon Name (optional):</label>
-                <input type="text" bind:value={holonName} placeholder="Leave empty to use holon ID">
+                <label for="holon-name">Holon Name (optional):</label>
+                <input id="holon-name" type="text" bind:value={holonName} placeholder="Leave empty to use holon ID">
               </div>
               <div class="form-actions">
                 <button class="btn-primary" on:click={createHolonBundle} disabled={loading || !creatorUserId}>
@@ -501,11 +501,12 @@
                   </div>
                   
                   <div class="split-control">
-                    <label>Internal Percentage:</label>
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="100" 
+                    <label for="internal-percentage">Internal Percentage:</label>
+                    <input
+                      id="internal-percentage"
+                      type="range"
+                      min="0"
+                      max="100"
                       bind:value={internalPercent}
                       class="slider"
                     >
@@ -550,9 +551,10 @@
                 <div class="add-members">
                   <h4>Add New Members</h4>
                   <div class="form-group">
-                    <label>Member User IDs (comma-separated):</label>
-                    <textarea 
-                      bind:value={newMemberIds} 
+                    <label for="new-member-ids">Member User IDs (comma-separated):</label>
+                    <textarea
+                      id="new-member-ids"
+                      bind:value={newMemberIds}
                       placeholder="user1, user2, user3..."
                       rows="3"
                     ></textarea>
@@ -600,16 +602,16 @@
               <div class="add-federation">
                 <h4>Add Federation Link</h4>
                 <div class="form-group">
-                  <label>Target Holon ID:</label>
-                  <input type="text" bind:value={federationTargetId} placeholder="target_holon_id">
+                  <label for="federation-target-id">Target Holon ID:</label>
+                  <input id="federation-target-id" type="text" bind:value={federationTargetId} placeholder="target_holon_id">
                 </div>
                 <div class="form-group">
-                  <label>Target Name:</label>
-                  <input type="text" bind:value={federationTargetName} placeholder="Target Holon Name">
+                  <label for="federation-target-name">Target Name:</label>
+                  <input id="federation-target-name" type="text" bind:value={federationTargetName} placeholder="Target Holon Name">
                 </div>
                 <div class="form-group">
-                  <label>Relationship:</label>
-                  <select bind:value={federationRelationship}>
+                  <label for="federation-relationship">Relationship:</label>
+                  <select id="federation-relationship" bind:value={federationRelationship}>
                     <option value="federated">Federated (Bidirectional)</option>
                     <option value="notifies">Notifies (One-way)</option>
                   </select>
@@ -628,27 +630,27 @@
             {#if holonSettings}
               <div class="settings-grid">
                 <div class="setting-item">
-                  <label>Name:</label>
+                  <span class="setting-label">Name:</span>
                   <span>{holonSettings.name}</span>
                 </div>
                 <div class="setting-item">
-                  <label>Theme:</label>
+                  <span class="setting-label">Theme:</span>
                   <span>{holonSettings.theme}</span>
                 </div>
                 <div class="setting-item">
-                  <label>Language:</label>
+                  <span class="setting-label">Language:</span>
                   <span>{holonSettings.language}</span>
                 </div>
                 <div class="setting-item">
-                  <label>Timezone:</label>
+                  <span class="setting-label">Timezone:</span>
                   <span>{holonSettings.timezone}</span>
                 </div>
                 <div class="setting-item">
-                  <label>Max Tasks:</label>
+                  <span class="setting-label">Max Tasks:</span>
                   <span>{holonSettings.maxTasks}</span>
                 </div>
                 <div class="setting-item">
-                  <label>Auto Balance:</label>
+                  <span class="setting-label">Auto Balance:</span>
                   <span>{holonSettings.flowManagement.autoBalance ? 'Enabled' : 'Disabled'}</span>
                 </div>
               </div>
@@ -1104,7 +1106,8 @@
     background: #374151;
   }
 
-  .setting-item label {
+  .setting-item label,
+  .setting-item .setting-label {
     font-weight: 600;
     font-size: 0.875rem;
     color: #6b7280;

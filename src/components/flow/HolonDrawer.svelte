@@ -105,6 +105,7 @@
             on:dragstart={(e) => handleDragStart(e, holon)}
             on:dragend={handleDragEnd}
             on:click={() => handleHolonClick(holon.id)}
+            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleHolonClick(holon.id); }}
             role="button"
             tabindex="0"
           >

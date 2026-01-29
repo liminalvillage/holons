@@ -906,15 +906,19 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 </script>
 
 <!-- Modal Backdrop -->
-<div 
+<div
 	class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
 	on:click={() => onClose && onClose()}
 	on:keydown={(e) => e.key === 'Escape' && onClose && onClose()}
+	role="dialog"
+	tabindex="-1"
 >
 	<!-- Modal Container -->
-	<div 
+	<div
 		class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden"
 		on:click|stopPropagation={() => {}}
+		on:keydown|stopPropagation={() => {}}
+		role="presentation"
 	>
 		<!-- Header with Close Button -->
 		<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-gray-700 to-gray-600 rounded-t-2xl">
@@ -1015,15 +1019,19 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 	{@const elementAdvisors = getElementAdvisors(selectedElement)}
 	
 	<!-- Modal Backdrop -->
-	<div 
+	<div
 		class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
 		on:click={closeElementModal}
 		on:keydown={(e) => e.key === 'Escape' && closeElementModal()}
+		role="dialog"
+		tabindex="-1"
 	>
 		<!-- Modal Container -->
-		<div 
+		<div
 			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] relative border border-gray-700 flex flex-col overflow-hidden"
 			on:click|stopPropagation={() => {}}
+			on:keydown|stopPropagation={() => {}}
+			role="presentation"
 		>
 			<!-- Header with Close Button -->
 			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r {elementData.color} rounded-t-2xl">
@@ -1154,15 +1162,19 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 <!-- Back-cast from Future Modal -->
 {#if showBackcastModal}
 	<!-- Modal Backdrop -->
-	<div 
+	<div
 		class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
 		on:click={closeBackcastModal}
 		on:keydown={(e) => e.key === 'Escape' && closeBackcastModal()}
+		role="dialog"
+		tabindex="-1"
 	>
 		<!-- Modal Container -->
-		<div 
+		<div
 			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] relative border border-gray-700 flex flex-col overflow-hidden"
 			on:click|stopPropagation={() => {}}
+			on:keydown|stopPropagation={() => {}}
+			role="presentation"
 		>
 			<!-- Header with Close Button -->
 			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-purple-700 to-indigo-700 rounded-t-2xl">
@@ -1315,14 +1327,18 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 
 <!-- Backcast from the Future Modal -->
 {#if showTimelineMapping}
-	<div 
+	<div
 		class="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
 		on:click={closeTimelineMapping}
 		on:keydown={(e) => e.key === 'Escape' && closeTimelineMapping()}
+		role="dialog"
+		tabindex="-1"
 	>
-		<div 
+		<div
 			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden"
 			on:click|stopPropagation={() => {}}
+			on:keydown|stopPropagation={() => {}}
+			role="presentation"
 		>
 			<!-- Header -->
 			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-purple-700 to-indigo-700 rounded-t-2xl">
@@ -1646,14 +1662,18 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 
 <!-- Vision Clarification Modal -->
 {#if showVisionClarification}
-	<div 
+	<div
 		class="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
 		on:click={() => showVisionClarification = false}
 		on:keydown={(e) => e.key === 'Escape' && (showVisionClarification = false)}
+		role="dialog"
+		tabindex="-1"
 	>
-		<div 
+		<div
 			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden"
 			on:click|stopPropagation={() => {}}
+			on:keydown|stopPropagation={() => {}}
+			role="presentation"
 			style="height: 90vh;"
 		>
 			<!-- Header -->
@@ -1670,6 +1690,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 				<button
 					on:click={() => showVisionClarification = false}
 					class="text-white hover:text-white/80 transition-colors p-2 rounded-lg hover:bg-white/10"
+					aria-label="Close vision clarification"
 				>
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -1985,8 +2006,9 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 
 									<!-- Response Input -->
 									<div class="space-y-4">
-										<label class="block text-white font-medium">Your Response:</label>
+										<label class="block text-white font-medium" for="user-response-input">Your Response:</label>
 										<textarea
+											id="user-response-input"
 											bind:value={userResponseInput}
 											placeholder="Share your thoughts and insights..."
 											class="w-full bg-gray-600 border border-gray-500 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"

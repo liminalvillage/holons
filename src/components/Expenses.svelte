@@ -419,8 +419,10 @@
 		<div
 			class="bg-gray-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-xl"
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
+			tabindex="0"
 		>
 			<!-- Header with editable title -->
 			<div class="p-6 border-b border-gray-700">
@@ -451,7 +453,7 @@
 			<!-- Body -->
 			<div class="p-6 overflow-y-auto flex-1 space-y-4">
 				<div class="bg-gray-700/30 p-4 rounded-xl">
-					<label class="text-sm font-medium text-gray-300 mb-2 block">Amount</label>
+					<label class="text-sm font-medium text-gray-300 mb-2 block">Amount
 					<div class="flex items-center gap-2">
 						<span class="text-gray-400 text-lg">{selectedCurrency.toUpperCase()}</span>
 						<input
@@ -463,10 +465,11 @@
 							class="flex-1 text-2xl font-bold text-white bg-transparent border-none outline-none"
 						/>
 					</div>
+				</label>
 				</div>
 
 				<div class="bg-gray-700/30 p-4 rounded-xl">
-					<label class="text-sm font-medium text-gray-300 mb-2 block">Paid By</label>
+					<label class="text-sm font-medium text-gray-300 mb-2 block">Paid By
 					<select
 						bind:value={newExpense.paidBy}
 						class="w-full bg-gray-700 text-white rounded-lg border border-gray-600 p-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors"
@@ -475,10 +478,11 @@
 							<option value={user.id.toString()}>{user.first_name}</option>
 						{/each}
 					</select>
+				</label>
 				</div>
 
 				<div class="bg-gray-700/30 p-4 rounded-xl">
-					<label class="text-sm font-medium text-gray-300 mb-3 block">Split With</label>
+					<span class="text-sm font-medium text-gray-300 mb-3 block">Split With</span>
 					<div class="flex flex-wrap gap-2">
 						{#each users as user}
 							<label class="inline-flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors {newExpense.splitWith.includes(user.id.toString()) ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/50' : 'bg-gray-700 text-gray-300 border border-gray-600 hover:border-gray-500'}">

@@ -107,7 +107,8 @@
         onfinalize={handleDndFinalize}
       >
         {#each items as chromosome, index (chromosome.id)}
-          <div class="sequence-item" tabindex="0">
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div class="sequence-item" tabindex="0" role="listitem">
             <div class="drag-handle" aria-label="Drag to reorder">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />

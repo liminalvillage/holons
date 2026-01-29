@@ -837,7 +837,7 @@
           <div class="space-y-6">
             <!-- Holon Type Selection -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-3">Select Holon Type</label>
+              <span class="block text-sm font-medium text-gray-300 mb-3">Select Holon Type</span>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {#each HOLON_TYPES as type}
                   {@const info = HOLON_TYPE_INFO[type]}
@@ -977,7 +977,7 @@
               <div class="space-y-4">
                 <div class="flex items-center gap-4">
                   <div class="flex-1">
-                    <label class="block text-sm text-gray-300 mb-2">Internal: {flowSplitPercent}%</label>
+                    <label class="block text-sm text-gray-300 mb-2">Internal: {flowSplitPercent}%
                     <input
                       type="range"
                       min="0"
@@ -985,6 +985,7 @@
                       bind:value={flowSplitPercent}
                       class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
                     />
+                    </label>
                   </div>
                   <div class="text-center px-4">
                     <div class="text-2xl text-white font-bold">{flowSplitPercent}%</div>

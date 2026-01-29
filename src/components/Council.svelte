@@ -4347,14 +4347,18 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 
 <!-- Value Editing Modal -->
 {#if showValueModal}
-	<div 
+	<div
 		class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
 		on:click={() => closeValueModal()}
 		on:keydown={(e) => e.key === 'Escape' && closeValueModal()}
+		role="button"
+		tabindex="0"
 	>
-		<div 
+		<div
 			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700 max-h-[90vh] overflow-hidden flex flex-col"
 			on:click|stopPropagation={() => {}}
+			on:keydown|stopPropagation={() => {}}
+			role="presentation"
 		>
 			<div class="p-4 border-b border-gray-700 flex items-center justify-between">
 				<h3 class="text-white text-lg font-semibold">Add Value</h3>

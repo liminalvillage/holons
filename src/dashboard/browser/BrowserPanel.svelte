@@ -1067,10 +1067,10 @@
 				<!-- Lens Configuration -->
 				<div class="add-modal__lens-config">
 					<div class="add-modal__lens-section">
-						<label class="add-modal__lens-label">
+						<span class="add-modal__lens-label">
 							<span class="add-modal__lens-icon">↓</span>
 							Receive (inbound lenses)
-						</label>
+						</span>
 						<div class="add-modal__lens-toggles">
 							{#each availableLenses as lens}
 								<label class="add-modal__lens-toggle">
@@ -1085,10 +1085,10 @@
 						</div>
 					</div>
 					<div class="add-modal__lens-section">
-						<label class="add-modal__lens-label">
+						<span class="add-modal__lens-label">
 							<span class="add-modal__lens-icon">↑</span>
 							Share (outbound lenses)
-						</label>
+						</span>
 						<div class="add-modal__lens-toggles">
 							{#each availableLenses as lens}
 								<label class="add-modal__lens-toggle">

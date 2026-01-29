@@ -357,7 +357,7 @@
 					</button>
 
 					{#if showKeyMenu}
-						<div class="holon-item__dropdown" transition:slide={{ duration: 150 }} on:click|stopPropagation>
+						<div class="holon-item__dropdown" transition:slide={{ duration: 150 }} on:click|stopPropagation on:keydown|stopPropagation role="presentation">
 							<div class="holon-item__dropdown-header">
 								<span class="holon-item__dropdown-status">
 									Private
@@ -436,7 +436,7 @@
 
 	<!-- Inline lens config panel (expands below the holon item) -->
 	{#if showLensConfig && isFederated}
-		<div class="holon-item__inline-config" transition:slide={{ duration: 150 }} on:click|stopPropagation>
+		<div class="holon-item__inline-config" transition:slide={{ duration: 150 }} on:click|stopPropagation on:keydown|stopPropagation role="presentation">
 			<!-- Legend -->
 			<div class="holon-item__config-legend">
 				<span class="holon-item__config-legend-item holon-item__config-legend-item--in" title="Receive (Read)">↓R</span>

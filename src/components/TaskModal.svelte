@@ -1644,6 +1644,7 @@
             transition:scale={{ duration: 200, start: 0.95 }}
             role="dialog"
             aria-modal="true"
+            tabindex="0"
             on:click|stopPropagation
             on:keydown|stopPropagation
         >

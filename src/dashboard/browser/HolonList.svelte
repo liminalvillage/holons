@@ -344,14 +344,4 @@
 		margin-left: var(--spacing-1, 0.25rem);
 	}
 
-	/* Legacy request styles - kept for backwards compatibility */
-	.holon-list__request-btn--decline {
-		background: var(--color-bg-tertiary, #374151);
-		color: var(--color-text-muted, #6b7280);
-	}
-
-	.holon-list__request-btn--decline:hover {
-		background: var(--color-error, #ef4444);
-		color: white;
-	}
 </style>

@@ -364,6 +364,7 @@
             on:dragleave={handleDragLeave}
             on:drop={(e) => handleDrop(e, zone)}
             on:click={() => handleZoneClick(zone)}
+            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleZoneClick(zone); }}
             role="button"
             tabindex="0"
             aria-label="Zone {zone}: {actualPercent.toFixed(1)}%"
@@ -404,6 +405,8 @@
             on:mouseenter={(e) => showMemberTooltip(e, member)}
             on:mouseleave={hideTooltip}
             on:mousemove={(e) => showMemberTooltip(e, member)}
+            role="img"
+            aria-label="{member?.name || 'Member'}: {member?.percentage?.toFixed(1) || 0}%"
           />
         {/each}
         <text class="center-percent" text-anchor="middle" dominant-baseline="middle" y="-5">

@@ -476,8 +476,10 @@
 
   <!-- Add Chromosome Modal -->
   {#if showAddModal}
-    <div class="modal-overlay" onclick={() => showAddModal = false}>
-      <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="modal-overlay" onclick={() => showAddModal = false} onkeydown={(e) => { if (e.key === 'Escape') showAddModal = false; }} role="button" tabindex="0">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="modal-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
         <h2 class="modal-title">Add New Chromosome</h2>
 
         <form onsubmit={(e) => {
