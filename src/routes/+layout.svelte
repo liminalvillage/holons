@@ -122,7 +122,7 @@
 				if (isFirstTimeUser) {
 					// First time login - create the holon with custom or default name
 					console.log('First time user - creating personal holon:', holonName);
-					await holosphere.write(userPublicKey, 'settings', {
+					await holosphere.put(userPublicKey, 'settings', {
 						id: userPublicKey,
 						name: holonName,
 						purpose: 'Personal holon',

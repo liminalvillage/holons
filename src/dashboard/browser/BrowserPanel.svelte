@@ -87,13 +87,14 @@
 
 			await loadHolons();
 
-			// Always fetch home holon name from HNS (single source of truth)
-			// Use forceRefreshHolonName to ensure we get fresh data from HNS
+			// Fetch home holon name - use cache-friendly fetchHolonName first
+			// (preserves HNS cache seeded during initialization)
+			// Only force-refresh if we get a fallback name
 			if ($nostrPublicKey && holosphere) {
-				const name = await forceRefreshHolonName(holosphere, $nostrPublicKey);
+				const name = await fetchHolonName(holosphere, $nostrPublicKey);
 				homeHolonName = name || '';
-				// If we got a fallback/default name, the HNS entry might not be ready yet
-				// Retry once after a short delay
+				// If we got a fallback/default name, the relay data might not be ready yet
+				// Retry with force refresh after a delay
 				const isFallbackName = name?.startsWith('Holon ') || name === 'My Holon';
 				if (isFallbackName) {
 					console.log('[BrowserPanel] Got fallback name, will retry:', name);
@@ -104,7 +105,7 @@
 							homeHolonName = retryName;
 							console.log('[BrowserPanel] Retried HNS lookup, got name:', retryName);
 						}
-					}, 1000);
+					}, 2000);
 				}
 			}
 
