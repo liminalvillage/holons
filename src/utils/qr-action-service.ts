@@ -72,26 +72,16 @@ export class QRActionService {
 	/**
 	 * Writes data to holosphere with capability-based authorization.
 	 * For the holon owner, writes succeed without a token.
-	 * For non-owners, a holosphere-native capability token is constructed
-	 * from the QR capability (already validated via Schnorr signature).
+	 * For non-owners, uses externalWriter mode — the QR capability was already
+	 * validated via Schnorr signature, so holosphere skips its own auth and
+	 * registers the writer's pubkey for read visibility.
 	 */
 	private async putWithCapability(holonID: string, lens: string, data: any, capability: QRCapabilityToken | null | undefined): Promise<void> {
 		const isOwner = (this.holosphere as any).client?.publicKey === holonID;
 		if (isOwner || !capability) {
 			await this.holosphere.put(holonID, lens, data);
 		} else {
-			await (this.holosphere as any).put(holonID, lens, data, {
-				capabilityToken: {
-					type: 'capability',
-					permissions: ['read', 'write'],
-					scope: { holonId: holonID, lensName: lens },
-					expires: capability.expiresAt,
-					issued: capability.issuedAt,
-					nonce: capability.nonce,
-					issuer: capability.issuerPubKey,
-					recipient: '*'
-				}
-			});
+			await (this.holosphere as any).put(holonID, lens, data, { externalWriter: true });
 		}
 	}
 
