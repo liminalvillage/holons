@@ -5,7 +5,7 @@
 	import { parseCSV, generateSampleCSV } from '$lib/card-generator/csv-parser';
 	import { generatePDF, downloadPDF, buildQRUrl, generateQRDataUrl, generateQRZip, downloadZip } from '$lib/card-generator/pdf-generator';
 	import { renderCardFront, renderCardBack, renderCardBackPlaceholder, CARD_WIDTH_PX, CARD_HEIGHT_PX } from '$lib/card-generator/CardRenderer';
-	import type { Card, DeckConfig, CardStyle } from '$lib/card-generator/types';
+	import type { Card, CardType, DeckConfig, CardStyle } from '$lib/card-generator/types';
 	import { CARD_TYPE_COLORS, DEFAULT_CARD_STYLE, FONT_OPTIONS } from '$lib/card-generator/types';
 	import { registerDeck } from '$lib/deck-registry';
 	import { nostrPrivateKey } from '$lib/stores/nostr';
@@ -39,6 +39,14 @@
 	let isDragOver = false;
 	let previewCardIndex = 0;
 	let previewSide: 'front' | 'back' = 'front';
+
+	// Manual input state
+	let inputMode: 'csv' | 'manual' = 'csv';
+	let manualTitle = '';
+	let manualType: CardType = 'task';
+	let manualDescription = '';
+	let manualImageUrl = '';
+	let nextManualId = 1;
 
 	// Card style configuration
 	let cardStyle: CardStyle = JSON.parse(JSON.stringify(DEFAULT_CARD_STYLE));
@@ -168,6 +176,42 @@
 		link.click();
 		document.body.removeChild(link);
 		URL.revokeObjectURL(url);
+	}
+
+	function addManualCard() {
+		if (!manualTitle.trim() || !manualDescription.trim()) return;
+		const card: Card = {
+			id: `manual-${nextManualId++}`,
+			title: manualTitle.trim(),
+			type: manualType,
+			description: manualDescription.trim(),
+			imageUrl: manualImageUrl.trim() || undefined
+		};
+		cards = [...cards, card];
+		manualTitle = '';
+		manualDescription = '';
+		manualImageUrl = '';
+		pdfBlob = null;
+	}
+
+	function removeCard(index: number) {
+		cards = cards.filter((_, i) => i !== index);
+		if (previewCardIndex >= cards.length) {
+			previewCardIndex = Math.max(0, cards.length - 1);
+		}
+		pdfBlob = null;
+	}
+
+	function switchInputMode(mode: 'csv' | 'manual') {
+		if (mode === inputMode) return;
+		inputMode = mode;
+		if (mode === 'manual') {
+			csvFile = null;
+		}
+		cards = [];
+		parseErrors = [];
+		pdfBlob = null;
+		previewCardIndex = 0;
 	}
 
 	async function handleGeneratePDF() {
@@ -328,35 +372,90 @@
 				</div>
 			</div>
 
-			<!-- CSV Upload -->
+			<!-- Cards Input (CSV or Manual) -->
 			<div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-				<div class="flex items-center justify-between mb-3">
-					<h2 class="text-lg font-semibold">Cards CSV</h2>
-					<button on:click={downloadSampleCSV} class="text-xs text-blue-400 hover:text-blue-300">Sample CSV</button>
-				</div>
-				<div
-					class="border-2 border-dashed rounded-lg p-4 text-center transition-colors {isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-gray-600'}"
-					on:dragover|preventDefault={() => (isDragOver = true)}
-					on:dragleave|preventDefault={() => (isDragOver = false)}
-					on:drop={handleCSVDrop}
-					role="button"
-					tabindex="0"
-				>
-					{#if csvFile}
-						<div class="flex items-center justify-center gap-2">
-							<span class="text-green-400 text-sm">{csvFile.name}</span>
-							<span class="text-gray-400 text-xs">({cards.length} cards)</span>
-							<button on:click={() => { csvFile = null; cards = []; }} class="text-gray-400 hover:text-red-400 ml-2" aria-label="Remove CSV file">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-							</button>
-						</div>
-					{:else}
-						<label class="cursor-pointer">
-							<input type="file" accept=".csv" class="hidden" on:change={handleCSVSelect} />
-							<span class="text-gray-400 text-sm">Drop CSV or click to upload</span>
-						</label>
+				<!-- Tab switcher -->
+				<div class="flex items-center gap-1 mb-3">
+					<button
+						on:click={() => switchInputMode('csv')}
+						class="px-3 py-1 rounded-lg text-sm font-medium transition-colors {inputMode === 'csv' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
+					>CSV Upload</button>
+					<button
+						on:click={() => switchInputMode('manual')}
+						class="px-3 py-1 rounded-lg text-sm font-medium transition-colors {inputMode === 'manual' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
+					>Manual Input</button>
+					{#if inputMode === 'csv'}
+						<button on:click={downloadSampleCSV} class="ml-auto text-xs text-blue-400 hover:text-blue-300">Sample CSV</button>
 					{/if}
 				</div>
+
+				{#if inputMode === 'csv'}
+					<!-- CSV Upload -->
+					<div
+						class="border-2 border-dashed rounded-lg p-4 text-center transition-colors {isDragOver ? 'border-blue-500 bg-blue-500/10' : 'border-gray-600'}"
+						on:dragover|preventDefault={() => (isDragOver = true)}
+						on:dragleave|preventDefault={() => (isDragOver = false)}
+						on:drop={handleCSVDrop}
+						role="button"
+						tabindex="0"
+					>
+						{#if csvFile}
+							<div class="flex items-center justify-center gap-2">
+								<span class="text-green-400 text-sm">{csvFile.name}</span>
+								<span class="text-gray-400 text-xs">({cards.length} cards)</span>
+								<button on:click={() => { csvFile = null; cards = []; }} class="text-gray-400 hover:text-red-400 ml-2" aria-label="Remove CSV file">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+								</button>
+							</div>
+						{:else}
+							<label class="cursor-pointer">
+								<input type="file" accept=".csv" class="hidden" on:change={handleCSVSelect} />
+								<span class="text-gray-400 text-sm">Drop CSV or click to upload</span>
+							</label>
+						{/if}
+					</div>
+				{:else}
+					<!-- Manual Input Form -->
+					<div class="space-y-2">
+						<div class="grid grid-cols-2 gap-2">
+							<div>
+								<label for="manual-title" class="block text-xs text-gray-400 mb-1">Title *</label>
+								<input id="manual-title" type="text" bind:value={manualTitle} placeholder="Card title" class="w-full px-2 py-1.5 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
+							</div>
+							<div>
+								<label for="manual-type" class="block text-xs text-gray-400 mb-1">Type *</label>
+								<select id="manual-type" bind:value={manualType} class="w-full px-2 py-1.5 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm">
+									<option value="task">Task</option>
+									<option value="action">Action</option>
+									<option value="event">Event</option>
+									<option value="role">Role</option>
+									<option value="badge">Badge</option>
+									<option value="resource">Resource</option>
+									<option value="vibe">Vibe</option>
+								</select>
+							</div>
+						</div>
+						<div>
+							<label for="manual-desc" class="block text-xs text-gray-400 mb-1">Description *</label>
+							<textarea id="manual-desc" bind:value={manualDescription} placeholder="Card description" rows="2" class="w-full px-2 py-1.5 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm resize-none"></textarea>
+						</div>
+						<div>
+							<label for="manual-image" class="block text-xs text-gray-400 mb-1">Image URL</label>
+							<input id="manual-image" type="text" bind:value={manualImageUrl} placeholder="https://... (optional)" class="w-full px-2 py-1.5 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" />
+						</div>
+						<div class="flex items-center gap-2 pt-1">
+							<button
+								on:click={addManualCard}
+								disabled={!manualTitle.trim() || !manualDescription.trim()}
+								class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium"
+							>Add Card</button>
+							{#if cards.length > 0}
+								<span class="text-xs text-gray-400">{cards.length} card{cards.length !== 1 ? 's' : ''}</span>
+								<button on:click={() => { cards = []; pdfBlob = null; previewCardIndex = 0; }} class="ml-auto text-xs text-red-400 hover:text-red-300">Clear All</button>
+							{/if}
+						</div>
+					</div>
+				{/if}
 				{#if parseErrors.length > 0}
 					<div class="mt-2 text-red-400 text-xs">{parseErrors[0]}</div>
 				{/if}
@@ -446,7 +545,7 @@
 					{/if}
 				{:else}
 					<div class="flex items-center justify-center h-48 text-gray-500 text-sm">
-						Upload CSV to preview
+						Upload CSV or add cards manually to preview
 					</div>
 				{/if}
 			</div>
@@ -675,7 +774,7 @@
 
 						{#if !canGenerate}
 							<span class="text-xs text-gray-500">
-								{#if !deckId.trim()}Enter Deck ID{:else if cards.length === 0}Upload CSV{/if}
+								{#if !deckId.trim()}Enter Deck ID{:else if cards.length === 0}Upload CSV or add cards manually{/if}
 							</span>
 						{/if}
 					{/if}
@@ -688,20 +787,29 @@
 					<h2 class="text-lg font-semibold mb-3">Cards ({cards.length})</h2>
 					<div class="flex gap-2 overflow-x-auto pb-2">
 						{#each cards as card, index}
-							<button
-								class="flex-shrink-0 flex items-center gap-2 p-2 rounded-lg text-left text-sm {index === previewCardIndex ? 'bg-blue-600/30 border border-blue-500' : 'bg-gray-700 hover:bg-gray-600'}"
-								on:click={() => { previewCardIndex = index; previewSide = 'front'; }}
-							>
-								<span
-									class="w-6 h-6 rounded flex items-center justify-center text-xs font-bold shrink-0"
-									style="background: {CARD_TYPE_COLORS[card.type].bg}; color: {CARD_TYPE_COLORS[card.type].text}"
+							<div class="flex-shrink-0 flex items-center gap-1 rounded-lg text-sm {index === previewCardIndex ? 'bg-blue-600/30 border border-blue-500' : 'bg-gray-700'}">
+								<button
+									class="flex items-center gap-2 p-2 text-left hover:opacity-80"
+									on:click={() => { previewCardIndex = index; previewSide = 'front'; }}
 								>
-									{card.type.charAt(0).toUpperCase()}
-								</span>
-								<div class="min-w-0 max-w-24">
-									<p class="font-medium truncate text-xs">{card.title}</p>
-								</div>
-							</button>
+									<span
+										class="w-6 h-6 rounded flex items-center justify-center text-xs font-bold shrink-0"
+										style="background: {CARD_TYPE_COLORS[card.type].bg}; color: {CARD_TYPE_COLORS[card.type].text}"
+									>
+										{card.type.charAt(0).toUpperCase()}
+									</span>
+									<div class="min-w-0 max-w-24">
+										<p class="font-medium truncate text-xs">{card.title}</p>
+									</div>
+								</button>
+								<button
+									on:click|stopPropagation={() => removeCard(index)}
+									class="pr-2 text-gray-500 hover:text-red-400"
+									aria-label="Remove card {card.title}"
+								>
+									<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+								</button>
+							</div>
 						{/each}
 					</div>
 				</div>

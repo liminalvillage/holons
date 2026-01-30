@@ -6,6 +6,7 @@ import type { Card, DeckConfig, PDFGeneratorOptions } from './types';
 import { renderCardFront, renderCardBack, CARD_WIDTH_PX, CARD_HEIGHT_PX } from './CardRenderer';
 import type { QRCapabilityToken } from '$lib/capabilities/qrCapability';
 import { encodeCapabilityForUrl } from '$lib/capabilities/qrCapability';
+import { shortenUrl } from '../../utils/url-shortener';
 
 // A4 dimensions in pixels at 96 DPI (landscape orientation)
 const A4_WIDTH_PX = 1123;
@@ -33,6 +34,7 @@ export function buildQRUrl(card: Card, config: DeckConfig, capability?: QRCapabi
 		deckId: config.deckId,
 		holonID: config.holonId,
 		title: card.title,
+		desc: card.description,
 		action: card.type
 	});
 
@@ -107,7 +109,8 @@ export async function generateQRZip(options: QRZipOptions): Promise<Blob> {
 		const card = cards[i];
 		const capability = capabilities?.get(card.id);
 		const qrUrl = buildQRUrl(card, config, capability);
-		const qrDataUrl = await generateQRDataUrl(qrUrl, true, 800);
+		const shortUrl = await shortenUrl(qrUrl);
+		const qrDataUrl = await generateQRDataUrl(shortUrl, true, 800);
 		const qrBlob = dataUrlToBlob(qrDataUrl);
 
 		// Create filename from card title
@@ -240,8 +243,9 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
 		for (const card of pageCards) {
 			const capability = capabilities?.get(card.id);
 			const qrUrl = buildQRUrl(card, config, capability);
+			const shortUrl = await shortenUrl(qrUrl);
 			const useTransparentQR = config.cardStyle.qrCode.transparentBackground;
-			const qrDataUrl = await generateQRDataUrl(qrUrl, useTransparentQR);
+			const qrDataUrl = await generateQRDataUrl(shortUrl, useTransparentQR);
 			backHTMLs.push(renderCardBack(qrDataUrl, config.cardStyle, config.backgroundImage));
 			frontHTMLs.push(renderCardFront(card, config.cardStyle, config.foregroundImage, true));
 		}

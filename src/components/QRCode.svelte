@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { shortenUrl } from '../utils/url-shortener';
 
 	const QR_BASE_URL = import.meta.env.VITE_QR_BASE_URL || 'https://dashboard.holons.io/qr';
 
@@ -17,7 +18,7 @@
 		generateQRCode();
 	});
 
-	function generateQRCode() {
+	async function generateQRCode() {
 		if (!action || !title || !holonID) {
 			console.error('Missing required parameters for QR code generation');
 			return;
@@ -27,12 +28,13 @@
 		const normalizedAction = action.toLowerCase() === 'action' ? 'task' : action;
 
 		// Create the URL that the QR code should point to
-		// Using the new URL structure with holonID, deckId, and cardId
 		const qrUrl = `${QR_BASE_URL}?action=${encodeURIComponent(normalizedAction)}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}&holonID=${encodeURIComponent(holonID)}&deckId=${encodeURIComponent(deckId)}&cardId=${encodeURIComponent(cardId)}`;
-		
+
+		// Shorten the URL so the QR code is simpler and easier to scan
+		const shortUrl = await shortenUrl(qrUrl);
+
 		// Generate SVG QR code using a reliable service
-		// SVG format provides better quality and scalability
-		qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=svg&data=${encodeURIComponent(qrUrl)}&margin=10`;
+		qrCode = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=svg&data=${encodeURIComponent(shortUrl)}&margin=10`;
 	}
 
 	function downloadQRCode() {

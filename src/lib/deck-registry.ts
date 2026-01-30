@@ -19,14 +19,15 @@ export async function registerDeck(
   holonId: string,
   name?: string
 ): Promise<void> {
-  const entry: DeckRegistryEntry = {
+  const entry = {
+    id: deckId,
     deckId,
     holonId,
     createdBy: holosphere.client?.publicKey || 'anonymous',
     createdAt: new Date().toISOString(),
     name
   };
-  await holosphere.writeGlobal(DECK_REGISTRY_TABLE, deckId, entry);
+  await holosphere.writeGlobal(DECK_REGISTRY_TABLE, entry);
 }
 
 /**
