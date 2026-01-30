@@ -267,7 +267,19 @@
 
         if (confirm("Are you sure you want to delete this task?")) {
             try {
-                await holosphere.delete(holonId, "quests", questId);
+                const deleted = await holosphere.delete(holonId, "quests", questId);
+
+                if (!deleted) {
+                    // Native delete couldn't find the data (likely written by another author).
+                    // Write a tombstone so future reads (which skip author filtering for
+                    // own-holon queries) see _deleted and filter it out.
+                    await holosphere.put(holonId, "quests", {
+                        id: questId,
+                        _deleted: true,
+                        _deletedAt: Date.now()
+                    });
+                }
+
                 dispatch("close", { deleted: true, questId });
             } catch (error: any) {
                 if (error?.name === 'AuthorizationError') {

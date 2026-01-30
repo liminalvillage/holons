@@ -1270,7 +1270,7 @@
 			// Handle federated data
 			if (Array.isArray(federatedData)) {
 				federatedData.forEach((quest: any, index) => {
-					if (quest && quest.id) {
+					if (quest && quest.id && !quest._deleted) {
 						const key = quest.key || quest.id || `federated_${index}`;
 
 						// Filter by type to only include tasks/quests (not offers/requests)
@@ -1404,7 +1404,7 @@
 			const newStore: Store = {};
 			if (Array.isArray(initialData)) {
 				initialData.forEach((quest: any, index) => {
-					if (quest && quest.id) {
+					if (quest && quest.id && !quest._deleted) {
 						// Use the quest ID as the key, or generate one if missing
 						const key = quest.id || `initial_${index}`;
 
@@ -1418,7 +1418,7 @@
 			} else if (typeof initialData === 'object' && initialData !== null) {
 				// If it's already a keyed object, use it directly
 				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
-					if (quest && quest.id) {
+					if (quest && quest.id && !quest._deleted) {
 						// Ensure required arrays are initialized
 						if (!quest.participants) quest.participants = [];
 						if (!quest.appreciation) quest.appreciation = [];
