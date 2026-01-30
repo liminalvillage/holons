@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { getHolonIdForDeck } from '$lib/deck-registry';
 	import { nostrPublicKey } from '$lib/stores/nostr';
+	import { fetchHolonName } from '../../utils/holonNames';
 
 	export let data: any;
 
@@ -17,10 +18,10 @@
 	let actionResult: QRActionResult | null = null;
 	let actionComplete = false;
 	let resolvedHolonID: string | null = null;
-	
+
 	let isLoggedIn = false;
 
-	onMount(() => {
+	onMount(async () => {
 		// Get holosphere context (always available — layout requires Splash auth first)
 		holosphere = getContext('holosphere');
 		if (holosphere) {
@@ -33,10 +34,22 @@
 		// If logged in and we have valid QR params with valid capability, auto-process
 		if (isLoggedIn && hasValidParams && capabilityStatus === 'valid' && qrActionService) {
 			console.log(`[QR Page] User logged in (${clientPubKey.slice(0, 12)}...), processing QR action`);
+
+			// Resolve the user's holon name so tasks/roles show a readable name
+			let userName = clientPubKey.slice(0, 8);
+			try {
+				const resolved = await fetchHolonName(holosphere, clientPubKey);
+				if (resolved && !resolved.startsWith('Holon ')) {
+					userName = resolved;
+				}
+			} catch (err) {
+				console.warn('[QR Page] Could not resolve holon name, using pubkey fallback');
+			}
+
 			processQRAction({
 				id: clientPubKey,
-				first_name: clientPubKey.slice(0, 8),
-				username: clientPubKey.slice(0, 12),
+				first_name: userName,
+				username: userName,
 				auth_date: Math.floor(Date.now() / 1000),
 				hash: clientPubKey
 			});
