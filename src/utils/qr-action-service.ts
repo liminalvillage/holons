@@ -3,7 +3,7 @@ import type { QRCapabilityToken, CapabilityValidationResult } from '$lib/capabil
 import { validateCapability, isCapabilityValid } from '$lib/capabilities/qrCapability';
 
 export interface TelegramUser {
-	id: number;
+	id: number | string;
 	first_name: string;
 	last_name?: string;
 	username?: string;

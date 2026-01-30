@@ -1,11 +1,9 @@
 <script lang="ts">
-	import TelegramAuth from '../../components/TelegramAuth.svelte';
-	import { QRActionService, type TelegramUser, type QRActionResult } from '../../utils/qr-action-service';
+	import { QRActionService, type QRActionResult, type TelegramUser } from '../../utils/qr-action-service';
 	import { onMount, getContext } from 'svelte';
 	import type { HoloSphere } from "holosphere";
 	import { goto } from '$app/navigation';
 	import { getHolonIdForDeck } from '$lib/deck-registry';
-	import type { QRCapabilityToken } from '$lib/capabilities/qrCapability';
 	import { nostrPublicKey } from '$lib/stores/nostr';
 
 	export let data: any;
@@ -20,95 +18,30 @@
 	let actionComplete = false;
 	let resolvedHolonID: string | null = null;
 	
-	// Debug mode detection
-	let isDebugMode = false;
-	let debugUserID = '235114395';
+	let isLoggedIn = false;
 
 	onMount(() => {
-		// Check if we're in debug mode (localhost) AND we're actually on a QR page with parameters
-		const isLocalhost = window.location.hostname === 'localhost' || 
-						   window.location.hostname === '127.0.0.1';
-		const isDevMode = import.meta.env.VITE_LOCAL_MODE === 'development';
-		
-		// Only activate debug mode if we're on localhost AND have valid QR parameters
-		isDebugMode = (isLocalhost || isDevMode) && hasValidParams;
-		
-		console.log(`[QR Page] Debug mode check:`, {
-			isLocalhost,
-			isDevMode,
-			hasValidParams,
-			isDebugMode,
-			url: window.location.href
-		});
-		
-		// Get holosphere context
+		// Get holosphere context (always available — layout requires Splash auth first)
 		holosphere = getContext('holosphere');
 		if (holosphere) {
 			qrActionService = new QRActionService(holosphere);
 		}
-		
-		// If in debug mode and we have valid params with valid capability, automatically process the action
-		if (isDebugMode && hasValidParams && capabilityStatus === 'valid' && qrActionService) {
-			console.log(`[QR Page] Debug mode active - processing QR action automatically`);
-			// Keep original holon ID from QR, but use debug user
-			processQRAction(createDebugUser());
-		} else if (isDebugMode && hasValidParams && capabilityStatus !== 'valid') {
-			console.log(`[QR Page] Debug mode but capability not valid: ${capabilityStatus}`);
-		} else if (isLocalhost && !hasValidParams) {
-			console.log(`[QR Page] Running on localhost but no valid QR parameters - debug mode inactive`);
-		}
 
-		// Check if user is already authenticated (for smooth UX) - only if capability is valid
-		if (!isDebugMode && hasValidParams && capabilityStatus === 'valid' && qrActionService) {
-			checkExistingAuth();
+		const clientPubKey = (holosphere as any)?.client?.publicKey;
+		isLoggedIn = !!clientPubKey;
+
+		// If logged in and we have valid QR params with valid capability, auto-process
+		if (isLoggedIn && hasValidParams && capabilityStatus === 'valid' && qrActionService) {
+			console.log(`[QR Page] User logged in (${clientPubKey.slice(0, 12)}...), processing QR action`);
+			processQRAction({
+				id: clientPubKey,
+				first_name: clientPubKey.slice(0, 8),
+				username: clientPubKey.slice(0, 12),
+				auth_date: Math.floor(Date.now() / 1000),
+				hash: clientPubKey
+			});
 		}
 	});
-
-	async function checkExistingAuth() {
-		try {
-			// Check localStorage for existing Telegram authentication
-			const storedUser = localStorage.getItem('telegramUser');
-			const storedAuthDate = localStorage.getItem('telegramAuthDate');
-			
-			if (storedUser && storedAuthDate) {
-				const userData = JSON.parse(storedUser);
-				const authDate = parseInt(storedAuthDate);
-				const currentTime = Math.floor(Date.now() / 1000);
-				
-				// Check if auth is still valid (24 hours)
-				if (currentTime - authDate < 24 * 60 * 60) {
-					console.log(`[QR Page] Found valid existing authentication for user ${userData.id}, processing action automatically`);
-					// User is already authenticated, process action immediately
-					await processQRAction(userData);
-				}
-			}
-		} catch (error) {
-			console.warn('[QR Page] Error checking existing authentication:', error);
-			// Continue with normal flow
-		}
-	}
-
-	function createDebugUser(): TelegramUser {
-		// Create a mock user for debug mode
-		return {
-			id: parseInt(debugUserID),
-			first_name: 'Debug User',
-			last_name: 'Localhost',
-			username: 'debug_user',
-			photo_url: '',
-			auth_date: Math.floor(Date.now() / 1000),
-			hash: 'debug_hash_' + Date.now()
-		};
-	}
-
-	function handleAuthSuccess(userData: TelegramUser) {
-		console.log('User authenticated:', userData);
-		
-		// If we have valid QR parameters, automatically process the action
-		if (hasValidParams && qrActionService) {
-			processQRAction(userData);
-		}
-	}
 
 	async function processQRAction(userData: TelegramUser) {
 		if (!qrActionService || !hasValidParams) {
@@ -139,7 +72,6 @@
 				holonID: finalHolonID,
 				deckId,
 				cardId,
-				isDebugMode,
 				needsHolonLookup,
 				hasCapability: !!capability,
 				capabilityStatus
@@ -197,23 +129,9 @@
 		<div class="text-center mb-6">
 			<h1 class="text-2xl font-bold text-white mb-2">QR Code Action</h1>
 			<p class="text-gray-400">
-				{isDebugMode ? '🔧 Debug Mode - Localhost' : 'Scan a QR code to perform an action'}
+				Scan a QR code to perform an action
 			</p>
 		</div>
-
-		<!-- Debug Mode Notice -->
-		{#if isDebugMode}
-			<div class="mb-6 bg-yellow-900 bg-opacity-30 border border-yellow-500 rounded-lg p-4">
-				<div class="text-yellow-400 font-semibold mb-2">🔧 Debug Mode Active</div>
-				<div class="text-yellow-200 text-sm">
-					<p>Running from localhost - Telegram login bypassed</p>
-					<p><strong>Debug User ID:</strong> {debugUserID}</p>
-					<p><strong>Action:</strong> {action}</p>
-					<p><strong>Title:</strong> {title}</p>
-					<p><strong>Holon ID:</strong> {holonID} (from QR code)</p>
-				</div>
-			</div>
-		{/if}
 
 		<!-- Capability Status -->
 		{#if capabilityStatus === 'valid'}
@@ -278,34 +196,6 @@
 
 		<!-- Main Content -->
 		{#if hasValidParams && capabilityStatus === 'valid'}
-			<!-- Authentication Section - Only show if not in debug mode, capability is valid, and action not complete -->
-			{#if !isDebugMode && !actionComplete}
-				<div class="bg-gray-800 rounded-2xl p-6">
-					<h2 class="text-xl font-semibold text-white mb-4 text-center">🔐 Login Required</h2>
-					<p class="text-gray-400 mb-6 text-center">
-						Login with Telegram to automatically perform your action:
-						<span class="block mt-2 text-blue-300 font-medium">
-							{#if action === 'task' || action === 'action'}
-								Create and assign task "{title}"
-							{:else if action === 'event'}
-								Schedule event "{title}" for 12 hours from now
-							{:else if action === 'badge'}
-								Award badge "{title}"
-							{:else if action === 'role'}
-								Assign role "{title}"
-							{:else}
-								Execute "{title}"
-							{/if}
-						</span>
-					</p>
-					
-					<TelegramAuth 
-						{holonID} 
-						onAuthSuccess={handleAuthSuccess}
-						redirectAfterAuth={false}
-					/>
-				</div>
-			{/if}
 
 			<!-- Processing State -->
 			{#if isProcessingAction}
