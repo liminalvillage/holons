@@ -225,7 +225,7 @@
 					Verified Capability
 				</div>
 				<p class="text-green-200 text-sm">
-					This QR code is authorized by the holon owner. {capabilityExpiration}
+					This QR code is authorized by the holon owner.
 				</p>
 			</div>
 		{:else if capabilityStatus === 'expired'}
