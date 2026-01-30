@@ -3,6 +3,7 @@
     import { fade, slide } from "svelte/transition";
     import { ID } from "../dashboard/store";
     import type { HoloSphere } from "holosphere";
+    import { nameMap, userDisplayName } from '$lib/stores/nameResolver';
 
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -238,19 +239,6 @@
         currentView = view;
     }
 
-    // Get user display name
-    function getUserDisplayName(user: User): string {
-        if (user.first_name && user.last_name) {
-            return `${user.first_name} ${user.last_name}`;
-        } else if (user.first_name) {
-            return user.first_name;
-        } else if (user.username) {
-            return user.username;
-        } else {
-            return 'Unknown User';
-        }
-    }
-
     // Get user initials for avatar
     function getUserInitials(user: User): string {
         if (user.first_name) {
@@ -341,7 +329,7 @@
                                 </div>
                                 <div class="flex-1">
                                     <h3 class="text-xl font-semibold text-white">
-                                        {getUserDisplayName(userWithBadges.user)}
+                                        {userDisplayName(userWithBadges.user, $nameMap)}
                                     </h3>
                                     {#if userWithBadges.user.username}
                                         <p class="text-white/60 text-sm">@{userWithBadges.user.username}</p>

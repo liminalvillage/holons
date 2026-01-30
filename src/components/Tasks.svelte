@@ -14,11 +14,10 @@
 	import { writable } from 'svelte/store';
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
-	import { getHologramSourceName } from "../utils/holonNames";
+	import { nameMap, resolveName, resolveHologramSource, extractHolonIdFromSoul, awaitName } from '$lib/stores/nameResolver';
 	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/store";
 	// Add new imports for quest library
 	import QuestImportModal from "./QuestImportModal.svelte";
-	import { fetchHolonName } from "../utils/holonNames";
 	// Import shared components
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { CheckSquare, Calendar as CalendarIcon, Plus } from 'svelte-feathers';
@@ -95,7 +94,7 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let holonID = $state(''); // Start empty so reactive block triggers on first valid ID
-	let holonName = $state('Tasks'); // Default name
+	let holonName = $derived((holonID && $nameMap[holonID]) || 'Tasks');
 	let store: Store = $state({});
 	let quests = $derived(Object.entries(store));
 
@@ -309,9 +308,6 @@
 	// Add this variable to track the selected task
 	let selectedTask: any = $state(null);
 	let selectedTaskId: string | null = null; // For URL parameter support
-
-	// Add cache for hologram source names to avoid repeated resolution
-	let hologramSourceNames = new Map<string, string>();
 
 	// Add these near the top of the script section, after the interface definitions
 	// let sortField: 'x' | 'y' = 'x'; // Removed
@@ -843,62 +839,24 @@
 		};
 	});
 
-	// Function to get hologram source name from cache
+	// Function to get hologram source name from reactive nameMap
 	function getHologramSource(hologramSoul: string | undefined): string {
 		if (!hologramSoul) return '';
-		
-		// Return cached name if available
-		if (hologramSourceNames.has(hologramSoul)) {
-			return hologramSourceNames.get(hologramSoul)!;
-		}
-		
-		// Return fallback while loading
-		const match = hologramSoul.match(/Holons\/([^\/]+)/);
-		return match ? `Holon ${match[1]}` : 'External Source';
+
+		const holonId = extractHolonIdFromSoul(hologramSoul);
+		if (!holonId) return 'External Source';
+
+		return $nameMap[holonId] || `Holon ${holonId}`;
 	}
 
-		// Function to pre-resolve hologram names for all quests
-	async function preResolveHologramNames(questsToProcess: [string, Quest][]) {
-		const hologramSouls = new Set<string>();
-
-		// Collect all unique hologram souls that we don't already have cached
+	// Function to pre-resolve hologram names for all quests
+	function preResolveHologramNames(questsToProcess: [string, Quest][]) {
+		// Collect all unique hologram souls and resolve them via nameResolver
 		questsToProcess.forEach(([_, quest]) => {
 			if (quest._hologram?.isHologram && quest._hologram.soul) {
-				// Only add if we don't already have it cached
-				if (!hologramSourceNames.has(quest._hologram.soul)) {
-					hologramSouls.add(quest._hologram.soul);
-				}
+				resolveHologramSource(quest._hologram.soul);
 			}
 		});
-
-		// Only resolve names we don't already have
-		if (hologramSouls.size === 0) return;
-
-		// Resolve names for all new hologram souls using the async version to get real names
-		// fetchHolonName is already imported at the top - no dynamic import needed
-		const promises = Array.from(hologramSouls).map(async (hologramSoul) => {
-			try {
-				const match = hologramSoul.match(/Holons\/([^\/]+)/);
-				if (match) {
-					const holonId = match[1];
-					const realName = await fetchHolonName(holosphere, holonId);
-					hologramSourceNames.set(hologramSoul, realName);
-				}
-			} catch (error) {
-				// Error resolving hologram source name - set fallback
-				const match = hologramSoul.match(/Holons\/([^\/]+)/);
-				if (match) {
-					hologramSourceNames.set(hologramSoul, `Holon ${match[1]}`);
-				}
-			}
-		});
-
-		await Promise.allSettled(promises);
-
-		// Trigger reactivity only if we actually resolved new names
-		if (hologramSouls.size > 0) {
-			hologramSourceNames = new Map(hologramSourceNames);
-		}
 	}
 
 	// Add color category function
@@ -1540,10 +1498,9 @@
 				}
 				updateStats();
 
-				// Only resolve hologram names if this is a new hologram we haven't seen before
-				if (newquest && newquest._hologram?.isHologram && newquest._hologram.soul &&
-					!hologramSourceNames.has(newquest._hologram.soul)) {
-					await preResolveHologramNames([[questKey, newquest]]);
+				// Resolve hologram name for new holograms
+				if (newquest && newquest._hologram?.isHologram && newquest._hologram.soul) {
+					resolveHologramSource(newquest._hologram.soul);
 				}
 			};
 
@@ -1627,10 +1584,8 @@
 			connectionReady = true;
 			isLoading = true;
 			fetchData();
-			// Load holon name for TitleBar
-			fetchHolonName(holosphere, holonID).then(name => {
-				holonName = name || 'Tasks';
-			});
+			// Resolve holon name reactively
+			resolveName(holonID);
 			// Preload settings + users for TaskModal (instant cache hit when modal opens)
 			equation = getCachedEquation(holonID);
 			preloadHolon(holosphere, holonID).then(() => {
@@ -1700,7 +1655,7 @@
 				const holons: Array<{ id: string; name: string }> = [];
 				for (const id of federationInfo.federated) {
 					// Try HNS first (authoritative), then fall back to stored partner name
-					let name = await fetchHolonName(holosphere, id);
+					let name = await awaitName(id);
 
 					// If HNS returned a fallback name, use stored partnerName instead
 					if (!name || name.startsWith('Holon ')) {

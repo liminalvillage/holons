@@ -15,7 +15,7 @@
 	import StatCard from "./shared/StatCard.svelte";
 	import StatGrid from "./shared/StatGrid.svelte";
 	import { Users, UserCheck, UserX, Plus, Calendar } from 'svelte-feathers';
-	import { fetchHolonName } from "../utils/holonNames";
+	import { nameMap, resolveName } from '$lib/stores/nameResolver';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
@@ -32,7 +32,7 @@
 
 	$: roles = Object.entries(store || {});
 	let holosphere = getContext("holosphere") as HoloSphere;
-	let holonName = 'Roles'; // Default name
+	$: holonName = (activeHolonId && $nameMap[activeHolonId]) || 'Roles';
 	let statsCollapsed = false; // For mobile stats toggle
 
 	// Initialize preferences with default values
@@ -393,10 +393,8 @@
 		ID.set(activeHolonId);
 		isUserStoreReady = false;
 		loadAndSubscribeData(activeHolonId);
-		// Load holon name for TitleBar
-		fetchHolonName(holosphere, activeHolonId).then(name => {
-			holonName = name || 'Roles';
-		});
+		// Resolve holon name reactively
+		resolveName(activeHolonId);
 	}
 
 	// Format time for display

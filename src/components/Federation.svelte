@@ -7,7 +7,7 @@
     import { handshake, nostrUtils } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
     import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
-    import { fetchHolonName } from "../utils/holonNames";
+    import { nameMap, resolveName, awaitName } from '$lib/stores/nameResolver';
     import { addVisitedHolon } from "../utils/localStorage";
     import TitleBar from "./shared/TitleBar.svelte";
     import QRScanner from "./QRScanner.svelte";
@@ -56,7 +56,7 @@
 
     // State
     let currentHolonId = '';
-    let holonName = 'Federation';
+    $: holonName = (currentHolonId && $nameMap[currentHolonId]) || 'Federation';
     let federationInfo: FederationInfo | null = null;
     let federatedHolons: FederatedHolon[] = [];
     let loading = true;
@@ -144,8 +144,7 @@
                 if (currentHolonId) {
                     await loadFederationData();
                     await subscribeFederationChanges();
-                    const name = await fetchHolonName(holosphere, currentHolonId);
-                    holonName = name || 'Federation';
+                    resolveName(currentHolonId);
                 } else {
                     federationInfo = null;
                     federatedHolons = [];
@@ -227,7 +226,7 @@
                     const partnerName = federationInfo.partnerNames?.[holonId];
                     const name = partnerName && partnerName !== holonId
                         ? partnerName
-                        : await fetchHolonName(holosphere, holonId);
+                        : await awaitName(holonId);
 
                     let pubKey: string | undefined;
 
@@ -280,7 +279,7 @@
 
                 if (result.success && result.requestId) {
                     // Try to resolve recipient holon name
-                    const recipientHolonName = await fetchHolonName(holosphere, newPartnerHexPubKey);
+                    const recipientHolonName = await awaitName(newPartnerHexPubKey);
                     const outgoing = createOutgoingRequest(
                         result.requestId, $nostrPublicKey, ourNpub,
                         currentHolonId, ourHolonName,
@@ -504,8 +503,9 @@
 
     function navigateToHolon(holonId: string) {
         ID.set(holonId);
+        resolveName(holonId);
         if ($walletAddress) {
-            fetchHolonName(holosphere, holonId).then(name => {
+            awaitName(holonId).then(name => {
                 addVisitedHolon($walletAddress, holonId, name || holonId, 'federation');
             });
         }

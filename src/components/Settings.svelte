@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
-  import { clearHolonNameCache, fetchHolonName } from '../utils/holonNames';
+  import { nameMap, resolveName, forceRefresh, setName } from '$lib/stores/nameResolver';
   import { registerName as hnsRegister } from '$lib/hns';
   import { nostrStore } from '$lib/stores/nostr';
   import TitleBar from './shared/TitleBar.svelte';
@@ -38,7 +38,7 @@
   let holosphere: any;
   let loading = true;
   let error: string | null = null;
-  let holonName: string = 'Settings';
+  $: holonName = (holonId && $nameMap[holonId]) || 'Settings';
   let notifications: Array<{id: number, message: string, type: string}> = [];
   let notificationId = 0;
 
@@ -174,10 +174,15 @@
         }
       }
 
-      // Clear the cached holon name to force refresh with the new name
-      clearHolonNameCache(holonId);
+      // Directly update the reactive name store and cache with the new name
+      // (avoids relay round-trip race from forceRefresh)
+      if (settings.name) {
+        setName(holonId, settings.name);
+      } else {
+        forceRefresh(holonId);
+      }
 
-      // Dispatch event to update the name in TopBar and MyHolons
+      // Dispatch event to update the name in TopBar and sidebar
       window.dispatchEvent(new CustomEvent('holonNameUpdated', {
         detail: { holonId, newName: settings.name }
       }));
@@ -201,7 +206,7 @@
       await holosphere.put(holonId, 'settings', settingsToSave);
 
       // Clear the cached holon name to force refresh (will show fallback)
-      clearHolonNameCache(holonId);
+      forceRefresh(holonId);
 
       // Dispatch event to update the name in TopBar and MyHolons
       window.dispatchEvent(new CustomEvent('holonNameUpdated', {
@@ -219,12 +224,8 @@
   $: if (holonId) {
     holosphere = getContext('holosphere');
     loadSettings();
-    // Load holon name for TitleBar
-    if (holosphere) {
-      fetchHolonName(holosphere, holonId).then(name => {
-        holonName = name || 'Settings';
-      });
-    }
+    // Resolve holon name reactively
+    resolveName(holonId);
   }
 
   // UI logic - updated to use settings store

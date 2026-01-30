@@ -7,7 +7,7 @@
 	import TreeView from "./TreeView.svelte";
 	import type { HoloSphere } from "holosphere";
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { fetchHolonName } from "../utils/holonNames";
+	import { nameMap, resolveName } from '$lib/stores/nameResolver';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -21,7 +21,7 @@
 	 */
 	let store = {};
 	let holonID: string = '';
-	let holonName: string = 'Knowledge Base';
+	$: holonName = (holonID && $nameMap[holonID]) || 'Knowledge Base';
 	let isLoading = true;
 	let connectionReady = false;
 	let error = '';
@@ -110,11 +110,8 @@
 		const idUnsubscribe = ID.subscribe(async (value) => {
 			if (value && value !== holonID) {
 				holonID = value;
-				// Load holon name for TitleBar
-				if (holosphere) {
-					const name = await fetchHolonName(holosphere, value);
-					holonName = name || 'Knowledge Base';
-				}
+				// Resolve holon name reactively
+				resolveName(value);
 				// Clean up previous subscription
 				if (unsubscribe) {
 					unsubscribe();

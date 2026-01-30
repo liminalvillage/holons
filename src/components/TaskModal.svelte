@@ -3,7 +3,7 @@
     import { fade, scale } from "svelte/transition";
     import { goto } from '$app/navigation';
     import type { HoloSphere } from "holosphere";
-    import { getHologramSourceName } from "../utils/holonNames";
+    import { nameMap, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
     import { formatDate } from "../utils/date";
     import {
         calculateTaskCompletionScores,
@@ -126,13 +126,13 @@
     const CANVAS_WIDTH = 2000;
     const CANVAS_HEIGHT = 1500;
 
-    // Function to get hologram source name using centralized service
+    // Function to get hologram source name from reactive nameMap
     function getHologramSource(soul: string | undefined): string {
         if (!soul) return '';
 
-        // Use the centralized service to get hologram source name
-        // Don't use callback to avoid reactive loops - just return cached value
-        return getHologramSourceName(holosphere, soul);
+        resolveHologramSource(soul);
+        const holonId = extractHolonIdFromSoul(soul);
+        return (holonId && $nameMap[holonId]) || 'External Source';
     }
 
     // Add function to navigate to hologram source

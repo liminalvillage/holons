@@ -2,14 +2,9 @@
 	import { createEventDispatcher, getContext } from 'svelte';
 	import { Copy, Check, Grid } from 'svelte-feathers';
 	import { ID } from '../store';
-	import { fetchHolonName } from '../../utils/holonNames';
-	import type { HoloSphere } from 'holosphere';
+	import { nameMap, resolveName } from '$lib/stores/nameResolver';
 
 	const dispatch = createEventDispatcher();
-	const holosphere = getContext<HoloSphere>('holosphere');
-
-	// State
-	let holonName: string = 'No Holon Selected';
 	let idCopied: boolean = false;
 	let showQRModal: boolean = false;
 
@@ -22,14 +17,9 @@
 			: currentHolonId)
 		: '';
 
-	// Fetch holon name when ID changes
-	$: if (currentHolonId && holosphere) {
-		fetchHolonName(holosphere, currentHolonId).then(name => {
-			holonName = name || 'Unnamed Holon';
-		});
-	} else if (!currentHolonId) {
-		holonName = 'No Holon Selected';
-	}
+	// Resolve holon name reactively
+	$: if (currentHolonId) resolveName(currentHolonId);
+	$: holonName = currentHolonId ? ($nameMap[currentHolonId] || 'Unnamed Holon') : 'No Holon Selected';
 
 	async function copyHolonId() {
 		if (currentHolonId) {

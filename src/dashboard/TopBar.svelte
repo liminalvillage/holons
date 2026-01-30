@@ -7,7 +7,7 @@
 	import { browser } from '$app/environment';
 	import type { HoloSphere } from "holosphere";
 	import { addVisitedHolon, getWalletAddress, loadVisitedHolons, saveVisitedHolons, type VisitedHolon } from "../utils/localStorage";
-	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
+	import { nameMap, resolveName, forceRefresh, awaitName } from '$lib/stores/nameResolver';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 	import VideoCall from '../components/VideoCall.svelte';
 	import WidgetDashboard from '../components/WidgetDashboard.svelte';
@@ -58,31 +58,26 @@
 		}
 	}
 
-	// Fetch holon name with simple retry
-	async function updateCurrentHolonName(id: string, attempt = 0) {
+	// Resolve holon name reactively
+	function updateCurrentHolonName(id: string, attempt = 0) {
 		if (!isValidHolonId(id)) {
 			currentHolonName = undefined;
 			return;
 		}
 
-		if (!holosphere) {
-			currentHolonName = `Holon ${id}`;
-			if (attempt < 3) {
-				setTimeout(() => updateCurrentHolonName(id, attempt + 1), 500);
-			}
-			return;
+		if (attempt > 0) {
+			forceRefresh(id);
+		} else {
+			resolveName(id);
 		}
 
-		try {
-			if (attempt > 0) clearHolonNameCache(id);
-			const name = await fetchHolonName(holosphere, id);
-			currentHolonName = name && name !== `Holon ${id}` ? name : `Holon ${id}`;
-		} catch (error) {
-			if (attempt < 2) {
-				setTimeout(() => updateCurrentHolonName(id, attempt + 1), 500 * (attempt + 1));
-			} else {
-				currentHolonName = `Holon ${id}`;
-			}
+		// Update currentHolonName from store
+		const name = $nameMap[id];
+		currentHolonName = name || `Holon ${id}`;
+
+		// Retry if we got a fallback and haven't exhausted attempts
+		if (!name && attempt < 2) {
+			setTimeout(() => updateCurrentHolonName(id, attempt + 1), 500 * (attempt + 1));
 		}
 	}
 
@@ -117,6 +112,11 @@
 			processedHolonId = storedHolonID;
 			updateCurrentHolonName(storedHolonID);
 		}
+	}
+
+	// Keep currentHolonName in sync with reactive nameMap
+	$: if ($ID && $nameMap[$ID]) {
+		currentHolonName = $nameMap[$ID];
 	}
 
 	// Handle ID store changes

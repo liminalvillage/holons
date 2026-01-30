@@ -7,7 +7,7 @@
 	import { formatDate, formatTime } from "../utils/date";
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
-	import { getHologramSourceName, fetchHolonName } from "../utils/holonNames";
+	import { nameMap, resolveName, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { Gift, Plus } from 'svelte-feathers';
 	import { nostrPublicKey } from "../lib/stores/nostr";
@@ -25,7 +25,7 @@
 	 */
 	let store = {};
 	let holonID: string | null = null;
-	let holonName = 'Offers & Requests';
+	$: holonName = (holonID && $nameMap[holonID]) || 'Offers & Requests';
 
 	// Federated offers toggle
 	let includeFederatedOffers = false;
@@ -179,12 +179,8 @@
 			if (isDestroyed) return;
 			if (value && value !== holonID) {
 				holonID = value;
-				// Load holon name for TitleBar
-				if (holosphere) {
-					fetchHolonName(holosphere, value).then(name => {
-						holonName = name || 'Offers & Requests';
-					});
-				}
+				// Resolve holon name reactively
+				resolveName(value);
 				// Force re-initialization when ID changes with error handling
 				initializeComponent().catch(error => {
 					// Silently handle re-initialization errors
@@ -581,13 +577,9 @@
 	function getHologramSourceDisplay(soul: string | undefined): string {
 		if (!soul) return '';
 
-		// Use the centralized service to get hologram source name
-		// This will return cached name immediately or trigger async fetch with callback
-		return getHologramSourceName(holosphere, soul, () => {
-			// Trigger reactivity by updating store when name is fetched
-			console.log('[Offers] Hologram source name updated, triggering reactivity');
-			store = { ...store };
-		});
+		resolveHologramSource(soul);
+		const holonId = extractHolonIdFromSoul(soul);
+		return (holonId && $nameMap[holonId]) || 'External Source';
 	}
 
 	// Assign a user as a participant to an offer or need

@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { getHolonIdForDeck } from '$lib/deck-registry';
 	import { nostrPublicKey } from '$lib/stores/nostr';
-	import { fetchHolonName } from '../../utils/holonNames';
+	import { awaitName } from '$lib/stores/nameResolver';
 
 	export let data: any;
 
@@ -38,8 +38,8 @@
 			// Resolve the user's holon name so tasks/roles show a readable name
 			let userName = clientPubKey.slice(0, 8);
 			try {
-				const resolved = await fetchHolonName(holosphere, clientPubKey);
-				if (resolved && !resolved.startsWith('Holon ')) {
+				const resolved = await awaitName(clientPubKey);
+				if (resolved && resolved.length > 8) {
 					userName = resolved;
 				}
 			} catch (err) {

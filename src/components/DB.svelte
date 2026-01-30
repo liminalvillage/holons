@@ -3,20 +3,16 @@
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { fetchHolonName } from "../utils/holonNames";
+	import { nameMap, resolveName } from '$lib/stores/nameResolver';
 	import { Plus } from 'svelte-feathers';
 
 	// Use URL param directly instead of global ID store to avoid race conditions
 	$: holonID = $page.params.id || "";
-	let holonName: string = 'Database';
 	let holosphere = getContext("holosphere") as HoloSphere;
 
-	// Load holon name when ID changes
-	$: if (holonID && holosphere) {
-		fetchHolonName(holosphere, holonID).then(name => {
-			holonName = name || 'Database';
-		});
-	}
+	// Resolve holon name reactively
+	$: if (holonID) resolveName(holonID);
+	$: holonName = (holonID && $nameMap[holonID]) || 'Database';
 
 	let store: Record<string, any> = {};
 	let selectedTable = "quests";

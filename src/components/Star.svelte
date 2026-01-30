@@ -9,6 +9,7 @@
 	import TaskModal from "./TaskModal.svelte";
 	import { browser } from "$app/environment";
 	import CanvasView from "./CanvasView.svelte";
+	import { nameMap, resolveName } from '$lib/stores/nameResolver';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -81,21 +82,11 @@
 	// Add this variable to track the selected task
 	let selectedTask = null;
 
-	let holonName = "";
+	$: holonName = (holonID && $nameMap[holonID]) || 'Tasks';
 
-	async function fetchHolonName() {
-		try {
-			const name = await holosphere.get(holonID, "name");
-			holonName = name || "Unnamed Holon";
-		} catch (error) {
-			console.error("Error fetching holon name:", error);
-			holonName = "Unnamed Holon";
-		}
-	}
-
-	// Update when holonID changes
+	// Resolve holon name reactively
 	$: if (holonID) {
-		fetchHolonName();
+		resolveName(holonID);
 	}
 
 	onMount(async () => {

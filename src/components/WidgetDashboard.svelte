@@ -5,7 +5,7 @@ import { ID } from "../dashboard/store";
 import type { HoloSphere } from "holosphere";
 import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
 import { goto } from "$app/navigation";
-import { fetchHolonName } from "../utils/holonNames";
+import { nameMap, resolveName, userDisplayName } from '$lib/stores/nameResolver';
 import RoleModal from "./RoleModal.svelte";
 import TaskModal from "./TaskModal.svelte";
 import ItemModal from "./ItemModal.svelte";
@@ -26,8 +26,8 @@ import ItemModal from "./ItemModal.svelte";
     // Holon data state
     $: holonID = $ID;
     
-    // Holon name state
-    let holonName = '';
+    // Holon name state (reactive via nameResolver)
+    $: holonName = (holonID && $nameMap[holonID]) || '';
     let isLoadingHolonName = false;
     
     // Roles and users data state
@@ -448,27 +448,17 @@ import ItemModal from "./ItemModal.svelte";
 
     // Subscribe to holon name with real-time updates
     async function subscribeToHolonName() {
-        if (!holosphere || !holonID) return;
-        
+        if (!holonID) return;
+
         // Cleanup existing subscription
         if (holonNameUnsubscribe) {
             holonNameUnsubscribe();
             holonNameUnsubscribe = null;
         }
-        
+
         isLoadingHolonName = true;
-        try {
-            holonName = await fetchHolonName(holosphere, holonID);
-            
-            // Note: Holon metadata subscriptions may not be available in all holosphere implementations
-            // This is kept for future compatibility
-            
-        } catch (error) {
-            console.error("OverlayDashboard: Error loading holon name:", error);
-            holonName = `Holon ${holonID}`;
-        } finally {
-            isLoadingHolonName = false;
-        }
+        resolveName(holonID);
+        isLoadingHolonName = false;
     }
 
     // Subscribe to badges data with real-time updates
@@ -572,20 +562,10 @@ import ItemModal from "./ItemModal.svelte";
         selectedItem = null;
     }
 
-    // Get user display name
+    // Get user display name using nameResolver
     function getUserDisplayName(userId: string): string {
         const user = users[userId];
-        if (!user) return 'Unknown User';
-        
-        if (user.first_name && user.last_name) {
-            return `${user.first_name} ${user.last_name}`;
-        } else if (user.first_name) {
-            return user.first_name;
-        } else if (user.username) {
-            return user.username;
-        }
-        
-        return 'Unknown User';
+        return userDisplayName(user ? { id: userId, ...user } : { id: userId }, $nameMap);
     }
 
     // Get role statistics

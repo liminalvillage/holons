@@ -4,7 +4,7 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import type { HoloSphere } from "holosphere";
-    import { fetchHolonName } from "../utils/holonNames";
+    import { nameMap, resolveName } from '$lib/stores/nameResolver';
     import TitleBar from "./shared/TitleBar.svelte";
     import { ShoppingCart, Plus } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -31,7 +31,6 @@
     const holosphere = getContext("holosphere") as HoloSphere;
 
     let holonID: string = '';
-    let holonName: string = 'Shopping List';
     let shoppingChecklist: Checklist | null = null;
     let shoppingChecklistId: string | null = null;
     let checklistsUnsubscribe: (() => void) | undefined;
@@ -126,10 +125,8 @@
             holonID = newId;
             ID.set(newId);
             fetchData();
-            // Load holon name for TitleBar
-            fetchHolonName(holosphere, newId).then(name => {
-                holonName = name || 'Shopping List';
-            });
+            // Resolve holon name reactively
+            resolveName(newId);
         }
     }
 
@@ -256,7 +253,7 @@
 
 <div class="space-y-4">
     <!-- TitleBar -->
-    <TitleBar {holonName} title="Shopping List" icon={ShoppingCart} />
+    <TitleBar holonName={$nameMap[holonID] || 'Loading...'} title="Shopping List" icon={ShoppingCart} />
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">

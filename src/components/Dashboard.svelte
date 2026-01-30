@@ -10,14 +10,11 @@
 	import StatGrid from "./shared/StatGrid.svelte";
 	import { Users, CheckSquare, Calendar, ShoppingCart, Gift, Clipboard, UserPlus, Grid } from 'svelte-feathers';
 	import type { HoloSphere } from "holosphere";
-	import { fetchHolonName } from "../utils/holonNames";
+	import { nameMap, resolveName } from '$lib/stores/nameResolver';
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
 
 	const holosphere = getContext("holosphere") as HoloSphere;
-
-	// Holon name for title bar
-	let holonName = '';
 
 	// Helper to validate holon ID
 	const isValidId = (id: string | undefined | null): id is string =>
@@ -96,12 +93,8 @@
 		checklistsMap = new Map();
 		rolesMap = new Map();
 
-		// Fetch holon name
-		try {
-			holonName = await fetchHolonName(holosphere, holonID) || `Holon ${holonID.slice(0, 8)}...`;
-		} catch (e) {
-			holonName = `Holon ${holonID.slice(0, 8)}...`;
-		}
+		// Resolve holon name reactively
+		resolveName(holonID);
 
 		// Helper to convert data to map
 		const toMap = (data: any): Map<string, any> => {
@@ -249,7 +242,7 @@
 </script>
 
 <!-- Title Bar -->
-<TitleBar {holonName} title="Dashboard" icon={Grid} />
+<TitleBar holonName={$nameMap[holonID] || 'Loading...'} title="Dashboard" icon={Grid} />
 
 {#if isLoading}
 	<div class="loading">

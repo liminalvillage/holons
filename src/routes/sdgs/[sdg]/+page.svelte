@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import type { HoloSphere } from "holosphere";
   import { getSdgByCode, getSdgHolonId } from '$lib/sdgs';
-  import { fetchHolonName } from '../../../utils/holonNames';
+  import { resolveNames, awaitName } from '$lib/stores/nameResolver';
 
   const holosphere = getContext('holosphere') as HoloSphere;
 
@@ -60,7 +60,8 @@
       ];
       const unique = Array.from(new Set(ids));
       // Rebuild list from source of truth each time to remove unfederated holons
-      federatedHolons = await Promise.all(unique.map(async (id) => ({ id, name: await fetchHolonName(holosphere, id) })));
+      resolveNames(unique);
+      federatedHolons = await Promise.all(unique.map(async (id) => ({ id, name: await awaitName(id) })));
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load federated holons';
     } finally {

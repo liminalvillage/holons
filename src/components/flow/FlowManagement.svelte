@@ -6,7 +6,7 @@
   import type { HolonBundle, FlowConfig } from '../../lib/holons/HolonsContract';
   import type { FederationLink } from '../../lib/holons/FlowSettings';
   import type { HoloSphere } from 'holosphere';
-  import { fetchHolonName } from '../../utils/holonNames';
+  import { awaitName } from '$lib/stores/nameResolver';
   import {
     loadEquation,
     toAggregates,
@@ -277,7 +277,7 @@
         const holonsWithNames = await Promise.all(
           federationData.map(async (fed: any, index: number) => {
             const targetId = fed.targetId || fed.id || fed;
-            const name = await fetchHolonName(holosphere, String(targetId));
+            const name = await awaitName(String(targetId));
             const savedZone = settings?.[0]?.federationZones?.[targetId];
             return {
               id: String(targetId),

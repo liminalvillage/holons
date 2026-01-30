@@ -4,7 +4,7 @@
     import type { HoloSphere } from "holosphere";
     import * as d3 from 'd3';
     import { ID } from "../dashboard/store";
-    import { fetchHolonName } from "../utils/holonNames";
+    import { awaitName } from '$lib/stores/nameResolver';
     import { addClickedHolon, addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 
     interface Holon {
@@ -482,7 +482,7 @@
             // Track this click and visit (with or without wallet)
             const walletAddr = getWalletAddress();
             try {
-                const holonName = await fetchHolonName(holosphere, d.data.federatedFrom);
+                const holonName = await awaitName(d.data.federatedFrom);
                 
                 // Track as clicked holon (from navigator view)
                 addClickedHolon(walletAddr, d.data.federatedFrom, holonName, 'navigator');
@@ -505,7 +505,7 @@
             // Track this click and visit (with or without wallet)
             const walletAddr = getWalletAddress();
             try {
-                const holonName = await fetchHolonName(holosphere, d.data.key);
+                const holonName = await awaitName(d.data.key);
                 
                 // Track as clicked holon (from navigator view)
                 addClickedHolon(walletAddr, d.data.key, holonName, 'navigator');

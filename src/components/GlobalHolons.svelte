@@ -5,7 +5,7 @@
     import { browser } from "$app/environment";
     import type { HoloSphere } from "holosphere";
     import { ID } from "../dashboard/store";
-    import { fetchHolonName } from "../utils/holonNames";
+    import { awaitName } from '$lib/stores/nameResolver';
     import { addClickedHolon, addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 
     // Initialize holosphere
@@ -528,7 +528,7 @@
         // Track this click and visit (with or without wallet)
         const walletAddr = getWalletAddress();
         try {
-            const holonName = await fetchHolonName(holosphere, holonId);
+            const holonName = await awaitName(holonId);
 
             // Dispatch event with the holon name so TopBar can use it immediately
             if (browser && holonName) {

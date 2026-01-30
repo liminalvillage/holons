@@ -13,8 +13,7 @@
 	import QRScanner from '../../components/QRScanner.svelte';
 
 	import { ID, sidebarExpanded } from '../store';
-	// localStorage imports removed - holons list is managed by federation only
-	import { fetchHolonName, forceRefreshHolonName } from '../../utils/holonNames';
+	import { nameMap, resolveName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
 	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
 
 	// Props
@@ -80,6 +79,12 @@
 	const starredIds: string[] = [];
 
 	// Load holons on mount
+	// Keep homeHolonName in sync with the reactive name store
+	// (covers initial load via setName in layout AND later updates from Settings)
+	$: if ($nostrPublicKey && $nameMap[$nostrPublicKey]) {
+		homeHolonName = $nameMap[$nostrPublicKey];
+	}
+
 	onMount(async () => {
 		if (browser) {
 			// Initialize active holon identity store
@@ -87,26 +92,9 @@
 
 			await loadHolons();
 
-			// Fetch home holon name - use cache-friendly fetchHolonName first
-			// (preserves HNS cache seeded during initialization)
-			// Only force-refresh if we get a fallback name
-			if ($nostrPublicKey && holosphere) {
-				const name = await fetchHolonName(holosphere, $nostrPublicKey);
-				homeHolonName = name || '';
-				// If we got a fallback/default name, the relay data might not be ready yet
-				// Retry with force refresh after a delay
-				const isFallbackName = name?.startsWith('Holon ') || name === 'My Holon';
-				if (isFallbackName) {
-					console.log('[BrowserPanel] Got fallback name, will retry:', name);
-					setTimeout(async () => {
-						const retryName = await forceRefreshHolonName(holosphere, $nostrPublicKey);
-						const isStillFallback = retryName?.startsWith('Holon ') || retryName === 'My Holon';
-						if (retryName && !isStillFallback) {
-							homeHolonName = retryName;
-							console.log('[BrowserPanel] Retried HNS lookup, got name:', retryName);
-						}
-					}, 2000);
-				}
+			// Trigger name resolution (reactive $: statement keeps homeHolonName in sync)
+			if ($nostrPublicKey) {
+				resolveName($nostrPublicKey);
 			}
 
 			// Initialize federation requests store
@@ -121,6 +109,7 @@
 		// Listen for holon updates
 		window.addEventListener('holonCreated', handleHolonCreated as EventListener);
 		window.addEventListener('holonNavigated', handleHolonNavigated as EventListener);
+		window.addEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
 		window.addEventListener('federationResponse', handleFederationResponseEvent as EventListener);
 		window.addEventListener('federationRequest', handleFederationRequestEvent as EventListener);
 		window.addEventListener('federationUpdate', handleFederationUpdateEvent as EventListener);
@@ -130,6 +119,7 @@
 		if (browser) {
 			window.removeEventListener('holonCreated', handleHolonCreated as EventListener);
 			window.removeEventListener('holonNavigated', handleHolonNavigated as EventListener);
+			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated as EventListener);
 			window.removeEventListener('federationResponse', handleFederationResponseEvent as EventListener);
 			window.removeEventListener('federationRequest', handleFederationRequestEvent as EventListener);
 			window.removeEventListener('federationUpdate', handleFederationUpdateEvent as EventListener);
@@ -357,38 +347,19 @@
 		updateUserHolons();
 	}
 
-	async function refreshHolonNames() {
-		if (!holosphere) return;
-
-		// Capture current holon IDs to avoid race conditions during async operations
-		const holonIds = holons.map(h => h.id);
-
-		// Fetch all names concurrently with force refresh to get latest from HNS
-		const nameResults = await Promise.all(
-			holonIds.map(async (id) => ({
-				id,
-				name: await forceRefreshHolonName(holosphere, id)
-			}))
-		);
-
-		// Apply names atomically by matching on ID
-		const nameMap = new Map(nameResults.map(r => [r.id, r.name]));
-		holons = holons.map(h => {
-			const fetchedName = nameMap.get(h.id);
-			return fetchedName ? { ...h, name: fetchedName } : h;
-		});
-	}
-
-
 	function handleHolonCreated(event: CustomEvent<{ holonId: string; holonName: string }>) {
-		const { holonId, holonName } = event.detail;
-		// Update home holon name if this is our holon
-		if (holonId === $nostrPublicKey && holonName) {
-			homeHolonName = holonName;
-			console.log('[BrowserPanel] Updated home holon name from event:', holonName);
-		}
 		// Reload federation list when a new holon is created
 		loadHolons();
+	}
+
+	function handleHolonNameUpdated(event: CustomEvent<{ holonId: string; newName: string }>) {
+		const { holonId, newName } = event.detail;
+		// Update federated partner name in the holons list
+		const idx = holons.findIndex(h => h.id === holonId);
+		if (idx >= 0 && newName) {
+			holons[idx].name = newName;
+			holons = [...holons];
+		}
 	}
 
 	function handleHolonNavigated(event: CustomEvent) {
@@ -837,7 +808,7 @@
 			let name = newHolonName.trim();
 			if (!name && holosphere) {
 				try {
-					const fetchedName = await fetchHolonName(holosphere, holonId);
+					const fetchedName = await awaitName(holonId);
 					name = fetchedName || `Holon ${holonId.slice(0, 8)}...`;
 				} catch {
 					name = `Holon ${holonId.slice(0, 8)}...`;

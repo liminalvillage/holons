@@ -13,7 +13,7 @@
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
 	import { registerName as hnsRegister } from '$lib/hns';
-	import { isValidHolonName } from '../utils/holonNames';
+	import { isValidHolonName, setName } from '$lib/stores/nameResolver';
 
 	// Import global design system styles
 	import '../styles/index.css';
@@ -165,6 +165,10 @@
 			} else {
 				console.log('Telegram-mapped session: skipping write operations (read-only mode)');
 			}
+
+			// Populate the reactive name store so all components see it immediately
+			// (avoids relay round-trip race after writing settings/HNS)
+			setName(userPublicKey, holonName);
 
 			// Add the holon to visited list so it appears in TopBar
 			if (browser) {

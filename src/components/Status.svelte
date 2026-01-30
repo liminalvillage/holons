@@ -9,7 +9,7 @@
     import PieChart3D from "./PieChart3D.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
     import TitleBar from "./shared/TitleBar.svelte";
-    import { fetchHolonName } from "../utils/holonNames";
+    import { nameMap, resolveName } from '$lib/stores/nameResolver';
     import { HolonsManager } from "../lib/holons/HolonsManager";
     interface User {
         id?: string;
@@ -52,7 +52,7 @@
     let expenseStore: Record<string, Expense> = {};
     let availableCurrencies: string[] = [];
     let holonID: string;
-    let holonName: string = 'Status';
+    $: holonName = (holonID && $nameMap[holonID]) || 'Status';
     let holosphere = getContext("holosphere") as HoloSphere;
     let valueEquationLoaded = false;
     let selectedUserId: string | null = null;
@@ -208,12 +208,8 @@
             
             if (value && value !== holonID) {
             holonID = value;
-                // Load holon name for TitleBar
-                if (holosphere) {
-                    fetchHolonName(holosphere, value).then(name => {
-                        holonName = name || 'Status';
-                    });
-                }
+                // Resolve holon name reactively
+                resolveName(value);
                 store = {}; // Reset store
                 valueEquationLoaded = false;
                 currenciesLoaded = false;
