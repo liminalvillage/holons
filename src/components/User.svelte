@@ -2,6 +2,7 @@
     import { createEventDispatcher, onMount, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import type { HoloSphere } from "holosphere";
+    import { nameMap, resolveName, displayName } from '$lib/stores/nameResolver';
 
     export let userId: string;
     export let holonId: string;
@@ -45,6 +46,8 @@
         } else {
             await loadUserData();
         }
+        // Trigger name resolution for the user's pubkey
+        if (userId) resolveName(userId);
     });
 
     async function loadUserData() {
@@ -144,9 +147,9 @@
                         </div>
                         <div>
                             <h1 class="text-3xl font-bold text-white">
-                                {user.first_name} {user.last_name || ''}
+                                {displayName(user.id, user.first_name, $nameMap)} {user.last_name || ''}
                             </h1>
-                            <p class="text-gray-400 text-sm">ID: {String(user.id)}</p>
+                            <p class="text-gray-400 text-sm">{user.id?.length === 64 ? `${user.id.slice(0, 12)}...` : user.id}</p>
                         </div>
                     </div>
                     <button 

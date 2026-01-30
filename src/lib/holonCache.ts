@@ -6,6 +6,7 @@
  */
 
 import { DEFAULT_EQUATION, type ScoreEquation } from './scoring/ContributionScoring';
+import { fetchHolonName } from '../utils/holonNames';
 
 // Types
 export interface CachedUser {
@@ -144,6 +145,70 @@ function setCachedUsers(holonId: string, users: CachedUser[]): void {
     entry.lastUpdated = Date.now();
 }
 
+// ============ NAME RESOLUTION ============
+
+/**
+ * Check if a string looks like a hex public key (64 hex chars)
+ */
+function isPubkey(s: string): boolean {
+    return typeof s === 'string' && /^[0-9a-f]{64}$/i.test(s);
+}
+
+/**
+ * Check if a name looks like it was derived from a pubkey (truncated hex)
+ */
+function looksLikeTruncatedPubkey(name: string, pubkey: string): boolean {
+    if (!name || !pubkey) return false;
+    // Matches patterns like "a1b2c3d4" or "a1b2c3d4e5f6" that are a prefix of the pubkey
+    if (/^[0-9a-f]{6,16}$/i.test(name) && pubkey.toLowerCase().startsWith(name.toLowerCase())) {
+        return true;
+    }
+    // Also catch "a1b2c3d4..." style truncations
+    if (/^[0-9a-f]{6,16}\.\.\.$/i.test(name)) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Resolve display names for cached users whose names look like truncated pubkeys.
+ * Runs in the background — does not block preloading.
+ */
+function resolveUserNames(holonId: string, holosphere: any): void {
+    const entry = holonCache.get(holonId);
+    if (!entry || entry.users.size === 0) return;
+
+    for (const [key, user] of entry.users) {
+        const userId = user.id;
+        if (!userId || !isPubkey(userId)) continue;
+
+        const nameNeedsResolving =
+            looksLikeTruncatedPubkey(user.first_name, userId) ||
+            looksLikeTruncatedPubkey(user.username, userId) ||
+            user.first_name === userId ||
+            user.username === userId;
+
+        if (!nameNeedsResolving) continue;
+
+        fetchHolonName(holosphere, userId)
+            .then((resolved) => {
+                if (resolved && !resolved.startsWith('Holon ')) {
+                    const currentEntry = holonCache.get(holonId);
+                    const currentUser = currentEntry?.users.get(key);
+                    if (currentUser) {
+                        currentUser.first_name = resolved;
+                        if (looksLikeTruncatedPubkey(currentUser.username, userId) || currentUser.username === userId) {
+                            currentUser.username = resolved;
+                        }
+                    }
+                }
+            })
+            .catch(() => {
+                // Silently fail — user will keep truncated pubkey as fallback
+            });
+    }
+}
+
 // ============ PRELOADING ============
 
 /**
@@ -186,6 +251,9 @@ export async function preloadHolon(
                 ? usersData
                 : Object.values(usersData || {});
             setCachedUsers(holonId, users.filter((u): u is CachedUser => !!u?.username));
+
+            // Resolve names for users whose first_name/username looks like a truncated pubkey
+            resolveUserNames(holonId, holosphere);
 
         } catch (error) {
             console.error('[HolonCache] Preload error:', error);
