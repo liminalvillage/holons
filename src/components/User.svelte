@@ -2,7 +2,8 @@
     import { createEventDispatcher, onMount, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import type { HoloSphere } from "holosphere";
-    import { nameMap, resolveName, displayName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+    import DisplayName from './shared/DisplayName.svelte';
 
     export let userId: string;
     export let holonId: string;
@@ -46,8 +47,7 @@
         } else {
             await loadUserData();
         }
-        // Trigger name resolution for the user's pubkey
-        if (userId) resolveName(userId);
+        // Name resolution is now automatic via resolvedName()
     });
 
     async function loadUserData() {
@@ -82,9 +82,6 @@
         return new Date(timestamp).toLocaleDateString();
     }
 
-    function getInitials(firstName: string, lastName?: string) {
-        return `${firstName[0]}${lastName ? lastName[0] : ''}`.toUpperCase();
-    }
 
     $: stats = user ? [
         { label: 'Tasks Initiated', value: user.initiated?.length || 0, color: 'text-blue-400' },
@@ -132,9 +129,9 @@
             <div class="bg-gradient-to-r from-gray-700 to-gray-600 px-8 py-6">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-4">
-                        <img 
+                        <img
                             src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
-                            alt={`${user.first_name} ${user.last_name || ''}`}
+                            alt={resolvedName(user.id, $nameMap, user)}
                             class="w-16 h-16 rounded-full object-cover border-2 border-gray-300"
                             on:error={(e) => {
                                 // Fallback to initials if image fails to load
@@ -143,11 +140,11 @@
                             }}
                         />
                         <div class="w-16 h-16 rounded-full bg-gray-500 flex items-center justify-center text-white text-xl font-bold" style="display: none;">
-                            {getInitials(user.first_name, user.last_name)}
+                            {resolvedInitials(user.id, $nameMap, user)}
                         </div>
                         <div>
                             <h1 class="text-3xl font-bold text-white">
-                                {displayName(user.id, user.first_name, $nameMap)} {user.last_name || ''}
+                                <DisplayName id={user.id} {user} />
                             </h1>
                             <p class="text-gray-400 text-sm">{user.id?.length === 64 ? `${user.id.slice(0, 12)}...` : user.id}</p>
                         </div>

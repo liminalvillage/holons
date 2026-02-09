@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher, onMount, onDestroy, getContext } from "svelte";
+    import { onMount, onDestroy, getContext } from "svelte";
     import { fade, slide, fly } from "svelte/transition";
     import { goto } from "$app/navigation";
     import { page } from "$app/stores";
@@ -7,7 +7,7 @@
     import { handshake, nostrUtils } from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
     import { nostrPrivateKey, nostrPublicKey } from "../lib/stores/nostr";
-    import { nameMap, resolveName, awaitName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName, awaitName } from '$lib/stores/nameResolver';
     import { addVisitedHolon } from "../utils/localStorage";
     import TitleBar from "./shared/TitleBar.svelte";
     import QRScanner from "./QRScanner.svelte";
@@ -23,12 +23,9 @@
         incomingUpdates,
         outgoingUpdates,
         createIncomingUpdate,
-        createOutgoingUpdate,
-        type PendingRequest,
-        type PendingUpdate
+        createOutgoingUpdate
     } from "../lib/stores/federationRequests";
 
-    const dispatch = createEventDispatcher();
     const holosphere = getContext("holosphere") as HoloSphere;
 
     // Available lenses for federation
@@ -41,7 +38,7 @@
         id: string;
         name: string;
         federated: string[];
-        lensConfig?: Record<string, { inbound: string[]; outbound: string[]; timestamp: number }>;
+        lensConfig?: Record<string, { lenses?: string[]; inbound?: string[]; outbound?: string[]; timestamp?: number }>;
         partnerNames?: Record<string, string>;
         timestamp: number;
     }
@@ -51,12 +48,12 @@
         name: string;
         pubKey?: string;
         status: 'connected' | 'pending' | 'rejected' | 'error';
-        lensConfig: { inbound: string[]; outbound: string[] };
+        lenses: string[];
     }
 
     // State
     let currentHolonId = '';
-    $: holonName = (currentHolonId && $nameMap[currentHolonId]) || 'Federation';
+    $: holonName = resolvedName(currentHolonId, $nameMap, null, 'Federation');
     let federationInfo: FederationInfo | null = null;
     let federatedHolons: FederatedHolon[] = [];
     let loading = true;
@@ -71,51 +68,28 @@
     let npubError = '';
     let federationMessage = '';
 
-    // Unified permissions per lens (v2.0 format)
-    // permissions[lensName] = { receive: ['read', 'write'], share: ['read', 'write'] }
-    type LensPermissions = { receive: ('read' | 'write')[]; share: ('read' | 'write')[] };
-    let permissions: Record<string, LensPermissions> = {};
+    // Selected lenses for new federation
+    let selectedLenses: Set<string> = new Set();
 
-    // Initialize permissions for all lenses
-    function initializePermissions() {
-        const initial: Record<string, LensPermissions> = {};
-        for (const lens of AVAILABLE_LENSES) {
-            initial[lens] = { receive: [], share: [] };
-        }
-        permissions = initial;
+    // Initialize selected lenses
+    function initializeSelectedLenses() {
+        selectedLenses = new Set();
     }
 
-    // Toggle a permission for a lens
-    function togglePermission(lens: string, direction: 'receive' | 'share', perm: 'read' | 'write') {
-        const current = permissions[lens][direction];
-        if (current.includes(perm)) {
-            permissions[lens][direction] = current.filter(p => p !== perm);
+    // Toggle a lens
+    function toggleLensSelection(lens: string) {
+        if (selectedLenses.has(lens)) {
+            selectedLenses.delete(lens);
         } else {
-            permissions[lens][direction] = [...current, perm];
+            selectedLenses.add(lens);
         }
-        permissions = permissions; // Trigger reactivity
+        selectedLenses = new Set(selectedLenses); // Trigger reactivity
     }
 
-    // Check if a permission is set
-    function hasPermission(lens: string, direction: 'receive' | 'share', perm: 'read' | 'write'): boolean {
-        return permissions[lens]?.[direction]?.includes(perm) ?? false;
-    }
-
-    // Convert unified permissions to legacy lensConfig for backward compatibility
-    function permissionsToLegacyConfig() {
-        const inbound: string[] = [];
-        const outbound: string[] = [];
-        const writeInbound: string[] = [];
-        const writeOutbound: string[] = [];
-
-        for (const [lens, perms] of Object.entries(permissions)) {
-            if (perms.receive.includes('read')) inbound.push(lens);
-            if (perms.share.includes('read')) outbound.push(lens);
-            if (perms.receive.includes('write')) writeInbound.push(lens);
-            if (perms.share.includes('write')) writeOutbound.push(lens);
-        }
-
-        return { inbound, outbound, writeInbound, writeOutbound };
+    // Get selected lenses as config
+    function getSelectedLensConfig() {
+        const lenses = Array.from(selectedLenses);
+        return { lenses, inbound: lenses, outbound: lenses };
     }
 
     // QR Scanner
@@ -127,7 +101,6 @@
     // Subscriptions
     let idUnsubscribe: (() => void) | undefined;
     let federationSubscription: any = null;
-    let dmUnsubscribe: (() => void) | undefined;
 
     onMount(() => {
         // Initialize with user's public key for scoped storage
@@ -153,15 +126,13 @@
             }
         });
 
-        if ($nostrPrivateKey && $nostrPublicKey) {
-            subscribeToDMs();
-        }
+        // Listen to global federation DM events dispatched by +layout.svelte
+        // (the global subscription in layout handles DM operations; we handle UI state)
+        window.addEventListener('federationRequest', handleGlobalFederationRequest);
+        window.addEventListener('federationResponse', handleGlobalFederationResponse);
+        window.addEventListener('federationUpdate', handleGlobalFederationUpdate);
+        window.addEventListener('federationUpdateResponse', handleGlobalFederationUpdateResponse);
     });
-
-    // Reactively subscribe to DMs when Nostr keys become available
-    $: if (holosphere && $nostrPrivateKey && $nostrPublicKey && !dmUnsubscribe) {
-        subscribeToDMs();
-    }
 
     // Update request stores when user changes
     $: if ($nostrPublicKey) {
@@ -172,7 +143,12 @@
     onDestroy(() => {
         idUnsubscribe?.();
         federationSubscription?.unsubscribe();
-        dmUnsubscribe?.();
+        if (typeof window !== 'undefined') {
+            window.removeEventListener('federationRequest', handleGlobalFederationRequest);
+            window.removeEventListener('federationResponse', handleGlobalFederationResponse);
+            window.removeEventListener('federationUpdate', handleGlobalFederationUpdate);
+            window.removeEventListener('federationUpdateResponse', handleGlobalFederationUpdateResponse);
+        }
     });
 
     const isValidHolonId = (id: string | undefined | null): id is string =>
@@ -217,10 +193,13 @@
 
                 for (const holonId of federatedList) {
                     const rawConfig = federationInfo.lensConfig?.[holonId];
-                    const lensConfig = {
-                        inbound: Array.isArray(rawConfig?.inbound) ? rawConfig.inbound : [],
-                        outbound: Array.isArray(rawConfig?.outbound) ? rawConfig.outbound : []
-                    };
+                    // Read lenses from new format, fall back to merging inbound+outbound for backward compat
+                    const lenses = Array.isArray(rawConfig?.lenses)
+                        ? rawConfig.lenses
+                        : [...new Set([
+                            ...(Array.isArray(rawConfig?.inbound) ? rawConfig.inbound : []),
+                            ...(Array.isArray(rawConfig?.outbound) ? rawConfig.outbound : [])
+                        ])];
 
                     // Always resolve holon name
                     const partnerName = federationInfo.partnerNames?.[holonId];
@@ -234,7 +213,7 @@
                         pubKey = holonId;
                     }
 
-                    tempHolons.push({ id: holonId, name, pubKey, status: 'connected', lensConfig });
+                    tempHolons.push({ id: holonId, name, pubKey, status: 'connected', lenses });
                 }
 
                 federatedHolons = tempHolons;
@@ -259,8 +238,7 @@
 
             if ($nostrPrivateKey && $nostrPublicKey) {
                 const ourNpub = nostrUtils.hexToNpub($nostrPublicKey);
-                // Convert unified permissions to legacy format for backward compatibility
-                const lensConfig = permissionsToLegacyConfig();
+                const lensConfig = getSelectedLensConfig();
 
                 // Use retry with exponential backoff for DM sends
                 const result = await withRetry(async () => {
@@ -293,7 +271,7 @@
                 }
             } else {
                 const success = await holosphere.federateHolon(currentHolonId, newPartnerHexPubKey, {
-                    lensConfig: { inbound: [], outbound: [] }
+                    lensConfig: { lenses: [], inbound: [], outbound: [] }
                 });
                 if (!success) {
                     error = 'Failed to create federation';
@@ -324,6 +302,8 @@
                 expandedCards.delete(holonId);
                 expandedCards = expandedCards;
                 showSuccess('Federation removed');
+                // Notify other components (Tasks, Offers, BrowserPanel sidebar) that federation list changed
+                window.dispatchEvent(new CustomEvent('federationChanged'));
                 await new Promise(r => setTimeout(r, 300));
                 await loadFederationData();
             } else {
@@ -336,21 +316,18 @@
         }
     }
 
-    async function updateLensConfig(holonId: string, inbound: string[], outbound: string[]) {
+    async function updateLensConfig(holonId: string, lenses: string[]) {
         if (!holosphere || !currentHolonId || !$nostrPrivateKey) return;
 
         // Find the current federation
         const holon = federatedHolons.find(h => h.id === holonId);
         if (!holon) return;
 
-        const currentLensConfig = holon.lensConfig;
-        const newLensConfig = { inbound, outbound };
+        const currentLenses = holon.lenses;
+        const newLensConfig = { lenses, inbound: lenses, outbound: lenses };
 
         // Check if there's actually a change
-        const inboundChanged = JSON.stringify([...currentLensConfig.inbound].sort()) !== JSON.stringify([...newLensConfig.inbound].sort());
-        const outboundChanged = JSON.stringify([...currentLensConfig.outbound].sort()) !== JSON.stringify([...newLensConfig.outbound].sort());
-
-        if (!inboundChanged && !outboundChanged) {
+        if (JSON.stringify([...currentLenses].sort()) === JSON.stringify([...lenses].sort())) {
             return; // No change
         }
 
@@ -389,7 +366,7 @@
                     partnerPubKey, // Use pubKey instead of npub
                     holonId,
                     holon.name,
-                    currentLensConfig,
+                    { lenses: currentLenses },
                     newLensConfig
                 );
                 pendingUpdates.add(pending);
@@ -402,30 +379,21 @@
         }
     }
 
-    function handleToggleLens(event: CustomEvent<{ holonId: string; lens: string; direction: 'inbound' | 'outbound'; currentlyEnabled: boolean }>) {
-        const { holonId, lens, direction, currentlyEnabled } = event.detail;
+    function handleToggleLens(event: CustomEvent<{ holonId: string; lens: string; currentlyEnabled: boolean }>) {
+        const { holonId, lens, currentlyEnabled } = event.detail;
         const holon = federatedHolons.find(h => h.id === holonId);
         if (!holon) return;
 
         const normalizedLens = lens.toLowerCase();
-        let newInbound = [...holon.lensConfig.inbound];
-        let newOutbound = [...holon.lensConfig.outbound];
+        let newLenses = [...holon.lenses];
 
-        if (direction === 'inbound') {
-            if (currentlyEnabled) {
-                newInbound = newInbound.filter(l => l.toLowerCase() !== normalizedLens);
-            } else {
-                newInbound.push(normalizedLens);
-            }
+        if (currentlyEnabled) {
+            newLenses = newLenses.filter(l => l.toLowerCase() !== normalizedLens);
         } else {
-            if (currentlyEnabled) {
-                newOutbound = newOutbound.filter(l => l.toLowerCase() !== normalizedLens);
-            } else {
-                newOutbound.push(normalizedLens);
-            }
+            newLenses.push(normalizedLens);
         }
 
-        updateLensConfig(holonId, newInbound, newOutbound);
+        updateLensConfig(holonId, newLenses);
     }
 
     async function getHolonName(id: string): Promise<string> {
@@ -468,11 +436,11 @@
         newPartnerHexPubKey = '';
         npubError = '';
         federationMessage = '';
-        initializePermissions();
+        initializeSelectedLenses();
     }
 
-    // Initialize permissions on component mount
-    initializePermissions();
+    // Initialize selected lenses on component mount
+    initializeSelectedLenses();
 
     function validateNpub() {
         if (!newPartnerNpub.trim()) {
@@ -521,47 +489,25 @@
         expandedCards = expandedCards;
     }
 
-    // DM subscription for federation requests
-    function subscribeToDMs() {
-        if (!holosphere || !$nostrPrivateKey || !$nostrPublicKey) return;
-        // Clean up existing subscription first
-        if (dmUnsubscribe) {
-            dmUnsubscribe();
-            dmUnsubscribe = undefined;
-        }
-        console.log('Setting up federation DM subscription for pubkey:', $nostrPublicKey);
-        try {
-            // Get appname from holosphere config for persistent DM tracking
-            const appname = holosphere.config?.appName || 'Holons';
+    // Window event handlers for global federation DM events (dispatched by +layout.svelte)
+    function handleGlobalFederationRequest(event: Event) {
+        const { request, senderPubKey } = (event as CustomEvent).detail;
+        handleIncomingRequest(request, senderPubKey);
+    }
 
-            dmUnsubscribe = handshake.subscribeToFederationDMs(
-                holosphere,
-                $nostrPrivateKey,
-                $nostrPublicKey,
-                {
-                    onRequest: (request: any, senderPubKey: string) => {
-                        console.log('DM onRequest callback triggered:', request?.type, 'from:', senderPubKey?.slice(0, 8));
-                        handleIncomingRequest(request, senderPubKey);
-                    },
-                    onResponse: (response: any, senderPubKey: string) => {
-                        console.log('DM onResponse callback triggered:', response?.status, 'from:', senderPubKey?.slice(0, 8));
-                        handleFederationResponse(response, senderPubKey);
-                    },
-                    onUpdate: (update: any, senderPubKey: string) => {
-                        console.log('DM onUpdate callback triggered:', update?.updateId, 'from:', senderPubKey?.slice(0, 8));
-                        handleIncomingUpdate(update, senderPubKey);
-                    },
-                    onUpdateResponse: (response: any, senderPubKey: string) => {
-                        console.log('DM onUpdateResponse callback triggered:', response?.status, 'from:', senderPubKey?.slice(0, 8));
-                        handleUpdateResponse(response, senderPubKey);
-                    }
-                },
-                { appname } // Pass appname for persistent DM tracking
-            );
-            console.log('Federation DM subscription established with appname:', appname);
-        } catch (err) {
-            console.error('DM subscription error:', err);
-        }
+    function handleGlobalFederationResponse(event: Event) {
+        const { response, senderPubKey } = (event as CustomEvent).detail;
+        handleFederationResponseUI(response, senderPubKey);
+    }
+
+    function handleGlobalFederationUpdate(event: Event) {
+        const { update, senderPubKey } = (event as CustomEvent).detail;
+        handleIncomingUpdate(update, senderPubKey);
+    }
+
+    function handleGlobalFederationUpdateResponse(event: Event) {
+        const { response, senderPubKey } = (event as CustomEvent).detail;
+        handleUpdateResponse(response, senderPubKey);
     }
 
     async function handleIncomingRequest(request: any, senderPubKey: string) {
@@ -588,63 +534,15 @@
         showSuccess(`Request from ${request.senderHolonName}`);
     }
 
-    async function handleFederationResponse(response: any, senderPubKey: string) {
-        console.log('Federation response received:', response, 'from:', senderPubKey);
-
+    // UI-only handler for federation responses (data ops handled by +layout.svelte global subscription)
+    async function handleFederationResponseUI(response: any, senderPubKey: string) {
         // Ignore our own responses (echoed back from Nostr)
-        if (senderPubKey === $nostrPublicKey) {
-            console.log('Ignoring own response echo');
-            return;
-        }
+        if (senderPubKey === $nostrPublicKey) return;
 
         const request = pendingFederationRequests.getById(response.requestId);
-        if (!request) {
-            console.log('No matching request found for response ID:', response.requestId);
-            return;
-        }
-
-        console.log('Found matching request:', request);
+        if (!request) return;
 
         if (response.status === 'accepted') {
-            // Process the response - this stores capabilities, registers holon, and receives holograms
-            if (holosphere && currentHolonId && $nostrPrivateKey) {
-                console.log('Processing federation response - storing capabilities and registering holon');
-
-                // Get our inbound lenses to receive data from the responder
-                // Use response.lensConfig.outbound (what responder is sharing) not request.lensConfig.inbound
-                const ourInboundLenses = response.lensConfig?.outbound || [];
-
-                const result = await handshake.processFederationResponse(
-                    holosphere,
-                    response,
-                    senderPubKey,
-                    {
-                        holonId: currentHolonId,
-                        inboundLenses: ourInboundLenses
-                    }
-                );
-
-                console.log('processFederationResponse result:', result);
-
-                // Also store the federation relationship in holosphere (for UI display)
-                // IMPORTANT: If using response.lensConfig, swap from responder's perspective to initiator's
-                // Responder's outbound (what they share) = Initiator's inbound (what I receive)
-                // Responder's inbound (what they receive) = Initiator's outbound (what I share)
-                // If no response.lensConfig, use original request.lensConfig which is already initiator's perspective
-                if (response.responderHolonId) {
-                    const initiatorLensConfig = response.lensConfig
-                        ? {
-                            inbound: response.lensConfig.outbound || [],
-                            outbound: response.lensConfig.inbound || []
-                        }
-                        : request.lensConfig;
-                    console.log('Storing federation with holon:', response.responderHolonId, 'lensConfig:', initiatorLensConfig);
-                    await holosphere.federateHolon(currentHolonId, response.responderHolonId, {
-                        lensConfig: initiatorLensConfig,
-                        partnerName: response.responderHolonName
-                    });
-                }
-            }
             pendingFederationRequests.updateStatus(response.requestId, 'accepted');
             showSuccess('Federation accepted!');
             await loadFederationData();
@@ -656,85 +554,41 @@
 
     async function acceptRequest(requestId: string) {
         const request = pendingFederationRequests.getById(requestId);
-        // Only accept incoming requests (not our own outgoing requests)
         if (!request || request.type !== 'incoming' || !holosphere || !$nostrPrivateKey || !currentHolonId) return;
 
         saving = true;
+
         try {
             const ourName = await getHolonName(currentHolonId);
-            // Use retry with exponential backoff for DM sends
-            await withRetry(async () => {
-                // Map PendingRequest to the format expected by handshake function
-                const requestPayload = {
-                    requestId: request.id,  // PendingRequest uses 'id', handshake expects 'requestId'
+
+            const sharedLenses = request.lensConfig?.lenses || [];
+
+            // Use the library's acceptFederationRequest which handles all steps:
+            // partner registration, federateHolon, capability issuance,
+            // response DM, dismissRequest, and hologram reception
+            const result = await handshake.acceptFederationRequest(holosphere, $nostrPrivateKey, {
+                request: {
+                    requestId: request.id,
                     senderHolonId: request.senderHolonId,
                     senderHolonName: request.senderHolonName,
-                    capabilities: request.capabilities || []
-                };
-                await handshake.acceptFederationRequest(holosphere, $nostrPrivateKey, {
-                    request: requestPayload,
-                    senderPubKey: request.senderPubKey,
-                    holonId: currentHolonId,
-                    holonName: ourName,
-                    lensConfig: request.lensConfig
-                });
-            }, 3, 1000);
-
-            // IMPORTANT: Set up data replication for the responder side
-            // The responder needs to also process the federation to receive holograms
-            // from the initiator. Without this, only the initiator gets data replication.
-            //
-            // From the initiator's lensConfig:
-            // - initiator's outbound = what initiator shares = responder's inbound (what we receive)
-            // - initiator's inbound = what initiator wants = responder's outbound (what we share)
-            //
-            // So responder's perspective:
-            const responderLensConfig = {
-                inbound: request.lensConfig?.outbound || [],  // What we receive from initiator
-                outbound: request.lensConfig?.inbound || []   // What we share to initiator
-            };
-
-            // Build a synthetic response to process (as if we received it from ourselves)
-            // This sets up the capability and data replication for the responder
-            const syntheticResponse = {
-                requestId: request.id,
-                status: 'accepted',
-                responderHolonId: request.senderHolonId,
-                responderHolonName: request.senderHolonName,
-                lensConfig: request.lensConfig,
-                capabilities: request.capabilities || []
-            };
-
-            console.log('[Federation] Responder setting up data replication:', {
-                responderLensConfig,
-                initiatorHolonId: request.senderHolonId,
-                ourInboundLenses: responderLensConfig.inbound
+                    capabilities: request.capabilities || [],
+                    lensConfig: { lenses: sharedLenses, inbound: sharedLenses, outbound: sharedLenses }
+                },
+                senderPubKey: request.senderPubKey,
+                holonId: currentHolonId,
+                holonName: ourName,
+                lensConfig: { lenses: sharedLenses, inbound: sharedLenses, outbound: sharedLenses }
             });
 
-            // Process to store capabilities and register for inbound data
-            // Note: We use responder's inbound lenses to receive holograms from initiator
-            const result = await handshake.processFederationResponse(
-                holosphere,
-                syntheticResponse,
-                request.senderPubKey,
-                {
-                    holonId: currentHolonId,
-                    inboundLenses: responderLensConfig.inbound
-                }
-            );
-            console.log('[Federation] Responder processFederationResponse result:', result);
-
-            // Actually store the federation relationship in holosphere
-            // Use responder's perspective for lensConfig
-            await holosphere.federateHolon(currentHolonId, request.senderHolonId, {
-                lensConfig: responderLensConfig,
-                partnerName: request.senderHolonName
-            });
-
-            pendingFederationRequests.updateStatus(requestId, 'accepted');
-            showSuccess('Federation accepted');
-            await loadFederationData();
+            if (result.success) {
+                pendingFederationRequests.updateStatus(requestId, 'accepted');
+                showSuccess('Federation accepted');
+                await loadFederationData();
+            } else {
+                error = result.error || 'Failed to accept';
+            }
         } catch (err) {
+            console.error('[Federation] Failed to accept federation request:', err);
             error = err instanceof Error ? err.message : 'Failed to accept';
         } finally {
             saving = false;
@@ -780,9 +634,9 @@
             return;
         }
 
-        // Find the current federation to get current lens config
+        // Find the current federation to get current lenses
         const existingFederation = federatedHolons.find(h => h.pubKey === senderPubKey || h.id === senderPubKey);
-        const currentLensConfig = existingFederation?.lensConfig || { inbound: [], outbound: [] };
+        const currentLensConfig = { lenses: existingFederation?.lenses || [] };
 
         console.log('Creating incoming update from:', update.senderHolonName);
         const pending = createIncomingUpdate(
@@ -964,14 +818,9 @@
                             <div class="federation__request-details">
                                 <span class="federation__request-name">{request.senderHolonName}</span>
                                 <span class="federation__request-npub">{shortenPubKey(request.senderPubKey)}</span>
-                                {#if request.lensConfig && (request.lensConfig.inbound?.length > 0 || request.lensConfig.outbound?.length > 0)}
+                                {#if request.lensConfig?.lenses?.length > 0}
                                     <span class="federation__request-lenses">
-                                        {#if request.lensConfig.inbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--inbound" title="They want to receive">↓ {request.lensConfig.inbound.join(', ')}</span>
-                                        {/if}
-                                        {#if request.lensConfig.outbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--outbound" title="They want to share">↑ {request.lensConfig.outbound.join(', ')}</span>
-                                        {/if}
+                                        <span class="federation__lens-tag" title="Shared lenses">{request.lensConfig.lenses.join(', ')}</span>
                                     </span>
                                 {/if}
                                 {#if request.message}
@@ -1048,25 +897,17 @@
                                 <div class="federation__update-diff">
                                     <div class="federation__update-from">
                                         <span class="federation__update-label">Current:</span>
-                                        {#if update.currentLensConfig.inbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.currentLensConfig.inbound.join(', ')}</span>
-                                        {/if}
-                                        {#if update.currentLensConfig.outbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.currentLensConfig.outbound.join(', ')}</span>
-                                        {/if}
-                                        {#if !update.currentLensConfig.inbound?.length && !update.currentLensConfig.outbound?.length}
+                                        {#if update.currentLensConfig.lenses?.length > 0}
+                                            <span class="federation__lens-tag">{update.currentLensConfig.lenses.join(', ')}</span>
+                                        {:else}
                                             <span class="federation__lens-tag">None</span>
                                         {/if}
                                     </div>
                                     <div class="federation__update-to">
                                         <span class="federation__update-label">New:</span>
-                                        {#if update.newLensConfig.inbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.newLensConfig.inbound.join(', ')}</span>
-                                        {/if}
-                                        {#if update.newLensConfig.outbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.newLensConfig.outbound.join(', ')}</span>
-                                        {/if}
-                                        {#if !update.newLensConfig.inbound?.length && !update.newLensConfig.outbound?.length}
+                                        {#if update.newLensConfig.lenses?.length > 0}
+                                            <span class="federation__lens-tag">{update.newLensConfig.lenses.join(', ')}</span>
+                                        {:else}
                                             <span class="federation__lens-tag">None</span>
                                         {/if}
                                     </div>
@@ -1107,20 +948,14 @@
                                 <div class="federation__update-diff">
                                     <div class="federation__update-from">
                                         <span class="federation__update-label">Current:</span>
-                                        {#if update.currentLensConfig.inbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.currentLensConfig.inbound.join(', ')}</span>
-                                        {/if}
-                                        {#if update.currentLensConfig.outbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.currentLensConfig.outbound.join(', ')}</span>
+                                        {#if update.currentLensConfig.lenses?.length > 0}
+                                            <span class="federation__lens-tag">{update.currentLensConfig.lenses.join(', ')}</span>
                                         {/if}
                                     </div>
                                     <div class="federation__update-to">
                                         <span class="federation__update-label">Requested:</span>
-                                        {#if update.newLensConfig.inbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--inbound">↓ {update.newLensConfig.inbound.join(', ')}</span>
-                                        {/if}
-                                        {#if update.newLensConfig.outbound?.length > 0}
-                                            <span class="federation__lens-tag federation__lens-tag--outbound">↑ {update.newLensConfig.outbound.join(', ')}</span>
+                                        {#if update.newLensConfig.lenses?.length > 0}
+                                            <span class="federation__lens-tag">{update.newLensConfig.lenses.join(', ')}</span>
                                         {/if}
                                     </div>
                                 </div>
@@ -1220,58 +1055,23 @@
                     ></textarea>
                 </div>
 
-                <!-- Unified Lens Permissions -->
+                <!-- Shared Lenses -->
                 <div class="federation__permissions">
                     <div class="federation__permissions-header">
-                        <span class="federation__permissions-label">Lens</span>
-                        <div class="federation__permissions-cols">
-                            <span class="federation__permissions-col" title="Request to read their data">↓R</span>
-                            <span class="federation__permissions-col" title="Request to write their data">↓W</span>
-                            <span class="federation__permissions-col" title="Share your data for reading">↑R</span>
-                            <span class="federation__permissions-col" title="Share your data for writing">↑W</span>
-                        </div>
+                        <span class="federation__permissions-label">Shared Lenses</span>
                     </div>
                     {#each AVAILABLE_LENSES as lens}
                         <div class="federation__permissions-row">
                             <span class="federation__permissions-lens">{lens}</span>
-                            <div class="federation__permissions-checkboxes">
-                                <label class="federation__perm-check federation__perm-check--receive" title="Request to read their {lens}">
-                                    <input
-                                        type="checkbox"
-                                        checked={hasPermission(lens, 'receive', 'read')}
-                                        on:change={() => togglePermission(lens, 'receive', 'read')}
-                                    />
-                                </label>
-                                <label class="federation__perm-check federation__perm-check--receive-write" title="Request to write their {lens}">
-                                    <input
-                                        type="checkbox"
-                                        checked={hasPermission(lens, 'receive', 'write')}
-                                        on:change={() => togglePermission(lens, 'receive', 'write')}
-                                    />
-                                </label>
-                                <label class="federation__perm-check federation__perm-check--share" title="Share your {lens} for reading">
-                                    <input
-                                        type="checkbox"
-                                        checked={hasPermission(lens, 'share', 'read')}
-                                        on:change={() => togglePermission(lens, 'share', 'read')}
-                                    />
-                                </label>
-                                <label class="federation__perm-check federation__perm-check--share-write" title="Share your {lens} for writing">
-                                    <input
-                                        type="checkbox"
-                                        checked={hasPermission(lens, 'share', 'write')}
-                                        on:change={() => togglePermission(lens, 'share', 'write')}
-                                    />
-                                </label>
-                            </div>
+                            <label class="federation__perm-check" title="Share {lens}">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedLenses.has(lens)}
+                                    on:change={() => toggleLensSelection(lens)}
+                                />
+                            </label>
                         </div>
                     {/each}
-                    <div class="federation__permissions-legend">
-                        <span><span class="federation__legend-icon federation__legend-icon--receive">↓</span> Receive from them</span>
-                        <span><span class="federation__legend-icon federation__legend-icon--share">↑</span> Share with them</span>
-                        <span><strong>R</strong> = Read</span>
-                        <span><strong>W</strong> = Write</span>
-                    </div>
                 </div>
             </div>
 
@@ -1515,16 +1315,6 @@
         padding: 1px 6px;
         border-radius: 4px;
         font-family: monospace;
-    }
-
-    .federation__lens-tag--inbound {
-        background: rgba(34, 197, 94, 0.2);
-        color: #86efac;
-    }
-
-    .federation__lens-tag--outbound {
-        background: rgba(59, 130, 246, 0.2);
-        color: #93c5fd;
     }
 
     .federation__request-actions {
@@ -1850,20 +1640,6 @@
         color: var(--color-text-secondary, #d1d5db);
     }
 
-    .federation__permissions-cols {
-        display: flex;
-        gap: var(--spacing-2, 0.5rem);
-    }
-
-    .federation__permissions-col {
-        width: 28px;
-        text-align: center;
-        font-size: 11px;
-        font-weight: var(--font-weight-semibold, 600);
-        color: var(--color-text-muted, #6b7280);
-        cursor: help;
-    }
-
     .federation__permissions-row {
         display: flex;
         align-items: center;
@@ -1889,13 +1665,7 @@
         text-transform: capitalize;
     }
 
-    .federation__permissions-checkboxes {
-        display: flex;
-        gap: var(--spacing-2, 0.5rem);
-    }
-
     .federation__perm-check {
-        width: 28px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1907,53 +1677,6 @@
         height: 16px;
         cursor: pointer;
         accent-color: var(--color-accent, #4f46e5);
-    }
-
-    .federation__perm-check--receive input[type="checkbox"]:checked {
-        accent-color: #22c55e;
-    }
-
-    .federation__perm-check--receive-write input[type="checkbox"]:checked {
-        accent-color: #a855f7;
-    }
-
-    .federation__perm-check--share input[type="checkbox"]:checked {
-        accent-color: #3b82f6;
-    }
-
-    .federation__perm-check--share-write input[type="checkbox"]:checked {
-        accent-color: #f97316;
-    }
-
-    .federation__permissions-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--spacing-3, 0.75rem);
-        margin-top: var(--spacing-3, 0.75rem);
-        font-size: 11px;
-        color: var(--color-text-muted, #6b7280);
-    }
-
-    .federation__legend-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
-        border-radius: 3px;
-        font-size: 10px;
-        font-weight: bold;
-        margin-right: 2px;
-    }
-
-    .federation__legend-icon--receive {
-        background: rgba(34, 197, 94, 0.2);
-        color: #86efac;
-    }
-
-    .federation__legend-icon--share {
-        background: rgba(59, 130, 246, 0.2);
-        color: #93c5fd;
     }
 
     /* Update section styles */

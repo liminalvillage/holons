@@ -3,7 +3,8 @@
     import { fade, scale } from "svelte/transition";
     import { goto } from '$app/navigation';
     import type { HoloSphere } from "holosphere";
-    import { nameMap, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul, buildHologramLink } from '$lib/stores/nameResolver';
+    import DisplayName from './shared/DisplayName.svelte';
     import { formatDate } from "../utils/date";
     import {
         calculateTaskCompletionScores,
@@ -72,9 +73,10 @@
             const existsByPubKey = Object.values(store).some(u => u.id === pubKey);
             if (!existsByPubKey) {
                 // Add nostr user to store with pubKey as ID (similar structure to telegram)
+                // Name resolution is automatic via resolvedName()
                 store[pubKey] = {
                     id: pubKey,
-                    first_name: 'You',
+                    first_name: resolvedName(pubKey, $nameMap),
                     last_name: '',
                     username: pubKey  // Use full pubKey as username (like telegram ID)
                 };
@@ -132,15 +134,13 @@
 
         resolveHologramSource(soul);
         const holonId = extractHolonIdFromSoul(soul);
-        return (holonId && $nameMap[holonId]) || 'External Source';
+        return resolvedName(holonId, $nameMap, null, 'External Source');
     }
 
-    // Add function to navigate to hologram source
+    // Navigate to hologram source — deep links to the specific task on the source holon
     function navigateToHologramSource() {
-        if (!quest._hologram?.sourceHolon) return;
-
-        // Navigate to the source holon using sourceHolon directly
-        goto(`/${quest._hologram.sourceHolon}/dashboard`);
+        if (!quest._hologram) return;
+        goto(buildHologramLink(quest._hologram));
     }
 
     onMount(() => {
@@ -241,6 +241,7 @@
 
         try {
             // holosphere.put() is optimistic - caches locally and returns immediately
+            // For holograms, holosphere automatically routes writes to the source holon
             await holosphere.put(holonId, "quests", updatedQuest);
             quest = updatedQuest;
 
@@ -267,18 +268,7 @@
 
         if (confirm("Are you sure you want to delete this task?")) {
             try {
-                const deleted = await holosphere.delete(holonId, "quests", questId);
-
-                if (!deleted) {
-                    // Native delete couldn't find the data (likely written by another author).
-                    // Write a tombstone so future reads (which skip author filtering for
-                    // own-holon queries) see _deleted and filter it out.
-                    await holosphere.put(holonId, "quests", {
-                        id: questId,
-                        _deleted: true,
-                        _deletedAt: Date.now()
-                    });
-                }
+                await holosphere.delete(holonId, "quests", questId);
 
                 dispatch("close", { deleted: true, questId });
             } catch (error: any) {
@@ -576,20 +566,6 @@
 
             // Update quest with new participants
     await updateQuest({ participants: newParticipantsArray });
-    
-    // Create a hologram of the task in the participant's personal holon (if they have one)
-    // Only attempt if user.id is a valid holon ID (non-empty string)
-    if (user.id && typeof user.id === 'string' && user.id.trim() !== '' && user.id !== holonId) {
-        try {
-            const hologram = await holosphere.createHologram(holonId, 'quests', quest);
-            await holosphere.put(user.id, 'quests', hologram);
-        } catch (error: any) {
-            // Silently ignore AuthorizationError for holograms - user may not have write access
-            if (error?.name !== 'AuthorizationError') {
-                console.debug(`[TaskModal.svelte] Could not create hologram in participant's holon (${user.id}):`, error);
-            }
-        }
-    }
     }
 
     async function scheduleTask() {
@@ -1490,13 +1466,13 @@
                                             </div>
                                             <img
                                                 src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
-                                                alt={user.first_name}
+                                                alt={resolvedName(user.id, $nameMap, user)}
                                                 class="w-7 h-7 rounded-full"
                                                 loading="lazy"
                                             />
                                             <div class="text-left">
                                                 <div class="text-gray-200 font-medium">
-                                                    {user.first_name} {user.last_name || ""}
+                                                    <DisplayName id={user.id} {user} />
                                                 </div>
                                                 {#if currentTime > 0}
                                                     <div class="text-xs text-indigo-300">{formatTime(currentTime)}</div>
@@ -1693,12 +1669,12 @@
                                 </div>
                                 <img
                                     src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
-                                    alt={user.first_name}
+                                    alt={resolvedName(user.id, $nameMap, user)}
                                     class="w-7 h-7 rounded-full"
                                     loading="lazy"
                                 />
                                 <span class="text-gray-200 font-medium">
-                                    {user.first_name} {user.last_name || ""}
+                                    <DisplayName id={user.id} {user} />
                                 </span>
                             </button>
                         {/each}

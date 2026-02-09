@@ -1,16 +1,13 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
-	import { Check, X, ArrowDown, ArrowUp, RefreshCw } from 'svelte-feathers';
+	import { Check, X, RefreshCw } from 'svelte-feathers';
 
 	export let id: string;
 	export let senderPubKey: string;
 	export let senderHolonName: string;
 	export let type: 'federation_request' | 'lens_update' = 'federation_request';
 	export let message: string = '';
-	// What they're offering to share with us (their outbound = our inbound)
-	export let theirOutbound: string[] = [];
-	// What they're requesting from us (their inbound = our outbound)
-	export let theirInbound: string[] = [];
+	export let sharedLenses: string[] = [];
 	export let isProcessing: boolean = false;
 
 	const dispatch = createEventDispatcher();
@@ -49,40 +46,20 @@
 		</div>
 	</div>
 
-	<!-- Lens Exchange Details -->
+	<!-- Shared Lenses -->
 	<div class="request-card__exchange">
-		<!-- What they're offering -->
-		{#if theirOutbound.length > 0}
+		{#if sharedLenses.length > 0}
 			<div class="request-card__lenses request-card__lenses--receiving">
 				<div class="request-card__lenses-header">
-					<ArrowDown size={12} />
-					<span>You will receive</span>
+					<span>Shared lenses</span>
 				</div>
 				<div class="request-card__lens-tags">
-					{#each theirOutbound as lens}
+					{#each sharedLenses as lens}
 						<span class="request-card__lens-tag request-card__lens-tag--receive">{lens}</span>
 					{/each}
 				</div>
 			</div>
-		{/if}
-
-		<!-- What they're requesting -->
-		{#if theirInbound.length > 0}
-			<div class="request-card__lenses request-card__lenses--sharing">
-				<div class="request-card__lenses-header">
-					<ArrowUp size={12} />
-					<span>They request from you</span>
-				</div>
-				<div class="request-card__lens-tags">
-					{#each theirInbound as lens}
-						<span class="request-card__lens-tag request-card__lens-tag--share">{lens}</span>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
-		<!-- No lenses specified -->
-		{#if theirOutbound.length === 0 && theirInbound.length === 0}
+		{:else}
 			<div class="request-card__no-lenses">
 				No specific lenses configured
 			</div>
@@ -222,11 +199,6 @@
 		border-left: 3px solid var(--color-success, #22c55e);
 	}
 
-	.request-card__lenses--sharing {
-		background: rgba(59, 130, 246, 0.1);
-		border-left: 3px solid var(--color-info, #3b82f6);
-	}
-
 	.request-card__lenses-header {
 		display: flex;
 		align-items: center;
@@ -239,10 +211,6 @@
 
 	.request-card__lenses--receiving .request-card__lenses-header {
 		color: var(--color-success, #22c55e);
-	}
-
-	.request-card__lenses--sharing .request-card__lenses-header {
-		color: var(--color-info, #3b82f6);
 	}
 
 	.request-card__lens-tags {
@@ -261,11 +229,6 @@
 	.request-card__lens-tag--receive {
 		background: rgba(34, 197, 94, 0.2);
 		color: var(--color-success, #22c55e);
-	}
-
-	.request-card__lens-tag--share {
-		background: rgba(59, 130, 246, 0.2);
-		color: var(--color-info, #3b82f6);
 	}
 
 	.request-card__no-lenses {

@@ -1,13 +1,8 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
-import { schnorr } from '@noble/curves/secp256k1';
-import { bytesToHex } from '@noble/hashes/utils';
+import { nostrUtils } from 'holosphere';
 
-// Get Nostr public key (x-only schnorr format, 64 hex chars)
-function getPublicKey(privateKey: string): string {
-	const pubKeyBytes = schnorr.getPublicKey(privateKey);
-	return bytesToHex(pubKeyBytes);
-}
+const { getPublicKey, generatePrivateKey, parseNsecOrHex } = nostrUtils;
 
 const STORAGE_KEY = 'nostr_private_key';
 
@@ -31,14 +26,14 @@ function createNostrStore() {
 	return {
 		subscribe,
 
-		// Initialize - check localStorage for existing key
+		// Initialize - check sessionStorage for existing key
 		init: async () => {
 			if (!browser) return;
 
 			update((state) => ({ ...state, isLoading: true }));
 
 			try {
-				const storedKey = localStorage.getItem(STORAGE_KEY);
+				const storedKey = sessionStorage.getItem(STORAGE_KEY);
 				if (storedKey) {
 					const publicKey = getPublicKey(storedKey);
 					update((state) => ({
@@ -48,7 +43,7 @@ function createNostrStore() {
 						isLoading: false,
 						isNewKey: false
 					}));
-					console.log('Nostr key loaded from localStorage');
+					console.log('Nostr key loaded from sessionStorage');
 				} else {
 					update((state) => ({
 						...state,
@@ -71,16 +66,14 @@ function createNostrStore() {
 			update((state) => ({ ...state, isLoading: true }));
 
 			try {
-				// Generate 32 random bytes for private key
-				const privateKeyBytes = new Uint8Array(32);
-				crypto.getRandomValues(privateKeyBytes);
-				const privateKey = bytesToHex(privateKeyBytes);
+				// Generate private key using holosphere
+				const privateKey = generatePrivateKey();
 
-				// Derive public key using holosphere
+				// Derive public key
 				const publicKey = getPublicKey(privateKey);
 
-				// Store in localStorage
-				localStorage.setItem(STORAGE_KEY, privateKey);
+				// Store in sessionStorage
+				sessionStorage.setItem(STORAGE_KEY, privateKey);
 
 				update((state) => ({
 					...state,
@@ -102,34 +95,36 @@ function createNostrStore() {
 			}
 		},
 
-		// Import an existing private key
-		importKey: async (privateKey: string) => {
+		// Import an existing private key (accepts hex or nsec format)
+		importKey: async (keyInput: string) => {
 			if (!browser) return;
 
-			// Validate key format (64 hex characters)
-			if (!/^[0-9a-fA-F]{64}$/.test(privateKey)) {
-				throw new Error('Invalid private key format. Must be 64 hex characters.');
+			// Parse key input (accepts nsec or hex)
+			const parsed = parseNsecOrHex(keyInput);
+			if (!parsed.valid) {
+				throw new Error(parsed.error || 'Invalid private key format');
 			}
+			const privateKey = parsed.hexPrivKey!;
 
 			update((state) => ({ ...state, isLoading: true }));
 
 			try {
-				// Derive public key using holosphere
+				// Derive public key
 				const publicKey = getPublicKey(privateKey);
 
-				// Store in localStorage
-				localStorage.setItem(STORAGE_KEY, privateKey.toLowerCase());
+				// Store hex internally
+				sessionStorage.setItem(STORAGE_KEY, privateKey);
 
 				update((state) => ({
 					...state,
-					privateKey: privateKey.toLowerCase(),
+					privateKey,
 					publicKey,
 					isLoading: false,
 					isNewKey: false
 				}));
 
 				console.log('Nostr key imported successfully');
-				return { privateKey: privateKey.toLowerCase(), publicKey };
+				return { privateKey, publicKey };
 			} catch (error) {
 				console.error('Error importing Nostr key:', error);
 				update((state) => ({
@@ -151,7 +146,7 @@ function createNostrStore() {
 		// Clear the key (logout)
 		clearKey: () => {
 			if (browser) {
-				localStorage.removeItem(STORAGE_KEY);
+				sessionStorage.removeItem(STORAGE_KEY);
 			}
 			set({
 				...initialState,

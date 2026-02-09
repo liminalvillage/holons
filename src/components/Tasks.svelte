@@ -14,7 +14,7 @@
 	import { writable } from 'svelte/store';
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
-	import { nameMap, resolveName, resolveHologramSource, extractHolonIdFromSoul, awaitName } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName, resolveName, resolveHologramSource, extractHolonIdFromSoul, awaitName, buildHologramLink } from '$lib/stores/nameResolver';
 	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/store";
 	// Add new imports for quest library
 	import QuestImportModal from "./QuestImportModal.svelte";
@@ -94,7 +94,7 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let holonID = $state(''); // Start empty so reactive block triggers on first valid ID
-	let holonName = $derived((holonID && $nameMap[holonID]) || 'Tasks');
+	let holonName = $derived(resolvedName(holonID, $nameMap, null, 'Tasks'));
 	let store: Store = $state({});
 	let quests = $derived(Object.entries(store));
 
@@ -276,7 +276,8 @@
 				users.set(telegramId, { id: telegramId, name: name });
 			}
 		} else if (pubKey) {
-			users.set(pubKey, { id: pubKey, name: 'You' });
+			// Name resolution is automatic via resolvedName()
+			users.set(pubKey, { id: pubKey, name: resolvedName(pubKey, $nameMap) });
 		}
 
 		// Add users from quest participants
@@ -846,7 +847,7 @@
 		const holonId = extractHolonIdFromSoul(hologramSoul);
 		if (!holonId) return 'External Source';
 
-		return $nameMap[holonId] || `Holon ${holonId}`;
+		return resolvedName(holonId, $nameMap);
 	}
 
 	// Function to pre-resolve hologram names for all quests
@@ -1554,6 +1555,16 @@
 		};
 		window.addEventListener('openDependencyTask', handleDependencyTask as EventListener);
 
+		// Listen for federation changes (e.g. holon removed from federation)
+		const handleFederationChanged = () => {
+			if (includeFederatedTasks) {
+				fetchFederatedTasks();
+			} else {
+				fetchData();
+			}
+		};
+		window.addEventListener('federationChanged', handleFederationChanged);
+
 		// Note: Data fetching is handled by the reactive block below
 		// which triggers when $page.params.id !== holonID
 
@@ -1568,6 +1579,7 @@
 			subscriptionState.currentHolonID = null;
 			currentHolonId = null; // Reset so next mount triggers fetch
 			window.removeEventListener('openDependencyTask', handleDependencyTask as EventListener);
+			window.removeEventListener('federationChanged', handleFederationChanged);
 		};
 	});
 
@@ -2032,23 +2044,23 @@
 												{#if quest._hologram?.isHologram}
 													<span
 														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
-														title="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
+														title="Navigate to source task: {getHologramSource(quest._hologram.soul)}"
 														onclick={(e) => { e.stopPropagation();
-															if (quest._hologram?.sourceHolon) {
-																goto(`/${quest._hologram.sourceHolon}/tasks`);
+															if (quest._hologram) {
+																goto(buildHologramLink(quest._hologram));
 															}
 														}}
 														onkeydown={(e) => {
 															e.stopPropagation();
 															if (e.key === 'Enter' || e.key === ' ') {
-																if (quest._hologram?.sourceHolon) {
-																	goto(`/${quest._hologram.sourceHolon}/tasks`);
+																if (quest._hologram) {
+																	goto(buildHologramLink(quest._hologram));
 																}
 															}
 														}}
 														tabindex="0"
 														role="button"
-														aria-label="Navigate to source holon: {getHologramSource(quest._hologram.soul)}"
+														aria-label="Navigate to source task: {getHologramSource(quest._hologram.soul)}"
 													>
 														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
 															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>

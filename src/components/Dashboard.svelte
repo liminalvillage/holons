@@ -10,7 +10,7 @@
 	import StatGrid from "./shared/StatGrid.svelte";
 	import { Users, CheckSquare, Calendar, ShoppingCart, Gift, Clipboard, UserPlus, Grid } from 'svelte-feathers';
 	import type { HoloSphere } from "holosphere";
-	import { nameMap, resolveName } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { subscribeWithFederationSupport } from "../lib/federation/subscriptionHelper";
 
@@ -93,8 +93,7 @@
 		checklistsMap = new Map();
 		rolesMap = new Map();
 
-		// Resolve holon name reactively
-		resolveName(holonID);
+		// Name resolution is automatic via resolvedName() in TitleBar
 
 		// Helper to convert data to map
 		const toMap = (data: any): Map<string, any> => {
@@ -242,7 +241,7 @@
 </script>
 
 <!-- Title Bar -->
-<TitleBar holonName={$nameMap[holonID] || 'Loading...'} title="Dashboard" icon={Grid} />
+<TitleBar holonName={resolvedName(holonID, $nameMap, null, 'Loading...')} title="Dashboard" icon={Grid} />
 
 {#if isLoading}
 	<div class="loading">

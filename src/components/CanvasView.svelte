@@ -4,6 +4,7 @@
     import { formatDate, formatTime } from '../utils/date.js';
     import type { HoloSphere } from 'holosphere';
     import DrawingTools from './DrawingTools.svelte';
+    import { buildHologramLink } from '$lib/stores/nameResolver';
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -1475,10 +1476,10 @@
                                     {#if card.quest._hologram?.isHologram}
                                         <button
                                             class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-800 flex-shrink-0 hover:bg-blue-500 hover:bg-opacity-30 transition-colors"
-                                            title="Navigate to source holon"
+                                            title="Navigate to source task"
                                             on:click|stopPropagation={() => {
-                                                if (card.quest._hologram?.sourceHolon) {
-                                                    goto(`/${card.quest._hologram.sourceHolon}/tasks`);
+                                                if (card.quest._hologram) {
+                                                    goto(buildHologramLink(card.quest._hologram));
                                                 }
                                             }}
                                         >

@@ -12,10 +12,7 @@
 		name: string;
 		federationStatus?: FederationStatus;
 		lensConfig?: {
-			inbound: string[];
-			outbound: string[];
-			writeInbound?: string[];
-			writeOutbound?: string[];
+			lenses: string[];
 		};
 		accessLevel?: 'none' | 'read' | 'write' | 'member';
 	}
@@ -25,7 +22,7 @@
 		senderPubKey: string;
 		senderHolonName: string;
 		senderHolonId?: string;
-		lensConfig: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] };
+		lensConfig: { lenses: string[] };
 		message?: string;
 		requestKind?: 'lens_update';  // If set, it's a lens update; otherwise it's a federation request
 	}
@@ -106,8 +103,7 @@
 						senderHolonName={request.senderHolonName}
 						type="federation_request"
 						message={request.message || ''}
-						theirOutbound={request.lensConfig?.outbound || []}
-						theirInbound={request.lensConfig?.inbound || []}
+						sharedLenses={request.lensConfig?.lenses || []}
 						isProcessing={processingRequestId === request.id}
 						on:accept={handleAccept}
 						on:decline={handleDecline}
@@ -150,8 +146,7 @@
 						id={request.id}
 						senderPubKey={request.senderPubKey}
 						senderHolonName={request.senderHolonName}
-						theirOutbound={request.lensConfig?.outbound || []}
-						theirInbound={request.lensConfig?.inbound || []}
+						sharedLenses={request.lensConfig?.lenses || []}
 						message={request.message || ''}
 						isProcessing={processingRequestId === request.id}
 						on:accept={handleAccept}
@@ -160,7 +155,6 @@
 				{/each}
 
 				{#each acceptedHolons as holon (holon.id)}
-					{@const hasWriteAccess = (holon.lensConfig?.writeInbound?.length ?? 0) > 0}
 					<HolonItem
 						id={holon.id}
 						name={holon.name}
@@ -169,11 +163,8 @@
 						isStarred={false}
 						isHome={false}
 						federationStatus={holon.federationStatus || 'none'}
-						inboundLenses={holon.lensConfig?.inbound || []}
-						outboundLenses={holon.lensConfig?.outbound || []}
-						writeInboundLenses={holon.lensConfig?.writeInbound || []}
-						writeOutboundLenses={holon.lensConfig?.writeOutbound || []}
-						accessLevel={hasWriteAccess ? 'write' : 'read'}
+						sharedLenses={holon.lensConfig?.lenses || []}
+						accessLevel={(holon.lensConfig?.lenses?.length ?? 0) > 0 ? 'read' : 'none'}
 						{showPinButton}
 						showStarButton={false}
 						{showRemoveButton}
@@ -198,10 +189,7 @@
 						isStarred={false}
 						isHome={false}
 						federationStatus={holon.federationStatus || 'none'}
-						inboundLenses={holon.lensConfig?.inbound || []}
-						outboundLenses={holon.lensConfig?.outbound || []}
-						writeInboundLenses={holon.lensConfig?.writeInbound || []}
-						writeOutboundLenses={holon.lensConfig?.writeOutbound || []}
+						sharedLenses={holon.lensConfig?.lenses || []}
 						accessLevel="none"
 						showPinButton={false}
 						showStarButton={false}

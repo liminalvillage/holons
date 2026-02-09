@@ -6,7 +6,7 @@
     import Schedule from "./ScheduleWidget.svelte";
     import type { HoloSphere } from "holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
-    import { nameMap, resolveName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
     import { Plus } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -27,7 +27,7 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
     let holonID: string = $page.params.id;
-    $: holonName = (holonID && $nameMap[holonID]) || 'Checklists';
+    $: holonName = resolvedName(holonID, $nameMap, null, 'Checklists');
     let unsubscribe: () => void;
     let checklistsUnsubscribe: (() => void) | undefined;
     let isLoading = true;

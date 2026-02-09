@@ -1,17 +1,13 @@
 import type { HoloSphere } from 'holosphere';
+// @ts-ignore — buildLensPath is exported from holosphere ESM but missing from type declarations
+import { subscriptions, buildLensPath } from 'holosphere';
 
 /**
- * Set up a subscription to a holon's lens with enhanced logging for debugging.
- * For owned holons, subscribes to real-time updates.
- * For federated holons, skips real-time subscription (defense-in-depth);
- * federated data is loaded via getAll() which has proper authorization checks.
+ * Subscribe to a holon's lens with federation support.
  *
- * @param holosphere - The HoloSphere instance
- * @param userPubKey - The current user's public key (for logging)
- * @param targetHolonId - The holon ID to subscribe to
- * @param lens - The lens name to subscribe to
- * @param callback - Callback function for updates
- * @returns Unsubscribe function
+ * holosphere.subscribe() forces authors=[localPubKey], which prevents receiving
+ * updates authored by federated partners. For federated holons, this helper uses
+ * the low-level createSubscription to derive the author from the path instead.
  */
 export async function subscribeWithFederationSupport(
   holosphere: HoloSphere,
@@ -22,53 +18,51 @@ export async function subscribeWithFederationSupport(
 ): Promise<() => void> {
   const isFederated = targetHolonId !== userPubKey;
 
-  // Defense-in-depth: skip real-time subscriptions for non-owned holons.
-  // holosphere.subscribe() now has its own authorization check, but this
-  // provides an additional guard at the client layer.
-  // Federated data is still loaded via getAll() which has proper auth.
   if (isFederated) {
-    console.log('[SubscriptionHelper] Skipping subscription for federated holon (defense-in-depth):', {
-      targetHolonId: targetHolonId.slice(0, 12),
-      lens,
-      userPubKey: userPubKey?.slice(0, 12)
-    });
-    return () => {};
+    // GATEKEEPER: Verify federation is accepted before allowing subscription
+    try {
+      const federationInfo = await holosphere.getFederation(userPubKey);
+      const federatedList = federationInfo?.federated || [];
+
+      if (!federatedList.includes(targetHolonId)) {
+        console.warn('[SubscriptionHelper] Blocked subscription to non-federated holon:', {
+          targetHolonId: targetHolonId.slice(0, 8) + '...',
+          lens
+        });
+        return () => {}; // Return no-op unsubscribe
+      }
+    } catch (err) {
+      console.error('[SubscriptionHelper] Failed to verify federation:', err);
+      return () => {}; // Fail closed - don't allow subscription if verification fails
+    }
+
+    const hs = holosphere as any;
+    const appName: string | undefined = hs.config?.appName;
+    const client = hs.client;
+
+    if (!client || !appName) {
+      console.warn('[SubscriptionHelper] Cannot subscribe to federated holon: missing client or appName');
+      return () => {};
+    }
+
+    const path = buildLensPath(appName, targetHolonId, lens);
+
+    try {
+      const sub = await subscriptions.createSubscription(
+        client, path, callback,
+        { realtimeOnly: true, resolveHolograms: true, appname: appName }
+      );
+      return () => { sub?.unsubscribe?.(); };
+    } catch (err) {
+      console.error('[SubscriptionHelper] Failed to set up federated subscription:', err);
+      return () => {};
+    }
   }
 
-  console.log('[SubscriptionHelper] Setting up subscription:', {
-    targetHolonId: targetHolonId.slice(0, 12),
-    lens,
-    isFederated,
-    userPubKey: userPubKey?.slice(0, 12)
-  });
-
-  // Wrap callback to add logging
-  const wrappedCallback = (item: any, key?: string) => {
-    console.log('[SubscriptionHelper] Subscription callback received:', {
-      targetHolonId: targetHolonId.slice(0, 12),
-      lens,
-      isFederated,
-      itemId: item?.id || key,
-      itemTitle: item?.title,
-      isDeleted: !item || item._deleted
-    });
-    callback(item, key);
-  };
-
-  // Subscribe to real-time updates for owned holon
-  const sub = holosphere.subscribe(targetHolonId, lens, wrappedCallback) as { unsubscribe?: () => void } | (() => void);
-
-  console.log('[SubscriptionHelper] Subscription created for:', {
-    targetHolonId: targetHolonId.slice(0, 12),
-    lens,
-    subscriptionType: typeof sub
-  });
+  // For owned holons, use holosphere.subscribe() directly
+  const sub = holosphere.subscribe(targetHolonId, lens, callback) as { unsubscribe?: () => void } | (() => void);
 
   return () => {
-    console.log('[SubscriptionHelper] Unsubscribing from:', {
-      targetHolonId: targetHolonId.slice(0, 12),
-      lens
-    });
     if (sub && typeof sub === 'object' && 'unsubscribe' in sub && sub.unsubscribe) {
       sub.unsubscribe();
     } else if (typeof sub === 'function') {

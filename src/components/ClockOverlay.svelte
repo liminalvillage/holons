@@ -6,7 +6,7 @@
     import type { HoloSphere } from "holosphere";
     import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import { goto } from "$app/navigation";
-    import { nameMap, resolveName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 
     import { taskSortStore, sortTasks, type TaskSortState } from "../dashboard/store";
 
@@ -24,9 +24,8 @@
     // Holon data state
     $: holonID = $ID;
 
-    // Holon name (reactive via nameResolver)
-    $: if (holonID) resolveName(holonID);
-    $: holonName = (holonID && $nameMap[holonID]) || '';
+    // Holon name (reactive via nameResolver, auto-triggers resolution)
+    $: holonName = resolvedName(holonID, $nameMap, null, '');
     
     // Events and tasks data
     let todaysEvents: Array<{

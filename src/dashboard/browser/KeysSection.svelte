@@ -3,7 +3,9 @@
 	import { slide } from 'svelte/transition';
 	import { Key, ChevronDown, Copy, Check, LogOut } from 'svelte-feathers';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
+	import { nostrUtils } from 'holosphere';
 
+	const { hexToNsec } = nostrUtils;
 	const dispatch = createEventDispatcher();
 
 	// UI State
@@ -16,6 +18,7 @@
 	let showPrivateKey: boolean = false;
 
 	$: shortenedPubKey = $nostrPublicKey ? `${$nostrPublicKey.slice(0, 8)}...${$nostrPublicKey.slice(-6)}` : 'Not set';
+	$: displayNsec = $nostrPrivateKey ? hexToNsec($nostrPrivateKey) : '';
 
 	// Load collapse state from localStorage
 	if (typeof window !== 'undefined') {
@@ -66,7 +69,7 @@
 	}
 
 	function logout() {
-		localStorage.setItem('just_logged_out', 'true');
+		sessionStorage.setItem('just_logged_out', 'true');
 		nostrStore.clearKey();
 		dispatch('keyChanged', { action: 'exit' });
 		window.location.reload();
@@ -144,8 +147,8 @@
 
 					{#if showPrivateKey}
 						<div class="keys-section__private-key" transition:slide>
-							<p class="keys-section__private-key-label">Private Key (keep secret!)</p>
-							<code class="keys-section__private-key-value">{$nostrPrivateKey}</code>
+							<p class="keys-section__private-key-label">nsec (keep secret!)</p>
+							<code class="keys-section__private-key-value">{displayNsec}</code>
 						</div>
 					{/if}
 
@@ -166,12 +169,12 @@
 						<i class="fas fa-arrow-left"></i> Back
 					</button>
 
-					<p class="keys-section__import-label">Enter your 64-character hex private key</p>
+					<p class="keys-section__import-label">Enter your nsec or hex private key</p>
 
 					<input
 						type="password"
 						bind:value={importKeyInput}
-						placeholder="Private key..."
+						placeholder="nsec1... or hex key"
 						class="keys-section__import-input"
 						class:keys-section__import-input--error={importError}
 					/>
@@ -183,7 +186,7 @@
 					<button
 						class="keys-section__import-btn"
 						on:click={importKey}
-						disabled={isProcessing || importKeyInput.length !== 64}
+						disabled={isProcessing || !importKeyInput.trim()}
 					>
 						{#if isProcessing}
 							<i class="fas fa-spinner fa-spin"></i>

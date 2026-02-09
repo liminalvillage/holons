@@ -7,7 +7,6 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
-import type { CapabilityInfo } from '../federation/nostrDM';
 
 // ============================================================================
 // Types
@@ -25,12 +24,9 @@ export interface PendingRequest {
   senderHolonId: string;
   senderHolonName: string;
   lensConfig: {
-    inbound: string[];
-    outbound: string[];
-    writeInbound?: string[];
-    writeOutbound?: string[];
+    lenses: string[];
   };
-  capabilities: CapabilityInfo[];
+  capabilities: any[];
   timestamp: number;
   status: RequestStatus;
   message?: string;
@@ -48,12 +44,10 @@ export interface PendingUpdate {
   partnerHolonId: string;
   partnerHolonName: string;
   currentLensConfig: {
-    inbound: string[];
-    outbound: string[];
+    lenses: string[];
   };
   newLensConfig: {
-    inbound: string[];
-    outbound: string[];
+    lenses: string[];
   };
   timestamp: number;
   status: RequestStatus;
@@ -296,10 +290,11 @@ export function createIncomingRequest(
   senderNpub: string,
   senderHolonId: string,
   senderHolonName: string,
-  lensConfig: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] },
-  capabilities: CapabilityInfo[],
+  lensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
+  capabilities: any[],
   message?: string
 ): PendingRequest {
+  const lenses = lensConfig.lenses || [...new Set([...(lensConfig.inbound || []), ...(lensConfig.outbound || [])])];
   return {
     id: requestId,
     type: 'incoming',
@@ -307,7 +302,7 @@ export function createIncomingRequest(
     senderNpub,
     senderHolonId,
     senderHolonName,
-    lensConfig,
+    lensConfig: { lenses },
     capabilities,
     timestamp: Date.now(),
     status: 'pending',
@@ -326,11 +321,12 @@ export function createOutgoingRequest(
   senderHolonName: string,
   recipientPubKey: string,
   recipientNpub: string,
-  lensConfig: { inbound: string[]; outbound: string[] },
-  capabilities: CapabilityInfo[],
+  lensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
+  capabilities: any[],
   message?: string,
   recipientHolonName?: string
 ): PendingRequest {
+  const lenses = lensConfig.lenses || [...new Set([...(lensConfig.inbound || []), ...(lensConfig.outbound || [])])];
   return {
     id: requestId,
     type: 'outgoing',
@@ -341,7 +337,7 @@ export function createOutgoingRequest(
     recipientPubKey,
     recipientNpub,
     recipientHolonName,
-    lensConfig,
+    lensConfig: { lenses },
     capabilities,
     timestamp: Date.now(),
     status: 'pending',
@@ -497,10 +493,12 @@ export function createIncomingUpdate(
   partnerNpub: string,
   partnerHolonId: string,
   partnerHolonName: string,
-  currentLensConfig: { inbound: string[]; outbound: string[] },
-  newLensConfig: { inbound: string[]; outbound: string[] },
+  currentLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
+  newLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
   message?: string
 ): PendingUpdate {
+  const curLenses = currentLensConfig.lenses || [...new Set([...(currentLensConfig.inbound || []), ...(currentLensConfig.outbound || [])])];
+  const newLenses = newLensConfig.lenses || [...new Set([...(newLensConfig.inbound || []), ...(newLensConfig.outbound || [])])];
   return {
     id: updateId,
     type: 'incoming_update',
@@ -508,8 +506,8 @@ export function createIncomingUpdate(
     partnerNpub,
     partnerHolonId,
     partnerHolonName,
-    currentLensConfig,
-    newLensConfig,
+    currentLensConfig: { lenses: curLenses },
+    newLensConfig: { lenses: newLenses },
     timestamp: Date.now(),
     status: 'pending',
     message
@@ -525,10 +523,12 @@ export function createOutgoingUpdate(
   partnerNpub: string,
   partnerHolonId: string,
   partnerHolonName: string,
-  currentLensConfig: { inbound: string[]; outbound: string[] },
-  newLensConfig: { inbound: string[]; outbound: string[] },
+  currentLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
+  newLensConfig: { lenses?: string[]; inbound?: string[]; outbound?: string[] },
   message?: string
 ): PendingUpdate {
+  const curLenses = currentLensConfig.lenses || [...new Set([...(currentLensConfig.inbound || []), ...(currentLensConfig.outbound || [])])];
+  const newLenses = newLensConfig.lenses || [...new Set([...(newLensConfig.inbound || []), ...(newLensConfig.outbound || [])])];
   return {
     id: updateId,
     type: 'outgoing_update',
@@ -536,8 +536,8 @@ export function createOutgoingUpdate(
     partnerNpub,
     partnerHolonId,
     partnerHolonName,
-    currentLensConfig,
-    newLensConfig,
+    currentLensConfig: { lenses: curLenses },
+    newLensConfig: { lenses: newLenses },
     timestamp: Date.now(),
     status: 'pending',
     message

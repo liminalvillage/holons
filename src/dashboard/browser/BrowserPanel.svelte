@@ -7,7 +7,6 @@
 	import { Search, Plus, X, Upload } from 'svelte-feathers';
 	import { nostrPublicKey, nostrPrivateKey, nostrStore } from '../../lib/stores/nostr';
 	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
-	import { useFederationHandshake } from '../../lib/federation/useFederationHandshake';
 	import { handshake } from 'holosphere';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
@@ -30,7 +29,7 @@
 		id: string;
 		name: string;
 		federationStatus: FederationStatus;
-		lensConfig?: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] };
+		lensConfig?: { lenses: string[] };
 		pendingRequestId?: string;
 	}
 
@@ -51,15 +50,11 @@
 
 	// Lens configuration for federation (same as Federation component)
 	const availableLenses = ['quests', 'offers', 'tags', 'expenses', 'announcements', 'users', 'shopping', 'recurring'];
-	let selectedInboundLenses: Set<string> = new Set(['quests', 'offers', 'users']);
-	let selectedOutboundLenses: Set<string> = new Set(['quests', 'offers', 'users']);
+	let selectedLenses: Set<string> = new Set(['quests', 'offers', 'users']);
 
 
 	// Current holon from route
 	$: currentHolonId = $ID;
-
-	// Federation handshake helpers
-	$: federationHelpers = useFederationHandshake(holosphere);
 
 	// Filtered holons based on search
 	$: filteredHolons = getFilteredHolons(searchQuery, holons);
@@ -95,6 +90,10 @@
 			// Trigger name resolution (reactive $: statement keeps homeHolonName in sync)
 			if ($nostrPublicKey) {
 				resolveName($nostrPublicKey);
+				// Eagerly initialize from current nameMap snapshot so the first render has the correct name
+				if ($nameMap[$nostrPublicKey]) {
+					homeHolonName = $nameMap[$nostrPublicKey];
+				}
 			}
 
 			// Initialize federation requests store
@@ -113,6 +112,7 @@
 		window.addEventListener('federationResponse', handleFederationResponseEvent as EventListener);
 		window.addEventListener('federationRequest', handleFederationRequestEvent as EventListener);
 		window.addEventListener('federationUpdate', handleFederationUpdateEvent as EventListener);
+		window.addEventListener('federationChanged', handleFederationChanged as EventListener);
 	});
 
 	onDestroy(() => {
@@ -123,6 +123,7 @@
 			window.removeEventListener('federationResponse', handleFederationResponseEvent as EventListener);
 			window.removeEventListener('federationRequest', handleFederationRequestEvent as EventListener);
 			window.removeEventListener('federationUpdate', handleFederationUpdateEvent as EventListener);
+			window.removeEventListener('federationChanged', handleFederationChanged as EventListener);
 		}
 	});
 
@@ -164,7 +165,7 @@
 				'', // npub - will be resolved if needed
 				request.senderHolonId || senderPubKey,
 				request.senderHolonName || 'Unknown Holon',
-				request.lensConfig || { inbound: [], outbound: [] },
+				request.lensConfig || { lenses: [] },
 				request.capabilities || [],
 				request.message
 			);
@@ -179,14 +180,7 @@
 
 		// Add to pending requests store for UI display (as a lens_update type)
 		if (update && senderPubKey) {
-			// Extract lens config including write permissions
-			const newLensConfig = update.newLensConfig || { inbound: [], outbound: [] };
-			const lensConfig = {
-				inbound: newLensConfig.inbound || [],
-				outbound: newLensConfig.outbound || [],
-				writeInbound: newLensConfig.writeInbound || [],
-				writeOutbound: newLensConfig.writeOutbound || []
-			};
+			const newLensConfig = update.newLensConfig || { lenses: [] };
 
 			const pendingRequest = createIncomingRequest(
 				update.updateId || `update-${Date.now()}`,
@@ -194,7 +188,7 @@
 				'', // npub
 				update.senderHolonId || senderPubKey,
 				update.senderHolonName || 'Unknown Holon',
-				lensConfig,
+				newLensConfig,
 				newLensConfig.capabilities || [],
 				update.message
 			);
@@ -244,10 +238,12 @@
 								name: name || `Holon ${holonId.slice(0, 8)}...`,
 								federationStatus: 'accepted',
 								lensConfig: {
-									inbound: storedLensConfig?.inbound || [],
-									outbound: storedLensConfig?.outbound || [],
-									writeInbound: storedLensConfig?.writeInbound || [],
-									writeOutbound: storedLensConfig?.writeOutbound || []
+									lenses: Array.isArray(storedLensConfig?.lenses)
+										? storedLensConfig.lenses
+										: [...new Set([
+											...(Array.isArray(storedLensConfig?.inbound) ? storedLensConfig.inbound : []),
+											...(Array.isArray(storedLensConfig?.outbound) ? storedLensConfig.outbound : [])
+										])]
 								}
 							});
 						}
@@ -362,6 +358,11 @@
 		}
 	}
 
+	function handleFederationChanged() {
+		// Refresh the sidebar when federation list changes (e.g. removal from Federation.svelte)
+		loadHolons();
+	}
+
 	function handleHolonNavigated(event: CustomEvent) {
 		// No-op: holons list is managed by federation, not navigation history
 	}
@@ -410,26 +411,22 @@
 
 		// Remove from local holons list
 		holons = holons.filter(h => h.id !== holonId);
+
+		// Notify other components (Tasks, Offers, etc.) that federation list changed
+		window.dispatchEvent(new CustomEvent('federationChanged'));
 	}
 
-	async function handleLensConfigUpdate(event: CustomEvent<{ holonId: string; lensConfig: { inbound: string[]; outbound: string[]; writeInbound?: string[]; writeOutbound?: string[] } }>) {
+	async function handleLensConfigUpdate(event: CustomEvent<{ holonId: string; lensConfig: { lenses: string[] } }>) {
 		const { holonId, lensConfig } = event.detail;
 
 		// Get old lens config to determine what's new
 		const index = holons.findIndex(h => h.id === holonId);
-		const oldLensConfig = index >= 0 ? holons[index].lensConfig : { inbound: [], outbound: [], writeInbound: [], writeOutbound: [] };
-		const newOutboundLenses = lensConfig.outbound.filter(
-			lens => !oldLensConfig?.outbound?.includes(lens)
-		);
+		const oldLenses = index >= 0 ? (holons[index].lensConfig?.lenses || []) : [];
+		const newLenses = lensConfig.lenses;
 
-		// Check for write permission changes
-		const oldWriteInbound = oldLensConfig?.writeInbound || [];
-		const oldWriteOutbound = oldLensConfig?.writeOutbound || [];
-		const newWriteInbound = lensConfig.writeInbound || [];
-		const newWriteOutbound = lensConfig.writeOutbound || [];
-
-		const writeInboundChanged = JSON.stringify([...oldWriteInbound].sort()) !== JSON.stringify([...newWriteInbound].sort());
-		const writeOutboundChanged = JSON.stringify([...oldWriteOutbound].sort()) !== JSON.stringify([...newWriteOutbound].sort());
+		// Check if there's actually a change
+		const changed = JSON.stringify([...oldLenses].sort()) !== JSON.stringify([...newLenses].sort());
+		if (!changed) return;
 
 		// Update the holon's lens config in the list immediately for UI responsiveness
 		if (index >= 0) {
@@ -444,118 +441,28 @@
 		if (holosphere && homeHolonId) {
 			try {
 				// Use federateHolon to update the lens config (it handles updates too)
+				const fedLensConfig = { lenses: newLenses, inbound: newLenses, outbound: newLenses };
 				await holosphere.federateHolon(homeHolonId, holonId, {
-					lensConfig,
+					lensConfig: fedLensConfig,
 					skipPropagation: true // Don't re-propagate existing data
 				});
 				console.log('[BrowserPanel] Lens config saved for:', holonId.slice(0, 12) + '...', lensConfig);
 
-				// Check if we need to send a handshake request
-				// Send handshake whenever lens config changes so partner is notified
-				const inboundChanged = JSON.stringify([...lensConfig.inbound].sort()) !== JSON.stringify([...(oldLensConfig?.inbound || [])].sort());
-				const outboundChanged = JSON.stringify([...lensConfig.outbound].sort()) !== JSON.stringify([...(oldLensConfig?.outbound || [])].sort());
-				const needsHandshake = inboundChanged || outboundChanged || writeInboundChanged || writeOutboundChanged;
+				// Send lens update notification to partner via NIP-44 DM
+				if ($nostrPrivateKey) {
+					const addedLenses = newLenses.filter(l => !oldLenses.includes(l));
+					const removedLenses = oldLenses.filter(l => !newLenses.includes(l));
+					const parts: string[] = [];
+					if (addedLenses.length > 0) parts.push(`Added: ${addedLenses.join(', ')}`);
+					if (removedLenses.length > 0) parts.push(`Removed: ${removedLenses.join(', ')}`);
+					const message = parts.length > 0 ? parts.join('. ') : 'Updated lens configuration';
 
-				if (needsHandshake && $nostrPrivateKey) {
-					console.log('[BrowserPanel] Lens config changed, preparing handshake request');
-					if (newOutboundLenses.length > 0) {
-						console.log('[BrowserPanel] New outbound lenses:', newOutboundLenses);
-					}
-					if (writeInboundChanged) {
-						console.log('[BrowserPanel] Write inbound changed:', oldWriteInbound, '->', newWriteInbound);
-					}
-					if (writeOutboundChanged) {
-						console.log('[BrowserPanel] Write outbound changed:', oldWriteOutbound, '->', newWriteOutbound);
-					}
-
-					const newCapabilities = [];
-
-					// Issue read capabilities for newly added outbound lenses
-					for (const lensName of newOutboundLenses) {
-						try {
-							const token = await holosphere.issueCapability(
-								['read'],
-								{ holonId: homeHolonId, lensName, dataId: '*' },
-								holonId, // recipient is the partner
-								{
-									expiresIn: 365 * 24 * 60 * 60 * 1000, // 1 year
-									issuer: $nostrPublicKey,  // Must be signer's public key for signature verification
-									issuerKey: $nostrPrivateKey
-								}
-							);
-							newCapabilities.push({
-								token,
-								scope: { holonId: homeHolonId, lensName },
-								permissions: ['read']
-							});
-							console.log(`[BrowserPanel] Issued read capability for lens "${lensName}"`);
-						} catch (err) {
-							console.warn(`[BrowserPanel] Failed to issue read capability for lens "${lensName}":`, err);
-						}
-					}
-
-					// Issue write capabilities for newly added writeOutbound lenses
-					const newWriteOutboundLenses = newWriteOutbound.filter(
-						lens => !oldWriteOutbound.includes(lens)
-					);
-					for (const lensName of newWriteOutboundLenses) {
-						try {
-							const token = await holosphere.issueCapability(
-								['read', 'write'],
-								{ holonId: homeHolonId, lensName, dataId: '*' },
-								holonId, // recipient is the partner
-								{
-									expiresIn: 365 * 24 * 60 * 60 * 1000, // 1 year
-									issuer: $nostrPublicKey,  // Must be signer's public key for signature verification
-									issuerKey: $nostrPrivateKey
-								}
-							);
-							newCapabilities.push({
-								token,
-								scope: { holonId: homeHolonId, lensName },
-								permissions: ['read', 'write']
-							});
-							console.log(`[BrowserPanel] Issued write capability for lens "${lensName}"`);
-						} catch (err) {
-							console.warn(`[BrowserPanel] Failed to issue write capability for lens "${lensName}":`, err);
-						}
-					}
-
-					// Build the message describing the changes
-					const changeDescriptions = [];
-					if (newOutboundLenses.length > 0) {
-						changeDescriptions.push(`New shared lenses: ${newOutboundLenses.join(', ')}`);
-					}
-					if (newWriteOutboundLenses.length > 0) {
-						changeDescriptions.push(`New write access granted for: ${newWriteOutboundLenses.join(', ')}`);
-					}
-					if (writeInboundChanged) {
-						const requestedWriteLenses = newWriteInbound.filter(l => !oldWriteInbound.includes(l));
-						const revokedWriteLenses = oldWriteInbound.filter(l => !newWriteInbound.includes(l));
-						if (requestedWriteLenses.length > 0) {
-							changeDescriptions.push(`Requesting write access for: ${requestedWriteLenses.join(', ')}`);
-						}
-						if (revokedWriteLenses.length > 0) {
-							changeDescriptions.push(`Removed write access request for: ${revokedWriteLenses.join(', ')}`);
-						}
-					}
-					const message = changeDescriptions.length > 0
-						? changeDescriptions.join('. ')
-						: 'Updated lens configuration';
-
-					// Send the handshake request to the partner via DM
 					try {
-						// Use the federation update protocol to notify partner of changes
-						// Include capabilities in the lensConfig so partner can store them
-						const lensConfigWithCapabilities = {
-							...lensConfig,
-							capabilities: newCapabilities.length > 0 ? newCapabilities : undefined
-						};
 						const result = await handshake.requestFederationUpdate(holosphere, $nostrPrivateKey, {
 							partnerPubKey: holonId,
 							holonId: homeHolonId,
 							holonName: homeHolonName || 'My Holon',
-							newLensConfig: lensConfigWithCapabilities,
+							newLensConfig: fedLensConfig,
 							message
 						});
 						if (result.success) {
@@ -570,8 +477,8 @@
 			} catch (err) {
 				console.warn('[BrowserPanel] Failed to update lens config:', err);
 				// Revert UI change on error
-				if (index >= 0 && oldLensConfig) {
-					holons[index].lensConfig = oldLensConfig;
+				if (index >= 0) {
+					holons[index].lensConfig = { lenses: oldLenses };
 					holons = [...holons];
 				}
 			}
@@ -590,8 +497,7 @@
 		addSuccess = '';
 		isInitiatingFederation = false;
 		// Reset lens config to defaults
-		selectedInboundLenses = new Set(['quests', 'offers', 'users']);
-		selectedOutboundLenses = new Set(['quests', 'offers', 'users']);
+		selectedLenses = new Set(['quests', 'offers', 'users']);
 	}
 
 
@@ -605,22 +511,13 @@
 		isInitiatingFederation = false;
 	}
 
-	function toggleInboundLens(lens: string) {
-		if (selectedInboundLenses.has(lens)) {
-			selectedInboundLenses.delete(lens);
+	function toggleLens(lens: string) {
+		if (selectedLenses.has(lens)) {
+			selectedLenses.delete(lens);
 		} else {
-			selectedInboundLenses.add(lens);
+			selectedLenses.add(lens);
 		}
-		selectedInboundLenses = new Set(selectedInboundLenses);
-	}
-
-	function toggleOutboundLens(lens: string) {
-		if (selectedOutboundLenses.has(lens)) {
-			selectedOutboundLenses.delete(lens);
-		} else {
-			selectedOutboundLenses.add(lens);
-		}
-		selectedOutboundLenses = new Set(selectedOutboundLenses);
+		selectedLenses = new Set(selectedLenses);
 	}
 
 	// Federation request handlers
@@ -652,40 +549,36 @@
 	// Handle accepting a federation request
 	async function handleAcceptFederationRequest(request: PendingRequest) {
 		const homeHolonId = $nostrPublicKey || currentHolonId;
-		if (!$nostrPrivateKey || !holosphere || !homeHolonId) return;
+		if (!$nostrPrivateKey || !holosphere || !homeHolonId) {
+			console.error('[BrowserPanel] Cannot accept: missing privateKey, holosphere, or homeHolonId');
+			return;
+		}
 
-		// IMPORTANT: Swap inbound/outbound when accepting
-		// Sender's lensConfig.outbound = lenses they share (we receive)
-		// Sender's lensConfig.inbound = lenses they want (we share)
-		const acceptorLensConfig = {
-			inbound: request.lensConfig?.outbound || [],   // Accept what they're sharing
-			outbound: request.lensConfig?.inbound || []    // Share what they're requesting
-		};
+		const sharedLenses = request.lensConfig?.lenses || [];
 
-		const result = await federationHelpers.acceptFederationRequest($nostrPrivateKey, {
+		// Use the library's acceptFederationRequest which handles all steps:
+		// partner registration, federateHolon, capability issuance,
+		// response DM, dismissRequest, and hologram reception
+		const result = await handshake.acceptFederationRequest(holosphere, $nostrPrivateKey, {
 			request: {
 				requestId: request.id,
 				senderHolonId: request.senderHolonId,
 				senderHolonName: request.senderHolonName,
-				capabilities: request.capabilities
+				capabilities: request.capabilities || [],
+				lensConfig: { lenses: sharedLenses, inbound: sharedLenses, outbound: sharedLenses }
 			},
 			senderPubKey: request.senderPubKey,
 			holonId: homeHolonId,
 			holonName: homeHolonName || 'My Holon',
-			lensConfig: acceptorLensConfig
+			lensConfig: { lenses: sharedLenses, inbound: sharedLenses, outbound: sharedLenses }
 		});
 
 		if (result.success) {
-			// Note: acceptFederationRequest in handshake.js already calls federateHolon()
-			// with the correct lens config and partner name, so no need to call it again here
-
-			// Update request status
 			pendingFederationRequests.updateStatus(request.id, 'accepted');
-
-			// Reload federation list to include new partner
 			await loadHolons();
-
 			console.log('[BrowserPanel] Federation request accepted:', request.id);
+		} else {
+			console.error('[BrowserPanel] Failed to accept federation:', result.error);
 		}
 	}
 
@@ -697,57 +590,18 @@
 		const update = (request as any).updateData;
 		const senderPubKey = request.senderPubKey;
 
-		// Extract capabilities if included (new outbound lenses from partner = our new inbound)
-		const partnerCapabilities = update?.newLensConfig?.capabilities || request.capabilities || [];
+		const sharedUpdateLenses = request.lensConfig?.lenses || [];
 
-		// Swap the lens config from partner's perspective to our perspective
-		// Partner's outbound (what they share) = Our inbound (what we receive)
-		// Partner's inbound (what they receive) = Our outbound (what we share)
-		// Partner's writeOutbound (write access they grant) = Our writeInbound (write access we receive)
-		// Partner's writeInbound (write access they request) = Our writeOutbound (write access we grant)
-		const ourLensConfig = {
-			inbound: request.lensConfig?.outbound || [],
-			outbound: request.lensConfig?.inbound || [],
-			writeInbound: request.lensConfig?.writeOutbound || [],
-			writeOutbound: request.lensConfig?.writeInbound || []
-		};
-
-		// Store capabilities from the partner for the new inbound lenses
-		if (partnerCapabilities.length > 0 && holosphere.storeInboundCapability) {
-			for (const cap of partnerCapabilities) {
-				try {
-					await holosphere.storeInboundCapability(senderPubKey, cap);
-					console.log('[BrowserPanel] Stored capability for lens:', cap.scope?.lensName);
-				} catch (err) {
-					console.warn('[BrowserPanel] Failed to store capability:', err);
-				}
-			}
-		}
-
-		// Update our local federation with the swapped lens config
-		// Note: acceptFederationUpdate may also call federateHolon internally, but this call
-		// ensures we have the updated config locally before sending the acceptance DM
-		await holosphere.federateHolon(homeHolonId, senderPubKey, {
-			lensConfig: ourLensConfig,
-			skipPropagation: true
-		});
-		console.log('[BrowserPanel] Updated local lens config from partner:', ourLensConfig);
-
-		// Accept the update (sends response to partner)
+		// acceptFederationUpdate handles both federateHolon and sending the response DM
 		await handshake.acceptFederationUpdate(holosphere, $nostrPrivateKey, {
 			updateId: update?.updateId || request.id,
 			senderPubKey,
 			holonId: homeHolonId,
-			newLensConfig: ourLensConfig
+			newLensConfig: { lenses: sharedUpdateLenses, inbound: sharedUpdateLenses, outbound: sharedUpdateLenses }
 		});
-		console.log('[BrowserPanel] Sent acceptance for lens update');
 
-		// Update request status
 		pendingFederationRequests.updateStatus(request.id, 'accepted');
-
-		// Reload federation list to show updated lens config
 		await loadHolons();
-
 		console.log('[BrowserPanel] Lens update accepted:', request.id);
 	}
 
@@ -755,7 +609,7 @@
 		if (!$nostrPrivateKey || !holosphere) return;
 
 		try {
-			await federationHelpers.rejectFederationRequest($nostrPrivateKey, {
+			await handshake.rejectFederationRequest(holosphere, $nostrPrivateKey, {
 				requestId: request.id,
 				senderPubKey: request.senderPubKey
 			});
@@ -826,15 +680,13 @@
 
 			if ($nostrPrivateKey && holosphere && homeHolonId) {
 				try {
-					const lensConfig = {
-						inbound: Array.from(selectedInboundLenses),
-						outbound: Array.from(selectedOutboundLenses)
-					};
+					const lenses = Array.from(selectedLenses);
+					const lensConfig = { lenses, inbound: lenses, outbound: lenses };
 
 					// Get home holon name for federation request
 					const myHolonName = homeHolonName || 'My Holon';
 
-					const result = await federationHelpers.initiateFederationHandshake($nostrPrivateKey, {
+					const result = await handshake.initiateFederationHandshake(holosphere, $nostrPrivateKey, {
 						partnerPubKey: holonId,
 						holonId: homeHolonId,
 						holonName: myHolonName,
@@ -1038,35 +890,14 @@
 				<!-- Lens Configuration -->
 				<div class="add-modal__lens-config">
 					<div class="add-modal__lens-section">
-						<span class="add-modal__lens-label">
-							<span class="add-modal__lens-icon">↓</span>
-							Receive (inbound lenses)
-						</span>
+						<span class="add-modal__lens-label">Shared Lenses</span>
 						<div class="add-modal__lens-toggles">
 							{#each availableLenses as lens}
 								<label class="add-modal__lens-toggle">
 									<input
 										type="checkbox"
-										checked={selectedInboundLenses.has(lens)}
-										onchange={() => toggleInboundLens(lens)}
-									/>
-									<span>{lens}</span>
-								</label>
-							{/each}
-						</div>
-					</div>
-					<div class="add-modal__lens-section">
-						<span class="add-modal__lens-label">
-							<span class="add-modal__lens-icon">↑</span>
-							Share (outbound lenses)
-						</span>
-						<div class="add-modal__lens-toggles">
-							{#each availableLenses as lens}
-								<label class="add-modal__lens-toggle">
-									<input
-										type="checkbox"
-										checked={selectedOutboundLenses.has(lens)}
-										onchange={() => toggleOutboundLens(lens)}
+										checked={selectedLenses.has(lens)}
+										onchange={() => toggleLens(lens)}
 									/>
 									<span>{lens}</span>
 								</label>

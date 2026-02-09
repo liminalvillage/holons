@@ -21,10 +21,8 @@ export type ExpirationPreset = 'permanent' | '30days' | '1year' | 'custom';
 
 export type Permission = 'read' | 'write' | 'delete';
 
-export type Direction = 'inbound' | 'outbound';
-
 export interface LensCapabilityToken {
-  /** Unique identifier: {issuerPubKey}_{recipientPubKey}_{holonId}_{lensName}_{direction} */
+  /** Unique identifier: {issuerPubKey}_{recipientPubKey}_{holonId}_{lensName} */
   id: string;
   /** Token type marker */
   type: 'lens_capability';
@@ -38,8 +36,6 @@ export interface LensCapabilityToken {
   lensName: string;
   /** Array of permissions granted */
   permissions: Permission[];
-  /** inbound = READ capability, outbound = WRITE capability */
-  direction: Direction;
   /** Unix timestamp when issued */
   issuedAt: number;
   /** Unix timestamp when expires, or null for permanent */
@@ -64,10 +60,7 @@ export interface PartnerCapabilities {
   /** Optional human-readable alias */
   alias?: string;
   /** Per-lens capabilities */
-  lensCapabilities: Record<string, {
-    inbound?: LensCapabilityToken;
-    outbound?: LensCapabilityToken;
-  }>;
+  lensCapabilities: Record<string, LensCapabilityToken>;
 }
 
 export interface ParsedNpubResult {
@@ -184,23 +177,13 @@ export function generateCapabilityId(
   issuerPubKey: string,
   recipientPubKey: string,
   holonId: string,
-  lensName: string,
-  direction: Direction
+  lensName: string
 ): string {
-  return `${issuerPubKey}_${recipientPubKey}_${holonId}_${lensName}_${direction}`;
+  return `${issuerPubKey}_${recipientPubKey}_${holonId}_${lensName}`;
 }
 
 // Re-export utilities from holosphere
 export { generateNonce, hexToNpub, parseNpubOrHex, shortenNpub, shortenPubKey };
-
-/**
- * Get permissions based on direction
- * - inbound (partner can read my data) = ['read']
- * - outbound (partner can write to my holon) = ['write']
- */
-export function getPermissionsForDirection(direction: Direction): Permission[] {
-  return direction === 'inbound' ? ['read'] : ['write'];
-}
 
 /**
  * Create a new capability token record (unsigned - signing happens via holosphere)
@@ -210,21 +193,20 @@ export function createCapabilityRecord(
   recipientPubKey: string,
   holonId: string,
   lensName: string,
-  direction: Direction,
+  permissions: Permission[],
   expirationPreset: ExpirationPreset,
   customExpirationDate?: string
 ): Omit<LensCapabilityToken, 'signature'> {
   const now = Date.now();
 
   return {
-    id: generateCapabilityId(issuerPubKey, recipientPubKey, holonId, lensName, direction),
+    id: generateCapabilityId(issuerPubKey, recipientPubKey, holonId, lensName),
     type: 'lens_capability',
     issuerPubKey,
     recipientPubKey,
     holonId,
     lensName,
-    permissions: getPermissionsForDirection(direction),
-    direction,
+    permissions,
     issuedAt: now,
     expiresAt: getExpirationTimestamp(expirationPreset, customExpirationDate),
     expirationPreset,

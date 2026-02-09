@@ -7,7 +7,8 @@
 	import { formatDate, formatTime } from "../utils/date";
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
-	import { nameMap, resolveName, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+	import DisplayName from './shared/DisplayName.svelte';
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { Gift, Plus } from 'svelte-feathers';
 	import { nostrPublicKey } from "../lib/stores/nostr";
@@ -25,7 +26,7 @@
 	 */
 	let store = {};
 	let holonID: string | null = null;
-	$: holonName = (holonID && $nameMap[holonID]) || 'Offers & Requests';
+	$: holonName = resolvedName(holonID, $nameMap, null, 'Offers & Requests');
 
 	// Federated offers toggle
 	let includeFederatedOffers = false;
@@ -104,10 +105,10 @@
 		// Check if Nostr user is logged in
 		else if (pubKey) {
 			if (!store[pubKey]) {
-				// Use similar structure to telegram user
+				// Name resolution is automatic via resolvedName()
 				store[pubKey] = {
 					id: pubKey,
-					first_name: 'You',
+					first_name: resolvedName(pubKey, $nameMap),
 					last_name: '',
 					username: pubKey  // Use full pubKey as username (like telegram ID)
 				};
@@ -190,7 +191,17 @@
 		
 		// Add click outside handler
 		document.addEventListener('click', handleClickOutside);
-		
+
+		// Listen for federation changes (e.g. holon removed from federation)
+		const handleFederationChanged = () => {
+			if (includeFederatedOffers) {
+				subscribeToOffersAndNeeds();
+			} else {
+				subscribeToOffersAndNeeds();
+			}
+		};
+		window.addEventListener('federationChanged', handleFederationChanged);
+
 		// Initial load if holonID is already set from the ID store
 		if ($ID) {
 			holonID = $ID;
@@ -198,10 +209,11 @@
 				// Silently handle initial initialization errors
 			});
 		}
-		
+
 		return () => {
 			isDestroyed = true;
 			document.removeEventListener('click', handleClickOutside);
+			window.removeEventListener('federationChanged', handleFederationChanged);
 			idUnsubscribe();
 			// Clean up subscriptions on unmount
 			if (questSubscriptionOff) {
@@ -579,7 +591,7 @@
 
 		resolveHologramSource(soul);
 		const holonId = extractHolonIdFromSoul(soul);
-		return (holonId && $nameMap[holonId]) || 'External Source';
+		return resolvedName(holonId, $nameMap, null, 'External Source');
 	}
 
 	// Assign a user as a participant to an offer or need
@@ -609,53 +621,13 @@
 			participants: updatedParticipants
 		};
 		
-		// If this is a federated item (has _hologram metadata), we need to handle it differently
-		// to avoid creating duplicates. Instead of putting it directly to the local holon,
-		// we should update the original source or use a different approach.
-		if (item._federation || item._hologram?.isHologram) {
-			console.log("[Offers.svelte] Taking federated item:", item.id);
-
-			// For federated items, we'll store the participation in a separate local tracking system
-			// to avoid duplicating the entire item
-			const participationKey = `participation_${item.id}`;
-			const participationData = {
-				itemId: item.id,
-				itemTitle: item.title,
-				participant: newParticipant,
-				participatedAt: new Date().toISOString(),
-				originalHolonId: item._federation?.sourceHolonId || item._hologram?.sourceHolon,
-				itemSoul: item._federation?.soul || item._hologram?.soul
-			};
-			
-			// Store participation locally
-			try {
-				await holosphere.put(holonID, 'participations', participationData);
-
-				// Update the item in the store to show the user as a participant
-				// This is just for UI display - the actual item remains federated
-				store = {
-					...store,
-					[item.key]: updatedItem
-				};
-
-				console.log("[Offers.svelte] Stored participation for federated item:", participationData);
-			} catch (error: any) {
-				if (error?.name === 'AuthorizationError') {
-					notifyWriteDenied('Unable to save - no write permission for this holon');
-				} else {
-					console.error('[Offers.svelte] Error storing participation:', error);
-				}
-			}
-		} else {
-			// For local items, update normally - the subscription will handle the store update
-			try {
-				await holosphere.put(holonID, 'quests', updatedItem);
-			} catch (error: any) {
-				if (error?.name === 'AuthorizationError') {
-					notifyWriteDenied('Unable to save - no write permission for this holon');
-				} else {
-					console.error('[Offers.svelte] Error updating quest:', error);
-				}
+		try {
+			await holosphere.put(holonID, 'quests', updatedItem);
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('[Offers.svelte] Error updating quest:', error);
 			}
 		}
 
@@ -832,58 +804,19 @@
 			return;
 		}
 		
-		// If this is a federated item, remove from participations
-		if (item._federation || item._hologram?.isHologram) {
-			console.log("[Offers.svelte] Removing participation from federated item:", item.id);
+		const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
+		const updatedItem = {
+			...item,
+			participants: updatedParticipants
+		};
 
-			// Find and remove the participation record
-			const participationData = await holosphere.getAll(holonID, "participations");
-			if (Array.isArray(participationData)) {
-				const participationToRemove = participationData.find(p =>
-					p.itemId === item.id && p.participant.id === user.id
-				);
-
-				if (participationToRemove) {
-					try {
-						// Delete the participation record
-						await holosphere.delete(holonID, "participations", participationToRemove.id || participationToRemove.key);
-
-						// Update the item in the store to remove the user from participants
-						const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
-						store = {
-							...store,
-							[item.key]: {
-								...item,
-								participants: updatedParticipants
-							}
-						};
-
-						console.log("[Offers.svelte] Removed participation for federated item:", item.id);
-					} catch (error: any) {
-						if (error?.name === 'AuthorizationError') {
-							notifyWriteDenied('Unable to delete - no write permission for this holon');
-						} else {
-							console.error('[Offers.svelte] Error deleting participation:', error);
-						}
-					}
-				}
-			}
-		} else {
-			// For local items, update normally
-			const updatedParticipants = (item.participants || []).filter(p => p.id !== user.id);
-			const updatedItem = {
-				...item,
-				participants: updatedParticipants
-			};
-
-			try {
-				await holosphere.put(holonID, 'quests', updatedItem);
-			} catch (error: any) {
-				if (error?.name === 'AuthorizationError') {
-					notifyWriteDenied('Unable to save - no write permission for this holon');
-				} else {
-					console.error('[Offers.svelte] Error updating quest:', error);
-				}
+		try {
+			await holosphere.put(holonID, 'quests', updatedItem);
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('[Offers.svelte] Error updating quest:', error);
 			}
 		}
 	}
@@ -1118,8 +1051,8 @@
 													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
 														{#each Object.entries(userStore).filter(([userId, user]) => !offer.participants?.some(p => p.id === user.id)) as [userId, user]}
 															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(offer, user)}>
-																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
-																<span>{user.first_name} {user.last_name || ''}</span>
+																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={resolvedName(user.id, $nameMap, user)} />
+																<span><DisplayName id={user.id} {user} /></span>
 															</button>
 														{/each}
 														{#if Object.entries(userStore).filter(([userId, user]) => !offer.participants?.some(p => p.id === user.id)).length === 0}
@@ -1131,13 +1064,13 @@
 
 											{#if offer.participants?.length > 0}
 												<div class="flex items-center gap-1">
-													<div class="flex -space-x-1 relative group" title={offer.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
+													<div class="flex -space-x-1 relative group" title={offer.participants.map(p => resolvedName(p.id, $nameMap, { first_name: p.firstName, last_name: p.lastName, username: p.username })).join(', ')}>
 														{#each offer.participants.slice(0, 2) as participant}
 															<div class="relative">
 																<img
 																	class="w-5 h-5 rounded-full border border-white shadow-sm"
 																	src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-																	alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
+																	alt={resolvedName(participant.id, $nameMap, { first_name: participant.firstName, last_name: participant.lastName, username: participant.username })}
 																/>
 															</div>
 														{/each}
@@ -1321,8 +1254,8 @@
 													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
 														{#each Object.entries(userStore).filter(([userId, user]) => !need.participants?.some(p => p.id === user.id)) as [userId, user]}
 															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(need, user)}>
-																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
-																<span>{user.first_name} {user.last_name || ''}</span>
+																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={resolvedName(user.id, $nameMap, user)} />
+																<span><DisplayName id={user.id} {user} /></span>
 															</button>
 														{/each}
 														{#if Object.entries(userStore).filter(([userId, user]) => !need.participants?.some(p => p.id === user.id)).length === 0}
@@ -1334,13 +1267,13 @@
 
 											{#if need.participants?.length > 0}
 												<div class="flex items-center gap-1">
-													<div class="flex -space-x-1 relative group" title={need.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
+													<div class="flex -space-x-1 relative group" title={need.participants.map(p => resolvedName(p.id, $nameMap, { first_name: p.firstName, last_name: p.lastName, username: p.username })).join(', ')}>
 														{#each need.participants.slice(0, 2) as participant}
 															<div class="relative">
 																<img
 																	class="w-5 h-5 rounded-full border border-white shadow-sm"
 																	src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-																	alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
+																	alt={resolvedName(participant.id, $nameMap, { first_name: participant.firstName, last_name: participant.lastName, username: participant.username })}
 																/>
 															</div>
 														{/each}

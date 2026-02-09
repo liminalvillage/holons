@@ -3,7 +3,8 @@
     import { fade, slide } from "svelte/transition";
     import { ID } from "../dashboard/store";
     import type { HoloSphere } from "holosphere";
-    import { nameMap, userDisplayName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+    import DisplayName from './shared/DisplayName.svelte';
 
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -239,18 +240,6 @@
         currentView = view;
     }
 
-    // Get user initials for avatar
-    function getUserInitials(user: User): string {
-        if (user.first_name) {
-            const firstInitial = user.first_name.charAt(0).toUpperCase();
-            const lastInitial = user.last_name ? user.last_name.charAt(0).toUpperCase() : '';
-            return firstInitial + lastInitial;
-        } else if (user.username) {
-            return user.username.charAt(0).toUpperCase();
-        } else {
-            return '?';
-        }
-    }
 
     // Watch for holon ID changes
     $: if (holonID) {
@@ -325,11 +314,11 @@
                             <!-- User Header -->
                             <div class="flex items-center space-x-4 mb-6">
                                 <div class="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xl">
-                                    {getUserInitials(userWithBadges.user)}
+                                    {resolvedInitials(userWithBadges.user.id, $nameMap, userWithBadges.user)}
                                 </div>
                                 <div class="flex-1">
                                     <h3 class="text-xl font-semibold text-white">
-                                        {userDisplayName(userWithBadges.user, $nameMap)}
+                                        <DisplayName id={userWithBadges.user.id} user={userWithBadges.user} />
                                     </h3>
                                     {#if userWithBadges.user.username}
                                         <p class="text-white/60 text-sm">@{userWithBadges.user.username}</p>
@@ -438,11 +427,11 @@
                                         {#each badge.awarded_to.slice(0, 4) as recipient}
                                             <div class="flex items-center space-x-2 bg-white/5 rounded-lg p-2">
                                                 <div class="w-6 h-6 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                                                    {(recipient.first_name?.[0] || recipient.username?.[0] || '?').toUpperCase()}
+                                                    {resolvedInitials(recipient.id, $nameMap, recipient)}
                                                 </div>
                                                 <div class="flex-1 min-w-0">
                                                     <div class="text-xs text-white font-medium truncate">
-                                                        {recipient.first_name ? `${recipient.first_name} ${recipient.last_name || ''}`.trim() : recipient.username}
+                                                        <DisplayName id={recipient.id} user={recipient} />
                                                     </div>
                                                     <div class="text-xs text-white/50">
                                                         {formatDate(recipient.awarded_at)}
@@ -527,11 +516,11 @@
                                     <div class="flex items-center justify-between">
                                         <div class="flex items-center space-x-3">
                                             <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                                                {(recipient.first_name?.[0] || recipient.username?.[0] || '?').toUpperCase()}
+                                                {resolvedInitials(recipient.id, $nameMap, recipient)}
                                             </div>
                                             <div>
                                                 <div class="font-medium text-white">
-                                                    {recipient.first_name} {recipient.last_name}
+                                                    <DisplayName id={recipient.id} user={recipient} />
                                                 </div>
                                                 <div class="text-sm text-white/60">
                                                     @{recipient.username}

@@ -47,6 +47,32 @@ export function extractHolonIdFromSoul(hologramSoul: string | undefined): string
 	return match ? match[1] : null;
 }
 
+/** Extract lens name and item ID from a hologram soul path. */
+export function extractLensAndItemFromSoul(hologramSoul: string | undefined): { lens: string | null; itemId: string | null } {
+	if (!hologramSoul) return { lens: null, itemId: null };
+	const match = hologramSoul.match(/Holons\/[^\/]+\/([^\/]+)\/(.+)/);
+	return match ? { lens: match[1], itemId: match[2] } : { lens: null, itemId: null };
+}
+
+/** Map holosphere lens names to SvelteKit route names. */
+const lensToRoute: Record<string, string> = {
+	quests: 'tasks',
+};
+
+export function lensToRouteName(lens: string): string {
+	return lensToRoute[lens] || lens;
+}
+
+/** Build a deep link to a specific hologram's source task/lens. */
+export function buildHologramLink(hologram: { soul?: string; sourceHolon?: string }): string {
+	const holonId = hologram.sourceHolon || extractHolonIdFromSoul(hologram.soul);
+	if (!holonId) return '/';
+	const { lens, itemId } = extractLensAndItemFromSoul(hologram.soul);
+	const route = lens ? lensToRouteName(lens) : 'dashboard';
+	const base = `/${holonId}/${route}`;
+	return itemId ? `${base}?task=${itemId}` : base;
+}
+
 // ─── async fetch (cache → HNS → settings → fallback) ───────────────
 
 /**
@@ -228,29 +254,68 @@ export function setName(pubkey: string, name: string): void {
 	}
 }
 
-// ─── display-name helpers ───────────────────────────────────────────
+// ─── canonical display-name functions ───────────────────────────────
 
-/** Display name for a user ID with a string fallback. */
-export function displayName(
-	id: string,
-	fallback: string,
-	nameMap: Record<string, string>
-): string {
-	if (id && nameMap[id]) return nameMap[id];
-	return fallback || (id ? `${id.slice(0, 8)}...` : 'Unknown');
+/** User object shape for name resolution. */
+export interface NameUser {
+	first_name?: string;
+	last_name?: string;
+	username?: string;
 }
 
-/** Display name from a user object, using nameMap for pubkey resolution. */
-export function userDisplayName(
-	user: { id?: string; first_name?: string; last_name?: string; username?: string } | null,
-	nameMap: Record<string, string>
+/**
+ * Canonical name resolver. Works for both users (with user object) and holons (just an ID).
+ * Auto-triggers resolveName() as a side-effect.
+ *
+ * Resolution waterfall:
+ *   nameMap[id] → first+last → first → username → fallback → truncated ID → "Unknown"
+ */
+export function resolvedName(
+	id: string | undefined,
+	nameMap: Record<string, string>,
+	user?: NameUser | null,
+	fallback?: string
 ): string {
-	if (!user) return 'Unknown User';
-	if (user.id && nameMap[user.id]) return nameMap[user.id];
-	if (user.first_name && user.last_name) return `${user.first_name} ${user.last_name}`;
-	if (user.first_name) return user.first_name;
-	if (user.username) return user.username;
-	return 'Unknown User';
+	// 1. Side-effect: trigger async resolution for pubkeys
+	if (id) resolveName(id);
+
+	// 2. nameMap hit (HNS-resolved name)
+	if (id && nameMap[id]) return nameMap[id];
+
+	// 3. User object fields
+	if (user) {
+		if (user.first_name && user.last_name) return `${user.first_name} ${user.last_name}`.trim();
+		if (user.first_name) return user.first_name;
+		if (user.username) return user.username;
+	}
+
+	// 4. Explicit fallback
+	if (fallback) return fallback;
+
+	// 5. Truncated pubkey (for long IDs like 64-char hex)
+	if (id && id.length >= 16) return `${id.slice(0, 8)}...`;
+
+	// 6. Last resort
+	return 'Unknown';
+}
+
+/**
+ * Canonical initials resolver. Derives initials from the resolved name.
+ * Use for avatar fallbacks.
+ */
+export function resolvedInitials(
+	id: string | undefined,
+	nameMap: Record<string, string>,
+	user?: NameUser | null
+): string {
+	const name = resolvedName(id, nameMap, user);
+	if (name === 'Unknown') return '?';
+
+	const words = name.trim().split(/\s+/);
+	if (words.length >= 2) {
+		return (words[0][0] + words[1][0]).toUpperCase();
+	}
+	return name.slice(0, 2).toUpperCase();
 }
 
 // ─── public store (read-only) ───────────────────────────────────────

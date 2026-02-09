@@ -9,10 +9,7 @@
         name: string;
         pubKey?: string;
         status: 'connected' | 'pending' | 'rejected' | 'error';
-        lensConfig: {
-            inbound: string[];
-            outbound: string[];
-        };
+        lenses: string[];
     }
 
     // Props
@@ -24,7 +21,7 @@
     const dispatch = createEventDispatcher<{
         remove: { holonId: string };
         navigate: { holonId: string };
-        toggleLens: { holonId: string; lens: string; direction: 'inbound' | 'outbound'; currentlyEnabled: boolean };
+        toggleLens: { holonId: string; lens: string; currentlyEnabled: boolean };
     }>();
 
     // Local state
@@ -35,10 +32,9 @@
         return name.toLowerCase();
     }
 
-    function isLensEnabled(lens: string, direction: 'inbound' | 'outbound'): boolean {
-        const lenses = direction === 'inbound' ? holon.lensConfig.inbound : holon.lensConfig.outbound;
-        if (!lenses || !Array.isArray(lenses)) return false;
-        return lenses.some(l => normalizeLensName(l) === normalizeLensName(lens));
+    function isLensEnabled(lens: string): boolean {
+        if (!holon.lenses || !Array.isArray(holon.lenses)) return false;
+        return holon.lenses.some(l => normalizeLensName(l) === normalizeLensName(lens));
     }
 
     function getLensIcon(lens: string): string {
@@ -85,15 +81,13 @@
         }
     }
 
-    function handleToggleLens(lens: string, direction: 'inbound' | 'outbound') {
-        const currentlyEnabled = isLensEnabled(lens, direction);
-        dispatch('toggleLens', { holonId: holon.id, lens, direction, currentlyEnabled });
+    function handleToggleLens(lens: string) {
+        const currentlyEnabled = isLensEnabled(lens);
+        dispatch('toggleLens', { holonId: holon.id, lens, currentlyEnabled });
     }
 
     // Count active lenses
-    $: inboundCount = holon.lensConfig.inbound?.length || 0;
-    $: outboundCount = holon.lensConfig.outbound?.length || 0;
-    $: totalActive = new Set([...(holon.lensConfig.inbound || []), ...(holon.lensConfig.outbound || [])]).size;
+    $: lensCount = holon.lenses?.length || 0;
 </script>
 
 <div
@@ -123,14 +117,9 @@
 
         <!-- Quick stats -->
         <div class="holon-card__stats">
-            {#if totalActive > 0}
+            {#if lensCount > 0}
                 <span class="holon-card__stat">
-                    <span class="holon-card__stat-icon">↓</span>
-                    {inboundCount}
-                </span>
-                <span class="holon-card__stat">
-                    <span class="holon-card__stat-icon holon-card__stat-icon--out">↑</span>
-                    {outboundCount}
+                    {lensCount} {lensCount === 1 ? 'lens' : 'lenses'}
                 </span>
             {:else}
                 <span class="holon-card__stat holon-card__stat--empty">No lenses</span>
@@ -170,42 +159,26 @@
             <!-- Lens configuration -->
             <div class="holon-card__lenses">
                 <div class="holon-card__lenses-header">
-                    <span class="holon-card__lenses-title">Data Sharing</span>
-                    <div class="holon-card__lenses-legend">
-                        <span class="holon-card__legend-item holon-card__legend-item--in">↓ Receive</span>
-                        <span class="holon-card__legend-item holon-card__legend-item--out">↑ Share</span>
-                    </div>
+                    <span class="holon-card__lenses-title">Shared Lenses</span>
                 </div>
 
                 <div class="holon-card__lens-grid">
                     {#each availableLenses as lens}
-                        {@const inboundEnabled = isLensEnabled(lens, 'inbound')}
-                        {@const outboundEnabled = isLensEnabled(lens, 'outbound')}
-                        <div class="holon-card__lens" class:holon-card__lens--active={inboundEnabled || outboundEnabled}>
+                        {@const enabled = isLensEnabled(lens)}
+                        <div class="holon-card__lens" class:holon-card__lens--active={enabled}>
                             <div class="holon-card__lens-info">
                                 <span class="holon-card__lens-icon">{getLensIcon(lens)}</span>
                                 <span class="holon-card__lens-name">{lens}</span>
                             </div>
-                            <div class="holon-card__lens-toggles">
-                                <button
-                                    class="holon-card__lens-toggle holon-card__lens-toggle--in"
-                                    class:holon-card__lens-toggle--active={inboundEnabled}
-                                    disabled={saving}
-                                    title="{inboundEnabled ? 'Stop receiving' : 'Receive'} {lens}"
-                                    on:click={() => handleToggleLens(lens, 'inbound')}
-                                >
-                                    ↓
-                                </button>
-                                <button
-                                    class="holon-card__lens-toggle holon-card__lens-toggle--out"
-                                    class:holon-card__lens-toggle--active={outboundEnabled}
-                                    disabled={saving}
-                                    title="{outboundEnabled ? 'Stop sharing' : 'Share'} {lens}"
-                                    on:click={() => handleToggleLens(lens, 'outbound')}
-                                >
-                                    ↑
-                                </button>
-                            </div>
+                            <button
+                                class="holon-card__lens-toggle"
+                                class:holon-card__lens-toggle--active={enabled}
+                                disabled={saving}
+                                title="{enabled ? 'Remove' : 'Add'} {lens}"
+                                on:click={() => handleToggleLens(lens)}
+                            >
+                                {enabled ? '✓' : '+'}
+                            </button>
                         </div>
                     {/each}
                 </div>
@@ -329,15 +302,6 @@
         font-style: italic;
     }
 
-    .holon-card__stat-icon {
-        color: #3b82f6;
-        font-weight: bold;
-    }
-
-    .holon-card__stat-icon--out {
-        color: #22c55e;
-    }
-
     .holon-card__expand {
         color: var(--color-text-muted, #6b7280);
         transition: transform 200ms ease;
@@ -408,24 +372,6 @@
         letter-spacing: 0.05em;
     }
 
-    .holon-card__lenses-legend {
-        display: flex;
-        gap: var(--spacing-3, 0.75rem);
-    }
-
-    .holon-card__legend-item {
-        font-size: 10px;
-        color: var(--color-text-muted, #6b7280);
-    }
-
-    .holon-card__legend-item--in {
-        color: #3b82f6;
-    }
-
-    .holon-card__legend-item--out {
-        color: #22c55e;
-    }
-
     .holon-card__lens-grid {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
@@ -474,11 +420,6 @@
         text-overflow: ellipsis;
     }
 
-    .holon-card__lens-toggles {
-        display: flex;
-        gap: 4px;
-    }
-
     .holon-card__lens-toggle {
         width: 22px;
         height: 22px;
@@ -499,13 +440,8 @@
         background: var(--color-bg-secondary, #1f2937);
     }
 
-    .holon-card__lens-toggle--in.holon-card__lens-toggle--active {
-        background: #3b82f6;
-        color: white;
-    }
-
-    .holon-card__lens-toggle--out.holon-card__lens-toggle--active {
-        background: #22c55e;
+    .holon-card__lens-toggle--active {
+        background: var(--color-accent, #4f46e5);
         color: white;
     }
 

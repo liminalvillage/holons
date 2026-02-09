@@ -5,7 +5,7 @@ import { ID } from "../dashboard/store";
 import type { HoloSphere } from "holosphere";
 import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
 import { goto } from "$app/navigation";
-import { nameMap, resolveName, userDisplayName } from '$lib/stores/nameResolver';
+import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
 import RoleModal from "./RoleModal.svelte";
 import TaskModal from "./TaskModal.svelte";
 import ItemModal from "./ItemModal.svelte";
@@ -27,7 +27,7 @@ import ItemModal from "./ItemModal.svelte";
     $: holonID = $ID;
     
     // Holon name state (reactive via nameResolver)
-    $: holonName = (holonID && $nameMap[holonID]) || '';
+    $: holonName = resolvedName(holonID, $nameMap, null, '');
     let isLoadingHolonName = false;
     
     // Roles and users data state
@@ -565,7 +565,7 @@ import ItemModal from "./ItemModal.svelte";
     // Get user display name using nameResolver
     function getUserDisplayName(userId: string): string {
         const user = users[userId];
-        return userDisplayName(user ? { id: userId, ...user } : { id: userId }, $nameMap);
+        return resolvedName(userId, $nameMap, user ? { first_name: user.first_name, last_name: user.last_name, username: user.username } : null);
     }
 
     // Get role statistics

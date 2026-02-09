@@ -5,40 +5,27 @@
 
 	export let holonId: string;
 	export let holonName: string;
-	export let inboundLenses: string[] = [];
-	export let outboundLenses: string[] = [];
+	export let sharedLenses: string[] = [];
 	export let isOpen: boolean = false;
 
 	const dispatch = createEventDispatcher();
 	const availableLenses = ['quests', 'tasks', 'calendar', 'notes', 'contacts'];
 
 	// Local state for lens selections
-	let selectedInbound: Set<string> = new Set(inboundLenses);
-	let selectedOutbound: Set<string> = new Set(outboundLenses);
+	let selectedLenses: Set<string> = new Set(sharedLenses);
 
 	// Sync props to local state when they change
 	$: {
-		selectedInbound = new Set(inboundLenses);
-		selectedOutbound = new Set(outboundLenses);
+		selectedLenses = new Set(sharedLenses);
 	}
 
-	function toggleInbound(lens: string) {
-		if (selectedInbound.has(lens)) {
-			selectedInbound.delete(lens);
+	function toggleLens(lens: string) {
+		if (selectedLenses.has(lens)) {
+			selectedLenses.delete(lens);
 		} else {
-			selectedInbound.add(lens);
+			selectedLenses.add(lens);
 		}
-		selectedInbound = new Set(selectedInbound);
-		dispatchUpdate();
-	}
-
-	function toggleOutbound(lens: string) {
-		if (selectedOutbound.has(lens)) {
-			selectedOutbound.delete(lens);
-		} else {
-			selectedOutbound.add(lens);
-		}
-		selectedOutbound = new Set(selectedOutbound);
+		selectedLenses = new Set(selectedLenses);
 		dispatchUpdate();
 	}
 
@@ -46,8 +33,7 @@
 		dispatch('update', {
 			holonId,
 			lensConfig: {
-				inbound: Array.from(selectedInbound),
-				outbound: Array.from(selectedOutbound)
+				lenses: Array.from(selectedLenses)
 			}
 		});
 	}
@@ -97,46 +83,21 @@
 {#if isOpen}
 	<div class="lens-dropdown" transition:slide={{ duration: 150 }}>
 		<div class="lens-dropdown__header">
-			<span class="lens-dropdown__title">Lens Configuration</span>
+			<span class="lens-dropdown__title">Shared Lenses</span>
 			<button class="lens-dropdown__close" onclick={close}>
 				<X size={14} />
 			</button>
 		</div>
 
 		<div class="lens-dropdown__content">
-			<!-- Inbound (receive) -->
 			<div class="lens-dropdown__section">
-				<label class="lens-dropdown__label">
-					<span class="lens-dropdown__icon">↓</span>
-					Receive (inbound)
-				</label>
 				<div class="lens-dropdown__toggles">
 					{#each availableLenses as lens}
 						<label class="lens-dropdown__toggle">
 							<input
 								type="checkbox"
-								checked={selectedInbound.has(lens)}
-								onchange={() => toggleInbound(lens)}
-							/>
-							<span>{lens}</span>
-						</label>
-					{/each}
-				</div>
-			</div>
-
-			<!-- Outbound (share) -->
-			<div class="lens-dropdown__section">
-				<label class="lens-dropdown__label">
-					<span class="lens-dropdown__icon">↑</span>
-					Share (outbound)
-				</label>
-				<div class="lens-dropdown__toggles">
-					{#each availableLenses as lens}
-						<label class="lens-dropdown__toggle">
-							<input
-								type="checkbox"
-								checked={selectedOutbound.has(lens)}
-								onchange={() => toggleOutbound(lens)}
+								checked={selectedLenses.has(lens)}
+								onchange={() => toggleLens(lens)}
 							/>
 							<span>{lens}</span>
 						</label>
@@ -212,21 +173,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-2, 0.5rem);
-	}
-
-	.lens-dropdown__label {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-1, 0.25rem);
-		font-size: var(--font-size-xs, 0.75rem);
-		font-weight: var(--font-weight-medium, 500);
-		color: var(--color-text-muted, #6b7280);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.lens-dropdown__icon {
-		font-size: var(--font-size-sm, 0.875rem);
 	}
 
 	.lens-dropdown__toggles {

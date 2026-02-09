@@ -9,6 +9,8 @@
     import { createEventDispatcher, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
     import { notifyWriteDenied } from '../lib/stores/writeNotifications';
+    import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+    import DisplayName from './shared/DisplayName.svelte';
 
     export let role: any;
     export let roleId: string;
@@ -297,9 +299,9 @@
                                         class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
                                         on:click={() => addParticipant(userId)}
                                     >
-                                            <img 
+                                            <img
                                             src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
-                                                alt={user.first_name}
+                                                alt={resolvedName(user.id || userId, $nameMap, user)}
                                             class="w-6 h-6 rounded-full object-cover border border-gray-500"
                                             on:error={(e) => {
                                                 e.currentTarget.style.display = 'none';
@@ -307,9 +309,9 @@
                                             }}
                                         />
                                         <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-xs text-white border border-gray-500" style="display: none;">
-                                            {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
+                                            {resolvedInitials(user.id || userId, $nameMap, user)}
                                             </div>
-                                        <span>{user.first_name} {user.last_name || ''}</span>
+                                        <span><DisplayName id={user.id || userId} {user} /></span>
                                     </button>
                                 {/each}
                             {/if}

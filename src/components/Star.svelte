@@ -9,7 +9,8 @@
 	import TaskModal from "./TaskModal.svelte";
 	import { browser } from "$app/environment";
 	import CanvasView from "./CanvasView.svelte";
-	import { nameMap, resolveName } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
+	import DisplayName from './shared/DisplayName.svelte';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -82,12 +83,8 @@
 	// Add this variable to track the selected task
 	let selectedTask = null;
 
-	$: holonName = (holonID && $nameMap[holonID]) || 'Tasks';
-
-	// Resolve holon name reactively
-	$: if (holonID) {
-		resolveName(holonID);
-	}
+	// Name resolution is automatic via resolvedName()
+	$: holonName = resolvedName(holonID, $nameMap, null, 'Tasks');
 
 	onMount(async () => {
 		// Fetch all quests from holon
@@ -546,11 +543,7 @@
 															userId
 														)}
 												>
-													<span
-														>{user.first_name}
-														{user.last_name ||
-															""}</span
-													>
+													<span><DisplayName id={userId} {user} /></span>
 													{#if isParticipant}
 														<span
 															class="text-green-500"
@@ -755,11 +748,7 @@
 																userId
 															)}
 													>
-														<span
-															>{user.first_name}
-															{user.last_name ||
-																""}</span
-														>
+														<span><DisplayName id={userId} {user} /></span>
 														{#if isParticipant}
 															<span
 																class="text-green-500"

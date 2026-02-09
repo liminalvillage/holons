@@ -4,7 +4,7 @@
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
     import type { HoloSphere } from "holosphere";
-    import { nameMap, resolveName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import TitleBar from "./shared/TitleBar.svelte";
     import { ShoppingCart, Plus } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -253,7 +253,7 @@
 
 <div class="space-y-4">
     <!-- TitleBar -->
-    <TitleBar holonName={$nameMap[holonID] || 'Loading...'} title="Shopping List" icon={ShoppingCart} />
+    <TitleBar holonName={resolvedName(holonID, $nameMap, null, 'Loading...')} title="Shopping List" icon={ShoppingCart} />
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">

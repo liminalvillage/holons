@@ -2,12 +2,12 @@
 	import { createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { Check, X, ChevronDown, RefreshCw } from 'svelte-feathers';
+	import { nameMap, resolvedInitials } from '$lib/stores/nameResolver';
 
 	export let id: string;
 	export let senderPubKey: string;
 	export let senderHolonName: string;
-	export let theirOutbound: string[] = [];  // What they're sharing (our inbound)
-	export let theirInbound: string[] = [];   // What they're requesting (our outbound)
+	export let sharedLenses: string[] = [];
 	export let message: string = '';
 	export let isProcessing: boolean = false;
 
@@ -30,16 +30,6 @@
 		expanded = !expanded;
 	}
 
-	// Generate avatar initials from name
-	function getInitials(name: string): string {
-		if (!name) return '?';
-		const words = name.trim().split(/\s+/);
-		if (words.length >= 2) {
-			return (words[0][0] + words[1][0]).toUpperCase();
-		}
-		return name.slice(0, 2).toUpperCase();
-	}
-
 	// Generate deterministic color
 	function getAvatarColor(id: string): string {
 		const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899'];
@@ -50,7 +40,7 @@
 		return colors[Math.abs(hash) % colors.length];
 	}
 
-	$: initials = getInitials(senderHolonName);
+	$: initials = resolvedInitials(senderPubKey, $nameMap);
 	$: avatarColor = getAvatarColor(senderPubKey);
 </script>
 
@@ -105,19 +95,12 @@
 	<!-- Expandable Details -->
 	{#if expanded}
 		<div class="lens-update__details" transition:slide={{ duration: 150 }}>
-			{#if theirOutbound.length > 0}
+			{#if sharedLenses.length > 0}
 				<div class="lens-update__lens-row">
-					<span class="lens-update__lens-label lens-update__lens-label--receive">You receive:</span>
-					<span class="lens-update__lens-list">{theirOutbound.join(', ')}</span>
+					<span class="lens-update__lens-label lens-update__lens-label--receive">Shared lenses:</span>
+					<span class="lens-update__lens-list">{sharedLenses.join(', ')}</span>
 				</div>
-			{/if}
-			{#if theirInbound.length > 0}
-				<div class="lens-update__lens-row">
-					<span class="lens-update__lens-label lens-update__lens-label--share">They request:</span>
-					<span class="lens-update__lens-list">{theirInbound.join(', ')}</span>
-				</div>
-			{/if}
-			{#if theirOutbound.length === 0 && theirInbound.length === 0}
+			{:else}
 				<div class="lens-update__lens-row">
 					<span class="lens-update__lens-list lens-update__lens-list--empty">No lenses configured</span>
 				</div>

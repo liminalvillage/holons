@@ -8,7 +8,7 @@
     import * as d3 from "d3";
     import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
     import TitleBar from "./shared/TitleBar.svelte";
-    import { nameMap, resolveName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import { Plus } from 'svelte-feathers';
 
     interface CalendarEvents {
@@ -19,7 +19,7 @@
     const holosphere = getContext("holosphere") as HoloSphere;
 
     // Holon name for TitleBar
-    $: holonName = ($ID && $nameMap[$ID]) || 'Calendar';
+    $: holonName = resolvedName($ID, $nameMap, null, 'Calendar');
 
     // Calendar state
     let currentDate = new Date();

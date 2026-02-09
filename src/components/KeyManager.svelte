@@ -2,8 +2,13 @@
 	import { createEventDispatcher } from 'svelte';
 	import { fade, slide } from 'svelte/transition';
 	import { nostrStore, nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
+	import { nostrUtils } from 'holosphere';
 
+	const { hexToNsec } = nostrUtils;
 	const dispatch = createEventDispatcher();
+
+	// Derive nsec from private key
+	$: displayNsec = $nostrPrivateKey ? hexToNsec($nostrPrivateKey) : '';
 
 	// Telegram Bot username
 	const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'HolonsBot';
@@ -60,15 +65,15 @@
 	}
 
 	async function copyPrivateKey() {
-		if ($nostrPrivateKey) {
-			await navigator.clipboard.writeText($nostrPrivateKey);
+		if (displayNsec) {
+			await navigator.clipboard.writeText(displayNsec);
 			keyCopied = true;
 			setTimeout(() => keyCopied = false, 2000);
 		}
 	}
 
 	function logout() {
-		localStorage.setItem('just_logged_out', 'true');
+		sessionStorage.setItem('just_logged_out', 'true');
 		nostrStore.clearKey();
 		dispatch('keyChanged', { action: 'exit' });
 		window.location.reload();
@@ -208,13 +213,13 @@
 
 						{#if showPrivateKey}
 							<div class="mx-3 my-2 p-2 bg-gray-900 rounded-lg" transition:slide>
-								<div class="text-xs text-gray-400 mb-1">Private Key (keep secret!)</div>
-								<div class="text-xs font-mono text-amber-400 break-all">{$nostrPrivateKey}</div>
+								<div class="text-xs text-gray-400 mb-1">nsec (keep secret!)</div>
+								<div class="text-xs font-mono text-amber-400 break-all">{displayNsec}</div>
 								<button
 									on:click={copyPrivateKey}
 									class="mt-2 text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
 								>
-									<i class="fas fa-copy mr-1"></i> Copy
+									<i class="fas fa-copy mr-1"></i> Copy nsec
 								</button>
 							</div>
 						{/if}
@@ -259,12 +264,12 @@
 					</button>
 
 					<h4 class="text-sm font-medium text-white mb-2">Import Private Key</h4>
-					<p class="text-xs text-gray-400 mb-3">Enter your 64-character hex private key</p>
+					<p class="text-xs text-gray-400 mb-3">Enter your nsec or hex private key</p>
 
 					<input
 						type="password"
 						bind:value={importKeyInput}
-						placeholder="Enter private key..."
+						placeholder="nsec1... or hex key"
 						class="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm font-mono
 							   focus:border-blue-500 focus:outline-none
 							   {importError ? 'border-red-500' : ''}"
@@ -276,7 +281,7 @@
 
 					<button
 						on:click={importKey}
-						disabled={isProcessing || importKeyInput.length !== 64}
+						disabled={isProcessing || !importKeyInput.trim()}
 						class="w-full mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed
 							   rounded-lg text-white text-sm font-medium transition-colors"
 					>

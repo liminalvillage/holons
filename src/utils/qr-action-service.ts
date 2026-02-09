@@ -1,4 +1,6 @@
 import type { HoloSphere } from "holosphere";
+// @ts-ignore — registry is exported from holosphere ESM but missing from type declarations
+import { registry } from "holosphere";
 import type { QRCapabilityToken, CapabilityValidationResult } from '$lib/capabilities/qrCapability';
 import { validateCapability, isCapabilityValid } from '$lib/capabilities/qrCapability';
 
@@ -77,11 +79,52 @@ export class QRActionService {
 	 * registers the writer's pubkey for read visibility.
 	 */
 	private async putWithCapability(holonID: string, lens: string, data: any, capability: QRCapabilityToken | null | undefined): Promise<void> {
-		const isOwner = (this.holosphere as any).client?.publicKey === holonID;
+		const clientPubKey = (this.holosphere as any).client?.publicKey;
+		const isOwner = clientPubKey === holonID;
+
 		if (isOwner || !capability) {
 			await this.holosphere.put(holonID, lens, data);
 		} else {
-			await (this.holosphere as any).put(holonID, lens, data, { externalWriter: true });
+			// Non-owner with valid capability: use externalWriter to bypass holosphere auth
+			// (capability was already verified via Schnorr signature at the app level)
+			console.log(`[putWithCapability] externalWriter write`, {
+				lens,
+				holonID: holonID?.slice(0, 12),
+				writer: clientPubKey?.slice(0, 12),
+				hasCap: !!capability
+			});
+			await (this.holosphere as any).write(holonID, lens, data, { externalWriter: true });
+		}
+	}
+
+	/**
+	 * Stores an inbound read capability in the scanner's federation registry
+	 * so that holosphere.read() can find it via _getCapabilityForAuthor().
+	 * This grants the scanning user read access to the entire holon.
+	 */
+	private async storeReadCapability(params: QRActionParams): Promise<void> {
+		if (!params.capability || !params.holonID) return;
+
+		const hs = this.holosphere as any;
+		const client = hs.client;
+		const appName = hs.config?.appName;
+		if (!client || !appName) return;
+
+		try {
+			await registry.storeInboundCapability(
+				client,
+				appName,
+				params.holonID, // partner = the holon whose data we want to read
+				{
+					token: 'qr_capability',
+					scope: { holonId: params.holonID, lensName: '*', dataId: '*' },
+					permissions: ['read'],
+					expires: params.capability.expiresAt || null
+				}
+			);
+			console.log(`[QRActionService] Stored inbound read capability for holon ${params.holonID.slice(0, 12)}...`);
+		} catch (err) {
+			console.warn('[QRActionService] Failed to store read capability:', err);
 		}
 	}
 
@@ -147,6 +190,11 @@ export class QRActionService {
 					error: capabilityValidation.code || 'UNAUTHORIZED'
 				};
 			}
+
+			// Store an inbound read capability so the scanner can read the entire holon.
+			// The QR capability was signed by the holon owner, so this is a legitimate grant.
+			// holosphere's read() calls _getCapabilityForAuthor() which checks inboundCapabilities.
+			await this.storeReadCapability(params);
 
 			const normalizedAction = params.action.toLowerCase();
 			switch (normalizedAction) {

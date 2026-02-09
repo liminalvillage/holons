@@ -12,7 +12,7 @@
 	import { holosphereStore } from '$lib/stores/holosphere';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
-	import { registerName as hnsRegister } from '$lib/hns';
+	import { registerName as hnsRegister, lookupName as hnsLookup } from '$lib/hns';
 	import { isValidHolonName, setName } from '$lib/stores/nameResolver';
 
 	// Import global design system styles
@@ -85,8 +85,8 @@
 			let pendingHolonId: string | null = null;
 			let pendingHolonNameFromStorage: string | null = null;
 			if (browser) {
-				pendingHolonNameFromStorage = localStorage.getItem('pending_holon_name');
-				pendingHolonId = localStorage.getItem('pending_holon_id');
+				pendingHolonNameFromStorage = sessionStorage.getItem('pending_holon_name');
+				pendingHolonId = sessionStorage.getItem('pending_holon_id');
 			}
 
 			// Determine the holon name (from pending or existing settings or default)
@@ -97,31 +97,72 @@
 			const pendingNameForThisUser = (pendingHolonId === userPublicKey)
 				? pendingHolonNameFromStorage
 				: pendingHolonName; // pendingHolonName is set by handleAuthenticated for splash-based creation
-			const holonName = pendingNameForThisUser || (existingNameValid ? existingName : null) || 'My Holon';
+			// Multi-step name resolution chain:
+			// 1. Pending name (from Create flow)
+			// 2. Existing settings name (from relay)
+			// 3. HNS lookup (global table, no federation needed)
+			// 4. Final fallback: "My Holon"
+			let hnsName: string | null = null;
+			let resolvedName: string;
+			let nameSource: string;
 
-			// Clear pending holon data from localStorage ONLY if we used the pending name
+			if (pendingNameForThisUser) {
+				resolvedName = pendingNameForThisUser;
+				nameSource = 'pending';
+			} else if (existingNameValid) {
+				resolvedName = existingName!;
+				nameSource = 'settings';
+			} else {
+				// Settings unavailable (slow relay) — try HNS before falling back
+				try {
+					hnsName = await hnsLookup(holosphere, userPublicKey);
+				} catch (err) {
+					console.warn('HNS lookup failed during init:', err);
+				}
+				if (hnsName && isValidHolonName(hnsName)) {
+					resolvedName = hnsName;
+					nameSource = 'hns';
+					console.log('Resolved name from HNS:', hnsName);
+				} else {
+					resolvedName = 'My Holon';
+					nameSource = 'fallback';
+				}
+			}
+			const holonName = resolvedName;
+
+			// Clear pending holon data from sessionStorage ONLY if we used the pending name
 			if (browser && pendingHolonId && pendingHolonId === userPublicKey) {
-				localStorage.removeItem('pending_holon_name');
-				localStorage.removeItem('pending_holon_id');
-				console.log('Cleared pending holon data from localStorage after using name:', pendingHolonNameFromStorage);
+				sessionStorage.removeItem('pending_holon_name');
+				sessionStorage.removeItem('pending_holon_id');
+				console.log('Cleared pending holon data from sessionStorage after using name:', pendingHolonNameFromStorage);
 			}
 
 			// Log name resolution
-			if (pendingNameForThisUser) {
+			if (nameSource === 'pending') {
 				console.log('Using pending holon name for new identity:', pendingNameForThisUser);
-			} else if (existingName && !existingNameValid) {
-				console.log('Existing name invalid, using fallback:', existingName, '->', holonName);
+			} else if (nameSource === 'settings') {
+				console.log('Using existing settings name:', existingName);
+			} else if (nameSource === 'hns') {
+				console.log('Using name from HNS lookup:', hnsName);
+			} else if (nameSource === 'fallback') {
+				if (existingName && !existingNameValid) {
+					console.log('Existing name invalid, using fallback:', existingName, '->', holonName);
+				} else {
+					console.log('No name found from settings or HNS, using temporary fallback:', holonName);
+				}
 			}
 
-			// Track if this is a first-time user (for navigation decisions later)
-			// Also treat users with invalid names as first-time (they need settings corrected)
+			// Distinguish genuinely new users from returning users with a slow relay
+			// New user = came through Create flow (pendingNameForThisUser is set) AND no existing settings
+			// Returning user = no pending name; may have settings or HNS name
+			const isGenuinelyNewUser = !!pendingNameForThisUser && !existingSettings;
 			const isFirstTimeUser = !existingSettings || !existingNameValid;
 
 			// Skip write operations in telegram-mapped mode (read-only access with service key)
 			if (!isTelegramMappedSession) {
-				if (isFirstTimeUser) {
-					// First time login - create the holon with custom or default name
-					console.log('First time user - creating personal holon:', holonName);
+				if (isGenuinelyNewUser) {
+					// Genuinely new user (Create flow) — write settings and HNS
+					console.log('Genuinely new user - creating personal holon:', holonName);
 					await holosphere.put(userPublicKey, 'settings', {
 						id: userPublicKey,
 						name: holonName,
@@ -129,20 +170,18 @@
 						createdAt: Date.now(),
 						createdBy: userPublicKey
 					});
-				}
 
-				// Register name in HNS (Holon Name Service) - signed public registry
-				// Only register if first-time user OR name is changing
-				// Note: we use holonName comparison since pendingNameForThisUser was already applied
-				const nameIsChanging = holonName !== existingName;
-				if (isFirstTimeUser || nameIsChanging) {
 					try {
 						await hnsRegister(holosphere, userPublicKey, holonName, privateKey);
 						console.log('Registered holon name in HNS:', holonName);
 					} catch (error) {
 						console.warn('Failed to register holon name in HNS:', error);
 					}
-				} else {
+				} else if (nameSource === 'fallback') {
+					// Returning user with slow relay AND no HNS — do NOT overwrite with "My Holon"
+					console.log('Returning user with unresolved name, skipping destructive write of fallback:', holonName);
+				} else if (nameSource === 'settings' || nameSource === 'hns') {
+					// Returning user with name resolved from settings or HNS — no write needed
 					console.log('Returning user with existing name, skipping HNS registration');
 				}
 
@@ -168,7 +207,12 @@
 
 			// Populate the reactive name store so all components see it immediately
 			// (avoids relay round-trip race after writing settings/HNS)
-			setName(userPublicKey, holonName);
+			// BUT: don't cache the "My Holon" fallback — let reactive resolveName() retry later
+			if (nameSource !== 'fallback') {
+				setName(userPublicKey, holonName);
+			} else {
+				console.log('Skipping eager name cache for unresolved fallback — resolveName() will retry');
+			}
 
 			// Add the holon to visited list so it appears in TopBar
 			if (browser) {
@@ -176,6 +220,10 @@
 				// Dispatch event to refresh TopBar holon list
 				window.dispatchEvent(new CustomEvent('holonCreated', {
 					detail: { holonId: userPublicKey, holonName }
+				}));
+				// Dispatch holonNameUpdated so sidebar picks up the name immediately
+				window.dispatchEvent(new CustomEvent('holonNameUpdated', {
+					detail: { holonId: userPublicKey, newName: holonName }
 				}));
 			}
 
@@ -187,12 +235,12 @@
 				? pathParts[0]
 				: null;
 
-			// First-time users should always go to their own holon
+			// New users (Create flow) go to their own holon unless on a special route (e.g. /qr)
 			// Returning users can respect the URL if they're viewing another holon
-			if (isFirstTimeUser) {
-				// New user - always redirect to their personal holon
+			if (isGenuinelyNewUser) {
 				ID.set(userPublicKey);
-				console.log('First time user - redirecting to personal holon:', userPublicKey);
+				// Redirect new users to their personal holon dashboard
+				console.log('New user - redirecting to personal holon:', userPublicKey);
 				goto(`/${userPublicKey}/dashboard`);
 			} else if (holonIdInUrl) {
 				// Returning user - respect the holon ID in the URL
@@ -270,21 +318,22 @@
 									senderPubKey,
 									{
 										holonId: currentHolonId,
-										inboundLenses: response.lensConfig?.outbound || []
+										inboundLenses: response.lensConfig?.lenses || response.lensConfig?.outbound || []
 									}
 								);
 								console.log('[Global DM] processFederationResponse result:', result);
 
 								// Store federation relationship with lens config
-								// IMPORTANT: Swap lensConfig from responder's perspective to initiator's
-								// Responder's outbound (what they share) = Initiator's inbound (what I receive)
-								// Responder's inbound (what they receive) = Initiator's outbound (what I share)
-								// Note: processFederationResponse already calls addFederatedPartner internally,
-								// but federateHolon also sets up lens config which may not be done by addFederatedPartner
+								// In the new share protocol, lenses are symmetric - no swapping needed
 								if (response.responderHolonId) {
+									const sharedLenses = response.lensConfig?.lenses || [...new Set([
+										...(response.lensConfig?.inbound || []),
+										...(response.lensConfig?.outbound || [])
+									])];
 									const initiatorLensConfig = {
-										inbound: response.lensConfig?.outbound || [],
-										outbound: response.lensConfig?.inbound || []
+										lenses: sharedLenses,
+										inbound: sharedLenses,
+										outbound: sharedLenses
 									};
 									await holosphere.federateHolon(currentHolonId, response.responderHolonId, {
 										lensConfig: initiatorLensConfig,
@@ -339,19 +388,6 @@
 		}
 
 		console.log('Initializing HoloSphere with user key...');
-		// -=-=-=-=-=-=-=-=- USE GUN
-		// holosphere = new HoloSphere({
-		// 	appName: environmentName,
-		// 	privateKey: privateKey,
-		// 	backend: 'gundb',
-		// 	gundb: {
-		// 		peers: ['https://gun.holons.io/gun'],
-		// 		radisk: true,
-		// 		localStorage: true
-		// 	}
-		// });
-
-		// -=-=-=-=-=-=-=-=- USE NOSTR
 		holosphere = new HoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),

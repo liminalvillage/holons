@@ -2,6 +2,8 @@
 	// @ts-nocheck
 	import { createEventDispatcher } from 'svelte';
 	import { fade } from 'svelte/transition';
+	import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+	import DisplayName from './shared/DisplayName.svelte';
 
 	export let assignedUsers: { id: string; username: string }[] = [];
 	export let availableUsers: Record<string, any> = {};
@@ -118,16 +120,16 @@
 						<img
 							class="week-cell__dropdown-avatar"
 							src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
-							alt={user.first_name}
+							alt={resolvedName(user.id || userId, $nameMap, user)}
 							on:error={(e) => {
 								e.currentTarget.style.display = 'none';
 								e.currentTarget.nextElementSibling.style.display = 'flex';
 							}}
 						/>
 						<div class="week-cell__dropdown-avatar-fallback" style="display: none;">
-							{user.first_name ? user.first_name[0] : '?'}
+							{resolvedInitials(user.id || userId, $nameMap, user)}
 						</div>
-						<span>{user.first_name} {user.last_name || ''}</span>
+						<span><DisplayName id={user.id || userId} {user} /></span>
 					</button>
 				{/each}
 			{:else if !hasAssignment}

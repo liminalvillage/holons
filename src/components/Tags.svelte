@@ -7,7 +7,7 @@
 	import TreeView from "./TreeView.svelte";
 	import type { HoloSphere } from "holosphere";
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { nameMap, resolveName } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -21,7 +21,7 @@
 	 */
 	let store = {};
 	let holonID: string = '';
-	$: holonName = (holonID && $nameMap[holonID]) || 'Knowledge Base';
+	$: holonName = resolvedName(holonID, $nameMap, null, 'Knowledge Base');
 	let isLoading = true;
 	let connectionReady = false;
 	let error = '';

@@ -3,8 +3,10 @@
 	import { fade, fly, slide } from 'svelte/transition';
 	import { nostrStore } from '$lib/stores/nostr';
 	import { telegramStore } from '$lib/stores/telegram';
-	import { HoloSphere } from 'holosphere';
+	import { HoloSphere, nostrUtils } from 'holosphere';
 	import MyHolonsIcon from '../dashboard/sidebar/icons/MyHolonsIcon.svelte';
+
+	const { hexToNsec } = nostrUtils;
 
 	// Props
 	export let skipLoading = false; // Skip loading animation (for modal usage)
@@ -13,7 +15,7 @@
 	const dispatch = createEventDispatcher();
 
 	// View states
-	type View = 'loading' | 'welcome' | 'create' | 'restore' | 'telegram-choice';
+	type View = 'loading' | 'welcome' | 'create' | 'restore' | 'telegram-choice' | 'save-key';
 	let view: View = skipLoading ? 'welcome' : 'loading';
 
 	// Form state
@@ -21,6 +23,13 @@
 	let privateKeyInput = '';
 	let error = '';
 	let isProcessing = false;
+
+	// Generated key state (for save-key view)
+	let generatedNsec = '';
+	let generatedPublicKey = '';
+	let pendingHolonName = '';
+	let pendingTelegramUserId: number | null = null;
+	let keyCopied = false;
 
 	// Telegram state
 	let telegramUser: any = null;
@@ -85,10 +94,10 @@
 		}
 
 		// Check if user just logged out (show welcome screen to allow re-login)
-		const justLoggedOut = localStorage.getItem('just_logged_out') === 'true';
+		const justLoggedOut = sessionStorage.getItem('just_logged_out') === 'true';
 		if (justLoggedOut) {
 			// Clear the flag
-			localStorage.removeItem('just_logged_out');
+			sessionStorage.removeItem('just_logged_out');
 			// Show welcome screen with login options
 			setTimeout(() => {
 				view = 'welcome';
@@ -173,13 +182,13 @@
 			const result = await nostrStore.generateKey();
 
 			if (result) {
-				// Dispatch authenticated with holon name for creation
-				dispatch('authenticated', {
-					publicKey: result.publicKey,
-					holonName: name,
-					telegramUserId: telegramUser.id,
-					mode: 'private'
-				});
+				// Store pending data and show save-key view
+				generatedNsec = hexToNsec(result.privateKey);
+				generatedPublicKey = result.publicKey;
+				pendingHolonName = name;
+				pendingTelegramUserId = telegramUser.id;
+				keyCopied = false;
+				view = 'save-key';
 			}
 		} catch (err: any) {
 			console.error('Telegram create failed:', err);
@@ -204,12 +213,13 @@
 			const result = await nostrStore.generateKey();
 
 			if (result) {
-				// Dispatch authenticated with holon name for creation
-				dispatch('authenticated', {
-					publicKey: result.publicKey,
-					holonName: holonName.trim(),
-					mode: 'private'
-				});
+				// Store pending data and show save-key view
+				generatedNsec = hexToNsec(result.privateKey);
+				generatedPublicKey = result.publicKey;
+				pendingHolonName = holonName.trim();
+				pendingTelegramUserId = null;
+				keyCopied = false;
+				view = 'save-key';
 			}
 		} catch (err: any) {
 			error = err.message || 'Failed to create holon';
@@ -225,19 +235,12 @@
 			return;
 		}
 
-		// Validate key format
-		const key = privateKeyInput.trim().toLowerCase();
-		if (!/^[0-9a-f]{64}$/.test(key)) {
-			error = 'Invalid key format. Must be 64 hex characters.';
-			return;
-		}
-
 		isProcessing = true;
 		error = '';
 
 		try {
-			// Import the key
-			const result = await nostrStore.importKey(key);
+			// Import the key (nostrStore.importKey accepts nsec or hex)
+			const result = await nostrStore.importKey(privateKeyInput.trim());
 
 			if (result) {
 				// Check if this matches expected public key for Telegram user
@@ -265,11 +268,30 @@
 		view = 'restore';
 	}
 
-	// Handle key input formatting
+	// Handle key input (allow nsec or hex format)
 	function handleKeyInput(event: Event) {
 		const input = event.target as HTMLInputElement;
-		// Remove non-hex characters and convert to lowercase
-		privateKeyInput = input.value.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+		privateKeyInput = input.value.trim();
+	}
+
+	// Copy nsec to clipboard
+	async function copyNsec() {
+		try {
+			await navigator.clipboard.writeText(generatedNsec);
+			keyCopied = true;
+		} catch (err) {
+			console.error('Failed to copy:', err);
+		}
+	}
+
+	// Proceed after saving key
+	function proceedAfterSave() {
+		dispatch('authenticated', {
+			publicKey: generatedPublicKey,
+			holonName: pendingHolonName,
+			telegramUserId: pendingTelegramUserId,
+			mode: 'private'
+		});
 	}
 
 	// Go back to welcome screen
@@ -604,21 +626,19 @@
 			</button>
 
 			<h1 class="title">Restore Your Holon</h1>
-			<p class="subtitle">Enter your 64-character private key</p>
+			<p class="subtitle">Enter your nsec or hex private key</p>
 
 			<div class="form-group">
 				<input
 					type="password"
-					value={privateKeyInput}
+					bind:value={privateKeyInput}
 					on:input={handleKeyInput}
-					placeholder="Enter private key..."
+					placeholder="nsec1... or hex key"
 					class="text-input mono"
 					class:error={error}
 					disabled={isProcessing}
 					on:keydown={(e) => e.key === 'Enter' && handleRestore()}
 				/>
-
-				<p class="key-length">{privateKeyInput.length}/64 characters</p>
 
 				{#if error}
 					<p class="error-message" transition:slide>{error}</p>
@@ -628,7 +648,7 @@
 			<button
 				class="submit-button"
 				on:click={handleRestore}
-				disabled={isProcessing || privateKeyInput.length !== 64}
+				disabled={isProcessing || !privateKeyInput.trim()}
 			>
 				{#if isProcessing}
 					<svg class="spinner" viewBox="0 0 24 24">
@@ -643,6 +663,69 @@
 			<p class="info-text">
 				Your private key is stored only on this device and never sent to any server.
 			</p>
+		</div>
+
+		<div class="bottom-branding">
+			<p>powered by HoloSphere</p>
+		</div>
+	</div>
+
+{:else if view === 'save-key'}
+	<!-- Save Key View -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="splash-container"
+		class:splash-container--modal={isModal}
+		transition:fade={{ duration: 300 }}
+		on:click={handleBackdropClick}
+	>
+		<div class="onboarding-card" in:fly={{ y: 30, duration: 400 }}>
+			<div class="logo-small">
+				<MyHolonsIcon />
+			</div>
+
+			<h1 class="title">Save Your Secret Key</h1>
+			<p class="subtitle warning">
+				This is your only way to recover your identity. Save it somewhere safe!
+			</p>
+
+			<div class="key-display">
+				<div class="key-label">Your nsec (private key)</div>
+				<div class="key-value">{generatedNsec}</div>
+				<button class="copy-button" on:click={copyNsec}>
+					{#if keyCopied}
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+						</svg>
+						Copied!
+					{:else}
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+						</svg>
+						Copy to Clipboard
+					{/if}
+				</button>
+			</div>
+
+			<div class="warning-box">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+				</svg>
+				<span>If you lose this key, you cannot recover your holon or data.</span>
+			</div>
+
+			<button
+				class="submit-button"
+				on:click={proceedAfterSave}
+				disabled={!keyCopied}
+			>
+				{#if keyCopied}
+					I've Saved My Key - Continue
+				{:else}
+					Copy Key First to Continue
+				{/if}
+			</button>
 		</div>
 
 		<div class="bottom-branding">
@@ -1016,6 +1099,82 @@
 	.info-text.highlight {
 		color: #fbbf24;
 		font-size: 0.85rem;
+	}
+
+	/* Save Key View */
+	.subtitle.warning {
+		color: #fbbf24;
+		font-weight: 500;
+	}
+
+	.key-display {
+		background: rgba(15, 23, 42, 0.8);
+		border: 1px solid rgba(100, 116, 139, 0.3);
+		border-radius: 0.75rem;
+		padding: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.key-label {
+		color: #94a3b8;
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.5rem;
+	}
+
+	.key-value {
+		color: #a5b4fc;
+		font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+		font-size: 0.85rem;
+		word-break: break-all;
+		line-height: 1.5;
+		margin-bottom: 0.75rem;
+	}
+
+	.copy-button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.625rem 1rem;
+		background: rgba(79, 70, 229, 0.2);
+		border: 1px solid rgba(79, 70, 229, 0.4);
+		border-radius: 0.5rem;
+		color: #a5b4fc;
+		font-size: 0.9rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.copy-button:hover {
+		background: rgba(79, 70, 229, 0.3);
+		border-color: rgba(79, 70, 229, 0.6);
+	}
+
+	.warning-box {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.875rem;
+		background: rgba(251, 191, 36, 0.1);
+		border: 1px solid rgba(251, 191, 36, 0.3);
+		border-radius: 0.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.warning-box svg {
+		color: #fbbf24;
+		flex-shrink: 0;
+		margin-top: 0.125rem;
+	}
+
+	.warning-box span {
+		color: #fcd34d;
+		font-size: 0.85rem;
+		line-height: 1.4;
 	}
 
 </style>

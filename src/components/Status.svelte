@@ -9,7 +9,7 @@
     import PieChart3D from "./PieChart3D.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
     import TitleBar from "./shared/TitleBar.svelte";
-    import { nameMap, resolveName } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
     import { HolonsManager } from "../lib/holons/HolonsManager";
     interface User {
         id?: string;
@@ -52,7 +52,7 @@
     let expenseStore: Record<string, Expense> = {};
     let availableCurrencies: string[] = [];
     let holonID: string;
-    $: holonName = (holonID && $nameMap[holonID]) || 'Status';
+    $: holonName = resolvedName(holonID, $nameMap, null, 'Status');
     let holosphere = getContext("holosphere") as HoloSphere;
     let valueEquationLoaded = false;
     let selectedUserId: string | null = null;
@@ -802,7 +802,7 @@
                                                 <div class="relative flex-shrink-0">
                                                     <img
                                                         src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
-                                                        alt={`${user.first_name} ${user.last_name || ''}`}
+                                                        alt={resolvedName(user.id || userId, $nameMap, user)}
                                                         class="w-8 h-8 rounded-full object-cover border border-gray-500 aspect-square flex-shrink-0"
                                                         onerror={(e) => {
                                                             e.currentTarget.style.display = 'none';
@@ -810,11 +810,11 @@
                                                         }}
                                                     />
                                                     <div class="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center text-white text-xs font-bold border border-gray-500 aspect-square flex-shrink-0" style="display: none;">
-                                                        {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
+                                                        {resolvedInitials(user.id || userId, $nameMap, user)}
                                                     </div>
                                                 </div>
                                                 <div class="text-sm">
-                                                    <div class="font-medium">{user.first_name}</div>
+                                                    <div class="font-medium">{resolvedName(user.id || userId, $nameMap, user)}</div>
                                                 </div>
                                             </button>
                                         </td>

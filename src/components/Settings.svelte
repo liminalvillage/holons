@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
-  import { nameMap, resolveName, forceRefresh, setName } from '$lib/stores/nameResolver';
+  import { nameMap, resolvedName, resolveName, forceRefresh, setName } from '$lib/stores/nameResolver';
   import { registerName as hnsRegister } from '$lib/hns';
   import { nostrStore } from '$lib/stores/nostr';
   import TitleBar from './shared/TitleBar.svelte';
@@ -38,7 +38,7 @@
   let holosphere: any;
   let loading = true;
   let error: string | null = null;
-  $: holonName = (holonId && $nameMap[holonId]) || 'Settings';
+  $: holonName = resolvedName(holonId, $nameMap, null, 'Settings');
   let notifications: Array<{id: number, message: string, type: string}> = [];
   let notificationId = 0;
 
@@ -118,7 +118,12 @@
       } else {
         settings = getDefaultSettings(holonId);
       }
-      
+
+      // Back-fill name from nameMap if loaded name is empty (handles relay propagation delay)
+      if (!settings.name && $nameMap[holonId]) {
+        settings.name = $nameMap[holonId];
+      }
+
       // Update the global settings store
       settingsStore.set(settings);
       
@@ -395,6 +400,7 @@
 										type="text" 
 										bind:value={settings.name}
 										onblur={() => updateSetting('name', settings.name)}
+										onkeydown={(e) => e.key === 'Enter' && updateSetting('name', settings.name)}
 										placeholder="Enter holon name"
 										class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 									/>

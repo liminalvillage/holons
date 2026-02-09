@@ -3,6 +3,8 @@
     import { fade, scale } from 'svelte/transition';
     import { goto } from '$app/navigation';
     import type { HoloSphere } from "holosphere";
+    import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+    import DisplayName from './shared/DisplayName.svelte';
     // Allow either quest or role to be passed
     export let quest: any = undefined;
     export let role: any = undefined;
@@ -348,9 +350,9 @@
                             {#each item.participants as participant}
                                 <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
                                     <div class="flex items-center gap-2">
-                                        <img 
+                                        <img
                                             src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-                                            alt={participant.username || participant.first_name}
+                                            alt={resolvedName(participant.id, $nameMap, participant)}
                                             class="w-8 h-8 rounded-full object-cover border border-gray-500"
                                             on:error={(e) => {
                                                 e.currentTarget.style.display = 'none';
@@ -358,14 +360,14 @@
                                             }}
                                         />
                                         <div class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-sm font-bold border border-gray-500" style="display: none;">
-                                            {participant.first_name ? participant.first_name[0] : '?'}{participant.last_name ? participant.last_name[0] : ''}
+                                            {resolvedInitials(participant.id, $nameMap, participant)}
                                         </div>
-                                        <span>{participant.username || `${participant.first_name} ${participant.last_name || ''}`}</span>
+                                        <span><DisplayName id={participant.id} user={participant} /></span>
                                     </div>
-                                    <button 
+                                    <button
                                         class="text-gray-400 hover:text-red-400 transition-colors"
                                         on:click={() => removeParticipant(participant.id)}
-                                        aria-label={`Remove participant ${participant.first_name}`}
+                                        aria-label={`Remove participant ${resolvedName(participant.id, $nameMap, participant)}`}
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -387,9 +389,9 @@
                                     on:click|stopPropagation={() => toggleParticipant(userId)}
                                 >
                                     <div class="flex items-center gap-2 flex-1">
-                                        <img 
+                                        <img
                                             src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
-                                            alt={user.first_name}
+                                            alt={resolvedName(user.id || userId, $nameMap, user)}
                                             class="w-6 h-6 rounded-full object-cover border border-gray-500"
                                             on:error={(e) => {
                                                 e.currentTarget.style.display = 'none';
@@ -397,9 +399,9 @@
                                             }}
                                         />
                                         <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-white text-xs font-bold border border-gray-500" style="display: none;">
-                                            {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
+                                            {resolvedInitials(user.id || userId, $nameMap, user)}
                                         </div>
-                                        <span>{user.first_name} {user.last_name || ''}</span>
+                                        <span><DisplayName id={user.id || userId} {user} /></span>
                                     </div>
                                     {#if isUserParticipant(userId)}
                                         <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
