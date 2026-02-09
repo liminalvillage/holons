@@ -13,6 +13,9 @@
 	import WidgetDashboard from '../components/WidgetDashboard.svelte';
 	import TopNavItems from './TopNavItems.svelte';
 
+	declare const __COMMIT_HASH__: string;
+	const commitHash = typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev';
+
 	const dispatch = createEventDispatcher();
 
 	// Helper to validate holon ID
@@ -187,6 +190,7 @@
 
 	<!-- Right controls -->
 	<div class="topbar__controls">
+		<span class="topbar__version" title="Build: {commitHash}">{commitHash}</span>
 		{#if !isPrimaryPage && $ID}
 			<!-- Widget Dashboard toggle -->
 			<button class="topbar__icon-btn" onclick={toggleWidgetDashboard} title="Widget Dashboard">
@@ -291,6 +295,17 @@
 	.topbar__translate {
 		transform: scale(0.75);
 		transform-origin: right center;
+	}
+
+	.topbar__version {
+		font-size: 10px;
+		font-family: monospace;
+		color: var(--color-text-muted, #6b7280);
+		opacity: 0.6;
+		padding: 2px 6px;
+		background: var(--color-bg-tertiary, #374151);
+		border-radius: var(--radius-sm, 0.25rem);
+		cursor: default;
 	}
 
 	/* Mobile adjustments */

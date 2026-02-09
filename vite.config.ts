@@ -1,5 +1,8 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
+import { execSync } from 'child_process';
+
+const commitHash = execSync('git rev-parse --short HEAD').toString().trim();
 
 export default defineConfig({
 	plugins: [sveltekit()],
@@ -8,7 +11,8 @@ export default defineConfig({
 	},
 	define: {
 		// Provide global Buffer for libraries that expect Node.js environment
-		global: 'globalThis'
+		global: 'globalThis',
+		__COMMIT_HASH__: JSON.stringify(commitHash)
 	},
 	optimizeDeps: {
 		include: ['svelte', 'ajv', 'h3-js', 'buffer'],
