@@ -1,8 +1,11 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
 import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
 
 const commitHash = execSync('git rev-parse --short HEAD').toString().trim();
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
+const holosphereVersion = pkg.dependencies?.holosphere || 'unknown';
 
 export default defineConfig({
 	plugins: [sveltekit()],
@@ -12,7 +15,8 @@ export default defineConfig({
 	define: {
 		// Provide global Buffer for libraries that expect Node.js environment
 		global: 'globalThis',
-		__COMMIT_HASH__: JSON.stringify(commitHash)
+		__COMMIT_HASH__: JSON.stringify(commitHash),
+		__HOLOSPHERE_VERSION__: JSON.stringify(holosphereVersion)
 	},
 	optimizeDeps: {
 		include: ['svelte', 'ajv', 'h3-js', 'buffer'],

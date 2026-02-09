@@ -15,6 +15,11 @@
 	import { nameMap, resolveName, awaitName, forceRefreshHolonName } from '$lib/stores/nameResolver';
 	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
 
+	declare const __COMMIT_HASH__: string;
+	declare const __HOLOSPHERE_VERSION__: string;
+	const commitHash = typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev';
+	const holosphereVersion = typeof __HOLOSPHERE_VERSION__ !== 'undefined' ? __HOLOSPHERE_VERSION__ : 'unknown';
+
 	// Props
 	export let isOpen: boolean = true;
 
@@ -821,6 +826,12 @@
 		on:acceptRequest={(e) => handleAcceptRequest(e.detail)}
 		on:declineRequest={(e) => handleDeclineRequest(e.detail)}
 	/>
+
+	<!-- Version footer -->
+	<div class="browser-panel__footer">
+		<span title="Build: {commitHash}">build: {commitHash}</span>
+		<span title="Holosphere version">holosphere: {holosphereVersion}</span>
+	</div>
 </aside>
 
 <!-- Add Holon Modal -->
@@ -1276,6 +1287,24 @@
 	.add-modal__lens-toggle span {
 		font-size: var(--font-size-xs, 0.75rem);
 		color: var(--color-text-secondary, #d1d5db);
+	}
+
+	/* Version footer */
+	.browser-panel__footer {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
+		border-top: 1px solid var(--color-border, #374151);
+		margin-top: auto;
+		flex-shrink: 0;
+	}
+
+	.browser-panel__footer span {
+		font-size: 10px;
+		font-family: monospace;
+		color: var(--color-text-muted, #6b7280);
+		opacity: 0.6;
 	}
 
 </style>
