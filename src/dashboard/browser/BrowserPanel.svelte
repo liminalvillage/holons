@@ -7,7 +7,7 @@
 	import { Search, Plus, X, Upload } from 'svelte-feathers';
 	import { nostrPublicKey, nostrPrivateKey, nostrStore } from '../../lib/stores/nostr';
 	import { incomingRequests, outgoingRequests, pendingFederationRequests, federationNotifications, type PendingRequest, createIncomingRequest, createOutgoingRequest, incomingUpdates, pendingUpdates } from '../../lib/stores/federationRequests';
-	import { handshake } from 'holosphere';
+	import { handshake, version as holosphereVersion } from 'holosphere';
 	import HolonList from './HolonList.svelte';
 	import QRScanner from '../../components/QRScanner.svelte';
 
@@ -16,9 +16,7 @@
 	import { activeHolonIdentity, userHolons, activeHolonIdentityStore } from '../../lib/stores/activeHolonIdentity';
 
 	declare const __COMMIT_HASH__: string;
-	declare const __HOLOSPHERE_VERSION__: string;
 	const commitHash = typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev';
-	const holosphereVersion = typeof __HOLOSPHERE_VERSION__ !== 'undefined' ? __HOLOSPHERE_VERSION__ : 'unknown';
 
 	// Props
 	export let isOpen: boolean = true;
