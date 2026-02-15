@@ -65,17 +65,18 @@
 
         try {
             // Fetch all checklists and find the shopping one
-            const allChecklists = await holosphere.getAll(holonID, "checklists") as Record<string, Checklist>;
+            // Note: getAll returns an array of checklist objects, not a Record
+            const allChecklists = await holosphere.getAll(holonID, "checklists") as Checklist[];
 
-            // Find a checklist with shopping keywords
+            // Find a checklist with shopping keywords (check checklist.id property)
             let foundChecklist: Checklist | null = null;
             let foundId: string | null = null;
 
-            if (allChecklists && typeof allChecklists === 'object') {
-                for (const [key, checklist] of Object.entries(allChecklists)) {
-                    if (isShoppingChecklist(key)) {
+            if (allChecklists && Array.isArray(allChecklists)) {
+                for (const checklist of allChecklists) {
+                    if (checklist && checklist.id && isShoppingChecklist(checklist.id)) {
                         foundChecklist = checklist;
-                        foundId = key;
+                        foundId = checklist.id;
                         break;
                     }
                 }
