@@ -105,7 +105,8 @@ export class HolonSettings extends Ad4mModel {
   /**
    * Flow management config stored as JSON literal.
    * Too complex for individual links at this stage.
-   * TODO: Consider decomposing into sub-model if semantic queries are needed.
+   * NOTE: Consider decomposing into a sub-model if semantic queries on individual
+   * flow management fields become necessary.
    */
   @Optional({ through: 'holons://flowManagement', resolveLanguage: 'literal' })
   flowManagement?: string;
@@ -321,7 +322,8 @@ export class CouncilAdvisor extends Ad4mModel {
   /**
    * Character specification as JSON literal.
    * Contains personality traits, domain expertise, communication style, etc.
-   * TODO: Consider decomposing if we need to query by character traits.
+   * NOTE: Consider decomposing into individual properties if querying by
+   * specific character traits (e.g., domain expertise) becomes necessary.
    */
   @Property({ through: 'holons://advisor/characterSpec', resolveLanguage: 'literal' })
   characterSpec: string = '{}';

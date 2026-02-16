@@ -54,11 +54,56 @@ const defaultDiscrepancyLogger: DiscrepancyLogger = (
   );
 };
 
+// =============================================================================
+// Metrics
+// =============================================================================
+
+/** Per-operation latency and error tracking for a single backend */
+export interface BackendMetrics {
+  /** Total number of operations */
+  totalOps: number;
+  /** Total number of errors */
+  errorCount: number;
+  /** Cumulative latency in ms (divide by totalOps for average) */
+  totalLatencyMs: number;
+  /** Per-operation type breakdown */
+  ops: Record<string, { count: number; errors: number; totalMs: number }>;
+}
+
+/** Combined metrics for both backends */
+export interface DualAdapterMetrics {
+  holosphere: BackendMetrics;
+  ad4m: BackendMetrics;
+  /** When metrics tracking started */
+  since: number;
+}
+
+function createEmptyBackendMetrics(): BackendMetrics {
+  return { totalOps: 0, errorCount: 0, totalLatencyMs: 0, ops: {} };
+}
+
+function recordOp(metrics: BackendMetrics, operation: string, durationMs: number, isError: boolean): void {
+  metrics.totalOps++;
+  metrics.totalLatencyMs += durationMs;
+  if (isError) metrics.errorCount++;
+
+  if (!metrics.ops[operation]) {
+    metrics.ops[operation] = { count: 0, errors: 0, totalMs: 0 };
+  }
+  const op = metrics.ops[operation];
+  op.count++;
+  op.totalMs += durationMs;
+  if (isError) op.errors++;
+}
+
 /**
  * DualWriteAdapter — transparent backend multiplexer.
  *
  * Implements the same API surface as HoloSphere so it can replace it
  * in the Svelte context without any component changes.
+ *
+ * Tracks per-operation latency and error counts for both backends.
+ * Retrieve metrics via `getMetrics()`.
  *
  * ## Usage
  *
@@ -72,16 +117,20 @@ const defaultDiscrepancyLogger: DiscrepancyLogger = (
  *
  * // Now use exactly like HoloSphere:
  * const quests = await adapter.getAll(holonId, 'quests');
- * ```
  *
- * TODO: Add metric tracking (latency, error rates per backend).
- * TODO: Add configurable retry logic for AD4M operations in dual mode.
+ * // Check performance:
+ * const metrics = adapter.getMetrics();
+ * console.log('AD4M avg latency:', metrics.ad4m.totalLatencyMs / metrics.ad4m.totalOps);
+ * ```
  */
 export class DualWriteAdapter {
   private holosphere: HoloSphere;
   private ad4m: HoloSphereAd4mAdapter | null = null;
   private _mode: BackendMode;
   private logDiscrepancy: DiscrepancyLogger;
+  private hsMetrics: BackendMetrics = createEmptyBackendMetrics();
+  private ad4mMetrics: BackendMetrics = createEmptyBackendMetrics();
+  private metricsSince: number = Date.now();
 
   constructor(config: DualAdapterConfig) {
     this.holosphere = config.holosphere;
@@ -125,6 +174,46 @@ export class DualWriteAdapter {
   /** The underlying AD4M adapter (for advanced operations) */
   get ad4mAdapter(): HoloSphereAd4mAdapter | null {
     return this.ad4m;
+  }
+
+  /**
+   * Get operation metrics for both backends.
+   * Returns in-memory counters — no external dependencies.
+   */
+  getMetrics(): DualAdapterMetrics {
+    return {
+      holosphere: { ...this.hsMetrics, ops: { ...this.hsMetrics.ops } },
+      ad4m: { ...this.ad4mMetrics, ops: { ...this.ad4mMetrics.ops } },
+      since: this.metricsSince,
+    };
+  }
+
+  /**
+   * Reset all metrics counters.
+   */
+  resetMetrics(): void {
+    this.hsMetrics = createEmptyBackendMetrics();
+    this.ad4mMetrics = createEmptyBackendMetrics();
+    this.metricsSince = Date.now();
+  }
+
+  /** Run an operation on a backend with metrics tracking */
+  private async tracked<T>(
+    backend: 'holosphere' | 'ad4m',
+    operation: string,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const metrics = backend === 'holosphere' ? this.hsMetrics : this.ad4mMetrics;
+    const start = Date.now();
+    let isError = false;
+    try {
+      return await fn();
+    } catch (err) {
+      isError = true;
+      throw err;
+    } finally {
+      recordOp(metrics, operation, Date.now() - start, isError);
+    }
   }
 
   // ===========================================================================
@@ -183,19 +272,19 @@ export class DualWriteAdapter {
   async get(holonId: string, lens: string, key?: string): Promise<any> {
     switch (this._mode) {
       case 'holosphere':
-        return this.holosphere.get(holonId, lens, key);
+        return this.tracked('holosphere', 'get', () => this.holosphere.get(holonId, lens, key));
 
       case 'ad4m':
         if (!this.ad4m) throw new Error('AD4M adapter not initialized');
-        return this.ad4m.get(holonId, lens, key);
+        return this.tracked('ad4m', 'get', () => this.ad4m!.get(holonId, lens, key));
 
       case 'dual': {
         // Read from HoloSphere (primary)
-        const hsResult = await this.holosphere.get(holonId, lens, key);
+        const hsResult = await this.tracked('holosphere', 'get', () => this.holosphere.get(holonId, lens, key));
 
         // Background validation against AD4M (fire-and-forget)
         if (this.ad4m?.isConnected) {
-          this.ad4m.get(holonId, lens, key).then((ad4mResult) => {
+          this.tracked('ad4m', 'get', () => this.ad4m!.get(holonId, lens, key)).then((ad4mResult) => {
             if (hsResult && ad4mResult) {
               this.compareResults('get', lens, hsResult, ad4mResult);
             }
@@ -220,17 +309,17 @@ export class DualWriteAdapter {
   async getAll(holonId: string, lens: string): Promise<Record<string, any>> {
     switch (this._mode) {
       case 'holosphere':
-        return this.holosphere.getAll(holonId, lens);
+        return this.tracked('holosphere', 'getAll', () => this.holosphere.getAll(holonId, lens));
 
       case 'ad4m':
         if (!this.ad4m) throw new Error('AD4M adapter not initialized');
-        return this.ad4m.getAll(holonId, lens);
+        return this.tracked('ad4m', 'getAll', () => this.ad4m!.getAll(holonId, lens));
 
       case 'dual': {
-        const hsResult = await this.holosphere.getAll(holonId, lens);
+        const hsResult = await this.tracked('holosphere', 'getAll', () => this.holosphere.getAll(holonId, lens));
 
         if (this.ad4m?.isConnected) {
-          this.ad4m.getAll(holonId, lens).then((ad4mResult) => {
+          this.tracked('ad4m', 'getAll', () => this.ad4m!.getAll(holonId, lens)).then((ad4mResult) => {
             const hsCount = Object.keys(hsResult || {}).length;
             const ad4mCount = Object.keys(ad4mResult || {}).length;
             if (hsCount !== ad4mCount) {
@@ -260,19 +349,19 @@ export class DualWriteAdapter {
   async put(holonId: string, lens: string, data: any, options?: any): Promise<void> {
     switch (this._mode) {
       case 'holosphere':
-        return this.holosphere.put(holonId, lens, data, options);
+        return this.tracked('holosphere', 'put', () => this.holosphere.put(holonId, lens, data, options));
 
       case 'ad4m':
         if (!this.ad4m) throw new Error('AD4M adapter not initialized');
-        return this.ad4m.put(holonId, lens, data, options);
+        return this.tracked('ad4m', 'put', () => this.ad4m!.put(holonId, lens, data, options));
 
       case 'dual': {
         // Write to HoloSphere first (primary)
-        await this.holosphere.put(holonId, lens, data, options);
+        await this.tracked('holosphere', 'put', () => this.holosphere.put(holonId, lens, data, options));
 
         // Write to AD4M (background, non-blocking)
         if (this.ad4m?.isConnected) {
-          this.ad4m.put(holonId, lens, data, options).catch((err) => {
+          this.tracked('ad4m', 'put', () => this.ad4m!.put(holonId, lens, data, options)).catch((err) => {
             console.error('[DualAdapter] AD4M background put failed:', err.message);
             this.logDiscrepancy('put', lens, data, null, `AD4M write failed: ${err.message}`);
           });
@@ -309,17 +398,17 @@ export class DualWriteAdapter {
   async delete(holonId: string, lens: string, key?: string): Promise<void> {
     switch (this._mode) {
       case 'holosphere':
-        return (this.holosphere as any).delete(holonId, lens, key);
+        return this.tracked('holosphere', 'delete', () => (this.holosphere as any).delete(holonId, lens, key));
 
       case 'ad4m':
         if (!this.ad4m) throw new Error('AD4M adapter not initialized');
-        return this.ad4m.delete(holonId, lens, key);
+        return this.tracked('ad4m', 'delete', () => this.ad4m!.delete(holonId, lens, key));
 
       case 'dual': {
-        await (this.holosphere as any).delete(holonId, lens, key);
+        await this.tracked('holosphere', 'delete', () => (this.holosphere as any).delete(holonId, lens, key));
 
         if (this.ad4m?.isConnected) {
-          this.ad4m.delete(holonId, lens, key).catch((err) => {
+          this.tracked('ad4m', 'delete', () => this.ad4m!.delete(holonId, lens, key)).catch((err) => {
             console.error('[DualAdapter] AD4M background delete failed:', err.message);
           });
         }

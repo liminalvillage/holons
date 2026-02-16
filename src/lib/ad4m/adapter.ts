@@ -61,6 +61,16 @@ export interface Subscription {
   unsubscribe: () => void;
 }
 
+/** Data from a federated (linked) holon */
+export interface FederatedHolonData {
+  /** The federation link that pointed to this holon */
+  federationLink: any;
+  /** The perspective UUID of the joined neighbourhood */
+  perspectiveUuid: string;
+  /** Data read from the federated holon, keyed by lens */
+  data: Record<string, Record<string, any>>;
+}
+
 /**
  * HoloSphereAd4mAdapter — drop-in replacement for HoloSphere using AD4M.
  *
@@ -107,9 +117,9 @@ export interface Subscription {
  * await adapter.put(holonId, 'quests', { title: 'New Quest', status: 'ongoing' });
  * ```
  *
- * TODO: Test all methods with a real AD4M executor.
- * TODO: Handle cases where the perspective doesn't exist yet (auto-create?).
- * TODO: Implement federation-related methods (federate, getFederation, etc.).
+ * NOTE: All methods should be tested with a real AD4M executor. Some behaviors
+ * (e.g., subscription timing, Prolog query semantics) may differ from HoloSphere's
+ * GunDB/Nostr backend.
  */
 export class HoloSphereAd4mAdapter {
   private connection: Ad4mConnection;
@@ -435,13 +445,14 @@ export class HoloSphereAd4mAdapter {
    * Uses AD4M's live query subscription system. The callback receives
    * individual data items as they change (matching HoloSphere's event-based API).
    *
+   * NOTE: Subscription behavior may differ from HoloSphere's GunDB-based
+   * subscriptions (which fire per-item vs per-query). Subscriptions are
+   * automatically re-established after WebSocket reconnection.
+   *
    * @param holonId - The holon/perspective UUID
    * @param lens - The lens name
    * @param callback - Called with (data, key) on each update
    * @returns Subscription handle with unsubscribe() method
-   *
-   * TODO: Test with real executor — subscription behavior may differ from
-   * HoloSphere's GunDB-based subscriptions (which fire per-item vs per-query).
    */
   subscribe(
     holonId: string,
@@ -451,6 +462,7 @@ export class HoloSphereAd4mAdapter {
     const ModelClass = this.getModelForLens(lens);
     let disposed = false;
     let queryDisposer: (() => void) | null = null;
+    let reconnectDisposer: (() => void) | null = null;
 
     if (!ModelClass) {
       console.warn(`[Ad4mAdapter] No model mapped for lens: ${lens}`);
@@ -491,23 +503,32 @@ export class HoloSphereAd4mAdapter {
     // Fire and forget — subscription setup is async but HoloSphere API is sync
     setupSubscription();
 
+    // Register for re-establishment on reconnect
+    reconnectDisposer = this.connection.registerSubscription(holonId, () => {
+      if (!disposed) {
+        // Re-setup subscription after reconnect
+        setupSubscription();
+      }
+    });
+
     return {
       unsubscribe: () => {
         disposed = true;
         if (queryDisposer) queryDisposer();
+        if (reconnectDisposer) reconnectDisposer();
       },
     };
   }
 
   // ===========================================================================
-  // Profile Operations (stub — matches HoloSphere API)
+  // Profile Operations
   // ===========================================================================
 
   /**
    * Get holon profile.
    *
    * In AD4M, this maps to the HolonSettings instance in the perspective.
-   * TODO: Implement properly when profile format is finalized.
+   * NOTE: Profile format may evolve — currently returns the full settings object.
    */
   async getHolonProfile(holonId: string): Promise<any> {
     return this.get(holonId, 'settings');
@@ -521,7 +542,7 @@ export class HoloSphereAd4mAdapter {
   }
 
   // ===========================================================================
-  // Federation Operations (stub)
+  // Federation Operations
   // ===========================================================================
 
   /**
@@ -568,6 +589,141 @@ export class HoloSphereAd4mAdapter {
     return this.getAll(holonId, 'federation');
   }
 
+  /**
+   * Follow federation links from a holon, join target neighbourhoods if needed,
+   * and return data from the federated holons.
+   *
+   * This walks the FederationLink graph: for each link, it joins the target
+   * neighbourhood (if not already joined) and reads the specified lenses.
+   *
+   * @param holonId - The source holon's perspective UUID
+   * @param lenses - Which lenses to read from federated holons (default: all outbound lenses from each link)
+   * @returns Array of federated holon data
+   */
+  async getLinkedHolons(
+    holonId: string,
+    lenses?: string[]
+  ): Promise<FederatedHolonData[]> {
+    const federationLinks = await this.getFederation(holonId);
+    const results: FederatedHolonData[] = [];
+
+    for (const [_id, linkData] of Object.entries(federationLinks)) {
+      const link = linkData as any;
+      const targetUrl = link.targetNeighbourhood;
+      if (!targetUrl) continue;
+
+      try {
+        // Join the target neighbourhood if not already joined
+        let perspective: PerspectiveProxy;
+        try {
+          perspective = await this.connection.joinNeighbourhood(targetUrl);
+        } catch (joinErr: any) {
+          // If already joined, try to find it in existing perspectives
+          if (joinErr.message?.includes('already') || joinErr.message?.includes('exists')) {
+            const allPerspectives = await this.connection.getAllPerspectives();
+            const existing = allPerspectives.find((p: any) =>
+              p.sharedUrl === targetUrl || p.neighbourhood?.data?.linkLanguageAddress
+            );
+            if (!existing) {
+              console.warn(`[Ad4mAdapter] Could not find or join neighbourhood: ${targetUrl}`);
+              continue;
+            }
+            perspective = existing;
+          } else {
+            console.error(`[Ad4mAdapter] Failed to join neighbourhood ${targetUrl}:`, joinErr);
+            continue;
+          }
+        }
+
+        // Determine which lenses to read
+        const lensesToRead = lenses || link.outboundLenses || [];
+        const data: Record<string, Record<string, any>> = {};
+
+        for (const lens of lensesToRead) {
+          try {
+            // Read directly from the federated perspective
+            const ModelClass = this.getModelForLens(lens);
+            const instances = await ModelClass.findAll(perspective);
+            const record: Record<string, any> = {};
+            for (const instance of instances) {
+              const obj = this.instanceToObject(instance);
+              record[obj.id || (instance as any).baseExpression] = obj;
+            }
+            data[lens] = record;
+          } catch (lensErr) {
+            console.error(`[Ad4mAdapter] Failed to read lens '${lens}' from federated holon:`, lensErr);
+            data[lens] = {};
+          }
+        }
+
+        results.push({
+          federationLink: link,
+          perspectiveUuid: perspective.uuid,
+          data,
+        });
+      } catch (error) {
+        console.error(`[Ad4mAdapter] Error processing federation link to ${targetUrl}:`, error);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Sync specific lenses from a single federated holon.
+   *
+   * Joins the target neighbourhood if not already joined, then reads the
+   * specified lenses and returns the data.
+   *
+   * @param holonId - Source holon (for context/logging)
+   * @param targetNeighbourhoodUrl - The neighbourhood URL to read from
+   * @param lenses - Which lenses to read
+   * @returns Data from the federated holon, keyed by lens name
+   */
+  async syncFederatedData(
+    holonId: string,
+    targetNeighbourhoodUrl: string,
+    lenses: string[]
+  ): Promise<Record<string, Record<string, any>>> {
+    let perspective: PerspectiveProxy;
+    try {
+      perspective = await this.connection.joinNeighbourhood(targetNeighbourhoodUrl);
+    } catch (joinErr: any) {
+      // May already be joined
+      const allPerspectives = await this.connection.getAllPerspectives();
+      const existing = allPerspectives.find((p: any) => p.sharedUrl === targetNeighbourhoodUrl);
+      if (!existing) {
+        throw new Error(`Cannot join or find neighbourhood: ${targetNeighbourhoodUrl}`);
+      }
+      perspective = existing;
+    }
+
+    // Ensure SDNA is registered in the federated perspective
+    if (!this.sdnaInitialized.has(perspective.uuid)) {
+      await this.registerAllSubjectClasses(perspective);
+      this.sdnaInitialized.add(perspective.uuid);
+    }
+
+    const data: Record<string, Record<string, any>> = {};
+    for (const lens of lenses) {
+      try {
+        const ModelClass = this.getModelForLens(lens);
+        const instances = await ModelClass.findAll(perspective);
+        const record: Record<string, any> = {};
+        for (const instance of instances) {
+          const obj = this.instanceToObject(instance);
+          record[obj.id || (instance as any).baseExpression] = obj;
+        }
+        data[lens] = record;
+      } catch (err) {
+        console.error(`[Ad4mAdapter] syncFederatedData: failed to read lens '${lens}':`, err);
+        data[lens] = {};
+      }
+    }
+
+    return data;
+  }
+
   // ===========================================================================
   // Cleanup
   // ===========================================================================
@@ -599,15 +755,16 @@ export class HoloSphereAd4mAdapter {
   /**
    * Get or create a PerspectiveProxy for a holon ID and ensure SDNA is registered.
    *
-   * The first time a perspective is accessed, all Holons subject classes are
-   * registered via ensureSDNASubjectClass(). This is idempotent on the AD4M side.
+   * If the perspective doesn't exist, it is created automatically using the
+   * holonId as the perspective name. The first time a perspective is accessed,
+   * all Holons subject classes are registered via ensureSDNASubjectClass().
    */
   private async ensurePerspective(holonId: string): Promise<PerspectiveProxy> {
     if (this.perspectiveCache.has(holonId)) {
       return this.perspectiveCache.get(holonId)!;
     }
 
-    const perspective = await this.connection.getPerspective(holonId);
+    const perspective = await this.connection.getOrCreatePerspective(holonId);
 
     // Register all subject classes if not done yet for this perspective
     if (!this.sdnaInitialized.has(holonId)) {
@@ -626,8 +783,8 @@ export class HoloSphereAd4mAdapter {
    * ensureSDNASubjectClass is idempotent — if the class already exists,
    * it's a no-op.
    *
-   * TODO: Consider lazy registration (only register classes as they're used)
-   * for better startup performance.
+   * NOTE: Consider lazy registration (only register classes as they're used)
+   * for better startup performance if the number of models grows significantly.
    */
   private async registerAllSubjectClasses(perspective: PerspectiveProxy): Promise<void> {
     for (const ModelClass of ALL_SUBJECT_CLASSES) {

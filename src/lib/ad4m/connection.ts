@@ -43,6 +43,19 @@ export interface Ad4mConnectionConfig {
    * Default: true. Set to false for read-only/one-shot operations.
    */
   subscribe?: boolean;
+
+  /**
+   * Maximum number of reconnection attempts before giving up.
+   * Default: 5. Set to 0 to disable reconnection.
+   */
+  retryAttempts?: number;
+
+  /**
+   * Base delay in milliseconds between reconnection attempts.
+   * Actual delay uses exponential backoff: retryDelayMs * 2^attempt.
+   * Default: 1000 (1 second).
+   */
+  retryDelayMs?: number;
 }
 
 /** Represents the current connection state */
@@ -51,6 +64,7 @@ export type ConnectionState =
   | 'connecting'
   | 'connected'
   | 'authenticated'
+  | 'reconnecting'
   | 'error';
 
 /** Connection state change callback */
@@ -64,20 +78,22 @@ export type ConnectionStateCallback = (state: ConnectionState, error?: Error) =>
  * 2. Building an Ad4mClient from it
  * 3. Authenticating with the executor
  * 4. Providing access to PerspectiveProxy instances
+ * 5. Reconnecting with exponential backoff on connection loss
  *
  * Usage:
  * ```typescript
  * const conn = new Ad4mConnection({
  *   executorUrl: 'ws://localhost:12000/graphql',
- *   token: 'your-jwt-token'
+ *   token: 'your-jwt-token',
+ *   retryAttempts: 5,
+ *   retryDelayMs: 1000,
  * });
  * await conn.connect();
  * const perspective = await conn.getPerspective(perspectiveUuid);
  * ```
  *
- * TODO: Test with a real AD4M executor to verify Apollo Client setup.
- * The actual Apollo Client construction may need adjustment based on
- * the executor's GraphQL schema version.
+ * NOTE: The Apollo Client construction may need adjustment based on the
+ * executor's GraphQL schema version. Test with a real executor to verify.
  */
 export class Ad4mConnection {
   private config: Ad4mConnectionConfig;
@@ -85,10 +101,13 @@ export class Ad4mConnection {
   private state: ConnectionState = 'disconnected';
   private stateCallbacks: Set<ConnectionStateCallback> = new Set();
   private perspectiveCache: Map<string, PerspectiveProxy> = new Map();
+  private activeSubscriptions: Array<{ perspectiveUuid: string; callback: () => void }> = [];
 
   constructor(config: Ad4mConnectionConfig) {
     this.config = {
       subscribe: true,
+      retryAttempts: 5,
+      retryDelayMs: 1000,
       ...config,
     };
   }
@@ -128,10 +147,12 @@ export class Ad4mConnection {
   /**
    * Connect to the AD4M executor.
    *
-   * This establishes a WebSocket connection and creates the Ad4mClient.
-   * If a token is provided, it will be used for authentication.
+   * Establishes a WebSocket connection with automatic reconnection via
+   * graphql-ws's built-in retry mechanism with exponential backoff.
+   * On reconnection, the perspective cache is invalidated and subscriptions
+   * are re-established.
    *
-   * TODO: This uses dynamic imports for Apollo Client to avoid bundling issues.
+   * NOTE: Uses dynamic imports for Apollo Client to avoid bundling issues.
    * The exact Apollo Client setup depends on the runtime environment (browser vs Node).
    * With a real AD4M executor, you may need to use @coasys/ad4m-connect for the
    * full auth flow instead of manual Apollo Client construction.
@@ -158,12 +179,39 @@ export class Ad4mConnection {
         url.searchParams.set('token', this.config.token);
       }
 
-      // Create GraphQL WebSocket client
+      const retryAttempts = this.config.retryAttempts ?? 5;
+      const retryDelayMs = this.config.retryDelayMs ?? 1000;
+
+      // Create GraphQL WebSocket client with reconnection
       const wsClient = createClient({
         url: url.toString(),
-        // TODO: Add reconnect logic for production use
-        // retryAttempts: 5,
-        // connectionParams: { token: this.config.token },
+        retryAttempts,
+        retryWait: async (retryCount: number) => {
+          // Exponential backoff: baseDelay * 2^retryCount, capped at 30s
+          const delay = Math.min(retryDelayMs * Math.pow(2, retryCount), 30000);
+          console.log(`[Ad4mConnection] Reconnecting in ${delay}ms (attempt ${retryCount + 1}/${retryAttempts})`);
+          this.setState('reconnecting');
+          await new Promise(resolve => setTimeout(resolve, delay));
+        },
+        on: {
+          connected: () => {
+            // On reconnection, invalidate perspective cache and re-establish subscriptions
+            if (this.state === 'reconnecting') {
+              console.log('[Ad4mConnection] Reconnected — re-establishing state');
+              this.perspectiveCache.clear();
+              this.reEstablishSubscriptions();
+            }
+          },
+          closed: (event: any) => {
+            if (this.state !== 'disconnected') {
+              console.warn('[Ad4mConnection] WebSocket closed:', event);
+            }
+          },
+          error: (error: any) => {
+            console.error('[Ad4mConnection] WebSocket error:', error);
+          },
+        },
+        connectionParams: this.config.token ? { token: this.config.token } : undefined,
       });
 
       // Create Apollo link from WebSocket client
@@ -206,11 +254,49 @@ export class Ad4mConnection {
   }
 
   /**
+   * Re-establish subscriptions after a reconnection.
+   * Called automatically when the WebSocket reconnects.
+   */
+  private reEstablishSubscriptions(): void {
+    for (const sub of this.activeSubscriptions) {
+      try {
+        sub.callback();
+      } catch (e) {
+        console.error(`[Ad4mConnection] Failed to re-establish subscription for ${sub.perspectiveUuid}:`, e);
+      }
+    }
+    // Update state after re-establishing
+    if (this.config.token) {
+      this.setState('authenticated');
+    } else {
+      this.setState('connected');
+    }
+  }
+
+  /**
+   * Register a subscription re-establishment callback.
+   * Called by the adapter layer to ensure subscriptions survive reconnects.
+   *
+   * @param perspectiveUuid - The perspective this subscription belongs to
+   * @param callback - Function to call to re-establish the subscription
+   * @returns Unregister function
+   */
+  registerSubscription(perspectiveUuid: string, callback: () => void): () => void {
+    const entry = { perspectiveUuid, callback };
+    this.activeSubscriptions.push(entry);
+    return () => {
+      const idx = this.activeSubscriptions.indexOf(entry);
+      if (idx >= 0) this.activeSubscriptions.splice(idx, 1);
+    };
+  }
+
+  /**
    * Disconnect from the AD4M executor.
    * Clears the client and perspective cache.
    */
   async disconnect(): Promise<void> {
     this.perspectiveCache.clear();
+    this.activeSubscriptions = [];
     this.client = null;
     this.setState('disconnected');
   }
@@ -220,14 +306,16 @@ export class Ad4mConnection {
    * Caches perspectives to avoid redundant lookups.
    *
    * @param uuid - The perspective UUID (maps to a Holon ID in our system)
+   * @param options - Optional settings
+   * @param options.createIfMissing - If true, creates the perspective when not found
+   * @param options.name - Name to use when creating a missing perspective
    * @returns PerspectiveProxy for interacting with the perspective
-   * @throws Error if not connected
-   *
-   * TODO: Test with real executor — perspective.byUUID() may need
-   * the perspective to exist already. For new holons, we'll need
-   * to create the perspective first.
+   * @throws Error if not connected or perspective not found (when createIfMissing is false)
    */
-  async getPerspective(uuid: string): Promise<PerspectiveProxy> {
+  async getPerspective(
+    uuid: string,
+    options?: { createIfMissing?: boolean; name?: string }
+  ): Promise<PerspectiveProxy> {
     if (!this.client) {
       throw new Error('Not connected to AD4M executor. Call connect() first.');
     }
@@ -238,11 +326,29 @@ export class Ad4mConnection {
 
     const perspective = await this.client.perspective.byUUID(uuid);
     if (!perspective) {
+      if (options?.createIfMissing) {
+        return this.createPerspective(options.name || uuid);
+      }
       throw new Error(`Perspective not found: ${uuid}`);
     }
 
     this.perspectiveCache.set(uuid, perspective);
     return perspective;
+  }
+
+  /**
+   * Get an existing perspective or create it if it doesn't exist.
+   *
+   * Convenience method that combines getPerspective() with createPerspective().
+   * Useful for ensuring a perspective exists for a given holon ID.
+   *
+   * @param uuid - The perspective UUID to look for
+   * @param name - Name to use if creating a new perspective (defaults to uuid)
+   * @returns PerspectiveProxy for the existing or newly created perspective
+   * @throws Error if not connected
+   */
+  async getOrCreatePerspective(uuid: string, name?: string): Promise<PerspectiveProxy> {
+    return this.getPerspective(uuid, { createIfMissing: true, name: name || uuid });
   }
 
   /**
@@ -263,25 +369,70 @@ export class Ad4mConnection {
   }
 
   /**
+   * Get all installed languages from the executor, filtered to link languages.
+   *
+   * Link languages handle synchronisation of links between agents in a neighbourhood.
+   * They are identified by having "link" or "linksAdapter" in their name or description.
+   *
+   * @returns Array of language objects with address and name
+   * @throws Error if not connected
+   */
+  async getInstalledLinkLanguages(): Promise<Array<{ address: string; name: string }>> {
+    if (!this.client) {
+      throw new Error('Not connected to AD4M executor. Call connect() first.');
+    }
+
+    const allLanguages = await this.client.languages.byFilter('');
+    // Filter to link languages by name/description heuristic
+    return allLanguages
+      .filter((lang: any) => {
+        const name = (lang.name || '').toLowerCase();
+        return name.includes('link') || name.includes('links-adapter') || name.includes('linksadapter');
+      })
+      .map((lang: any) => ({
+        address: lang.address,
+        name: lang.name,
+      }));
+  }
+
+  /**
+   * Get the default (first suitable) link language for neighbourhood publishing.
+   *
+   * @returns The address of the first available link language
+   * @throws Error if not connected or no link languages are installed
+   */
+  async getDefaultLinkLanguage(): Promise<string> {
+    const linkLanguages = await this.getInstalledLinkLanguages();
+    if (linkLanguages.length === 0) {
+      throw new Error(
+        'No link languages installed in the executor. Install a link language before publishing neighbourhoods.'
+      );
+    }
+    return linkLanguages[0].address;
+  }
+
+  /**
    * Publish a local Perspective as a shared Neighbourhood.
    *
    * This makes a private holon accessible to other agents via Holochain DHT.
+   * If no linkLanguageAddress is provided, the default installed link language
+   * is used automatically.
    *
    * @param perspectiveUuid - UUID of the local perspective to share
-   * @param linkLanguageAddress - Address of the Link Language to use for sync
+   * @param linkLanguageAddress - Address of the Link Language to use for sync (auto-detected if omitted)
    * @returns The Neighbourhood URL
-   * @throws Error if not connected
-   *
-   * TODO: Determine the correct Link Language address to use.
-   * This depends on which Link Languages are installed in the executor.
+   * @throws Error if not connected or no link language is available
    */
   async publishNeighbourhood(
     perspectiveUuid: string,
-    linkLanguageAddress: string
+    linkLanguageAddress?: string
   ): Promise<string> {
     if (!this.client) {
       throw new Error('Not connected to AD4M executor. Call connect() first.');
     }
+
+    // Auto-select link language if not provided
+    const resolvedAddress = linkLanguageAddress || await this.getDefaultLinkLanguage();
 
     // Import the necessary types
     const { Perspective } = await import('@coasys/ad4m');
@@ -292,7 +443,7 @@ export class Ad4mConnection {
 
     const neighbourhoodUrl = await this.client.neighbourhood.publishFromPerspective(
       perspectiveUuid,
-      linkLanguageAddress,
+      resolvedAddress,
       meta
     );
 
