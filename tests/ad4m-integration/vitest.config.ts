@@ -2,6 +2,15 @@ import { defineConfig } from "vitest/config";
 import path from "path";
 
 export default defineConfig({
+  esbuild: {
+    // Support TypeScript decorators used in AD4M model definitions
+    tsconfigRaw: {
+      compilerOptions: {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+      },
+    },
+  },
   resolve: {
     alias: {
       "$lib": path.resolve(__dirname, "../../src/lib"),
