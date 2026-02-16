@@ -97,9 +97,9 @@ export type {
 } from './connection';
 
 // ---------------------------------------------------------------------------
-// Registry — Holon discovery across neighbourhoods
+// Registry — Agent-centric holon discovery
 // ---------------------------------------------------------------------------
-export { HolonRegistry, HolonRegistryEntry } from './registry';
+export { AgentHolonIndex, HolonIndexEntry, SharedHolonRef } from './registry';
 
 // ---------------------------------------------------------------------------
 // Schema Bridge — JSON Schema → AD4M Subject Class conversion

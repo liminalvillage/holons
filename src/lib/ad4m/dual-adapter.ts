@@ -379,37 +379,46 @@ export class DualWriteAdapter {
   }
 
   // ===========================================================================
-  // Global Operations
+  // Agent-Local Operations (replaces global operations)
   // ===========================================================================
 
-  /** Write to global lens */
+  /**
+   * @deprecated Global lenses don't exist in agent-centric AD4M.
+   * Data is either in a local perspective, a shared neighbourhood, or unknown.
+   * Use per-holon get/put operations instead.
+   */
   async writeGlobal(lens: string, ...args: any[]): Promise<void> {
-    if (this._mode === 'ad4m' && this.ad4m) {
-      // writeGlobal can be called as (lens, data) or (lens, key, value)
-      const key = args.length === 2 ? args[0] : (args[0]?.id || '');
-      const data = args.length === 2 ? args[1] : args[0];
-      return this.ad4m.writeGlobal(lens, key, data);
+    if (this._mode === 'ad4m') {
+      console.warn('[DualAdapter] writeGlobal() has no equivalent in agent-centric AD4M. Use per-holon put() instead.');
+      return;
     }
     return (this.holosphere as any).writeGlobal(lens, ...args);
   }
 
-  /** Get from global lens */
+  /**
+   * @deprecated Global lenses don't exist in agent-centric AD4M.
+   * Use the AgentHolonIndex for discovery, or per-holon get() for data.
+   */
   async getGlobal(lens: string, key?: string): Promise<any> {
-    if (this._mode === 'ad4m' && this.ad4m) {
-      return this.ad4m.getGlobal(lens, key);
+    if (this._mode === 'ad4m') {
+      console.warn('[DualAdapter] getGlobal() has no equivalent in agent-centric AD4M. Use AgentHolonIndex or per-holon get() instead.');
+      return null;
     }
     return (this.holosphere as any).getGlobal(lens, key);
   }
 
-  /** Get all from global lens */
+  /**
+   * @deprecated Global lenses don't exist in agent-centric AD4M.
+   */
   async getAllGlobal(lens: string): Promise<Record<string, any>> {
-    if (this._mode === 'ad4m' && this.ad4m) {
-      return this.ad4m.getAllGlobal(lens);
+    if (this._mode === 'ad4m') {
+      console.warn('[DualAdapter] getAllGlobal() has no equivalent in agent-centric AD4M. Use AgentHolonIndex for discovery.');
+      return {};
     }
     return (this.holosphere as any).getAllGlobal?.(lens) ?? {};
   }
 
-  /** Get federation info for a holon */
+  /** Get federation links for a holon */
   async getFederation(holonId: string): Promise<any> {
     if (this._mode === 'ad4m' && this.ad4m) {
       return this.ad4m.getFederation(holonId);
@@ -434,11 +443,15 @@ export class DualWriteAdapter {
   // ===========================================================================
 
   /**
-   * Federation operations always go through HoloSphere for now.
-   * AD4M federation will use Neighbourhood joining which is a different paradigm.
-   * TODO: Implement AD4M federation when Neighbourhood protocol is finalized.
+   * Federation in AD4M uses FederationLink instances within each holon's
+   * perspective, enabling graph-walking discovery between related holons.
+   * In HoloSphere mode, this passes through to the existing implementation.
    */
   async federateHolon(...args: any[]): Promise<any> {
+    if (this._mode === 'ad4m' && this.ad4m) {
+      // In AD4M mode, use the adapter's federation method
+      return this.ad4m.federate(args[0], args[1], args[2], args[3], args[4], args[5]);
+    }
     return (this.holosphere as any).federateHolon?.(...args);
   }
 

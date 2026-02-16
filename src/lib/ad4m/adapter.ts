@@ -20,6 +20,10 @@
  * Each holonId maps to an AD4M Perspective (local) or Neighbourhood (shared).
  * Each lens maps to a Subject Class via LENS_MODEL_MAP.
  *
+ * Discovery is agent-centric: there is no global registry or namespace.
+ * Each agent maintains a local holon index (see AgentHolonIndex in registry.ts).
+ * Holons are discovered socially — shared via neighbourhood URLs between agents.
+ *
  * @module ad4m/adapter
  */
 
@@ -521,54 +525,47 @@ export class HoloSphereAd4mAdapter {
   // ===========================================================================
 
   /**
-   * Federate two holons.
+   * Federate two holons by creating FederationLink instances.
    *
-   * In AD4M, this creates FederationLink instances in both holons' perspectives
-   * and potentially joins the target Neighbourhood.
+   * In agent-centric AD4M, federation creates a FederationLink in the source
+   * holon's perspective pointing to the target holon's neighbourhood URL.
+   * Discovery of federated holons works by walking these links.
    *
-   * TODO: Implement full federation logic with Neighbourhood joining.
+   * @param sourceHolonId - Perspective UUID of the source holon
+   * @param targetNeighbourhoodUrl - Neighbourhood URL of the target holon
+   * @param targetName - Display name of the target holon
+   * @param relationship - Relationship type (default: 'federated')
+   * @param inboundLenses - Lenses to accept data from the target
+   * @param outboundLenses - Lenses to share with the target
    */
   async federate(
     sourceHolonId: string,
-    targetHolonId: string,
-    _sourceKey?: string | null,
-    _targetKey?: string | null,
-    _bidirectional?: boolean,
-    _permissions?: any
+    targetNeighbourhoodUrl: string,
+    targetName: string,
+    relationship: string = 'federated',
+    inboundLenses: string[] = [],
+    outboundLenses: string[] = [],
   ): Promise<void> {
-    console.warn('[Ad4mAdapter] federate() is a stub — not yet implemented');
-    // TODO: Create FederationLink in source perspective pointing to target Neighbourhood
+    const perspective = await this.ensurePerspective(sourceHolonId);
+
+    const link = new FederationLink(perspective);
+    link.targetNeighbourhood = targetNeighbourhoodUrl;
+    link.targetName = targetName;
+    link.relationship = relationship;
+    link.inboundLenses = inboundLenses;
+    link.outboundLenses = outboundLenses;
+
+    await link.save();
   }
 
   /**
-   * Get federation info for a holon.
+   * Get federation links for a holon.
+   *
+   * Returns all FederationLink instances from the holon's perspective,
+   * representing the holons it is federated with.
    */
   async getFederation(holonId: string): Promise<any> {
     return this.getAll(holonId, 'federation');
-  }
-
-  // ===========================================================================
-  // Global Operations (stub)
-  // ===========================================================================
-
-  /**
-   * Get data from a global lens.
-   *
-   * In AD4M, global data lives in the Holon Registry Neighbourhood.
-   * TODO: Implement when registry is set up.
-   */
-  async getGlobal(lens: string, key?: string): Promise<any> {
-    console.warn('[Ad4mAdapter] getGlobal() is a stub — not yet implemented');
-    return null;
-  }
-
-  async getAllGlobal(lens: string): Promise<Record<string, any>> {
-    console.warn('[Ad4mAdapter] getAllGlobal() is a stub — not yet implemented');
-    return {};
-  }
-
-  async writeGlobal(lens: string, key: string, value: any): Promise<void> {
-    console.warn('[Ad4mAdapter] writeGlobal() is a stub — not yet implemented');
   }
 
   // ===========================================================================

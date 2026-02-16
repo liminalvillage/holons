@@ -357,6 +357,36 @@ export class Ad4mConnection {
     const status = await this.client.agent.status();
     return status.did!;
   }
+
+  /**
+   * Share a neighbourhood URL with another agent by creating a link
+   * in a shared perspective.
+   *
+   * This is a low-level helper. For higher-level holon sharing,
+   * use AgentHolonIndex.shareHolon() instead.
+   *
+   * @param sharedPerspectiveUuid - UUID of a perspective both agents can access
+   * @param neighbourhoodUrl - The neighbourhood URL to share
+   * @param label - Human-readable label for the shared link
+   * @returns The created link
+   */
+  async shareNeighbourhoodUrl(
+    sharedPerspectiveUuid: string,
+    neighbourhoodUrl: string,
+    label: string = ''
+  ): Promise<any> {
+    if (!this.client) {
+      throw new Error('Not connected to AD4M executor. Call connect() first.');
+    }
+
+    const { Literal } = await import('@coasys/ad4m');
+    const perspective = await this.getPerspective(sharedPerspectiveUuid);
+    return perspective.add({
+      source: 'ad4m://self',
+      predicate: 'holons://shared/neighbourhoodUrl',
+      target: neighbourhoodUrl,
+    });
+  }
 }
 
 // =============================================================================
