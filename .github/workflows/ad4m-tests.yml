@@ -1,0 +1,75 @@
+name: AD4M Integration Tests
+on:
+  push:
+    branches:
+      - feat/ad4m-integration
+  pull_request:
+    branches:
+      - holosphere2
+  workflow_dispatch:
+
+concurrency:
+  group: ad4m-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Create SvelteKit tsconfig stub
+        run: |
+          mkdir -p .svelte-kit
+          echo '{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","esModuleInterop":true,"strict":true,"skipLibCheck":true}}' > .svelte-kit/tsconfig.json
+
+      - name: Install test dependencies
+        working-directory: tests/ad4m-integration
+        run: npm install
+
+      - name: Download AD4M executor v0.10.1
+        run: |
+          BINARY_URL="https://github.com/perspect3vism/ad4m/releases/download/v0.10.1/ad4m-cli-executor-linux-0.10.1-x64"
+          mkdir -p $HOME/.local/bin
+          curl -fSL "$BINARY_URL" -o $HOME/.local/bin/ad4m-executor
+          chmod +x $HOME/.local/bin/ad4m-executor
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Setup CI environment (ESM bundles + bootstrapSeed)
+        working-directory: tests/ad4m-integration
+        run: node scripts/setup-ci.cjs "$HOME/.local/bin/ad4m-executor"
+
+      - name: Run Schema Bridge tests
+        working-directory: tests/ad4m-integration
+        timeout-minutes: 10
+        run: bash scripts/run-test.sh holons-schema-bridge
+
+      - name: Run CRUD tests
+        working-directory: tests/ad4m-integration
+        timeout-minutes: 10
+        run: bash scripts/run-test.sh holons-crud
+
+      - name: Run Sync tests
+        working-directory: tests/ad4m-integration
+        timeout-minutes: 10
+        run: bash scripts/run-test.sh holons-sync
+
+      - name: Run Neighbourhood tests
+        working-directory: tests/ad4m-integration
+        timeout-minutes: 15
+        run: bash scripts/run-test.sh holons-neighbourhood
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ad4m-test-logs
+          path: /tmp/ad4m-test/
+          if-no-files-found: ignore
