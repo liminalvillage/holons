@@ -10,6 +10,8 @@
 	import HolosphereProvider from '../components/HolosphereProvider.svelte';
 	import { nostrStore } from '$lib/stores/nostr';
 	import { holosphereStore } from '$lib/stores/holosphere';
+	import { DualWriteAdapter } from '$lib/ad4m/dual-adapter';
+	import { ad4mConfig } from '$lib/ad4m/config';
 	import { ID } from '../dashboard/store';
 	import { addVisitedHolon } from '../utils/localStorage';
 	import { registerName as hnsRegister, lookupName as hnsLookup } from '$lib/hns';
@@ -403,6 +405,22 @@
 		// Log the public key for verification
 		if (holosphere.client) {
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
+		}
+
+		// Wrap with DualAdapter if AD4M mode is enabled
+		const config = ad4mConfig.getConfig();
+		if (config.mode !== 'holosphere') {
+			const dualAdapter = new DualWriteAdapter({
+				holosphere,
+				mode: config.mode,
+				ad4mConfig: {
+					executorUrl: config.executorUrl,
+					token: config.token || undefined,
+				},
+			});
+			await dualAdapter.init();
+			holosphere = dualAdapter as any;
+			console.log(`[AD4M] DualAdapter initialized in ${config.mode} mode`);
 		}
 
 		// Update the global store (this can be called from async callbacks)

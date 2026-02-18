@@ -66,6 +66,7 @@
 	},
 	"type": "module",
 	"dependencies": {
+		"@coasys/ad4m": "^0.11.2-dev.6",
 		"@mapbox/mapbox-gl-geocoder": "^5.0.3",
 		"@mapbox/search-js-web": "^1.0.0-beta.21",
 		"@scure/base": "^2.0.0",
@@ -73,6 +74,8 @@
 		"d3": "^7.9.0",
 		"ethers": "^6.14.0",
 		"fontawesome": "^5.6.3",
+		"graphql": "^16.12.0",
+		"graphql-ws": "^5.16.2",
 		"h3-js": "^4.3.0",
 		"holosphere": "^2.0.0-alpha23",
 		"html2canvas": "^1.4.1",

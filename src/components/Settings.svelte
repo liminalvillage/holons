@@ -6,6 +6,7 @@
   import { nostrStore } from '$lib/stores/nostr';
   import TitleBar from './shared/TitleBar.svelte';
   import { Plus } from 'svelte-feathers';
+  import Ad4mSettings from '$lib/ad4m/settings-ui.svelte';
 
   // Types
   interface User {
@@ -650,6 +651,13 @@
 								{/each}
 							</div>
 						</div>
+					</section>
+				</div>
+
+				<!-- AD4M Integration Settings -->
+				<div class="mt-8">
+					<section class="bg-gray-700/50 rounded-2xl p-8">
+						<Ad4mSettings holonId={settings.id || ''} />
 					</section>
 				</div>
 			{/if}
