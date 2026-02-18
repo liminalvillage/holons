@@ -42,7 +42,7 @@ jobs:
           chmod +x $HOME/.local/bin/ad4m-executor
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Setup CI environment (ESM bundles + bootstrapSeed)
+      - name: Download bootstrap seed
         working-directory: tests/ad4m-integration
         run: node scripts/setup-ci.cjs "$HOME/.local/bin/ad4m-executor"
 

@@ -43,12 +43,6 @@ export const AD4M_EXECUTOR_PATH = path.resolve(
 export const BOOTSTRAP_SEED_PATH = path.resolve(
   __dirname,
   "..",
-  "..",
-  "..",
-  "..",
-  "ad4m",
-  "tests",
-  "js",
   "bootstrapSeed.json"
 );
 
