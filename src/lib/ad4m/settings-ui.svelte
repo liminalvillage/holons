@@ -20,6 +20,8 @@
   import type { ConnectionState } from './connection';
   import { syncHolonToAd4m } from './sync';
   import type { SyncReport, LensSyncResult } from './sync';
+  import ConnectUi from './connect-ui.svelte';
+  import NeighbourhoodUi from './neighbourhood-ui.svelte';
 
   // Props
   export let holonId: string = '';
@@ -31,6 +33,25 @@
   let connectionStatus: ConnectionState = 'disconnected';
   let connectionError: string = '';
   let isTesting = false;
+
+  // Connect UI state (bound from connect-ui component)
+  let connectState: ConnectionState = 'disconnected';
+  let connectAgentDid = '';
+  let connectLocked = false;
+  let connectConnected = false;
+
+  // AD4M connection instance for neighbourhood UI
+  let ad4mConnectionInstance: Ad4mConnection | null = null;
+  $: if (connectConnected && !ad4mConnectionInstance) {
+    ad4mConnectionInstance = new Ad4mConnection({
+      executorUrl,
+      token: token || undefined,
+    });
+    ad4mConnectionInstance.connect().catch(() => {});
+  }
+  $: if (!connectConnected) {
+    ad4mConnectionInstance = null;
+  }
   let isSyncing = false;
   let syncProgress = '';
   let syncReport: SyncReport | null = null;
@@ -66,6 +87,7 @@
     connecting: 'bg-yellow-500 animate-pulse',
     connected: 'bg-green-500',
     authenticated: 'bg-green-400',
+    reconnecting: 'bg-yellow-500 animate-pulse',
     error: 'bg-red-500',
   };
 
@@ -74,6 +96,7 @@
     connecting: 'Connecting...',
     connected: 'Connected',
     authenticated: 'Authenticated',
+    reconnecting: 'Reconnecting...',
     error: 'Error',
   };
 
@@ -199,77 +222,20 @@
   <!-- Connection Settings (shown when AD4M is enabled) -->
   {#if mode !== 'holosphere'}
     <div class="space-y-4 p-4 bg-gray-800/40 rounded-xl border border-gray-700/50">
-      <!-- Connection Status -->
-      <div class="flex items-center justify-between">
-        <span class="text-sm text-gray-300">Connection Status</span>
-        <div class="flex items-center gap-2">
-          <div class="w-2.5 h-2.5 rounded-full {statusColors[connectionStatus]}"></div>
-          <span class="text-xs text-gray-400">{statusLabels[connectionStatus]}</span>
-        </div>
-      </div>
-
-      {#if connectionError}
-        <div class="p-2 bg-red-500/10 border border-red-500/30 rounded-lg">
-          <p class="text-xs text-red-400">{connectionError}</p>
-        </div>
-      {/if}
-
-      <!-- Executor URL -->
-      <div class="space-y-1">
-        <label for="ad4m-url" class="block text-xs font-medium text-gray-400">Executor URL</label>
-        <input
-          id="ad4m-url"
-          type="text"
-          bind:value={executorUrl}
-          on:change={saveConfig}
-          placeholder="ws://localhost:12000/graphql"
-          class="w-full px-3 py-2 bg-gray-900/60 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none transition-colors"
-        />
-      </div>
-
-      <!-- Token -->
-      <div class="space-y-1">
-        <label for="ad4m-token" class="block text-xs font-medium text-gray-400">Auth Token</label>
-        <input
-          id="ad4m-token"
-          type="password"
-          bind:value={token}
-          on:change={saveConfig}
-          placeholder="JWT token from AD4M executor"
-          class="w-full px-3 py-2 bg-gray-900/60 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none transition-colors"
-        />
-      </div>
-
-      <!-- Quick connect buttons -->
-      <div class="flex gap-2">
-        <button
-          on:click={() => { executorUrl = 'ws://localhost:12000/graphql'; saveConfig(); }}
-          class="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
-        >
-          Local
-        </button>
-        <button
-          on:click={() => { executorUrl = 'wss://lucksus.ad4m.dev:12001/graphql'; saveConfig(); }}
-          class="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
-        >
-          Remote (WWW)
-        </button>
-      </div>
-
-      <!-- Test Connection Button -->
-      <button
-        on:click={testConnection}
-        disabled={isTesting}
-        class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
-      >
-        {#if isTesting}
-          <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-          Testing...
-        {:else}
-          🔌 Test Connection
-        {/if}
-      </button>
+      <ConnectUi
+        bind:connectionState={connectState}
+        bind:agentDid={connectAgentDid}
+        bind:isAgentLocked={connectLocked}
+        bind:connected={connectConnected}
+      />
     </div>
+
+    <!-- Neighbourhood Management (shown when connected) -->
+    {#if connectConnected && ad4mConnectionInstance}
+      <div class="p-4 bg-gray-800/40 rounded-xl border border-gray-700/50">
+        <NeighbourhoodUi connection={ad4mConnectionInstance} />
+      </div>
+    {/if}
   {/if}
 
   <!-- Data Sync Section (shown when AD4M is enabled and a holon is selected) -->

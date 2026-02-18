@@ -138,3 +138,10 @@ export {
 // Sync — HoloSphere → AD4M data migration
 export { syncHolonToAd4m, syncLensToAd4m } from './sync';
 export type { SyncReport, LensSyncResult, SyncProgressCallback } from './sync';
+
+// Identity — mode-aware identity abstraction
+export { getIdentity, formatIdentity, setAgentDid, getAgentDid } from './identity';
+export type { Identity } from './identity';
+
+// Federation — AD4M-native federation helpers
+export { requestAd4mFederation, shouldUseAd4mFederation, getAd4mFederationLinks, removeAd4mFederation } from './federation';

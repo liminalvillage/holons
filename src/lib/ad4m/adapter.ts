@@ -442,12 +442,9 @@ export class HoloSphereAd4mAdapter {
    *
    * Matches HoloSphere.subscribe(holonId, lens, callback)
    *
-   * Uses AD4M's live query subscription system. The callback receives
-   * individual data items as they change (matching HoloSphere's event-based API).
-   *
-   * NOTE: Subscription behavior may differ from HoloSphere's GunDB-based
-   * subscriptions (which fire per-item vs per-query). Subscriptions are
-   * automatically re-established after WebSocket reconnection.
+   * Uses AD4M's perspective listener system for real-time link updates,
+   * combined with Subject Class query subscriptions for typed data.
+   * Subscriptions are automatically re-established after WebSocket reconnection.
    *
    * @param holonId - The holon/perspective UUID
    * @param lens - The lens name
@@ -462,6 +459,7 @@ export class HoloSphereAd4mAdapter {
     const ModelClass = this.getModelForLens(lens);
     let disposed = false;
     let queryDisposer: (() => void) | null = null;
+    let listenerDisposer: (() => void) | null = null;
     let reconnectDisposer: (() => void) | null = null;
 
     if (!ModelClass) {
@@ -473,28 +471,70 @@ export class HoloSphereAd4mAdapter {
     const setupSubscription = async () => {
       try {
         const perspective = await this.ensurePerspective(holonId);
-        const builder = ModelClass.query(perspective);
 
-        await builder.subscribe((results: any[]) => {
-          if (disposed) return;
+        // Try Subject Class query subscription first
+        try {
+          const builder = ModelClass.query(perspective);
+          await builder.subscribe((results: any[]) => {
+            if (disposed) return;
+            for (const instance of results) {
+              const obj = this.instanceToObject(instance);
+              const key = obj.id || instance.baseExpression;
+              callback(obj, key);
+            }
+          });
+          queryDisposer = () => {
+            try { builder.dispose(); } catch { /* ignore */ }
+          };
+        } catch (queryErr) {
+          console.warn(`[Ad4mAdapter] Query subscription failed for ${lens}, falling back to perspective listener:`, queryErr);
+        }
 
-          // Convert each result to HoloSphere format and call callback
-          for (const instance of results) {
-            const obj = this.instanceToObject(instance);
-            const key = obj.id || instance.baseExpression;
-            callback(obj, key);
+        // Also add a perspective link listener as a fallback/complement
+        // This catches link changes that may not trigger query subscription updates
+        try {
+          const handler = {
+            handleLinkAdded: (link: any) => {
+              if (disposed) return;
+              // Check if the link's predicate matches our lens
+              const predicate = link?.data?.predicate || '';
+              const lensPrefix = `holons://`;
+              if (predicate.startsWith(lensPrefix)) {
+                // Re-query to get fresh data
+                ModelClass.findAll(perspective).then((results: any[]) => {
+                  if (disposed) return;
+                  for (const instance of results) {
+                    const obj = this.instanceToObject(instance);
+                    const key = obj.id || instance.baseExpression;
+                    callback(obj, key);
+                  }
+                }).catch(() => {});
+              }
+            },
+            handleLinkRemoved: (_link: any) => {
+              // Could trigger a re-fetch, but deletion callbacks
+              // are hard to map back to specific items
+            },
+          };
+
+          // addListener returns a function to remove the listener in newer AD4M versions
+          const removeListener = (perspective as any).addListener(handler);
+          if (typeof removeListener === 'function') {
+            listenerDisposer = removeListener;
           }
-        });
-
-        // Store disposer for cleanup
-        queryDisposer = () => builder.dispose();
+        } catch (listenerErr) {
+          // addListener may not be available in all AD4M versions
+          console.debug(`[Ad4mAdapter] Perspective listener not available:`, listenerErr);
+        }
 
         // Track subscription for cleanup
         const subKey = `${holonId}:${lens}`;
         if (!this.subscriptionDisposers.has(subKey)) {
           this.subscriptionDisposers.set(subKey, []);
         }
-        this.subscriptionDisposers.get(subKey)!.push(() => builder.dispose());
+        const disposers = this.subscriptionDisposers.get(subKey)!;
+        if (queryDisposer) disposers.push(queryDisposer);
+        if (listenerDisposer) disposers.push(listenerDisposer);
       } catch (error) {
         console.error(`[Ad4mAdapter] subscribe(${holonId}, ${lens}) failed:`, error);
       }
@@ -506,7 +546,9 @@ export class HoloSphereAd4mAdapter {
     // Register for re-establishment on reconnect
     reconnectDisposer = this.connection.registerSubscription(holonId, () => {
       if (!disposed) {
-        // Re-setup subscription after reconnect
+        // Clean up old disposers before re-setup
+        if (queryDisposer) { queryDisposer(); queryDisposer = null; }
+        if (listenerDisposer) { listenerDisposer(); listenerDisposer = null; }
         setupSubscription();
       }
     });
@@ -515,6 +557,7 @@ export class HoloSphereAd4mAdapter {
       unsubscribe: () => {
         disposed = true;
         if (queryDisposer) queryDisposer();
+        if (listenerDisposer) listenerDisposer();
         if (reconnectDisposer) reconnectDisposer();
       },
     };

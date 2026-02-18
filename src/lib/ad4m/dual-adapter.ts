@@ -17,6 +17,7 @@
  */
 
 import type { HoloSphere } from 'holosphere';
+import type { PerspectiveProxy } from '@coasys/ad4m';
 import { HoloSphereAd4mAdapter, type Subscription } from './adapter';
 import type { Ad4mConnectionConfig } from './connection';
 import type { BackendMode } from './config';
@@ -131,6 +132,8 @@ export class DualWriteAdapter {
   private hsMetrics: BackendMetrics = createEmptyBackendMetrics();
   private ad4mMetrics: BackendMetrics = createEmptyBackendMetrics();
   private metricsSince: number = Date.now();
+  private directoryPerspective: PerspectiveProxy | null = null;
+  private static readonly DIRECTORY_NAME = 'holons-global-directory';
 
   constructor(config: DualAdapterConfig) {
     this.holosphere = config.holosphere;
@@ -472,37 +475,74 @@ export class DualWriteAdapter {
   // ===========================================================================
 
   /**
-   * @deprecated Global lenses don't exist in agent-centric AD4M.
-   * Data is either in a local perspective, a shared neighbourhood, or unknown.
-   * Use per-holon get/put operations instead.
+   * Write to a global table. In AD4M mode, uses a "directory" perspective
+   * with links using predicate `holons://global/{table}`.
    */
   async writeGlobal(lens: string, ...args: any[]): Promise<void> {
     if (this._mode === 'ad4m') {
-      console.warn('[DualAdapter] writeGlobal() has no equivalent in agent-centric AD4M. Use per-holon put() instead.');
+      if (!this.ad4m) throw new Error('AD4M adapter not initialized');
+      const [dataOrKey, maybeValue] = args;
+      const data = maybeValue !== undefined ? maybeValue : dataOrKey;
+      const key = maybeValue !== undefined ? dataOrKey : (data?.id || data?.name || '');
+      const perspective = await this.getDirectoryPerspective();
+      const { Literal } = await import('@coasys/ad4m');
+      await perspective.add({
+        source: 'ad4m://self',
+        predicate: `holons://global/${lens}`,
+        target: Literal.from(JSON.stringify({ key, data })).toUrl(),
+      });
       return;
     }
     return (this.holosphere as any).writeGlobal(lens, ...args);
   }
 
   /**
-   * @deprecated Global lenses don't exist in agent-centric AD4M.
-   * Use the AgentHolonIndex for discovery, or per-holon get() for data.
+   * Get a specific entry from a global table. In AD4M mode, queries
+   * the directory perspective for matching links.
    */
   async getGlobal(lens: string, key?: string): Promise<any> {
     if (this._mode === 'ad4m') {
-      console.warn('[DualAdapter] getGlobal() has no equivalent in agent-centric AD4M. Use AgentHolonIndex or per-holon get() instead.');
+      const perspective = await this.getDirectoryPerspective();
+      const { Literal } = await import('@coasys/ad4m');
+      const links = await perspective.get(
+        new (await import('@coasys/ad4m')).LinkQuery({
+          source: 'ad4m://self',
+          predicate: `holons://global/${lens}`,
+        })
+      );
+      for (const link of links) {
+        try {
+          const parsed = JSON.parse(Literal.fromUrl(link.data.target).get());
+          if (!key || parsed.key === key) return parsed.data;
+        } catch { /* skip unparseable */ }
+      }
       return null;
     }
     return (this.holosphere as any).getGlobal(lens, key);
   }
 
   /**
-   * @deprecated Global lenses don't exist in agent-centric AD4M.
+   * Get all entries from a global table. In AD4M mode, returns
+   * all links from the directory perspective for this table.
    */
   async getAllGlobal(lens: string): Promise<Record<string, any>> {
     if (this._mode === 'ad4m') {
-      console.warn('[DualAdapter] getAllGlobal() has no equivalent in agent-centric AD4M. Use AgentHolonIndex for discovery.');
-      return {};
+      const perspective = await this.getDirectoryPerspective();
+      const { Literal, LinkQuery } = await import('@coasys/ad4m');
+      const links = await perspective.get(
+        new LinkQuery({
+          source: 'ad4m://self',
+          predicate: `holons://global/${lens}`,
+        })
+      );
+      const result: Record<string, any> = {};
+      for (const link of links) {
+        try {
+          const parsed = JSON.parse(Literal.fromUrl(link.data.target).get());
+          result[parsed.key || link.data.target] = parsed.data;
+        } catch { /* skip */ }
+      }
+      return result;
     }
     return (this.holosphere as any).getAllGlobal?.(lens) ?? {};
   }
@@ -581,6 +621,28 @@ export class DualWriteAdapter {
   // ===========================================================================
   // Internal
   // ===========================================================================
+
+  /**
+   * Get or lazily create the directory perspective for global lookups.
+   * Used by writeGlobal/getGlobal/getAllGlobal in AD4M mode.
+   */
+  private async getDirectoryPerspective(): Promise<PerspectiveProxy> {
+    if (this.directoryPerspective) return this.directoryPerspective;
+    if (!this.ad4m) throw new Error('AD4M adapter not initialized');
+
+    const conn = this.ad4m.ad4mConnection;
+    // Look for existing directory perspective
+    const all = await conn.getAllPerspectives();
+    const existing = all.find((p: any) => (p as any).name === DualWriteAdapter.DIRECTORY_NAME);
+    if (existing) {
+      this.directoryPerspective = existing;
+      return existing;
+    }
+
+    // Create it
+    this.directoryPerspective = await conn.createPerspective(DualWriteAdapter.DIRECTORY_NAME);
+    return this.directoryPerspective;
+  }
 
   /**
    * Compare results from both backends and log discrepancies.
