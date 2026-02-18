@@ -26,6 +26,12 @@ import {
   BOOTSTRAP_SEED_PATH,
   runHcLocalServices,
 } from "./utils/utils";
+import {
+  ALL_SUBJECT_CLASSES,
+  HolonSettings,
+  Quest,
+  FederationLink,
+} from "../../src/lib/ad4m/models/index";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -192,13 +198,11 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Multi-User Scenarios", () => {
       sharedPerspectiveUuid = perspective.uuid;
 
       // Register subject classes
-      const { ALL_SUBJECT_CLASSES } = await import("../../src/lib/ad4m/models/index");
       for (const ModelClass of ALL_SUBJECT_CLASSES) {
         await perspective.ensureSDNASubjectClass(ModelClass);
       }
 
       // Create initial holon settings
-      const { HolonSettings } = await import("../../src/lib/ad4m/models/index");
       const settings = new HolonSettings(perspective);
       settings.name = "Shared Community";
       settings.purpose = "Multi-user testing";
@@ -212,7 +216,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Multi-User Scenarios", () => {
       const perspective = await userAClient!.perspective.byUUID(sharedPerspectiveUuid);
       expect(perspective).not.toBeNull();
 
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quest = new Quest(perspective!);
       quest.title = "Alice's Quest: Set up governance";
@@ -252,11 +255,7 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Multi-User Scenarios", () => {
       // User A creates a holon
       const holonA = await userAClient!.perspective.add("Holon Alpha");
 
-      // Register federation model
-      const { FederationLink, ALL_SUBJECT_CLASSES } = await import(
-        "../../src/lib/ad4m/models/index"
-      );
-      for (const ModelClass of ALL_SUBJECT_CLASSES) {
+      // Register federation model      for (const ModelClass of ALL_SUBJECT_CLASSES) {
         await holonA.ensureSDNASubjectClass(ModelClass);
       }
 
@@ -330,10 +329,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Multi-User Scenarios", () => {
 
   describe("Per-User Subject Class Operations", () => {
     it("should let each user create subject instances independently", async () => {
-      const { Quest, ALL_SUBJECT_CLASSES } = await import(
-        "../../src/lib/ad4m/models/index"
-      );
-
       // User A's perspective
       const perspA = await userAClient!.perspective.add("User A Subjects");
       for (const ModelClass of ALL_SUBJECT_CLASSES) {

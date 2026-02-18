@@ -24,6 +24,7 @@ import {
   BOOTSTRAP_SEED_PATH,
   runHcLocalServices,
 } from "./utils/utils";
+import { createBridgedSchemas, bridgeCustomSchema } from "../../src/lib/ad4m/schema-bridge";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -93,10 +94,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
 
   describe("Schema Bridge Creation", () => {
     it("should bridge all Harvest JSON schemas without errors", async () => {
-      const { createBridgedSchemas } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-
       const bridgedSchemas = createBridgedSchemas();
       expect(bridgedSchemas.size).toBeGreaterThan(0);
 
@@ -111,10 +108,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
     });
 
     it("should bridge a custom schema at runtime", async () => {
-      const { bridgeCustomSchema } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-
       const customSchema = {
         type: "object",
         title: "Custom Widget",
@@ -138,11 +131,7 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
   // =========================================================================
 
   describe("SDNA Registration for Bridged Schemas", () => {
-    it("should register bridged schemas as SDNA in a perspective", async () => {
-      const { createBridgedSchemas } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-      const bridgedSchemas = createBridgedSchemas();
+    it("should register bridged schemas as SDNA in a perspective", async () => {      const bridgedSchemas = createBridgedSchemas();
 
       let registered = 0;
       for (const [name, schema] of bridgedSchemas) {
@@ -165,11 +154,7 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
   // =========================================================================
 
   describe("Bridged Schema Instance CRUD", () => {
-    it("should create and save instances from bridged quest schema", async () => {
-      const { createBridgedSchemas } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-      const bridgedSchemas = createBridgedSchemas();
+    it("should create and save instances from bridged quest schema", async () => {      const bridgedSchemas = createBridgedSchemas();
       const questSchema = bridgedSchemas.get("QuestSchema");
 
       if (!questSchema) {
@@ -195,11 +180,7 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
       }
     });
 
-    it("should create and save instances from bridged community schema", async () => {
-      const { createBridgedSchemas } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-      const bridgedSchemas = createBridgedSchemas();
+    it("should create and save instances from bridged community schema", async () => {      const bridgedSchemas = createBridgedSchemas();
       const communitySchema = bridgedSchemas.get("CommunitySchema");
 
       if (!communitySchema) {
@@ -228,10 +209,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
 
   describe("Schema Bridge Edge Cases", () => {
     it("should handle schema with author property (removed for AD4M compat)", async () => {
-      const { bridgeCustomSchema } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-
       // Schema with an "author" property that should be stripped
       const schemaWithAuthor = {
         type: "object",
@@ -250,10 +227,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
     });
 
     it("should handle schema with metadata fields", async () => {
-      const { bridgeCustomSchema } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-
       // Schema with Murmurations-style metadata
       const schemaWithMetadata = {
         type: "object",
@@ -274,10 +247,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Schema Bridge", () => {
     });
 
     it("should handle empty/minimal schema", async () => {
-      const { bridgeCustomSchema } = await import(
-        "../../src/lib/ad4m/schema-bridge"
-      );
-
       const minimalSchema = {
         properties: {
           data: { type: "string" },

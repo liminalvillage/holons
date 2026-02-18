@@ -24,6 +24,22 @@ import {
   BOOTSTRAP_SEED_PATH,
   runHcLocalServices,
 } from "./utils/utils";
+import {
+  HolonSettings,
+  Quest,
+  HolonMember,
+  ShoppingItem,
+  Chromosome,
+  DNASequence,
+  Role,
+  CouncilAdvisor,
+  Badge,
+  Invite,
+  OfferWant,
+  QuestTreeNode,
+  GenericData,
+  ALL_SUBJECT_CLASSES,
+} from "../../src/lib/ad4m/models/index";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -110,28 +126,24 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
       expect(perspective).not.toBeNull();
 
       // Import the model dynamically
-      const { HolonSettings } = await import("../../src/lib/ad4m/models/index");
       await perspective!.ensureSDNASubjectClass(HolonSettings);
       console.log("✅ HolonSettings SDNA registered");
     });
 
     it("should register Quest SDNA", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
       await perspective!.ensureSDNASubjectClass(Quest);
       console.log("✅ Quest SDNA registered");
     });
 
     it("should register HolonMember SDNA", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { HolonMember } = await import("../../src/lib/ad4m/models/index");
       await perspective!.ensureSDNASubjectClass(HolonMember);
       console.log("✅ HolonMember SDNA registered");
     });
 
     it("should register all remaining subject classes", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { ALL_SUBJECT_CLASSES } = await import("../../src/lib/ad4m/models/index");
 
       for (const ModelClass of ALL_SUBJECT_CLASSES) {
         await perspective!.ensureSDNASubjectClass(ModelClass);
@@ -147,7 +159,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("HolonSettings CRUD", () => {
     it("should create holon settings", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { HolonSettings } = await import("../../src/lib/ad4m/models/index");
 
       const settings = new HolonSettings(perspective!);
       settings.name = "Test Community";
@@ -162,7 +173,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should read back holon settings", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { HolonSettings } = await import("../../src/lib/ad4m/models/index");
 
       const results = await HolonSettings.findAll(perspective!, {}, false);
       expect(results.length).toBeGreaterThanOrEqual(1);
@@ -176,7 +186,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should update holon settings", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { HolonSettings } = await import("../../src/lib/ad4m/models/index");
 
       const results = await HolonSettings.findAll(perspective!, {}, false);
       const settings = results[0];
@@ -201,7 +210,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should create a quest", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quest = new Quest(perspective!);
       quest.title = "Build the AD4M bridge";
@@ -217,7 +225,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should create multiple quests", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quest2 = new Quest(perspective!);
       quest2.title = "Write integration tests";
@@ -236,7 +243,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should read all quests", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quests = await Quest.findAll(perspective!, {}, false);
       expect(quests.length).toBe(3);
@@ -250,7 +256,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should update a quest", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quests = await Quest.findAll(perspective!, {}, false);
       const quest = quests.find((q: any) => q.title === "Build the AD4M bridge");
@@ -270,7 +275,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should delete a quest", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quests = await Quest.findAll(perspective!, {}, false);
       const toDelete = quests.find((q: any) => q.title === "Deploy to production");
@@ -293,7 +297,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("HolonMember CRUD", () => {
     it("should create members", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { HolonMember } = await import("../../src/lib/ad4m/models/index");
 
       const member1 = new HolonMember(perspective!);
       member1.username = "alice";
@@ -312,7 +315,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should read all members", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { HolonMember } = await import("../../src/lib/ad4m/models/index");
 
       const members = await HolonMember.findAll(perspective!, {}, false);
       expect(members.length).toBe(2);
@@ -336,7 +338,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("ShoppingItem CRUD", () => {
     it("should create and read shopping items", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { ShoppingItem } = await import("../../src/lib/ad4m/models/index");
 
       const item = new ShoppingItem(perspective!);
       item.name = "Apples";
@@ -364,7 +365,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
 
     it("should create chromosomes", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Chromosome } = await import("../../src/lib/ad4m/models/index");
 
       const chrome = new Chromosome(perspective!);
       chrome.holonId = holonPerspectiveUuid;
@@ -382,7 +382,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
       // SKIP: @Collection properties not supported by Prolog query path (useSurrealDB=false)
       // Re-enable when executor is upgraded to v0.11.x+ with SurrealDB support
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { DNASequence } = await import("../../src/lib/ad4m/models/index");
 
       const dna = new DNASequence(perspective!);
       dna.holonId = holonPerspectiveUuid;
@@ -407,7 +406,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("Role CRUD", () => {
     it("should create and read roles", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Role } = await import("../../src/lib/ad4m/models/index");
 
       const role = new Role(perspective!);
       role.title = "Coordinator";
@@ -429,7 +427,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("CouncilAdvisor CRUD", () => {
     it("should create and read council advisors", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { CouncilAdvisor } = await import("../../src/lib/ad4m/models/index");
 
       const advisor = new CouncilAdvisor(perspective!);
       advisor.name = "Athena";
@@ -454,7 +451,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("Badge CRUD", () => {
     it("should create and read badges", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Badge } = await import("../../src/lib/ad4m/models/index");
 
       const badge = new Badge(perspective!);
       badge.title = "First Quest";
@@ -477,7 +473,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("Invite CRUD", () => {
     it("should create and read invites", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { Invite } = await import("../../src/lib/ad4m/models/index");
 
       const invite = new Invite(perspective!);
       invite.title = "Join our community";
@@ -502,7 +497,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("OfferWant CRUD", () => {
     it("should create and read offers", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { OfferWant } = await import("../../src/lib/ad4m/models/index");
 
       const offer = new OfferWant(perspective!);
       offer.title = "Fresh tomatoes";
@@ -526,7 +520,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("QuestTreeNode CRUD", () => {
     it("should create and read quest tree nodes", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { QuestTreeNode } = await import("../../src/lib/ad4m/models/index");
 
       const root = new QuestTreeNode(perspective!);
       root.title = "Build sustainable community";
@@ -554,7 +547,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons CRUD via AD4M Adapter", () => {
   describe("GenericData CRUD", () => {
     it("should create and read generic data entries", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(holonPerspectiveUuid);
-      const { GenericData } = await import("../../src/lib/ad4m/models/index");
 
       const entry = new GenericData(perspective!);
       entry.data = JSON.stringify({ ritual: "morning standup", frequency: "daily" });

@@ -17,7 +17,10 @@
  * @module ad4m/connection
  */
 
-import { Ad4mClient, PerspectiveProxy } from '@coasys/ad4m';
+import { Ad4mClient, PerspectiveProxy, Perspective, Literal } from '@coasys/ad4m';
+import { ApolloClient, InMemoryCache } from '@apollo/client/core';
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
+import { createClient } from 'graphql-ws';
 
 /** Configuration for connecting to an AD4M executor */
 export interface Ad4mConnectionConfig {
@@ -167,12 +170,6 @@ export class Ad4mConnection {
     this.setState('connecting');
 
     try {
-      // Dynamic import to avoid bundling issues in SvelteKit
-      // These are peer dependencies that must be installed separately
-      const { ApolloClient, InMemoryCache } = await import('@apollo/client/core');
-      const { GraphQLWsLink } = await import('@apollo/client/link/subscriptions');
-      const { createClient } = await import('graphql-ws');
-
       // Build WebSocket URL with optional token
       const url = new URL(this.config.executorUrl);
       if (this.config.token) {
@@ -434,9 +431,6 @@ export class Ad4mConnection {
     // Auto-select link language if not provided
     const resolvedAddress = linkLanguageAddress || await this.getDefaultLinkLanguage();
 
-    // Import the necessary types
-    const { Perspective } = await import('@coasys/ad4m');
-
     // publishFromPerspective takes (perspectiveUUID, linkLanguageAddress, meta: Perspective)
     // The meta Perspective can contain links with metadata about the neighbourhood
     const meta = new Perspective();
@@ -530,7 +524,6 @@ export class Ad4mConnection {
       throw new Error('Not connected to AD4M executor. Call connect() first.');
     }
 
-    const { Literal } = await import('@coasys/ad4m');
     const perspective = await this.getPerspective(sharedPerspectiveUuid);
     return perspective.add({
       source: 'ad4m://self',

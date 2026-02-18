@@ -31,6 +31,11 @@ import {
   BOOTSTRAP_SEED_PATH,
   runHcLocalServices,
 } from "./utils/utils";
+import {
+  HolonSettings,
+  Quest,
+  HolonMember,
+} from "../../src/lib/ad4m/models/index";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -170,9 +175,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Neighbourhood: Multi-Agent", () => {
       alicePerspectiveUuid = perspective.uuid;
       expect(alicePerspectiveUuid).toBeTruthy();
 
-      const { HolonSettings, Quest, HolonMember } = await import(
-        "../../src/lib/ad4m/models/index"
-      );
       await perspective.ensureSDNASubjectClass(HolonSettings);
       await perspective.ensureSDNASubjectClass(Quest);
       await perspective.ensureSDNASubjectClass(HolonMember);
@@ -181,7 +183,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Neighbourhood: Multi-Agent", () => {
 
     it("Alice creates holon settings", async () => {
       const perspective = await aliceClient!.perspective.byUUID(alicePerspectiveUuid);
-      const { HolonSettings } = await import("../../src/lib/ad4m/models/index");
 
       const settings = new HolonSettings(perspective!);
       settings.name = "Test Community";
@@ -195,7 +196,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Neighbourhood: Multi-Agent", () => {
 
     it("Alice adds a quest", async () => {
       const perspective = await aliceClient!.perspective.byUUID(alicePerspectiveUuid);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quest = new Quest(perspective!);
       quest.title = "Build the commons";
@@ -266,7 +266,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Neighbourhood: Multi-Agent", () => {
       const links = await perspective!.get(new LinkQuery({}));
       expect(links.length).toBeGreaterThan(0);
 
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
       const quests = await Quest.findAll(perspective!, {}, false);
       expect(quests.length).toBeGreaterThan(0);
       expect(quests[0].title).toBe("Build the commons");
@@ -275,7 +274,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Neighbourhood: Multi-Agent", () => {
 
     it.skipIf(true)("Bob adds data to shared holon", async () => {
       const perspective = await bobClient!.perspective.byUUID(bobPerspectiveUuid);
-      const { HolonMember } = await import("../../src/lib/ad4m/models/index");
 
       const member = new HolonMember(perspective!);
       member.username = "bob";
@@ -318,7 +316,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Neighbourhood: Multi-Agent", () => {
   describe("Bob's Independent Perspective", () => {
     it("Bob creates and populates his own perspective", async () => {
       const perspective = await bobClient!.perspective.add("Bob's Holon");
-      const { HolonSettings, Quest } = await import("../../src/lib/ad4m/models/index");
 
       await perspective.ensureSDNASubjectClass(HolonSettings);
       await perspective.ensureSDNASubjectClass(Quest);

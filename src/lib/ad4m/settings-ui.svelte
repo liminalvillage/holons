@@ -16,7 +16,9 @@
   import { onDestroy, getContext } from 'svelte';
   import { ad4mConfig, isAd4mEnabled } from './config';
   import type { BackendMode } from './config';
+  import { Ad4mConnection } from './connection';
   import type { ConnectionState } from './connection';
+  import { syncHolonToAd4m } from './sync';
   import type { SyncReport, LensSyncResult } from './sync';
 
   // Props
@@ -96,8 +98,6 @@
     connectionStatus = 'connecting';
 
     try {
-      // Dynamic import to avoid bundling AD4M unless needed
-      const { Ad4mConnection } = await import('./connection');
       const conn = new Ad4mConnection({
         executorUrl,
         token: token || undefined,
@@ -141,8 +141,6 @@
         isSyncing = false;
         return;
       }
-
-      const { syncHolonToAd4m } = await import('./sync');
 
       syncReport = await syncHolonToAd4m(
         holosphere,

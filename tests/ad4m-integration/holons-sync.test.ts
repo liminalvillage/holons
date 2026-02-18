@@ -23,6 +23,14 @@ import {
   BOOTSTRAP_SEED_PATH,
   runHcLocalServices,
 } from "./utils/utils";
+import {
+  ALL_SUBJECT_CLASSES,
+  HolonSettings,
+  Quest,
+  HolonMember,
+  ShoppingItem,
+} from "../../src/lib/ad4m/models/index";
+import { HoloSphereAd4mAdapter } from "../../src/lib/ad4m/adapter";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -209,7 +217,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
       const holonId = perspective.uuid;
 
       // Register all subject classes
-      const { ALL_SUBJECT_CLASSES } = await import("../../src/lib/ad4m/models/index");
       for (const ModelClass of ALL_SUBJECT_CLASSES) {
         await perspective.ensureSDNASubjectClass(ModelClass);
       }
@@ -218,7 +225,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
       // Note: We need to create an adapter instance directly since syncHolonToAd4m
       // creates its own adapter internally. Instead, we test the adapter's put/get
       // methods which is what sync relies on.
-      const { HoloSphereAd4mAdapter } = await import("../../src/lib/ad4m/adapter");
       const adapter = new HoloSphereAd4mAdapter({
         executorUrl: `ws://127.0.0.1:${gqlPort}/graphql`,
       });
@@ -282,8 +288,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
       const perspective = await ad4mClient!.perspective.add("Verify Sync Holon");
       syncedHolonId = perspective.uuid;
 
-      const { ALL_SUBJECT_CLASSES, HolonSettings, Quest, HolonMember, ShoppingItem } =
-        await import("../../src/lib/ad4m/models/index");
       for (const ModelClass of ALL_SUBJECT_CLASSES) {
         await perspective.ensureSDNASubjectClass(ModelClass);
       }
@@ -344,7 +348,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
 
     it("should have synced settings correctly", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(syncedHolonId);
-      const { HolonSettings } = await import("../../src/lib/ad4m/models/index");
 
       const results = await HolonSettings.findAll(perspective!, {}, false);
       expect(results.length).toBeGreaterThanOrEqual(1);
@@ -357,7 +360,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
 
     it("should have synced quests correctly", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(syncedHolonId);
-      const { Quest } = await import("../../src/lib/ad4m/models/index");
 
       const quests = await Quest.findAll(perspective!, {}, false);
       expect(quests.length).toBe(2);
@@ -376,7 +378,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
 
     it("should have synced users correctly", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(syncedHolonId);
-      const { HolonMember } = await import("../../src/lib/ad4m/models/index");
 
       const members = await HolonMember.findAll(perspective!, {}, false);
       expect(members.length).toBe(2);
@@ -394,7 +395,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
 
     it("should have synced shopping items correctly", async () => {
       const perspective = await ad4mClient!.perspective.byUUID(syncedHolonId);
-      const { ShoppingItem } = await import("../../src/lib/ad4m/models/index");
 
       const items = await ShoppingItem.findAll(perspective!, {}, false);
       expect(items.length).toBe(1);
@@ -413,7 +413,6 @@ describe.skipIf(!EXECUTOR_EXISTS)("Holons Data Sync: HoloSphere → AD4M", () =>
       const mockHolosphere = createMockHoloSphere();
       const perspective = await ad4mClient!.perspective.add("Progress Test Holon");
 
-      const { ALL_SUBJECT_CLASSES } = await import("../../src/lib/ad4m/models/index");
       for (const ModelClass of ALL_SUBJECT_CLASSES) {
         await perspective.ensureSDNASubjectClass(ModelClass);
       }
