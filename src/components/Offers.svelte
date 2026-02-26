@@ -7,7 +7,7 @@
 	import { formatDate, formatTime } from "../utils/date";
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
-	import { nameMap, resolvedName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName, resolveName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import DisplayName from './shared/DisplayName.svelte';
 	import TitleBar from "./shared/TitleBar.svelte";
 	import { Gift, Plus } from 'svelte-feathers';
@@ -300,8 +300,12 @@
 					}
 
 					// Then set up subscription for live updates
+					const subscribedHolonId = holonID;
 					questSubscriptionOff = holosphere.subscribe(holonID, "quests", (newItem, key) => {
 						try {
+							if (holonID !== subscribedHolonId) {
+								return; // Ignore updates from old holon subscription
+							}
 							if (newItem) {
 								const parsedItem = newItem;
 								parsedItem.key = key; // Add the key to the parsed item object

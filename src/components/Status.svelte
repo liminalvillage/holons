@@ -9,7 +9,7 @@
     import PieChart3D from "./PieChart3D.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
     import TitleBar from "./shared/TitleBar.svelte";
-    import { nameMap, resolvedName, resolvedInitials } from '$lib/stores/nameResolver';
+    import { nameMap, resolvedName, resolveName, resolvedInitials } from '$lib/stores/nameResolver';
     import { HolonsManager } from "../lib/holons/HolonsManager";
     interface User {
         id?: string;

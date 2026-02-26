@@ -15,7 +15,7 @@
 	import StatCard from "./shared/StatCard.svelte";
 	import StatGrid from "./shared/StatGrid.svelte";
 	import { Users, UserCheck, UserX, Plus, Calendar } from 'svelte-feathers';
-	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
@@ -248,10 +248,14 @@
 		}
 
 		// Subscribe to role updates
+		const subscribedHolonId = holonIdToLoad;
 		rolesSubscriptionUnsubscribe = holosphere.subscribe(holonIdToLoad, "roles", (newRole, key) => {
+			if (activeHolonId !== subscribedHolonId) {
+				return; // Ignore updates from old holon subscription
+			}
 			if (!key || key === 'undefined') {
 				console.warn(`[Roles.svelte] Subscription received update with invalid key: '${key}'`);
-				return; 
+				return;
 			}
 
 			console.log(`[Roles.svelte] Role update received - Key: '${key}', Role title: '${newRole?.title}', Role ID: '${newRole?.id}'`);
@@ -314,6 +318,9 @@
 
 		// Subscribe to user updates
 		usersSubscriptionUnsubscribe = holosphere.subscribe(holonIdToLoad, "users", (newUser, key) => {
+			if (activeHolonId !== subscribedHolonId) {
+				return; // Ignore updates from old holon subscription
+			}
 			if (!key || key === 'undefined') {
 				console.warn(`[Roles.svelte] User subscription received update with invalid key: '${key}'`);
 				return;

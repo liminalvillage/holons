@@ -7,7 +7,7 @@
 	import TreeView from "./TreeView.svelte";
 	import type { HoloSphere } from "holosphere";
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { nameMap, resolvedName } from '$lib/stores/nameResolver';
+	import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
