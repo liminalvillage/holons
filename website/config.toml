@@ -76,6 +76,11 @@ weight = 1
 # weight = 6
 
 [[menu.main]]
+name = "Sponsor a Feature"
+URL = "sponsor"
+weight = 2
+
+[[menu.main]]
 name = "Contact"
 URL = "contact"
 weight = 3

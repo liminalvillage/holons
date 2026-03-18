@@ -169,8 +169,8 @@ export default {
         
         // check if relative, add the rest of the path
       console.log('ID: ' +this.id+ ' route:'+ this.$route.query.id)
-      if (this.id.startsWith('./') || this.id.startsWith('/') || this.id.startsWith('..') || this.id.match(/^[a-zA-Z]+$/) )
-        this.id = this.$route.query.id + '/' + this.id //this.id.slice(0, this.id.lastIndexOf('/') + 1)
+      if (this.$route.query.id && (this.id.startsWith('./') || this.id.startsWith('/') || this.id.startsWith('..')))
+        this.id = this.$route.query.id + '/' + this.id
 
       let r = await fetchInfo(this.id? this.id : this.$route.query.id, this.lense)
       
