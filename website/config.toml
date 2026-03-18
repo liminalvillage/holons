@@ -69,19 +69,24 @@ URL = "partners"
 weight = 5
 
 [[menu.main]]
+name = "Holonic DAO"
+URL = "holonic-dao"
+weight = 6
+
+[[menu.main]]
 name = "Sponsor a Feature"
 URL = "sponsor"
-weight = 6
+weight = 7
 
 [[menu.main]]
 name = "Contact"
 URL = "contact"
-weight = 7
+weight = 8
 
 [[menu.main]]
 name = "Documentation"
 URL = "https://docs.holons.io"
-weight = 8
+weight = 9
 
 ############################# Default Parameters ##########################
 [params]
