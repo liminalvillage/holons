@@ -70,7 +70,7 @@ weight = 5
 
 [[menu.main]]
 name = "Holonic DAO"
-URL = "holonic-dao"
+URL = "https://dao.holons.io"
 weight = 6
 
 [[menu.main]]
