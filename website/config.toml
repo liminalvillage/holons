@@ -69,14 +69,19 @@ URL = "partners"
 weight = 5
 
 [[menu.main]]
+name = "Sponsor a Feature"
+URL = "sponsor"
+weight = 6
+
+[[menu.main]]
 name = "Contact"
 URL = "contact"
-weight = 6
+weight = 7
 
 [[menu.main]]
 name = "Documentation"
 URL = "https://docs.holons.io"
-weight = 7
+weight = 8
 
 ############################# Default Parameters ##########################
 [params]
