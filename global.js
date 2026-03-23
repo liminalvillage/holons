@@ -320,86 +320,90 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
         }
 
         return new Promise((resolve) => {
-            let output = [];
-            let isResolved = false;
-            let timeout = setTimeout(() => {
-                if (!isResolved) {
-                    isResolved = true;
-                    resolve(output);
-                }
-            }, 5000);
-
-            const handleData = async (data) => {
-                if (!data) {
-                    clearTimeout(timeout);
-                    isResolved = true;
-                    resolve([]);
-                    return;
-                }
-
-                const keys = Object.keys(data).filter(key => key !== '_');
-                const promises = keys.map(key =>
-                    new Promise(async (resolveItem) => {
-                        const itemPath = password ?
-                            user.get('private').get(tableName).get(key) :
-                            holoInstance.gun.get(holoInstance.appname).get(tableName).get(key);
-
-                        const itemData = await new Promise(resolveData => {
-                            itemPath.once(resolveData);
-                        });
-
-                        if (itemData) {
-                            try {
-                                const parsed = await holoInstance.parse(itemData); // Use instance's parse
-                                if (parsed) {
-                                    // Check if this is a hologram that needs to be resolved
-                                    if (holoInstance.isHologram(parsed)) { // Use instance's isHologram
-                                        const resolved = await holoInstance.resolveHologram(parsed, { // Use instance's resolveHologram
-                                            followHolograms: true // Always follow holograms
-                                        });
-
-                                        if (resolved === null) {
-                                            try {
-                                                await holoInstance.deleteGlobal(tableName, key, password); // Use instance's deleteGlobal
-                                            } catch (deleteError) {
-                                                console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
-                                            }
-                                            resolveItem();
-                                            return;
-                                        }
-
-                                        if (resolved !== parsed) {
-                                            // Hologram was resolved successfully
-                                            output.push(resolved);
-                                        } else {
-                                            // If resolution didn't change it (e.g., circular ref guard), push original parsed (which is a hologram)
-                                            output.push(parsed);
-                                        }
-                                    } else {
-                                        output.push(parsed);
-                                    }
-                                }
-                            } catch (error) {
-                                console.error('Error parsing data:', error);
-                            }
-                        }
-                        resolveItem();
-                    })
-                );
-
-                await Promise.all(promises);
-                clearTimeout(timeout);
-                if (!isResolved) {
-                    isResolved = true;
-                    resolve(output);
-                }
-            };
+            const output = [];
+            const pendingProcessing = [];
 
             const dataPath = password ?
                 user.get('private').get(tableName) :
                 holoInstance.gun.get(holoInstance.appname).get(tableName);
 
-            dataPath.once(handleData);
+            // PASS 1: Get shallow node to determine expected item count
+            dataPath.once((data) => {
+                if (!data) {
+                    resolve([]);
+                    return;
+                }
+
+                // Filter out Gun metadata, null/deleted entries, and Gun soul references
+                const keys = Object.keys(data).filter(key => {
+                    if (key === '_') return false;
+                    const val = data[key];
+                    if (val === null) return false;
+                    // Filter out Gun graph references (sub-nodes)
+                    if (typeof val === 'object' && val['#']) return false;
+                    return true;
+                });
+                const expectedCount = keys.length;
+
+                if (expectedCount === 0) {
+                    resolve([]);
+                    return;
+                }
+
+                // PASS 2: Use map().once() to iterate and get full item data
+                let receivedCount = 0;
+
+                dataPath.map().once(async (itemData, key) => {
+                    if (!itemData || key === '_') {
+                        receivedCount++;
+                        if (receivedCount >= expectedCount) {
+                            await Promise.all(pendingProcessing);
+                            resolve(output);
+                        }
+                        return;
+                    }
+
+                    const processingPromise = (async () => {
+                        try {
+                            const parsed = await holoInstance.parse(itemData);
+                            if (!parsed) return;
+
+                            if (holoInstance.isHologram(parsed)) {
+                                const resolved = await holoInstance.resolveHologram(parsed, {
+                                    followHolograms: true
+                                });
+
+                                if (resolved === null) {
+                                    try {
+                                        await holoInstance.deleteGlobal(tableName, key, password);
+                                    } catch (deleteError) {
+                                        console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
+                                    }
+                                    return;
+                                }
+
+                                if (resolved !== parsed) {
+                                    output.push(resolved);
+                                } else {
+                                    output.push(parsed);
+                                }
+                            } else {
+                                output.push(parsed);
+                            }
+                        } catch (error) {
+                            console.error('Error parsing data:', error);
+                        }
+                    })();
+
+                    pendingProcessing.push(processingPromise);
+                    receivedCount++;
+
+                    if (receivedCount >= expectedCount) {
+                        await Promise.all(pendingProcessing);
+                        resolve(output);
+                    }
+                });
+            });
         });
     } catch (error) {
         console.error('Error in getAllGlobal:', error);

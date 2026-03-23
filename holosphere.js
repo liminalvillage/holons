@@ -1,6 +1,6 @@
 /**
  * @module holosphere
- * @version 1.1.17
+ * @version 1.1.21
  * @description Holonic Geospatial Communication Infrastructure
  * @author Roberto Valenti
  * @license GPL-3.0-or-later
@@ -20,7 +20,7 @@ import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
 
 // Define the version constant
-const HOLOSPHERE_VERSION = '1.1.17'; 
+const HOLOSPHERE_VERSION = '1.1.21'; 
 
 class HoloSphere {
     /**

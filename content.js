@@ -508,94 +508,110 @@ export async function getAll(holoInstance, holon, lens, password = null) {
 
         return new Promise((resolve) => {
             const output = new Map();
-
-            const processData = async (data, key) => {
-                if (!data || key === '_') return;
-
-                try {
-                    const parsed = await holoInstance.parse(data); // Use instance's parse
-                    if (!parsed || !parsed.id) return;
-
-                    // Check if this is a hologram that needs to be resolved
-                    if (holoInstance.isHologram(parsed)) {
-                        try {
-                            const resolved = await holoInstance.resolveHologram(parsed, {
-                                followHolograms: true,
-                                maxDepth: 10,
-                                currentDepth: 0
-                            });
-
-                            if (resolved === null) {
-                                console.warn(`Broken hologram detected in getAll for key ${key}. Removing it...`);
-                                
-                                try {
-                                    // Delete the broken hologram
-                                    await holoInstance.delete(holon, lens, key, password);
-                                    console.log(`Successfully removed broken hologram from ${holon}/${lens}/${key}`);
-                                } catch (cleanupError) {
-                                    console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
-                                }
-                                return; // Skip adding this item to output
-                            }
-
-                            if (resolved && resolved !== parsed) {
-                                // Hologram was resolved successfully
-                                if (schema) {
-                                    const valid = holoInstance.validator.validate(schema, resolved);
-                                    if (valid || !holoInstance.strict) {
-                                        output.set(resolved.id, resolved);
-                                    }
-                                } else {
-                                    output.set(resolved.id, resolved);
-                                }
-                                return;
-                            }
-                        } catch (hologramError) {
-                            console.error(`Error resolving hologram for key ${key}:`, hologramError);
-                            return; // Skip this item
-                        }
-                    }
-
-                    if (schema) {
-                        const valid = holoInstance.validator.validate(schema, parsed);
-                        if (valid || !holoInstance.strict) {
-                            output.set(parsed.id, parsed);
-                        }
-                    } else {
-                        output.set(parsed.id, parsed);
-                    }
-                } catch (error) {
-                    console.error('Error processing data:', error);
-                }
-            };
-
-            const handleData = async (data) => {
-                if (!data) {
-                    resolve([]);
-                    return;
-                }
-
-                const initialPromises = [];
-                Object.keys(data)
-                    .filter(key => key !== '_')
-                    .forEach(key => {
-                        initialPromises.push(processData(data[key], key));
-                    });
-
-                try {
-                    await Promise.all(initialPromises);
-                    resolve(Array.from(output.values()));
-                } catch (error) {
-                    console.error('Error in getAll:', error);
-                    resolve([]);
-                }
-            };
+            const pendingProcessing = [];
 
             const dataPath = password ?
                 user.get('private').get(lens) :
                 holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
 
-            dataPath.once(handleData);
+            // PASS 1: Get shallow node to determine expected item count
+            dataPath.once((data) => {
+                if (!data) {
+                    resolve([]);
+                    return;
+                }
+
+                // Filter out Gun metadata, null/deleted entries, and Gun soul references
+                const keys = Object.keys(data).filter(key => {
+                    if (key === '_') return false;
+                    const val = data[key];
+                    if (val === null) return false;
+                    // Filter out Gun graph references (sub-nodes)
+                    if (typeof val === 'object' && val['#']) return false;
+                    return true;
+                });
+                const expectedCount = keys.length;
+
+                if (expectedCount === 0) {
+                    resolve([]);
+                    return;
+                }
+
+                // PASS 2: Use map().once() to iterate and get full item data
+                let receivedCount = 0;
+
+                dataPath.map().once(async (itemData, key) => {
+                    if (!itemData || key === '_') {
+                        receivedCount++;
+                        if (receivedCount >= expectedCount) {
+                            await Promise.all(pendingProcessing);
+                            resolve(Array.from(output.values()));
+                        }
+                        return;
+                    }
+
+                    const processingPromise = (async () => {
+                        try {
+                            const parsed = await holoInstance.parse(itemData);
+                            if (!parsed || !parsed.id) return;
+
+                            if (holoInstance.isHologram(parsed)) {
+                                try {
+                                    const resolved = await holoInstance.resolveHologram(parsed, {
+                                        followHolograms: true,
+                                        maxDepth: 10,
+                                        currentDepth: 0
+                                    });
+
+                                    if (resolved === null) {
+                                        console.warn(`Broken hologram detected in getAll for key ${key}. Removing it...`);
+                                        try {
+                                            await holoInstance.delete(holon, lens, key, password);
+                                        } catch (cleanupError) {
+                                            console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
+                                        }
+                                        return;
+                                    }
+
+                                    if (resolved && resolved !== parsed) {
+                                        if (schema) {
+                                            const valid = holoInstance.validator.validate(schema, resolved);
+                                            if (valid || !holoInstance.strict) {
+                                                output.set(resolved.id, resolved);
+                                            }
+                                        } else {
+                                            output.set(resolved.id, resolved);
+                                        }
+                                        return;
+                                    }
+                                } catch (hologramError) {
+                                    console.error(`Error resolving hologram for key ${key}:`, hologramError);
+                                    return;
+                                }
+                            }
+
+                            if (schema) {
+                                const valid = holoInstance.validator.validate(schema, parsed);
+                                if (valid || !holoInstance.strict) {
+                                    output.set(parsed.id, parsed);
+                                }
+                            } else {
+                                output.set(parsed.id, parsed);
+                            }
+                        } catch (error) {
+                            console.error('Error processing data:', error);
+                        }
+                    })();
+
+                    pendingProcessing.push(processingPromise);
+                    receivedCount++;
+
+                    if (receivedCount >= expectedCount) {
+                        await Promise.all(pendingProcessing);
+                        resolve(Array.from(output.values()));
+                    }
+                });
+            });
         });
     } catch (error) {
         console.error('Error in getAll:', error);
