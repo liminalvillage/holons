@@ -250,18 +250,20 @@ export async function generatePDF(options: PDFGeneratorOptions): Promise<Blob> {
 			frontHTMLs.push(renderCardFront(card, config.cardStyle, config.foregroundImage, true));
 		}
 
+		// Page 1: fronts (normal order)
 		if (pageGroup > 0) pdf.addPage();
-		const backPageHTML = createPageHTML(backHTMLs, false);
-		const backCanvas = await renderPageToCanvas(backPageHTML);
-		pdf.addImage(backCanvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
+		const frontPageHTML = createPageHTML(frontHTMLs, false);
+		const frontCanvas = await renderPageToCanvas(frontPageHTML);
+		pdf.addImage(frontCanvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
 
 		currentStep++;
 		onProgress?.(currentStep, totalSteps);
 
+		// Page 2: backs (mirrored so they align when paper is flipped)
 		pdf.addPage();
-		const frontPageHTML = createPageHTML(frontHTMLs, true);
-		const frontCanvas = await renderPageToCanvas(frontPageHTML);
-		pdf.addImage(frontCanvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
+		const backPageHTML = createPageHTML(backHTMLs, true);
+		const backCanvas = await renderPageToCanvas(backPageHTML);
+		pdf.addImage(backCanvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
 
 		currentStep++;
 		onProgress?.(currentStep, totalSteps);

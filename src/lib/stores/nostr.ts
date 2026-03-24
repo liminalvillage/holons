@@ -26,14 +26,14 @@ function createNostrStore() {
 	return {
 		subscribe,
 
-		// Initialize - check sessionStorage for existing key
+		// Initialize - check localStorage for existing key
 		init: async () => {
 			if (!browser) return;
 
 			update((state) => ({ ...state, isLoading: true }));
 
 			try {
-				const storedKey = sessionStorage.getItem(STORAGE_KEY);
+				const storedKey = localStorage.getItem(STORAGE_KEY);
 				if (storedKey) {
 					const publicKey = getPublicKey(storedKey);
 					update((state) => ({
@@ -43,7 +43,7 @@ function createNostrStore() {
 						isLoading: false,
 						isNewKey: false
 					}));
-					console.log('Nostr key loaded from sessionStorage');
+					console.log('Nostr key loaded from localStorage');
 				} else {
 					update((state) => ({
 						...state,
@@ -72,8 +72,8 @@ function createNostrStore() {
 				// Derive public key
 				const publicKey = getPublicKey(privateKey);
 
-				// Store in sessionStorage
-				sessionStorage.setItem(STORAGE_KEY, privateKey);
+				// Store in localStorage
+				localStorage.setItem(STORAGE_KEY, privateKey);
 
 				update((state) => ({
 					...state,
@@ -113,7 +113,7 @@ function createNostrStore() {
 				const publicKey = getPublicKey(privateKey);
 
 				// Store hex internally
-				sessionStorage.setItem(STORAGE_KEY, privateKey);
+				localStorage.setItem(STORAGE_KEY, privateKey);
 
 				update((state) => ({
 					...state,
@@ -146,7 +146,7 @@ function createNostrStore() {
 		// Clear the key (logout)
 		clearKey: () => {
 			if (browser) {
-				sessionStorage.removeItem(STORAGE_KEY);
+				localStorage.removeItem(STORAGE_KEY);
 			}
 			set({
 				...initialState,

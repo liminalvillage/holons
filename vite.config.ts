@@ -16,7 +16,7 @@ export default defineConfig({
 	},
 	optimizeDeps: {
 		include: ['svelte', 'ajv', 'h3-js', 'buffer'],
-		exclude: ['@sveltejs/kit', 'holosphere']
+		exclude: ['@sveltejs/kit']
 	},
 	resolve: {
 		dedupe: ['svelte', 'ajv', 'h3-js'],
@@ -29,8 +29,8 @@ export default defineConfig({
 	ssr: {
 		// Don't bundle Node.js-only packages for SSR
 		external: ['ws'],
-		// Ensure nostr-tools is bundled (not externalized)
-		noExternal: ['nostr-tools']
+		// Ensure these packages are bundled (not externalized)
+		noExternal: ['holosphere']
 	},
 	build: {
 		rollupOptions: {

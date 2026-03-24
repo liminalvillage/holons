@@ -391,10 +391,12 @@
 		holosphere = new HoloSphere({
 			appName: environmentName,
 			privateKey: hexToBytes(privateKey),
-			backend: 'nostr',
-			nostr: {
-				peers: ['wss://relay.holons.io'],
-			}
+			// Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
+			// Holosphere 2: uncomment below to use Nostr relay instead
+			// backend: 'nostr',
+			// nostr: {
+			// 	peers: ['wss://relay.holons.io'],
+			// }
 		});
 
 		// Wait for Nostr backend to be ready (async initialization)

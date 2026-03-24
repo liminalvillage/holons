@@ -16,8 +16,8 @@ export function renderCardFront(
 	pdfMode: boolean = false
 ): string {
 	const colors = CARD_TYPE_COLORS[card.type];
-	const desc = card.description || '';
-	const truncatedDesc = desc.length > 100 ? desc.substring(0, 97) + '...' : desc;
+	const desc = (card.description || '').replace(/\\n/g, '<br>');
+	const truncatedDesc = desc.length > 200 ? desc.substring(0, 197) + '...' : desc;
 
 	const bgStyle = foregroundImage
 		? `background-image: url('${foregroundImage}'); background-size: cover; background-position: center;`

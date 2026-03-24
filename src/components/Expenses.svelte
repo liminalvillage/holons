@@ -66,7 +66,7 @@
 			const [expensesData, usersData, settingsData] = await Promise.allSettled([
 				holosphere.getAll(holonID, "expenses"),
 				holosphere.getAll(holonID, "users"),
-				holosphere.read(holonID, "settings", holonID)
+				holosphere.get(holonID, "settings", holonID)
 			]);
 
 			// Process expenses

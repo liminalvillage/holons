@@ -50,11 +50,13 @@
 			const tempHolosphere = new HoloSphere({
 				appName: environmentName,
 				privateKey: HOLOSPHERE_PRIVATE_KEY,
-				backend: 'nostr',
-				nostr: {
-					relays: ['wss://relay.holons.io'],
-					persistence: true
-				}
+				// Holosphere 1.3: uses Gun server (gun.holons.io/gun) by default
+				// Holosphere 2: uncomment below to use Nostr relay instead
+				// backend: 'nostr',
+				// nostr: {
+				// 	relays: ['wss://relay.holons.io'],
+				// 	persistence: true
+				// }
 			});
 
 			await tempHolosphere.ready();
