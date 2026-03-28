@@ -150,7 +150,7 @@
 		if (holosphere && tableName.trim()) {
 			// First, fetch initial data using read() - this filters out _deleted items
 			try {
-				const initialData = await holosphere.read(safeHolonID, tableName);
+				const initialData = await holosphere.getAll(safeHolonID, tableName);
 				if (initialData) {
 					if (Array.isArray(initialData)) {
 						initialData.forEach((item: any) => {

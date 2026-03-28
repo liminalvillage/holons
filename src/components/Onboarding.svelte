@@ -2,47 +2,81 @@
 	import { createEventDispatcher, onMount } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { browser } from '$app/environment';
-	import { nostrPublicKey, nostrPrivateKey } from '$lib/stores/nostr';
+	import { goto } from '$app/navigation';
+	import { nostrPrivateKey } from '$lib/stores/nostr';
+	import { ID } from '../dashboard/store';
 
 	const dispatch = createEventDispatcher();
 
-	// Check if user has seen onboarding
 	let showOnboarding = false;
 	let currentStep = 0;
+	let direction = 1; // 1 = forward, -1 = backward
 
 	const ONBOARDING_KEY = 'harvest_onboarding_complete';
 
-	// Steps in the onboarding flow
-	const steps = [
+	interface Step {
+		title: string;
+		subtitle: string;
+		description: string;
+		icon: string;
+		gradient: string;
+		action?: { label: string; route: string };
+		features?: { icon: string; label: string }[];
+		tip: string;
+	}
+
+	const steps: Step[] = [
 		{
 			title: 'Welcome to Harvest',
-			description: 'A decentralized platform for holonic organization and collaboration.',
+			subtitle: 'Your home base',
+			description: 'This is your holon — a self-organizing space for you and your community. Give it a name and purpose to get started.',
 			icon: 'fa-seedling',
-			tip: 'Holons are self-organizing units that are both whole and part of larger wholes.'
+			gradient: 'linear-gradient(135deg, #10b981, #059669)',
+			action: { label: 'Set Up Your Holon', route: '/settings' },
+			tip: 'Head to Settings to name your holon and describe its purpose.'
 		},
 		{
-			title: 'Your Home Holon',
-			description: 'Your personal space tied to your unique identity. All your data starts here.',
-			icon: 'fa-home',
-			tip: 'Click "Home" in the sidebar to always return to your personal space.'
+			title: 'Your Toolkit',
+			subtitle: 'Everything you need, in the sidebar',
+			description: 'Each icon in the sidebar is a tool for your community. Here are some highlights:',
+			icon: 'fa-th-large',
+			gradient: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+			features: [
+				{ icon: 'fa-tasks', label: 'Tasks — organize what needs doing' },
+				{ icon: 'fa-calendar-alt', label: 'Schedule — plan your time' },
+				{ icon: 'fa-globe-americas', label: 'Map — see holons in space' },
+				{ icon: 'fa-wallet', label: 'Expenses — track spending' },
+				{ icon: 'fa-exchange-alt', label: 'Offers & Requests — trade and share' },
+				{ icon: 'fa-book', label: 'Library — shared documents' }
+			],
+			tip: 'Explore the sidebar to discover all the tools available to your holon.'
 		},
 		{
-			title: 'Join or Create Holons',
-			description: 'Star holons to save them, or add new ones using the + button.',
+			title: 'Create Your First Task',
+			subtitle: 'Even a small task gets things moving',
+			description: 'Your task board is where work happens. Add a task — it can be anything from "buy supplies" to "plan the next gathering".',
+			icon: 'fa-check-circle',
+			gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
+			action: { label: 'Open Tasks', route: '/tasks' },
+			tip: 'Find Tasks in the sidebar to create, assign, and track work.'
+		},
+		{
+			title: 'Pin Yourself on the Map',
+			subtitle: 'Holons exist in space — claim yours',
+			description: 'Set your location so other holons can find you. The map shows the whole network — zoom in to discover neighbors.',
+			icon: 'fa-map-marker-alt',
+			gradient: 'linear-gradient(135deg, #ec4899, #db2777)',
+			action: { label: 'Open Map', route: '/map' },
+			tip: 'Go to Map in the sidebar to set your location and explore nearby holons.'
+		},
+		{
+			title: 'Connect with Others',
+			subtitle: "You're not alone",
+			description: 'Star a holon to save it, scan a QR code to join one, or create a new community. Holons can nest inside each other to form larger networks.',
 			icon: 'fa-users',
-			tip: 'Use QR codes to quickly add holons from others.'
-		},
-		{
-			title: 'Navigate with Tabs',
-			description: 'Use the top navigation to switch between Tasks, Schedule, Expenses, and more.',
-			icon: 'fa-compass',
-			tip: 'Each tab shows a different lens into your holon\'s data.'
-		},
-		{
-			title: 'Manage Your Identity',
-			description: 'Your cryptographic key is your identity. Back it up in Keys & Access!',
-			icon: 'fa-key',
-			tip: 'If you lose your key without a backup, your identity cannot be recovered.'
+			gradient: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+			action: { label: 'Browse Holons', route: '/federation' },
+			tip: 'Use the browser panel on the left to find and star holons, or scan QR codes to join.'
 		}
 	];
 
@@ -52,10 +86,7 @@
 		if (browser) {
 			const completed = localStorage.getItem(ONBOARDING_KEY);
 			const hasPrivateKey = !!$nostrPrivateKey;
-
-			// Show onboarding if not completed and user is logged in
 			if (!completed && hasPrivateKey) {
-				// Small delay to let the UI settle
 				setTimeout(() => {
 					showOnboarding = true;
 				}, 500);
@@ -65,6 +96,7 @@
 
 	function nextStep() {
 		if (currentStep < steps.length - 1) {
+			direction = 1;
 			currentStep++;
 		} else {
 			complete();
@@ -73,6 +105,7 @@
 
 	function prevStep() {
 		if (currentStep > 0) {
+			direction = -1;
 			currentStep--;
 		}
 	}
@@ -85,6 +118,14 @@
 		dispatch('complete');
 	}
 
+	function tryAction() {
+		const action = currentStepData.action;
+		if (action && $ID) {
+			complete();
+			goto(`/${$ID}${action.route}`);
+		}
+	}
+
 	function skip() {
 		complete();
 	}
@@ -93,35 +134,57 @@
 {#if showOnboarding}
 	<div class="onboarding-backdrop" transition:fade={{ duration: 200 }}>
 		<div class="onboarding-modal" transition:fly={{ y: 20, duration: 300 }}>
-			<!-- Progress indicator -->
-			<div class="onboarding-progress">
-				{#each steps as _, i}
-					<div
-						class="onboarding-progress__dot"
-						class:onboarding-progress__dot--active={i === currentStep}
-						class:onboarding-progress__dot--completed={i < currentStep}
-					></div>
-				{/each}
+			<!-- Progress bar -->
+			<div class="onboarding-progress-bar">
+				<div
+					class="onboarding-progress-bar__fill"
+					style="width: {((currentStep + 1) / steps.length) * 100}%"
+				></div>
+			</div>
+
+			<!-- Step indicator -->
+			<div class="onboarding-step-label">
+				{currentStep + 1} / {steps.length}
 			</div>
 
 			<!-- Content -->
-			<div class="onboarding-content">
-				<div class="onboarding-icon">
-					<i class="fas {currentStepData.icon}"></i>
-				</div>
+			{#key currentStep}
+				<div
+					class="onboarding-content"
+					in:fly={{ x: 60 * direction, duration: 250, delay: 100 }}
+					out:fly={{ x: -60 * direction, duration: 150 }}
+				>
+					<div class="onboarding-icon" style="background: {currentStepData.gradient}">
+						<i class="fas {currentStepData.icon}"></i>
+					</div>
 
-				<h2 class="onboarding-title">{currentStepData.title}</h2>
-				<p class="onboarding-description">{currentStepData.description}</p>
+					<h2 class="onboarding-title">{currentStepData.title}</h2>
+					<p class="onboarding-subtitle">{currentStepData.subtitle}</p>
+					<p class="onboarding-description">{currentStepData.description}</p>
 
-				<div class="onboarding-tip">
-					<i class="fas fa-lightbulb"></i>
-					<span>{currentStepData.tip}</span>
+					<!-- Feature grid for step 2 -->
+					{#if currentStepData.features}
+						<div class="onboarding-features">
+							{#each currentStepData.features as feature}
+								<div class="onboarding-feature">
+									<i class="fas {feature.icon}"></i>
+									<span>{feature.label}</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					<!-- Tip -->
+					<div class="onboarding-tip">
+						<i class="fas fa-hand-point-right"></i>
+						<span>{currentStepData.tip}</span>
+					</div>
 				</div>
-			</div>
+			{/key}
 
 			<!-- Actions -->
 			<div class="onboarding-actions">
-				<button class="onboarding-btn onboarding-btn--secondary" on:click={skip}>
+				<button class="onboarding-btn onboarding-btn--skip" on:click={skip}>
 					Skip Tour
 				</button>
 
@@ -132,18 +195,20 @@
 						</button>
 					{/if}
 
+					{#if currentStepData.action && $ID}
+						<button class="onboarding-btn onboarding-btn--try" on:click={tryAction}>
+							<i class="fas fa-external-link-alt"></i>
+							{currentStepData.action.label}
+						</button>
+					{/if}
+
 					<button class="onboarding-btn onboarding-btn--primary" on:click={nextStep}>
-						{currentStep < steps.length - 1 ? 'Next' : 'Get Started'}
+						{currentStep < steps.length - 1 ? 'Next' : 'Get Started!'}
 						{#if currentStep < steps.length - 1}
 							<i class="fas fa-arrow-right"></i>
 						{/if}
 					</button>
 				</div>
-			</div>
-
-			<!-- Step counter -->
-			<div class="onboarding-counter">
-				Step {currentStep + 1} of {steps.length}
 			</div>
 		</div>
 	</div>
@@ -153,7 +218,7 @@
 	.onboarding-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.8);
+		background: rgba(0, 0, 0, 0.85);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -164,107 +229,147 @@
 	.onboarding-modal {
 		background: var(--color-bg-secondary, #1f2937);
 		border-radius: var(--radius-xl, 1rem);
-		padding: var(--spacing-6, 1.5rem);
-		max-width: 440px;
+		padding: 0;
+		max-width: 480px;
 		width: 100%;
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+		box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.6);
 		border: 1px solid var(--color-border, #374151);
+		overflow: hidden;
 	}
 
-	.onboarding-progress {
-		display: flex;
-		justify-content: center;
-		gap: var(--spacing-2, 0.5rem);
-		margin-bottom: var(--spacing-6, 1.5rem);
-	}
-
-	.onboarding-progress__dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
+	/* Progress bar */
+	.onboarding-progress-bar {
+		height: 3px;
 		background: var(--color-bg-tertiary, #374151);
-		transition: all 200ms ease;
 	}
 
-	.onboarding-progress__dot--active {
-		background: var(--color-accent, #4f46e5);
-		transform: scale(1.25);
+	.onboarding-progress-bar__fill {
+		height: 100%;
+		background: linear-gradient(90deg, #6366f1, #8b5cf6);
+		transition: width 300ms ease;
+		border-radius: 0 2px 2px 0;
 	}
 
-	.onboarding-progress__dot--completed {
-		background: var(--color-accent-light, #818cf8);
+	.onboarding-step-label {
+		text-align: right;
+		padding: 0.75rem 1.25rem 0;
+		font-size: 0.7rem;
+		color: var(--color-text-muted, #6b7280);
+		letter-spacing: 0.05em;
+		font-weight: 500;
 	}
 
+	/* Content */
 	.onboarding-content {
 		text-align: center;
-		margin-bottom: var(--spacing-6, 1.5rem);
+		padding: 0.5rem 1.5rem 1.25rem;
 	}
 
 	.onboarding-icon {
-		width: 64px;
-		height: 64px;
-		border-radius: var(--radius-lg, 0.5rem);
-		background: linear-gradient(135deg, var(--color-accent, #4f46e5), var(--color-accent-light, #6366f1));
+		width: 72px;
+		height: 72px;
+		border-radius: 1rem;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		margin: 0 auto var(--spacing-4, 1rem);
-		font-size: 1.5rem;
+		margin: 0 auto 1rem;
+		font-size: 1.75rem;
 		color: white;
+		box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3);
 	}
 
 	.onboarding-title {
-		font-size: var(--font-size-xl, 1.25rem);
-		font-weight: var(--font-weight-bold, 700);
+		font-size: 1.35rem;
+		font-weight: 700;
 		color: var(--color-text-primary, #ffffff);
-		margin: 0 0 var(--spacing-2, 0.5rem);
+		margin: 0 0 0.25rem;
+	}
+
+	.onboarding-subtitle {
+		font-size: 0.9rem;
+		color: var(--color-accent-light, #818cf8);
+		margin: 0 0 0.75rem;
+		font-weight: 500;
 	}
 
 	.onboarding-description {
-		font-size: var(--font-size-base, 1rem);
+		font-size: 0.95rem;
 		color: var(--color-text-secondary, #d1d5db);
-		margin: 0 0 var(--spacing-4, 1rem);
-		line-height: 1.5;
+		margin: 0 0 1rem;
+		line-height: 1.6;
 	}
 
+	/* Feature grid */
+	.onboarding-features {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+		text-align: left;
+	}
+
+	.onboarding-feature {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.6rem;
+		background: var(--color-bg-tertiary, #374151);
+		border-radius: 0.5rem;
+		font-size: 0.8rem;
+		color: var(--color-text-secondary, #d1d5db);
+	}
+
+	.onboarding-feature i {
+		color: var(--color-accent-light, #818cf8);
+		width: 16px;
+		text-align: center;
+		flex-shrink: 0;
+	}
+
+	/* Tip */
 	.onboarding-tip {
 		display: inline-flex;
-		align-items: center;
-		gap: var(--spacing-2, 0.5rem);
-		padding: var(--spacing-2, 0.5rem) var(--spacing-3, 0.75rem);
-		background: rgba(251, 191, 36, 0.1);
-		border: 1px solid rgba(251, 191, 36, 0.3);
-		border-radius: var(--radius-md, 0.375rem);
-		font-size: var(--font-size-sm, 0.875rem);
-		color: #fbbf24;
+		align-items: flex-start;
+		gap: 0.5rem;
+		padding: 0.6rem 0.85rem;
+		background: rgba(99, 102, 241, 0.1);
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		border-radius: 0.5rem;
+		font-size: 0.8rem;
+		color: #a5b4fc;
+		text-align: left;
 	}
 
 	.onboarding-tip i {
 		flex-shrink: 0;
+		margin-top: 0.1rem;
 	}
 
+	/* Actions */
 	.onboarding-actions {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		gap: var(--spacing-3, 0.75rem);
-		margin-bottom: var(--spacing-4, 1rem);
+		gap: 0.5rem;
+		padding: 1rem 1.5rem 1.25rem;
+		border-top: 1px solid var(--color-border, #374151);
+		background: rgba(0, 0, 0, 0.15);
 	}
 
 	.onboarding-nav {
 		display: flex;
-		gap: var(--spacing-2, 0.5rem);
+		gap: 0.4rem;
 	}
 
 	.onboarding-btn {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: var(--spacing-2, 0.5rem);
-		padding: var(--spacing-2, 0.5rem) var(--spacing-4, 1rem);
-		border-radius: var(--radius-md, 0.375rem);
-		font-size: var(--font-size-sm, 0.875rem);
-		font-weight: var(--font-weight-medium, 500);
+		gap: 0.4rem;
+		padding: 0.5rem 1rem;
+		border-radius: 0.5rem;
+		font-size: 0.85rem;
+		font-weight: 500;
 		cursor: pointer;
 		transition: all 150ms ease;
 		border: none;
@@ -277,21 +382,36 @@
 
 	.onboarding-btn--primary:hover {
 		background: var(--color-accent-dark, #4338ca);
+		transform: translateY(-1px);
 	}
 
-	.onboarding-btn--secondary {
+	.onboarding-btn--try {
+		background: rgba(99, 102, 241, 0.15);
+		color: #a5b4fc;
+		border: 1px solid rgba(99, 102, 241, 0.3);
+		font-size: 0.8rem;
+		padding: 0.4rem 0.75rem;
+	}
+
+	.onboarding-btn--try:hover {
+		background: rgba(99, 102, 241, 0.25);
+		color: white;
+	}
+
+	.onboarding-btn--skip {
 		background: transparent;
 		color: var(--color-text-muted, #6b7280);
+		font-size: 0.8rem;
+		padding: 0.4rem 0.6rem;
 	}
 
-	.onboarding-btn--secondary:hover {
+	.onboarding-btn--skip:hover {
 		color: var(--color-text-primary, #ffffff);
-		background: var(--color-bg-tertiary, #374151);
 	}
 
 	.onboarding-btn--nav {
-		width: 36px;
-		height: 36px;
+		width: 34px;
+		height: 34px;
 		padding: 0;
 		background: var(--color-bg-tertiary, #374151);
 		color: var(--color-text-secondary, #d1d5db);
@@ -302,29 +422,28 @@
 		color: var(--color-text-primary, #ffffff);
 	}
 
-	.onboarding-counter {
-		text-align: center;
-		font-size: var(--font-size-xs, 0.75rem);
-		color: var(--color-text-muted, #6b7280);
-	}
-
 	@media (max-width: 480px) {
-		.onboarding-modal {
-			padding: var(--spacing-4, 1rem);
+		.onboarding-content {
+			padding: 0.5rem 1rem 1rem;
 		}
 
 		.onboarding-actions {
 			flex-direction: column-reverse;
-			gap: var(--spacing-2, 0.5rem);
+			gap: 0.5rem;
+			padding: 0.75rem 1rem 1rem;
 		}
 
 		.onboarding-nav {
 			width: 100%;
-			justify-content: space-between;
+			justify-content: flex-end;
 		}
 
 		.onboarding-btn--primary {
 			flex: 1;
+		}
+
+		.onboarding-features {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>

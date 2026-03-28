@@ -99,7 +99,7 @@ export class QRActionService {
 
 	/**
 	 * Stores an inbound read capability in the scanner's federation registry
-	 * so that holosphere.read() can find it via _getCapabilityForAuthor().
+	 * so that holosphere.get() can find it via _getCapabilityForAuthor().
 	 * This grants the scanning user read access to the entire holon.
 	 */
 	private async storeReadCapability(params: QRActionParams): Promise<void> {
