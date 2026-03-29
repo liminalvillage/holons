@@ -170,7 +170,12 @@ class UI {
   }
 
   async init() {
-    // Initialize browser on startup
+    // Initialize browser on startup (skip if DISABLE_PUPPETEER is set)
+    if (process.env.DISABLE_PUPPETEER === 'true') {
+      browserAvailable = false;
+      console.log('Puppeteer disabled via env — text-only mode');
+      return;
+    }
     try {
       if (!browser || !browser.connected) {
         console.log('Initializing Puppeteer browser...');

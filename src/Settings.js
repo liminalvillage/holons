@@ -129,6 +129,13 @@ export default class Settings {
                 const chatType = ctx.chat?.type;
                 const language = await this.getLanguage(holonId);
 
+                // Handle deeplink payloads (e.g. /start join_-1002282981272_quests_itemId)
+                const payload = ctx.message.text.split(' ')[1];
+                if (payload && payload.startsWith('join_') && chatType === 'private') {
+                    await this._handleJoinDeeplink(ctx, payload, language);
+                    return;
+                }
+
                 // Use personalWelcome for private chats, groupWelcome for groups
                 const welcomeKey = chatType === 'private' ? 'personalWelcome' : 'groupWelcome';
                 const welcomeMessage = i18next.t(welcomeKey, { lng: language });
@@ -3895,5 +3902,103 @@ export default class Settings {
             return `${idStr.substring(0, 8)}...${idStr.substring(56)}`;
         }
         return lookupHolonId;
+    }
+
+    /**
+     * Handle join deeplink from Shopfront widget.
+     * Payload format: join_{holonId}_{lens}_{itemId}
+     */
+    async _handleJoinDeeplink(ctx, payload, language) {
+        try {
+            const parts = payload.substring(5);
+            const knownLenses = ['offers', 'quests', 'shopping', 'announcements', 'events', 'roles', 'checklists', 'badges'];
+            let targetHolonId = null, lens = null, itemId = null;
+
+            for (const l of knownLenses) {
+                const idx = parts.indexOf('_' + l + '_');
+                if (idx !== -1) {
+                    targetHolonId = parts.substring(0, idx);
+                    lens = l;
+                    itemId = parts.substring(idx + l.length + 2);
+                    break;
+                }
+            }
+
+            console.log(`[Deeplink] Parsed: holon=${targetHolonId} lens=${lens} item=${itemId}`);
+
+            if (!targetHolonId || !lens || !itemId) {
+                await ctx.reply('❌ Invalid join link.');
+                return;
+            }
+
+            const user = ctx.from;
+            const userName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || 'Unknown';
+            await ctx.reply(`⏳ Looking up ${lens.slice(0, -1)}...`);
+
+            // Read from GunDB
+            const appName = this.db.appname || process.env.APPNAME || 'Holons';
+            console.log(`[Deeplink] Reading: ${appName} > ${targetHolonId} > ${lens} > ${itemId}`);
+
+            const item = await new Promise((resolve) => {
+                this.db.gun.get(appName).get(targetHolonId).get(lens).get(itemId).once((data) => {
+                    console.log(`[Deeplink] Gun response:`, typeof data, data ? String(data).substring(0, 200) : 'null');
+                    if (data && typeof data === 'string') {
+                        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+                    } else if (data && typeof data === 'object') {
+                        resolve(data);
+                    } else {
+                        resolve(null);
+                    }
+                });
+                setTimeout(() => { console.log('[Deeplink] Gun timeout'); resolve(null); }, 8000);
+            });
+
+            if (!item) {
+                await ctx.reply(`❌ Could not find that ${lens.slice(0, -1)}.\n\nDebug: app=${appName} holon=${targetHolonId} lens=${lens} id=${itemId}`);
+                return;
+            }
+
+            let participants = [];
+            if (item.participants) {
+                if (typeof item.participants === 'string') {
+                    try { participants = JSON.parse(item.participants); } catch { participants = []; }
+                } else if (Array.isArray(item.participants)) {
+                    participants = item.participants;
+                } else if (typeof item.participants === 'object') {
+                    participants = Object.values(item.participants).filter(p => p && typeof p === 'object');
+                }
+            }
+
+            const alreadyIn = participants.some(p =>
+                (p.id && String(p.id) === String(user.id)) ||
+                (p.username && p.username === user.username)
+            );
+
+            if (alreadyIn) {
+                await ctx.reply(`✅ You're already in "${item.title || item.name || itemId}"!`);
+                return;
+            }
+
+            participants.push({
+                id: user.id, first_name: user.first_name,
+                last_name: user.last_name || '', username: user.username || '',
+                name: userName, date: Date.now(),
+            });
+
+            item.participants = participants;
+            this.db.gun.get(appName).get(targetHolonId).get(lens).get(itemId).put(JSON.stringify(item));
+
+            const title = item.title || item.name || itemId;
+            await ctx.reply(
+                `✅ You joined "${title}"!\n\n👥 ${participants.length} participant${participants.length !== 1 ? 's' : ''}`,
+                { reply_markup: { inline_keyboard: [
+                    [{ text: '📋 View', url: `https://dao.holons.io/explorer/holon.html?id=${targetHolonId}&lens=${lens}` }],
+                ]}}
+            );
+            console.log(`[Deeplink] ${userName} (${user.id}) joined ${lens}/${itemId} in ${targetHolonId}`);
+        } catch (error) {
+            console.error('[Deeplink] Error:', error);
+            await ctx.reply('❌ Something went wrong. Please try again.');
+        }
     }
 }

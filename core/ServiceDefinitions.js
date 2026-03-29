@@ -6,7 +6,7 @@ import i18next from 'i18next';
 
 // Import all modules
 import Server from '../src/Server.js';
-import createHoloSphere, { createKeyManager } from '../src/createHoloSphere.js';
+// createHoloSphere removed — using HoloSphere 1.3 directly in service factory
 import UI from '../src/UI.js';
 import H3 from '../src/H3.js';
 import Holons from '../src/Holons.js';
@@ -134,36 +134,38 @@ export const serviceDefinitions = {
     dependencies: ['config', 'logger'],
   },
 
-  // KeyManager - Per-holon key management for cross-author federation
+  // KeyManager - stub for compatibility (no per-holon keys, just returns master)
   keyManager: {
     factory: async ({ config }) => {
       const appname = config.isDevelopment ? 'HolonsDebug' : 'Holons';
-      const keyManager = createKeyManager(appname);
-
-      log.debug('KeyManager initialized', { appname });
+      const { HoloSphere } = await import('holosphere');
+      const holosphere = new HoloSphere(appname, false, null, {
+        peers: ['https://gun.holons.io/gun'],
+      });
+      // Stub keyManager interface
+      const keyManager = {
+        masterHolosphere: holosphere,
+        getHolosphere: async () => holosphere,
+        appName: appname,
+      };
+      log.debug('Database initialized (GunDB via HoloSphere 1.3)', { appname });
       return keyManager;
     },
     singleton: true,
     dependencies: ['config', 'logger'],
   },
 
-  // Database (thin wrapper around HoloSphere - uses master key for backward compatibility)
+  // Database (HoloSphere instance for GunDB access)
   database: {
     factory: async ({ keyManager }) => {
-      // Return the master holosphere for backward compatibility
-      // Modules can still use this.db.put(), this.db.get(), etc.
       const holosphere = keyManager.masterHolosphere;
-
-      // Add keyManager reference so modules can access per-holon features
       holosphere.keyManager = keyManager;
+      holosphere.holosphere = holosphere; // self-reference for compat
 
-      // Helper to get per-holon holosphere for holon-specific data
-      // Usage: const hs = await this.db.forHolon(holonId);
-      holosphere.forHolon = async (holonId) => {
-        return keyManager.getHolosphere(holonId);
-      };
+      // forHolon just returns the same instance (no per-holon keys)
+      holosphere.forHolon = async () => holosphere;
 
-      log.debug('Database service initialized (using master HoloSphere)');
+      log.debug('Database service initialized (HoloSphere 1.3 + GunDB)');
       return holosphere;
     },
     singleton: true,
