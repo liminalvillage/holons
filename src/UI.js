@@ -354,8 +354,8 @@ class UI {
 
     const path = './images/rank' + holonId + '.png'
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId))
-    await this.screenshotHtml(html, path, '.status-table-container')
-    return path
+    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container')
+    return _ssResult !== null ? path : null
   }
   async bulletinboard(ctx) {
     if (!this.db) return
@@ -1021,8 +1021,8 @@ class UI {
     this.themeCache.set(holonId, cachedTheme);
     
     const html = await this.generateHtml(element, cachedTheme);
-    await this.screenshotHtml(html, path, '.quest-card-container');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.quest-card-container');
+    return _ssResult !== null ? path : null;
   }
 
   // Helper function to convert picture file_id to HTML with embedded base64
@@ -1120,8 +1120,8 @@ class UI {
     `;
     
     const html = await this.generateHtml(element, simpleCss);
-    await this.screenshotHtml(html, path, '.simple-quest-card');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.simple-quest-card');
+    return _ssResult !== null ? path : null;
   }
 
   async getBulletinTable(users, quests, holonId) {
@@ -1253,8 +1253,8 @@ class UI {
 
     const path = './images/offersneeds' + holonId + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    await this.screenshotHtml(html, path, '.status-table-container');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    return _ssResult !== null ? path : null;
   }
 
   async getCreditTable(creditMatrix, userArray, holonId) {
@@ -1295,8 +1295,8 @@ class UI {
   
     const path = './images/creditMatrix' + holonId + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    await this.screenshotHtml(html, path, '.status-table-container');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    return _ssResult !== null ? path : null;
   }
 
   async getQuestsTable(quests, holonId, ctx) {
@@ -1382,8 +1382,8 @@ class UI {
 
     const path = './images/quests' + holonId + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    await this.screenshotHtml(html, path, '.quest-list-container');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.quest-list-container');
+    return _ssResult !== null ? path : null;
   }
 
   async getRolesTable(roles, holonId) {
@@ -1440,8 +1440,8 @@ class UI {
 
     const path = './images/roles' + holonId + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    await this.screenshotHtml(html, path, '.status-table-container');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    return _ssResult !== null ? path : null;
   }
 
 
@@ -1498,8 +1498,8 @@ class UI {
 
     const path = './images/requests' + holonId + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    await this.screenshotHtml(html, path, '.status-table-container');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    return _ssResult !== null ? path : null;
   }
 
   async getOffersTable(offers, holonId) {
@@ -1555,8 +1555,8 @@ class UI {
 
     const path = './images/offers' + holonId + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
-    await this.screenshotHtml(html, path, '.status-table-container');
-    return path;
+    const _ssResult = await this.screenshotHtml(html, path, '.status-table-container');
+    return _ssResult !== null ? path : null;
   }
 
   async generateHtml(element, theme) {
@@ -1975,8 +1975,8 @@ class UI {
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await this.screenshotHtml(html, path, '.chart-container');
-        return path;
+        const _ssResult = await this.screenshotHtml(html, path, '.chart-container');
+        return _ssResult !== null ? path : null;
       } catch (error) {
         lastError = error;
         console.error(`Screenshot attempt ${attempt}/${maxRetries} failed:`, error.message);
