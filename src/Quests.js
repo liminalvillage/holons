@@ -951,8 +951,12 @@ export default class Quests {
         const updatedMessages = new Set();
 
         // 1. Handle personal hologram for interacting user (before save, modifies quest.activeHolograms)
-        // Only create personal hologram if the user is interacting from a group chat (not their own private chat)
-        if (interactingUser && questHolon !== interactingUser.id) {
+        // Only create personal hologram if the user is participating from a DIFFERENT holon
+        // (e.g. clicked on a federated copy). Skip if they're in the quest's home holon.
+        const clickedChatId = String(ctx.callbackQuery?.message?.chat?.id || '');
+        const questHolonStr = String(questHolon);
+        const userIdStr = String(interactingUser?.id || '');
+        if (interactingUser && clickedChatId !== questHolonStr && userIdStr !== questHolonStr) {
             await this.personalHologram(interactingUser.id, quest);
             const hologramResult = await this.ensureTelegramHologramMessage(ctx, quest, interactingUser.id, language);
             if (hologramResult) {
