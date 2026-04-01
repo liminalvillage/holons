@@ -367,8 +367,16 @@ class UI {
     const threadId = isTopic ? ctx.message.message_thread_id : null;
     
       // Wait for users and quests to be retrieved using holosphere.getAll with holograms
+      // Retry if empty — GunDB may not have synced from peers yet after restart
     let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
     let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
+    if (!Array.isArray(quests) || quests.length === 0) {
+      await new Promise(r => setTimeout(r, 3000));
+      quests = await this.db.holosphere.getAll(holonId.toString(), 'quests');
+      if (!Array.isArray(users) || users.length === 0) {
+        users = await this.db.holosphere.getAll(holonId.toString(), 'users');
+      }
+    }
 
     // If in a topic, filter quests by message_thread_id
     if (isTopic && threadId) {
@@ -546,7 +554,12 @@ class UI {
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
       // Wait for all quests to be retrieved using holosphere.getAll with holograms
+      // Retry if empty — GunDB may not have synced from peers yet after restart
     let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
+      if (!Array.isArray(quests) || quests.length === 0) {
+        await new Promise(r => setTimeout(r, 3000));
+        quests = await this.db.holosphere.getAll(holonId.toString(), 'quests');
+      }
     
       // Ensure we have a valid array before filtering
       if (!Array.isArray(quests)) {

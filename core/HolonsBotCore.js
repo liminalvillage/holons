@@ -82,6 +82,19 @@ class HolonsBot {
       // Setup process event handlers
       this.setupProcessHandlers();
 
+      // Warm up GunDB cache — subscribe to known data so peer sync starts early
+      try {
+        const db = await this.container.get('database');
+        const gun = db.gun || db.getGun?.();
+        if (gun) {
+          // Touch the top-level app node to trigger sync from peers
+          gun.get(db.appname || 'Holons').once(() => {});
+          log.info('GunDB warmup: subscribed to peer data');
+        }
+      } catch (e) {
+        log.warn('GunDB warmup failed (non-fatal)', { error: e.message });
+      }
+
       // Launch the Telegram bot now that everything is initialized
       await this.launchBot();
 
