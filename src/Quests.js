@@ -2449,8 +2449,8 @@ export default class Quests {
                 } else {
                     newHologramMsg = await ctx.reply(messageText, markup);
                 }
-            } else if (questToView.picture) {
-                // Text mode with picture: show original photo with caption
+            } else if (questToView.picture && (questToView.picture.startsWith('http') || questToView.picture.startsWith('AgAC'))) {
+                // Text mode with picture: show original photo with caption (only if valid URL or file_id)
                 newHologramMsg = await ctx.replyWithPhoto(questToView.picture, {
                     caption: this.truncateCaption(messageText),
                     ...markup
