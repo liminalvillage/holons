@@ -20,6 +20,7 @@
   "author": "Roberto Valenti",
   "license": "GPL-3.0-only",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.7.8",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
