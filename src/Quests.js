@@ -2950,32 +2950,15 @@ export default class Quests {
     }
 
     async getCachedQuestImage(quest, holonId, isHologram = false) {
-        // Create a cache key that includes quest data hash for invalidation
-        const questDataHash = this.getQuestDataHash(quest);
-        const questHolon = Quests.getQuestHolon(quest);
-        const cacheKey = `${quest.id}_${questHolon}_${isHologram}_${questDataHash}`;
-
-        if (this.questImageCache.has(cacheKey)) {
-            return this.questImageCache.get(cacheKey);
-        }
+        // Always regenerate — cache causes stale images on toggle actions
+        // The Puppeteer page reuse already provides speed gains
 
         if (!this.ui?.getQuestImage) {
             return null;
         }
 
         try {
-            // Clear old cache entries for this quest (with different hashes)
-            this.invalidateQuestImageCache(quest.id, questHolon, isHologram);
-
             const imagePath = await this.ui.getQuestImage(quest, holonId, isHologram);
-            this.questImageCache.set(cacheKey, imagePath);
-
-            // Cleanup old cache entries
-            if (this.questImageCache.size > 100) {
-                const firstKey = this.questImageCache.keys().next().value;
-                this.questImageCache.delete(firstKey);
-            }
-
             return imagePath;
         } catch (error) {
             console.error('Error generating quest image:', error);

@@ -151,7 +151,7 @@ class UI {
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--no-first-run',
-        '--disable-images', // Skip loading images for faster performance
+        // '--disable-images', // Disabled: breaks emoji rendering
         // Emoji and font rendering support
         '--font-render-hinting=none',
         '--disable-font-subpixel-positioning',
@@ -591,7 +591,9 @@ class UI {
         const title = typeof quest.title === 'string' ? quest.title.substring(0, 50) : 'Untitled Quest';
         // Get the source holon: prefer _hologram.sourceHolon for resolved holograms, then quest.holon/chat, fallback to holonId
         const sourceHolon = quest._hologram?.sourceHolon || getQuestHolon(quest) || holonId;
-        return [Markup.button.callback(title, 'view_original_quest_' + sourceHolon + '_' + quest.id)];
+        const cbData = 'view_original_quest_' + sourceHolon + '_' + quest.id;
+        if (cbData.length > 64) return [Markup.button.callback(title, 'view_original_quest_' + sourceHolon + '_' + String(quest.id).slice(0, 64 - ('view_original_quest_' + sourceHolon + '_').length))];
+        return [Markup.button.callback(title, cbData)];
       });
 
       inline_keyboard_buttons.push([
@@ -1602,7 +1604,13 @@ class UI {
         browserAvailable = true;
       }
 
-      page = await browser.newPage();
+      // Reuse a cached page for quest cards to avoid newPage() overhead
+      if (onElement.includes('quest-card') && this._cachedPage && !this._cachedPage.isClosed()) {
+        page = this._cachedPage;
+      } else {
+        page = await browser.newPage();
+        if (onElement.includes('quest-card')) this._cachedPage = page;
+      }
       
       // DYNAMIC VIEWPORT: Use high DPI for better image quality
       let initialViewport = { width: 1200, height: 800, deviceScaleFactor: 2 };
@@ -1616,9 +1624,9 @@ class UI {
         initialViewport = { width: 1400, height: 1200, deviceScaleFactor: 2 };
       }
 
-      // For quest cards with images, ensure high quality
+      // For quest cards - use 1x scale for speed on low-RAM servers
       if (onElement.includes('quest-card')) {
-        initialViewport = { width: 1200, height: 800, deviceScaleFactor: 2 };
+        initialViewport = { width: 800, height: 600, deviceScaleFactor: 1 };
       }
 
       await page.setDefaultTimeout(5000); // Increased timeout for larger content
@@ -1741,8 +1749,8 @@ class UI {
       
       throw error;
     } finally {
-      // Quick page cleanup
-      if (page) {
+      // Quick page cleanup — skip closing if it's the cached quest card page
+      if (page && page !== this._cachedPage) {
         try {
           await page.close();
         } catch (closeError) {

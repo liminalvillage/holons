@@ -384,7 +384,39 @@ async function main() {
     const port = parseInt(process.argv[portArg + 1]);
     let sseTransport;
     
+    const TOOL_NAMES = [
+      'list_holons', 'get_lens', 'get_item', 'put_item', 'delete_item',
+      'get_holon_info', 'get_federation', 'search_holon', 'create_quest', 'get_global'
+    ];
+
+    // Direct REST tool caller — dispatches to toolHandlers map
+    async function callToolREST(toolName, args) {
+      const handler = toolHandlers[toolName];
+      if (!handler) throw new Error(`Unknown tool: ${toolName}. Available: ${TOOL_NAMES.join(', ')}`);
+      return await handler(args);
+    }
+
     const httpServer = http.createServer(async (req, res) => {
+      // REST endpoint: POST /tool/<toolName> with JSON body as arguments
+      const toolMatch = req.method === 'POST' && req.url?.match(/^\/tool\/([a-z_]+)$/);
+      if (toolMatch) {
+        const toolName = toolMatch[1];
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', async () => {
+          try {
+            const args = JSON.parse(body || '{}');
+            const result = await callToolREST(toolName, args);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+          }
+        });
+        return;
+      }
+
       if (req.method === 'GET' && req.url === '/sse') {
         sseTransport = new SSEServerTransport('/messages', res);
         await server.connect(sseTransport);
@@ -399,12 +431,15 @@ async function main() {
           res.writeHead(400);
           res.end('No SSE connection');
         }
+      } else if (req.method === 'GET' && req.url === '/tools') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ tools: TOOL_NAMES }));
       } else {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           name: 'holonsbot-mcp',
           version: '1.0.0',
-          description: 'HolonsBot MCP Server — connect via SSE at /sse'
+          description: 'HolonsBot MCP Server — /sse for MCP protocol, POST /tool/<name> for REST'
         }));
       }
     });
