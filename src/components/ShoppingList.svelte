@@ -2,45 +2,28 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
-    import { goto } from "$app/navigation";
     import type { HoloSphere } from "holosphere";
     import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import TitleBar from "./shared/TitleBar.svelte";
     import { ShoppingCart, Plus } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
-    interface ChecklistItem {
-        text: string;
-        checked: boolean;
-    }
-
-    interface Checklist {
+    interface ShoppingItem {
         id: string;
-        items: ChecklistItem[];
-        creator?: string;
-        created?: Date;
-    }
-
-    // Display format for shopping items (derived from checklist items)
-    interface ShoppingDisplayItem {
         text: string;
         checked: boolean;
-        index: number;
+        [key: string]: any;
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
     let holonID: string = '';
-    let shoppingChecklist: Checklist | null = null;
-    let shoppingChecklistId: string | null = null;
-    let checklistsUnsubscribe: (() => void) | undefined;
+    let store: Record<string, ShoppingItem> = {};
+    let unsubscribeFn: (() => void) | undefined;
 
-    // Derived shopping items from checklist
-    $: shoppingItems = shoppingChecklist?.items?.map((item, index) => ({
-        text: item.text,
-        checked: item.checked,
-        index
-    })) || [];
+    $: shoppingItems = Object.entries(store)
+        .filter(([_, item]) => item && item.id && !item._deleted)
+        .map(([key, item]) => ({ ...item, _key: key }));
 
     $: pendingItems = shoppingItems.filter(item => !item.checked);
     $: completedItems = shoppingItems.filter(item => item.checked);
@@ -48,75 +31,68 @@
     let showInput = false;
     let inputText = "";
 
-    const SHOPPING_KEYWORDS = ['shopping', 'shopping list', 'groceries', 'grocery'];
-
-    function isShoppingChecklist(checklistId: string): boolean {
-        return SHOPPING_KEYWORDS.some(keyword => checklistId.toLowerCase().includes(keyword));
-    }
-
     async function fetchData() {
         if (!holosphere || !holonID) return;
 
-        // Clean up previous subscription
-        if (checklistsUnsubscribe) {
-            checklistsUnsubscribe();
-            checklistsUnsubscribe = undefined;
+        if (unsubscribeFn) {
+            unsubscribeFn();
+            unsubscribeFn = undefined;
         }
 
+        store = {};
+
         try {
-            // Fetch all checklists and find the shopping one
-            // Note: getAll returns an array of checklist objects, not a Record
-            const allChecklists = await holosphere.getAll(holonID, "checklists") as Checklist[];
+            // Load initial data
+            const initialData = await holosphere.getAll(holonID, "shopping");
 
-            // Find a checklist with shopping keywords (check checklist.id property)
-            let foundChecklist: Checklist | null = null;
-            let foundId: string | null = null;
-
-            if (allChecklists && Array.isArray(allChecklists)) {
-                for (const checklist of allChecklists) {
-                    if (checklist && checklist.id && isShoppingChecklist(checklist.id)) {
-                        foundChecklist = checklist;
-                        foundId = checklist.id;
-                        break;
+            const newStore: Record<string, ShoppingItem> = {};
+            if (Array.isArray(initialData)) {
+                initialData.forEach((item: any) => {
+                    if (item && item.id && !item._deleted) {
+                        newStore[item.id] = item;
                     }
-                }
+                });
+            } else if (typeof initialData === 'object' && initialData !== null) {
+                Object.entries(initialData).forEach(([key, item]: [string, any]) => {
+                    if (item && item.id && !item._deleted) {
+                        newStore[key] = item;
+                    }
+                });
             }
+            store = newStore;
 
-            shoppingChecklist = foundChecklist;
-            shoppingChecklistId = foundId;
-
-            // Set up subscription for real-time updates
+            // Subscribe for real-time updates
             const subscription = await holosphere.subscribe(
                 holonID,
-                "checklists",
-                (newItem: Checklist | null, key?: string) => {
-                    if (key && isShoppingChecklist(key)) {
-                        if (newItem) {
-                            shoppingChecklist = newItem;
-                            shoppingChecklistId = key;
-                        } else {
-                            // Checklist was deleted
-                            shoppingChecklist = null;
-                            shoppingChecklistId = null;
-                        }
+                "shopping",
+                (newItem: ShoppingItem | null, key?: string) => {
+                    if (!key) return;
+                    if (newItem && newItem.id && !newItem._deleted) {
+                        store[key] = newItem;
+                        store = store;
+                    } else {
+                        delete store[key];
+                        store = store;
                     }
                 }
             );
 
-            checklistsUnsubscribe = subscription.unsubscribe;
-
+            if (typeof subscription === 'function') {
+                unsubscribeFn = subscription;
+            } else if (subscription && typeof subscription === 'object' && 'unsubscribe' in subscription) {
+                unsubscribeFn = (subscription as any).unsubscribe;
+            }
         } catch (error) {
-            console.error('Error fetching shopping checklist:', error);
+            console.error('Error fetching shopping list:', error);
         }
     }
 
     onMount(() => {
         return () => {
-            if (checklistsUnsubscribe) checklistsUnsubscribe();
+            if (unsubscribeFn) unsubscribeFn();
         };
     });
 
-    // Single reactive block: when page ID changes and holosphere is ready, fetch data
     let currentHolonId: string | null = null;
     $: {
         const newId = $page.params.id;
@@ -126,23 +102,17 @@
             holonID = newId;
             ID.set(newId);
             fetchData();
-            // Resolve holon name reactively
             resolveName(newId);
         }
     }
 
-    async function toggleItemStatus(itemIndex: number): Promise<void> {
-        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
+    async function toggleItemStatus(item: ShoppingItem & { _key: string }): Promise<void> {
+        if (!holonID) return;
 
         try {
-            const updatedChecklist = { ...shoppingChecklist };
-            updatedChecklist.items = [...updatedChecklist.items];
-            updatedChecklist.items[itemIndex] = {
-                ...updatedChecklist.items[itemIndex],
-                checked: !updatedChecklist.items[itemIndex].checked
-            };
-
-            await holosphere.put(holonID, "checklists", updatedChecklist);
+            const updated = { ...item, checked: !item.checked };
+            delete (updated as any)._key;
+            await holosphere.put(holonID, "shopping", updated);
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -161,28 +131,13 @@
         if (!inputText.trim() || !holonID) return;
 
         try {
-            if (shoppingChecklist && shoppingChecklistId) {
-                // Add to existing shopping checklist
-                const updatedChecklist = { ...shoppingChecklist };
-                updatedChecklist.items = [
-                    ...updatedChecklist.items,
-                    { text: inputText.trim(), checked: false }
-                ];
+            const newItem: ShoppingItem = {
+                id: Date.now().toString(),
+                text: inputText.trim(),
+                checked: false
+            };
 
-                await holosphere.put(holonID, "checklists", updatedChecklist);
-            } else {
-                // Create new shopping checklist
-                const newChecklist: Checklist = {
-                    id: "Shopping List",
-                    items: [{ text: inputText.trim(), checked: false }],
-                    creator: "Dashboard User",
-                    created: new Date()
-                };
-
-                await holosphere.put(holonID, "checklists", newChecklist);
-                shoppingChecklistId = "Shopping List";
-            }
-
+            await holosphere.put(holonID, "shopping", newItem);
             showInput = false;
             inputText = "";
         } catch (error: any) {
@@ -194,14 +149,11 @@
         }
     }
 
-    async function removeItem(itemIndex: number): Promise<void> {
-        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
+    async function removeItem(item: ShoppingItem & { _key: string }): Promise<void> {
+        if (!holonID) return;
 
         try {
-            const updatedChecklist = { ...shoppingChecklist };
-            updatedChecklist.items = updatedChecklist.items.filter((_, index) => index !== itemIndex);
-
-            await holosphere.put(holonID, "checklists", updatedChecklist);
+            await holosphere.delete(holonID, "shopping", item.id);
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -212,16 +164,14 @@
     }
 
     async function removeChecked(): Promise<void> {
-        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
-
-        const checkedCount = shoppingChecklist.items.filter(item => item.checked).length;
-        if (checkedCount === 0) return;
+        if (!holonID) return;
+        const checked = shoppingItems.filter(item => item.checked);
+        if (checked.length === 0) return;
 
         try {
-            const updatedChecklist = { ...shoppingChecklist };
-            updatedChecklist.items = updatedChecklist.items.filter(item => !item.checked);
-
-            await holosphere.put(holonID, "checklists", updatedChecklist);
+            for (const item of checked) {
+                await holosphere.delete(holonID, "shopping", item.id);
+            }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -232,16 +182,16 @@
     }
 
     async function clearAll(): Promise<void> {
-        if (!shoppingChecklist || !shoppingChecklistId || !holonID) return;
+        if (!holonID) return;
+        const checked = shoppingItems.filter(item => item.checked);
+        if (checked.length === 0) return;
 
         try {
-            const updatedChecklist = { ...shoppingChecklist };
-            updatedChecklist.items = updatedChecklist.items.map(item => ({
-                ...item,
-                checked: false
-            }));
-
-            await holosphere.put(holonID, "checklists", updatedChecklist);
+            for (const item of checked) {
+                const updated = { ...item, checked: false };
+                delete (updated as any)._key;
+                await holosphere.put(holonID, "shopping", updated);
+            }
         } catch (error: any) {
             if (error?.name === 'AuthorizationError') {
                 notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -318,7 +268,7 @@
 
             <!-- Shopping Items -->
             <div class="space-y-3">
-                {#each shoppingItems as item (item.index)}
+                {#each shoppingItems as item (item.id)}
                     <div class="w-full">
                         <div
                             class="p-4 rounded-xl transition-all duration-300 border hover:shadow-md cursor-pointer transform hover:scale-[1.002]"
@@ -329,8 +279,8 @@
                             class:border-transparent={!item.checked}
                             class:hover:bg-gray-600={!item.checked}
                             class:hover:border-gray-500={!item.checked}
-                            on:click={() => toggleItemStatus(item.index)}
-                            on:keydown={(e) => e.key === 'Enter' && toggleItemStatus(item.index)}
+                            on:click={() => toggleItemStatus(item)}
+                            on:keydown={(e) => e.key === 'Enter' && toggleItemStatus(item)}
                             role="button"
                             tabindex="0"
                             aria-label={`Toggle ${item.text} - ${item.checked ? 'completed' : 'pending'}`}
@@ -361,7 +311,7 @@
                                         />
                                     </div>
                                     <button
-                                        on:click|stopPropagation={() => removeItem(item.index)}
+                                        on:click|stopPropagation={() => removeItem(item)}
                                         class="text-gray-300 hover:text-red-400 hover:bg-red-500/20 p-2 rounded-lg transition-all duration-200 bg-gray-600/50"
                                         aria-label="Remove item"
                                         title="Delete item"

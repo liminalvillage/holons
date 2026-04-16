@@ -13,7 +13,7 @@ export async function subscribeWithFederationSupport(
   lens: string,
   callback: (item: any, key?: string) => void
 ): Promise<() => void> {
-  const sub = holosphere.subscribe(targetHolonId, lens, callback) as { unsubscribe?: () => void } | (() => void);
+  const sub = await holosphere.subscribe(targetHolonId, lens, callback) as { unsubscribe?: () => void } | (() => void);
 
   return () => {
     if (sub && typeof sub === 'object' && 'unsubscribe' in sub && sub.unsubscribe) {

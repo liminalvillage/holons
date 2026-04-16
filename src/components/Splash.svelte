@@ -118,8 +118,8 @@
 		if (state.privateKey) {
 			// Returning user - key exists, proceed to app
 			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' }), 300);
-		} else if (telegramUser && isTelegramWebApp) {
-			// Telegram Mini App user - check for existing mapping and auto-login
+		} else if (telegramUser) {
+			// Telegram user (Mini App or widget) - auto-login seamlessly
 			isProcessing = true;
 			try {
 				existingTelegramMapping = await checkTelegramMapping(telegramUser.id);
@@ -127,11 +127,11 @@
 			} catch (err) {
 				console.error('Error checking telegram mapping:', err);
 			}
-			isProcessing = false;
 
 			if (existingTelegramMapping) {
-				// User has existing mapping - skip splash and navigate directly to their holon
-				console.log('Telegram Mini App: Auto-login to existing holon:', existingTelegramMapping.holonName);
+				// User has existing mapping - auto-login to their holon
+				console.log('Telegram: Auto-login to existing holon:', existingTelegramMapping.holonName);
+				isProcessing = false;
 				setTimeout(() => {
 					dispatch('authenticated', {
 						publicKey: existingTelegramMapping!.publicKey,
@@ -141,26 +141,32 @@
 					});
 				}, 300);
 			} else {
-				// New Telegram user - show telegram choice screen to create identity
-				setTimeout(() => {
-					view = 'telegram-choice';
-				}, 500);
-			}
-		} else if (telegramUser) {
-			// Telegram user via widget (not in Mini App) - show telegram choice screen
-			isProcessing = true;
-			try {
-				existingTelegramMapping = await checkTelegramMapping(telegramUser.id);
-				console.log('Existing mapping found:', existingTelegramMapping);
-			} catch (err) {
-				console.error('Error checking telegram mapping:', err);
-			}
-			isProcessing = false;
+				// New Telegram user - auto-generate key silently and proceed
+				console.log('Telegram: New user, auto-generating identity for', telegramUser.first_name);
+				try {
+					const name = telegramUser.username
+						? `@${telegramUser.username}'s Holon`
+						: `${telegramUser.first_name}'s Holon`;
 
-			// Show telegram choice screen - let user create or restore
-			setTimeout(() => {
-				view = 'telegram-choice';
-			}, 500);
+					const result = await nostrStore.generateKey();
+					if (result) {
+						isProcessing = false;
+						dispatch('authenticated', {
+							publicKey: result.publicKey,
+							holonName: name,
+							telegramUserId: telegramUser.id,
+							mode: 'private'
+						});
+					} else {
+						isProcessing = false;
+						view = 'welcome';
+					}
+				} catch (err) {
+					console.error('Telegram auto-create failed:', err);
+					isProcessing = false;
+					view = 'welcome';
+				}
+			}
 		} else {
 			// No key, no telegram - show welcome screen
 			setTimeout(() => {
