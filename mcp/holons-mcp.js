@@ -193,6 +193,145 @@ defineTool('library_return',
   async (args) => botCall('/library/return', args)
 );
 
+// ── Roles ──
+
+defineTool('list_roles',
+  'List all roles in a holon.',
+  { chatId: z.string().describe('Telegram chat ID') },
+  async (args) => botCall('/roles', args)
+);
+
+defineTool('add_role',
+  'Add a new role to a holon.',
+  {
+    chatId: z.string().describe('Telegram chat ID'),
+    name: z.string().describe('Role name'),
+    description: z.string().optional().describe('Role description'),
+  },
+  async (args) => botCall('/roles/add', args)
+);
+
+defineTool('remove_role',
+  'Remove a role from a holon.',
+  {
+    chatId: z.string().describe('Telegram chat ID'),
+    roleId: z.string().describe('Role ID to remove'),
+  },
+  async (args) => botCall('/roles/remove', args)
+);
+
+// ── Checklists ──
+
+defineTool('list_checklists',
+  'List all checklists in a holon.',
+  { chatId: z.string().describe('Telegram chat ID') },
+  async (args) => botCall('/checklists', args)
+);
+
+defineTool('create_checklist',
+  'Create a new checklist with optional items.',
+  {
+    chatId: z.string().describe('Telegram chat ID'),
+    name: z.string().describe('Checklist name'),
+    items: z.array(z.string()).optional().describe('Initial items'),
+  },
+  async (args) => botCall('/checklists/create', args)
+);
+
+defineTool('toggle_checklist_item',
+  'Toggle a checklist item checked/unchecked.',
+  {
+    chatId: z.string().describe('Telegram chat ID'),
+    checklistId: z.string().describe('Checklist ID'),
+    itemId: z.string().describe('Item ID to toggle'),
+  },
+  async (args) => botCall('/checklists/toggle', args)
+);
+
+// ── Leaderboard & Stats ──
+
+defineTool('get_leaderboard',
+  'Get appreciation/participation scores for a holon.',
+  { chatId: z.string().describe('Telegram chat ID') },
+  async (args) => botCall('/leaderboard', args)
+);
+
+// ── Settings ──
+
+defineTool('get_settings',
+  'Get holon settings (name, language, theme, purpose, values, domains, currencies).',
+  { chatId: z.string().describe('Telegram chat ID') },
+  async (args) => botCall('/settings', args)
+);
+
+defineTool('update_settings',
+  'Update holon settings. Only provided fields are changed.',
+  {
+    chatId: z.string().describe('Telegram chat ID'),
+    name: z.string().optional().describe('Holon name'),
+    language: z.string().optional().describe('Language code (en, it, es, fr, de, ru)'),
+    theme: z.string().optional().describe('Theme (light, dark)'),
+    purpose: z.string().optional().describe('Holon purpose'),
+    values: z.array(z.string()).optional().describe('Core values'),
+    domains: z.array(z.string()).optional().describe('Activity domains'),
+    currencies: z.array(z.string()).optional().describe('Accepted currencies (e.g. ["hour", "euro"])'),
+  },
+  async (args) => botCall('/settings/update', args)
+);
+
+// ── Federation ──
+
+defineTool('get_federation_links',
+  'Get federation links for a holon (which holons it is connected to).',
+  { chatId: z.string().describe('Telegram chat ID') },
+  async (args) => botCall('/federation', args)
+);
+
+defineTool('federate',
+  'Create a bidirectional federation link between two holons.',
+  {
+    chatId: z.string().describe('Source holon ID'),
+    targetId: z.string().describe('Target holon ID to federate with'),
+  },
+  async (args) => botCall('/federation/add', args)
+);
+
+defineTool('unfederate',
+  'Remove a federation link from a holon.',
+  {
+    chatId: z.string().describe('Source holon ID'),
+    targetId: z.string().describe('Target holon ID to unfederate'),
+  },
+  async (args) => botCall('/federation/remove', args)
+);
+
+// ── Members ──
+
+defineTool('list_members',
+  'List all members of a holon.',
+  { chatId: z.string().describe('Telegram chat ID') },
+  async (args) => botCall('/members', args)
+);
+
+// ── Ledger / Balances ──
+
+defineTool('get_ledger',
+  'Get expense balances for a holon — who owes whom.',
+  { chatId: z.string().describe('Telegram chat ID') },
+  async (args) => botCall('/ledger', args)
+);
+
+// ── Agenda / Scheduling ──
+
+defineTool('get_agenda',
+  'Get upcoming scheduled quests and events for a holon.',
+  {
+    chatId: z.string().describe('Telegram chat ID'),
+    days: z.number().optional().describe('Look-ahead days (default 7)'),
+  },
+  async (args) => botCall('/agenda', args)
+);
+
 defineTool('send_message',
   'Send a plain text message to a chat via the bot.',
   {

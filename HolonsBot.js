@@ -263,6 +263,212 @@ const apiServer = http.createServer(async (req, res) => {
       res.writeHead(200); res.end(JSON.stringify({ success: true, item: libItem })); return;
     }
 
+    // POST /roles — list roles in a holon
+    if (req.method === 'POST' && req.url === '/roles') {
+      const { chatId } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const roles = await db.getAll(String(chatId), 'roles');
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, roles: Array.isArray(roles) ? roles : [] })); return;
+    }
+
+    // POST /roles/add — add a role
+    if (req.method === 'POST' && req.url === '/roles/add') {
+      const { chatId, name, description, checklist } = await getBody();
+      if (!chatId || !name) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId and name required' })); return; }
+      const db = await bot.container.get('database');
+      const telebot = await bot.container.get('telebot');
+      const holon = String(chatId);
+      const role = { id: `r_${Date.now()}`, name, description: description || '', members: [], checklist: checklist || [] };
+      await db.put(holon, 'roles', role);
+      await telebot.telegram.sendMessage(chatId, `👤 Role added: ${name}${description ? '\n📝 ' + description : ''}`);
+      res.writeHead(200); res.end(JSON.stringify({ success: true, role })); return;
+    }
+
+    // POST /roles/remove — remove a role
+    if (req.method === 'POST' && req.url === '/roles/remove') {
+      const { chatId, roleId } = await getBody();
+      if (!chatId || !roleId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId and roleId required' })); return; }
+      const db = await bot.container.get('database');
+      await db.delete(String(chatId), 'roles', roleId);
+      res.writeHead(200); res.end(JSON.stringify({ success: true, deleted: roleId })); return;
+    }
+
+    // POST /checklists — list checklists
+    if (req.method === 'POST' && req.url === '/checklists') {
+      const { chatId } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const lists = await db.getAll(String(chatId), 'checklists');
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, checklists: Array.isArray(lists) ? lists : [] })); return;
+    }
+
+    // POST /checklists/create — create a checklist
+    if (req.method === 'POST' && req.url === '/checklists/create') {
+      const { chatId, name, items } = await getBody();
+      if (!chatId || !name) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId and name required' })); return; }
+      const db = await bot.container.get('database');
+      const telebot = await bot.container.get('telebot');
+      const checklist = { id: `cl_${Date.now()}`, name, items: (items || []).map((t, i) => ({ id: `i_${i}`, text: t, checked: false })) };
+      await db.put(String(chatId), 'checklists', checklist);
+      await telebot.telegram.sendMessage(chatId, `📋 Checklist created: ${name}\n${checklist.items.map(i => `☐ ${i.text}`).join('\n') || '(empty)'}`);
+      res.writeHead(200); res.end(JSON.stringify({ success: true, checklist })); return;
+    }
+
+    // POST /checklists/toggle — toggle a checklist item
+    if (req.method === 'POST' && req.url === '/checklists/toggle') {
+      const { chatId, checklistId, itemId } = await getBody();
+      if (!chatId || !checklistId || !itemId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId, checklistId, itemId required' })); return; }
+      const db = await bot.container.get('database');
+      const holon = String(chatId);
+      const cl = await db.get(holon, 'checklists', checklistId);
+      if (!cl) { res.writeHead(404); res.end(JSON.stringify({ error: 'Checklist not found' })); return; }
+      const item = cl.items?.find(i => i.id === itemId);
+      if (item) item.checked = !item.checked;
+      await db.put(holon, 'checklists', cl);
+      res.writeHead(200); res.end(JSON.stringify({ success: true, checklist: cl })); return;
+    }
+
+    // POST /leaderboard — get appreciation scores
+    if (req.method === 'POST' && req.url === '/leaderboard') {
+      const { chatId } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const holon = String(chatId);
+      const quests = await db.getAll(holon, 'quests');
+      const scores = {};
+      if (Array.isArray(quests)) {
+        for (const q of quests) {
+          if (q.appreciation) for (const u of q.appreciation) { scores[u.first_name || u.id] = (scores[u.first_name || u.id] || 0) + 1; }
+          if (q.participants) for (const u of q.participants) { scores[u.first_name || u.id] = (scores[u.first_name || u.id] || 0) + 1; }
+        }
+      }
+      const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).map(([name, score]) => ({ name, score }));
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, leaderboard: sorted })); return;
+    }
+
+    // POST /settings — get holon settings
+    if (req.method === 'POST' && req.url === '/settings') {
+      const { chatId } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const settings = await bot.container.get('settings');
+      const s = await settings.getSettings(String(chatId));
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, settings: s })); return;
+    }
+
+    // POST /settings/update — update holon settings
+    if (req.method === 'POST' && req.url === '/settings/update') {
+      const { chatId, name, language, theme, purpose, values, domains, currencies } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const holon = String(chatId);
+      const current = await db.getAll(holon, 'settings');
+      const s = (Array.isArray(current) && current[0]) ? current[0] : { id: chatId, version: 0.1 };
+      if (name !== undefined) s.name = name;
+      if (language !== undefined) s.language = language;
+      if (theme !== undefined) s.theme = theme;
+      if (purpose !== undefined) s.purpose = purpose;
+      if (values !== undefined) s.values = values;
+      if (domains !== undefined) s.domains = domains;
+      if (currencies !== undefined) s.currencies = currencies;
+      await db.put(holon, 'settings', s);
+      res.writeHead(200); res.end(JSON.stringify({ success: true, settings: s })); return;
+    }
+
+    // POST /federation — get federation links
+    if (req.method === 'POST' && req.url === '/federation') {
+      const { chatId } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const fed = await db.getGlobal('federation', String(chatId));
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, federation: fed || {} })); return;
+    }
+
+    // POST /federation/add — federate with another holon
+    if (req.method === 'POST' && req.url === '/federation/add') {
+      const { chatId, targetId } = await getBody();
+      if (!chatId || !targetId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId and targetId required' })); return; }
+      const db = await bot.container.get('database');
+      const holon = String(chatId);
+      const target = String(targetId);
+      const fed = await db.getGlobal('federation', holon) || {};
+      fed[target] = { joined: Date.now(), active: true };
+      await db.putGlobal('federation', holon, fed);
+      // Bidirectional
+      const targetFed = await db.getGlobal('federation', target) || {};
+      targetFed[holon] = { joined: Date.now(), active: true };
+      await db.putGlobal('federation', target, targetFed);
+      res.writeHead(200); res.end(JSON.stringify({ success: true, federation: fed })); return;
+    }
+
+    // POST /federation/remove — unfederate
+    if (req.method === 'POST' && req.url === '/federation/remove') {
+      const { chatId, targetId } = await getBody();
+      if (!chatId || !targetId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId and targetId required' })); return; }
+      const db = await bot.container.get('database');
+      const holon = String(chatId);
+      const target = String(targetId);
+      const fed = await db.getGlobal('federation', holon) || {};
+      delete fed[target];
+      await db.putGlobal('federation', holon, fed);
+      res.writeHead(200); res.end(JSON.stringify({ success: true, removed: targetId })); return;
+    }
+
+    // POST /members — list members
+    if (req.method === 'POST' && req.url === '/members') {
+      const { chatId } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const users = await db.getAll(String(chatId), 'users');
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, members: Array.isArray(users) ? users : [] })); return;
+    }
+
+    // POST /ledger — get expense balances
+    if (req.method === 'POST' && req.url === '/ledger') {
+      const { chatId } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const holon = String(chatId);
+      const expenses = await db.getAll(holon, 'expenses');
+      const balances = {};
+      if (Array.isArray(expenses)) {
+        for (const e of expenses) {
+          const payer = String(e.paidBy);
+          const splitCount = e.splitWith?.length || 1;
+          const perPerson = e.amount / splitCount;
+          balances[payer] = (balances[payer] || 0) + e.amount - perPerson;
+          if (e.splitWith) for (const uid of e.splitWith) {
+            const u = String(uid);
+            if (u !== payer) balances[u] = (balances[u] || 0) - perPerson;
+          }
+        }
+      }
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, balances, expenseCount: expenses?.length || 0 })); return;
+    }
+
+    // POST /agenda — get upcoming scheduled quests/events
+    if (req.method === 'POST' && req.url === '/agenda') {
+      const { chatId, days } = await getBody();
+      if (!chatId) { res.writeHead(400); res.end(JSON.stringify({ error: 'chatId required' })); return; }
+      const db = await bot.container.get('database');
+      const holon = String(chatId);
+      const now = Date.now();
+      const horizon = now + (days || 7) * 86400000;
+      const [quests, events] = await Promise.all([
+        db.getAll(holon, 'quests').catch(() => []),
+        db.getAll(holon, 'events').catch(() => []),
+      ]);
+      const upcoming = [];
+      for (const q of (quests || [])) {
+        if (q.when) { const d = new Date(q.when).getTime(); if (d >= now && d <= horizon) upcoming.push({ type: 'quest', ...q }); }
+      }
+      for (const e of (events || [])) {
+        if (e.when) { const d = new Date(e.when).getTime(); if (d >= now && d <= horizon) upcoming.push({ type: 'event', ...e }); }
+      }
+      upcoming.sort((a, b) => new Date(a.when) - new Date(b.when));
+      res.writeHead(200); res.end(JSON.stringify({ holon: chatId, days: days || 7, upcoming })); return;
+    }
+
     // POST /message — send plain text message
     if (req.method === 'POST' && req.url === '/message') {
       const { chatId, text } = await getBody();
