@@ -36,7 +36,7 @@
     let tempTitle: string;
     
     // View options: 'month', 'week', 'day', 'orbits'
-    let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' | 'orbits' = 'week';
+    let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' | 'orbits' = 'day';
     
     // Drag and drop state
     let draggedTask: { key: string; task: any } | null = null;
@@ -509,14 +509,14 @@
                 const newTasks: Record<string, any> = {};
 
                 items.forEach((task: any) => {
-                    if (task && task.id && task.when) {
-                        // Include any quest/task with a date, regardless of type
+                    if (task && task.id) {
+                        // Include all tasks — those with 'when' show on calendar, those without show as unassigned
                         newTasks[task.id] = task;
                     }
                 });
 
                 tasks = newTasks;
-                console.log(`[Calendar] Loaded ${Object.keys(tasks).length} scheduled items`);
+                console.log(`[Calendar] Loaded ${Object.keys(tasks).length} items (${Object.values(tasks).filter(t => !t.when).length} unassigned)`);
             }
         } catch (error) {
             console.error('[Calendar] Error loading initial tasks:', error);
@@ -524,18 +524,10 @@
 
         // Then subscribe for real-time updates
         holosphere.subscribe($ID, 'quests', (newTask: any, key?: string) => {
-            if (!key) return; // Skip if no key
+            if (!key) return;
             if (newTask) {
-                const task = newTask;
-                if (task.when) {
-                    // Include any quest/task with a date, regardless of type
-                    tasks[key] = task;
-                    tasks = tasks;
-                } else {
-                    // If task exists but has no 'when' field, remove it from calendar display
-                    delete tasks[key];
-                    tasks = tasks;
-                }
+                tasks[key] = newTask;
+                tasks = tasks;
             } else {
                 delete tasks[key];
                 tasks = tasks;
@@ -619,9 +611,14 @@
             }));
     }
 
+    // Unassigned tasks (no 'when' date) — available for drag/drop onto calendar
+    $: unassignedTasks = Object.entries(tasks)
+        .filter(([_, task]) => !task.when)
+        .map(([key, task]) => ({ key, ...task }));
+
     function handleTaskClick(key: string, task: any) {
         selectedTask = { id: key, task };
-        const date = new Date(task.when);
+        const date = task.when ? new Date(task.when) : new Date();
         const endDate = task.ends ? new Date(task.ends) : new Date(date.getTime() + 60*60*1000);
         tempDate = date.toISOString().split('T')[0];
         tempTime = date.toTimeString().slice(0, 5);
@@ -1659,6 +1656,35 @@
         </div>
     </div>
 
+    <!-- Unassigned tasks panel + calendar in flex layout -->
+    <div class="flex gap-2">
+    <!-- Unassigned tasks sidebar -->
+    {#if unassignedTasks.length > 0}
+    <div class="w-48 shrink-0 bg-gray-800 rounded-lg p-2 max-h-[calc(100vh-200px)] overflow-y-auto">
+        <div class="text-xs text-gray-400 font-medium mb-2 uppercase">Unassigned ({unassignedTasks.length})</div>
+        {#each unassignedTasks as task (task.key)}
+            <div
+                class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors"
+                class:opacity-50={draggedTask?.key === task.key}
+                draggable="true"
+                ondragstart={(e) => handleDragStart(e, task.key, task)}
+                ondragend={handleDragEnd}
+                onclick={() => handleTaskClick(task.key, task)}
+                onkeydown={(e) => e.key === 'Enter' && handleTaskClick(task.key, task)}
+                role="button"
+                tabindex="0"
+            >
+                <div class="font-bold truncate">{task.title || 'Untitled'}</div>
+                {#if task.type}
+                    <div class="text-gray-400 mt-0.5">{task.type}</div>
+                {/if}
+            </div>
+        {/each}
+    </div>
+    {/if}
+    <!-- Calendar views -->
+    <div class="flex-1 min-w-0">
+
     {#if viewMode === 'month'}
         <div class="grid grid-cols-7 gap-px bg-gray-700">
             {#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as day}
@@ -2031,6 +2057,9 @@
             {/if}
         </div>
     {/if}
+
+    </div><!-- end calendar views -->
+    </div><!-- end flex layout -->
 </div>
 
 <!-- Orbital Task Details Modal -->
