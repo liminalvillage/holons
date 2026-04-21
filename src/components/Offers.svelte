@@ -860,26 +860,11 @@
 	<TitleBar {holonName} title="Offers & Requests" icon={Gift} />
 
 	<FeatureToolbar
-		onAdd={() => openAddModal('offer')}
-		addLabel="Add Offer"
-		bind:searchQuery={filters.searchQuery}
-		searchPlaceholder="Search offers & requests…"
+		onAdd={null}
 		bind:showFederated={filters.showFederated}
 		bind:showHolograms={filters.showHolograms}
 		federatedLoading={loadingFederated}
-	>
-		<svelte:fragment slot="actions">
-			<button
-				type="button"
-				class="icon-btn"
-				on:click={() => openAddModal('request')}
-				title="Add Request"
-				aria-label="Add Request"
-			>
-				<ArrowDownCircle size="14" />
-			</button>
-		</svelte:fragment>
-	</FeatureToolbar>
+	/>
 
 	<!-- Main Content Container -->
 	{#if !componentReady}
@@ -898,29 +883,6 @@
 			<!-- Offers & Requests Panel -->
 			<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
 			<div class="p-8">
-				<!-- Stats Bar -->
-				<div class="stats-bar mb-4">
-					<div class="stats-bar__item stats-bar__item--success">
-						<span class="stats-bar__value">{offers.length}</span>
-						<span class="stats-bar__label">Offers</span>
-					</div>
-					<div class="stats-bar__divider"></div>
-					<div class="stats-bar__item stats-bar__item--info">
-						<span class="stats-bar__value">{needs.length}</span>
-						<span class="stats-bar__label">Requests</span>
-					</div>
-					<div class="stats-bar__divider"></div>
-					<div class="stats-bar__item stats-bar__item--warning">
-						<span class="stats-bar__value">{offers.length + needs.length - offers.concat(needs).filter((item) => item.participants?.length > 0).length}</span>
-						<span class="stats-bar__label">Unassigned</span>
-					</div>
-					<div class="stats-bar__divider"></div>
-					<div class="stats-bar__item">
-						<span class="stats-bar__value">{offers.length + needs.length}</span>
-						<span class="stats-bar__label">Total</span>
-					</div>
-				</div>
-
 				<!-- Federated Status Indicator -->
 				{#if includeFederatedOffers}
 					<div class="mb-6 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
