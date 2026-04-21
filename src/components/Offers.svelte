@@ -5,6 +5,7 @@
 	import { goto } from "$app/navigation";
 	import { ID } from "../dashboard/store";
 	import { formatDate, formatTime } from "../utils/date";
+	import { formatRelativeExpiry } from "$lib/util/relativeTime";
 	import type { HoloSphere } from "holosphere";
 	import Announcements from "./Announcements.svelte";
 	import { nameMap, resolvedName, resolveName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
@@ -607,6 +608,12 @@
 
 
 
+	function getTransactionLabel(value: string, side: 'offer' | 'request'): string {
+		const entry = TRANSACTION_TYPES.find((t) => t.value === value);
+		if (!entry) return value;
+		return side === 'offer' ? entry.offerLabel : entry.requestLabel;
+	}
+
 	// Function to classify a task as offer or request
 	function classifyTask(item) {
 		if (!item) return null;
@@ -1069,6 +1076,31 @@
 														{offer.description}
 													</p>
 												{/if}
+												{#if offer.item_type || (offer.transaction_type && offer.transaction_type.length > 0) || (offer.tags && offer.tags.length > 0) || offer.expires_at}
+													<div class="meta-row">
+														{#if offer.item_type}
+															<span class="meta-row__icon" title={offer.item_type === 'good' ? 'Good' : 'Service'}>
+																{offer.item_type === 'good' ? '📦' : '🛠️'}
+															</span>
+														{/if}
+														{#if offer.transaction_type}
+															{#each offer.transaction_type as tx}
+																<span class="meta-row__pill">{getTransactionLabel(tx, 'offer')}</span>
+															{/each}
+														{/if}
+														{#if offer.tags}
+															{#each offer.tags.slice(0, 3) as tag}
+																<span class="meta-row__chip">#{tag}</span>
+															{/each}
+															{#if offer.tags.length > 3}
+																<span class="meta-row__chip">+{offer.tags.length - 3}</span>
+															{/if}
+														{/if}
+														{#if offer.expires_at}
+															<span class="meta-row__expiry">{formatRelativeExpiry(offer.expires_at, Date.now())}</span>
+														{/if}
+													</div>
+												{/if}
 											</div>
 										</div>
 
@@ -1299,6 +1331,31 @@
 													<p class="text-sm text-gray-700 truncate">
 														{need.description}
 													</p>
+												{/if}
+												{#if need.item_type || (need.transaction_type && need.transaction_type.length > 0) || (need.tags && need.tags.length > 0) || need.expires_at}
+													<div class="meta-row">
+														{#if need.item_type}
+															<span class="meta-row__icon" title={need.item_type === 'good' ? 'Good' : 'Service'}>
+																{need.item_type === 'good' ? '📦' : '🛠️'}
+															</span>
+														{/if}
+														{#if need.transaction_type}
+															{#each need.transaction_type as tx}
+																<span class="meta-row__pill">{getTransactionLabel(tx, 'request')}</span>
+															{/each}
+														{/if}
+														{#if need.tags}
+															{#each need.tags.slice(0, 3) as tag}
+																<span class="meta-row__chip">#{tag}</span>
+															{/each}
+															{#if need.tags.length > 3}
+																<span class="meta-row__chip">+{need.tags.length - 3}</span>
+															{/if}
+														{/if}
+														{#if need.expires_at}
+															<span class="meta-row__expiry">{formatRelativeExpiry(need.expires_at, Date.now())}</span>
+														{/if}
+													</div>
 												{/if}
 											</div>
 										</div>
@@ -1678,5 +1735,46 @@
 
 	.section-header__search-input::placeholder {
 		color: #6b7280;
+	}
+
+	.meta-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.375rem;
+		margin-top: 0.5rem;
+	}
+
+	.meta-row__icon {
+		font-size: 0.875rem;
+		line-height: 1;
+	}
+
+	.meta-row__pill {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.125rem 0.5rem;
+		border-radius: 9999px;
+		background: rgba(17, 24, 39, 0.15);
+		color: #1f2937;
+		font-size: 0.7rem;
+		font-weight: 500;
+	}
+
+	.meta-row__chip {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.125rem 0.5rem;
+		border-radius: 9999px;
+		background: rgba(99, 102, 241, 0.2);
+		color: #3730a3;
+		font-size: 0.7rem;
+		font-weight: 500;
+	}
+
+	.meta-row__expiry {
+		font-size: 0.7rem;
+		color: #374151;
+		margin-left: auto;
 	}
 </style>
