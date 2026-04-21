@@ -5,6 +5,8 @@
 	import type { HoloSphere } from "holosphere";
 	import { calculateCreditMatrix } from "../utils/expenseCalculations";
 	import { Plus } from 'svelte-feathers';
+	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
 	interface Expense {
 		id: string;
@@ -35,6 +37,15 @@
 	let creditMatrix: number[][] = [];
 	let isLoading = true;
 	let connectionReady = false;
+
+	// Shared toolbar state — search + federated + hologram toggles mirror the
+	// other features; the currency dropdown still lives in the filters slot.
+	let filters = loadFilters('expenses', {
+		searchQuery: '',
+		showFederated: false,
+		showHolograms: true,
+	});
+	$: saveFilters('expenses', filters);
 
 	// Real users from store (excluding the holon)
 	$: realUsers = Object.values(store);
@@ -191,6 +202,14 @@
 
 	$: filteredExpenses = Object.values(expenses)
 		.filter(e => e.currency === selectedCurrency)
+		.filter((e: any) => {
+			const isHologram = e?._hologram?.isHologram === true;
+			if (!filters.showHolograms && isHologram) return false;
+			if (!filters.showFederated && isHologram) return false;
+			const q = filters.searchQuery.trim().toLowerCase();
+			if (!q) return true;
+			return `${e.description ?? ''} ${e.paidBy ?? ''}`.toLowerCase().includes(q);
+		})
 		.sort((a, b) => parseInt(b.date) - parseInt(a.date));
 
 	$: noCurrenciesAvailable = !isLoading && availableCurrencies.length === 0;
@@ -289,28 +308,30 @@
 <div class="expenses-container">
 	<div class="header">
 		<h2>Expenses</h2>
-		<div class="header-actions">
-			{#if selectedCurrency}
-				<button
-					class="btn btn--primary"
-					onclick={openAddExpense}
-					aria-label="Add new expense"
-				>
-					<Plus size={16} />
-					<span class="hidden sm:inline">Add Expense</span>
-				</button>
-				<select bind:value={selectedCurrency} class="filter-select">
+	</div>
+
+	{#if selectedCurrency}
+		<FeatureToolbar
+			onAdd={openAddExpense}
+			addLabel="Add Expense"
+			bind:searchQuery={filters.searchQuery}
+			searchPlaceholder="Search expenses…"
+			bind:showFederated={filters.showFederated}
+			bind:showHolograms={filters.showHolograms}
+		>
+			<svelte:fragment slot="filters">
+				<select bind:value={selectedCurrency} class="filter-select" aria-label="Currency">
 					{#each availableCurrencies as currency}
 						<option value={currency}>{currency.toUpperCase()}</option>
 					{/each}
 				</select>
-			{:else if noCurrenciesAvailable}
-				<span class="text-muted">No currencies configured</span>
-			{:else}
-				<span class="text-muted">Loading...</span>
-			{/if}
-		</div>
-	</div>
+			</svelte:fragment>
+		</FeatureToolbar>
+	{:else if noCurrenciesAvailable}
+		<div class="text-muted">No currencies configured</div>
+	{:else}
+		<div class="text-muted">Loading…</div>
+	{/if}
 
 	<!-- Stats Bar -->
 	{#if selectedCurrency && users.length > 0}
@@ -515,7 +536,7 @@
 					onclick={saveExpense}
 					disabled={!newExpense.description || !newExpense.amount}
 				>
-					<Plus size={16} />
+					<Plus size="16" />
 					Add Expense
 				</button>
 			</div>

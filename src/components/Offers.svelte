@@ -10,7 +10,9 @@
 	import { nameMap, resolvedName, resolveName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
 	import DisplayName from './shared/DisplayName.svelte';
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { Gift, Plus } from 'svelte-feathers';
+	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle } from 'svelte-feathers';
+	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { telegramStore } from "../lib/stores/telegram";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
@@ -28,23 +30,36 @@
 	let holonID: string | null = null;
 	$: holonName = resolvedName(holonID, $nameMap, null, 'Offers & Requests');
 
-	// Federated offers toggle
-	let includeFederatedOffers = false;
+	// Shared toolbar state (same field keys as other features). `showFederated`
+	// supersedes the legacy `includeFederatedOffers` flag while keeping the
+	// same meaning: when on, also pull in items from federated partners.
+	let filters = loadFilters('offers', {
+		searchQuery: '',
+		showFederated: false,
+		showHolograms: true,
+	});
+	$: saveFilters('offers', filters);
+	$: includeFederatedOffers = filters.showFederated;
 	let loadingFederated = false;
 
+	function matchesFilters(item: any): boolean {
+		const isHologram = item?._hologram?.isHologram === true;
+		if (!filters.showHolograms && isHologram) return false;
+		if (!filters.showFederated && isHologram) return false;
+		const q = filters.searchQuery.trim().toLowerCase();
+		if (!q) return true;
+		return `${item.title ?? ''} ${item.description ?? ''}`.toLowerCase().includes(q);
+	}
+
 	$: offers = Object.values(store).filter((item) => {
-		// Use the classification function for better categorization
 		const classifiedType = classifyTask(item);
-		const isOffer = classifiedType === "offer";
-		console.log(`Checking item ${item.id}: type=${item.type}, classifiedType=${classifiedType}, isOffer=${isOffer}`);
-		return isOffer;
+		if (classifiedType !== "offer") return false;
+		return matchesFilters(item);
 	});
 	$: needs = Object.values(store).filter((item) => {
-		// Use the classification function for better categorization
 		const classifiedType = classifyTask(item);
-		const isNeed = classifiedType === "request" || classifiedType === "need";
-		console.log(`Checking item ${item.id}: type=${item.type}, classifiedType=${classifiedType}, isNeed=${isNeed}`);
-		return isNeed;
+		if (classifiedType !== "request" && classifiedType !== "need") return false;
+		return matchesFilters(item);
 	});
 
 	let holosphere = getContext("holosphere") as HoloSphere;
@@ -558,10 +573,15 @@
 		return userOffers;
 	}
 
-	// Handle federated toggle change
+	// Handle federated toggle change. Invoked via the FeatureToolbar binding.
 	async function handleFederatedToggle() {
-		includeFederatedOffers = !includeFederatedOffers;
 		await subscribeToOffersAndNeeds();
+	}
+	// Kick off re-subscription when the federation toggle flips.
+	let lastFederatedFlag = filters.showFederated;
+	$: if (filters.showFederated !== lastFederatedFlag) {
+		lastFederatedFlag = filters.showFederated;
+		handleFederatedToggle();
 	}
 
 
@@ -828,34 +848,29 @@
 
 <div class="space-y-4">
 	<!-- TitleBar -->
-	<TitleBar {holonName} title="Offers & Requests" icon={Gift}>
-		<div slot="actions" class="flex items-center gap-3">
-			<button class="btn btn--primary" on:click={() => openAddModal('offer')}>
-				<Plus size={16} />
-				<span class="hidden sm:inline">Add Offer</span>
+	<TitleBar {holonName} title="Offers & Requests" icon={Gift} />
+
+	<FeatureToolbar
+		onAdd={() => openAddModal('offer')}
+		addLabel="Add Offer"
+		bind:searchQuery={filters.searchQuery}
+		searchPlaceholder="Search offers & requests…"
+		bind:showFederated={filters.showFederated}
+		bind:showHolograms={filters.showHolograms}
+		federatedLoading={loadingFederated}
+	>
+		<svelte:fragment slot="actions">
+			<button
+				type="button"
+				class="icon-btn"
+				on:click={() => openAddModal('request')}
+				title="Add Request"
+				aria-label="Add Request"
+			>
+				<ArrowDownCircle size="14" />
 			</button>
-			<button class="btn btn--primary" on:click={() => openAddModal('request')}>
-				<Plus size={16} />
-				<span class="hidden sm:inline">Add Request</span>
-			</button>
-			<div class="hidden md:flex items-center gap-2 ml-2">
-				<span class="text-white text-sm font-medium">Federated</span>
-				<button
-					class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {includeFederatedOffers ? 'bg-blue-600' : 'bg-gray-600'}"
-					on:click={handleFederatedToggle}
-					disabled={loadingFederated}
-				>
-					<span class="sr-only">Include federated offers</span>
-					<span
-						class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
-					></span>
-				</button>
-				{#if loadingFederated}
-					<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-				{/if}
-			</div>
-		</div>
-	</TitleBar>
+		</svelte:fragment>
+	</FeatureToolbar>
 
 	<!-- Main Content Container -->
 	{#if !componentReady}

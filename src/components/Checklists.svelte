@@ -6,9 +6,11 @@
     import Schedule from "./ScheduleWidget.svelte";
     import type { HoloSphere } from "holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
+    import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
     import { Plus } from 'svelte-feathers';
+    import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
     interface ChecklistItem {
@@ -37,8 +39,17 @@
     let selectedChecklist: string | null = null;
     let roles: Record<string, any> = {};
     let quests: Record<string, any> = {};
-    let allChecklists: Record<string, Checklist> = {}; // Store all checklists including attached ones
-    let activeFilter: string = 'all';
+    let allChecklists: Record<string, Checklist> = {};
+
+    // Shared toolbar state — activeFilter maps to the existing tab values.
+    let filters = loadFilters('checklists', {
+        searchQuery: '',
+        showFederated: false,
+        showHolograms: true,
+        activeFilter: 'all' as 'all' | 'standalone' | 'roles' | 'quests',
+    });
+    $: saveFilters('checklists', filters);
+    $: activeFilter = filters.activeFilter;
 
     $: checklistEntries = Object.entries(checklists);
     $: selectedChecklistData = selectedChecklist ? checklists[selectedChecklist] : null;
@@ -46,21 +57,37 @@
     $: totalItems = selectedChecklistData ? (selectedChecklistData.items || []).length : 0;
     $: pendingItems = totalItems - completedItems;
 
-    // Filter checklists based on active filter
+    // Filter checklists by active tab + search query + hologram flag.
     $: filteredChecklists = (() => {
-        const entries = Object.entries(allChecklists);
-        
-        switch (activeFilter) {
+        const q = filters.searchQuery.trim().toLowerCase();
+        let entries = Object.entries(allChecklists);
+
+        entries = entries.filter(([_, checklist]) => {
+            const isHologram = (checklist as any)?._hologram?.isHologram === true;
+            if (!filters.showHolograms && isHologram) return false;
+            if (!filters.showFederated && isHologram) return false;
+            return true;
+        });
+
+        switch (filters.activeFilter) {
             case 'standalone':
-                return entries.filter(([_, checklist]) => !checklist.questId && !checklist.roleId);
+                entries = entries.filter(([_, checklist]) => !checklist.questId && !checklist.roleId);
+                break;
             case 'roles':
-                return entries.filter(([_, checklist]) => checklist.roleId);
+                entries = entries.filter(([_, checklist]) => checklist.roleId);
+                break;
             case 'quests':
-                return entries.filter(([_, checklist]) => checklist.questId);
-            case 'all':
-            default:
-                return entries;
+                entries = entries.filter(([_, checklist]) => checklist.questId);
+                break;
         }
+
+        if (q) {
+            entries = entries.filter(([key, checklist]) =>
+                `${key} ${(checklist as any)?.title ?? ''}`.toLowerCase().includes(q)
+            );
+        }
+
+        return entries;
     })();
 
     // Update checklists based on filtered results
@@ -534,7 +561,7 @@
                                 on:click={() => showAddInput(false)}
                                 class="btn btn--primary"
                             >
-                                <Plus size={16} />
+                                <Plus size="16" />
                                 <span class="hidden sm:inline">Add Item</span>
                             </button>
                         </div>
@@ -642,52 +669,35 @@
                         </div>
                     </div>
 
-                    <!-- Controls Row -->
-                    <div class="controls-row mb-4">
-                        <div class="controls-row__left">
-                            {#if activeFilter === 'all' || activeFilter === 'standalone'}
-                                <button
-                                    on:click={() => showAddInput(true)}
-                                    class="btn btn--primary"
-                                >
-                                    <Plus size={16} />
-                                    <span class="hidden sm:inline">New</span>
-                                </button>
-                            {/if}
-                        </div>
-
-                        <div class="controls-row__center">
-                            <!-- Filter Tabs -->
+                    <FeatureToolbar
+                        onAdd={(filters.activeFilter === 'all' || filters.activeFilter === 'standalone') ? (() => showAddInput(true)) : null}
+                        addLabel="New"
+                        bind:searchQuery={filters.searchQuery}
+                        searchPlaceholder="Search checklists…"
+                        bind:showFederated={filters.showFederated}
+                        bind:showHolograms={filters.showHolograms}
+                    >
+                        <svelte:fragment slot="filters">
                             <div class="filter-tabs">
                                 <button
-                                    on:click={() => activeFilter = 'all'}
-                                    class="filter-tabs__btn {activeFilter === 'all' ? 'filter-tabs__btn--active' : ''}"
-                                >
-                                    All
-                                </button>
+                                    on:click={() => (filters.activeFilter = 'all')}
+                                    class="filter-tabs__btn {filters.activeFilter === 'all' ? 'filter-tabs__btn--active' : ''}"
+                                >All</button>
                                 <button
-                                    on:click={() => activeFilter = 'standalone'}
-                                    class="filter-tabs__btn {activeFilter === 'standalone' ? 'filter-tabs__btn--active' : ''}"
-                                >
-                                    Lists
-                                </button>
+                                    on:click={() => (filters.activeFilter = 'standalone')}
+                                    class="filter-tabs__btn {filters.activeFilter === 'standalone' ? 'filter-tabs__btn--active' : ''}"
+                                >Lists</button>
                                 <button
-                                    on:click={() => activeFilter = 'roles'}
-                                    class="filter-tabs__btn {activeFilter === 'roles' ? 'filter-tabs__btn--active' : ''}"
-                                >
-                                    Roles
-                                </button>
+                                    on:click={() => (filters.activeFilter = 'roles')}
+                                    class="filter-tabs__btn {filters.activeFilter === 'roles' ? 'filter-tabs__btn--active' : ''}"
+                                >Roles</button>
                                 <button
-                                    on:click={() => activeFilter = 'quests'}
-                                    class="filter-tabs__btn {activeFilter === 'quests' ? 'filter-tabs__btn--active' : ''}"
-                                >
-                                    Tasks
-                                </button>
+                                    on:click={() => (filters.activeFilter = 'quests')}
+                                    class="filter-tabs__btn {filters.activeFilter === 'quests' ? 'filter-tabs__btn--active' : ''}"
+                                >Tasks</button>
                             </div>
-                        </div>
-
-                        <div class="controls-row__right"></div>
-                    </div>
+                        </svelte:fragment>
+                    </FeatureToolbar>
 
                     {#if activeFilter === 'quests'}
                         <div class="flex justify-center mb-6">
