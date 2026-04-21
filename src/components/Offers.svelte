@@ -826,13 +826,16 @@
 	}
 
 	function handleTagKeydown(event: KeyboardEvent) {
+		if (event.isComposing) return;
 		if (event.key === 'Enter' || event.key === ',') {
 			event.preventDefault();
-			const trimmed = newItemTagInput.trim().replace(/,$/, '');
-			if (trimmed && !newItemTags.includes(trimmed)) {
-				newItemTags = [...newItemTags, trimmed];
+			const trimmed = newItemTagInput.trim();
+			if (trimmed) {
+				if (!newItemTags.includes(trimmed)) {
+					newItemTags = [...newItemTags, trimmed];
+				}
+				newItemTagInput = '';
 			}
-			newItemTagInput = '';
 		} else if (event.key === 'Backspace' && newItemTagInput === '' && newItemTags.length > 0) {
 			newItemTags = newItemTags.slice(0, -1);
 		}
