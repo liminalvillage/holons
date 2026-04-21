@@ -34,7 +34,8 @@
 	// supersedes the legacy `includeFederatedOffers` flag while keeping the
 	// same meaning: when on, also pull in items from federated partners.
 	let filters = loadFilters('offers', {
-		searchQuery: '',
+		searchQueryOffers: '',
+		searchQueryRequests: '',
 		showFederated: false,
 		showHolograms: true,
 	});
@@ -42,24 +43,32 @@
 	$: includeFederatedOffers = filters.showFederated;
 	let loadingFederated = false;
 
-	function matchesFilters(item: any): boolean {
+	function matchesVisibility(item: any): boolean {
 		const isHologram = item?._hologram?.isHologram === true;
 		if (!filters.showHolograms && isHologram) return false;
 		if (!filters.showFederated && isHologram) return false;
-		const q = filters.searchQuery.trim().toLowerCase();
+		return true;
+	}
+
+	function matchesSearch(item: any, query: string): boolean {
+		const q = query.trim().toLowerCase();
 		if (!q) return true;
-		return `${item.title ?? ''} ${item.description ?? ''}`.toLowerCase().includes(q);
+		const tagsText = Array.isArray(item.tags) ? item.tags.join(' ') : '';
+		return `${item.title ?? ''} ${item.description ?? ''} ${tagsText}`
+			.toLowerCase()
+			.includes(q);
 	}
 
 	$: offers = Object.values(store).filter((item) => {
-		const classifiedType = classifyTask(item);
-		if (classifiedType !== "offer") return false;
-		return matchesFilters(item);
+		if (classifyTask(item) !== 'offer') return false;
+		if (!matchesVisibility(item)) return false;
+		return matchesSearch(item, filters.searchQueryOffers);
 	});
 	$: needs = Object.values(store).filter((item) => {
-		const classifiedType = classifyTask(item);
-		if (classifiedType !== "request" && classifiedType !== "need") return false;
-		return matchesFilters(item);
+		const t = classifyTask(item);
+		if (t !== 'request' && t !== 'need') return false;
+		if (!matchesVisibility(item)) return false;
+		return matchesSearch(item, filters.searchQueryRequests);
 	});
 
 	let holosphere = getContext("holosphere") as HoloSphere;
