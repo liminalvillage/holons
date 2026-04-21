@@ -22,6 +22,18 @@
 	let addModalType: 'offer' | 'request' = 'offer';
 	let newItemTitle = '';
 	let newItemDescription = '';
+	let newItemItemType: 'good' | 'service' | '' = '';
+	let newItemTransactionTypes: string[] = [];
+	let newItemTagInput = '';
+	let newItemTags: string[] = [];
+	let newItemExpiresAtLocal = ''; // datetime-local value (empty = no expiry)
+
+	const TRANSACTION_TYPES = [
+		{ value: 'borrow-lend',    offerLabel: 'Lend',    requestLabel: 'Borrow' },
+		{ value: 'rent-lease',     offerLabel: 'Rent',    requestLabel: 'Rent' },
+		{ value: 'buy-sell',       offerLabel: 'Sell',    requestLabel: 'Buy' },
+		{ value: 'receive-donate', offerLabel: 'Donate',  requestLabel: 'Receive' },
+	];
 
 	/**
 	 * @type {string | any[]}
@@ -797,27 +809,65 @@
 		addModalType = type;
 		newItemTitle = '';
 		newItemDescription = '';
+		newItemItemType = '';
+		newItemTransactionTypes = [];
+		newItemTagInput = '';
+		newItemTags = [];
+		newItemExpiresAtLocal = '';
 		showAddModal = true;
+	}
+
+	function toggleTransactionType(value: string) {
+		if (newItemTransactionTypes.includes(value)) {
+			newItemTransactionTypes = newItemTransactionTypes.filter((v) => v !== value);
+		} else {
+			newItemTransactionTypes = [...newItemTransactionTypes, value];
+		}
+	}
+
+	function handleTagKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter' || event.key === ',') {
+			event.preventDefault();
+			const trimmed = newItemTagInput.trim().replace(/,$/, '');
+			if (trimmed && !newItemTags.includes(trimmed)) {
+				newItemTags = [...newItemTags, trimmed];
+			}
+			newItemTagInput = '';
+		} else if (event.key === 'Backspace' && newItemTagInput === '' && newItemTags.length > 0) {
+			newItemTags = newItemTags.slice(0, -1);
+		}
+	}
+
+	function removeTag(tag: string) {
+		newItemTags = newItemTags.filter((t) => t !== tag);
 	}
 
 	// Create a new offer or request
 	async function createNewItem() {
 		if (!holosphere || !holonID || !newItemTitle.trim()) return;
+		if (newItemTransactionTypes.length === 0) return;
 
-		const newItem = {
+		const expiresAtMs = newItemExpiresAtLocal
+			? new Date(newItemExpiresAtLocal).getTime()
+			: undefined;
+
+		const newItem: Record<string, any> = {
 			id: crypto.randomUUID(),
 			type: addModalType,
+			exchange_type: addModalType === 'offer' ? 'offer' : 'want',
 			title: newItemTitle.trim(),
 			description: newItemDescription.trim(),
+			transaction_type: [...newItemTransactionTypes],
 			participants: [],
 			created_at: new Date().toISOString()
 		};
+		if (newItemItemType) newItem.item_type = newItemItemType;
+		if (newItemTags.length > 0) newItem.tags = [...newItemTags];
+		if (expiresAtMs && !Number.isNaN(expiresAtMs)) newItem.expires_at = expiresAtMs;
 
 		try {
 			await holosphere.put(holonID, 'quests', newItem);
 			showAddModal = false;
-			newItemTitle = '';
-			newItemDescription = '';
 		} catch (error: any) {
 			if (error?.name === 'AuthorizationError') {
 				notifyWriteDenied('Unable to save - no write permission for this holon');
@@ -1419,6 +1469,93 @@
 						class="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors resize-none"
 					></textarea>
 				</div>
+
+				<div>
+					<span class="block text-sm font-medium text-gray-300 mb-2">Item type</span>
+					<div class="flex gap-4">
+						<label class="inline-flex items-center gap-2 text-gray-200">
+							<input
+								type="radio"
+								name="item-type"
+								value="good"
+								bind:group={newItemItemType}
+								class="accent-indigo-500"
+							/>
+							Good
+						</label>
+						<label class="inline-flex items-center gap-2 text-gray-200">
+							<input
+								type="radio"
+								name="item-type"
+								value="service"
+								bind:group={newItemItemType}
+								class="accent-indigo-500"
+							/>
+							Service
+						</label>
+					</div>
+				</div>
+
+				<div>
+					<span class="block text-sm font-medium text-gray-300 mb-2">
+						Transaction type
+						<span class="text-red-400">*</span>
+					</span>
+					<div class="flex flex-wrap gap-2">
+						{#each TRANSACTION_TYPES as tx}
+							{@const label = addModalType === 'offer' ? tx.offerLabel : tx.requestLabel}
+							{@const selected = newItemTransactionTypes.includes(tx.value)}
+							<button
+								type="button"
+								class="px-3 py-1 rounded-full text-sm border transition-colors"
+								class:bg-indigo-500={selected}
+								class:border-indigo-500={selected}
+								class:text-white={selected}
+								class:bg-gray-700={!selected}
+								class:border-gray-600={!selected}
+								class:text-gray-300={!selected}
+								on:click={() => toggleTransactionType(tx.value)}
+							>
+								{label}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<div>
+					<label for="item-tags" class="block text-sm font-medium text-gray-300 mb-2">Tags</label>
+					<div class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg border border-gray-600 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+						{#each newItemTags as tag}
+							<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-100 text-sm">
+								{tag}
+								<button
+									type="button"
+									class="hover:text-white"
+									on:click={() => removeTag(tag)}
+									aria-label={`Remove tag ${tag}`}
+								>&times;</button>
+							</span>
+						{/each}
+						<input
+							id="item-tags"
+							type="text"
+							bind:value={newItemTagInput}
+							on:keydown={handleTagKeydown}
+							placeholder={newItemTags.length === 0 ? 'Add tags (Enter or , to add)' : ''}
+							class="flex-1 min-w-[6rem] bg-transparent text-white outline-none text-sm py-1"
+						/>
+					</div>
+				</div>
+
+				<div>
+					<label for="item-expires-at" class="block text-sm font-medium text-gray-300 mb-2">Expires at (optional)</label>
+					<input
+						id="item-expires-at"
+						type="datetime-local"
+						bind:value={newItemExpiresAtLocal}
+						class="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-colors"
+					/>
+				</div>
 			</div>
 
 			<div class="p-6 border-t border-gray-700 flex justify-end gap-3">
@@ -1431,7 +1568,7 @@
 				<button
 					class="btn btn--primary"
 					on:click={createNewItem}
-					disabled={!newItemTitle.trim()}
+					disabled={!newItemTitle.trim() || newItemTransactionTypes.length === 0}
 				>
 					Create {addModalType === 'offer' ? 'Offer' : 'Request'}
 				</button>
