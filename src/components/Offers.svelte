@@ -1507,7 +1507,8 @@
 		position: relative;
 		display: flex;
 		align-items: center;
-		min-width: 12rem;
+		min-width: 10rem;
+		max-width: 20rem;
 	}
 
 	.section-header__search-icon {
