@@ -8,9 +8,11 @@
     import * as d3 from "d3";
     import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
     import TitleBar from "./shared/TitleBar.svelte";
+    import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import TaskModal from './TaskModal.svelte';
     import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import { Plus } from 'svelte-feathers';
+    import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -33,6 +35,15 @@
     
     // View options: 'month', 'week', 'day', 'orbits'
     let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' | 'orbits' = 'day';
+
+    // Shared toolbar state — same keys as every other feature.
+    // The date-nav controls below stay Calendar-specific.
+    let filters = loadFilters('calendar', {
+        searchQuery: '',
+        showFederated: false,
+        showHolograms: true,
+    });
+    $: saveFilters('calendar', filters);
     
     // Drag and drop state
     let draggedTask: { key: string; task: any } | null = null;
@@ -1925,6 +1936,15 @@
 <div class="space-y-4">
     <TitleBar {holonName} title="Calendar" />
 
+    <FeatureToolbar
+        onAdd={addNewEvent}
+        addLabel="Add Event"
+        bind:searchQuery={filters.searchQuery}
+        searchPlaceholder="Search events…"
+        bind:showFederated={filters.showFederated}
+        bind:showHolograms={filters.showHolograms}
+    />
+
     <Timeline
         currentDate={currentDate}
         profiles={profiles}
@@ -2015,15 +2035,6 @@
                     </button>
                 {/each}
             </div>
-            <button
-                class="btn btn--primary"
-                onclick={addNewEvent}
-                aria-label="Add new event"
-                title="Add event"
-            >
-                <Plus size={16} />
-                <span class="hidden md:inline">Add Event</span>
-            </button>
         </div>
     </div>
 

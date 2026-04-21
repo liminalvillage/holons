@@ -20,7 +20,9 @@
 	import QuestImportModal from "./QuestImportModal.svelte";
 	// Import shared components
 	import TitleBar from "./shared/TitleBar.svelte";
-	import { CheckSquare, Calendar as CalendarIcon, Plus } from 'svelte-feathers';
+	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import ToggleChip from "./shared/ToggleChip.svelte";
+	import { CheckSquare, Calendar as CalendarIcon, Plus, List, Grid, Columns, Upload } from 'svelte-feathers';
 	import {
 		calculateTaskCompletionScores,
 		getActionScore,
@@ -1328,9 +1330,14 @@
 		}
 	}
 
-	// Handle federated toggle change
-	async function handleFederatedToggle() {
-		includeFederatedTasks = !includeFederatedTasks;
+	// Handle federated toggle change. Accepts an optional boolean event payload
+	// from FeatureToolbar; falls back to flipping the flag for legacy callers.
+	async function handleFederatedToggle(eventOrUndefined?: CustomEvent<boolean> | undefined) {
+		if (eventOrUndefined && typeof eventOrUndefined === 'object' && 'detail' in eventOrUndefined) {
+			includeFederatedTasks = eventOrUndefined.detail;
+		} else {
+			includeFederatedTasks = !includeFederatedTasks;
+		}
 		if (includeFederatedTasks) {
 			await fetchFederatedTasks();
 		} else {
@@ -1778,69 +1785,23 @@
 					</div>
 				</div>
 
-				<!-- Controls Row - Compact and organized -->
-				<div class="controls-row mb-4">
-					<!-- Left: View toggle + Add button -->
-					<div class="controls-row__left">
-						<button
-							onclick={showDialog}
-							class="btn btn--primary"
-							aria-label="Add new task"
-						>
-							<Plus size={16} />
-							<span class="hidden sm:inline">Add</span>
-						</button>
-
-						<div class="view-toggle">
-							<button
-								class="view-toggle__btn {viewMode === 'list' ? 'view-toggle__btn--active' : ''}"
-								onclick={() => (viewMode = 'list')}
-								aria-label="List view"
-								title="List view"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="8" y1="6" x2="21" y2="6" />
-									<line x1="8" y1="12" x2="21" y2="12" />
-									<line x1="8" y1="18" x2="21" y2="18" />
-									<line x1="3" y1="6" x2="3.01" y2="6" />
-									<line x1="3" y1="12" x2="3.01" y2="12" />
-									<line x1="3" y1="18" x2="3.01" y2="18" />
-								</svg>
-							</button>
-							<button
-								class="view-toggle__btn {viewMode === 'kanban' ? 'view-toggle__btn--active' : ''}"
-								onclick={() => (viewMode = 'kanban')}
-								aria-label="Kanban view"
-								title="Kanban view"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<rect x="4" y="3" width="4" height="18" rx="1"></rect>
-									<rect x="10" y="3" width="4" height="12" rx="1"></rect>
-									<rect x="16" y="3" width="4" height="15" rx="1"></rect>
-								</svg>
-							</button>
-							<button
-								class="view-toggle__btn {viewMode === 'canvas' ? 'view-toggle__btn--active' : ''}"
-								onclick={() => (viewMode = 'canvas')}
-								aria-label="Canvas view"
-								title="Canvas view"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<rect x="3" y="3" width="7" height="7"></rect>
-									<rect x="14" y="3" width="7" height="7"></rect>
-									<rect x="14" y="14" width="7" height="7"></rect>
-									<rect x="3" y="14" width="7" height="7"></rect>
-								</svg>
-							</button>
-						</div>
-					</div>
-
-					<!-- Center: Filters -->
-					<div class="controls-row__center">
-						<select
-							bind:value={selectedCategory}
-							class="filter-select"
-						>
+				<FeatureToolbar
+					onAdd={showDialog}
+					addLabel="Add"
+					viewMode={viewMode}
+					on:viewChange={(e) => (viewMode = e.detail as 'list' | 'canvas' | 'kanban')}
+					viewModes={[
+						{ value: 'list', icon: List, label: 'List view' },
+						{ value: 'kanban', icon: Columns, label: 'Kanban view' },
+						{ value: 'canvas', icon: Grid, label: 'Canvas view' },
+					]}
+					showFederated={includeFederatedTasks}
+					on:federatedChange={handleFederatedToggle}
+					federatedLoading={loadingFederated}
+					bind:showHolograms={showHolograms}
+				>
+					<svelte:fragment slot="filters">
+						<select bind:value={selectedCategory} class="filter-select" aria-label="Filter by category">
 							{#each categories as category}
 								<option value={category}>
 									{category === "all" ? "All Categories" : category}
@@ -1848,10 +1809,7 @@
 							{/each}
 						</select>
 
-						<select
-							bind:value={selectedUserId}
-							class="filter-select"
-						>
+						<select bind:value={selectedUserId} class="filter-select" aria-label="Filter by user">
 							{#each allUsers as user}
 								<option value={user.id}>{user.name}</option>
 							{/each}
@@ -1878,43 +1836,21 @@
 								</svg>
 							{/key}
 						</button>
-					</div>
 
-					<!-- Right: Toggles + Import -->
-					<div class="controls-row__right">
-						<label class="toggle-chip" title="Show completed tasks">
-							<input type="checkbox" bind:checked={showCompleted} class="sr-only" />
-							<span class="toggle-chip__dot" class:toggle-chip__dot--active={showCompleted}></span>
-							<span class="toggle-chip__label">Completed</span>
-						</label>
+						<ToggleChip bind:checked={showCompleted} label="Completed" />
+					</svelte:fragment>
 
-						<label class="toggle-chip" title="Show holograms">
-							<input type="checkbox" bind:checked={showHolograms} class="sr-only" />
-							<span class="toggle-chip__dot" class:toggle-chip__dot--active={showHolograms}></span>
-							<span class="toggle-chip__label">Holograms</span>
-						</label>
-
-						<label class="toggle-chip" title="Include federated tasks from connected holons">
-							<input type="checkbox" checked={includeFederatedTasks} onchange={handleFederatedToggle} class="sr-only" />
-							<span class="toggle-chip__dot" class:toggle-chip__dot--active={includeFederatedTasks}></span>
-							<span class="toggle-chip__label">Federated</span>
-							{#if loadingFederated}
-								<div class="w-3 h-3 ml-1 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-							{/if}
-						</label>
-
+					<svelte:fragment slot="actions">
 						<button
-							onclick={() => showImportModal = true}
-							class="import-btn"
+							onclick={() => (showImportModal = true)}
+							class="icon-btn"
 							aria-label="Import quests"
 							title="Import quests"
 						>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-							</svg>
+							<Upload size="14" />
 						</button>
-					</div>
-				</div>
+					</svelte:fragment>
+				</FeatureToolbar>
 
 				<!-- Federated Status Indicator -->
 				{#if includeFederatedTasks}
@@ -2522,26 +2458,6 @@
 {/if}
 
 <style>
-	/* Import Button - Task-specific icon button */
-	.import-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 2rem;
-		height: 2rem;
-		background: #374151;
-		color: #9ca3af;
-		border-radius: 0.5rem;
-		border: 1px solid #4b5563;
-		cursor: pointer;
-		transition: all 150ms ease;
-	}
-
-	.import-btn:hover {
-		background: #4b5563;
-		color: #fff;
-	}
-
 	/* Task card styling */
 	.task-card {
 		position: relative;
