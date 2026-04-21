@@ -14,8 +14,10 @@
 	import TitleBar from "./shared/TitleBar.svelte";
 	import StatCard from "./shared/StatCard.svelte";
 	import StatGrid from "./shared/StatGrid.svelte";
-	import { Users, UserCheck, UserX, Plus, Calendar } from 'svelte-feathers';
+	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import { Users, UserCheck, UserX, Plus, Calendar, List, Grid } from 'svelte-feathers';
 	import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
+	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { getWeekKey, toISODateString } from "../utils/weekUtils";
 	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 
@@ -30,35 +32,62 @@
 	let activeHolonId: string | undefined; // Manages the current Holon ID for this component
 	let isUserStoreReady = false; // Tracks if userStore has been populated for the activeHolonId
 
-	$: roles = Object.entries(store || {});
 	let holosphere = getContext("holosphere") as HoloSphere;
 	$: holonName = resolvedName(activeHolonId, $nameMap, null, 'Roles');
 	let statsCollapsed = false; // For mobile stats toggle
 
-	// Initialize preferences with default values
-	let isListView = false;
-	let viewMode: 'cards' | 'week' = 'cards';
-	let notification: { roleName: string; userName: string } | null = null;
+	// Shared toolbar state (same keys as other features). view values:
+	//   'list' = list view, 'grid' = card grid, 'week' = week schedule view.
+	let filters = loadFilters('roles', {
+		searchQuery: '',
+		showFederated: false,
+		showHolograms: true,
+		viewMode: 'grid' as 'list' | 'grid' | 'week',
+	});
+	$: saveFilters('roles', filters);
 
-	// Load preferences only in browser environment
+	// Legacy convenience flags derived from filters.viewMode so the existing
+	// template blocks (week / list / grid) keep working without rewrites.
+	$: viewMode = filters.viewMode === 'week' ? 'week' : 'cards';
+	$: isListView = filters.viewMode === 'list';
+
+	const ROLE_VIEW_MODES = [
+		{ value: 'list', icon: List, label: 'List' },
+		{ value: 'grid', icon: Grid, label: 'Grid' },
+		{ value: 'week', icon: Calendar, label: 'Week' },
+	];
+
+	// One-time migration from the legacy localStorage keys so existing users
+	// keep the view mode they had before this refactor.
 	onMount(() => {
 		if (browser) {
-			isListView =
-				localStorage.getItem("rolesViewMode") === "list" || false;
-			const savedViewMode = localStorage.getItem("rolesViewModeType");
-			if (savedViewMode === 'week') {
-				viewMode = 'week';
-			}
+			try {
+				const savedIsList = localStorage.getItem("rolesViewMode");
+				const savedType = localStorage.getItem("rolesViewModeType");
+				if (savedType === 'week') filters.viewMode = 'week';
+				else if (savedIsList === 'list') filters.viewMode = 'list';
+			} catch {}
 		}
 	});
 
-	// Save preferences when they change
-	$: {
-		if (browser) {
-			localStorage.setItem("rolesViewMode", isListView ? "list" : "grid");
-			localStorage.setItem("rolesViewModeType", viewMode);
-		}
-	}
+	// Apply the search filter against the role title; 'roles' stays unchanged
+	// for stats so the top bar reflects the full dataset, not the filtered one.
+	$: roles = Object.entries(store || {});
+	$: visibleRoles = (() => {
+		const q = filters.searchQuery.trim().toLowerCase();
+		if (!q && filters.showHolograms && filters.showFederated) return roles;
+		return roles.filter(([, role]) => {
+			const isHologram = (role as any)?._hologram?.isHologram === true;
+			if (!filters.showHolograms && isHologram) return false;
+			if (!filters.showFederated && isHologram) return false;
+			if (!q) return true;
+			const title = (role as any)?.title ?? '';
+			const description = (role as any)?.description ?? '';
+			return `${title} ${description}`.toLowerCase().includes(q);
+		});
+	})();
+
+	let notification: { roleName: string; userName: string } | null = null;
 
 	// Get today's assigned user for a role (from week schedule or permanent)
 	function getTodayAssignment(role: any): { id: string; username: string } | null {
@@ -494,65 +523,16 @@
 			</div>
 		</div>
 
-		<!-- Controls Row with View Toggle -->
-		<div class="controls-row mb-4">
-			<div class="controls-row__left">
-				<button
-					class="btn btn--primary"
-					on:click={addNewRole}
-					aria-label="Add new role"
-				>
-					<Plus size={16} />
-					<span class="hidden sm:inline">Add Role</span>
-				</button>
-			</div>
-			<div class="controls-row__center"></div>
-			<div class="controls-row__right">
-				<div class="view-toggle">
-					<button
-						class="view-toggle__btn {viewMode === 'cards' && isListView ? 'view-toggle__btn--active' : ''}"
-						title="List View"
-						on:click={() => { viewMode = 'cards'; isListView = true; }}
-						aria-label="Switch to list view"
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="8" y1="6" x2="21" y2="6" />
-							<line x1="8" y1="12" x2="21" y2="12" />
-							<line x1="8" y1="18" x2="21" y2="18" />
-							<line x1="3" y1="6" x2="3.01" y2="6" />
-							<line x1="3" y1="12" x2="3.01" y2="12" />
-							<line x1="3" y1="18" x2="3.01" y2="18" />
-						</svg>
-					</button>
-					<button
-						class="view-toggle__btn {viewMode === 'cards' && !isListView ? 'view-toggle__btn--active' : ''}"
-						title="Grid View"
-						on:click={() => { viewMode = 'cards'; isListView = false; }}
-						aria-label="Switch to grid view"
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<rect x="3" y="3" width="7" height="7" />
-							<rect x="14" y="3" width="7" height="7" />
-							<rect x="14" y="14" width="7" height="7" />
-							<rect x="3" y="14" width="7" height="7" />
-						</svg>
-					</button>
-					<button
-						class="view-toggle__btn {viewMode === 'week' ? 'view-toggle__btn--active' : ''}"
-						title="Week View"
-						on:click={() => viewMode = 'week'}
-						aria-label="Switch to week view"
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-							<line x1="16" y1="2" x2="16" y2="6"></line>
-							<line x1="8" y1="2" x2="8" y2="6"></line>
-							<line x1="3" y1="10" x2="21" y2="10"></line>
-						</svg>
-					</button>
-				</div>
-			</div>
-		</div>
+		<FeatureToolbar
+			onAdd={addNewRole}
+			addLabel="Add Role"
+			bind:searchQuery={filters.searchQuery}
+			searchPlaceholder="Search roles…"
+			bind:viewMode={filters.viewMode}
+			viewModes={ROLE_VIEW_MODES}
+			bind:showFederated={filters.showFederated}
+			bind:showHolograms={filters.showHolograms}
+		/>
 
 		{#if viewMode === 'week'}
 			<RoleWeekView
@@ -566,7 +546,7 @@
 			/>
 		{:else if isListView}
 			<div class="space-y-3">
-				{#each roles as [key, role]}
+				{#each visibleRoles as [key, role]}
 					{@const todayAssignment = getTodayAssignment(role)}
 					<div
 						id={key}
@@ -650,7 +630,7 @@
 			</div>
 		{:else}
 			<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-				{#each roles as [key, role]}
+				{#each visibleRoles as [key, role]}
 					{@const todayAssignment = getTodayAssignment(role)}
 					<div
 						id={key}

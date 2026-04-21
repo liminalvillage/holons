@@ -5,7 +5,9 @@
     import type { HoloSphere } from "holosphere";
     import { awaitName, resolveHologramSource, nameMap } from "$lib/stores/nameResolver";
     import TitleBar from "./shared/TitleBar.svelte";
+    import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import { Package, Plus, Calendar } from 'svelte-feathers';
+    import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
     // Library item types
     const LIBRARY_TYPES = {
@@ -50,10 +52,17 @@
     $: libraryItems = Object.entries(store);
     $: filteredItems = libraryItems.filter(([_, item]: [string, any]) => {
         if (item._deleted) return false;
-        if (!showHolograms && item._hologram?.isHologram) return false;
+        const isHologram = item._hologram?.isHologram === true;
+        if (!filters.showHolograms && isHologram) return false;
+        if (!filters.showFederated && isHologram) return false;
 
-        // Apply active filter
-        switch (activeFilter) {
+        const q = filters.searchQuery.trim().toLowerCase();
+        if (q) {
+            const hay = `${item.id ?? ''} ${item.description ?? ''} ${item.category ?? ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+
+        switch (filters.activeFilter) {
             case 'available':
                 return !item.borrowed;
             case 'borrowed':
@@ -72,8 +81,18 @@
     $: myItems = libraryItems.filter(([_, item]) => !item._deleted && item.createdBy === currentUserId).length;
 
     let showInput = false;
-    let showHolograms = true;
-    let activeFilter: string = 'all';
+    // Shared filter state across features; legacy `libraryShowHolograms`
+    // localStorage key is migrated from in onMount below.
+    let filters = loadFilters('library', {
+        searchQuery: '',
+        showFederated: false,
+        showHolograms: true,
+        activeFilter: 'all' as 'all' | 'available' | 'borrowed' | 'mine',
+    });
+    $: saveFilters('library', filters);
+    // Legacy aliases used throughout the template; kept to minimise diff.
+    $: showHolograms = filters.showHolograms;
+    $: activeFilter = filters.activeFilter;
     let libraryItemsUnsubscribe: (() => void) | undefined;
     let hologramSourceNames = new Map<string, string>();
 
@@ -176,11 +195,11 @@
 
     onMount(() => {
         try {
+            // One-time migration of the legacy flag into the new filter bag.
             const storedShowHolograms = localStorage.getItem("libraryShowHolograms");
             if (storedShowHolograms !== null) {
-                showHolograms = storedShowHolograms === "true";
+                filters.showHolograms = storedShowHolograms === "true";
             }
-            // Get current user info from localStorage or session
             currentUserId = localStorage.getItem("userId") || "";
             currentUsername = localStorage.getItem("username") || "";
         } catch (error) {
@@ -207,8 +226,9 @@
         }
     }
 
+    // Keep the legacy key in sync while downstream consumers still read it.
     $: if (typeof localStorage !== 'undefined') {
-        localStorage.setItem("libraryShowHolograms", showHolograms.toString());
+        localStorage.setItem("libraryShowHolograms", filters.showHolograms.toString());
     }
 
     function getHologramSource(hologramSoul: string | undefined): string {
@@ -492,26 +512,7 @@
 
 <div class="space-y-4">
     <!-- TitleBar -->
-    <TitleBar {holonName} title="Library" icon={Package}>
-        <label slot="actions" class="flex items-center cursor-pointer">
-            <div class="relative">
-                <input
-                    type="checkbox"
-                    class="sr-only"
-                    bind:checked={showHolograms}
-                />
-                <div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-                <div
-                    class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
-                    class:translate-x-5={showHolograms}
-                ></div>
-            </div>
-            <div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-                <span class="hidden sm:inline">Show Holograms</span>
-                <span class="sm:hidden" aria-label="Show hologram items">🔮</span>
-            </div>
-        </label>
-    </TitleBar>
+    <TitleBar {holonName} title="Library" icon={Package} />
 
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
@@ -539,51 +540,35 @@
                 </div>
             </div>
 
-            <!-- Controls Row -->
-            <div class="controls-row mb-4">
-                <div class="controls-row__left">
-                    <button
-                        on:click={showAddInput}
-                        class="btn btn--primary"
-                        aria-label="Add new item"
-                    >
-                        <Plus size={16} />
-                        <span class="hidden sm:inline">Add Item</span>
-                    </button>
-                </div>
-
-                <div class="controls-row__center">
-                    <!-- Filter Tabs -->
+            <FeatureToolbar
+                onAdd={showAddInput}
+                addLabel="Add Item"
+                bind:searchQuery={filters.searchQuery}
+                searchPlaceholder="Search library…"
+                bind:showFederated={filters.showFederated}
+                bind:showHolograms={filters.showHolograms}
+            >
+                <svelte:fragment slot="filters">
                     <div class="filter-tabs">
                         <button
-                            on:click={() => activeFilter = 'all'}
-                            class="filter-tabs__btn {activeFilter === 'all' ? 'filter-tabs__btn--active' : ''}"
-                        >
-                            All
-                        </button>
+                            on:click={() => (filters.activeFilter = 'all')}
+                            class="filter-tabs__btn {filters.activeFilter === 'all' ? 'filter-tabs__btn--active' : ''}"
+                        >All</button>
                         <button
-                            on:click={() => activeFilter = 'available'}
-                            class="filter-tabs__btn {activeFilter === 'available' ? 'filter-tabs__btn--active' : ''}"
-                        >
-                            Available
-                        </button>
+                            on:click={() => (filters.activeFilter = 'available')}
+                            class="filter-tabs__btn {filters.activeFilter === 'available' ? 'filter-tabs__btn--active' : ''}"
+                        >Available</button>
                         <button
-                            on:click={() => activeFilter = 'borrowed'}
-                            class="filter-tabs__btn {activeFilter === 'borrowed' ? 'filter-tabs__btn--active' : ''}"
-                        >
-                            Borrowed
-                        </button>
+                            on:click={() => (filters.activeFilter = 'borrowed')}
+                            class="filter-tabs__btn {filters.activeFilter === 'borrowed' ? 'filter-tabs__btn--active' : ''}"
+                        >Borrowed</button>
                         <button
-                            on:click={() => activeFilter = 'mine'}
-                            class="filter-tabs__btn {activeFilter === 'mine' ? 'filter-tabs__btn--active' : ''}"
-                        >
-                            Mine
-                        </button>
+                            on:click={() => (filters.activeFilter = 'mine')}
+                            class="filter-tabs__btn {filters.activeFilter === 'mine' ? 'filter-tabs__btn--active' : ''}"
+                        >Mine</button>
                     </div>
-                </div>
-
-                <div class="controls-row__right"></div>
-            </div>
+                </svelte:fragment>
+            </FeatureToolbar>
 
             <!-- Library Items -->
             <div class="space-y-3">
@@ -1085,8 +1070,3 @@
     </div>
 {/if}
 
-<style>
-    .dot {
-        transition: transform 0.3s ease-in-out;
-    }
-</style>

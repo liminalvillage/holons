@@ -1,36 +1,52 @@
 <script lang="ts">
-    import { onMount, onDestroy, getContext } from "svelte";
+    import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import type { HoloSphere } from "holosphere";
     import ProposalChart from './ProposalChart.svelte';
-    import { Plus } from 'svelte-feathers';
+    import FeatureToolbar from './shared/FeatureToolbar.svelte';
+    import Modal from './shared/Modal.svelte';
+    import ItemCard from './shared/ItemCard.svelte';
+    import { nameMap, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
+    import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
     interface Proposal {
         id: string;
         type: string;
         title: string;
         description: string;
-        participants: string[];  // Array of user IDs who agreed
-        stoppers: string[];  // Array of user IDs who blocked
-        date: number;  // Unix timestamp
+        participants: string[];
+        stoppers: string[];
+        date: number;
         creator: string;
+        _hologram?: { isHologram?: boolean; sourceHolon?: string; soul?: string };
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;
-    
+
     $: currentHolonID = $ID;
     let proposals: Record<string, Proposal> = {};
-    let selectedProposal: Proposal | null = null;
-    let showModal = false;
     let unsubscribeFromProposals: (() => void) | null = null;
-    
-    // Computed property to sort proposals by date and then agreement count
+
+    // Shared toolbar state — same field names/keys as other features.
+    let filters = loadFilters('proposals', {
+        searchQuery: '',
+        showFederated: false,
+        showHolograms: true,
+    });
+    $: saveFilters('proposals', filters);
+
     $: sortedProposals = Object.values(proposals)
         .filter(p => p.type === "proposal")
+        .filter((p) => {
+            const isHologram = p._hologram?.isHologram === true;
+            if (!filters.showHolograms && isHologram) return false;
+            if (!filters.showFederated && isHologram) return false;
+            const q = filters.searchQuery.trim().toLowerCase();
+            if (q && !`${p.title} ${p.description}`.toLowerCase().includes(q)) return false;
+            return true;
+        })
         .sort((a, b) => {
-            // Sort by date descending (newest first)
             const dateComparison = b.date - a.date;
-            // If dates are equal, sort by participant count
             if (dateComparison === 0) {
                 return (b.participants || []).length - (a.participants || []).length;
             }
@@ -39,20 +55,18 @@
 
     onMount(() => {
         const idUnsubscribe = ID.subscribe((value) => {
-             if (value !== currentHolonID) {
-                 currentHolonID = value;
-                 subscribeToProposals(currentHolonID);
-             } else if (value && !unsubscribeFromProposals) {
+            if (value !== currentHolonID) {
                 currentHolonID = value;
                 subscribeToProposals(currentHolonID);
-             }
+            } else if (value && !unsubscribeFromProposals) {
+                currentHolonID = value;
+                subscribeToProposals(currentHolonID);
+            }
         });
 
         return () => {
             idUnsubscribe();
-            if (unsubscribeFromProposals) {
-                unsubscribeFromProposals();
-            }
+            if (unsubscribeFromProposals) unsubscribeFromProposals();
         };
     });
 
@@ -61,8 +75,8 @@
             unsubscribeFromProposals();
             unsubscribeFromProposals = null;
         }
-        
-        proposals = {}; 
+
+        proposals = {};
 
         if (holosphere && holonIdToSubscribe) {
             holosphere.subscribe(
@@ -72,11 +86,11 @@
                     if (!key) return;
 
                     if (newItem && newItem.type === "proposal") {
-                         proposals[key] = newItem;
-                         proposals = proposals;
+                        proposals[key] = newItem;
+                        proposals = proposals;
                     } else if (!newItem && proposals[key]) {
-                         delete proposals[key];
-                         proposals = proposals;
+                        delete proposals[key];
+                        proposals = proposals;
                     }
                 }
             ).then(subscription => {
@@ -88,10 +102,7 @@
     }
 
     function addProposal(title: string, description: string): void {
-        if (!currentHolonID) {
-            console.error("Cannot add proposal: holonID is not set.");
-            return;
-        }
+        if (!currentHolonID) return;
         const newProposal: Proposal = {
             id: crypto.randomUUID(),
             type: "proposal",
@@ -99,62 +110,50 @@
             description,
             participants: [],
             stoppers: [],
-            date: Math.floor(Date.now() / 1000), // Current Unix timestamp
-            creator: "Dashboard User", // You might want to get the actual user
+            date: Math.floor(Date.now() / 1000),
+            creator: "Dashboard User",
         };
-        
         holosphere.put(currentHolonID, "quests", newProposal);
     }
 
     function toggleBlock(proposalId: string): void {
-        if (!currentHolonID) {
-            console.error("Cannot toggle block: holonID is not set.");
-            return;
-        }
+        if (!currentHolonID) return;
         const proposal = proposals[proposalId];
         if (!proposal) return;
 
-        const userId = "current-user"; // Replace with actual user ID
+        const userId = "current-user";
         const updatedProposal = { ...proposal };
-        
-        if (!updatedProposal.stoppers) {
-            updatedProposal.stoppers = [];
-        }
-        
+
+        if (!updatedProposal.stoppers) updatedProposal.stoppers = [];
+
         if (updatedProposal.stoppers.includes(userId)) {
             updatedProposal.stoppers = updatedProposal.stoppers.filter(id => id !== userId);
         } else {
             updatedProposal.stoppers = [...updatedProposal.stoppers, userId];
-            // Remove from participants if blocking
             updatedProposal.participants = updatedProposal.participants?.filter(id => id !== userId) || [];
         }
-        
+
         holosphere.put(currentHolonID, "quests", updatedProposal);
     }
 
     function toggleAgree(proposalId: string): void {
-        if (!currentHolonID) {
-            console.error("Cannot toggle agree: holonID is not set.");
-            return;
-        }
+        if (!currentHolonID) return;
         const proposal = proposals[proposalId];
         if (!proposal) return;
 
-        const userId = "current-user"; // Replace with actual user ID
+        const userId = "current-user";
         const updatedProposal = { ...proposal };
-        
         const participants = updatedProposal.participants || [];
 
         if (participants.includes(userId)) {
             updatedProposal.participants = participants.filter(id => id !== userId);
         } else {
             updatedProposal.participants = [...participants, userId];
-            // Remove from stoppers if agreeing
             if (updatedProposal.stoppers) {
                 updatedProposal.stoppers = updatedProposal.stoppers.filter(id => id !== userId);
             }
         }
-        
+
         holosphere.put(currentHolonID, "quests", updatedProposal);
     }
 
@@ -170,50 +169,51 @@
             showAddDialog = false;
         }
     }
+
+    function hologramSource(p: Proposal): string {
+        const soul = p._hologram?.soul;
+        if (!soul) return p._hologram?.sourceHolon ?? '';
+        resolveHologramSource(soul);
+        const holonId = extractHolonIdFromSoul(soul);
+        if (!holonId) return '';
+        return $nameMap[holonId] ?? holonId.slice(0, 8);
+    }
 </script>
 
 <div class="w-full bg-gray-800 py-6 px-6 rounded-3xl">
-    <div class="flex justify-between text-white items-center mb-8">
+    <div class="flex justify-between text-white items-center mb-4">
         <p class="text-2xl font-bold">Proposals</p>
-        <button
-            on:click={() => showAddDialog = true}
-            class="btn btn--primary"
-        >
-            <Plus size={16} />
-            New Proposal
-        </button>
     </div>
 
-    <ProposalChart 
-        proposals={Object.values(proposals)} 
-        quorum={5}
+    <FeatureToolbar
+        onAdd={() => (showAddDialog = true)}
+        addLabel="New Proposal"
+        bind:searchQuery={filters.searchQuery}
+        searchPlaceholder="Search proposals…"
+        bind:showFederated={filters.showFederated}
+        bind:showHolograms={filters.showHolograms}
     />
 
-    <div class="space-y-4 mt-8">
-        {#each sortedProposals as proposal}
-            <div 
-                class="bg-gray-700 rounded-lg p-4 cursor-pointer hover:bg-gray-600 transition-colors"
-                on:click={() => {
-                    selectedProposal = proposal;
-                    showModal = true;
-                }}
-                on:keydown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        selectedProposal = proposal;
-                        showModal = true;
-                    }
-                }}
-                role="button"
-                tabindex="0"
-                aria-label="View proposal: {proposal.title}"
+    <div class="mt-4">
+        <ProposalChart
+            proposals={Object.values(proposals)}
+            quorum={5}
+        />
+    </div>
+
+    <div class="space-y-3 mt-6">
+        {#each sortedProposals as proposal (proposal.id)}
+            <ItemCard
+                isHologram={proposal._hologram?.isHologram === true}
+                sourceHolon={hologramSource(proposal)}
             >
-                <div class="flex justify-between items-start mb-2">
-                    <h3 class="text-lg font-semibold text-white">{proposal.title}</h3>
-                    <div class="flex space-x-2">
+                <div class="flex justify-between items-start mb-2 gap-3">
+                    <h3 class="text-lg font-semibold text-white flex-1 min-w-0">{proposal.title}</h3>
+                    <div class="flex gap-2 flex-shrink-0">
                         <button
                             on:click|stopPropagation={() => toggleBlock(proposal.id)}
-                            class="px-3 py-1 rounded-full {proposal.stoppers?.includes('current-user') 
-                                ? 'bg-red-600 hover:bg-red-700' 
+                            class="px-3 py-1 rounded-full {proposal.stoppers?.includes('current-user')
+                                ? 'bg-red-600 hover:bg-red-700'
                                 : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm"
                         >
                             {proposal.stoppers?.includes('current-user') ? 'Blocked' : 'Block'}
@@ -237,93 +237,56 @@
                     ></div>
                 </div>
                 <div class="flex justify-between text-sm text-gray-400 mt-2">
-                    <div class="space-x-4">
+                    <div class="flex gap-4">
                         <span>{(proposal.participants || []).length} agreements</span>
                         {#if proposal.stoppers?.length}
                             <span class="text-red-400">{proposal.stoppers.length} stoppers</span>
                         {/if}
                     </div>
-                    <span>Created {new Date(proposal.date).toLocaleDateString()}</span>
+                    <span>Created {new Date(proposal.date * 1000).toLocaleDateString()}</span>
                 </div>
-            </div>
+            </ItemCard>
         {/each}
+
+        {#if sortedProposals.length === 0}
+            <div class="empty-state">
+                <h3 class="empty-state__title">
+                    {Object.keys(proposals).length === 0 ? 'No proposals yet' : 'No proposals match filters'}
+                </h3>
+                <p class="empty-state__description">
+                    {Object.keys(proposals).length === 0 ? 'Click "New Proposal" to start one' : 'Try adjusting the search or toggles above'}
+                </p>
+            </div>
+        {/if}
     </div>
 </div>
 
-{#if showAddDialog}
-    <dialog
-        class="fixed inset-0 bg-black bg-opacity-50 z-50"
-        open
-    >
-        <div class="fixed inset-0 flex items-center justify-center">
-            <form
-                on:submit|preventDefault={handleSubmit}
-                class="bg-gray-800 p-6 rounded-lg shadow-lg w-96"
-            >
-                <div class="relative">
-                    <button 
-                        type="button"
-                        class="absolute -top-2 -right-2 text-gray-400 hover:text-white cursor-pointer"
-                        on:click={() => showAddDialog = false}
-                        on:keydown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                showAddDialog = false;
-                            }
-                        }}
-                        aria-label="Close dialog"
-                    >
-                        <svg
-                            class="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M6 18L18 6M6 6l12 12"
-                            />
-                        </svg>
-                    </button>
-                    <h3 class="text-white text-lg font-bold mb-4">New Proposal</h3>
-                </div>
-                
-                <div class="space-y-4">
-                    <div>
-                        <input
-                            type="text"
-                            bind:value={newTitle}
-                            placeholder="Proposal title"
-                            class="w-full px-3 py-2 rounded-md bg-gray-700 text-white placeholder-gray-400 border-gray-600"
-                            required
-                        />
-                    </div>
-                    <div>
-                        <textarea
-                            bind:value={newDescription}
-                            placeholder="Proposal description"
-                            class="w-full px-3 py-2 rounded-md bg-gray-700 text-white placeholder-gray-400 border-gray-600 h-32"
-                            required
-                        ></textarea>
-                    </div>
-                    <div class="flex justify-end space-x-2">
-                        <button
-                            type="button"
-                            on:click={() => showAddDialog = false}
-                            class="px-4 py-2 rounded-md bg-gray-600 text-white hover:bg-gray-500"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            class="px-4 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
-                        >
-                            Submit
-                        </button>
-                    </div>
-                </div>
-            </form>
+<Modal bind:open={showAddDialog} title="New Proposal" size="md">
+    <form on:submit|preventDefault={handleSubmit} class="space-y-4">
+        <div>
+            <label for="proposal-title" class="block text-sm font-medium text-gray-300 mb-2">Title</label>
+            <input
+                id="proposal-title"
+                type="text"
+                bind:value={newTitle}
+                placeholder="Proposal title"
+                class="w-full px-3 py-2 rounded-md bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+                required
+            />
         </div>
-    </dialog>
-{/if} 
+        <div>
+            <label for="proposal-description" class="block text-sm font-medium text-gray-300 mb-2">Description</label>
+            <textarea
+                id="proposal-description"
+                bind:value={newDescription}
+                placeholder="Proposal description"
+                class="w-full px-3 py-2 rounded-md bg-gray-700 text-white placeholder-gray-400 border-gray-600 h-32"
+                required
+            ></textarea>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+            <button type="button" on:click={() => (showAddDialog = false)} class="btn btn--secondary">Cancel</button>
+            <button type="submit" class="btn btn--primary" disabled={!newTitle.trim() || !newDescription.trim()}>Submit</button>
+        </div>
+    </form>
+</Modal>
