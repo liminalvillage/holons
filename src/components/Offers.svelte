@@ -11,7 +11,7 @@
 	import DisplayName from './shared/DisplayName.svelte';
 	import TitleBar from "./shared/TitleBar.svelte";
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
-	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle } from 'svelte-feathers';
+	import { Gift, Plus, ArrowDownCircle, ArrowUpCircle, Search } from 'svelte-feathers';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 	import { nostrPublicKey } from "../lib/stores/nostr";
 	import { telegramStore } from "../lib/stores/telegram";
@@ -897,7 +897,35 @@
 
 				<!-- Offers Section -->
 				<div class="mb-8">
-					<h2 class="text-2xl font-bold text-white mb-6">Active Offers</h2>
+					<div class="section-header">
+						<div class="section-header__title-group">
+							<ArrowUpCircle size="20" />
+							<h2 class="section-header__title">Offers</h2>
+							<span class="section-header__count">({offers.length})</span>
+						</div>
+						<div class="section-header__controls">
+							<div class="section-header__search">
+								<span class="section-header__search-icon" aria-hidden="true">
+									<Search size="14" />
+								</span>
+								<input
+									type="search"
+									class="section-header__search-input"
+									placeholder="Search offers…"
+									bind:value={filters.searchQueryOffers}
+								/>
+							</div>
+							<button
+								type="button"
+								class="add-btn"
+								on:click={() => openAddModal('offer')}
+								aria-label="Add Offer"
+							>
+								<Plus size="16" />
+								<span>Add Offer</span>
+							</button>
+						</div>
+					</div>
 					{#if offers.length > 0}
 						<div class="space-y-3">
 							{#each offers as offer (offer.key)}
@@ -1100,7 +1128,35 @@
 
 				<!-- Requests Section -->
 				<div class="mb-8">
-					<h2 class="text-2xl font-bold text-white mb-6">Active Requests</h2>
+					<div class="section-header">
+						<div class="section-header__title-group">
+							<ArrowDownCircle size="20" />
+							<h2 class="section-header__title">Requests</h2>
+							<span class="section-header__count">({needs.length})</span>
+						</div>
+						<div class="section-header__controls">
+							<div class="section-header__search">
+								<span class="section-header__search-icon" aria-hidden="true">
+									<Search size="14" />
+								</span>
+								<input
+									type="search"
+									class="section-header__search-input"
+									placeholder="Search requests…"
+									bind:value={filters.searchQueryRequests}
+								/>
+							</div>
+							<button
+								type="button"
+								class="add-btn"
+								on:click={() => openAddModal('request')}
+								aria-label="Add Request"
+							>
+								<Plus size="16" />
+								<span>Add Request</span>
+							</button>
+						</div>
+					</div>
 					{#if needs.length > 0}
 						<div class="space-y-3">
 							{#each needs as need (need.key)}
@@ -1410,5 +1466,76 @@
 	/* Card hover effects */
 	.task-card:hover .group {
 		transform: translateY(-1px);
+	}
+
+	.section-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1.5rem;
+		flex-wrap: wrap;
+	}
+
+	.section-header__title-group {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: #fff;
+	}
+
+	.section-header__title {
+		font-size: 1.5rem;
+		font-weight: 700;
+		line-height: 1;
+	}
+
+	.section-header__count {
+		color: #9ca3af;
+		font-size: 1rem;
+		font-weight: 500;
+	}
+
+	.section-header__controls {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.section-header__search {
+		position: relative;
+		display: flex;
+		align-items: center;
+		min-width: 12rem;
+	}
+
+	.section-header__search-icon {
+		position: absolute;
+		left: 0.625rem;
+		top: 50%;
+		transform: translateY(-50%);
+		color: #9ca3af;
+		pointer-events: none;
+	}
+
+	.section-header__search-input {
+		width: 100%;
+		background: #374151;
+		border: 1px solid #4b5563;
+		border-radius: 0.5rem;
+		color: #fff;
+		font-size: 0.875rem;
+		padding: 0.5rem 0.75rem 0.5rem 2rem;
+		transition: border-color 150ms ease;
+	}
+
+	.section-header__search-input:focus {
+		outline: none;
+		border-color: #3b82f6;
+	}
+
+	.section-header__search-input::placeholder {
+		color: #6b7280;
 	}
 </style>
