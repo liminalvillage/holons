@@ -8,6 +8,7 @@
     import * as d3 from "d3";
     import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
     import TitleBar from "./shared/TitleBar.svelte";
+    import TaskModal from './TaskModal.svelte';
     import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import { Plus } from 'svelte-feathers';
 
@@ -28,12 +29,7 @@
     let tasks: Record<string, any> = {};
     let monthTasks: any[] = [];
     let monthProfiles: any[] = [];
-    let showModal = false;
-    let selectedTask: { id: string; task: any } | null = null;
-    let tempDate: string;
-    let tempTime: string;
-    let tempEndTime: string;
-    let tempTitle: string;
+    let selectedTask: { id: string; task: any; occurrenceWhen?: string } | null = null;
     
     // View options: 'month', 'week', 'day', 'orbits'
     let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' | 'orbits' = 'day';
@@ -42,6 +38,137 @@
     let draggedTask: { key: string; task: any } | null = null;
     let dragOverDate: Date | null = null;
     let dragOverTime: number | null = null; // Hour of day (0-23)
+
+    // Unassigned panel width (persisted across sessions)
+    const PANEL_WIDTH_KEY = 'calendar_unassigned_width';
+    const PANEL_OPEN_KEY = 'calendar_unassigned_open';
+    const PANEL_WIDTH_MIN = 160;
+    const PANEL_WIDTH_MAX = 480;
+    const PANEL_WIDTH_DEFAULT = 192;
+    let panelWidth = PANEL_WIDTH_DEFAULT;
+    let panelOpen = false; // drawer closed by default
+    let panelResizeState: { startX: number; startWidth: number; pointerId: number } | null = null;
+
+    function togglePanel() {
+        panelOpen = !panelOpen;
+        try { localStorage.setItem(PANEL_OPEN_KEY, panelOpen ? '1' : '0'); } catch {}
+    }
+
+    // Event resize state (drag bottom edge to change end time)
+    // previewEnd is displayed live during drag; task.ends is updated on pointerup.
+    const HOUR_PX = 48; // matches min-h-[48px] on hour rows
+    const RESIZE_SNAP_MIN = 15;
+    let resizingEvent: {
+        key: string;
+        task: any;
+        startY: number;
+        startEndMs: number;
+        startMs: number;
+        pointerId: number;
+        previewEnd: Date;
+    } | null = null;
+
+    function clampPanelWidth(w: number) {
+        return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(w)));
+    }
+
+    // --- Recurring task expansion ---
+    function advanceDate(date: Date, frequency: string): Date | null {
+        const d = new Date(date);
+        switch (String(frequency).toLowerCase()) {
+            case 'daily':     d.setDate(d.getDate() + 1); return d;
+            case 'weekly':    d.setDate(d.getDate() + 7); return d;
+            case 'biweekly':  d.setDate(d.getDate() + 14); return d;
+            case 'monthly':   d.setMonth(d.getMonth() + 1); return d;
+            case 'quarterly': d.setMonth(d.getMonth() + 3); return d;
+            case 'sixmonths': d.setMonth(d.getMonth() + 6); return d;
+            case 'yearly':    d.setFullYear(d.getFullYear() + 1); return d;
+        }
+        return null;
+    }
+
+    type TaskEntry = { key: string; originalKey: string; task: any; isInstance: boolean };
+
+    function expandTasks(tasksMap: Record<string, any>, windowStart: Date, windowEnd: Date): TaskEntry[] {
+        const entries = Object.entries(tasksMap);
+        // Fast path: no recurring tasks → identity mapping with no Date work.
+        let anyRecurring = false;
+        for (const [, task] of entries) {
+            if (task?.frequency && task?.when) { anyRecurring = true; break; }
+        }
+        if (!anyRecurring) {
+            return entries.map(([key, task]) => ({ key, originalKey: key, task, isInstance: false }));
+        }
+
+        const results: TaskEntry[] = [];
+        for (const [key, task] of entries) {
+            const hasDate = task?.when;
+            const hasFrequency = !!task?.frequency;
+
+            if (!hasDate || !hasFrequency) {
+                // Non-recurring (or unscheduled): pass through unchanged.
+                results.push({ key, originalKey: key, task, isInstance: false });
+                continue;
+            }
+
+            const base = new Date(task.when);
+            if (isNaN(base.getTime())) {
+                results.push({ key, originalKey: key, task, isInstance: false });
+                continue;
+            }
+            const durMs = task.ends ? Math.max(0, new Date(task.ends).getTime() - base.getTime()) : 60 * 60 * 1000;
+
+            const completedSet: Set<string> = new Set(Array.isArray(task.completedOccurrences) ? task.completedOccurrences : []);
+
+            let cur: Date | null = new Date(base);
+            let safety = 0;
+            while (cur && cur <= windowEnd && safety++ < 500) {
+                if (cur >= windowStart) {
+                    const iso = cur.toISOString();
+                    const instanceCompleted = completedSet.has(iso);
+                    results.push({
+                        key: `${key}::${iso}`,
+                        originalKey: key,
+                        task: {
+                            ...task,
+                            _originalKey: key,
+                            _isInstance: true,
+                            _instanceCompleted: instanceCompleted,
+                            when: iso,
+                            ends: new Date(cur.getTime() + durMs).toISOString(),
+                        },
+                        isInstance: true,
+                    });
+                }
+                const next = advanceDate(cur, task.frequency);
+                if (!next || next.getTime() === cur.getTime()) break;
+                cur = next;
+            }
+
+            // If no occurrences landed in the window (e.g., base in far future beyond windowEnd), fall back to the base.
+            if (!results.some(r => r.originalKey === key)) {
+                results.push({ key, originalKey: key, task, isInstance: false });
+            }
+        }
+        return results;
+    }
+
+    // Expansion window: 3 months back → 18 months forward. Computed once at module init
+    // so its identity is stable — otherwise the $: block would re-run on every reactive
+    // tick and re-expand every task needlessly.
+    const expansionWindow = (() => {
+        const s = new Date(); s.setMonth(s.getMonth() - 3);
+        const e = new Date(); e.setMonth(e.getMonth() + 18);
+        return { start: s, end: e };
+    })();
+    $: expandedTaskEntries = expandTasks(tasks, expansionWindow.start, expansionWindow.end);
+    $: expandedTasksRecord = Object.fromEntries(expandedTaskEntries.map(e => [e.key, e.task]));
+
+    function resolveOriginalKey(keyOrInstance: string, task?: any): string {
+        if (task?._originalKey) return task._originalKey;
+        if (typeof keyOrInstance === 'string' && keyOrInstance.includes('::')) return keyOrInstance.split('::')[0];
+        return keyOrInstance;
+    }
     
     // Get calendar data for current month
     $: monthData = getMonthData(currentDate);
@@ -58,6 +185,17 @@
     let showCalendarSettings = false;
     let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
     let externalEvents: ExternalCalendarEvent[] = [];
+    // Hidden imported calendars (persisted across sessions)
+    const HIDDEN_CALENDARS_KEY = 'calendar_hidden_imports';
+    let hiddenCalendarIds: Set<string> = new Set();
+    $: visibleExternalEvents = externalEvents.filter(e => !hiddenCalendarIds.has(e.calendarId ?? ''));
+
+    function toggleCalendarVisibility(id: string) {
+        const next = new Set(hiddenCalendarIds);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        hiddenCalendarIds = next;
+        try { localStorage.setItem(HIDDEN_CALENDARS_KEY, JSON.stringify([...next])); } catch {}
+    }
     let syncInterval: NodeJS.Timeout | number | null = null;
     const SYNC_INTERVAL_MS = 10 * 60 * 1000; // Sync every 10 minutes
 
@@ -160,6 +298,18 @@
     }
 
     onMount(() => {
+        try {
+            const stored = localStorage.getItem(PANEL_WIDTH_KEY);
+            if (stored) panelWidth = clampPanelWidth(parseInt(stored, 10) || PANEL_WIDTH_DEFAULT);
+            panelOpen = localStorage.getItem(PANEL_OPEN_KEY) === '1';
+
+            const hidden = localStorage.getItem(HIDDEN_CALENDARS_KEY);
+            if (hidden) {
+                const arr = JSON.parse(hidden);
+                if (Array.isArray(arr)) hiddenCalendarIds = new Set(arr);
+            }
+        } catch {}
+
         loadProfiles();
         loadTasks();
         loadImportedCalendars();
@@ -227,6 +377,15 @@
             if (svg) {
                 updateVisualization();
             }
+        } else {
+            reloadData();
+        }
+    }
+
+    function goToToday() {
+        currentDate = new Date();
+        if (viewMode === 'orbits') {
+            if (svg) updateVisualization();
         } else {
             reloadData();
         }
@@ -392,7 +551,7 @@
             }));
 
         // Get external events for this day
-        const dayExternalEvents = externalEvents
+        const dayExternalEvents = visibleExternalEvents
             .filter(event => {
                 const eventStart = new Date(event.start);
                 const eventEnd = new Date(event.end);
@@ -407,9 +566,10 @@
                 location: event.location,
                 when: event.start.toISOString(),
                 ends: event.end.toISOString(),
-                color: '#10b981', // Green color for external events
+                color: event.calendarColor || '#10b981',
                 isExternalEvent: true,
-                calendarName: event.calendarName
+                calendarName: event.calendarName,
+                calendarId: event.calendarId,
             }));
 
         return [...(events[dateStr] || []), ...dayTasks, ...dayExternalEvents];
@@ -543,36 +703,73 @@
             const calendarData = await holosphere.get($ID, 'settings', 'imported_calendars');
             if (calendarData && Array.isArray(calendarData.calendars)) {
                 importedCalendars = calendarData.calendars;
-                // Sync calendars after loading
-                await syncAllCalendars();
+                // Defer until idle so internal tasks paint first.
+                deferSync();
             }
         } catch (err) {
             console.error('Error loading imported calendars:', err);
         }
     }
 
-    // Sync all enabled imported calendars
-    async function syncAllCalendars() {
+    // Deterministic per-calendar color (HSL, keyed by calendar id)
+    function getCalendarColor(id: string): string {
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) {
+            hash = id.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = ((hash % 360) + 360) % 360;
+        return `hsl(${hue}, 60%, 55%)`;
+    }
+
+    // Sync all enabled imported calendars (parallel, scoped to the visible year)
+    let lastSyncedYear: number | null = null;
+    async function syncAllCalendars(year?: number) {
         if (importedCalendars.length === 0) return;
 
         const enabledCalendars = importedCalendars.filter(cal => cal.enabled);
-        const allEvents: ExternalCalendarEvent[] = [];
+        if (enabledCalendars.length === 0) { externalEvents = []; lastSyncedYear = null; return; }
 
-        for (const calendar of enabledCalendars) {
-            try {
-                const parsed = await fetchAndParseICalFeed(calendar.url, calendar.name);
-                // Add calendar info to each event
-                const eventsWithCal = parsed.events.map(event => ({
-                    ...event,
-                    calendarName: calendar.name
-                }));
-                allEvents.push(...eventsWithCal);
-            } catch (error) {
-                console.error(`Error syncing calendar ${calendar.name}:`, error);
-            }
+        const targetYear = year ?? currentDate.getFullYear();
+        const parseWindow = {
+            start: new Date(targetYear, 0, 1),
+            end: new Date(targetYear, 11, 31, 23, 59, 59),
+        };
+        lastSyncedYear = targetYear;
+
+        const results = await Promise.all(
+            enabledCalendars.map(async (calendar) => {
+                try {
+                    const parsed = await fetchAndParseICalFeed(calendar.url, calendar.name, parseWindow);
+                    const color = getCalendarColor(calendar.id);
+                    return parsed.events.map(event => ({
+                        ...event,
+                        calendarName: calendar.name,
+                        calendarId: calendar.id,
+                        calendarColor: color,
+                    }));
+                } catch (error) {
+                    console.error(`Error syncing calendar ${calendar.name}:`, error);
+                    return [] as ExternalCalendarEvent[];
+                }
+            })
+        );
+
+        externalEvents = results.flat();
+    }
+
+    // Defer a sync until the browser is idle so initial task rendering isn't blocked.
+    function deferSync(year?: number) {
+        const run = () => syncAllCalendars(year).catch(err => console.error('Background sync failed:', err));
+        if (typeof window !== 'undefined' && typeof (window as any).requestIdleCallback === 'function') {
+            (window as any).requestIdleCallback(run, { timeout: 2000 });
+        } else {
+            setTimeout(run, 0);
         }
+    }
 
-        externalEvents = allEvents;
+    // Re-sync when the user navigates to a different year (only after the initial sync).
+    $: if (lastSyncedYear !== null && currentDate.getFullYear() !== lastSyncedYear) {
+        deferSync(currentDate.getFullYear());
     }
 
     // Handle calendar settings update
@@ -580,21 +777,20 @@
         loadImportedCalendars();
     }
 
-    // Make monthTasks reactive to changes in tasks
+    // Make monthTasks reactive to changes in tasks (expanded for recurring)
     $: {
         const month = currentDate.getMonth();
         const year = currentDate.getFullYear();
         const startDate = new Date(year, month, 1);
         const endDate = new Date(year, month + 1, 0);
 
-        // Filter tasks for current month - this will react to changes in tasks
-        monthTasks = Object.entries(tasks)
-            .filter(([_, task]) => {
-                if (!task.when) return false;
-                const taskDate = new Date(task.when);
-                return taskDate >= startDate && taskDate <= endDate;
+        monthTasks = expandedTaskEntries
+            .filter(entry => {
+                if (!entry.task.when) return false;
+                const d = new Date(entry.task.when);
+                return d >= startDate && d <= endDate;
             })
-            .map(([key, task]) => ({ key, ...task }));
+            .map(entry => ({ key: entry.key, ...entry.task }));
 
         // Filter profiles for current month
         monthProfiles = Object.entries(profiles)
@@ -611,20 +807,32 @@
             }));
     }
 
-    // Unassigned tasks (no 'when' date) — available for drag/drop onto calendar
+    // Unscheduled tasks (no 'when' date) — available for drag/drop onto calendar
     $: unassignedTasks = Object.entries(tasks)
         .filter(([_, task]) => !task.when)
         .map(([key, task]) => ({ key, ...task }));
 
     function handleTaskClick(key: string, task: any) {
-        selectedTask = { id: key, task };
-        const date = task.when ? new Date(task.when) : new Date();
-        const endDate = task.ends ? new Date(task.ends) : new Date(date.getTime() + 60*60*1000);
-        tempDate = date.toISOString().split('T')[0];
-        tempTime = date.toTimeString().slice(0, 5);
-        tempEndTime = endDate.toTimeString().slice(0, 5);
-        tempTitle = task.title || '';
-        showModal = true;
+        // For expanded recurring-task instances, open the base series but remember which
+        // occurrence was clicked so "Mark Complete" can target just that one.
+        const originalKey = resolveOriginalKey(key, task);
+        const originalTask = tasks[originalKey] ?? task;
+        const isInstance = task?._isInstance === true;
+        selectedTask = {
+            id: originalKey,
+            task: originalTask,
+            occurrenceWhen: isInstance ? task.when : undefined,
+        };
+    }
+
+    function closeTaskModal(event?: CustomEvent<{ deleted?: boolean; questId?: string }>) {
+        const detail = event?.detail;
+        if (detail?.deleted && detail?.questId) {
+            // Evict immediately so the UI doesn't wait for the holosphere subscription callback.
+            const { [detail.questId]: _removed, ...rest } = tasks;
+            tasks = rest;
+        }
+        selectedTask = null;
     }
 
     async function addNewEvent() {
@@ -647,67 +855,17 @@
         };
 
         await holosphere.put($ID, 'quests', newEvent);
-        // Open for editing
         selectedTask = { id: newEvent.id, task: newEvent };
-        tempDate = startDate.toISOString().split('T')[0];
-        tempTime = startDate.toTimeString().slice(0, 5);
-        tempEndTime = endDate.toTimeString().slice(0, 5);
-        tempTitle = newEvent.title;
-        showModal = true;
-    }
-
-    function updateDateTime() {
-        if (!selectedTask || !$ID) return;
-
-        const newDate = new Date(`${tempDate}T${tempTime}`);
-        const endDate = new Date(`${tempDate}T${tempEndTime}`);
-        const updatedTask = {
-            ...selectedTask.task,
-            title: tempTitle,
-            when: newDate.toISOString(),
-            ends: endDate.toISOString()
-        };
-
-        showModal = false;
-        selectedTask = null;
-
-        try {
-            holosphere.put($ID, 'quests', updatedTask);
-        } catch (error) {
-            console.error('Error updating task:', error);
-        }
-    }
-
-    function deleteSchedule() {
-        if (!selectedTask || !$ID) return;
-
-        try {
-            const taskKey = selectedTask.id;
-            const updatedTask = {
-                ...selectedTask.task,
-                when: null,
-                status: 'ongoing'
-            };
-            
-            // Immediately remove from local state for instant UI update
-            delete tasks[taskKey];
-            tasks = tasks; // Trigger reactivity
-            
-            showModal = false;
-            selectedTask = null;
-            
-            holosphere.put($ID, 'quests', updatedTask);
-        } catch (error) {
-            console.error('Error removing schedule:', error);
-            // On error, we might want to restore the task, but for now just log
-        }
     }
 
     // Drag and drop handlers
     function handleDragStart(event: DragEvent, key: string, task: any) {
         if (!event.dataTransfer) return;
-        
-        draggedTask = { key, task };
+
+        // For recurring-instance rows, drag moves the underlying base series.
+        const originalKey = resolveOriginalKey(key, task);
+        const originalTask = tasks[originalKey] ?? task;
+        draggedTask = { key: originalKey, task: originalTask };
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', ''); // Required for some browsers
         
@@ -736,10 +894,105 @@
     function handleDragOver(event: DragEvent, date: Date, hour?: number) {
         event.preventDefault();
         if (!draggedTask) return;
-        
+
         event.dataTransfer!.dropEffect = 'move';
         dragOverDate = date;
         dragOverTime = hour !== undefined ? hour : null;
+    }
+
+    // --- Unassigned panel resize (mouse + touch via pointer events) ---
+    function handlePanelResizeStart(e: PointerEvent) {
+        e.preventDefault();
+        const target = e.currentTarget as HTMLElement;
+        try { target.setPointerCapture(e.pointerId); } catch {}
+        panelResizeState = { startX: e.clientX, startWidth: panelWidth, pointerId: e.pointerId };
+        document.body.style.userSelect = 'none';
+    }
+
+    function handlePanelResizeMove(e: PointerEvent) {
+        if (!panelResizeState || e.pointerId !== panelResizeState.pointerId) return;
+        panelWidth = clampPanelWidth(panelResizeState.startWidth + (e.clientX - panelResizeState.startX));
+    }
+
+    function handlePanelResizeEnd(e: PointerEvent) {
+        if (!panelResizeState || e.pointerId !== panelResizeState.pointerId) return;
+        const target = e.currentTarget as HTMLElement;
+        try { target.releasePointerCapture(e.pointerId); } catch {}
+        panelResizeState = null;
+        document.body.style.userSelect = '';
+        try { localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth)); } catch {}
+    }
+
+    // --- Event bottom-edge resize (change end time) ---
+    function handleEventResizeStart(e: PointerEvent, key: string, task: any) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!task.when) return;
+        const target = e.currentTarget as HTMLElement;
+        try { target.setPointerCapture(e.pointerId); } catch {}
+        // Keep the rendered key so the live preview binds to this row;
+        // saving will resolve back to the base series if this is a recurring instance.
+        const startMs = new Date(task.when).getTime();
+        const startEndMs = task.ends ? new Date(task.ends).getTime() : startMs + 60 * 60 * 1000;
+        resizingEvent = {
+            key,
+            task,
+            startY: e.clientY,
+            startEndMs,
+            startMs,
+            pointerId: e.pointerId,
+            previewEnd: new Date(startEndMs),
+        };
+        document.body.style.userSelect = 'none';
+    }
+
+    function handleEventResizeMove(e: PointerEvent) {
+        if (!resizingEvent || e.pointerId !== resizingEvent.pointerId) return;
+        const deltaPx = e.clientY - resizingEvent.startY;
+        // 48px = 1 hour → px-to-minute conversion, then snap to RESIZE_SNAP_MIN.
+        const deltaMin = Math.round((deltaPx / HOUR_PX) * 60 / RESIZE_SNAP_MIN) * RESIZE_SNAP_MIN;
+        let newEndMs = resizingEvent.startEndMs + deltaMin * 60 * 1000;
+        // Constraint: end >= start + one snap increment
+        const minEnd = resizingEvent.startMs + RESIZE_SNAP_MIN * 60 * 1000;
+        if (newEndMs < minEnd) newEndMs = minEnd;
+        // Constraint: clamp to end of same day (grid ends at 24:00)
+        const endOfDay = new Date(resizingEvent.startMs);
+        endOfDay.setHours(24, 0, 0, 0);
+        if (newEndMs > endOfDay.getTime()) newEndMs = endOfDay.getTime();
+        resizingEvent = { ...resizingEvent, previewEnd: new Date(newEndMs) };
+    }
+
+    async function handleEventResizeEnd(e: PointerEvent) {
+        if (!resizingEvent || e.pointerId !== resizingEvent.pointerId) return;
+        const target = e.currentTarget as HTMLElement;
+        try { target.releasePointerCapture(e.pointerId); } catch {}
+        const { key, task, previewEnd, startEndMs } = resizingEvent;
+        resizingEvent = null;
+        document.body.style.userSelect = '';
+        if (previewEnd.getTime() === startEndMs) return; // no change
+        if (!holosphere || !$ID) return;
+
+        // For a recurring instance, translate the delta onto the base series' end time.
+        const originalKey = resolveOriginalKey(key, task);
+        const originalTask = tasks[originalKey] ?? task;
+        const deltaMs = previewEnd.getTime() - startEndMs;
+        const baseEndMs = originalTask.ends
+            ? new Date(originalTask.ends).getTime() + deltaMs
+            : new Date(originalTask.when).getTime() + 60 * 60 * 1000 + deltaMs;
+        const updatedTask = { ...originalTask, ends: new Date(baseEndMs).toISOString() };
+
+        try {
+            await holosphere.put($ID, 'quests', updatedTask);
+            tasks = { ...tasks, [originalKey]: updatedTask };
+        } catch (err) {
+            console.error('[Calendar] Failed to update task end time:', err);
+        }
+    }
+
+    function handleEventResizeCancel(e: PointerEvent) {
+        if (!resizingEvent || e.pointerId !== resizingEvent.pointerId) return;
+        resizingEvent = null;
+        document.body.style.userSelect = '';
     }
 
     function handleDragLeave() {
@@ -825,9 +1078,11 @@
     }
 
     // Add this helper function to calculate grid positions
-    function getTaskPosition(task: any) {
+    function getTaskPosition(task: any, endsOverride?: Date) {
         const startTime = new Date(task.when);
-        const endTime = task.ends ? new Date(task.ends) : new Date(startTime.getTime() + 60*60*1000);
+        const endTime = endsOverride
+            ? endsOverride
+            : (task.ends ? new Date(task.ends) : new Date(startTime.getTime() + 60*60*1000));
         
         const startHour = startTime.getHours() - 6; // Adjust for 6 AM start
         const startMinutes = startTime.getMinutes();
@@ -1007,11 +1262,12 @@
                 return;
             }
             
-            // Find quests that have a recurringTaskID field or are recurring
+            // Find quests that have a recurringTaskID, a frequency field, or a recurring status/type
             const recurringQuests = quests.filter((quest: any) => {
                 const hasRecurringID = quest.recurringTaskID || quest.recurring_task_id || quest.recurringTaskId;
+                const hasFrequency = !!quest.frequency;
                 const isRecurring = quest.status === 'recurring' || quest.type === 'recurring' || quest.status === 'repeating';
-                return hasRecurringID || isRecurring;
+                return hasRecurringID || hasFrequency || isRecurring;
             });
             
             console.log('Found recurring quests:', recurringQuests.length);
@@ -1076,9 +1332,10 @@
             if (!$ID) return;
             const allQuests = await holosphere.getAll($ID, "quests");
             if (allQuests && allQuests.length > 0) {
-                const recurringQuests = allQuests.filter((quest: any) => 
-                    quest.status === 'recurring' || 
-                    quest.type === 'recurring' || 
+                const recurringQuests = allQuests.filter((quest: any) =>
+                    !!quest.frequency ||
+                    quest.status === 'recurring' ||
+                    quest.type === 'recurring' ||
                     quest.status === 'repeating'
                 );
                 
@@ -1142,10 +1399,17 @@
 
     // Determine frequency from quest data
     function determineFrequencyFromQuest(quest: any): 'daily' | 'weekly' | 'monthly' | 'yearly' | null {
+        // Explicit frequency field (set via TaskModal) is authoritative
+        if (quest.frequency) {
+            const f = String(quest.frequency).toLowerCase();
+            if (f === 'daily' || f === 'weekly' || f === 'monthly' || f === 'yearly') return f;
+            if (f === 'quarterly' || f === 'sixmonths' || f === 'biweekly') return 'monthly'; // closest orbit bucket
+        }
+
         if (quest.status === 'recurring' || quest.type === 'recurring') {
             return 'weekly';
         }
-        
+
         const recurringKeywords = ['daily', 'weekly', 'monthly', 'yearly', 'every', 'recurring', 'repeat'];
         const text = `${quest.title} ${quest.description || ''}`.toLowerCase();
         
@@ -1217,7 +1481,7 @@
     }
 
     // Calculate orbital position based on time and period
-    function calculateOrbitalPosition(task: RecurringTask, time: Date): { x: number; y: number; angle: number; progress: number } {
+    function calculateOrbitalPosition(task: RecurringTask, time: Date): { x: number; y: number; angle: number; progress: number; visible: boolean } {
         // Calculate the actual next occurrence (same logic as calculateTimeToOccurrence)
         let nextOccurrence = new Date(task.nextOccurrence);
         
@@ -1241,20 +1505,40 @@
         
         const timeToNext = Math.max(0, nextOccurrence.getTime() - time.getTime());
         const periodMs = task.orbitPeriod * 24 * 60 * 60 * 1000;
-        
+
+        // Future task hasn't entered its orbit yet. Stay off-field until within the approach window,
+        // then glide in tangentially from the right toward the 12 o'clock entry point.
+        if (timeToNext > periodMs) {
+            const approachWindowMs = periodMs * 0.25; // visible during last 25% before entering orbit
+            const excess = timeToNext - periodMs;
+            if (excess > approachWindowMs) {
+                return { x: -10000, y: -10000, angle: -Math.PI / 2, progress: 0, visible: false };
+            }
+            const approachProgress = excess / approachWindowMs; // 1 = just appeared, 0 = landing on orbit
+            // Enter from the left (counter to clockwise travel) so motion reads as "arriving" at 12 o'clock.
+            const offsetX = -task.orbitRadius * 0.9 * approachProgress;
+            return {
+                x: centerX + offsetX,
+                y: centerY - task.orbitRadius,
+                angle: -Math.PI / 2,
+                progress: 0,
+                visible: true,
+            };
+        }
+
         // Calculate progress through the current cycle
         // When timeToNext = periodMs (full cycle remaining), progress = 0 (at start/12 o'clock)
         // When timeToNext = 0 (no time remaining), progress = 1 (full circle completed)
         const progress = Math.max(0, Math.min(1, (periodMs - timeToNext) / periodMs));
         const angle = progress * 2 * Math.PI;
-        
+
         // Adjust angle so 0 is at the top (12 o'clock) instead of right side (3 o'clock)
         const adjustedAngle = angle - Math.PI / 2;
-        
+
         const x = centerX + task.orbitRadius * Math.cos(adjustedAngle);
         const y = centerY + task.orbitRadius * Math.sin(adjustedAngle);
-        
-        return { x, y, angle: adjustedAngle, progress };
+
+        return { x, y, angle: adjustedAngle, progress, visible: true };
     }
 
     // Calculate time to occurrence (next time the task should happen)
@@ -1374,6 +1658,49 @@
         }
     }
 
+    // Draw a deterministic starfield + a few constellation lines on the SVG background.
+    function drawStarfield(svgEl: any, w: number, h: number) {
+        // Tiny seeded PRNG so the pattern is stable across re-renders.
+        let seed = 0xdeadbeef;
+        const rand = () => {
+            seed ^= seed << 13;
+            seed ^= seed >>> 17;
+            seed ^= seed << 5;
+            return ((seed >>> 0) % 10000) / 10000;
+        };
+
+        const starLayer = svgEl.append('g').attr('class', 'starfield').attr('pointer-events', 'none');
+
+        // Stars
+        const starCount = Math.max(60, Math.min(180, Math.floor((w * h) / 9000)));
+        const stars: Array<{ x: number; y: number; r: number; opacity: number }> = [];
+        for (let i = 0; i < starCount; i++) {
+            const x = rand() * w;
+            const y = rand() * h;
+            const r = 0.5 + rand() * 1.3;
+            const opacity = 0.3 + rand() * 0.5;
+            stars.push({ x, y, r, opacity });
+            starLayer.append('circle')
+                .attr('cx', x)
+                .attr('cy', y)
+                .attr('r', r)
+                .attr('fill', '#e0e7ff')
+                .attr('opacity', opacity);
+        }
+
+        // A few brighter "accent" stars with a subtle twinkle via drop-shadow
+        for (let i = 0; i < 6; i++) {
+            const s = stars[Math.floor(rand() * stars.length)];
+            starLayer.append('circle')
+                .attr('cx', s.x)
+                .attr('cy', s.y)
+                .attr('r', s.r + 0.8)
+                .attr('fill', '#ffffff')
+                .attr('opacity', 0.9)
+                .style('filter', 'drop-shadow(0 0 2px rgba(224, 231, 255, 0.9))');
+        }
+    }
+
     // Initialize D3 visualization
     function initializeVisualization() {
         if (!container) return;
@@ -1388,61 +1715,97 @@
         // Clear existing SVG
         d3.select(container).selectAll('*').remove();
 
-        // Create SVG
+        // Create SVG (match calendar's flat gray-800 surface)
         svg = d3.select(container)
             .append('svg')
             .attr('width', width)
             .attr('height', height)
             .attr('viewBox', `0 0 ${width} ${height}`)
-            .style('background', 'radial-gradient(circle at center, #1e1b4b 0%, #0f0f23 50%, #000000 100%)'); // Mystical indigo gradient
+            .style('background', '#1f2937');
+
+        // Starfield + constellations (deterministic so stars don't jitter between renders)
+        drawStarfield(svg, width, height);
 
         // Add orbital rings
         const uniqueRadii = [...new Set(Object.values(orbitStore).map(task => task.orbitRadius))].sort((a, b) => a - b);
-        
+
         uniqueRadii.forEach(radius => {
             svg.append('circle')
                 .attr('cx', centerX)
                 .attr('cy', centerY)
                 .attr('r', radius)
                 .attr('fill', 'none')
-                .attr('stroke', '#6366F1')
-                .attr('stroke-width', 1.5)
-                .attr('stroke-dasharray', '5,5')
-                .attr('opacity', 0.4)
-                .style('filter', 'drop-shadow(0 0 8px rgba(99, 102, 241, 0.3))');
+                .attr('stroke', '#374151') // gray-700
+                .attr('stroke-width', 1)
+                .attr('stroke-dasharray', '4,4')
+                .attr('opacity', 0.8);
         });
 
-        // Add mystical center point
-        svg.append('circle')
-            .attr('cx', centerX)
-            .attr('cy', centerY)
-            .attr('r', 6)
-            .attr('fill', '#6366F1')
-            .attr('stroke', '#8B5CF6')
-            .attr('stroke-width', 3)
-            .style('filter', 'drop-shadow(0 0 12px rgba(99, 102, 241, 0.8))');
+        // Sun at the center — radial gradient core + layered halos + rays
+        const defs = svg.append('defs');
+        const gradId = 'sun-core-gradient';
+        const grad = defs.append('radialGradient')
+            .attr('id', gradId)
+            .attr('cx', '50%').attr('cy', '50%').attr('r', '50%');
+        grad.append('stop').attr('offset', '0%').attr('stop-color', '#fff8dc');
+        grad.append('stop').attr('offset', '55%').attr('stop-color', '#fbbf24'); // amber-400
+        grad.append('stop').attr('offset', '100%').attr('stop-color', '#f59e0b'); // amber-500
 
-        // Add mystical "NOW" indicator line (from center to edge of visualization)
-        const edgeY = Math.min(50, centerY - 50); // Go to edge or at least 50px from center
+        const sun = svg.append('g').attr('class', 'sun').attr('pointer-events', 'none');
+
+        // Outer soft halo
+        sun.append('circle')
+            .attr('cx', centerX).attr('cy', centerY).attr('r', 28)
+            .attr('fill', '#fbbf24').attr('opacity', 0.08);
+        sun.append('circle')
+            .attr('cx', centerX).attr('cy', centerY).attr('r', 20)
+            .attr('fill', '#fbbf24').attr('opacity', 0.18);
+        sun.append('circle')
+            .attr('cx', centerX).attr('cy', centerY).attr('r', 14)
+            .attr('fill', '#fbbf24').attr('opacity', 0.28);
+
+        // Corona rays
+        const rayCount = 12;
+        for (let i = 0; i < rayCount; i++) {
+            const angle = (i / rayCount) * 2 * Math.PI;
+            const inner = 11;
+            const outer = 18;
+            sun.append('line')
+                .attr('x1', centerX + inner * Math.cos(angle))
+                .attr('y1', centerY + inner * Math.sin(angle))
+                .attr('x2', centerX + outer * Math.cos(angle))
+                .attr('y2', centerY + outer * Math.sin(angle))
+                .attr('stroke', '#fbbf24')
+                .attr('stroke-width', 1.2)
+                .attr('stroke-linecap', 'round')
+                .attr('opacity', 0.7);
+        }
+
+        // Core with gradient + subtle glow
+        sun.append('circle')
+            .attr('cx', centerX).attr('cy', centerY).attr('r', 9)
+            .attr('fill', `url(#${gradId})`)
+            .style('filter', 'drop-shadow(0 0 6px rgba(251, 191, 36, 0.6))');
+
+        // "NOW" indicator line — matches the red current-time line in day/week views
+        const edgeY = Math.min(50, centerY - 50);
         svg.append('line')
             .attr('x1', centerX)
             .attr('y1', centerY)
             .attr('x2', centerX)
             .attr('y2', edgeY)
-            .attr('stroke', '#8B5CF6') // Mystical violet
-            .attr('stroke-width', 2.5)
-            .attr('stroke-dasharray', '5,5')
-            .style('filter', 'drop-shadow(0 0 6px rgba(139, 92, 246, 0.5))');
+            .attr('stroke', '#ef4444') // red-500
+            .attr('stroke-width', 1.5)
+            .attr('stroke-dasharray', '4,4')
+            .attr('opacity', 0.8);
 
-        // Add mystical "NOW" label at the end of the line
         svg.append('text')
             .attr('x', centerX)
-            .attr('y', edgeY - 10)
-            .attr('fill', '#A855F7')
-            .attr('font-size', '12px')
-            .attr('font-weight', '600')
+            .attr('y', edgeY - 8)
+            .attr('fill', '#ef4444')
+            .attr('font-size', '11px')
+            .attr('font-weight', '500')
             .attr('text-anchor', 'middle')
-            .style('filter', 'drop-shadow(0 0 4px rgba(168, 85, 247, 0.6))')
             .text('NOW');
 
 
@@ -1470,81 +1833,75 @@
         // Add planets for each task
         Object.values(orbitStore).forEach(task => {
             const position = calculateOrbitalPosition(task, visualizationTime);
+            if (!position.visible) return; // off-field (scheduled too far in the future)
+
             const timeToOccurrence = calculateTimeToOccurrence(task, visualizationTime);
             const categoryColor = categoryColors[task.category as keyof typeof categoryColors] || categoryColors.default;
-            
-            // Debug: Log unusual timer values (can be removed in production)
-            if (timeToOccurrence < 60000) { // Less than 1 minute
-                console.log(`Timer near zero for ${task.title}: ${Math.round(timeToOccurrence / 1000)}s remaining`);
-            }
-            
-            // Add mystical orbit trail
+
+            // Orbit trail (subtle category tint)
             svg.append('circle')
                 .attr('cx', centerX)
                 .attr('cy', centerY)
                 .attr('r', task.orbitRadius)
                 .attr('fill', 'none')
                 .attr('stroke', categoryColor)
-                .attr('stroke-width', 2.5)
-                .attr('opacity', 0.15)
-                .attr('stroke-dasharray', '8,8')
-                .classed('orbit-trail', true)
-                .style('filter', 'drop-shadow(0 0 4px rgba(99, 102, 241, 0.2))');
+                .attr('stroke-width', 1.5)
+                .attr('opacity', 0.25)
+                .attr('stroke-dasharray', '6,6')
+                .classed('orbit-trail', true);
 
-            // Add planet
+            // Detect "incoming from outer space" (future task in the approach window).
+            const distFromCenter = Math.hypot(position.x - centerX, position.y - centerY);
+            const isIncoming = distFromCenter > task.orbitRadius + 0.5;
+
+            // Planet group
             const planetGroup = svg.append('g')
                 .classed('planet', true)
-                .attr('transform', `translate(${position.x}, ${position.y})`);
+                .attr('transform', `translate(${position.x}, ${position.y})`)
+                .attr('opacity', isIncoming ? 0.7 : 1);
 
-            // Mystical planet body
+            // Planet body
             planetGroup.append('circle')
-                .attr('r', 12)
+                .attr('r', 10)
                 .attr('fill', categoryColor)
-                .attr('stroke', '#E0E7FF')
-                .attr('stroke-width', 2)
-                .attr('filter', 'drop-shadow(0 0 8px rgba(99, 102, 241, 0.6))');
-
-            // Enhanced mystical glow effect
-            planetGroup.append('circle')
-                .attr('r', 20)
-                .attr('fill', 'none')
-                .attr('stroke', categoryColor)
-                .attr('stroke-width', 1.5)
-                .attr('opacity', 0.4)
-                .style('filter', 'blur(2px)');
+                .attr('stroke', '#ffffff')
+                .attr('stroke-width', 1.5);
 
             // Task title
             planetGroup.append('text')
                 .attr('x', 0)
-                .attr('y', -20)
+                .attr('y', -16)
                 .attr('fill', '#ffffff')
                 .attr('font-size', '10px')
                 .attr('text-anchor', 'middle')
-                .attr('font-weight', '600')
+                .attr('font-weight', '500')
                 .text(task.title.length > 12 ? task.title.substring(0, 12) + '...' : task.title);
 
-            // Time to occurrence indicator
+            // Time to occurrence indicator (muted gray, red near zero — mirrors day view "now" treatment)
             const timeText = formatDuration(timeToOccurrence);
-            const timeColor = timeToOccurrence < 60000 ? '#ef4444' : '#94a3b8'; // Red when < 1 minute, gray otherwise
-            
+            const timeColor = timeToOccurrence < 60000 ? '#ef4444' : '#9ca3af'; // gray-400
+
             planetGroup.append('text')
                 .attr('x', 0)
-                .attr('y', 30)
+                .attr('y', 26)
                 .attr('fill', timeColor)
-                .attr('font-size', '8px')
+                .attr('font-size', '9px')
                 .attr('text-anchor', 'middle')
-                .attr('font-weight', timeToOccurrence < 60000 ? 'bold' : 'normal')
+                .attr('font-weight', timeToOccurrence < 60000 ? '600' : '400')
                 .text(timeText);
 
-            // Progress indicator
+            // Progress indicator (ring outside planet body)
+            const progressRadius = 14;
+            const circumference = 2 * Math.PI * progressRadius;
             const progressAngle = position.progress * 360;
             planetGroup.append('circle')
-                .attr('r', 8)
+                .attr('r', progressRadius)
                 .attr('fill', 'none')
                 .attr('stroke', '#ffffff')
-                .attr('stroke-width', 1.5)
-                .attr('stroke-dasharray', `${progressAngle / 360 * 50.24}, 50.24`)
-                .attr('transform', 'rotate(90)'); // Start at 12 o'clock (top)
+                .attr('stroke-width', 1)
+                .attr('opacity', 0.6)
+                .attr('stroke-dasharray', `${progressAngle / 360 * circumference}, ${circumference}`)
+                .attr('transform', 'rotate(-90)'); // Start at 12 o'clock (top)
 
             // Add click event
             planetGroup.style('cursor', 'pointer')
@@ -1572,51 +1929,22 @@
         currentDate={currentDate}
         profiles={profiles}
         users={users}
+        tasks={expandedTasksRecord}
+        externalEvents={visibleExternalEvents}
         on:dateSelect={handleTimelineDateSelect}
+        on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.task)}
     />
 
     <div class="bg-gray-800 rounded-2xl p-4 sm:p-6">
-    <div class="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
-        <div class="flex items-center gap-4">
-            <div class="flex gap-2">
-                <!-- svelte-ignore a11y_consider_explicit_label -->
-                <button
-                    class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
-                    onclick={() => handleNavigation(-1)}
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                    </svg>
-                </button>
-                <button
-                    class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
-                    onclick={() => handleNavigation(1)}
-                    aria-label="Next period"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                    </svg>
-                </button>
-            </div>
-            <h2 class="text-xl sm:text-2xl font-bold text-white">
-                {#if viewMode === 'month'}
-                    {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                {:else if viewMode === 'week'}
-                    {weekData[0].toLocaleDateString(undefined, { month: 'long', day: 'numeric' })} -
-                    {weekData[6].toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
-                {:else}
-                    {currentDate.toLocaleString('default', { month: 'long', day: 'numeric', year: 'numeric' })}
-                {/if}
-            </h2>
-        </div>
-        <div class="flex gap-2 flex-wrap items-center">
+    <div class="flex items-center gap-2 mb-4 flex-wrap">
+        <!-- Left: Today + Settings -->
+        <div class="flex-1 flex items-center gap-2 min-w-0">
             <button
-                class="btn btn--primary"
-                onclick={addNewEvent}
-                aria-label="Add new event"
+                class="px-3 py-1.5 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
+                onclick={goToToday}
+                aria-label="Jump to today"
             >
-                <Plus size={16} />
-                <span class="hidden sm:inline">Add Event</span>
+                Today
             </button>
             <button
                 class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
@@ -1629,58 +1957,164 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
             </button>
-            <button 
-                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                onclick={() => handleViewModeChange('day')}
+        </div>
+
+        <!-- Center: arrows + date -->
+        <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+                class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                onclick={() => handleNavigation(-1)}
+                aria-label="Previous period"
             >
-                Day
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+                </svg>
             </button>
-            <button 
-                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'week' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                onclick={() => handleViewModeChange('week')}
+            <h2 class="text-base sm:text-xl font-semibold text-white text-center whitespace-nowrap">
+                {#if viewMode === 'month'}
+                    <span class="sm:hidden">{currentDate.toLocaleString('default', { month: 'short', year: 'numeric' })}</span>
+                    <span class="hidden sm:inline">{currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</span>
+                {:else if viewMode === 'week'}
+                    <span class="sm:hidden">{weekData[0].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – {weekData[6].toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                    <span class="hidden sm:inline">{weekData[0].toLocaleDateString(undefined, { month: 'long', day: 'numeric' })} – {weekData[6].toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                {:else}
+                    <span class="sm:hidden">{currentDate.toLocaleString('default', { month: 'short', day: 'numeric' })}</span>
+                    <span class="hidden sm:inline">{currentDate.toLocaleString('default', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                {/if}
+            </h2>
+            <button
+                class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                onclick={() => handleNavigation(1)}
+                aria-label="Next period"
             >
-                Week
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+                </svg>
             </button>
-            <button 
-                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'month' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                onclick={() => handleViewModeChange('month')}
+        </div>
+
+        <!-- Right: View switcher + Add -->
+        <div class="flex-1 flex items-center gap-2 justify-end">
+            <div class="inline-flex items-center rounded-lg bg-gray-700 p-0.5" role="tablist" aria-label="Calendar view">
+                <span class="hidden sm:inline px-2 text-[11px] uppercase tracking-wider text-gray-400 font-medium">View</span>
+                {#each [
+                    { value: 'day', label: 'Day' },
+                    { value: 'week', label: 'Week' },
+                    { value: 'month', label: 'Month' },
+                    { value: 'orbits', label: 'Orbits' },
+                ] as option}
+                    {@const isActive = viewMode === option.value}
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        class="px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors {isActive ? 'bg-gray-900 text-white shadow' : 'text-gray-300 hover:text-white'}"
+                        onclick={() => handleViewModeChange(option.value as 'day' | 'week' | 'month' | 'orbits')}
+                    >
+                        {option.label}
+                    </button>
+                {/each}
+            </div>
+            <button
+                class="btn btn--primary"
+                onclick={addNewEvent}
+                aria-label="Add new event"
+                title="Add event"
             >
-                Month
-            </button>
-            <button 
-                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'orbits' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
-                onclick={() => handleViewModeChange('orbits')}
-            >
-                Orbits
+                <Plus size={16} />
+                <span class="hidden md:inline">Add Event</span>
             </button>
         </div>
     </div>
 
+    <!-- Imported calendar visibility chips -->
+    {#if importedCalendars.filter(c => c.enabled).length > 0}
+        <div class="flex items-center flex-wrap gap-1.5 mb-3">
+            <span class="text-[11px] uppercase tracking-wider text-gray-400 font-medium mr-1">Calendars</span>
+            {#each importedCalendars.filter(c => c.enabled) as cal (cal.id)}
+                {@const hidden = hiddenCalendarIds.has(cal.id)}
+                {@const color = getCalendarColor(cal.id)}
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs transition-opacity {hidden ? 'opacity-40' : 'opacity-100'} border-gray-700 hover:border-gray-500"
+                    style="background-color: color-mix(in srgb, {color} 20%, transparent);"
+                    onclick={() => toggleCalendarVisibility(cal.id)}
+                    aria-pressed={!hidden}
+                    title={hidden ? `Show ${cal.name}` : `Hide ${cal.name}`}
+                >
+                    <span class="inline-block w-2 h-2 rounded-sm" style="background-color: {color};"></span>
+                    <span class="text-gray-200 {hidden ? 'line-through' : ''}">{cal.name}</span>
+                </button>
+            {/each}
+        </div>
+    {/if}
+
     <!-- Unassigned tasks panel + calendar in flex layout -->
     <div class="flex gap-2">
-    <!-- Unassigned tasks sidebar -->
-    {#if unassignedTasks.length > 0}
-    <div class="w-48 shrink-0 bg-gray-800 rounded-lg p-2 max-h-[calc(100vh-200px)] overflow-y-auto">
-        <div class="text-xs text-gray-400 font-medium mb-2 uppercase">Unassigned ({unassignedTasks.length})</div>
-        {#each unassignedTasks as task (task.key)}
-            <div
-                class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors"
-                class:opacity-50={draggedTask?.key === task.key}
-                draggable="true"
-                ondragstart={(e) => handleDragStart(e, task.key, task)}
-                ondragend={handleDragEnd}
-                onclick={() => handleTaskClick(task.key, task)}
-                onkeydown={(e) => e.key === 'Enter' && handleTaskClick(task.key, task)}
-                role="button"
-                tabindex="0"
-            >
-                <div class="font-bold truncate">{task.title || 'Untitled'}</div>
-                {#if task.type}
-                    <div class="text-gray-400 mt-0.5">{task.type}</div>
-                {/if}
+    <!-- Unassigned tasks drawer -->
+    {#if unassignedTasks.length > 0 && !panelOpen}
+        <!-- Collapsed rail: click to open -->
+        <button
+            type="button"
+            class="shrink-0 self-stretch w-8 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex flex-col items-center justify-start py-2 gap-2"
+            onclick={togglePanel}
+            aria-label="Open unscheduled tasks drawer"
+            title="Unscheduled tasks ({unassignedTasks.length})"
+        >
+            <span class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-indigo-500 text-white text-[10px] font-semibold">{unassignedTasks.length}</span>
+            <span class="text-gray-400 text-[10px] font-medium uppercase tracking-wider [writing-mode:vertical-rl] rotate-180">Unscheduled</span>
+        </button>
+    {:else if unassignedTasks.length > 0 && panelOpen}
+        <div
+            class="shrink-0 bg-gray-800 rounded-lg max-h-[calc(100vh-200px)] overflow-y-auto relative flex flex-col"
+            style="width: {panelWidth}px;"
+        >
+            <div class="sticky top-0 bg-gray-800 flex items-center justify-between px-2 pt-2 pb-1">
+                <div class="text-xs text-gray-400 font-medium uppercase">Unscheduled ({unassignedTasks.length})</div>
+                <button
+                    type="button"
+                    class="p-1 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                    onclick={togglePanel}
+                    aria-label="Close unscheduled tasks drawer"
+                    title="Close"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
-        {/each}
-    </div>
+            <div class="px-2 pb-2">
+                {#each unassignedTasks as task (task.key)}
+                    <div
+                        class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors"
+                        class:opacity-50={draggedTask?.key === task.key}
+                        draggable="true"
+                        ondragstart={(e) => handleDragStart(e, task.key, task)}
+                        ondragend={handleDragEnd}
+                        onclick={() => handleTaskClick(task.key, task)}
+                        onkeydown={(e) => e.key === 'Enter' && handleTaskClick(task.key, task)}
+                        role="button"
+                        tabindex="0"
+                    >
+                        <div class="font-bold truncate">{task.title || 'Untitled'}</div>
+                        {#if task.type}
+                            <div class="text-gray-400 mt-0.5">{task.type}</div>
+                        {/if}
+                    </div>
+                {/each}
+            </div>
+        </div>
+        <div
+            class="w-1 shrink-0 self-stretch cursor-col-resize bg-transparent hover:bg-indigo-500/50 transition-colors touch-none"
+            class:bg-indigo-500={panelResizeState}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize unassigned tasks panel"
+            onpointerdown={handlePanelResizeStart}
+            onpointermove={handlePanelResizeMove}
+            onpointerup={handlePanelResizeEnd}
+            onpointercancel={handlePanelResizeEnd}
+    ></div>
     {/if}
     <!-- Calendar views -->
     <div class="flex-1 min-w-0">
@@ -1808,16 +2242,19 @@
                         </div>
 
                         <!-- Tasks for this day -->
-                        {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === date.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
-                            {@const position = getTaskPosition(task)}
+                        {#each calculateEventColumns(expandedTaskEntries.filter(e => e.task.when && new Date(e.task.when).toDateString() === date.toDateString()).map(e => ({key: e.key, task: e.task}))) as {key, task, column, totalColumns} (key)}
+                            {@const overrideEnd = resizingEvent?.key === key ? resizingEvent.previewEnd : undefined}
+                            {@const position = getTaskPosition(task, overrideEnd)}
                             {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
                             {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * ((100% - ${totalColumns * 2}px) / ${totalColumns}) + ${column * 2}px)` : '0.25rem'}
                             {@const startHour = new Date(task.when).getHours()}
-                            {@const endHour = task.ends ? new Date(task.ends).getHours() : startHour + 1}
+                            {@const endHour = (overrideEnd ?? (task.ends ? new Date(task.ends) : null))?.getHours() ?? startHour + 1}
                             {@const isShortEvent = (position.gridRowEnd - position.gridRowStart) <= 2}
-                            <div 
+                            <div
                                 class="rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden"
                                 class:opacity-50={draggedTask?.key === key}
+                                class:ring-2={resizingEvent?.key === key}
+                                class:ring-white={resizingEvent?.key === key}
                                 class:text-xs={!isShortEvent}
                                 class:text-[10px]={isShortEvent}
                                 class:p-1={isShortEvent}
@@ -1829,6 +2266,7 @@
                                 onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                                 role="button"
                                 tabindex="0"
+                                title={task.title || 'Untitled'}
                                 style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
                             >
                                 <div class="font-bold truncate leading-tight">
@@ -1859,6 +2297,30 @@
                                     <!-- For very crowded layouts, add a subtle indicator -->
                                     <div class="absolute top-0 right-0 w-2 h-2 bg-white bg-opacity-30 rounded-bl-md"></div>
                                 {/if}
+                                <div
+                                    class="absolute left-0 right-0 bottom-0 h-1.5 cursor-ns-resize touch-none hover:bg-white/40"
+                                    role="separator"
+                                    aria-orientation="horizontal"
+                                    aria-label="Resize event end time"
+                                    onpointerdown={(e) => handleEventResizeStart(e, key, task)}
+                                    onpointermove={handleEventResizeMove}
+                                    onpointerup={handleEventResizeEnd}
+                                    onpointercancel={handleEventResizeCancel}
+                                ></div>
+                            </div>
+                        {/each}
+
+                        <!-- Imported calendar events for this day -->
+                        {#each visibleExternalEvents.filter(ev => new Date(ev.start).toDateString() === date.toDateString()) as ev (ev.id)}
+                            {@const extTask = { when: new Date(ev.start).toISOString(), ends: new Date(ev.end).toISOString() }}
+                            {@const position = getTaskPosition(extTask)}
+                            <div
+                                class="absolute right-0 rounded text-white text-[9px] leading-tight p-0.5 overflow-hidden z-20 cursor-default shadow"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; width: 3.5rem; background-color: {ev.calendarColor || '#10b981'};"
+                                title={`${ev.title}${ev.calendarName ? ' · ' + ev.calendarName : ''}`}
+                                aria-label={ev.title}
+                            >
+                                <div class="truncate font-medium">{ev.title}</div>
                             </div>
                         {/each}
 
@@ -1943,13 +2405,16 @@
                 </div>
 
                 <!-- Tasks for this day -->
-                {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === currentDate.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
-                    {@const position = getTaskPosition(task)}
-                    {@const columnWidth = totalColumns > 1 ? `calc((100% - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
-                    {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * (100% - 0.5rem) / ${totalColumns})` : '0.25rem'}
+                {#each calculateEventColumns(expandedTaskEntries.filter(e => e.task.when && new Date(e.task.when).toDateString() === currentDate.toDateString()).map(e => ({key: e.key, task: e.task}))) as {key, task, column, totalColumns} (key)}
+                    {@const overrideEnd = resizingEvent?.key === key ? resizingEvent.previewEnd : undefined}
+                    {@const position = getTaskPosition(task, overrideEnd)}
+                    {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
+                    {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * ((100% - ${totalColumns * 2}px - 0.5rem) / ${totalColumns} + 2px))` : '0.25rem'}
                     <div
-                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10"
+                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden"
                         class:opacity-50={draggedTask?.key === key}
+                        class:ring-2={resizingEvent?.key === key}
+                        class:ring-white={resizingEvent?.key === key}
                         draggable="true"
                         ondragstart={(e) => handleDragStart(e, key, task)}
                         ondragend={handleDragEnd}
@@ -1957,6 +2422,7 @@
                         onkeydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                         role="button"
                         tabindex="0"
+                        title={task.title || 'Untitled'}
                         style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
                     >
                         <div class="font-bold truncate">{task.title}</div>
@@ -1970,6 +2436,37 @@
                             <div class="text-xs mt-1">
                                 🙋‍♂️ {task.participants.length}
                             </div>
+                        {/if}
+                        <div
+                            class="absolute left-0 right-0 bottom-0 h-2 cursor-ns-resize touch-none hover:bg-white/40"
+                            role="separator"
+                            aria-orientation="horizontal"
+                            aria-label="Resize event end time"
+                            draggable="false"
+                            onmousedown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                            ontouchstart={(e) => e.stopPropagation()}
+                            onclick={(e) => e.stopPropagation()}
+                            onpointerdown={(e) => handleEventResizeStart(e, key, task)}
+                            onpointermove={handleEventResizeMove}
+                            onpointerup={handleEventResizeEnd}
+                            onpointercancel={handleEventResizeCancel}
+                        ></div>
+                    </div>
+                {/each}
+
+                <!-- Imported calendar events for this day (fixed-width column on the right edge, above tasks) -->
+                {#each visibleExternalEvents.filter(ev => new Date(ev.start).toDateString() === currentDate.toDateString()) as ev (ev.id)}
+                    {@const extTask = { when: new Date(ev.start).toISOString(), ends: new Date(ev.end).toISOString() }}
+                    {@const position = getTaskPosition(extTask)}
+                    <div
+                        class="absolute right-1 rounded text-white text-[10px] leading-tight p-1 overflow-hidden z-20 cursor-default shadow"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; width: 7rem; background-color: {ev.calendarColor || '#10b981'};"
+                        title={`${ev.title}${ev.calendarName ? ' · ' + ev.calendarName : ''}`}
+                        aria-label={ev.title}
+                    >
+                        <div class="truncate font-medium">{ev.title}</div>
+                        {#if ev.calendarName}
+                            <div class="truncate opacity-80 text-[9px]">{ev.calendarName}</div>
                         {/if}
                     </div>
                 {/each}
@@ -2025,14 +2522,9 @@
         </div>
     {:else if viewMode === 'orbits'}
         <!-- Orbital Visualization View -->
-        <div class="flex flex-col items-center space-y-6">
-
-
-
-
-            <!-- D3 Visualization Container -->
-            <div 
-                class="w-full max-w-7xl bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-2xl mx-auto"
+        <div class="bg-gray-800">
+            <div
+                class="w-full"
                 style="min-height: calc(100vh - 400px); height: 600px;"
                 bind:this={container}
             ></div>
@@ -2041,12 +2533,13 @@
             {#if Object.keys(orbitStore).length > 0}
                 {@const categories = [...new Set(Object.values(orbitStore).map(task => task.category).filter(Boolean))]}
                 {#if categories.length > 0}
-                    <div class="w-full max-w-4xl">
-                        <div class="flex flex-wrap justify-center gap-6 p-4 bg-gradient-to-r from-indigo-900/80 to-purple-900/80 rounded-lg border border-indigo-500/30 backdrop-blur-sm">
+                    <div class="mt-2 bg-gray-800 rounded-lg p-2 border-t border-gray-700">
+                        <div class="text-xs text-gray-400 font-medium mb-2 uppercase">Categories</div>
+                        <div class="flex flex-wrap gap-4">
                             {#each categories as category}
                                 {#if category}
-                                    <div class="flex items-center gap-2 text-sm text-white">
-                                        <div class="w-4 h-4 rounded-full" style="background-color: {categoryColors[category] || categoryColors.default};"></div>
+                                    <div class="flex items-center gap-2 text-xs text-white">
+                                        <div class="w-3 h-3 rounded-full" style="background-color: {categoryColors[category] || categoryColors.default};"></div>
                                         <span class="capitalize">{category}</span>
                                     </div>
                                 {/if}
@@ -2064,12 +2557,15 @@
 
 <!-- Orbital Task Details Modal -->
 {#if showOrbitTaskDetails && selectedOrbitTask}
-    <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50" style="backdrop-filter: blur(4px);">
-        <div class="bg-gray-800 rounded-xl border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div class="flex justify-between items-center p-6 border-b border-gray-700">
-                <h2 class="text-2xl font-bold text-white">{selectedOrbitTask.title}</h2>
-                <button 
-                    class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+    <div class="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-50">
+        <div class="bg-gray-800 rounded-lg border border-gray-700 shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-start p-4 border-b border-gray-700">
+                <div class="flex-1 mr-4">
+                    <h2 class="text-lg font-medium text-white">{selectedOrbitTask.title}</h2>
+                    <p class="text-gray-400 text-xs mt-1 uppercase">Recurring task</p>
+                </div>
+                <button
+                    class="text-gray-400 hover:text-white transition-colors"
                     onclick={closeOrbitTaskDetails}
                     aria-label="Close modal"
                 >
@@ -2078,46 +2574,46 @@
                     </svg>
                 </button>
             </div>
-            
-            <div class="p-6">
-                <div class="space-y-4">
-                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
-                        <span class="text-white font-medium min-w-[140px]">Description:</span>
-                        <span class="text-white text-right flex-1">{selectedOrbitTask.description || 'No description provided'}</span>
+
+            <div class="p-4 space-y-3 text-sm">
+                {#if selectedOrbitTask.description}
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase mb-1">Description</div>
+                        <div class="text-white">{selectedOrbitTask.description}</div>
                     </div>
-                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
-                        <span class="text-white font-medium min-w-[140px]">Category:</span>
-                        <span class="text-white text-right flex-1 flex items-center justify-end gap-2">
+                {/if}
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase mb-1">Category</div>
+                        <div class="text-white flex items-center gap-2">
                             <div class="w-3 h-3 rounded-full" style="background-color: {categoryColors[selectedOrbitTask.category as keyof typeof categoryColors] || categoryColors.default};"></div>
-                            {selectedOrbitTask.category || 'Uncategorized'}
-                        </span>
+                            <span class="capitalize">{selectedOrbitTask.category || 'Uncategorized'}</span>
+                        </div>
                     </div>
-                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
-                        <span class="text-white font-medium min-w-[140px]">Frequency:</span>
-                        <span class="text-white text-right flex-1 capitalize">{selectedOrbitTask.frequency}</span>
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase mb-1">Frequency</div>
+                        <div class="text-white capitalize">{selectedOrbitTask.frequency}</div>
                     </div>
-                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
-                        <span class="text-white font-medium min-w-[140px]">Orbit Period:</span>
-                        <span class="text-white text-right flex-1">{selectedOrbitTask.orbitPeriod} days</span>
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase mb-1">Orbit period</div>
+                        <div class="text-white">{selectedOrbitTask.orbitPeriod} days</div>
                     </div>
-                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
-                        <span class="text-white font-medium min-w-[140px]">Last Occurrence:</span>
-                        <span class="text-white text-right flex-1">{selectedOrbitTask.lastOccurrence.toLocaleDateString()}</span>
-                    </div>
-                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
-                        <span class="text-white font-medium min-w-[140px]">Next Occurrence:</span>
-                        <span class="text-white text-right flex-1">{selectedOrbitTask.nextOccurrence.toLocaleDateString()}</span>
-                    </div>
-                    <div class="flex justify-between items-start py-3">
-                        <span class="text-white font-medium min-w-[140px]">Time to Occurrence:</span>
-                        <span class="text-blue-400 font-semibold text-right flex-1">
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase mb-1">Time to next</div>
+                        <div class="text-indigo-400 font-medium">
                             {formatDuration(calculateTimeToOccurrence(selectedOrbitTask, currentDate.toDateString() === new Date().toDateString() ? new Date() : currentDate))}
                             {#if currentDate.toDateString() !== new Date().toDateString()}
-                                <span class="text-xs text-white/60 block mt-1">
-                                    (from selected date)
-                                </span>
+                                <span class="text-xs text-gray-400 block">(from selected date)</span>
                             {/if}
-                        </span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase mb-1">Last occurrence</div>
+                        <div class="text-white">{selectedOrbitTask.lastOccurrence.toLocaleDateString()}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase mb-1">Next occurrence</div>
+                        <div class="text-white">{selectedOrbitTask.nextOccurrence.toLocaleDateString()}</div>
                     </div>
                 </div>
             </div>
@@ -2125,110 +2621,14 @@
     </div>
 {/if}
 
-{#if showModal}
-    <dialog 
-        class="fixed inset-0 bg-black/75 z-50"
-        open
-    >
-        <div class="fixed inset-0 flex items-center justify-center">
-            <form 
-                method="dialog"
-                class="bg-gray-800 p-6 rounded-xl schedule-modal border border-gray-700 shadow-xl max-w-md w-full"
-                aria-labelledby="modal-title"
-                aria-describedby="modal-description"
-            >
-                <div class="flex justify-between items-start mb-6">
-                    <div class="flex-1 mr-4">
-                        <input
-                            type="text"
-                            bind:value={tempTitle}
-                            placeholder="Event title..."
-                            class="w-full text-lg font-medium text-white bg-transparent border-b border-transparent hover:border-gray-600 focus:border-indigo-500 outline-none transition-colors pb-1"
-                            aria-label="Event title"
-                        />
-                        <p id="modal-title" class="text-gray-400 text-sm mt-1">Edit schedule</p>
-                    </div>
-                    <span id="modal-description" class="sr-only">Update schedule date and time</span>
-                    <button
-                        class="text-gray-400 hover:text-white transition-colors"
-                        onclick={() => {
-                            showModal = false;
-                            selectedTask = null;
-                        }}
-                        aria-label="Close modal"
-                    >
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-                
-                <div class="space-y-4">
-                    <div>
-                        <label for="date-input" class="text-gray-300 text-sm font-medium block mb-2">Date</label>
-                        <input 
-                            id="date-input"
-                            type="date" 
-                            bind:value={tempDate}
-                            class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
-                        >
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label for="time-input" class="text-gray-300 text-sm font-medium block mb-2">Start Time</label>
-                            <input 
-                                id="time-input"
-                                type="time" 
-                                bind:value={tempTime}
-                                class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
-                            >
-                        </div>
-                        
-                        <div>
-                            <label for="end-time-input" class="text-gray-300 text-sm font-medium block mb-2">End Time</label>
-                            <input 
-                                id="end-time-input"
-                                type="time" 
-                                bind:value={tempEndTime}
-                                class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
-                            >
-                        </div>
-                    </div>
-                    
-                    <div class="flex gap-3 justify-end pt-2">
-                        <button
-                            type="button"
-                            class="btn btn--danger"
-                            onclick={deleteSchedule}
-                            aria-label="Remove schedule"
-                        >
-                            Remove
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn--secondary"
-                            onclick={() => {
-                                showModal = false;
-                                selectedTask = null;
-                            }}
-                            aria-label="Cancel changes"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn--primary"
-                            onclick={updateDateTime}
-                            aria-label="Update schedule"
-                        >
-                            Save
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </dialog>
+{#if selectedTask?.id && selectedTask?.task && $ID}
+    <TaskModal
+        quest={selectedTask.task}
+        questId={selectedTask.id}
+        holonId={$ID}
+        occurrenceWhen={selectedTask.occurrenceWhen}
+        on:close={closeTaskModal}
+    />
 {/if}
 
 </div>

@@ -14,6 +14,8 @@ export interface ExternalCalendarEvent {
     recurrence?: string;
     calendarUrl: string;
     calendarName?: string;
+    calendarId?: string;
+    calendarColor?: string;
 }
 
 export interface ParsedCalendar {
@@ -28,29 +30,38 @@ export interface ParsedCalendar {
  * @param calendarName - Optional name for the calendar
  * @returns Parsed calendar with events
  */
+export interface ParseWindow {
+    start: Date;
+    end: Date;
+}
+
 export async function fetchAndParseICalFeed(
     url: string,
-    calendarName?: string
+    calendarName?: string,
+    window?: ParseWindow
 ): Promise<ParsedCalendar> {
     try {
         // Convert webcal:// to https://
-        const fetchUrl = url.replace(/^webcal:\/\//i, 'https://');
+        const normalizedUrl = url.replace(/^webcal:\/\//i, 'https://');
 
-        // Fetch the iCal feed
+        // Most iCal hosts (Google Calendar, iCloud) don't send CORS headers, so
+        // browser fetches fail. Route through our SvelteKit proxy when in-browser.
+        // On the server (SSR/build), fetch directly.
+        const inBrowser = typeof window !== 'undefined';
+        const fetchUrl = inBrowser
+            ? `/api/ical-proxy?url=${encodeURIComponent(normalizedUrl)}`
+            : normalizedUrl;
+
         const response = await fetch(fetchUrl, {
-            headers: {
-                'Accept': 'text/calendar, text/plain, */*'
-            }
+            headers: { Accept: 'text/calendar, text/plain, */*' }
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to fetch calendar: ${response.statusText}`);
+            throw new Error(`Failed to fetch calendar: ${response.status} ${response.statusText}`);
         }
 
         const icalText = await response.text();
-
-        // Parse the iCal data
-        return parseICalText(icalText, url, calendarName);
+        return parseICalText(icalText, url, calendarName, window);
     } catch (error) {
         console.error('Error fetching iCal feed:', error);
         throw error;
@@ -67,7 +78,8 @@ export async function fetchAndParseICalFeed(
 export function parseICalText(
     icalText: string,
     calendarUrl: string,
-    calendarName?: string
+    calendarName?: string,
+    window?: ParseWindow
 ): ParsedCalendar {
     try {
         const jcalData = ICAL.parse(icalText);
@@ -82,42 +94,81 @@ export function parseICalText(
         const events: ExternalCalendarEvent[] = [];
         const vevents = comp.getAllSubcomponents('vevent');
 
+        // Expansion window: caller-provided, or default to the current calendar year.
+        const now = new Date();
+        const windowStart = window?.start ?? new Date(now.getFullYear(), 0, 1);
+        const windowEnd = window?.end ?? new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+
+        // Convert ICAL.Time → JS Date. For all-day entries the iCal value is a DATE (no time);
+        // toJSDate() would implicitly use UTC midnight, which shifts into the previous day for
+        // users in negative UTC offsets (notably around New Year's). Build the Date from
+        // explicit Y/M/D parts so the calendar lands on the correct local day.
+        const icalTimeToDate = (t: any): Date => {
+            if (t?.isDate) {
+                return new Date(t.year, (t.month ?? 1) - 1, t.day ?? 1);
+            }
+            return t.toJSDate();
+        };
+
         vevents.forEach((vevent) => {
             try {
                 const event = new ICAL.Event(vevent);
 
-                // Get event properties
                 const uid = event.uid;
                 const summary = event.summary || 'Untitled Event';
                 const description = event.description || '';
                 const location = event.location || '';
-
-                // Get start and end times
-                const startDate = event.startDate.toJSDate();
-                const endDate = event.endDate.toJSDate();
-
-                // Check if it's an all-day event
-                const allDay = !event.startDate.isDate ? false : true;
-
-                // Get recurrence rule if exists
+                const allDay = event.startDate.isDate === true;
                 const rrule = vevent.getFirstPropertyValue('rrule');
                 const recurrence = rrule ? rrule.toString() : undefined;
 
-                events.push({
-                    id: uid,
-                    title: summary,
-                    description,
-                    location,
-                    start: startDate,
-                    end: endDate,
-                    allDay,
-                    recurrence,
-                    calendarUrl,
-                    calendarName: calName
-                });
+                const pushOccurrence = (startJs: Date, endJs: Date, occurrenceId: string) => {
+                    // Skip instances entirely outside the window.
+                    if (endJs < windowStart || startJs > windowEnd) return;
+                    events.push({
+                        id: occurrenceId,
+                        title: summary,
+                        description,
+                        location,
+                        start: startJs,
+                        end: endJs,
+                        allDay,
+                        recurrence,
+                        calendarUrl,
+                        calendarName: calName,
+                    });
+                };
+
+                if (event.isRecurring()) {
+                    // Iterate from DTSTART and filter by window ourselves. Two caps:
+                    //   - MAX_SKIP: how many pre-window occurrences we'll burn through.
+                    //     Covers ~5y of weekly or ~80y of monthly events starting in the past.
+                    //   - MAX_EMIT: how many in-window occurrences we'll emit.
+                    const MAX_SKIP = 300;
+                    const MAX_EMIT = 1000;
+                    const iterator = event.iterator();
+                    const durationMs = icalTimeToDate(event.endDate).getTime() - icalTimeToDate(event.startDate).getTime();
+                    let skipped = 0;
+                    let emitted = 0;
+                    let next = iterator.next();
+                    while (next) {
+                        const startJs = icalTimeToDate(next);
+                        // Past the window: stop iterating entirely.
+                        if (startJs > windowEnd) break;
+                        const endJs = new Date(startJs.getTime() + durationMs);
+                        if (endJs >= windowStart) {
+                            pushOccurrence(startJs, endJs, `${uid}::${startJs.toISOString()}`);
+                            if (++emitted >= MAX_EMIT) break;
+                        } else {
+                            if (++skipped >= MAX_SKIP) break;
+                        }
+                        next = iterator.next();
+                    }
+                } else {
+                    pushOccurrence(icalTimeToDate(event.startDate), icalTimeToDate(event.endDate), uid);
+                }
             } catch (error) {
                 console.error('Error parsing event:', error);
-                // Skip malformed events
             }
         });
 

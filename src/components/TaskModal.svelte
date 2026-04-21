@@ -26,6 +26,15 @@
     export let quest: any;
     export let questId: string;
     export let holonId: string;
+    // When the modal was opened from a specific recurring-task instance, this holds
+    // that occurrence's ISO `when`. Completion toggles apply only to that occurrence.
+    export let occurrenceWhen: string | undefined = undefined;
+
+    // True when we're editing a single occurrence of a recurring series.
+    $: isOccurrenceView = !!occurrenceWhen && !!quest?.frequency;
+    $: isOccurrenceCompleted = isOccurrenceView
+        && Array.isArray(quest?.completedOccurrences)
+        && quest.completedOccurrences.includes(occurrenceWhen);
 
     interface User {
         id: string;
@@ -104,6 +113,28 @@
     let showRecurringEditor = false;
     let recurringTaskId = quest.recurringTaskId || '';
     let recurringStatus = quest.status || 'ongoing';
+    let frequency: string | null = quest.frequency ?? null;
+
+    type FrequencyOption = { value: string | null; label: string };
+    const frequencyOptions: FrequencyOption[] = [
+        { value: null, label: 'Never' },
+        { value: 'daily', label: 'Daily' },
+        { value: 'weekly', label: 'Weekly' },
+        { value: 'monthly', label: 'Monthly' },
+        { value: 'quarterly', label: 'Quarterly' },
+        { value: 'yearly', label: 'Yearly' },
+    ];
+
+    async function updateFrequency(newFrequency: string | null) {
+        if ((frequency ?? null) === (newFrequency ?? null)) return;
+        frequency = newFrequency;
+        const updates: any = { frequency: newFrequency };
+        // When clearing frequency, also drop the recurringTaskId so the scheduler stops it.
+        if (newFrequency === null && quest.recurringTaskId) {
+            updates.recurringTaskId = null;
+        }
+        await updateQuest(updates);
+    }
 
     let editingTitle = false;
     let editedTitle = quest.title;
@@ -312,6 +343,11 @@
 
     // Open completion modal and initialize with current participants
     function openCompletionModal() {
+        // Occurrence-only view: toggle this occurrence without touching the series status.
+        if (isOccurrenceView) {
+            toggleOccurrenceCompleted();
+            return;
+        }
         // If already completed, just toggle back to ongoing
         if (quest.status === "completed") {
             completeQuest();
@@ -320,6 +356,19 @@
         // Initialize with current participants
         completionSelectedUsers = new Set((quest.participants || []).map((p: any) => p.id));
         showCompletionModal = true;
+    }
+
+    async function toggleOccurrenceCompleted() {
+        if (!occurrenceWhen) return;
+        const current: string[] = Array.isArray(quest.completedOccurrences) ? quest.completedOccurrences : [];
+        const has = current.includes(occurrenceWhen);
+        const next = has
+            ? current.filter((d) => d !== occurrenceWhen)
+            : [...current, occurrenceWhen];
+        await updateQuest({ completedOccurrences: next });
+        if (!has) {
+            dispatch("taskCompleted", { questId, occurrenceWhen });
+        }
     }
 
     // Toggle user selection in completion modal
@@ -1543,23 +1592,33 @@
                     </div>
                 </div>
 
-                    <!-- Recurring Task Info -->
-                    {#if quest.recurringTaskId || quest.status === 'recurring' || quest.status === 'repeating'}
-                        <div class="bg-gray-700/30 p-3 rounded-lg">
-                            <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                </svg>
-                                Recurring
-                            </h4>
-                            <div class="space-y-1 text-xs text-gray-400">
-                                {#if quest.recurringTaskId}
-                                    <div>ID: {quest.recurringTaskId}</div>
-                                {/if}
-                                <div>Status: {quest.status}</div>
-                            </div>
+                    <!-- Recurring Task Selector -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Recurring
+                        </h4>
+                        <div class="flex flex-wrap gap-1.5">
+                            {#each frequencyOptions as option}
+                                {@const isSelected = (frequency ?? null) === option.value}
+                                <button
+                                    type="button"
+                                    class="px-2.5 py-1 text-xs rounded border transition-colors {isSelected
+                                        ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                        : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-gray-200'}"
+                                    on:click={() => updateFrequency(option.value)}
+                                    aria-pressed={isSelected}
+                                >
+                                    {#if isSelected}✓ {/if}{option.label}
+                                </button>
+                            {/each}
                         </div>
-                    {/if}
+                        {#if quest.recurringTaskId}
+                            <div class="mt-2 text-[11px] text-gray-500">ID: {quest.recurringTaskId}</div>
+                        {/if}
+                    </div>
                 </div>
             </div>
 
@@ -1597,13 +1656,18 @@
                         Publish to Federation
                     </button>
                     <button
-                            class="px-4 py-2 {quest.status === 'completed'
+                            class="px-4 py-2 {(isOccurrenceView ? isOccurrenceCompleted : quest.status === 'completed')
                                 ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
                                 : 'bg-green-500/10 text-green-400 border-green-500/30'} rounded border hover:bg-opacity-20 transition-colors text-sm font-medium"
                         on:click={openCompletionModal}
                         type="button"
+                        title={isOccurrenceView ? 'Completes only this occurrence of the recurring series' : undefined}
                     >
-                            {quest.status === "completed" ? "Mark Ongoing" : "Mark Complete"}
+                            {#if isOccurrenceView}
+                                {isOccurrenceCompleted ? 'Mark Ongoing (this occurrence)' : 'Mark Complete (this occurrence)'}
+                            {:else}
+                                {quest.status === 'completed' ? 'Mark Ongoing' : 'Mark Complete'}
+                            {/if}
                     </button>
                     </div>
                 </div>

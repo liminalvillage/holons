@@ -15,3 +15,5 @@ radata/*
 holosphere.db/*
 .netlify/*
 docs/api/*
+.superpowers/
+.claude/

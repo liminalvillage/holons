@@ -1,6 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
     import { phase } from 'lune';
+    import type { ExternalCalendarEvent } from '../lib/services/icalParser';
 
     // Type definitions
     interface Profile {
@@ -32,6 +33,99 @@
     export let currentDate: Date;
     export let profiles: Record<string, Profile> = {};
     export let users: Record<string, User> = {};
+    export let tasks: Record<string, any> = {};
+    export let externalEvents: ExternalCalendarEvent[] = [];
+
+    // Layout constants — keep in sync with the {#each} square-stacking styles below.
+    const MIN_HEIGHT_PX = 128; // matches the original h-32
+    const TASK_ROW_PX = 10;
+    const EXTERNAL_ROW_PX = 10;
+
+    // Group external events by day for the current year.
+    type ExternalDay = { date: Date; items: Array<{ id: string; event: ExternalCalendarEvent }> };
+    $: externalByDay = (() => {
+        const year = currentDate.getFullYear();
+        const yearStart = new Date(year, 0, 1).getTime();
+        const yearEnd = new Date(year + 1, 0, 1).getTime();
+        const groups = new Map<string, ExternalDay>();
+        for (const ev of externalEvents) {
+            const start = new Date(ev.start);
+            const t = start.getTime();
+            if (isNaN(t) || t < yearStart || t >= yearEnd) continue;
+            const dayKey = start.toDateString();
+            let group = groups.get(dayKey);
+            if (!group) {
+                const anchor = new Date(start);
+                anchor.setHours(0, 0, 0, 0);
+                group = { date: anchor, items: [] };
+                groups.set(dayKey, group);
+            }
+            group.items.push({ id: ev.id, event: ev });
+        }
+        for (const group of groups.values()) {
+            group.items.sort((a, b) => new Date(a.event.start).getTime() - new Date(b.event.start).getTime());
+        }
+        return Array.from(groups.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+    })();
+
+    // Group tasks by day for the current year.
+    // Returns an array of { date, items: [{key, task, ...}] } per day that has tasks.
+    type TaskDay = { date: Date; items: Array<{ key: string; task: any; status: 'completed' | 'ongoing-future' | 'ongoing-past' }> };
+    $: tasksByDay = (() => {
+        const year = currentDate.getFullYear();
+        const yearStart = new Date(year, 0, 1).getTime();
+        const yearEnd = new Date(year + 1, 0, 1).getTime();
+        const now = Date.now();
+        const groups = new Map<string, TaskDay>();
+        for (const [key, task] of Object.entries(tasks)) {
+            if (!task?.when) continue;
+            const when = new Date(task.when);
+            const t = when.getTime();
+            if (isNaN(t) || t < yearStart || t >= yearEnd) continue;
+            const dayKey = when.toDateString();
+            let group = groups.get(dayKey);
+            if (!group) {
+                // Anchor each group to the start of the day for positioning.
+                const anchor = new Date(when);
+                anchor.setHours(0, 0, 0, 0);
+                group = { date: anchor, items: [] };
+                groups.set(dayKey, group);
+            }
+            const status: TaskDay['items'][number]['status'] =
+                (task._instanceCompleted === true || task.status === 'completed')
+                    ? 'completed'
+                    : t < now
+                        ? 'ongoing-past'
+                        : 'ongoing-future';
+            group.items.push({ key, task, status });
+        }
+        // Sort items within a day by start time so the stacking order is stable.
+        for (const group of groups.values()) {
+            group.items.sort((a, b) => new Date(a.task.when).getTime() - new Date(b.task.when).getTime());
+        }
+        return Array.from(groups.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+    })();
+
+    const TASK_SQUARE_COLOR = {
+        'completed': 'bg-emerald-400',
+        'ongoing-future': 'bg-blue-500',
+        'ongoing-past': 'bg-blue-400/60',
+    } as const;
+
+    // Auto-scale the timeline height so dense days don't overflow.
+    // Tasks stack from ~20% of container height downward; externals from ~55%.
+    // We compute the pixel space each stack needs and grow the container.
+    $: maxTaskItems = tasksByDay.reduce((m, d) => Math.max(m, d.items.length), 0);
+    $: maxExternalItems = externalByDay.reduce((m, d) => Math.max(m, d.items.length), 0);
+    // The task stack lives in the 20%→50% band (30% of height). Externals live in 55%→85% (30%).
+    // Required total height for each stack: (itemCount-1) * rowPx + padding, mapped to 30% of container.
+    $: timelineHeight = (() => {
+        const taskPx = Math.max(0, maxTaskItems - 1) * TASK_ROW_PX + 24;
+        const extPx = Math.max(0, maxExternalItems - 1) * EXTERNAL_ROW_PX + 24;
+        // Each stack occupies ~30% of container, so required container height is stackPx / 0.30.
+        const needed = Math.max(taskPx, extPx) / 0.30;
+        return Math.max(MIN_HEIGHT_PX, Math.ceil(needed));
+    })();
     
     // Get all stays for the current year
     $: yearStays = Object.entries(profiles)
@@ -168,8 +262,11 @@
             </svg>
         </button>
         
-        <h3 class="text-lg font-medium text-white">
-            {currentDate.getFullYear()}
+        <h3 class="text-base sm:text-lg font-medium text-white text-center whitespace-nowrap flex items-center gap-2">
+            <span>{formatDateDisplay(currentDate)}</span>
+            <span class="text-base" title="Current moon phase">
+                {getMoonPhaseIcon(phase(currentDate).phase)}
+            </span>
         </h3>
         
         <button 
@@ -183,8 +280,9 @@
         </button>
     </div>
     
-    <div 
-        class="relative h-32 select-none"
+    <div
+        class="relative select-none"
+        style="height: {timelineHeight}px;"
         bind:this={timelineContainer}
         on:click={handleTimelineClick}
         on:keydown={handleTimelineClick}
@@ -214,19 +312,24 @@
 
         <!-- Solar events -->
         {#each Object.entries(solarEvents) as [name, date]}
-            <div 
+            <div
                 class="absolute top-1/2 transform -translate-y-1/2 group"
                 style="left: {getPositionInYear(date)}%"
             >
-                {#if name.includes('Solstice')}
+                {#if name === 'summerSolstice'}
+                    <!-- Longest day: full bright sun -->
                     <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                {:else if name === 'winterSolstice'}
+                    <!-- Longest night: muted/dark -->
+                    <div class="w-3 h-3 rounded-full bg-slate-400"></div>
                 {:else}
-                    <div class="w-3 h-3 overflow-hidden relative">
-                        <div class="absolute inset-0 rounded-l-full bg-yellow-400"></div>
-                        <div class="absolute inset-0 rounded-r-full bg-gray-600"></div>
+                    <!-- Equinox: half day, half night. Spring = dark→light, Autumn = light→dark -->
+                    <div class="w-3 h-3 rounded-full overflow-hidden relative">
+                        <div class="absolute top-0 left-0 w-1/2 h-full {name === 'springEquinox' ? 'bg-slate-500' : 'bg-yellow-400'}"></div>
+                        <div class="absolute top-0 right-0 w-1/2 h-full {name === 'springEquinox' ? 'bg-yellow-400' : 'bg-slate-500'}"></div>
                     </div>
                 {/if}
-                
+
                 <!-- Tooltip -->
                 <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     {name.replace(/([A-Z])/g, ' $1').trim()}: {date.toLocaleDateString()}
@@ -285,17 +388,58 @@
             </div>
         {/each}
 
+        <!-- Task day overlay: dashed vertical line + stacked squares per day -->
+        {#each tasksByDay as day (day.date.toISOString())}
+            {@const leftPct = getPositionInYear(day.date)}
+            <div class="absolute h-full pointer-events-none" style="left: {leftPct}%;">
+                <div class="absolute top-[18%] bottom-[52%] left-0 w-0 border-l border-dashed border-gray-400/40"></div>
+                {#each day.items as item, i (item.key)}
+                    <button
+                        type="button"
+                        class="absolute w-2 h-2 rounded-sm -translate-x-1/2 pointer-events-auto group hover:scale-150 transition-transform {TASK_SQUARE_COLOR[item.status]}"
+                        style="top: calc(20% + {i * 10}px);"
+                        on:click|stopPropagation={() => dispatch('taskClick', { key: item.key, task: item.task })}
+                        aria-label={item.task.title || 'Untitled task'}
+                    >
+                        <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-40">
+                            <div class="font-semibold">{item.task.title || 'Untitled task'}</div>
+                            <div class="opacity-75 text-[10px]">
+                                {new Date(item.task.when).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                {#if item.status === 'completed'} · ✓ completed{/if}
+                            </div>
+                        </div>
+                    </button>
+                {/each}
+            </div>
+        {/each}
+
+        <!-- Imported calendar events: stacked squares below the base line, in calendar color -->
+        {#each externalByDay as day (day.date.toISOString())}
+            {@const leftPct = getPositionInYear(day.date)}
+            <div class="absolute h-full pointer-events-none" style="left: {leftPct}%;">
+                {#each day.items as item, i (item.id)}
+                    <div
+                        class="absolute w-2 h-2 rounded-sm -translate-x-1/2 pointer-events-auto group hover:scale-150 transition-transform"
+                        style="top: calc(55% + {i * 10}px); background-color: {item.event.calendarColor || '#10b981'};"
+                        aria-label={item.event.title}
+                    >
+                        <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-40">
+                            <div class="font-semibold">{item.event.title}</div>
+                            <div class="opacity-75 text-[10px]">
+                                {new Date(item.event.start).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                {#if item.event.calendarName} · {item.event.calendarName}{/if}
+                            </div>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        {/each}
+
         <!-- Current date indicator -->
-        <div 
+        <div
             class="absolute h-full w-px bg-white top-0 z-10"
             style="left: {markerPosition}%"
         >
-            <div class="absolute -top-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded flex items-center gap-2">
-                <span>{formatDateDisplay(currentDate)}</span>
-                <span class="text-base" title="Current moon phase">
-                    {getMoonPhaseIcon(phase(currentDate).phase)}
-                </span>
-            </div>
             <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full"></div>
         </div>
     </div>
