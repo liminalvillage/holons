@@ -190,9 +190,15 @@
 		return Math.abs(amount).toFixed(2);
 	}
 
-	// Reactive: set initial currency
-	$: if (!selectedCurrency && availableCurrencies.length > 0) {
-		selectedCurrency = availableCurrencies[0];
+	// Reactive: set initial currency. Fall back to USD so the toolbar and add
+	// flow are usable on fresh holons that don't have currencies configured yet.
+	$: if (!selectedCurrency) {
+		if (availableCurrencies.length > 0) {
+			selectedCurrency = availableCurrencies[0];
+		} else {
+			selectedCurrency = 'USD';
+			availableCurrencies = ['USD'];
+		}
 	}
 
 	// Reactive: calculate credits when currency or users change
@@ -310,28 +316,24 @@
 		<h2>Expenses</h2>
 	</div>
 
-	{#if selectedCurrency}
-		<FeatureToolbar
-			onAdd={openAddExpense}
-			addLabel="Add Expense"
-			bind:searchQuery={filters.searchQuery}
-			searchPlaceholder="Search expenses…"
-			bind:showFederated={filters.showFederated}
-			bind:showHolograms={filters.showHolograms}
-		>
-			<svelte:fragment slot="filters">
+	<FeatureToolbar
+		onAdd={openAddExpense}
+		addLabel="Add Expense"
+		bind:searchQuery={filters.searchQuery}
+		searchPlaceholder="Search expenses…"
+		bind:showFederated={filters.showFederated}
+		bind:showHolograms={filters.showHolograms}
+	>
+		<svelte:fragment slot="filters">
+			{#if availableCurrencies.length > 1}
 				<select bind:value={selectedCurrency} class="filter-select" aria-label="Currency">
 					{#each availableCurrencies as currency}
 						<option value={currency}>{currency.toUpperCase()}</option>
 					{/each}
 				</select>
-			</svelte:fragment>
-		</FeatureToolbar>
-	{:else if noCurrenciesAvailable}
-		<div class="text-muted">No currencies configured</div>
-	{:else}
-		<div class="text-muted">Loading…</div>
-	{/if}
+			{/if}
+		</svelte:fragment>
+	</FeatureToolbar>
 
 	<!-- Stats Bar -->
 	{#if selectedCurrency && users.length > 0}
