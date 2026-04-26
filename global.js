@@ -730,11 +730,70 @@ export async function deleteAllGlobal(holoInstance, tableName, password = null) 
     }
 } 
 
+/**
+ * Subscribe to real-time changes in a global table.
+ * @param {HoloSphere} holoInstance - The HoloSphere instance.
+ * @param {string} tableName - The table name to subscribe to.
+ * @param {string|null} key - Specific key to subscribe to, or null for all keys.
+ * @param {function} callback - Callback for data changes.
+ * @param {object} [options] - Subscription options.
+ * @param {boolean} [options.realtimeOnly] - Only fire for new changes.
+ * @returns {Promise<{ unsubscribe: () => void }>}
+ */
+export async function subscribeGlobal(holoInstance, tableName, key, callback, options = {}) {
+    const dataPath = holoInstance.gun.get(holoInstance.appname).get(tableName);
+    let active = true;
+
+    if (key) {
+        // Subscribe to a specific key
+        dataPath.get(key).on(async (data) => {
+            if (!active || !data) return;
+            try {
+                const parsed = await holoInstance.parse(data);
+                if (parsed) callback(parsed, key);
+            } catch (e) {
+                console.warn('[subscribeGlobal] Error parsing data:', e);
+            }
+        });
+    } else {
+        // Subscribe to all keys in the table
+        dataPath.map().on(async (data, k) => {
+            if (!active || !data || k === '_') return;
+            try {
+                const parsed = await holoInstance.parse(data);
+                if (parsed) callback(parsed, k);
+            } catch (e) {
+                console.warn('[subscribeGlobal] Error parsing data:', e);
+            }
+        });
+    }
+
+    return {
+        unsubscribe: () => {
+            active = false;
+            if (key) {
+                dataPath.get(key).off();
+            } else {
+                dataPath.off();
+            }
+        },
+        stop: () => {
+            active = false;
+            if (key) {
+                dataPath.get(key).off();
+            } else {
+                dataPath.off();
+            }
+        }
+    };
+}
+
 // Export all global operations as default
 export default {
     putGlobal,
     getGlobal,
     getAllGlobal,
     deleteGlobal,
-    deleteAllGlobal
-}; 
+    deleteAllGlobal,
+    subscribeGlobal
+};

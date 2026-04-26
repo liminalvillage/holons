@@ -1,13 +1,12 @@
 /**
  * @module holosphere
- * @version 1.1.21
+ * @version 1.3.0
  * @description Holonic Geospatial Communication Infrastructure
  * @author Roberto Valenti
  * @license GPL-3.0-or-later
  */
 
 import * as h3 from 'h3-js';
-import OpenAI from 'openai';
 import Gun from 'gun'
 import Ajv2019 from 'ajv/dist/2019.js'
 import * as Federation from './federation.js';
@@ -19,34 +18,90 @@ import * as HologramOps from './hologram.js';
 import * as ComputeOps from './compute.js';
 import * as Utils from './utils.js';
 
+// Named exports (v2-compatible)
+import { nostrUtils } from './nostr-utils-shim.js';
+import { subscriptions, buildLensPath } from './subscriptions-shim.js';
+import { registry } from './registry-shim.js';
+import * as handshake from './handshake-shim.js';
+
 // Define the version constant
-const HOLOSPHERE_VERSION = '1.1.21'; 
+const HOLOSPHERE_VERSION = '1.3.0';
+const version = HOLOSPHERE_VERSION;
 
 class HoloSphere {
     /**
      * Initializes a new instance of the HoloSphere class.
-     * @param {string} appname - The name of the application.
-     * @param {boolean} [strict=false] - Whether to enforce strict schema validation.
-     * @param {string|null} [openaikey=null] - The OpenAI API key.
-     * @param {object} [gunOptions={}] - Optional Gun constructor options (e.g., peers, localStorage, radisk).
+     * Supports both v1 positional args and v2 config object.
+     *
+     * v1: new HoloSphere(appname, strict, openaikey, gunOptions)
+     * v2: new HoloSphere({ appName, privateKey, backend, nostr: { peers, relays } })
+     *
+     * @param {string|object} appnameOrConfig - App name string (v1) or config object (v2).
+     * @param {boolean} [strict=false] - Whether to enforce strict schema validation (v1 only).
+     * @param {string|null} [openaikey=null] - The OpenAI API key (v1 only).
+     * @param {object} [gunOptions={}] - Optional Gun constructor options (v1 only).
      */
-    constructor(appname, strict = false, openaikey = null, gunOptions = {}) {
+    constructor(appnameOrConfig, strict = false, openaikey = null, gunOptions = {}) {
+        // Detect v2-style config object
+        if (typeof appnameOrConfig === 'object' && appnameOrConfig !== null) {
+            const config = appnameOrConfig;
+            this.config = config;
+            this.appname = config.appName || config.appname || 'holosphere';
+            this.strict = config.strict || false;
+            this._privateKey = config.privateKey || null;
+
+            // Derive public key from private key
+            if (this._privateKey) {
+                try {
+                    const pubHex = nostrUtils.getPublicKeyFromBytes
+                        ? nostrUtils.getPublicKeyFromBytes(this._privateKey)
+                        : nostrUtils.getPublicKey(
+                            typeof this._privateKey === 'string'
+                                ? this._privateKey
+                                : nostrUtils.bytesToHex(this._privateKey)
+                          );
+                    this.client = { publicKey: pubHex };
+                } catch (e) {
+                    console.warn('Failed to derive public key from private key:', e.message);
+                    this.client = { publicKey: '' };
+                }
+            } else {
+                this.client = { publicKey: '' };
+            }
+
+            // Map nostr relay/peer config to GunDB peers
+            const relays = config.nostr?.relays || config.nostr?.peers || [];
+            if (relays.length > 0) {
+                const gunPeers = relays.map(r =>
+                    r.replace('wss://', 'https://').replace('ws://', 'http://') + '/gun'
+                );
+                gunOptions = { peers: gunPeers, ...gunOptions };
+            }
+
+            openaikey = config.openaiKey || config.openaikey || null;
+        } else {
+            // v1-style positional args
+            this.appname = appnameOrConfig;
+            this.config = { appName: appnameOrConfig };
+            this.client = { publicKey: '' };
+            this.strict = strict;
+            this._privateKey = null;
+        }
+
         console.log('HoloSphere v' + HOLOSPHERE_VERSION);
-        this.appname = appname
-        this.strict = strict;
+
         this.validator = new Ajv2019({
             allErrors: true,
-            strict: false,  // Keep this false to avoid Ajv strict mode issues
-            validateSchema: true // Always validate schemas
+            strict: false,
+            validateSchema: true
         });
 
-       
         // Define default Gun options with radisk enabled
         const defaultGunOptions = {
             peers: ['https://gun.holons.io/gun'],
             axe: false,
-            radisk: true,  // Enable radisk storage by default
-            file: './holosphere'  // Default directory for radisk storage
+            radisk: true,
+            file: './holosphere'
         };
 
         // In browser environment, disable localStorage when radisk is enabled
@@ -59,20 +114,28 @@ class HoloSphere {
         console.log("Initializing Gun with options:", finalGunOptions);
 
         // Use provided Gun instance or create new one with final options
-        this.gun = Gun(finalGunOptions); // Pass the merged options
-    
+        this.gun = Gun(finalGunOptions);
 
-        if (openaikey != null) {
-            this.openai = new OpenAI({
-                apiKey: openaikey,
-            });
-        }
+        // OpenAI is optional - callers can set this.openai directly if needed
+        this.openai = null;
 
         // Initialize subscriptions
         this.subscriptions = {};
-        
+
         // Initialize schema cache
         this.schemaCache = new Map();
+
+        // Initialize allowed authors set (for canWrite)
+        this._allowedAuthors = new Set();
+    }
+
+    /**
+     * Waits for the HoloSphere instance to be ready.
+     * GunDB connects eagerly, so this resolves immediately.
+     * @returns {Promise<HoloSphere>} - The ready instance
+     */
+    async ready() {
+        return this;
     }
 
     getGun() {
@@ -81,37 +144,15 @@ class HoloSphere {
 
     // ================================ SCHEMA FUNCTIONS ================================
 
-    /**
-     * Sets the JSON schema for a specific lens.
-     * @param {string} lens - The lens identifier.
-     * @param {object} schema - The JSON schema to set.
-     * @returns {Promise} - Resolves when the schema is set.
-     */
     async setSchema(lens, schema) {
-        // Delegate to the external function
         return SchemaOps.setSchema(this, lens, schema);
     }
 
-    /**
-     * Retrieves the JSON schema for a specific lens.
-     * @param {string} lens - The lens identifier.
-     * @param {object} [options] - Additional options
-     * @param {boolean} [options.useCache=true] - Whether to use the schema cache
-     * @param {number} [options.maxCacheAge=3600000] - Maximum cache age in milliseconds (default: 1 hour)
-     * @returns {Promise<object|null>} - The retrieved schema or null if not found.
-     */
     async getSchema(lens, options = {}) {
-        // Delegate to the external function
         return SchemaOps.getSchema(this, lens, options);
     }
 
-    /**
-     * Clears the schema cache or a specific schema from the cache.
-     * @param {string} [lens] - Optional lens to clear from cache. If not provided, clears entire cache.
-     * @returns {boolean} - Returns true if successful
-     */
     clearSchemaCache(lens = null) {
-        // Delegate to the external function
         return SchemaOps.clearSchemaCache(this, lens);
     }
 
@@ -119,458 +160,271 @@ class HoloSphere {
 
     /**
      * Stores content in the specified holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens under which to store the content.
-     * @param {object} data - The data to store.
-     * @param {string} [password] - Optional password for private holon.
-     * @param {object} [options] - Additional options
-     * @param {boolean} [options.autoPropagate=true] - Whether to automatically propagate to federated holons (default: true)
-     * @param {object} [options.propagationOptions] - Options to pass to propagate
-     * @param {boolean} [options.propagationOptions.useReferences=true] - Whether to use references instead of duplicating data
-     * @returns {Promise<boolean>} - Returns true if successful, false if there was an error
+     * Supports both v1 and v2 calling conventions:
+     *   v1: put(holon, lens, data, password, options)
+     *   v2: put(holon, lens, data, { actingAs }) or put(holon, lens, data)
      */
-    async put(holon, lens, data, password = null, options = {}) {
-        // Delegate to the external function
+    async put(holon, lens, data, passwordOrOptions = null, options = {}) {
+        let password = null;
+        if (typeof passwordOrOptions === 'object' && passwordOrOptions !== null) {
+            // v2-style: 4th arg is options object (e.g., { actingAs })
+            options = passwordOrOptions;
+            password = options.password || null;
+        } else {
+            // v1-style: 4th arg is password string
+            password = passwordOrOptions;
+        }
         return ContentOps.put(this, holon, lens, data, password, options);
     }
 
     /**
      * Retrieves content from the specified holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to retrieve content.
-     * @param {string} key - The specific key to retrieve.
-     * @param {string} [password] - Optional password for private holon.
-     * @param {object} [options] - Additional options
-     * @param {boolean} [options.resolveReferences=true] - Whether to automatically resolve federation references
-     * @returns {Promise<object|null>} - The retrieved content or null if not found.
+     * Supports both v1 and v2 calling conventions:
+     *   v1: get(holon, lens, key, password, options)
+     *   v2: get(holon, lens) or get(holon, lens, key)
      */
-    async get(holon, lens, key, password = null, options = {}) {
-        // Delegate to the external function
+    async get(holon, lens, key = null, password = null, options = {}) {
+        if (key === null || key === undefined) {
+            // v2-style 2-arg call: get entire lens (return first/only item)
+            const items = await ContentOps.getAll(this, holon, lens, null);
+            return items && items.length > 0 ? items[0] : null;
+        }
         return ContentOps.get(this, holon, lens, key, password, options);
     }
 
-    /**
-     * Retrieves all content from the specified holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to retrieve content.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<Array<object>>} - The retrieved content.
-     */
     async getAll(holon, lens, password = null) {
-        // Delegate to the external function
         return ContentOps.getAll(this, holon, lens, password);
     }
 
-    /**
-   * Parses data from GunDB, handling various data formats and references.
-   * @param {*} data - The data to parse, could be a string, object, or GunDB reference.
-   * @returns {Promise<object>} - The parsed data.
-   */
     async parse(rawData) {
-        // Delegate to the external function
         return ContentOps.parse(this, rawData);
     }
 
-    /**
-     * Deletes a specific key from a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to delete the key.
-     * @param {string} key - The specific key to delete.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>} - Returns true if successful
-     */
     async delete(holon, lens, key, password = null) {
-        // Delegate to the external function (renamed to deleteFunc in module)
         return ContentOps.deleteFunc(this, holon, lens, key, password);
     }
 
-    /**
-     * Deletes all keys from a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens from which to delete all keys.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>} - Returns true if successful
-     */
     async deleteAll(holon, lens, password = null) {
-        // Delegate to the external function
         return ContentOps.deleteAll(this, holon, lens, password);
     }
 
     // ================================ NODE FUNCTIONS ================================
 
-
-    /**
-     * Stores a specific gun node in a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens under which to store the node.
-     * @param {object} data - The node to store.
-     */
     async putNode(holon, lens, data) {
-        // Delegate to the external function
         return NodeOps.putNode(this, holon, lens, data);
     }
 
-    /**
-     * Retrieves a specific gun node from the specified holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens identifier.
-     * @param {string} key - The specific key to retrieve.
-     * @returns {Promise<any>} - The retrieved node or null if not found.
-     */
     async getNode(holon, lens, key) {
-        // Delegate to the external function
         return NodeOps.getNode(this, holon, lens, key);
     }
 
-    /**
-     * Retrieves a Gun node reference using its soul path
-     * @param {string} soul - The soul path of the node
-     * @returns {Gun.ChainReference} - The Gun node reference
-     */
     getNodeRef(soul) {
-        // Delegate to the external function
         return NodeOps.getNodeRef(this, soul);
     }
 
-    /**
-     * Retrieves a node directly using its soul path
-     * @param {string} soul - The soul path of the node
-     * @returns {Promise<any>} - The retrieved node or null if not found.
-     */
     async getNodeBySoul(soul) {
-        // Delegate to the external function
         return NodeOps.getNodeBySoul(this, soul);
     }
 
-    /**
-     * Deletes a specific gun node from a given holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens identifier.
-     * @param {string} key - The key of the node to delete.
-     * @returns {Promise<boolean>} - Returns true if successful
-     */
     async deleteNode(holon, lens, key) {
-        // Delegate to the external function
         return NodeOps.deleteNode(this, holon, lens, key);
     }
 
     // ================================ GLOBAL FUNCTIONS ================================
-    /**
-     * Stores data in a global (non-holon-specific) table.
-     * @param {string} tableName - The table name to store data in.
-     * @param {object} data - The data to store. If it has an 'id' field, it will be used as the key.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<void>}
-     */
+
     async putGlobal(tableName, data, password = null) {
-        // Delegate to the external function
         return GlobalOps.putGlobal(this, tableName, data, password);
     }
 
     /**
-     * Retrieves a specific key from a global table.
-     * @param {string} tableName - The table name to retrieve from.
-     * @param {string} key - The key to retrieve.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<object|null>} - The parsed data for the key or null if not found.
+     * v2-compatible alias for putGlobal (no password param)
      */
+    async writeGlobal(tableName, data) {
+        return GlobalOps.putGlobal(this, tableName, data, null);
+    }
+
     async getGlobal(tableName, key, password = null) {
-        // Delegate to the external function
         return GlobalOps.getGlobal(this, tableName, key, password);
     }
 
-    /**
-     * Retrieves all data from a global table.
-     * @param {string} tableName - The table name to retrieve data from.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<Array<object>>} - The parsed data from the table as an array.
-     */
     async getAllGlobal(tableName, password = null) {
-        // Delegate to the external function
         return GlobalOps.getAllGlobal(this, tableName, password);
     }
 
-    /**
-     * Deletes a specific key from a global table.
-     * @param {string} tableName - The table name to delete from.
-     * @param {string} key - The key to delete.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>}
-     */
     async deleteGlobal(tableName, key, password = null) {
-        // Delegate to the external function
         return GlobalOps.deleteGlobal(this, tableName, key, password);
     }
 
-    /**
-     * Deletes an entire global table.
-     * @param {string} tableName - The table name to delete.
-     * @param {string} [password] - Optional password for private holon.
-     * @returns {Promise<boolean>}
-     */
     async deleteAllGlobal(tableName, password = null) {
-        // Delegate to the external function
         return GlobalOps.deleteAllGlobal(this, tableName, password);
+    }
+
+    /**
+     * Subscribe to real-time changes in a global table.
+     * v2-compatible: subscribeGlobal(lens, key, callback, options)
+     */
+    async subscribeGlobal(lens, keyOrCallback, callbackOrOptions, options = {}) {
+        let key, callback;
+        if (typeof keyOrCallback === 'function') {
+            callback = keyOrCallback;
+            key = null;
+            options = callbackOrOptions || {};
+        } else {
+            key = keyOrCallback;
+            callback = callbackOrOptions;
+        }
+        return GlobalOps.subscribeGlobal(this, lens, key, callback, options);
     }
 
     // ================================ REFERENCE FUNCTIONS ================================
 
-    /**
-     * Creates a soul hologram object for a data item
-     * @param {string} holon - The holon where the original data is stored
-     * @param {string} lens - The lens where the original data is stored
-     * @param {object} data - The data to create a hologram for
-     * @returns {object} - A hologram object with id and soul
-     */
     createHologram(holon, lens, data) {
-        // Delegate to the external function
         return HologramOps.createHologram(this, holon, lens, data);
     }
-    
-    /**
-     * Parses a soul path into its components
-     * @param {string} soul - The soul path to parse
-     * @returns {object|null} - The parsed components or null if invalid format
-     */
+
     parseSoulPath(soul) {
-        // Delegate to the external function (doesn't need instance)
         return HologramOps.parseSoulPath(soul);
     }
-    
-    /**
-     * Checks if an object is a hologram
-     * @param {object} data - The data to check
-     * @returns {boolean} - True if the object is a hologram
-     */
+
     isHologram(data) {
-        // Delegate to the external function (doesn't need instance)
         return HologramOps.isHologram(data);
     }
-    
-    /**
-     * Resolves a hologram to its actual data
-     * @param {object} hologram - The hologram to resolve
-     * @param {object} [options] - Optional parameters
-     * @param {boolean} [options.followHolograms=true] - Whether to follow nested holograms
-     * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
-     * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original hologram for circular/invalid cases.
-     */
+
     async resolveHologram(hologram, options = {}) {
-        // Delegate to the external function
         return HologramOps.resolveHologram(this, hologram, options);
     }
 
     // ================================ COMPUTE FUNCTIONS ================================
-    /**
-     * Computes operations across multiple layers up the hierarchy
-     * @param {string} holon - Starting holon identifier
-     * @param {string} lens - The lens to compute
-     * @param {object} options - Computation options
-     * @param {number} [maxLevels=15] - Maximum levels to compute up
-     * @param {string} [password] - Optional password for private holons
-     */
+
     async computeHierarchy(holon, lens, options, maxLevels = 15, password = null) {
-        // Delegate to the external function
         return ComputeOps.computeHierarchy(this, holon, lens, options, maxLevels, password);
     }
 
-    /**
-     * Computes operations on content within a holon and lens for one layer up.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens to compute.
-     * @param {object} options - Computation options
-     * @param {string} options.operation - The operation to perform ('summarize', 'aggregate', 'concatenate')
-     * @param {string[]} [options.fields] - Fields to perform operation on
-     * @param {string} [options.targetField] - Field to store the result in
-     * @param {string} [password] - Optional password for private holons
-     * @throws {Error} If parameters are invalid or missing
-     */
     async compute(holon, lens, options, password = null) {
-        // Delegate to the external function
         return ComputeOps.compute(this, holon, lens, options, password);
     }
 
-    /**
-     * Summarizes provided history text using OpenAI.
-     * @param {string} history - The history text to summarize.
-     * @returns {Promise<string>} - The summarized text.
-     */
     async summarize(history) {
-        // Delegate to the external function
         return ComputeOps.summarize(this, history);
     }
 
-    /**
-     * Upcasts content to parent holonagons recursively using references.
-     * @param {string} holon - The current holon identifier.
-     * @param {string} lens - The lens under which to upcast.
-     * @param {object} content - The content to upcast.
-     * @param {number} [maxLevels=15] - Maximum levels to upcast.
-     * @returns {Promise<object>} - The original content.
-     */
     async upcast(holon, lens, content, maxLevels = 15) {
-        // Delegate to the external function
         return ComputeOps.upcast(this, holon, lens, content, maxLevels);
     }
 
-    /**
-     * Updates the parent holon with a new report.
-     * @param {string} id - The child holon identifier.
-     * @param {string} report - The report to update.
-     * @returns {Promise<object>} - The updated parent information.
-     */
     async updateParent(id, report) {
-        // Delegate to the external function
         return ComputeOps.updateParent(this, id, report);
     }
 
-    /**
-     * Propagates data to federated holons
-     * @param {string} holon - The holon identifier
-     * @param {string} lens - The lens identifier
-     * @param {object} data - The data to propagate
-     * @param {object} [options] - Propagation options
-     * @returns {Promise<object>} - Result with success count and errors
-     */
     async propagate(holon, lens, data, options = {}) {
         return Federation.propagate(this, holon, lens, data, options);
     }
 
-    /**
-     * Converts latitude and longitude to a holon identifier.
-     * @param {number} lat - The latitude.
-     * @param {number} lng - The longitude.
-     * @param {number} resolution - The resolution level.
-     * @returns {Promise<string>} - The resulting holon identifier.
-     */
     async getHolon(lat, lng, resolution) {
-        // Delegate to the external function
         return Utils.getHolon(lat, lng, resolution);
     }
 
-    /**
-     * Retrieves all containing holonagons at all scales for given coordinates.
-     * @param {number} lat - The latitude.
-     * @param {number} lng - The longitude.
-     * @returns {Array<string>} - List of holon identifiers.
-     */
     getScalespace(lat, lng) {
-        // Delegate to the external function
         return Utils.getScalespace(lat, lng);
     }
 
-    /**
-     * Retrieves all containing holonagons at all scales for a given holon.
-     * @param {string} holon - The holon identifier.
-     * @returns {Array<string>} - List of holon identifiers.
-     */
     getHolonScalespace(holon) {
-        // Delegate to the external function
         return Utils.getHolonScalespace(holon);
     }
 
-    /**
-     * Subscribes to changes in a specific holon and lens.
-     * @param {string} holon - The holon identifier.
-     * @param {string} lens - The lens to subscribe to.
-     * @param {function} callback - The callback to execute on changes.
-     * @returns {Promise<object>} - Subscription object with unsubscribe method
-     */
     async subscribe(holon, lens, callback) {
-        // Delegate to the external function
         return Utils.subscribe(this, holon, lens, callback);
     }
 
-    /**
-     * Notifies subscribers about data changes
-     * @param {object} data - The data to notify about
-     * @private
-     */
     notifySubscribers(data) {
-        // Delegate to the external function
         return Utils.notifySubscribers(this, data);
     }
 
-    // Add ID generation method
     generateId() {
-        // Delegate to the external function
         return Utils.generateId();
     }
 
     // ================================ FEDERATION FUNCTIONS ================================
 
-    /**
-     * Creates a federation relationship between two holons
-     * @param {string} holonId1 - The first holon ID
-     * @param {string} holonId2 - The second holon ID
-     * @param {string} [password1] - Optional password for the first holon
-     * @param {string} [password2] - Optional password for the second holon
-     * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications automatically
-     * @param {object} [lensConfig] - Optional lens-specific configuration
-     * @param {string[]} [lensConfig.federate] - List of lenses to federate (default: all)
-     * @param {string[]} [lensConfig.notify] - List of lenses to notify (default: all)
-     * @returns {Promise<boolean>} - True if federation was created successfully
-     */
     async federate(holonId1, holonId2, password1 = null, password2 = null, bidirectional = true, lensConfig = {}) {
         return Federation.federate(this, holonId1, holonId2, password1, password2, bidirectional, lensConfig);
     }
 
     /**
-     * Subscribes to federation notifications for a holon
-     * @param {string} holonId - The holon ID to subscribe to
-     * @param {string} password - Password for the holon
-     * @param {function} callback - The callback to execute on notifications
-     * @param {object} [options] - Subscription options
-     * @param {string[]} [options.lenses] - Specific lenses to subscribe to (default: all)
-     * @param {number} [options.throttle] - Throttle notifications in ms (default: 0)
-     * @returns {Promise<object>} - Subscription object with unsubscribe() method
+     * v2-compatible federation creation.
+     * Maps v2 options to v1 federate() call.
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} targetHolon - Target holon ID
+     * @param {object} [options] - Federation options
+     * @param {object} [options.lensConfig] - Lens configuration
+     * @param {string} [options.partnerName] - Name of the partner holon
+     * @param {boolean} [options.skipPropagation] - Skip data propagation
+     * @returns {Promise<boolean>}
      */
+    async federateHolon(sourceHolon, targetHolon, options = {}) {
+        const lensConfig = options.lensConfig || {};
+        const lenses = lensConfig.lenses || lensConfig.outbound || lensConfig.federate || [];
+
+        // Store partner name if provided
+        if (options.partnerName) {
+            try {
+                const fedInfo = await this.getFederation(sourceHolon) || {
+                    id: sourceHolon, name: sourceHolon,
+                    federation: [], notify: [], lensConfig: {}, partnerNames: {}, timestamp: Date.now()
+                };
+                if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
+                fedInfo.partnerNames[targetHolon] = options.partnerName;
+                await this.putGlobal('federation', fedInfo);
+            } catch (e) {
+                console.warn('Failed to store partner name:', e.message);
+            }
+        }
+
+        return Federation.federate(this, sourceHolon, targetHolon, null, null, true, {
+            federate: lenses,
+            notify: lenses
+        });
+    }
+
+    /**
+     * v2-compatible federation removal.
+     * @param {string} sourceHolon - Source holon ID
+     * @param {string} targetHolon - Target holon ID
+     * @returns {Promise<boolean>}
+     */
+    async unfederateHolon(sourceHolon, targetHolon) {
+        return Federation.unfederate(this, sourceHolon, targetHolon, null, null);
+    }
+
     async subscribeFederation(holonId, password, callback, options = {}) {
         return Federation.subscribeFederation(this, holonId, password, callback, options);
     }
 
     /**
-     * Gets federation info for a holon
-     * @param {string} holonId - The holon ID
-     * @param {string} [password] - Optional password for the holon
-     * @returns {Promise<object|null>} - Federation info or null if not found
+     * Gets federation info for a holon.
+     * Returns v2-compatible shape with `federated`, `lensConfig`, `partnerNames` fields.
      */
     async getFederation(holonId, password = null) {
-        return Federation.getFederation(this, holonId, password);
+        const result = await Federation.getFederation(this, holonId, password);
+        if (!result) return { federated: [], lensConfig: {}, partnerNames: {} };
+
+        // Add v2-compatible fields alongside existing v1 fields
+        if (!result.federated) result.federated = result.federation || [];
+        if (!result.partnerNames) result.partnerNames = {};
+        // Ensure lensConfig exists (v1 already stores this)
+        if (!result.lensConfig) result.lensConfig = {};
+
+        return result;
     }
-  
-    /**
-     * Retrieves the lens-specific configuration for a federation link between two holons.
-     * @param {string} holonId - The ID of the source holon.
-     * @param {string} targetHolonId - The ID of the target holon in the federation link.
-     * @param {string} [password] - Optional password for the source holon.
-     * @returns {Promise<object|null>} - An object with 'federate' and 'notify' arrays, or null if not found.
-     */
+
     async getFederatedConfig(holonId, targetHolonId, password = null) {
         return Federation.getFederatedConfig(this, holonId, targetHolonId, password);
     }
 
-    /**
-     * Removes a federation relationship between holons
-     * @param {string} holonId1 - The first holon ID
-     * @param {string} holonId2 - The second holon ID
-     * @param {string} password1 - Password for the first holon
-     * @param {string} [password2] - Optional password for the second holon
-     * @returns {Promise<boolean>} - True if federation was removed successfully
-     */
     async unfederate(holonId1, holonId2, password1, password2 = null) {
         return await Federation.unfederate(this, holonId1, holonId2, password1, password2);
     }
 
-    /**
-     * Removes a notification relationship between two spaces
-     * This removes spaceId2 from the notify list of spaceId1
-     * 
-     * @param {string} holonId1 - The space to modify (remove from its notify list)
-     * @param {string} holonId2 - The space to be removed from notifications
-     * @param {string} [password1] - Optional password for the first space
-     * @returns {Promise<boolean>} - True if notification was removed successfully
-     */
     async removeNotify(holonId1, holonId2, password1 = null) {
         console.log(`HoloSphere.removeNotify called: ${holonId1}, ${holonId2}`);
         try {
@@ -583,99 +437,96 @@ class HoloSphere {
         }
     }
 
-    /**
-     * Get and aggregate data from federated holons
-     * @param {string} holon The holon name
-     * @param {string} lens The lens name
-     * @param {Object} options Options for retrieval and aggregation
-     * @returns {Promise<Array>} Combined array of local and federated data
-     */
     async getFederated(holon, lens, options = {}) {
         return Federation.getFederated(this, holon, lens, options);
     }
 
-    /**
-     * Tracks a federated message across different chats
-     * @param {string} originalChatId - The ID of the original chat
-     * @param {string} messageId - The ID of the original message
-     * @param {string} federatedChatId - The ID of the federated chat
-     * @param {string} federatedMessageId - The ID of the message in the federated chat
-     * @param {string} type - The type of message (e.g., 'quest', 'announcement')
-     * @returns {Promise<void>}
-     */
     async federateMessage(originalChatId, messageId, federatedChatId, federatedMessageId, type = 'generic') {
         return Federation.federateMessage(this, originalChatId, messageId, federatedChatId, federatedMessageId, type);
     }
 
-    /**
-     * Gets all federated messages for a given original message
-     * @param {string} originalChatId - The ID of the original chat
-     * @param {string} messageId - The ID of the original message
-     * @returns {Promise<Object|null>} The tracking information for the message
-     */
     async getFederatedMessages(originalChatId, messageId) {
         return Federation.getFederatedMessages(this, originalChatId, messageId);
     }
 
-    /**
-     * Updates a federated message across all federated chats
-     * @param {string} originalChatId - The ID of the original chat
-     * @param {string} messageId - The ID of the original message
-     * @param {Function} updateCallback - Function to update the message in each chat
-     * @returns {Promise<void>}
-     */
     async updateFederatedMessages(originalChatId, messageId, updateCallback) {
         return Federation.updateFederatedMessages(this, originalChatId, messageId, updateCallback);
     }
 
-    /**
-     * Resets the federation settings for a holon
-     * @param {string} holonId - The holon ID
-     * @param {string} [password] - Optional password for the holon
-     * @returns {Promise<boolean>} - True if federation was reset successfully
-     */
     async resetFederation(holonId, password = null) {
         return Federation.resetFederation(this, holonId, password);
     }
 
-    // ================================ END FEDERATION FUNCTIONS ================================
+    // ================================ AUTHORIZATION FUNCTIONS ================================
+
     /**
-     * Closes the HoloSphere instance and cleans up resources.
-     * @returns {Promise<void>}
+     * Check if a public key can write to a holon/lens.
+     * @param {string} holonId - The holon ID
+     * @param {string} lensName - The lens name
+     * @param {string} actingAs - The public key attempting to write
+     * @param {object} [options] - Additional options
+     * @returns {Promise<{ canWrite: boolean, reason: string, accessType: string }>}
      */
+    async canWrite(holonId, lensName, actingAs, options = {}) {
+        // Owner always has access
+        if (actingAs === this.client?.publicKey || actingAs === holonId) {
+            return { canWrite: true, reason: 'owner', accessType: 'owner' };
+        }
+
+        // Check allowed authors
+        if (this._allowedAuthors.has(actingAs)) {
+            return { canWrite: true, reason: 'allowed_author', accessType: 'allowed' };
+        }
+
+        // Check federation
+        try {
+            const fed = await Federation.getFederation(this, holonId);
+            if (fed && fed.federation && fed.federation.includes(actingAs)) {
+                return { canWrite: true, reason: 'federated', accessType: 'federation' };
+            }
+        } catch (e) { /* ignore */ }
+
+        return { canWrite: false, reason: 'not_authorized', accessType: 'none' };
+    }
+
+    /**
+     * Add a public key to the allowed authors list.
+     * @param {string} pubkey - The public key to allow
+     */
+    addAllowedAuthor(pubkey) {
+        this._allowedAuthors.add(pubkey);
+    }
+
+    /**
+     * Remove a public key from the allowed authors list.
+     * @param {string} pubkey - The public key to remove
+     */
+    removeAllowedAuthor(pubkey) {
+        this._allowedAuthors.delete(pubkey);
+    }
+
+    /**
+     * List all allowed authors.
+     * @returns {string[]}
+     */
+    listAllowedAuthors() {
+        return Array.from(this._allowedAuthors);
+    }
+
+    // ================================ END FEDERATION FUNCTIONS ================================
+
     async close() {
-        // Delegate to the external function
         return Utils.close(this);
     }
 
-    /**
-     * Creates a namespaced username for Gun authentication
-     * @private
-     * @param {string} holonId - The holon ID
-     * @returns {string} - Namespaced username
-     */
     userName(holonId) {
-        // Delegate to the external function
         return Utils.userName(this, holonId);
     }
 
-    /**
-     * Returns the current version of the HoloSphere library.
-     * @returns {string} The library version.
-     */
     getVersion() {
         return HOLOSPHERE_VERSION;
     }
 
-    /**
-     * Configures radisk storage options for GunDB.
-     * @param {object} options - Radisk configuration options
-     * @param {string} [options.file='./radata'] - Directory for radisk storage
-     * @param {boolean} [options.radisk=true] - Whether to enable radisk storage
-     * @param {number} [options.until] - Timestamp until which to keep data
-     * @param {number} [options.retry] - Number of retries for failed operations
-     * @param {number} [options.timeout] - Timeout for operations in milliseconds
-     */
     configureRadisk(options = {}) {
         const defaultOptions = {
             file: './radata',
@@ -684,9 +535,9 @@ class HoloSphere {
             retry: 3,
             timeout: 5000
         };
-        
+
         const radiskOptions = { ...defaultOptions, ...options };
-        
+
         if (this.gun && this.gun._.opt) {
             Object.assign(this.gun._.opt, radiskOptions);
             console.log("Radisk configuration updated:", radiskOptions);
@@ -695,15 +546,11 @@ class HoloSphere {
         }
     }
 
-    /**
-     * Gets radisk storage statistics and information.
-     * @returns {object} Radisk statistics including file path, enabled status, and storage info
-     */
     getRadiskStats() {
         if (!this.gun || !this.gun._.opt) {
             return { error: "Gun instance not available" };
         }
-        
+
         const options = this.gun._.opt;
         return {
             enabled: options.radisk || false,
@@ -717,4 +564,6 @@ class HoloSphere {
     }
 }
 
+// Default and named exports (v2-compatible)
 export default HoloSphere;
+export { HoloSphere, handshake, nostrUtils, subscriptions, buildLensPath, registry, version };
