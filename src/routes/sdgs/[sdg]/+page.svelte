@@ -173,7 +173,7 @@
             <button class="px-3 py-2 rounded-lg bg-gray-800 ring-1 ring-white/10 text-gray-100 hover:bg-gray-700" on:click={() => { showAddDialog = false; newHolonId=''; newHolonName=''; }} disabled={saving}>Cancel</button>
             <button class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white" on:click={addFederation} disabled={saving || (!newHolonId && !newHolonName)}>Add</button>
             {#if newHolonName}
-              <button class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white" on:click={createHolon} disabled={saving}>Create</button>
+              <button class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white" on:click={createHolon} disabled={saving}>Create</button>
             {/if}
           </div>
         </div>

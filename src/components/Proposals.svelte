@@ -187,7 +187,7 @@
 
     <FeatureToolbar
         onAdd={() => (showAddDialog = true)}
-        addLabel="New Proposal"
+        addLabel="Add Proposal"
         bind:searchQuery={filters.searchQuery}
         searchPlaceholder="Search proposals…"
         bind:showFederated={filters.showFederated}

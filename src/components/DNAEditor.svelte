@@ -351,12 +351,14 @@
         <button
           type="button"
           class="btn-add"
+          aria-label="Add Chromosome"
+          title="Add Chromosome"
           onclick={() => showAddModal = true}
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          Add Chromosome
+          <span class="btn-add__label">Add Chromosome</span>
         </button>
 
         <!-- Seed Button -->
@@ -619,13 +621,19 @@
 
   .btn-add {
     @apply flex items-center gap-2 px-4 py-2 rounded-lg;
-    @apply bg-purple-600 dark:bg-purple-500 text-white;
-    @apply hover:bg-purple-700 dark:hover:bg-purple-600;
+    @apply bg-indigo-600 dark:bg-indigo-500 text-white;
+    @apply hover:bg-indigo-700 dark:hover:bg-indigo-600;
     @apply transition-all font-medium shadow-sm;
   }
 
   .btn-add:hover {
     @apply shadow-md;
+  }
+
+  @media (max-width: 640px) {
+    .btn-add__label {
+      display: none;
+    }
   }
 
   .btn-seed {

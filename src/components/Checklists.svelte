@@ -671,7 +671,7 @@
 
                     <FeatureToolbar
                         onAdd={(filters.activeFilter === 'all' || filters.activeFilter === 'standalone') ? (() => showAddInput(true)) : null}
-                        addLabel="New"
+                        addLabel="Add Checklist"
                         bind:searchQuery={filters.searchQuery}
                         searchPlaceholder="Search checklists…"
                         bind:showFederated={filters.showFederated}

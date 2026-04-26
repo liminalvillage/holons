@@ -259,7 +259,7 @@
             <!-- Shared toolbar: Add / Search / Federated / Holograms + list-specific actions -->
             <FeatureToolbar
                 onAdd={showAddInput}
-                addLabel="Add"
+                addLabel="Add Item"
                 bind:searchQuery={filters.searchQuery}
                 searchPlaceholder="Search items…"
                 bind:showFederated={filters.showFederated}

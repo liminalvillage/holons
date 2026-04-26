@@ -1124,7 +1124,7 @@
   }
 
   .btn-primary {
-    background-color: #3b82f6;
+    background-color: #4f46e5;
     color: white;
     border: none;
     padding: 8px 16px;
@@ -1135,7 +1135,7 @@
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
+    background-color: #4338ca;
   }
 
   .btn-primary:disabled {

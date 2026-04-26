@@ -1543,8 +1543,8 @@
 	}
 
 	.add-array-item:hover {
-		border-color: #60a5fa;
-		color: #60a5fa;
+		border-color: #818cf8;
+		color: #818cf8;
 	}
 
 	.expand-btn, .collapse-btn {
@@ -1592,8 +1592,8 @@
 	}
 
 	.add-field-btn:hover {
-		border-color: #60a5fa;
-		color: #60a5fa;
+		border-color: #818cf8;
+		color: #818cf8;
 	}
 
 	.add-field-form {

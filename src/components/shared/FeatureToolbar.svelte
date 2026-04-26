@@ -67,6 +67,7 @@
 				on:click={handleAdd}
 				disabled={addDisabled}
 				aria-label={addLabel}
+				title={addLabel}
 			>
 				<svelte:component this={Plus} size="16" />
 				<span class="feature-toolbar__add-label">{addLabel}</span>
@@ -143,8 +144,8 @@
 		padding: 0.5rem 0;
 	}
 
-	/* Hide the Add label on very narrow viewports; the + icon carries the meaning. */
-	@media (max-width: 480px) {
+	/* Collapse the Add label on narrow viewports; the + icon + title carry the meaning. */
+	@media (max-width: 640px) {
 		.feature-toolbar__add-label {
 			display: none;
 		}

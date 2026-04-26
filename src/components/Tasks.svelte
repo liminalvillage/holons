@@ -1787,7 +1787,7 @@
 
 				<FeatureToolbar
 					onAdd={showDialog}
-					addLabel="Add"
+					addLabel="Add Task"
 					viewMode={viewMode}
 					on:viewChange={(e) => (viewMode = e.detail as 'list' | 'canvas' | 'kanban')}
 					viewModes={[
