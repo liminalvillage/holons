@@ -4,6 +4,7 @@
 	import { page } from "$app/stores";
 	import type { HoloSphere } from "holosphere";
 	import { calculateCreditMatrix } from "../utils/expenseCalculations";
+	import { resolveImage } from "../utils/imageServer";
 	import { Plus } from 'svelte-feathers';
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
@@ -16,6 +17,7 @@
 		paidBy: string;
 		splitWith: string[];
 		date: string;
+		picture?: string;
 	}
 
 	interface User {
@@ -412,6 +414,15 @@
 				<div class="expense-list">
 					{#each filteredExpenses as expense}
 						<div class="expense-card">
+							{#if expense.picture}
+								<img
+									src={resolveImage(expense.picture)}
+									alt={expense.description}
+									class="expense-thumb"
+									loading="lazy"
+									onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+								/>
+							{/if}
 							<div class="expense-info">
 								<h4>{expense.description}</h4>
 								<p class="paid-by">Paid by {users.find(u => String(u.id) === String(expense.paidBy))?.first_name || expense.paidBy}</p>
@@ -741,9 +752,24 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: flex-start;
+		gap: 0.75rem;
 		background: #374151;
 		padding: 1rem;
 		border-radius: 0.75rem;
+	}
+
+	.expense-thumb {
+		width: 3rem;
+		height: 3rem;
+		border-radius: 0.5rem;
+		object-fit: cover;
+		flex-shrink: 0;
+		background: rgba(0, 0, 0, 0.2);
+	}
+
+	.expense-info {
+		flex: 1;
+		min-width: 0;
 	}
 
 	.expense-info h4 {

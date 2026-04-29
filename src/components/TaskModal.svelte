@@ -6,6 +6,7 @@
     import { nameMap, resolvedName, resolvedInitials, resolveHologramSource, extractHolonIdFromSoul, buildHologramLink } from '$lib/stores/nameResolver';
     import DisplayName from './shared/DisplayName.svelte';
     import { formatDate } from "../utils/date";
+    import { resolveImage } from "../utils/imageServer";
     import {
         calculateTaskCompletionScores,
         getActionScore,
@@ -1275,6 +1276,17 @@
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-gray-300 min-h-0">
                 <!-- Left column -->
                 <div class="space-y-3 min-h-0">
+                {#if quest.picture}
+                    <div class="rounded-lg overflow-hidden bg-gray-700/30">
+                        <img
+                            src={resolveImage(quest.picture)}
+                            alt={quest.title}
+                            class="w-full max-h-64 object-cover"
+                            loading="lazy"
+                            on:error={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                        />
+                    </div>
+                {/if}
                 <!-- Description -->
                     <div class="bg-gray-700/30 p-3 rounded-lg">
                         <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">

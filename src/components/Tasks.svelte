@@ -6,6 +6,7 @@
 	import { replaceState, goto } from "$app/navigation";
 	import { fade, slide } from "svelte/transition";
 	import { formatDate, formatTime } from "../utils/date";
+	import { resolveImage } from "../utils/imageServer";
 	import type { HoloSphere } from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
@@ -68,6 +69,7 @@
 		appreciation: string[];
 		location?: string;
 		ends?: string;
+		picture?: string;
 		type?: 'task' | 'quest' | 'event' | 'recurring';
 		orderIndex?: number;
 		position?: { x: number; y: number };
@@ -1965,7 +1967,17 @@
 												</svg>
 											{/if}
 										</button>
-										
+
+										{#if quest.picture}
+											<img
+												src={resolveImage(quest.picture)}
+												alt={quest.title}
+												class="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover bg-black/10"
+												loading="lazy"
+												onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+											/>
+										{/if}
+
 										<!-- Main Content -->
 										<div class="flex-1 min-w-0">
 											<div class="flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1">
