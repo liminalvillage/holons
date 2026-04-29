@@ -912,16 +912,20 @@ export default class Events {
                 if (event.recurringTaskId) {
                     await this.scheduler.stopTask(event.recurringTaskId);
                 }
-                const task = await this.scheduler.createRecurringTask({
+                const taskId = await this.scheduler.createRecurringTask({
+                    id: `${event.id}_recurring`,
                     holonId,
-                    eventId: event.id,
+                    questId: event.id,
                     title: event.title,
                     frequency: event.frequency,
                     when: event.when,
+                    initiator: event.initiator,
+                    description: event.description,
+                    timezone: event.timezone,
                     type: 'event'
                 });
-                if (task) {
-                    event.recurringTaskId = task.id;
+                if (taskId) {
+                    event.recurringTaskId = taskId;
                 }
             }
         }

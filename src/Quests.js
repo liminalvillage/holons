@@ -2779,8 +2779,24 @@ export default class Quests {
                     await this.scheduler.stopTask(quest.recurringTaskId);
                 }
 
-                // Create new recurring task
-                quest.recurringTaskId = await this.scheduler.createRecurringTask(quest, quest.frequency);
+                // Build a task object in the shape Scheduler.createRecurringTask expects.
+                // Quests use `holon`/`id`; tasks use `holonId`/`questId`. Default `when` to
+                // now so the cron actually fires; user can adjust via the schedule picker.
+                const recurringTask = {
+                    id: `${quest.id}_recurring`,
+                    questId: quest.id,
+                    holonId: quest.holon || holonId,
+                    title: quest.title,
+                    frequency: quest.frequency,
+                    when: quest.when || new Date().toISOString(),
+                    initiator: quest.initiator,
+                    description: quest.description,
+                    checklistId: quest.checklistId,
+                    dependencies: quest.dependencies,
+                    timezone: quest.timezone
+                };
+
+                quest.recurringTaskId = await this.scheduler.createRecurringTask(recurringTask);
             } else if (!quest.frequency && quest.recurringTaskId && this.scheduler) {
                 // Cancel recurring task if frequency is set to never
                 await this.scheduler.stopTask(quest.recurringTaskId);

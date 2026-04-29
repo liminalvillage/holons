@@ -227,30 +227,39 @@ class Scheduler {
                 };
                 
                 
-                // Create the quest using the task type (default to 'task' if not specified)
-                const quest = await this.quests.quest('recurring', mockCtx);
-                if (!quest) {
-                    console.error('Failed to create recurring quest');
+                // Dispatch by task.type: events spawn events, everything else spawns a quest.
+                const isEvent = originalTask.type === 'event';
+                if (isEvent && !this.events) {
+                    console.error('Recurring event task fired but Events module is not wired into Scheduler');
                     return;
                 }
-                
-                let questHolonId = getQuestHolon(quest);
-                console.log('New quest created, quest ID:', quest.id, 'holon ID:', questHolonId);
 
-                // Ensure quest has the correct holon ID
-                if (!questHolonId || questHolonId === 0) {
-                    quest.holon = originalTask.holonId;
-                    questHolonId = originalTask.holonId;
-                    console.log('Corrected quest holon ID to:', questHolonId);
+                const item = isEvent
+                    ? await this.events.createEvent(mockCtx)
+                    : await this.quests.quest('recurring', mockCtx);
+                if (!item) {
+                    console.error(`Failed to create recurring ${isEvent ? 'event' : 'quest'}`);
+                    return;
+                }
+
+                const lens = isEvent ? 'events' : 'quests';
+                let itemHolonId = isEvent ? (item.holon ?? null) : getQuestHolon(item);
+                console.log(`New ${isEvent ? 'event' : 'quest'} created, id:`, item.id, 'holon ID:', itemHolonId);
+
+                // Ensure item has the correct holon ID
+                if (!itemHolonId || itemHolonId === 0) {
+                    item.holon = originalTask.holonId;
+                    itemHolonId = originalTask.holonId;
+                    console.log('Corrected item holon ID to:', itemHolonId);
                 }
 
                 // Copy details from original task
-                quest.frequency = originalTask.frequency === undefined ? null : originalTask.frequency;
-                quest.recurringTaskId = originalTask.id;
+                item.frequency = originalTask.frequency === undefined ? null : originalTask.frequency;
+                item.recurringTaskId = originalTask.id;
 
                 // Only set originalTaskId if the questId exists
                 if (originalTask.questId) {
-                    quest.originalTaskId = originalTask.questId; // Reference to the original task
+                    item.originalTaskId = originalTask.questId;
                     console.log(`Linked to original task ID: ${originalTask.questId}`);
                 } else {
                     console.log('No questId found in original task to reference');
@@ -258,54 +267,55 @@ class Scheduler {
 
                 // Copy description if it exists
                 if (originalTask.description) {
-                    quest.description = originalTask.description;
+                    item.description = originalTask.description;
                 }
 
-                // Copy dependencies if they exist
-                if (originalTask.dependencies && originalTask.dependencies.length > 0) {
-                    quest.dependencies = [...originalTask.dependencies];
-                }
+                // Quest-only fields (events don't have dependencies/checklists)
+                if (!isEvent) {
+                    if (originalTask.dependencies && originalTask.dependencies.length > 0) {
+                        item.dependencies = [...originalTask.dependencies];
+                    }
 
-                // Copy checklist if it exists
-                if (originalTask.checklistId) {
-                    try {
-                        const originalChecklist = await this.db.get(originalTask.holonId, 'checklists', originalTask.checklistId);
-                        if (originalChecklist) {
-                            // Create a new checklist with copied items but unchecked
-                            const newChecklist = {
-                                id: quest.id.toString(),
-                                type: 'quest', // Use standardized type
-                                items: originalChecklist.items.map(item => ({...item, checked: false})),
-                                creator: quest.initiator.id,
-                                created: new Date(),
-                                questId: quest.id,
-                                parentTitle: quest.title,
-                                holonId: questHolonId
-                            };
+                    if (originalTask.checklistId) {
+                        try {
+                            const originalChecklist = await this.db.get(originalTask.holonId, 'checklists', originalTask.checklistId);
+                            if (originalChecklist) {
+                                const newChecklist = {
+                                    id: item.id.toString(),
+                                    type: 'quest',
+                                    items: originalChecklist.items.map(i => ({...i, checked: false})),
+                                    creator: item.initiator.id,
+                                    created: new Date(),
+                                    questId: item.id,
+                                    parentTitle: item.title,
+                                    holonId: itemHolonId
+                                };
 
-                            // Save new checklist
-                            await this.db.put(questHolonId, 'checklists', newChecklist);
-
-                            // Update quest with new checklist ID
-                            quest.checklistId = quest.id.toString();
+                                await this.db.put(itemHolonId, 'checklists', newChecklist);
+                                item.checklistId = item.id.toString();
+                            }
+                        } catch (error) {
+                            console.error('Error copying checklist:', error);
                         }
-                    } catch (error) {
-                        console.error('Error copying checklist:', error);
                     }
                 }
 
-                // Save the updated quest
-                console.log('Saving quest with holon ID:', questHolonId);
-                await this.db.put(questHolonId, 'quests', quest);
+                // Save the updated item to the right lens
+                console.log(`Saving ${isEvent ? 'event' : 'quest'} with holon ID:`, itemHolonId);
+                await this.db.put(itemHolonId, lens, item);
                 const language = await this.settings.getLanguage(holonId);
-                await this.quests.updateMessage(ctx, quest, language, false);
-                
-                // Add the quest id to the lookup table
+                if (isEvent) {
+                    await this.events.updateMessage(ctx, item, language);
+                } else {
+                    await this.quests.updateMessage(ctx, item, language, false);
+                }
+
+                // Add to lookup table
                 await this.db.putGlobal('recurringlookup', {
-                    id: holonId + quest.id,
+                    id: holonId + item.id,
                     taskID: task.id
                 });
-                console.log('Recurring Lookup TASK', holonId + quest.id, task.id);
+                console.log('Recurring Lookup TASK', holonId + item.id, task.id);
                 
             } catch (error) {
                 console.error('Error in scheduled task execution');
