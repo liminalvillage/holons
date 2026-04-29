@@ -6,6 +6,7 @@ node_modules
 .env
 .env.*
 .package-lock.json
+pnpm-lock.yaml
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
