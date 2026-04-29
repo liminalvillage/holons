@@ -156,4 +156,50 @@ describe('Meta Field Stripping Tests', () => {
         const retrieved = await holoSphere.get(testHolon, testLens, testData.id);
         expect(retrieved._meta).toBeUndefined();
     });
+
+    describe('put() should strip _hologram envelope', () => {
+        test('should not store _hologram envelope when putting data', async () => {
+            const testData = {
+                id: 'test-hologram-strip',
+                name: 'Resolved item',
+                value: 7,
+                _hologram: {
+                    isHologram: true,
+                    soul: 'app/holon/lens/key',
+                    sourceHolon: 'holon',
+                    sourceLens: 'lens',
+                    sourceKey: 'key',
+                    resolvedAt: Date.now()
+                }
+            };
+
+            await holoSphere.put(testHolon, testLens, testData);
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const retrieved = await holoSphere.get(testHolon, testLens, testData.id);
+            expect(retrieved).not.toBeNull();
+            expect(retrieved.id).toBe(testData.id);
+            expect(retrieved.name).toBe(testData.name);
+            expect(retrieved._hologram).toBeUndefined();
+        });
+
+        test('putGlobal should strip _hologram envelope', async () => {
+            const testData = {
+                id: 'test-hologram-strip-global',
+                name: 'Resolved global',
+                _hologram: {
+                    isHologram: true,
+                    soul: 'app/holon/lens/key',
+                    resolvedAt: Date.now()
+                }
+            };
+
+            await holoSphere.putGlobal(testGlobalTable, testData);
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const retrieved = await holoSphere.getGlobal(testGlobalTable, testData.id);
+            expect(retrieved).not.toBeNull();
+            expect(retrieved._hologram).toBeUndefined();
+        });
+    });
 }); 

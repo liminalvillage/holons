@@ -63,15 +63,17 @@ describe('HoloSphere Reference System', () => {
         expect(resolved).toBeDefined();
         expect(resolved.id).toBe('ref2');
         expect(resolved.value).toBe('Data to Resolve');
-        // Check for updated metadata
-        expect(resolved._meta).toBeDefined();
-        expect(resolved._meta.resolvedFromHologram).toBe(true);
-        expect(resolved._meta.hologramSoul).toBe(hologram.soul);
-        expect(resolved.isHologram).toBeUndefined(); // Ensure top-level isHologram is not present
-        // Ensure old fields are not in _meta unless they were on originalData
-        expect(resolved._meta.isHologram).toBeUndefined(); 
-        expect(resolved._meta.resolved).toBeUndefined();
-        // expect(resolved._meta.soul).toBeUndefined(); // hologramSoul is the new field for this
+        // Check for canonical _hologram envelope
+        expect(resolved._hologram).toBeDefined();
+        expect(resolved._hologram.isHologram).toBe(true);
+        expect(resolved._hologram.soul).toBe(hologram.soul);
+        expect(resolved._hologram.sourceHolon).toBe(testHolon);
+        expect(resolved._hologram.sourceLens).toBe(testLens);
+        expect(resolved._hologram.sourceKey).toBe('ref2');
+        expect(typeof resolved._hologram.resolvedAt).toBe('number');
+        // Legacy indicators must be gone
+        expect(resolved._meta?.resolvedFromHologram).toBeUndefined();
+        expect(resolved.isHologram).toBeUndefined(); // top-level flag stays absent
     });
     
     test('resolveHologram should return null for a hologram pointing to non-existent data', async () => { // Rename test description
@@ -109,31 +111,35 @@ describe('HoloSphere Reference System', () => {
         await holoSphere.put(testHolon, testLens, hologram2Storage); 
         await waitForGun(750); // <-- Increased delay
 
-        // Resolve Hologram 2 (which is stored at hologram2-id)
-        // The system should fetch hologram2Storage, see its soul points to hologram1-id,
-        // fetch hologram1Storage, see its soul points to actual-nested-original,
-        // fetch originalData, and return it.
-        const resolved = await holoSphere.get(testHolon, testLens, 'hologram2-id'); 
+        // Resolve Hologram 2 with default (deep) resolution.
+        // Chain: hologram2Storage → hologram1Storage → originalData.
+        // Result must be originalData with the canonical _hologram envelope
+        // pointing at the outermost hologram's soul (hologram2's soul).
+        const resolved = await holoSphere.get(testHolon, testLens, 'hologram2-id');
 
-        expect(resolved).toBeNull(); // Expect null if new logic dictates this for nested resolution
+        expect(resolved).not.toBeNull();
+        expect(resolved.id).toBe('actual-nested-original');
+        expect(resolved.value).toBe('level 0');
+        expect(resolved._hologram).toBeDefined();
+        expect(resolved._hologram.isHologram).toBe(true);
+        // The envelope reflects the most recent (outer) resolution step.
+        expect(resolved._hologram.soul).toBe(hologram2Storage.soul);
+        expect(resolved._meta?.resolvedFromHologram).toBeUndefined();
 
-        // Resolve Hologram 2 without following deeply - should return Hologram 1 data
-        // Fetch hologram2Storage with resolveHolograms: false. This gets the raw hologram object.
+        // Now resolve only one level: should return hologram1Storage (the next hop).
         const fetchedHologram2 = await holoSphere.get(testHolon, testLens, 'hologram2-id', null, { resolveHolograms: false });
-        // Now, resolve *this specific hologram object* one level deep.
         const resolvedShallow = await holoSphere.resolveHologram(fetchedHologram2, { followHolograms: false });
-        
+
         expect(resolvedShallow).toBeDefined();
-        // Should match hologram2Storage because of put redirection
-        expect(resolvedShallow.id).toBe('hologram2-id'); // ID from hologram2Storage
-        expect(resolvedShallow.soul).toBe(hologram2Storage.soul); // Soul from hologram2Storage
-        expect(resolvedShallow.value).toBeUndefined(); // Should not have value from originalData
-        expect(resolvedShallow.isHologram).toBeUndefined(); // Ensure top-level isHologram is not present
-        expect(resolvedShallow._meta).toBeDefined();
-        expect(resolvedShallow._meta.resolvedFromHologram).toBe(true);
-        expect(resolvedShallow._meta.hologramSoul).toBe(fetchedHologram2.soul);
-        expect(resolvedShallow._meta.isHologram).toBeUndefined();
-        expect(resolvedShallow._meta.resolved).toBeUndefined();
+        // Shallow resolution stops at hologram1Storage, which is itself a hologram.
+        expect(resolvedShallow.id).toBe('hologram1-id');
+        expect(resolvedShallow.soul).toBe(hologram1Storage.soul);
+        expect(resolvedShallow.value).toBeUndefined(); // Did not follow into originalData
+        expect(resolvedShallow.isHologram).toBeUndefined(); // top-level flag stays absent
+        expect(resolvedShallow._hologram).toBeDefined();
+        expect(resolvedShallow._hologram.isHologram).toBe(true);
+        expect(resolvedShallow._hologram.soul).toBe(fetchedHologram2.soul);
+        expect(resolvedShallow._meta?.resolvedFromHologram).toBeUndefined();
     });
     
     // Test for circular holograms
@@ -172,20 +178,18 @@ describe('HoloSphere Reference System', () => {
         await holoSphere.put(testHolon, testLens, hologramStorageObject); 
         await waitForGun(750); // <-- Increased delay
 
-        // 4. Get the item by the hologram's storage ID ('get-ref')
-        // This should retrieve hologramStorageObject and then resolve its soul
+        // 4. Get the item by the hologram's storage ID ('get-ref').
+        // Should resolve hologramStorageObject's soul and return actualData with
+        // the canonical _hologram envelope.
         const resolved = await holoSphere.get(testHolon, testLens, 'get-ref');
 
-        console.log("!!!!!!!!!!!!!",resolved); // Should now show resolved data + meta
-        // Assertions should check against the *actualData*
-        // expect(resolved.id).toBe('actual-data-id'); // ID comes from the resolved data
-        // expect(resolved.value).toBe('Fetched via get'); // Value comes from the resolved data
-        // expect(resolved._meta).toBeDefined();
-        // expect(resolved._meta.isHologram).toBe(true);
-        // expect(resolved._meta.resolved).toBe(true);
-        // // The soul in the meta should be the soul of the *hologram object* we fetched
-        // expect(resolved._meta.soul).toBe(hologramStorageObject.soul);
-        expect(resolved).toBeNull(); // Expect null due to circular reference caused by put redirection
+        expect(resolved).not.toBeNull();
+        expect(resolved.id).toBe('actual-data-id');
+        expect(resolved.value).toBe('Fetched via get');
+        expect(resolved._hologram).toBeDefined();
+        expect(resolved._hologram.isHologram).toBe(true);
+        expect(resolved._hologram.soul).toBe(hologramStorageObject.soul);
+        expect(resolved._meta?.resolvedFromHologram).toBeUndefined();
     });
 
     test('get should not resolve holograms if resolveHolograms is false', async () => { // Rename test description
@@ -239,13 +243,12 @@ describe('HoloSphere Reference System', () => {
         const resolved2 = await holoSphere.resolveHologram(hologram); // Use renamed method
         expect(resolved2).toBeDefined();
         expect(resolved2.id).toBe('update-ref');
-        expect(resolved2.value).toBe('Version 2'); 
-        expect(resolved2.isHologram).toBeUndefined(); // Ensure top-level isHologram is not present
-        expect(resolved2._meta).toBeDefined();
-        expect(resolved2._meta.resolvedFromHologram).toBe(true);
-        expect(resolved2._meta.hologramSoul).toBe(hologram.soul);
-        expect(resolved2._meta.isHologram).toBeUndefined();
-        expect(resolved2._meta.resolved).toBeUndefined();
+        expect(resolved2.value).toBe('Version 2');
+        expect(resolved2.isHologram).toBeUndefined(); // top-level flag stays absent
+        expect(resolved2._hologram).toBeDefined();
+        expect(resolved2._hologram.isHologram).toBe(true);
+        expect(resolved2._hologram.soul).toBe(hologram.soul);
+        expect(resolved2._meta?.resolvedFromHologram).toBeUndefined();
     });
 
     // --- Tests for _holograms tracking ---

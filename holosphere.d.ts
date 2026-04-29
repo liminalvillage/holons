@@ -33,15 +33,56 @@ interface Hologram {
   [key: string]: any;
 }
 
+/**
+ * Canonical envelope attached to data resolved from a hologram reference.
+ *
+ * Single source of truth for resolved-hologram metadata. Every read path that
+ * returns data resolved from a hologram (get, getAll, subscribe, getFederated,
+ * getGlobal, getAllGlobal) attaches this field via `attachHologramMeta`.
+ *
+ * On success: `isHologram === true` and source* fields point at the origin.
+ * On failure: `isHologram === false` and `error` describes why resolution failed.
+ */
+interface ResolvedHologramMeta {
+  isHologram: boolean;
+  soul: string;
+  sourceHolon?: string | null;
+  sourceLens?: string | null;
+  sourceKey?: string | null;
+  resolvedAt: number;
+  error?: string;
+}
+
+interface ResolvedHologramData {
+  _hologram: ResolvedHologramMeta;
+  [key: string]: any;
+}
+
+/**
+ * Per-partner directional lens config. Directions are from the holding
+ * space's perspective: `inbound` lenses are received from the partner,
+ * `outbound` lenses are sent to the partner.
+ */
+interface FederationLensConfig {
+  inbound: string[];
+  outbound: string[];
+  timestamp: number;
+}
+
 interface FederationInfo {
   id: string;
   name: string;
-  federation: string[];
+  /** Canonical list of all federation partners (any direction, including no lens flow yet). */
   federated: string[];
-  notify: string[];
-  timestamp: number;
-  lensConfig: Record<string, any>;
+  /** Partners we receive data FROM (subset of `federated` with non-empty inbound lenses). */
+  inbound: string[];
+  /** Partners we send data TO (subset of `federated` with non-empty outbound lenses). */
+  outbound: string[];
+  /** Per-partner directional lens config. */
+  lensConfig: Record<string, FederationLensConfig>;
+  /** Optional display names for partners. */
   partnerNames: Record<string, string>;
+  timestamp: number;
 }
 
 interface GetFederatedOptions {
@@ -153,7 +194,8 @@ declare class HoloSphere {
     createHologram(holon: string, lens: string, data: { id: string, [key: string]: any }): Hologram;
     isHologram(data: any): data is Hologram;
     parseSoulPath(soul: string): { appname: string, holon: string, lens: string, key: string } | null;
-    resolveHologram(hologram: Hologram, options?: ResolveHologramOptions): Promise<object | null>;
+    resolveHologram(hologram: Hologram, options?: ResolveHologramOptions): Promise<ResolvedHologramData | null>;
+    attachHologramMeta<T extends object>(originalData: T, hologramSoul: string): T & ResolvedHologramData;
 
     // Compute
     computeHierarchy(holon: string, lens: string, options: object, maxLevels?: number, password?: string | null): Promise<Array<any>>;
@@ -172,16 +214,16 @@ declare class HoloSphere {
     subscribe(holon: string, lens: string, callback: (data: any, key?: string) => void): Promise<{ unsubscribe: () => void }>;
 
     // Federation - v1 style
-    federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { federate?: string[], notify?: string[] }): Promise<boolean>;
+    federate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null, bidirectional?: boolean, lensConfig?: { inbound?: string[], outbound?: string[] }): Promise<boolean>;
     unfederate(holonId1: string, holonId2: string, password1?: string | null, password2?: string | null): Promise<boolean>;
 
     // Federation - v2 style
-    federateHolon(sourceHolon: string, targetHolon: string, options?: { lensConfig?: any; partnerName?: string; skipPropagation?: boolean }): Promise<boolean>;
+    federateHolon(sourceHolon: string, targetHolon: string, options?: { lensConfig?: { inbound?: string[]; outbound?: string[] }; partnerName?: string }): Promise<boolean>;
     unfederateHolon(sourceHolon: string, targetHolon: string): Promise<boolean>;
 
     subscribeFederation(holonId: string, password: string | null, callback: (data: any, federatedSpace?: string, lens?: string) => void, options?: { lenses?: string[], throttle?: number }): Promise<{ unsubscribe: () => void, getSubscriptionCount: () => number }>;
     getFederation(holonId: string, password?: string | null): Promise<FederationInfo | null>;
-    getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ federate: string[], notify: string[] } | null>;
+    getFederatedConfig(holonId: string, targetHolonId: string, password?: string | null): Promise<{ inbound: string[], outbound: string[] } | null>;
     removeNotify(holonId1: string, holonId2: string, password1?: string | null): Promise<boolean>;
     getFederated(holon: string, lens: string, options?: GetFederatedOptions): Promise<Array<any>>;
     federateMessage(originalChatId: string, messageId: string, federatedChatId: string, federatedMessageId: string, type?: string): Promise<void>;

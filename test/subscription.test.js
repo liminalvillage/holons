@@ -324,14 +324,13 @@ describe('Subscription Tests', () => {
     
     // Check if we got the reference back
     if (directData) {
-      // The reference might be auto-resolved, in which case it will have a _federation property
-      // instead of a direct soul property
-      if (directData._federation) {
-        expect(directData._federation).toBeTruthy();
-        expect(directData._federation.soul).toEqual(soulPath);
-        expect(directData._federation.resolved).toBe(true);
+      // The reference might be auto-resolved, in which case it carries the
+      // canonical _hologram envelope instead of a bare soul property.
+      if (directData._hologram) {
+        expect(directData._hologram.isHologram).toBe(true);
+        expect(directData._hologram.soul).toEqual(soulPath);
       } else if (directData.soul) {
-        // Or it might be a direct reference
+        // Or it might be a direct unresolved reference
         expect(directData.soul).toBeTruthy();
         expect(directData.soul).toEqual(soulPath);
       }

@@ -4,164 +4,115 @@
  */
 
 import * as h3 from 'h3-js';
+import { attachHologramMeta } from './hologram.js';
 
 /**
- * Creates a federation relationship between two spaces
- * Federation is bidirectional by default, and data propagation uses soul references by default.
- * 
+ * Creates a directional federation relationship between two spaces.
+ *
+ * Directions are stated from spaceId1's perspective:
+ *  - `lensConfig.inbound`: lenses spaceId1 receives FROM spaceId2.
+ *  - `lensConfig.outbound`: lenses spaceId1 sends TO spaceId2.
+ *
+ * When `bidirectional` is true (default), spaceId2's record is mirrored with
+ * inverted directions so it agrees with the relationship from its own view.
+ *
  * @param {object} holosphere - The HoloSphere instance
  * @param {string} spaceId1 - The first space ID
  * @param {string} spaceId2 - The second space ID
  * @param {string} [password1] - Optional password for the first space
  * @param {string} [password2] - Optional password for the second space
- * @param {boolean} [bidirectional=true] - Whether to set up bidirectional notifications (default: true)
- * @param {object} [lensConfig] - Optional lens-specific configuration
- * @param {string[]} [lensConfig.federate] - List of lenses to federate (default: all)
- * @param {string[]} [lensConfig.notify] - List of lenses to notify (default: all)
+ * @param {boolean} [bidirectional=true] - Mirror the relationship onto spaceId2
+ * @param {object} [lensConfig] - Lens-direction config from spaceId1's perspective
+ * @param {string[]} [lensConfig.inbound]  - Lenses spaceId1 receives from spaceId2
+ * @param {string[]} [lensConfig.outbound] - Lenses spaceId1 sends to spaceId2
  * @returns {Promise<boolean>} - True if federation was created successfully
  */
 export async function federate(holosphere, spaceId1, spaceId2, password1 = null, password2 = null, bidirectional = true, lensConfig = {}) {
     if (!spaceId1 || !spaceId2) {
         throw new Error('federate: Missing required space IDs');
     }
-
-    // Prevent self-federation
     if (spaceId1 === spaceId2) {
         throw new Error('Cannot federate a space with itself');
     }
 
-    // Validate lens configuration
-    const { federate = [], notify = [] } = lensConfig;
-    if (!Array.isArray(federate) || !Array.isArray(notify)) {
-        throw new Error('federate: lensConfig.federate and lensConfig.notify must be arrays');
+    const { inbound = [], outbound = [] } = lensConfig;
+    if (!Array.isArray(inbound) || !Array.isArray(outbound)) {
+        throw new Error('federate: lensConfig.inbound and lensConfig.outbound must be arrays');
     }
 
-    // Use the provided lens configurations directly
-    const federateLenses = federate;
-    const notifyLenses = notify;
+    const applyDirection = (fedInfo, partnerId, partnerInbound, partnerOutbound) => {
+        if (!fedInfo.federated) fedInfo.federated = [];
+        if (!fedInfo.inbound)   fedInfo.inbound   = [];
+        if (!fedInfo.outbound)  fedInfo.outbound  = [];
+        if (!fedInfo.lensConfig) fedInfo.lensConfig = {};
 
-    try {
-        // Get or create federation info for first space (A)
-        let fedInfo1 = null;
-
-        try {
-            fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1);
-        } catch (error) {
+        // `federated` is the canonical list — partner is recorded regardless of
+        // whether any lenses flow yet.
+        if (!fedInfo.federated.includes(partnerId)) {
+            fedInfo.federated.push(partnerId);
         }
 
+        const hasInbound  = partnerInbound.length  > 0;
+        const hasOutbound = partnerOutbound.length > 0;
+
+        if (hasInbound && !fedInfo.inbound.includes(partnerId)) {
+            fedInfo.inbound.push(partnerId);
+        } else if (!hasInbound) {
+            fedInfo.inbound = fedInfo.inbound.filter(id => id !== partnerId);
+        }
+        if (hasOutbound && !fedInfo.outbound.includes(partnerId)) {
+            fedInfo.outbound.push(partnerId);
+        } else if (!hasOutbound) {
+            fedInfo.outbound = fedInfo.outbound.filter(id => id !== partnerId);
+        }
+
+        fedInfo.lensConfig[partnerId] = {
+            inbound:  [...partnerInbound],
+            outbound: [...partnerOutbound],
+            timestamp: Date.now()
+        };
+        fedInfo.timestamp = Date.now();
+    };
+
+    try {
+        // Space 1: directions as given.
+        let fedInfo1 = null;
+        try { fedInfo1 = await holosphere.getGlobal('federation', spaceId1, password1); } catch {}
         if (fedInfo1 == null) {
             fedInfo1 = {
-                id: spaceId1,
-                name: spaceId1,
-                federation: [],
-                notify: [],
-                lensConfig: {}, // New field for lens-specific settings
+                id: spaceId1, name: spaceId1,
+                federated: [], inbound: [], outbound: [],
+                lensConfig: {}, partnerNames: {},
                 timestamp: Date.now()
             };
         }
+        applyDirection(fedInfo1, spaceId2, inbound, outbound);
 
-        // Ensure arrays and lensConfig exist
-        if (!fedInfo1.federation) fedInfo1.federation = [];
-        if (!fedInfo1.notify) fedInfo1.notify = [];
-        if (!fedInfo1.lensConfig) fedInfo1.lensConfig = {};
-
-        // Add space2 to space1's federation list if not already present
-        if (!fedInfo1.federation.includes(spaceId2)) {
-            fedInfo1.federation.push(spaceId2);
-        }
-
-        // Add space2 to space1's notify list if not already present
-        if (!fedInfo1.notify.includes(spaceId2)) {
-            fedInfo1.notify.push(spaceId2);
-        }
-
-        // Store lens configuration for space2
-        const newLensConfigsForSpace1 = { ...(fedInfo1.lensConfig || {}) }; // Shallow copy existing lensConfigs for space1
-        newLensConfigsForSpace1[spaceId2] = { // Add/update config for the target spaceId2
-            federate: [...federateLenses], // federateLenses & notifyLenses are from the main lensConfig parameter
-            notify: [...notifyLenses], 
-            timestamp: Date.now()
-        };
-        fedInfo1.lensConfig = newLensConfigsForSpace1; // Assign the new/modified object back to fedInfo1.lensConfig
-
-        // Update timestamp
-        fedInfo1.timestamp = Date.now();
-
-        // Save updated federation info for space1
         try {
             await holosphere.putGlobal('federation', fedInfo1, password1);
         } catch (error) {
             throw new Error(`Failed to create federation: ${error.message}`);
         }
 
-        // If bidirectional is true, handle space2 (B) as well
-        {
+        // Space 2 (mirrored): directions are inverted from its perspective.
+        if (bidirectional) {
             let fedInfo2 = null;
-            try {
-                fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
-            } catch (error) {
-            }
-
+            try { fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2); } catch {}
             if (fedInfo2 == null) {
                 fedInfo2 = {
-                    id: spaceId2,
-                    name: spaceId2,
-                    federation: [],
-                    notify: [],
-                    lensConfig: {}, // New field for lens-specific settings
+                    id: spaceId2, name: spaceId2,
+                    federated: [], inbound: [], outbound: [],
+                    lensConfig: {}, partnerNames: {},
                     timestamp: Date.now()
                 };
             }
+            // From spaceId2's view, spaceId1's outbound lenses arrive as inbound,
+            // and spaceId1's inbound lenses go out as outbound.
+            applyDirection(fedInfo2, spaceId1, outbound, inbound);
 
-            // Ensure arrays and lensConfig exist
-            if (!fedInfo2.federation) fedInfo2.federation = [];
-            if (!fedInfo2.notify) fedInfo2.notify = [];
-            if (!fedInfo2.lensConfig) fedInfo2.lensConfig = {};
-
-            // Add space1 to space2's federation list if bidirectional
-            if (bidirectional && !fedInfo2.federation.includes(spaceId1)) {
-                fedInfo2.federation.push(spaceId1);
-            }
-
-            // Add space1 to space2's notify list if not already present
-            if (!fedInfo2.notify.includes(spaceId1)) {
-                fedInfo2.notify.push(spaceId1);
-            }
-
-            // Store lens configuration for space1
-            fedInfo2.lensConfig[spaceId1] = {
-                federate: bidirectional ? [...federateLenses] : [], // Create a copy of the array
-                notify: bidirectional ? [...notifyLenses] : [], // Create a copy of the array
-                timestamp: Date.now()
-            };
-
-            // Update timestamp
-            fedInfo2.timestamp = Date.now();
-
-            // Save updated federation info for space2
             try {
                 await holosphere.putGlobal('federation', fedInfo2, password2);
-            } catch (error) {
-            }
-        }
-
-        // Create federation metadata record
-        const federationMeta = {
-            id: `${spaceId1}_${spaceId2}`,
-            space1: spaceId1,
-            space2: spaceId2,
-            created: Date.now(),
-            status: 'active',
-            bidirectional: bidirectional,
-            lensConfig: {
-                federate: [...federateLenses], // Create a copy of the array
-                notify: [...notifyLenses] // Create a copy of the array
-            }
-        };
-
-        try {
-            await holosphere.putGlobal('federationMeta', federationMeta);
-        } catch (error) {
+            } catch {}
         }
 
         return true;
@@ -198,8 +149,8 @@ export async function subscribeFederation(holosphere, spaceId, password = null, 
     const subscriptions = [];
     let lastNotificationTime = {};
     
-    if (fedInfo.federation && fedInfo.federation.length > 0) {
-        for (const federatedSpace of fedInfo.federation) {
+    if (fedInfo.inbound && fedInfo.inbound.length > 0) {
+        for (const federatedSpace of fedInfo.inbound) {
             // For each lens specified (or all if '*')
             for (const lens of lenses) {
                 try {
@@ -283,7 +234,7 @@ export async function getFederation(holosphere, spaceId, password = null) {
  * @param {string} spaceId - The ID of the source space.
  * @param {string} targetSpaceId - The ID of the target space in the federation link.
  * @param {string} [password] - Optional password for the source space.
- * @returns {Promise<object|null>} - An object with 'federate' and 'notify' arrays, or null if not found.
+ * @returns {Promise<object|null>} - An object with 'inbound' and 'outbound' arrays, or null if not found.
  */
 export async function getFederatedConfig(holosphere, spaceId, targetSpaceId, password = null) {
     if (!holosphere || !spaceId || !targetSpaceId) {
@@ -295,11 +246,11 @@ export async function getFederatedConfig(holosphere, spaceId, targetSpaceId, pas
 
         if (fedInfo && fedInfo.lensConfig && fedInfo.lensConfig[targetSpaceId]) {
             return {
-                federate: fedInfo.lensConfig[targetSpaceId].federate || [],
-                notify: fedInfo.lensConfig[targetSpaceId].notify || []
+                inbound:  fedInfo.lensConfig[targetSpaceId].inbound  || [],
+                outbound: fedInfo.lensConfig[targetSpaceId].outbound || []
             };
         }
-        return null; // Or return an empty config: { federate: [], notify: [] }
+        return null;
     } catch (error) {
         console.error(`Error getting federated config for ${spaceId} -> ${targetSpaceId}: ${error.message}`);
         throw error;
@@ -332,53 +283,64 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
         }
         
         if (!fedInfo1) {
-            // If fedInfo1 doesn't exist, log and proceed to metadata cleanup.
             console.warn(`No federation info found for ${spaceId1}. Skipping its update.`);
         } else {
-            // Ensure arrays exist
-            if (!fedInfo1.federation) fedInfo1.federation = [];
-            if (!fedInfo1.notify) fedInfo1.notify = [];
-            
-            // Update first space federation info - remove from both federation and notify arrays
-            const originalFederationLength = fedInfo1.federation.length;
-            const originalNotifyLength = fedInfo1.notify.length;
-            
-            fedInfo1.federation = fedInfo1.federation.filter(id => id !== spaceId2);
-            fedInfo1.notify = fedInfo1.notify.filter(id => id !== spaceId2);
+            if (!fedInfo1.federated) fedInfo1.federated = [];
+            if (!fedInfo1.inbound)   fedInfo1.inbound   = [];
+            if (!fedInfo1.outbound)  fedInfo1.outbound  = [];
+            if (!fedInfo1.lensConfig) fedInfo1.lensConfig = {};
+            if (!fedInfo1.partnerNames) fedInfo1.partnerNames = {};
+
+            const beforeIn  = fedInfo1.inbound.length;
+            const beforeOut = fedInfo1.outbound.length;
+
+            fedInfo1.federated = fedInfo1.federated.filter(id => id !== spaceId2);
+            fedInfo1.inbound   = fedInfo1.inbound.filter(id => id !== spaceId2);
+            fedInfo1.outbound  = fedInfo1.outbound.filter(id => id !== spaceId2);
+            delete fedInfo1.lensConfig[spaceId2];
+            delete fedInfo1.partnerNames[spaceId2];
             fedInfo1.timestamp = Date.now();
-            
-            console.log(`Unfederate: Removed ${spaceId2} from ${spaceId1}: federation ${originalFederationLength} -> ${fedInfo1.federation.length}, notify ${originalNotifyLength} -> ${fedInfo1.notify.length}`);
-            
+
+            console.log(`Unfederate: removed ${spaceId2} from ${spaceId1}: inbound ${beforeIn} -> ${fedInfo1.inbound.length}, outbound ${beforeOut} -> ${fedInfo1.outbound.length}`);
+
             try {
                 await holosphere.putGlobal('federation', fedInfo1, password1);
             } catch (error) {
                 console.error(`Failed to update fedInfo1 for ${spaceId1} during unfederate: ${error.message}`);
-                throw error; // RE-THROW to signal failure
+                throw error;
             }
         }
 
-        // Update second space federation info (remove spaceId1 from spaceId2's notify list)
-        // This part is usually for full bidirectional unfederation cleanup.
-        // The original code only did this if password2 was provided.
-        if (password2) { // Retaining original condition for this block
+        // Mirror the removal on space2 if password provided.
+        if (password2) {
             let fedInfo2 = null;
             try {
                 fedInfo2 = await holosphere.getGlobal('federation', spaceId2, password2);
             } catch (error) {
                 console.error(`Error getting fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
             }
-            
-            if (!fedInfo2 || !fedInfo2.notify) {
-                console.warn(`No notify array found for ${spaceId2} or fedInfo2 is null. Skipping its update.`);
+
+            if (!fedInfo2) {
+                console.warn(`No federation info found for ${spaceId2}. Skipping its update.`);
             } else {
-                fedInfo2.notify = fedInfo2.notify.filter(id => id !== spaceId1);
+                if (!fedInfo2.federated) fedInfo2.federated = [];
+                if (!fedInfo2.inbound)   fedInfo2.inbound   = [];
+                if (!fedInfo2.outbound)  fedInfo2.outbound  = [];
+                if (!fedInfo2.lensConfig) fedInfo2.lensConfig = {};
+                if (!fedInfo2.partnerNames) fedInfo2.partnerNames = {};
+
+                fedInfo2.federated = fedInfo2.federated.filter(id => id !== spaceId1);
+                fedInfo2.inbound   = fedInfo2.inbound.filter(id => id !== spaceId1);
+                fedInfo2.outbound  = fedInfo2.outbound.filter(id => id !== spaceId1);
+                delete fedInfo2.lensConfig[spaceId1];
+                delete fedInfo2.partnerNames[spaceId1];
                 fedInfo2.timestamp = Date.now();
-                
+
                 try {
                     await holosphere.putGlobal('federation', fedInfo2, password2);
                 } catch (error) {
                     console.error(`Failed to update fedInfo2 for ${spaceId2} during unfederate: ${error.message}`);
-                    throw error; // RE-THROW to signal failure
+                    throw error;
                 }
             }
         }
@@ -409,14 +371,15 @@ export async function unfederate(holosphere, spaceId1, spaceId2, password1 = nul
 }
 
 /**
- * Removes a notification relationship between two spaces
- * This removes spaceId2 from the notify list of spaceId1
- * 
+ * Stops outbound propagation from spaceId1 to spaceId2.
+ * Removes spaceId2 from spaceId1's `outbound` list and clears the outbound
+ * lens config for that partner. Inbound subscriptions are untouched.
+ *
  * @param {object} holosphere - The HoloSphere instance
- * @param {string} spaceId1 - The space to modify (remove from its notify list)
- * @param {string} spaceId2 - The space to be removed from notifications
+ * @param {string} spaceId1 - The space to modify
+ * @param {string} spaceId2 - The partner to stop sending to
  * @param {string} [password1] - Optional password for the first space
- * @returns {Promise<boolean>} - True if notification was removed successfully
+ * @returns {Promise<boolean>} - True if outbound was removed
  */
 export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = null) {
     if (!spaceId1 || !spaceId2) {
@@ -424,29 +387,22 @@ export async function removeNotify(holosphere, spaceId1, spaceId2, password1 = n
     }
 
     try {
-        // Get federation info for space
-        let fedInfo = await holosphere.getGlobal('federation', spaceId1, password1);
-        
+        const fedInfo = await holosphere.getGlobal('federation', spaceId1, password1);
         if (!fedInfo) {
             throw new Error(`No federation info found for ${spaceId1}`);
         }
+        if (!fedInfo.outbound) fedInfo.outbound = [];
 
-        // Ensure notify array exists
-        if (!fedInfo.notify) fedInfo.notify = [];
-        
-        // Remove space2 from space1's notify list if present
-        if (fedInfo.notify.includes(spaceId2)) {
-            fedInfo.notify = fedInfo.notify.filter(id => id !== spaceId2);
-            
-            // Update timestamp
-            fedInfo.timestamp = Date.now();
-            
-            // Save updated federation info
-            await holosphere.putGlobal('federation', fedInfo, password1);
-            return true;
-        } else {
-            return false;
+        if (!fedInfo.outbound.includes(spaceId2)) return false;
+
+        fedInfo.outbound = fedInfo.outbound.filter(id => id !== spaceId2);
+        if (fedInfo.lensConfig?.[spaceId2]) {
+            fedInfo.lensConfig[spaceId2].outbound = [];
         }
+        fedInfo.timestamp = Date.now();
+
+        await holosphere.putGlobal('federation', fedInfo, password1);
+        return true;
     } catch (error) {
         throw error;
     }
@@ -515,8 +471,8 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
     if (includeLocal) {
         spacesToQuery.push(holon); // Add local holon first
     }
-    if (includeFederated && fedInfo && fedInfo.federation && fedInfo.federation.length > 0) {
-        const federatedSpaces = maxFederatedSpaces === -1 ? fedInfo.federation : fedInfo.federation.slice(0, maxFederatedSpaces);
+    if (includeFederated && fedInfo && fedInfo.inbound && fedInfo.inbound.length > 0) {
+        const federatedSpaces = maxFederatedSpaces === -1 ? fedInfo.inbound : fedInfo.inbound.slice(0, maxFederatedSpaces);
         spacesToQuery = spacesToQuery.concat(federatedSpaces);
     }
 
@@ -596,90 +552,44 @@ export async function getFederated(holosphere, holon, lens, options = {}) {
                         console.log(`Original data found via soul path:`, JSON.stringify(originalData));
                         
                         if (originalData) {
-                            // Replace the reference with the original data
-                            result[i] = {
-                                ...originalData,
-                                _federation: {
-                                    isReference: true,
-                                    resolved: true,
-                                    soul: item.soul,
-                                    timestamp: Date.now()
-                                }
-                            };
+                            // Replace the reference with the resolved data, attaching
+                            // the canonical _hologram envelope (single source of truth).
+                            result[i] = attachHologramMeta(originalData, item.soul);
                         } else {
-                            // Instead of leaving the original reference, create an error object
+                            // Original data not found — keep the id so callers can
+                            // identify the broken reference, and surface the error.
                             result[i] = {
                                 id: item.id,
-                                _federation: {
-                                    isReference: true,
-                                    resolved: false,
+                                _hologram: {
+                                    isHologram: false,
                                     soul: item.soul,
                                     error: 'Referenced data not found',
-                                    timestamp: Date.now()
+                                    resolvedAt: Date.now()
                                 }
                             };
                         }
                     } else {
                         console.warn(`Soul doesn't match expected format: ${item.soul}`);
-                        // Instead of leaving the original reference, create an error object
                         result[i] = {
                             id: item.id,
-                            _federation: {
-                                isReference: true,
-                                resolved: false,
+                            _hologram: {
+                                isHologram: false,
                                 soul: item.soul,
                                 error: 'Invalid soul format',
-                                timestamp: Date.now()
+                                resolvedAt: Date.now()
                             }
                         };
                     }
                 } catch (refError) {
-                    // Instead of leaving the original reference, create an error object
                     result[i] = {
                         id: item.id,
-                        _federation: {
-                            isReference: true,
-                            resolved: false,
+                        _hologram: {
+                            isHologram: false,
                             soul: item.soul,
                             error: refError.message || 'Error resolving reference',
-                            timestamp: Date.now()
+                            resolvedAt: Date.now()
                         }
                     };
-                }
-            } 
-            // For backward compatibility, check for old-style references
-            else if (item._federation && item._federation.isReference) {
-                console.log(`Found legacy reference: ${item._federation.origin}/${item._federation.lens}/${item[idField]}`);
-                
-                try {
-                    const reference = item._federation;
-                    console.log(`Getting original data from ${reference.origin} / ${reference.lens} / ${item[idField]}`);
-                    
-                    // Get original data
-                    const originalData = await holosphere.get(
-                        reference.origin,
-                        reference.lens,
-                        item[idField],
-                        null,
-                        { resolveReferences: false } // Prevent infinite recursion
-                    );
-                    
-                    console.log(`Original data found:`, JSON.stringify(originalData));
-                    
-                    if (originalData) {
-                        // Add federation information to the resolved data
-                        result[i] = {
-                            ...originalData,
-                            _federation: {
-                                ...reference,
-                                resolved: true,
-                                timestamp: Date.now()
-                            }
-                        };
-                    } else {
-                        console.warn(`Could not resolve legacy reference: original data not found`);
-                    }
-                } catch (refError) {
                 }
             }
         }
@@ -790,18 +700,16 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
         // Get federation info for this holon using getFederation
         const fedInfo = await getFederation(holosphere, holon, password);
         
-        // Only perform federation propagation if there's valid federation info
-        if (fedInfo && fedInfo.federation && fedInfo.federation.length > 0 && fedInfo.notify && fedInfo.notify.length > 0) {
-            // Filter federation spaces to those in notify list
-            let spaces = fedInfo.notify;
-            
-            // Further filter by targetSpaces if provided
+        // Only propagate if we have outbound partners configured.
+        if (fedInfo && fedInfo.outbound && fedInfo.outbound.length > 0) {
+            let spaces = fedInfo.outbound;
+
             if (targetSpaces && Array.isArray(targetSpaces) && targetSpaces.length > 0) {
                 spaces = spaces.filter(space => targetSpaces.includes(space));
             }
-            
+
             if (spaces.length > 0) {
-                // Filter spaces based on lens configuration
+                // Keep only partners whose outbound lens config includes this lens.
                 spaces = spaces.filter(targetSpace => {
                     const spaceConfig = fedInfo.lensConfig?.[targetSpace];
                     if (!spaceConfig) {
@@ -810,19 +718,13 @@ export async function propagate(holosphere, holon, lens, data, options = {}) {
                         return false;
                     }
 
-                    // Ensure .federate is an array before calling .includes
-                    const federateLenses = Array.isArray(spaceConfig.federate) ? spaceConfig.federate : [];
+                    const outboundLenses = Array.isArray(spaceConfig.outbound) ? spaceConfig.outbound : [];
+                    const shouldPropagate = outboundLenses.includes('*') || outboundLenses.includes(lens);
 
-                    const shouldFederate = federateLenses.includes('*') || federateLenses.includes(lens);
-                    
-                    // Propagation now only depends on the 'federate' list configuration for the lens
-                    const shouldPropagate = shouldFederate;
-                    
                     if (!shouldPropagate) {
-                        result.messages.push(`Propagation of lens '${lens}' to target space ${targetSpace} skipped: lens not in 'federate' configuration.`);
+                        result.messages.push(`Propagation of lens '${lens}' to target space ${targetSpace} skipped: lens not in 'outbound' configuration.`);
                         result.skipped++;
                     }
-                    
                     return shouldPropagate;
                 });
 
@@ -1128,82 +1030,76 @@ export async function resetFederation(holosphere, spaceId, password = null, opti
             };
         }
 
-        // Store counts for reporting
-        result.federatedCount = fedInfo.federation?.length || 0;
-        result.notifyCount = fedInfo.notify?.length || 0;
+        const allPartners = fedInfo.federated || [];
+        result.federatedCount = allPartners.length;
+        result.inboundCount   = fedInfo.inbound?.length  || 0;
+        result.outboundCount  = fedInfo.outbound?.length || 0;
 
-        // Create empty federation record
+        // Reset federation record to empty.
         const emptyFedInfo = {
             id: spaceId,
             name: spaceName || spaceId,
-            federation: [],
-            notify: [],
+            federated: [],
+            inbound: [],
+            outbound: [],
+            lensConfig: {},
+            partnerNames: {},
             timestamp: Date.now()
         };
-
-        // Update federation record with empty lists
         await holosphere.putGlobal('federation', emptyFedInfo, password);
 
-        // Notify federation partners if requested
-        if (notifyPartners && fedInfo.federation && fedInfo.federation.length > 0) {
-            const updatePromises = fedInfo.federation.map(async (partnerSpace) => {
+        // Tell each partner to drop us from their lists.
+        if (notifyPartners && allPartners.length > 0) {
+            const updatePromises = allPartners.map(async (partnerSpace) => {
                 try {
-                    // Get partner's federation info
                     const partnerFedInfo = await getFederation(holosphere, partnerSpace);
-                    
-                    if (partnerFedInfo) {
-                        // Remove this space from partner's federation list
-                        if (partnerFedInfo.federation) {
-                            partnerFedInfo.federation = partnerFedInfo.federation.filter(
-                                id => id !== spaceId.toString()
-                            );
-                        }
-                        
-                        // Remove this space from partner's notify list
-                        if (partnerFedInfo.notify) {
-                            partnerFedInfo.notify = partnerFedInfo.notify.filter(
-                                id => id !== spaceId.toString()
-                            );
-                        }
-                        
-                        partnerFedInfo.timestamp = Date.now();
-                        
-                        // Save partner's updated federation info
-                        await holosphere.putGlobal('federation', partnerFedInfo);
-                        result.partnersNotified++;
-                        return true;
+                    if (!partnerFedInfo) return false;
+
+                    const sid = spaceId.toString();
+                    if (partnerFedInfo.federated) {
+                        partnerFedInfo.federated = partnerFedInfo.federated.filter(id => id !== sid);
                     }
-                    return false;
+                    if (partnerFedInfo.inbound) {
+                        partnerFedInfo.inbound = partnerFedInfo.inbound.filter(id => id !== sid);
+                    }
+                    if (partnerFedInfo.outbound) {
+                        partnerFedInfo.outbound = partnerFedInfo.outbound.filter(id => id !== sid);
+                    }
+                    if (partnerFedInfo.lensConfig) {
+                        delete partnerFedInfo.lensConfig[sid];
+                    }
+                    if (partnerFedInfo.partnerNames) {
+                        delete partnerFedInfo.partnerNames[sid];
+                    }
+                    partnerFedInfo.timestamp = Date.now();
+
+                    await holosphere.putGlobal('federation', partnerFedInfo);
+                    result.partnersNotified++;
+                    return true;
                 } catch (error) {
-                    result.errors.push({
-                        partner: partnerSpace,
-                        error: error.message
-                    });
+                    result.errors.push({ partner: partnerSpace, error: error.message });
                     return false;
                 }
             });
-            
+
             await Promise.all(updatePromises);
         }
-        
-        // Update federation metadata records if they exist
-        if (fedInfo.federation && fedInfo.federation.length > 0) {
-            for (const partnerSpace of fedInfo.federation) {
-                try {
-                    const metaId = `${spaceId}_${partnerSpace}`;
-                    const altMetaId = `${partnerSpace}_${spaceId}`;
-                    
-                    const meta = await holosphere.getGlobal('federationMeta', metaId) || 
-                                await holosphere.getGlobal('federationMeta', altMetaId);
-                    
-                    if (meta) {
-                        meta.status = 'inactive';
-                        meta.endedAt = Date.now();
-                        await holosphere.putGlobal('federationMeta', meta);
-                    }
-                } catch (error) {
+
+        // Mark any federationMeta records inactive.
+        for (const partnerSpace of allPartners) {
+            try {
+                const metaId    = `${spaceId}_${partnerSpace}`;
+                const altMetaId = `${partnerSpace}_${spaceId}`;
+
+                const meta = await holosphere.getGlobal('federationMeta', metaId) ||
+                             await holosphere.getGlobal('federationMeta', altMetaId);
+
+                if (meta) {
+                    meta.status = 'inactive';
+                    meta.endedAt = Date.now();
+                    await holosphere.putGlobal('federationMeta', meta);
                 }
-            }
+            } catch {}
         }
         
         result.success = true;

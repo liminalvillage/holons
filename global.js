@@ -65,10 +65,14 @@ export async function putGlobal(holoInstance, tableName, data, password = null) 
 
         return new Promise((resolve, reject) => {
             try {
-                // Create a copy of data without the _meta field if it exists
+                // Create a copy of data, stripping read-side envelopes that
+                // must never be persisted (they're attached at resolution time).
                 let dataToStore = { ...data };
                 if (dataToStore._meta !== undefined) {
                     delete dataToStore._meta;
+                }
+                if (dataToStore._hologram !== undefined) {
+                    delete dataToStore._hologram;
                 }
                 const payload = JSON.stringify(dataToStore);
 
@@ -327,8 +331,12 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
                 user.get('private').get(tableName) :
                 holoInstance.gun.get(holoInstance.appname).get(tableName);
 
-            // PASS 1: Get shallow node to determine expected item count
-            dataPath.once((data) => {
+            // PASS 1: Get shallow node to determine expected item count.
+            // Retry once if empty — Gun's .once() reads from local cache, which
+            // may be cold immediately after startup before peers have synced.
+            const shallowOnce = () => new Promise((res) => dataPath.once((d) => res(d)));
+
+            const processShallow = (data) => {
                 if (!data) {
                     resolve([]);
                     return;
@@ -350,60 +358,63 @@ export async function getAllGlobal(holoInstance, tableName, password = null) {
                     return;
                 }
 
-                // PASS 2: Use map().once() to iterate and get full item data
-                let receivedCount = 0;
+                // PASS 2: iterate explicitly over the filtered keys.
+                // Avoid dataPath.map().once() — it fires for null tombstone
+                // siblings and can resolve before real items are processed.
+                const processItem = async (itemData, key) => {
+                    if (!itemData) return;
+                    try {
+                        const parsed = await holoInstance.parse(itemData);
+                        if (!parsed) return;
 
-                dataPath.map().once(async (itemData, key) => {
-                    if (!itemData || key === '_') {
-                        receivedCount++;
-                        if (receivedCount >= expectedCount) {
-                            await Promise.all(pendingProcessing);
-                            resolve(output);
-                        }
-                        return;
-                    }
+                        if (holoInstance.isHologram(parsed)) {
+                            const resolved = await holoInstance.resolveHologram(parsed, {
+                                followHolograms: true
+                            });
 
-                    const processingPromise = (async () => {
-                        try {
-                            const parsed = await holoInstance.parse(itemData);
-                            if (!parsed) return;
-
-                            if (holoInstance.isHologram(parsed)) {
-                                const resolved = await holoInstance.resolveHologram(parsed, {
-                                    followHolograms: true
-                                });
-
-                                if (resolved === null) {
-                                    try {
-                                        await holoInstance.deleteGlobal(tableName, key, password);
-                                    } catch (deleteError) {
-                                        console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
-                                    }
-                                    return;
+                            if (resolved === null) {
+                                try {
+                                    await holoInstance.deleteGlobal(tableName, key, password);
+                                } catch (deleteError) {
+                                    console.error(`Failed to delete invalid global hologram at ${tableName}/${key}:`, deleteError);
                                 }
+                                return;
+                            }
 
-                                if (resolved !== parsed) {
-                                    output.push(resolved);
-                                } else {
-                                    output.push(parsed);
-                                }
+                            if (resolved !== parsed) {
+                                output.push(resolved);
                             } else {
                                 output.push(parsed);
                             }
-                        } catch (error) {
-                            console.error('Error parsing data:', error);
+                        } else {
+                            output.push(parsed);
                         }
-                    })();
-
-                    pendingProcessing.push(processingPromise);
-                    receivedCount++;
-
-                    if (receivedCount >= expectedCount) {
-                        await Promise.all(pendingProcessing);
-                        resolve(output);
+                    } catch (error) {
+                        console.error('Error parsing data:', error);
                     }
-                });
-            });
+                };
+
+                Promise.all(keys.map((key) => {
+                    const inline = data[key];
+                    if (typeof inline !== 'object' || inline === null) {
+                        return processItem(inline, key);
+                    }
+                    return new Promise((resolveItem) => {
+                        dataPath.get(key).once((itemData) => {
+                            processItem(itemData, key).then(resolveItem, resolveItem);
+                        });
+                    });
+                })).then(() => resolve(output));
+            };
+
+            (async () => {
+                let data = await shallowOnce();
+                if (!data) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    data = await shallowOnce();
+                }
+                processShallow(data);
+            })();
         });
     } catch (error) {
         console.error('Error in getAllGlobal:', error);

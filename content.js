@@ -142,10 +142,14 @@ export async function put(holoInstance, holon, lens, data, password = null, opti
 
         return new Promise((resolve, reject) => {
             try {
-                // Create a copy of data without the _meta field if it exists
+                // Create a copy of data, stripping read-side envelopes that
+                // must never be persisted (they're attached at resolution time).
                 let dataToStore = { ...data };
                 if (dataToStore._meta !== undefined) {
                     delete dataToStore._meta;
+                }
+                if (dataToStore._hologram !== undefined) {
+                    delete dataToStore._hologram;
                 }
                 const payload = JSON.stringify(dataToStore); // The data being stored
 
@@ -514,8 +518,12 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                 user.get('private').get(lens) :
                 holoInstance.gun.get(holoInstance.appname).get(holon).get(lens);
 
-            // PASS 1: Get shallow node to determine expected item count
-            dataPath.once((data) => {
+            // PASS 1: Get shallow node to determine expected item count.
+            // Retry once if empty — Gun's .once() reads from local cache, which
+            // may be cold immediately after startup before peers have synced.
+            const shallowOnce = () => new Promise((res) => dataPath.once((d) => res(d)));
+
+            const processShallow = (data) => {
                 if (!data) {
                     resolve([]);
                     return;
@@ -537,81 +545,90 @@ export async function getAll(holoInstance, holon, lens, password = null) {
                     return;
                 }
 
-                // PASS 2: Use map().once() to iterate and get full item data
-                let receivedCount = 0;
+                // PASS 2: iterate explicitly over the filtered keys.
+                // Using dataPath.map().once() here is unsafe when the parent
+                // node has tombstoned siblings (null values): map() fires for
+                // every child, and a null sibling's callback can satisfy
+                // receivedCount before real items are processed, resolving [].
+                const processItem = async (itemData, key) => {
+                    if (!itemData) return;
+                    try {
+                        const parsed = await holoInstance.parse(itemData);
+                        if (!parsed || !parsed.id) return;
 
-                dataPath.map().once(async (itemData, key) => {
-                    if (!itemData || key === '_') {
-                        receivedCount++;
-                        if (receivedCount >= expectedCount) {
-                            await Promise.all(pendingProcessing);
-                            resolve(Array.from(output.values()));
-                        }
-                        return;
-                    }
+                        if (holoInstance.isHologram(parsed)) {
+                            try {
+                                const resolved = await holoInstance.resolveHologram(parsed, {
+                                    followHolograms: true,
+                                    maxDepth: 10,
+                                    currentDepth: 0
+                                });
 
-                    const processingPromise = (async () => {
-                        try {
-                            const parsed = await holoInstance.parse(itemData);
-                            if (!parsed || !parsed.id) return;
-
-                            if (holoInstance.isHologram(parsed)) {
-                                try {
-                                    const resolved = await holoInstance.resolveHologram(parsed, {
-                                        followHolograms: true,
-                                        maxDepth: 10,
-                                        currentDepth: 0
-                                    });
-
-                                    if (resolved === null) {
-                                        console.warn(`Broken hologram detected in getAll for key ${key}. Removing it...`);
-                                        try {
-                                            await holoInstance.delete(holon, lens, key, password);
-                                        } catch (cleanupError) {
-                                            console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
-                                        }
-                                        return;
+                                if (resolved === null) {
+                                    console.warn(`Broken hologram detected in getAll for key ${key}. Removing it...`);
+                                    try {
+                                        await holoInstance.delete(holon, lens, key, password);
+                                    } catch (cleanupError) {
+                                        console.error(`Failed to remove broken hologram at ${holon}/${lens}/${key}:`, cleanupError);
                                     }
-
-                                    if (resolved && resolved !== parsed) {
-                                        if (schema) {
-                                            const valid = holoInstance.validator.validate(schema, resolved);
-                                            if (valid || !holoInstance.strict) {
-                                                output.set(resolved.id, resolved);
-                                            }
-                                        } else {
-                                            output.set(resolved.id, resolved);
-                                        }
-                                        return;
-                                    }
-                                } catch (hologramError) {
-                                    console.error(`Error resolving hologram for key ${key}:`, hologramError);
                                     return;
                                 }
-                            }
 
-                            if (schema) {
-                                const valid = holoInstance.validator.validate(schema, parsed);
-                                if (valid || !holoInstance.strict) {
-                                    output.set(parsed.id, parsed);
+                                if (resolved && resolved !== parsed) {
+                                    if (schema) {
+                                        const valid = holoInstance.validator.validate(schema, resolved);
+                                        if (valid || !holoInstance.strict) {
+                                            output.set(resolved.id, resolved);
+                                        }
+                                    } else {
+                                        output.set(resolved.id, resolved);
+                                    }
+                                    return;
                                 }
-                            } else {
+                            } catch (hologramError) {
+                                console.error(`Error resolving hologram for key ${key}:`, hologramError);
+                                return;
+                            }
+                        }
+
+                        if (schema) {
+                            const valid = holoInstance.validator.validate(schema, parsed);
+                            if (valid || !holoInstance.strict) {
                                 output.set(parsed.id, parsed);
                             }
-                        } catch (error) {
-                            console.error('Error processing data:', error);
+                        } else {
+                            output.set(parsed.id, parsed);
                         }
-                    })();
-
-                    pendingProcessing.push(processingPromise);
-                    receivedCount++;
-
-                    if (receivedCount >= expectedCount) {
-                        await Promise.all(pendingProcessing);
-                        resolve(Array.from(output.values()));
+                    } catch (error) {
+                        console.error('Error processing data:', error);
                     }
-                });
-            });
+                };
+
+                Promise.all(keys.map((key) => {
+                    const inline = data[key];
+                    // If shallow already inlined the leaf (holosphere stores
+                    // payloads as JSON strings), process it directly. This
+                    // avoids a redundant round-trip and the map() race.
+                    if (typeof inline !== 'object' || inline === null) {
+                        return processItem(inline, key);
+                    }
+                    // Otherwise fetch the leaf — sub-graph reference path.
+                    return new Promise((resolveItem) => {
+                        dataPath.get(key).once((itemData) => {
+                            processItem(itemData, key).then(resolveItem, resolveItem);
+                        });
+                    });
+                })).then(() => resolve(Array.from(output.values())));
+            };
+
+            (async () => {
+                let data = await shallowOnce();
+                if (!data) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    data = await shallowOnce();
+                }
+                processShallow(data);
+            })();
         });
     } catch (error) {
         console.error('Error in getAll:', error);

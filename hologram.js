@@ -78,7 +78,37 @@ export function isHologram(data) {
 }
 
 /**
- * Resolves a hologram to its actual data
+ * Attaches the canonical `_hologram` envelope to data resolved from a soul reference.
+ *
+ * This is the SINGLE source of truth for resolved-hologram metadata in HoloSphere.
+ * Every code path that returns "data resolved from a hologram reference" must go
+ * through this helper so consumers can rely on one shape.
+ *
+ * @param {object} originalData - The data fetched from the source holon/lens/key.
+ * @param {string} hologramSoul - The soul path the hologram pointed at.
+ * @returns {object} - originalData merged with `_hologram: { isHologram, soul, sourceHolon, sourceLens, sourceKey, resolvedAt }`.
+ */
+export function attachHologramMeta(originalData, hologramSoul) {
+    const parts = parseSoulPath(hologramSoul);
+    return {
+        ...originalData,
+        _hologram: {
+            isHologram: true,
+            soul: hologramSoul,
+            sourceHolon: parts?.holon ?? null,
+            sourceLens: parts?.lens ?? null,
+            sourceKey: parts?.key ?? null,
+            resolvedAt: Date.now(),
+        },
+    };
+}
+
+/**
+ * Resolves a hologram to its actual data.
+ *
+ * On success, the returned object spreads `originalData` and attaches the
+ * canonical `_hologram` envelope (see {@link attachHologramMeta}).
+ *
  * @param {HoloSphere} holoInstance - The HoloSphere instance.
  * @param {object} hologram - The hologram to resolve
  * @param {object} [options] - Optional parameters
@@ -86,7 +116,7 @@ export function isHologram(data) {
  * @param {Set<string>} [options.visited] - Internal use: Tracks visited souls to prevent loops
  * @param {number} [options.maxDepth=10] - Maximum resolution depth to prevent infinite loops
  * @param {number} [options.currentDepth=0] - Current resolution depth
- * @returns {Promise<object|null>} - The resolved data, null if resolution failed due to target not found, or the original hologram for circular/invalid cases.
+ * @returns {Promise<object|null>} - The resolved data with `_hologram` attached, null if resolution failed due to target not found, or the original hologram for circular/invalid cases.
  */
 export async function resolveHologram(holoInstance, hologram, options = {}) {
     if (!isHologram(hologram)) {
@@ -143,16 +173,9 @@ export async function resolveHologram(holoInstance, hologram, options = {}) {
                 );
 
             if (originalData && !originalData._invalidHologram) {
-                    // Structure for the returned object - isHologram (top-level) is removed
-                    return {
-                        ...originalData,
-                        _meta: {
-                            ...(originalData._meta || {}), // Preserve original _meta
-                            resolvedFromHologram: true,    // This is now the primary indicator
-                        hologramSoul: hologram.soul,   // Clarified meta field
-                        resolutionDepth: currentDepth
-                        }
-                    };
+                    // Attach the canonical `_hologram` envelope. This is the only
+                    // resolved-hologram indicator HoloSphere emits.
+                    return attachHologramMeta(originalData, hologram.soul);
                 } else {
                 console.warn(`!!! Original data NOT FOUND for soul: ${hologram.soul}. Removing broken hologram.`);
                 
@@ -179,5 +202,6 @@ export default {
     createHologram,
     parseSoulPath,
     isHologram,
-    resolveHologram
-}; 
+    resolveHologram,
+    attachHologramMeta
+};

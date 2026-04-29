@@ -294,6 +294,10 @@ class HoloSphere {
         return HologramOps.resolveHologram(this, hologram, options);
     }
 
+    attachHologramMeta(originalData, hologramSoul) {
+        return HologramOps.attachHologramMeta(originalData, hologramSoul);
+    }
+
     // ================================ COMPUTE FUNCTIONS ================================
 
     async computeHierarchy(holon, lens, options, maxLevels = 15, password = null) {
@@ -351,39 +355,40 @@ class HoloSphere {
     }
 
     /**
-     * v2-compatible federation creation.
-     * Maps v2 options to v1 federate() call.
+     * Convenience wrapper around federate() for the common bidirectional case.
      * @param {string} sourceHolon - Source holon ID
      * @param {string} targetHolon - Target holon ID
      * @param {object} [options] - Federation options
-     * @param {object} [options.lensConfig] - Lens configuration
-     * @param {string} [options.partnerName] - Name of the partner holon
-     * @param {boolean} [options.skipPropagation] - Skip data propagation
+     * @param {object} [options.lensConfig] - Lens config from sourceHolon's perspective
+     * @param {string[]} [options.lensConfig.inbound] - Lenses sourceHolon receives from targetHolon
+     * @param {string[]} [options.lensConfig.outbound] - Lenses sourceHolon sends to targetHolon
+     * @param {string} [options.partnerName] - Display name for the partner
      * @returns {Promise<boolean>}
      */
     async federateHolon(sourceHolon, targetHolon, options = {}) {
         const lensConfig = options.lensConfig || {};
-        const lenses = lensConfig.lenses || lensConfig.outbound || lensConfig.federate || [];
+        const inbound  = Array.isArray(lensConfig.inbound)  ? lensConfig.inbound  : [];
+        const outbound = Array.isArray(lensConfig.outbound) ? lensConfig.outbound : [];
 
-        // Store partner name if provided
-        if (options.partnerName) {
+        const ok = await Federation.federate(this, sourceHolon, targetHolon, null, null, true, {
+            inbound,
+            outbound
+        });
+
+        if (ok && options.partnerName) {
             try {
-                const fedInfo = await this.getFederation(sourceHolon) || {
-                    id: sourceHolon, name: sourceHolon,
-                    federation: [], notify: [], lensConfig: {}, partnerNames: {}, timestamp: Date.now()
-                };
-                if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
-                fedInfo.partnerNames[targetHolon] = options.partnerName;
-                await this.putGlobal('federation', fedInfo);
+                const fedInfo = await this.getFederation(sourceHolon);
+                if (fedInfo) {
+                    if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
+                    fedInfo.partnerNames[targetHolon] = options.partnerName;
+                    await this.putGlobal('federation', fedInfo);
+                }
             } catch (e) {
                 console.warn('Failed to store partner name:', e.message);
             }
         }
 
-        return Federation.federate(this, sourceHolon, targetHolon, null, null, true, {
-            federate: lenses,
-            notify: lenses
-        });
+        return ok;
     }
 
     /**
