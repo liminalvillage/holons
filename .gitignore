@@ -5,5 +5,8 @@ radata/*
 package-lock.json
 yarn.lock
 radata*
+browser-radata/
+holosphere/
 holosphere.db*
 data/*
+holosphere-bundle*.js
