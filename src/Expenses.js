@@ -239,7 +239,8 @@ export default class Expenses {
         }
 
 
-        const expense = await this.addExpense(messageId + 1, holonId, amount, normalizedCurrency, description, ctx.from.id, [holonId]);
+        const picture = ctx.message.photo ? ctx.message.photo[ctx.message.photo.length - 1].file_id : null;
+        const expense = await this.addExpense(messageId + 1, holonId, amount, normalizedCurrency, description, ctx.from.id, [holonId], picture);
         if (expense) {
             ctx.reply(await this.createMessage(holonId, expense), Markup.inlineKeyboard([
                 [{ text: i18next.t('Select Participants', { lng: language }) || 'Select Participants', callback_data: `select_participants:${expense.id}` }]
@@ -249,7 +250,7 @@ export default class Expenses {
         }
     };
 
-    async addExpense(messageId, holonId, amount, currency, description, paidBy, splitWith) {
+    async addExpense(messageId, holonId, amount, currency, description, paidBy, splitWith, picture = null) {
         //do health check on currency: remove uppercase, check if it's a valid currency, remove plural
         if (isNaN(amount) || amount <= 0 ) { // Currency validation moved to 'spent'
             return false;
@@ -274,7 +275,8 @@ export default class Expenses {
             currency,
             description,
             paidBy,
-            splitWith
+            splitWith,
+            picture: picture || null
         };
 
         // Store expense record (for display and backward compatibility)

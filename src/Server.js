@@ -33,14 +33,17 @@ import { log } from '../utils/logger.js';
  * console.log(server.getServerStatus());
  */
 class Server {
-  constructor(bot) {
+  constructor(bot, services = {}) {
     this.bot = bot;
+    this.services = services;
     this.serverInstance = null;
     this.isRunning = false;
     this.requestCounts = new Map(); // For rate limiting
     this.maxRateLimitEntries = 10000; // Maximum IPs to track
     this.rateLimitCleanupInterval = null;
     this.signalHandlersSet = false; // Prevent duplicate signal handlers
+    this.refreshTimers = new Map(); // Per-(kind,holon,id) debounce timers
+    this.refreshDebounceMs = 300;
     this.setupServer();
   }
 
@@ -72,6 +75,9 @@ class Server {
 
     // Setup image endpoints (isolated)
     this.setupImageEndpoints(app);
+
+    // Setup refresh endpoints (harvest → telegram message edits)
+    this.setupRefreshEndpoints(app);
 
     // Global error handler
     this.setupGlobalErrorHandler(app);
@@ -545,6 +551,92 @@ class Server {
     }
   }
 
+  setupRefreshEndpoints(app) {
+    // Unauthenticated; protected by IP rate limit only. See TODO.md
+    // ("Telegram-login verification for /refresh endpoints") for the planned
+    // upgrade to per-user authentication.
+    app.post('/refresh/quest', (req, res) => {
+      const { chatId, questId } = req.body || {};
+      if (!chatId || questId === undefined || questId === null) {
+        return res.status(400).json({ error: 'chatId and questId required' });
+      }
+      this.scheduleRefresh('quest', String(chatId), String(questId));
+      res.status(202).json({ scheduled: true });
+    });
+
+    app.post('/refresh/expense', (req, res) => {
+      const { chatId, expenseId } = req.body || {};
+      if (!chatId || expenseId === undefined || expenseId === null) {
+        return res.status(400).json({ error: 'chatId and expenseId required' });
+      }
+      this.scheduleRefresh('expense', String(chatId), String(expenseId));
+      res.status(202).json({ scheduled: true });
+    });
+  }
+
+  scheduleRefresh(kind, holon, id) {
+    const key = `${kind}:${holon}:${id}`;
+    if (this.refreshTimers.has(key)) clearTimeout(this.refreshTimers.get(key));
+    const timer = setTimeout(async () => {
+      this.refreshTimers.delete(key);
+      try {
+        if (kind === 'quest') await this.refreshQuestMessage(holon, id);
+        else if (kind === 'expense') await this.refreshExpenseMessage(holon, id);
+      } catch (err) {
+        log.warn(`refresh ${kind} ${holon}/${id} failed: ${err?.message || err}`);
+      }
+    }, this.refreshDebounceMs);
+    this.refreshTimers.set(key, timer);
+  }
+
+  async refreshQuestMessage(holon, questId) {
+    const { quests, settings } = this.services;
+    if (!quests) throw new Error('quests service not available');
+
+    const language = (await settings?.getLanguage(holon).catch(() => null)) || 'en';
+    const holonDB = await quests.getHolonDB(holon);
+    const quest = await holonDB.get(holon, 'quests', questId);
+    if (!quest) {
+      log.info(`refresh: quest ${questId} not found in holon ${holon}`);
+      return;
+    }
+
+    const messageId = Number(questId);
+    const fakeCtx = { telegram: this.bot.telegram };
+    const markupConfig = quests.markup(quest, language);
+    await quests.updateQuestMessage(fakeCtx, quest, holon, messageId, language, markupConfig);
+  }
+
+  async refreshExpenseMessage(holon, expenseId) {
+    const { expenses, database } = this.services;
+    if (!expenses || !database) throw new Error('expenses/database service not available');
+
+    const expense = await database.get(holon, 'expenses', expenseId);
+    if (!expense) {
+      log.info(`refresh: expense ${expenseId} not found in holon ${holon}`);
+      return;
+    }
+
+    const text = await expenses.createMessage(holon, expense);
+    const reply_markup = {
+      inline_keyboard: [
+        [{ text: '🔀 Split', callback_data: `split:${expense.id}` },
+         { text: '🔀 Split All', callback_data: `splitall:${expense.id}` }],
+        [{ text: '👥 Select participants', callback_data: `select_participants:${expense.id}` }],
+      ],
+    };
+    const messageId = Number(expenseId);
+    const editor = expense.picture
+      ? this.bot.telegram.editMessageCaption.bind(this.bot.telegram)
+      : this.bot.telegram.editMessageText.bind(this.bot.telegram);
+    try {
+      await editor(holon, messageId, undefined, text, { reply_markup });
+    } catch (err) {
+      if (/message is not modified/i.test(err?.message || '')) return;
+      throw err;
+    }
+  }
+
   async downloadAndSaveAvatar(fileUrl, userId) {
     try {
       const response = await axios({
@@ -730,14 +822,11 @@ class Server {
         return { error: 'File is not an image' };
       }
 
-      const fileUrl = await this.bot.telegram.getFileLink(fileId);
-      
       return {
         file_id: fileInfo.file_id,
         file_unique_id: fileInfo.file_unique_id,
         file_size: fileInfo.file_size,
         file_path: fileInfo.file_path,
-        file_url: fileUrl ? fileUrl.href : null,
         file_extension: fileExtension,
         mime_type: this.getImageMimeType(fileExtension),
         is_image: true,
@@ -760,14 +849,11 @@ class Server {
         return null;
       }
 
-      const fileUrl = await this.bot.telegram.getFileLink(fileId);
-      
       return {
         file_id: fileInfo.file_id,
         file_unique_id: fileInfo.file_unique_id,
         file_size: fileInfo.file_size,
         file_path: fileInfo.file_path,
-        file_url: fileUrl ? fileUrl.href : null,
         file_extension: this.getFileExtension(fileInfo.file_path || ''),
         timestamp: Date.now()
       };

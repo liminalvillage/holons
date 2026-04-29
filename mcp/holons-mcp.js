@@ -98,6 +98,7 @@ defineTool('log_expense',
     amount: z.number().describe('Amount spent'),
     currency: z.string().describe('Currency (e.g. "hours", "euro", "usd")'),
     description: z.string().optional().describe('What was the expense for'),
+    picture: z.string().optional().describe('Telegram file_id of a receipt photo to attach'),
     sender: z.object({
       id: z.number().describe('Telegram user ID'),
       first_name: z.string().describe('First name'),

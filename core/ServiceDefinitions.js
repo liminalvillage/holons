@@ -424,11 +424,11 @@ export const serviceDefinitions = {
 
   // Web Server (should be last to avoid port conflicts during development)
   server: {
-    factory: ({ telebot }) => {
-      return new Server(telebot);
+    factory: ({ telebot, quests, expenses, database, settings }) => {
+      return new Server(telebot, { quests, expenses, database, settings });
     },
     singleton: true,
-    dependencies: ['telebot'],
+    dependencies: ['telebot', 'quests', 'expenses', 'database', 'settings'],
   },
 };
 

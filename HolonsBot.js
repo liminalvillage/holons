@@ -101,7 +101,7 @@ const apiServer = http.createServer(async (req, res) => {
 
     // POST /expense — create expense through bot's actual code path
     if (req.method === 'POST' && req.url === '/expense') {
-      const { chatId, amount, currency, description, sender } = await getBody();
+      const { chatId, amount, currency, description, sender, picture } = await getBody();
       if (!chatId || !amount || !currency) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'chatId, amount, and currency required' }));
@@ -114,25 +114,28 @@ const apiServer = http.createServer(async (req, res) => {
       const holon = String(chatId);
       const paidBy = sender?.id || Number(chatId);
 
-      // Send a placeholder message to get a message_id
-      const placeholder = await telegram.sendMessage(chatId, '💰 Recording expense...');
+      // Send a placeholder message to get a message_id (use photo if supplied so the receipt shows in chat)
+      const placeholder = picture
+        ? await telegram.sendPhoto(chatId, picture, { caption: '💰 Recording expense...' })
+        : await telegram.sendMessage(chatId, '💰 Recording expense...');
       const messageId = placeholder.message_id;
 
       // Create expense through bot's actual method
       const expense = await expenses.addExpense(
-        messageId, holon, parseFloat(amount), 
-        currency.toLowerCase().replace(/s$/, ''), 
-        description || '', paidBy, [holon]
+        messageId, holon, parseFloat(amount),
+        currency.toLowerCase().replace(/s$/, ''),
+        description || '', paidBy, [holon], picture || null
       );
 
       if (!expense) {
-        await telegram.editMessageText(chatId, messageId, null, '❌ Failed to create expense');
+        if (picture) await telegram.editMessageCaption(chatId, messageId, null, '❌ Failed to create expense');
+        else await telegram.editMessageText(chatId, messageId, null, '❌ Failed to create expense');
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'Invalid expense data' }));
         return;
       }
 
-      // Format and update the message
+      // Format and update the message (caption for photo messages, text otherwise)
       const msg = await expenses.createMessage(holon, expense);
       const buttons = {
         inline_keyboard: [
@@ -141,7 +144,11 @@ const apiServer = http.createServer(async (req, res) => {
           [{ text: '👥 Select participants', callback_data: `select_participants:${expense.id}` }]
         ]
       };
-      await telegram.editMessageText(chatId, messageId, null, msg, { reply_markup: buttons });
+      if (picture) {
+        await telegram.editMessageCaption(chatId, messageId, null, msg, { reply_markup: buttons });
+      } else {
+        await telegram.editMessageText(chatId, messageId, null, msg, { reply_markup: buttons });
+      }
 
       res.writeHead(200);
       res.end(JSON.stringify({ success: true, expenseId: expense.id, messageId }));
