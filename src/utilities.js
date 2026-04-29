@@ -227,8 +227,6 @@ export const getHolonName = async (db, holonId, ctx = null) => {
   }
 
   // Final fallback: return a generic name instead of the ID
-  console.log("This is the id that is being passed to this function", holonId);
-  console.log("This is being displayed when we are listing the holons in the Zoned")
   return `External Holon`;
 };
 

@@ -2464,9 +2464,11 @@ export default class Settings {
                         { text: i18next.t('settings_help', { lng: language }), callback_data: 'settings_help' },
                         { text: i18next.t('settings_support', { lng: language }), url: 'https://t.me/HolonicDAO' }
                     ],
-                    // 9. Dashboard (full width) - web_app only works in private chats, use URL for groups
+                    // 9. Dashboard (full width). web_app requires HTTPS and only
+                    // works in private chats; fall back to a plain URL otherwise
+                    // (also covers local dev like http://127.0.0.1:5173).
                     [
-                        isPrivateChat
+                        (isPrivateChat && dashboardUrl.startsWith('https://'))
                             ? { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, web_app: { url: dashboardUrl } }
                             : { text: `🔍 ${i18next.t('dashboard', { lng: language, defaultValue: 'Holonic Dashboard' })}`, url: dashboardUrl }
                     ]

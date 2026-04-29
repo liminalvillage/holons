@@ -2,7 +2,7 @@
  * @fileoverview User Interface components for HolonsBot.
  * @module src/UI
  */
-import puppetteer from 'puppeteer';
+import puppeteer from 'puppeteer';
 import i18next from 'i18next';
 import * as utils from './utilities.js'
 import fs from 'fs';
@@ -14,6 +14,129 @@ const DASHBOARD_ADDRESS = process.env.DASHBOARD_ADDRESS || 'https://dashboard.ho
 
 let browser = null;
 let browserAvailable = false;
+
+// Pastel card background derived deterministically from a category string.
+// Mirrors harvest's getColorFromCategory in src/components/Tasks.svelte so
+// cards rendered by the bot match harvest's palette for the same categories.
+function colorFromCategory(category, type = 'task', dark = false) {
+  if (!category) {
+    if (dark) {
+      if (type === 'event') return 'hsl(280, 25%, 22%)';
+      if (type === 'quest') return 'hsl(200, 25%, 22%)';
+      return '#1f2937';
+    }
+    if (type === 'event') return 'hsl(280, 70%, 88%)';
+    if (type === 'quest') return 'hsl(200, 70%, 88%)';
+    return '#E5E7EB';
+  }
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) {
+    hash = (hash << 5) - hash + category.charCodeAt(i);
+    hash = hash & hash;
+  }
+  const hue = Math.abs(hash % 360);
+  if (dark) {
+    if (type === 'event') return `hsl(${hue}, 30%, 24%)`;
+    if (type === 'quest') return `hsl(${hue}, 28%, 24%)`;
+    return `hsl(${hue}, 25%, 22%)`;
+  }
+  if (type === 'event') return `hsl(${hue}, 85%, 82%)`;
+  if (type === 'quest') return `hsl(${hue}, 75%, 84%)`;
+  return `hsl(${hue}, 70%, 86%)`;
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Page pool: pages are partitioned by viewport class so each stays warm for
+// similar work. One page per class (max=1) bounds memory and serializes
+// concurrent screenshot calls of the same class — no two callers ever drive
+// the same page at the same time. Different classes run in parallel.
+const PAGE_POOL_MAX_PER_CLASS = 1;
+const pagePools = new Map(); // class -> { page, busy, queue: [resolve...] }
+
+function getPool(klass) {
+  let pool = pagePools.get(klass);
+  if (!pool) {
+    pool = { page: null, busy: false, queue: [] };
+    pagePools.set(klass, pool);
+  }
+  return pool;
+}
+
+async function acquirePage(klass) {
+  const pool = getPool(klass);
+  if (pool.busy) {
+    // Same-class request in flight — queue and wait.
+    return new Promise((resolve) => pool.queue.push(resolve));
+  }
+  pool.busy = true;
+  if (pool.page && !pool.page.isClosed()) {
+    return pool.page;
+  }
+  pool.page = await browser.newPage();
+  return pool.page;
+}
+
+function releasePage(klass, { discard = false } = {}) {
+  const pool = pagePools.get(klass);
+  if (!pool) return;
+  if (discard && pool.page) {
+    const dead = pool.page;
+    pool.page = null;
+    dead.close().catch(() => {});
+  }
+  if (pool.queue.length > 0) {
+    const next = pool.queue.shift();
+    // Pool stays busy — handing off ownership to the next waiter.
+    Promise.resolve().then(async () => {
+      if (!pool.page || pool.page.isClosed()) {
+        try {
+          pool.page = await browser.newPage();
+        } catch (e) {
+          pool.busy = false;
+          // Reject by resolving with null so caller can fail soft.
+          next(null);
+          return;
+        }
+      }
+      next(pool.page);
+    });
+  } else {
+    pool.busy = false;
+  }
+}
+
+async function closePagePool() {
+  for (const pool of pagePools.values()) {
+    if (pool.page) {
+      try { await pool.page.close(); } catch {}
+    }
+    pool.page = null;
+    pool.queue = [];
+    pool.busy = false;
+  }
+  pagePools.clear();
+}
+
+function viewportClassFor(onElement) {
+  if (onElement.includes('quest-card')) return 'quest-card';
+  if (onElement.includes('table-container') ||
+      onElement.includes('quest-list') ||
+      onElement.includes('status-table') ||
+      onElement === 'table' ||
+      onElement.includes('modern-table')) {
+    return 'table';
+  }
+  return 'default';
+}
 
 /**
  * User Interface class for generating visual outputs and display commands.
@@ -179,7 +302,7 @@ class UI {
     try {
       if (!browser || !browser.connected) {
         console.log('Initializing Puppeteer browser...');
-        browser = await puppetteer.launch(this.getPuppeteerLaunchOptions());
+        browser = await puppeteer.launch(this.getPuppeteerLaunchOptions());
         browserAvailable = true;
         console.log('Browser initialized successfully');
       }
@@ -200,6 +323,7 @@ class UI {
   }
 
   async closeBrowser() {
+    await closePagePool();
     if (browser) {
       try {
         console.log('Closing Puppeteer browser...');
@@ -366,17 +490,8 @@ class UI {
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
     
-      // Wait for users and quests to be retrieved using holosphere.getAll with holograms
-      // Retry if empty — GunDB may not have synced from peers yet after restart
     let users = await this.db.holosphere.getAll(holonId.toString(), 'users')
     let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
-    if (!Array.isArray(quests) || quests.length === 0) {
-      await new Promise(r => setTimeout(r, 3000));
-      quests = await this.db.holosphere.getAll(holonId.toString(), 'quests');
-      if (!Array.isArray(users) || users.length === 0) {
-        users = await this.db.holosphere.getAll(holonId.toString(), 'users');
-      }
-    }
 
     // If in a topic, filter quests by message_thread_id
     if (isTopic && threadId) {
@@ -553,27 +668,20 @@ class UI {
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
-      // Wait for all quests to be retrieved using holosphere.getAll with holograms
-      // Retry if empty — GunDB may not have synced from peers yet after restart
     let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
-      if (!Array.isArray(quests) || quests.length === 0) {
-        await new Promise(r => setTimeout(r, 3000));
-        quests = await this.db.holosphere.getAll(holonId.toString(), 'quests');
-      }
-    
+
       // Ensure we have a valid array before filtering
       if (!Array.isArray(quests)) {
         quests = [];
       }
-      
-      // Initial filter for type and status - include tasks, holograms, and recurring tasks
-      quests = quests.filter(quest => {
-        const questHolonId = getQuestHolon(quest);
-        return (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') &&
-          (quest.status === 'ongoing' || quest.status === 'scheduled') &&
-          // Only show quests that belong to this holon (not federated from elsewhere)
-          (!questHolonId || questHolonId.toString() === holonId.toString());
-      })
+
+      // Filter by type and status. Federated holograms (source holon !==
+      // current) are kept — they render with the cyan-glow style so they're
+      // visually distinct from local tasks (matches harvest's Tasks view).
+      quests = quests.filter(quest =>
+        (quest.type === 'task' || quest.type === 'hologram' || quest.type === 'recurring') &&
+        (quest.status === 'ongoing' || quest.status === 'scheduled')
+      )
 
     // If in a topic, filter further by message_thread_id
     if (isTopic && threadId) {
@@ -1316,84 +1424,138 @@ class UI {
 
   async getQuestsTable(quests, holonId, ctx) {
     const language = await this.settings.getLanguage(holonId);
-    const rows = [];
+    const settings = await this.settings.getSettings(holonId);
+    const isDark = (settings?.theme || 'dark') !== 'light';
+
+    // Harvest-aligned palette. Dark mirrors harvest's gray-900/800/700 stack
+    // with indigo accent; light keeps the prior light look.
+    const p = isDark
+      ? {
+          bg: '#111827',          // page surface (gray-900)
+          cardBorder: 'rgba(255,255,255,0.06)',
+          cardShadow: '0 1px 3px rgba(0,0,0,0.4)',
+          titleColor: '#ffffff',
+          titleCompletedColor: '#9ca3af',
+          subtitleColor: '#9ca3af',
+          descColor: '#d1d5db',
+          countColor: '#9ca3af',
+          checkboxIdleBg: 'rgba(255,255,255,0.08)',
+          checkboxIdleFg: '#d1d5db',
+          pillBg: 'rgba(255,255,255,0.08)',
+          pillFg: '#d1d5db',
+          hologramBg: 'rgba(59,130,246,0.18)',
+          hologramFg: '#93c5fd',
+        }
+      : {
+          bg: '#f3f4f6',
+          cardBorder: 'rgba(0,0,0,0.06)',
+          cardShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          titleColor: '#111827',
+          titleCompletedColor: '#4b5563',
+          subtitleColor: '#6b7280',
+          descColor: '#4b5563',
+          countColor: '#374151',
+          checkboxIdleBg: 'rgba(0,0,0,0.12)',
+          checkboxIdleFg: '#374151',
+          pillBg: 'rgba(0,0,0,0.1)',
+          pillFg: '#374151',
+          hologramBg: 'rgba(59,130,246,0.18)',
+          hologramFg: '#1e40af',
+        };
+
+    const cards = [];
     for (const quest of quests) {
       let provenanceText = '';
-      let provenanceIcon = '🏠';
       let isHologram = false;
-      
-      const questHolonIdForProv = getQuestHolon(quest);
-      if (quest._meta && quest._meta.origin_chat_name) {
-        provenanceText = quest._meta.origin_chat_name;
-        provenanceIcon = '🌐';
+
+      // Source holon: prefer the resolver-attached _hologram.sourceHolon,
+      // then _meta.origin_chat_name, then the legacy holon/chat fields.
+      const sourceHolonId =
+        quest._hologram?.sourceHolon ??
+        getQuestHolon(quest);
+
+      if (quest._hologram?.isHologram || quest._meta?.origin_chat_name ||
+          (sourceHolonId && sourceHolonId.toString() !== holonId.toString())) {
         isHologram = true;
-      } else if (questHolonIdForProv && questHolonIdForProv.toString() !== holonId.toString()) {
-        try {
-          const nameFromUtil = await utils.getHolonName(this.db, questHolonIdForProv, ctx);
-          if (nameFromUtil && nameFromUtil.trim() !== '') { // Use if non-empty
-            provenanceText = nameFromUtil;
-            provenanceIcon = '🔗';
-            isHologram = true;
-          } else { // Fallback if util function gives empty/null/undefined
-            provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${questHolonIdForProv}`;
-            provenanceIcon = '🔗';
-            isHologram = true;
+        if (quest._meta?.origin_chat_name) {
+          provenanceText = quest._meta.origin_chat_name;
+        } else if (sourceHolonId) {
+          // getHolonName returns the literal strings 'External Holon' /
+          // 'Unknown Holon' when it can't resolve a real name. Treat those
+          // as no-name and show the actual holon ID instead — that's the
+          // origin the user actually wants to see.
+          let resolved = '';
+          try {
+            resolved = await utils.getHolonName(this.db, sourceHolonId, ctx) || '';
+          } catch (e) {
+            console.warn(`Could not get holon name for holon ${sourceHolonId}:`, e);
           }
-        } catch (e) {
-          console.warn(`Could not get holon name for holon ${questHolonIdForProv}:`, e);
-          provenanceText = `${i18next.t('holon_prefix', {lng: language, defaultValue: 'Holon'})} ${questHolonIdForProv}`; // Fallback on error
-          provenanceIcon = '🔗';
-          isHologram = true;
+          const isGenericFallback = !resolved.trim() ||
+            resolved === 'External Holon' || resolved === 'Unknown Holon';
+          provenanceText = isGenericFallback
+            ? `${i18next.t('holon_prefix', { lng: language, defaultValue: 'Holon' })} ${sourceHolonId}`
+            : resolved;
+        } else {
+          provenanceText = i18next.t('hologram', { lng: language, defaultValue: 'Hologram' });
         }
-      } else {
-        provenanceText = i18next.t('local_provenance', { lng: language, defaultValue: 'Local' });
-        provenanceIcon = '🏠';
-        isHologram = false;
       }
 
-      const statusIcon = quest.status === 'completed' ? '✅' : quest.status === 'ongoing' ? '🔄' : '📅';
-      const participantCount = quest.participants ? quest.participants.length : 0;
-      const appreciationCount = quest.appreciation ? quest.appreciation.length : 0;
-      
-      // Add hologram class if this is a hologram
-      const hologramClass = isHologram ? ' hologram' : '';
-      const hologramBadge = isHologram ? `<div class="hologram-badge">📡 ${provenanceText}</div>` : '';
+      const completed = quest.status === 'completed';
+      const cardBg = colorFromCategory(quest.category, quest.type, isDark);
+      const checkboxBg = completed ? '#10b981' : p.checkboxIdleBg;
+      const checkboxFg = completed ? '#ffffff' : p.checkboxIdleFg;
+      const checkIcon = completed
+        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
+        : (quest.type === 'event' || quest.when)
+          ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
+          : (quest.type === 'recurring' || quest.status === 'recurring')
+            ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>'
+            : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
 
-      const row = `<tr class="quest-row">
-          <td class="quest-card-row" colspan="4">
-            <div class="quest-card-item${hologramClass}" style="font-size: 18px;">
-              ${hologramBadge}
-              <div class="quest-header-row">
-                <div class="quest-status-badge ${quest.status}" style="font-size: 20px;">${statusIcon}</div>
-                <div class="quest-title-main" style="font-size: 22px; font-weight: bold;">${quest.title}</div>
-                <div class="quest-stats-mini" style="font-size: 16px;">
-                  <span class="stat-item">${participantCount}</span>
-                  <span class="stat-item">${appreciationCount}</span>
-            </div>
-            </div>
-              <div class="quest-meta-row" style="font-size: 16px;">
-                <span class="quest-initiator">by ${getDisplayName(quest.initiator)}</span>
-                <span class="quest-id-small">#${quest.id}</span>
-              </div>
-            </div>
-          </td>
-        </tr>`;
-      rows.push(row);
+      const titleStyle = completed
+        ? `text-decoration: line-through; color: ${p.titleCompletedColor};`
+        : `color: ${p.titleColor};`;
+
+      const categoryPill = quest.category
+        ? `<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:13px;background:${p.pillBg};color:${p.pillFg};font-weight:500;">${escapeHtml(quest.category)}</span>`
+        : '';
+
+      const hologramPill = isHologram
+        ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:9999px;font-size:13px;font-weight:500;background:${p.hologramBg};color:${p.hologramFg};">📡 ${escapeHtml(provenanceText)}</span>`
+        : '';
+
+      const participantCount = quest.participants?.length || 0;
+      const appreciationCount = quest.appreciation?.length || 0;
+      const counts = [
+        participantCount ? `<span style="white-space:nowrap;">👥 ${participantCount}</span>` : '',
+        appreciationCount ? `<span style="white-space:nowrap;">👍 ${appreciationCount}</span>` : ''
+      ].filter(Boolean).join('');
+
+      const description = quest.description
+        ? `<div style="font-size:14px;color:${p.descColor};line-height:1.4;max-height:2.8em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-top:4px;">${escapeHtml(quest.description)}</div>`
+        : '';
+
+      cards.push(`<div class="quest-card-item${isHologram ? ' hologram' : ''}" style="background-color:${cardBg};border-radius:12px;padding:14px 16px;margin:8px 0;border:1px solid ${p.cardBorder};box-shadow:${p.cardShadow};">
+  <div style="display:flex;align-items:center;gap:14px;">
+    <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:${checkboxBg};color:${checkboxFg};flex-shrink:0;">${checkIcon}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:18px;font-weight:700;${titleStyle}">${escapeHtml(quest.title || 'Untitled')}</span>
+        ${categoryPill}
+        ${hologramPill}
+      </div>
+      ${description}
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;font-size:14px;color:${p.countColor};flex-shrink:0;">${counts}</div>
+  </div>
+</div>`);
     }
 
-    const element = `<div class="quest-list-container" style="font-size: 18px;">
-      <div class="quest-list-header">
-        <div class="header-title" style="font-size: 24px; font-weight: bold;">${i18next.t('Quests', { lng: language })}</div>
-        <div class="header-stats" style="font-size: 16px;">🙋‍♂ ${i18next.t('People', { lng: language })} | 👏 ${i18next.t('Appreciation', { lng: language })}</div>
-      </div>
-      <div class="quest-list-wrapper">
-        <table class="quest-list-table" style="font-size: 18px;">
-          <tbody>
-            ${rows.join('\n')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+    const element = `<div class="quest-list-container" style="background:${p.bg};padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;width:1100px;box-sizing:border-box;">
+  <div style="font-size:22px;font-weight:700;color:${p.titleColor};margin-bottom:8px;">${escapeHtml(i18next.t('Quests', { lng: language }))}</div>
+  <div style="font-size:13px;color:${p.subtitleColor};margin-bottom:14px;">👥 ${escapeHtml(i18next.t('People', { lng: language }))} · 👍 ${escapeHtml(i18next.t('Appreciation', { lng: language }))}</div>
+  ${cards.join('\n')}
+</div>`;
 
     const path = './images/quests' + holonId + '.png';
     const html = await this.generateHtml(element, await this.settings.getTheme(holonId));
@@ -1589,60 +1751,46 @@ class UI {
   }
 
   async screenshotHtml(html, pathToSave, onElement) {
-    let page = null;
+    if (!browserAvailable) {
+      console.warn('Browser not available, skipping screenshot generation');
+      return null;
+    }
+
+    if (!browser || !browser.connected) {
+      console.log('Launching optimized browser instance...');
+      // Drop any pages from a previous (dead) browser before relaunching.
+      await closePagePool();
+      browser = await puppeteer.launch(this.getPuppeteerLaunchOptions());
+      browserAvailable = true;
+    }
+
+    const klass = viewportClassFor(onElement);
+    const page = await acquirePage(klass);
+    if (!page) return null;
+
+    let pageBroken = false;
+
     try {
-      // Check if browser is available
-      if (!browserAvailable) {
-        console.warn('Browser not available, skipping screenshot generation');
-        return null;
-      }
-
-      // Ensure browser is available with optimized pool
-      if (!browser || !browser.connected) {
-        console.log('Launching optimized browser instance...');
-        browser = await puppetteer.launch(this.getPuppeteerLaunchOptions());
-        browserAvailable = true;
-      }
-
-      // Reuse a cached page for quest cards to avoid newPage() overhead
-      if (onElement.includes('quest-card') && this._cachedPage && !this._cachedPage.isClosed()) {
-        page = this._cachedPage;
-      } else {
-        page = await browser.newPage();
-        if (onElement.includes('quest-card')) this._cachedPage = page;
-      }
-      
       // DYNAMIC VIEWPORT: Use high DPI for better image quality
       let initialViewport = { width: 1200, height: 800, deviceScaleFactor: 2 };
 
-      // For table containers and quest lists, use even larger viewport to prevent clipping
-      if (onElement.includes('table-container') ||
-          onElement.includes('quest-list') ||
-          onElement.includes('status-table') ||
-          onElement === 'table' ||
-          onElement.includes('modern-table')) {
+      if (klass === 'table') {
         initialViewport = { width: 1400, height: 1200, deviceScaleFactor: 2 };
-      }
-
-      // For quest cards - use 1x scale for speed on low-RAM servers
-      if (onElement.includes('quest-card')) {
+      } else if (klass === 'quest-card') {
+        // 1x scale for speed on low-RAM servers
         initialViewport = { width: 800, height: 600, deviceScaleFactor: 1 };
       }
 
-      await page.setDefaultTimeout(5000); // Increased timeout for larger content
+      page.setDefaultTimeout(5000);
       await page.setViewport(initialViewport);
-      
-      // SKIP FONT LOADING for speed - use system fonts only
       await page.setContent(html, { waitUntil: 'domcontentloaded' });
-      
-      // Wait for element and get its actual dimensions
+
       try {
         await page.waitForSelector(onElement, { timeout: 2000 });
-      } catch (timeoutError) {
+      } catch {
         console.warn('Element wait timeout, proceeding anyway');
       }
-      
-      // OPTIMIZED SCREENSHOT: Take screenshot with high quality settings
+
       const screenshotOptions = {
         path: pathToSave,
         type: 'png',
@@ -1650,7 +1798,6 @@ class UI {
         captureBeyondViewport: false
       };
 
-      // Try to get element dimensions and adjust viewport if needed
       try {
         const elementInfo = await page.evaluate((selector) => {
           const element = document.querySelector(selector);
@@ -1658,54 +1805,48 @@ class UI {
           const rect = element.getBoundingClientRect();
           return {
             x: Math.max(0, rect.left),
-            y: Math.max(0, rect.top), 
+            y: Math.max(0, rect.top),
             width: rect.width,
             height: rect.height,
             scrollWidth: element.scrollWidth || rect.width,
             scrollHeight: element.scrollHeight || rect.height
           };
         }, onElement);
-        
+
         if (elementInfo && elementInfo.width > 0 && elementInfo.height > 0) {
-          // For tables and lists, ensure we capture the full content without artificial constraints
-          const shouldResize = elementInfo.scrollHeight > initialViewport.height || 
+          const shouldResize = elementInfo.scrollHeight > initialViewport.height ||
                               elementInfo.scrollWidth > initialViewport.width;
-          
+
           if (shouldResize) {
             const newViewport = {
               width: Math.max(initialViewport.width, Math.ceil(elementInfo.scrollWidth + 100)),
               height: Math.max(initialViewport.height, Math.ceil(elementInfo.scrollHeight + 100))
             };
 
-            // Check if viewport would exceed Telegram's photo dimension limits
             const MAX_VIEWPORT_HEIGHT = 5000;
             const MAX_VIEWPORT_WIDTH = 5000;
 
             if (newViewport.height > MAX_VIEWPORT_HEIGHT || newViewport.width > MAX_VIEWPORT_WIDTH) {
               console.log(`Viewport too large (${newViewport.width}x${newViewport.height}), skipping image generation`);
-              await page.close();
-              return null; // Return null to trigger fallback to buttons-only
+              return null;
             }
 
             console.log(`Resizing viewport for ${onElement}: ${newViewport.width}x${newViewport.height}`);
             await page.setViewport(newViewport);
+            await new Promise((r) => setTimeout(r, 500));
 
-            // Wait a moment for reflow
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Re-evaluate element position after resize
             const updatedElementInfo = await page.evaluate((selector) => {
               const element = document.querySelector(selector);
               if (!element) return null;
               const rect = element.getBoundingClientRect();
               return {
                 x: Math.max(0, rect.left),
-                y: Math.max(0, rect.top), 
+                y: Math.max(0, rect.top),
                 width: rect.width,
                 height: rect.height
               };
             }, onElement);
-            
+
             if (updatedElementInfo) {
               screenshotOptions.clip = {
                 x: updatedElementInfo.x,
@@ -1715,7 +1856,6 @@ class UI {
               };
             }
           } else {
-            // Use element clipping for smaller content
             screenshotOptions.clip = {
               x: elementInfo.x,
               y: elementInfo.y,
@@ -1725,38 +1865,32 @@ class UI {
           }
         }
       } catch (clipError) {
-        // Skip clipping and take full page screenshot as fallback
         console.warn('Element clipping failed, using full page screenshot:', clipError.message);
       }
-      
+
       await page.screenshot(screenshotOptions);
-      
+
     } catch (error) {
       console.error('Screenshot error:', error);
-      
-      // Quick browser restart on critical errors
-      if (error.message.includes('Protocol error') || error.message.includes('Connection closed')) {
+
+      // Connection-level errors mean the browser/page is unusable.
+      // Mark the page as broken so the pool will discard it, and tear
+      // down the browser so the next call relaunches.
+      if (error.message?.includes('Protocol error') ||
+          error.message?.includes('Connection closed') ||
+          error.message?.includes('Target closed')) {
+        pageBroken = true;
         console.log('Browser connection lost, attempting quick restart...');
         try {
-          if (browser) {
-            await browser.close().catch(() => {});
-          }
-          browser = null;
+          if (browser) await browser.close().catch(() => {});
         } catch (closeError) {
           console.error('Error closing browser:', closeError);
         }
+        browser = null;
       }
-      
       throw error;
     } finally {
-      // Quick page cleanup — skip closing if it's the cached quest card page
-      if (page && page !== this._cachedPage) {
-        try {
-          await page.close();
-        } catch (closeError) {
-          console.error('Error closing page:', closeError);
-        }
-      }
+      releasePage(klass, { discard: pageBroken });
     }
   }
 

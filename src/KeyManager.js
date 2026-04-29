@@ -357,101 +357,63 @@ class KeyManager {
   }
 
   /**
-   * Setup federation relationship between two holons with lensConfig
-   * Uses master holosphere for metadata storage (consistent reads)
-   * and registers public keys for capability-based data access
+   * Setup federation relationship between two holons with lensConfig.
+   *
+   * Delegates to holosphere's native `federate()` API which writes the
+   * canonical `{federated, inbound, outbound, lensConfig, partnerNames}`
+   * shape and mirrors the relationship onto the partner with inverted
+   * directions when bidirectional.
    *
    * @param {string} sourceHolonId - Source holon ID
    * @param {string} targetHolonId - Target holon ID
    * @param {Object} options - Federation options
    * @param {Object} [options.lensConfig] - Lens configuration {inbound: [], outbound: []}
-   * @param {boolean} [options.skipPropagation] - Skip auto-propagation of existing data
    * @param {string} [options.partnerName] - Human-readable name for the partner
    * @returns {Promise<Object>} Federation result
    */
   async setupFederation(sourceHolonId, targetHolonId, options = {}) {
-    const { lensConfig = { inbound: [], outbound: [] }, partnerName = null, skipPropagation = false } = options;
+    const { lensConfig = { inbound: [], outbound: [] }, partnerName = null } = options;
 
-    // Get public keys for both holons (for capability-based access and self-federation check)
+    // Get public keys (used for capability-based access and self-federation check).
     const sourcePubKey = await this.getPublicKey(sourceHolonId);
     const targetPubKey = await this.getPublicKey(targetHolonId);
 
-    const source = String(sourceHolonId);
-    // PUBKEY-ONLY: Store target pubkey, not telegram ID
-    const target = targetPubKey;
-
-    // Check for self-federation by comparing public keys
     if (sourcePubKey === targetPubKey) {
       throw new Error('Cannot federate a holon with itself');
     }
 
-    // Get or create federation data (keyed by source telegram ID for easy lookup)
-    let federationData = await this.masterHolosphere.getGlobal('federation', source) || {
-      id: source,
-      name: source,
-      federated: [],
-      inbound: [],
-      outbound: [],
-      lensConfig: {},
-      partnerNames: {},
-      timestamp: Date.now()
-    };
+    const source = String(sourceHolonId);
+    // PUBKEY-ONLY: store target pubkey, not telegram ID.
+    const target = targetPubKey;
 
-    // Ensure arrays exist
-    if (!Array.isArray(federationData.federated)) federationData.federated = [];
-    if (!Array.isArray(federationData.inbound)) federationData.inbound = [];
-    if (!Array.isArray(federationData.outbound)) federationData.outbound = [];
-    if (!federationData.lensConfig) federationData.lensConfig = {};
-    if (!federationData.partnerNames) federationData.partnerNames = {};
-
-    // Add to federated list (using pubkey)
-    if (!federationData.federated.includes(target)) {
-      federationData.federated.push(target);
-    }
-
-    // Store partner name if provided (keyed by pubkey)
-    if (partnerName) {
-      federationData.partnerNames[target] = partnerName;
-    }
-
-    // Update inbound/outbound lists based on lensConfig (using pubkey)
-    if (lensConfig.outbound && lensConfig.outbound.length > 0) {
-      if (!federationData.outbound.includes(target)) {
-        federationData.outbound.push(target);
+    const success = await this.masterHolosphere.federate(
+      source,
+      target,
+      null,
+      null,
+      true, // bidirectional: mirror with inverted directions onto target
+      {
+        inbound:  Array.isArray(lensConfig.inbound)  ? lensConfig.inbound  : [],
+        outbound: Array.isArray(lensConfig.outbound) ? lensConfig.outbound : []
       }
-    } else {
-      federationData.outbound = federationData.outbound.filter(id => id !== target);
-    }
+    );
 
-    if (lensConfig.inbound && lensConfig.inbound.length > 0) {
-      if (!federationData.inbound.includes(target)) {
-        federationData.inbound.push(target);
+    if (success && partnerName) {
+      try {
+        const fedInfo = await this.masterHolosphere.getGlobal('federation', source);
+        if (fedInfo) {
+          if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
+          fedInfo.partnerNames[target] = partnerName;
+          await this.masterHolosphere.putGlobal('federation', fedInfo);
+        }
+      } catch (e) {
+        console.warn('[setupFederation] Failed to store partner name:', e.message);
       }
-    } else {
-      federationData.inbound = federationData.inbound.filter(id => id !== target);
     }
 
-    // Store lens config for this target (keyed by pubkey)
-    federationData.lensConfig[target] = {
-      inbound: lensConfig.inbound || [],
-      outbound: lensConfig.outbound || [],
-      timestamp: Date.now()
-    };
-
-    // Save federation metadata
-    const success = await this.masterHolosphere.putGlobal('federation', federationData);
     this.masterHolosphere.clearCache?.('federation');
 
-    // Propagate data for each lens if not skipped
-    if (success && !skipPropagation) {
-      for (const lens of (lensConfig.inbound || [])) {
-        await this.masterHolosphere.federate(target, source, lens, { direction: 'outbound', mode: 'reference' });
-      }
-      for (const lens of (lensConfig.outbound || [])) {
-        await this.masterHolosphere.federate(source, target, lens, { direction: 'outbound', mode: 'reference' });
-      }
-    }
-
+    const federationData = await this.masterHolosphere.getGlobal('federation', source);
     return { success, federationData };
   }
 
@@ -464,55 +426,20 @@ class KeyManager {
    * @returns {Promise<boolean>} Success indicator
    */
   async teardownFederation(sourceHolonId, targetHolonId) {
-    // Get public keys for both holons
     const sourcePubKey = await this.getPublicKey(sourceHolonId);
     const targetPubKey = await this.getPublicKey(targetHolonId);
 
+    if (sourcePubKey === targetPubKey) {
+      return true;
+    }
+
     const source = String(sourceHolonId);
-    // PUBKEY-ONLY: Use target pubkey for lookups in federation data
     const target = targetPubKey;
 
-    // Check for self-teardown by comparing pubkeys
-    if (sourcePubKey === targetPubKey) {
-      return true; // Nothing to teardown from self
-    }
-
-    const federationData = await this.masterHolosphere.getGlobal('federation', source);
-    if (!federationData) return false;
-
-    // Try to find lensConfig by pubkey first, fallback to telegram ID for backwards compatibility
-    const lensConfig = federationData.lensConfig?.[target] || federationData.lensConfig?.[String(targetHolonId)];
-
-    // Remove from all lists (using pubkey)
-    federationData.federated = (federationData.federated || []).filter(id => id !== target && id !== String(targetHolonId));
-    federationData.inbound = (federationData.inbound || []).filter(id => id !== target && id !== String(targetHolonId));
-    federationData.outbound = (federationData.outbound || []).filter(id => id !== target && id !== String(targetHolonId));
-
-    // Remove lens config (try both pubkey and telegram ID for backwards compatibility)
-    if (federationData.lensConfig) {
-      delete federationData.lensConfig[target];
-      delete federationData.lensConfig[String(targetHolonId)];
-    }
-
-    // Remove partner name (try both pubkey and telegram ID for backwards compatibility)
-    if (federationData.partnerNames) {
-      delete federationData.partnerNames[target];
-      delete federationData.partnerNames[String(targetHolonId)];
-    }
-
-    // Save updated federation data
-    const success = await this.masterHolosphere.putGlobal('federation', federationData);
+    // Delegate to holosphere — handles federated/inbound/outbound + lensConfig
+    // cleanup, and mirrors the removal onto the partner.
+    const success = await this.masterHolosphere.unfederate(source, target, null, null);
     this.masterHolosphere.clearCache?.('federation');
-
-    // Unfederate each lens
-    if (success && lensConfig) {
-      for (const lens of (lensConfig.inbound || [])) {
-        await this.masterHolosphere.unfederate(target, source, lens);
-      }
-      for (const lens of (lensConfig.outbound || [])) {
-        await this.masterHolosphere.unfederate(source, target, lens);
-      }
-    }
 
     return success;
   }

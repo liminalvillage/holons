@@ -134,7 +134,10 @@ export const serviceDefinitions = {
     dependencies: ['config', 'logger'],
   },
 
-  // KeyManager - stub for compatibility (no per-holon keys, just returns master)
+  // KeyManager - stub for compatibility (no per-holon keys, just returns master).
+  // Federation methods delegate straight to holosphere using chat IDs as the
+  // identity — no nostr keys, no capability tokens. Kept lightweight so the
+  // bot's chat-ID-keyed data layout doesn't require a pubkey-based migration.
   keyManager: {
     factory: async ({ config }) => {
       const appname = config.isDevelopment ? 'HolonsDebug' : 'Holons';
@@ -142,12 +145,72 @@ export const serviceDefinitions = {
       const holosphere = new HoloSphere(appname, false, null, {
         peers: ['https://gun.holons.io/gun'],
       });
-      // Stub keyManager interface
+
       const keyManager = {
         masterHolosphere: holosphere,
         getHolosphere: async () => holosphere,
         appName: appname,
+
+        // Identity passthrough: the chat ID *is* the public identity in stub
+        // mode. This keeps callers that round-trip through getPublicKey/
+        // getTelegramId working without a real keypair.
+        getPublicKey: async (holonId) => String(holonId),
+        getTelegramId: async (pubkey) => String(pubkey),
+
+        async setupFederation(sourceHolonId, targetHolonId, options = {}) {
+          const { lensConfig = { inbound: [], outbound: [] }, partnerName = null } = options;
+          const source = String(sourceHolonId);
+          const target = String(targetHolonId);
+          if (source === target) throw new Error('Cannot federate a holon with itself');
+
+          const success = await holosphere.federate(
+            source, target, null, null, true,
+            {
+              inbound:  Array.isArray(lensConfig.inbound)  ? lensConfig.inbound  : [],
+              outbound: Array.isArray(lensConfig.outbound) ? lensConfig.outbound : []
+            }
+          );
+
+          if (success && partnerName) {
+            try {
+              const fedInfo = await holosphere.getGlobal('federation', source);
+              if (fedInfo) {
+                if (!fedInfo.partnerNames) fedInfo.partnerNames = {};
+                fedInfo.partnerNames[target] = partnerName;
+                await holosphere.putGlobal('federation', fedInfo);
+              }
+            } catch (e) {
+              log.warn('[setupFederation] Failed to store partner name', { error: e.message });
+            }
+          }
+
+          holosphere.clearCache?.('federation');
+          const federationData = await holosphere.getGlobal('federation', source);
+          return { success, federationData };
+        },
+
+        async teardownFederation(sourceHolonId, targetHolonId) {
+          const source = String(sourceHolonId);
+          const target = String(targetHolonId);
+          if (source === target) return true;
+          const success = await holosphere.unfederate(source, target, null, null);
+          holosphere.clearCache?.('federation');
+          return success;
+        },
+
+        // Older API kept for compatibility — sets up a single-lens federation.
+        async federateHolons(sourceHolonId, targetHolonId, lensName, options = {}) {
+          const direction = options.direction || 'outbound';
+          const lensConfig = direction === 'inbound'
+            ? { inbound:  [lensName], outbound: [] }
+            : { outbound: [lensName], inbound:  [] };
+          return this.setupFederation(sourceHolonId, targetHolonId, {
+            ...options,
+            lensConfig
+          });
+        },
       };
+
       log.debug('Database initialized (GunDB via HoloSphere 1.3)', { appname });
       return keyManager;
     },

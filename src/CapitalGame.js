@@ -38,7 +38,6 @@ class CapitalGame {
         this.bot.action('menu_trade', (ctx) => this.showTradeMenu(ctx));
         this.bot.action('menu_goals', (ctx) => this.showGoalsMenu(ctx));
         this.bot.action('back_to_main', (ctx) => this.backToMainMenu(ctx));
-        this.bot.action('noop', (ctx) => ctx.answerCbQuery());
 
         // Transformation handlers
         this.bot.action(/transform_(.+)/, (ctx) => this.handleTransformation(ctx));
