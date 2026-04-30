@@ -36,7 +36,7 @@
     "gun": "^0.2020.1239",
     "h3-js": "^4.1.0",
     "helmet": "^8.1.0",
-    "holosphere": "link:../holosphere",
+    "holosphere": "holosphere@alpha",
     "http-proxy": "^1.18.1",
     "i18next": "^22.5.1",
     "i18next-fs-backend": "^2.6.0",
