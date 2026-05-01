@@ -7,10 +7,11 @@
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import GenericImportModal from "./shared/GenericImportModal.svelte";
-    import { Package, Plus, Calendar } from 'svelte-feathers';
+    import { Package, Plus, Calendar, List } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
     import { telegramStore } from '$lib/stores/telegram';
     import { nostrPublicKey } from '$lib/stores/nostr';
+    import CalendarComponent from './Calendar.svelte';
 
     // Library item types
     const LIBRARY_TYPES = {
@@ -20,9 +21,23 @@
         OTHER: 'other'
     };
 
+    interface Booking {
+        id: string;
+        start: string;        // YYYY-MM-DD (or ISO; we always read .slice(0,10))
+        end: string;          // YYYY-MM-DD
+        borrowerId: string;
+        borrower: string;     // display name
+        borrowerInitials?: string | null;
+        createdAt: string;
+    }
+
     interface LibraryItem {
         id: string;
         type: string;
+        bookings?: Booking[];
+        // Legacy single-borrow fields, kept for read-back compat with already
+        // stored items. New bookings are written to `bookings`; we still
+        // mirror onto these so the rest of the codebase keeps working.
         borrowed: boolean;
         borrower: string | null;
         borrowerId: string | null;
@@ -67,9 +82,9 @@
 
         switch (filters.activeFilter) {
             case 'available':
-                return !item.borrowed;
+                return !isCurrentlyBooked(item);
             case 'borrowed':
-                return item.borrowed;
+                return isCurrentlyBooked(item);
             case 'mine':
                 return item.createdBy === currentUserId;
             default:
@@ -79,11 +94,66 @@
 
     // Stats
     $: totalItems = libraryItems.filter(([_, item]) => !item._deleted).length;
-    $: availableItems = libraryItems.filter(([_, item]) => !item._deleted && !item.borrowed).length;
-    $: borrowedItems = libraryItems.filter(([_, item]) => !item._deleted && item.borrowed).length;
+    $: availableItems = libraryItems.filter(([_, item]) => !item._deleted && !isCurrentlyBooked(item)).length;
+    $: borrowedItems = libraryItems.filter(([_, item]) => !item._deleted && isCurrentlyBooked(item)).length;
     $: myItems = libraryItems.filter(([_, item]) => !item._deleted && item.createdBy === currentUserId).length;
 
+    // Shape borrowed items as borrowing-session records the Calendar component
+    // can render. A single borrow is expanded into one entry per day in the
+    // [borrowedAt, returnBy] range so the session shows on every day the user
+    // selected, regardless of which calendar view is active. Each entry is
+    // anchored at 9am local for hourly views and carries the item's stable
+    // colour so a borrow is easy to follow visually from start to end.
+    $: borrowedAsTasks = libraryItems
+        .filter(([_, item]) => !item._deleted)
+        .reduce((acc, [_, item]) => {
+            const color = getItemColor(item.id);
+            for (const booking of getDisplayBookings(item)) {
+                const borrowerSuffix = booking.borrower ? ` — ${booking.borrower}` : '';
+                const startMidnight = startOfDay(new Date(`${booking.start.slice(0, 10)}T00:00:00`));
+                const endMidnight = startOfDay(new Date(`${booking.end.slice(0, 10)}T00:00:00`));
+                for (let day = new Date(startMidnight); day.getTime() <= endMidnight.getTime(); day.setDate(day.getDate() + 1)) {
+                    const dayIso = atLocalHour(day.toISOString(), 9);
+                    const sessionId = `booking-${item.id}-${booking.id}-${formatDate(day)}`;
+                    acc[sessionId] = {
+                        id: sessionId,
+                        title: `${item.id}${borrowerSuffix}`,
+                        type: 'booking-session',
+                        status: 'ongoing',
+                        when: dayIso,
+                        ends: addHours(dayIso, 1),
+                        color,
+                        _libraryItemId: item.id
+                    };
+                }
+            }
+            return acc;
+        }, {} as Record<string, any>);
+
+    function startOfDay(date: Date): Date {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+
+    function atLocalHour(iso: string, hour: number): string {
+        const d = new Date(iso);
+        d.setHours(hour, 0, 0, 0);
+        return d.toISOString();
+    }
+
+    function addHours(iso: string, hours: number): string {
+        return new Date(new Date(iso).getTime() + hours * 60 * 60 * 1000).toISOString();
+    }
+
+    function handleCalendarTaskClick(_key: string, task: any) {
+        const itemId = task?._libraryItemId;
+        const item = itemId ? store[itemId] : null;
+        if (item) openItemDetail(item);
+    }
+
     let showInput = false;
+    let libraryView: 'list' | 'calendar' = 'list';
     // Shared filter state across features; legacy `libraryShowHolograms`
     // localStorage key is migrated from in onMount below.
     let filters = loadFilters('library', {
@@ -106,48 +176,103 @@
     let newItemCategory = "";
     let newItemDescription = "";
 
-    // Borrow modal state
+    // Booking modal state.
     let showBorrowModal = false;
     let borrowingItem: LibraryItem | null = null;
     let selectedStartDate: string = "";
     let selectedReturnDate: string = "";
     let currentMonth = new Date();
     let startCalendarMonth = new Date();
-    // Default = "borrowing now" — start date is today and the calendar is hidden.
+    // Default = "booking now" — start date is today and the calendar is hidden.
     let borrowNow: boolean = true;
 
-    // Resolve the active borrower from Telegram (preferred) → Nostr → legacy
-    // localStorage. Built fresh on each borrow so re-logins are picked up.
-    function resolveBorrowerIdentity(): { id: string; username: string; initials: string } {
+    // Resolve the active borrower. Prefers Telegram (id + username, falling back
+    // to first/last name); otherwise looks up the user's holon name from their
+    // Nostr public key. Async because the holon-name lookup may hit holosphere.
+    async function resolveBorrowerIdentity(): Promise<{ id: string; displayName: string; initials: string }> {
         const telegramUser = telegramStore.getState().user;
         if (telegramUser) {
             const username = telegramUser.username
-                || [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(' ').trim()
-                || `tg-${telegramUser.id}`;
+                ? `@${telegramUser.username}`
+                : [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(' ').trim()
+                    || `tg-${telegramUser.id}`;
             const initialsSource = telegramUser.first_name || telegramUser.username || `${telegramUser.id}`;
             return {
                 id: String(telegramUser.id),
-                username,
+                displayName: username,
                 initials: (initialsSource.charAt(0) || '?').toUpperCase()
             };
         }
 
         const nostrPub = $nostrPublicKey;
         if (nostrPub) {
+            let holonName: string | null = null;
+            try {
+                holonName = await awaitName(nostrPub);
+            } catch (err) {
+                console.warn('Failed to resolve borrower holon name:', err);
+            }
+            const shortKey = `${nostrPub.slice(0, 8)}…`;
             return {
                 id: nostrPub,
-                username: `${nostrPub.slice(0, 8)}…`,
-                initials: (nostrPub.charAt(0) || '?').toUpperCase()
+                displayName: holonName ? `${holonName} (${shortKey})` : shortKey,
+                initials: (holonName?.charAt(0) || nostrPub.charAt(0) || '?').toUpperCase()
             };
         }
 
         const id = currentUserId || '';
-        const username = currentUsername || '';
+        const displayName = currentUsername || 'Unknown';
         return {
             id,
-            username,
-            initials: (username.charAt(0) || '?').toUpperCase()
+            displayName,
+            initials: (displayName.charAt(0) || '?').toUpperCase()
         };
+    }
+
+    // Read-side: collect the canonical list of bookings for an item, falling
+    // back to a synthesized one from the legacy single-borrow fields so old
+    // data keeps showing up. New writes always go through `item.bookings`.
+    function getDisplayBookings(item: LibraryItem): Booking[] {
+        const list: Booking[] = Array.isArray(item.bookings) ? [...item.bookings] : [];
+        if (list.length === 0 && item.borrowed && item.borrowedAt) {
+            list.push({
+                id: 'legacy',
+                start: (item.borrowedAt as string).slice(0, 10),
+                end: item.returnBy || (item.borrowedAt as string).slice(0, 10),
+                borrowerId: item.borrowerId || '',
+                borrower: item.borrower || item.borrowerInitials || 'Unknown',
+                borrowerInitials: item.borrowerInitials,
+                createdAt: item.borrowedAt as string
+            });
+        }
+        list.sort((a, b) => a.start.localeCompare(b.start));
+        return list;
+    }
+
+    function isBookingActive(b: Booking, on: Date = new Date()): boolean {
+        const today = formatDate(on);
+        const start = b.start.length > 10 ? b.start.slice(0, 10) : b.start;
+        const end = b.end.length > 10 ? b.end.slice(0, 10) : b.end;
+        return today >= start && today <= end;
+    }
+
+    function getActiveBooking(item: LibraryItem): Booking | null {
+        return getDisplayBookings(item).find(b => isBookingActive(b)) ?? null;
+    }
+
+    function isCurrentlyBooked(item: LibraryItem): boolean {
+        return getActiveBooking(item) !== null;
+    }
+
+    // Stable per-item color so each library item is visually distinguishable
+    // both in the list and across its borrowing-session entries on the calendar.
+    function getItemColor(itemId: string): string {
+        let hash = 0;
+        for (let i = 0; i < itemId.length; i++) {
+            hash = itemId.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = ((hash % 360) + 360) % 360;
+        return `hsl(${hue}, 65%, 55%)`;
     }
 
     // Item detail modal state
@@ -381,20 +506,45 @@
     async function handleBorrow() {
         if (!borrowingItem || !selectedReturnDate || !selectedStartDate || !holonID) return;
 
-        const borrower = resolveBorrowerIdentity();
+        const conflict = findOverlappingBooking(borrowingItem, selectedStartDate, selectedReturnDate);
+        if (conflict) {
+            alert(
+                `That period overlaps an existing booking by ${conflict.borrower || 'someone'} ` +
+                `(${formatReturnDate(conflict.start)} → ${formatReturnDate(conflict.end)}). ` +
+                `Pick a range that doesn't intersect existing bookings.`
+            );
+            return;
+        }
 
-        // Treat the start date as midnight local time, then store as ISO so it
-        // round-trips with the same calendar day other UIs render.
-        const startDateIso = new Date(`${selectedStartDate}T00:00:00`).toISOString();
+        const borrower = await resolveBorrowerIdentity();
 
+        const newBooking: Booking = {
+            id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            start: selectedStartDate,
+            end: selectedReturnDate,
+            borrowerId: borrower.id,
+            borrower: borrower.displayName,
+            borrowerInitials: borrower.initials,
+            createdAt: new Date().toISOString()
+        };
+
+        const existing = Array.isArray(borrowingItem.bookings) ? borrowingItem.bookings : [];
+        const updatedBookings = [...existing, newBooking];
+
+        // Mirror onto legacy single-borrow fields if this booking covers today,
+        // so callers/UI that still read those fields stay in sync.
+        const isActiveNow = isBookingActive(newBooking);
         const updatedItem: LibraryItem = {
             ...borrowingItem,
-            borrowed: true,
-            borrower: borrower.username,
-            borrowerId: borrower.id,
-            borrowerInitials: borrower.initials,
-            borrowedAt: startDateIso,
-            returnBy: selectedReturnDate
+            bookings: updatedBookings,
+            ...(isActiveNow ? {
+                borrowed: true,
+                borrower: borrower.displayName,
+                borrowerId: borrower.id,
+                borrowerInitials: borrower.initials,
+                borrowedAt: new Date(`${selectedStartDate}T00:00:00`).toISOString(),
+                returnBy: selectedReturnDate
+            } : {})
         };
 
         store = { ...store, [updatedItem.id]: updatedItem };
@@ -402,7 +552,7 @@
         try {
             await holosphere.put(holonID, "library", updatedItem);
         } catch (err) {
-            console.error("Failed to borrow item", err);
+            console.error("Failed to save booking", err);
             store = { ...store, [borrowingItem.id]: borrowingItem };
         }
 
@@ -413,21 +563,28 @@
     async function handleReturn(item: LibraryItem) {
         if (!holonID) return;
 
-        // Check if current user is the borrower (matches Telegram/Nostr identity
-        // or the legacy localStorage fallback).
-        const borrower = resolveBorrowerIdentity();
+        // Active booking (today is between start and end). Without one there
+        // is nothing to return.
+        const active = getActiveBooking(item);
+        const borrower = await resolveBorrowerIdentity();
+        const activeBorrowerId = active?.borrowerId ?? item.borrowerId;
+        const activeBorrowerName = active?.borrower ?? item.borrower;
         const isBorrower =
-            item.borrowerId === borrower.id ||
-            item.borrower === borrower.username ||
-            item.borrowerId === currentUserId ||
-            item.borrower === currentUsername;
+            activeBorrowerId === borrower.id ||
+            activeBorrowerName === borrower.displayName ||
+            activeBorrowerId === currentUserId ||
+            activeBorrowerName === currentUsername;
         if (!isBorrower) {
-            alert(`Only ${item.borrower || 'the borrower'} can return this item.`);
+            alert(`Only ${activeBorrowerName || 'the borrower'} can return this item.`);
             return;
         }
 
+        const remainingBookings = (Array.isArray(item.bookings) ? item.bookings : [])
+            .filter(b => b.id !== active?.id);
+
         const updatedItem: LibraryItem = {
             ...item,
+            bookings: remainingBookings,
             borrowed: false,
             borrower: null,
             borrowerId: null,
@@ -463,7 +620,7 @@
         }
 
         if (item.borrowed) {
-            alert("Cannot delete a borrowed item. Please wait for it to be returned.");
+            alert("Cannot delete a booked item. Please wait for it to be returned.");
             return;
         }
 
@@ -502,6 +659,51 @@
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     }
 
+    // ---- Overlap detection ---------------------------------------------------
+    // Bookings are stored as YYYY-MM-DD strings, so plain string comparison
+    // gives the right ordering for half-open ranges.
+
+    function dayKey(s: string): string {
+        return s.length > 10 ? s.slice(0, 10) : s;
+    }
+
+    function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+        return dayKey(aStart) <= dayKey(bEnd) && dayKey(aEnd) >= dayKey(bStart);
+    }
+
+    function isDayBooked(item: LibraryItem, dateStr: string): boolean {
+        const day = dayKey(dateStr);
+        return getDisplayBookings(item).some(b =>
+            day >= dayKey(b.start) && day <= dayKey(b.end)
+        );
+    }
+
+    // Returns the next booking that starts strictly after `startDate`. Used to
+    // cap the selectable return-date range so the new booking can't span an
+    // existing one.
+    function getNextBookingAfter(item: LibraryItem, startDate: string): Booking | null {
+        const cutoff = dayKey(startDate);
+        const future = getDisplayBookings(item)
+            .filter(b => dayKey(b.start) > cutoff)
+            .sort((a, b) => dayKey(a.start).localeCompare(dayKey(b.start)));
+        return future[0] ?? null;
+    }
+
+    function findOverlappingBooking(item: LibraryItem, start: string, end: string): Booking | null {
+        for (const b of getDisplayBookings(item)) {
+            if (rangesOverlap(start, end, b.start, b.end)) return b;
+        }
+        return null;
+    }
+
+    // ---- Calendar selectability ---------------------------------------------
+
+    function isStartDateSelectable(year: number, month: number, day: number): boolean {
+        if (!borrowingItem) return true;
+        const dateStr = formatDate(new Date(year, month, day));
+        return !isDayBooked(borrowingItem, dateStr);
+    }
+
     function isReturnDateSelectable(year: number, month: number, day: number): boolean {
         const date = new Date(year, month, day);
         date.setHours(0, 0, 0, 0);
@@ -516,6 +718,16 @@
             start.setHours(0, 0, 0, 0);
             if (date < start) return false;
         }
+
+        if (!borrowingItem) return true;
+        const dateStr = formatDate(date);
+        // Block any day already inside another booking.
+        if (isDayBooked(borrowingItem, dateStr)) return false;
+        // And block return dates that would extend over the next booking.
+        if (selectedStartDate) {
+            const next = getNextBookingAfter(borrowingItem, selectedStartDate);
+            if (next && dateStr >= dayKey(next.start)) return false;
+        }
         return true;
     }
 
@@ -526,10 +738,19 @@
     }
 
     function selectStartDate(year: number, month: number, day: number) {
+        if (!isStartDateSelectable(year, month, day)) return;
         selectedStartDate = formatDate(new Date(year, month, day));
-        // Drop a return date that's now earlier than the new start.
-        if (selectedReturnDate && new Date(`${selectedReturnDate}T00:00:00`) < new Date(`${selectedStartDate}T00:00:00`)) {
-            selectedReturnDate = "";
+        // Drop a return date that's now earlier than the new start, or that
+        // would now span over a booking that comes after the new start.
+        if (selectedReturnDate) {
+            if (new Date(`${selectedReturnDate}T00:00:00`) < new Date(`${selectedStartDate}T00:00:00`)) {
+                selectedReturnDate = "";
+            } else if (borrowingItem) {
+                const next = getNextBookingAfter(borrowingItem, selectedStartDate);
+                if (next && selectedReturnDate >= dayKey(next.start)) {
+                    selectedReturnDate = "";
+                }
+            }
         }
     }
 
@@ -580,7 +801,14 @@
     }
 
     $: calendarDays = buildCalendarDays(currentMonth, selectedReturnDate, isReturnDateSelectable);
-    $: startCalendarDays = buildCalendarDays(startCalendarMonth, selectedStartDate, () => true);
+    $: startCalendarDays = buildCalendarDays(startCalendarMonth, selectedStartDate, isStartDateSelectable);
+
+    // Inline conflict check shown in the booking modal. Runs reactively so the
+    // user sees feedback as they pick dates, and also gates the Confirm button.
+    $: bookingConflict = (() => {
+        if (!borrowingItem || !selectedStartDate || !selectedReturnDate) return null;
+        return findOverlappingBooking(borrowingItem, selectedStartDate, selectedReturnDate);
+    })();
 
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                         'July', 'August', 'September', 'October', 'November', 'December'];
@@ -655,7 +883,7 @@
                 <div class="stats-bar__divider"></div>
                 <div class="stats-bar__item stats-bar__item--warning">
                     <span class="stats-bar__value">{borrowedItems}</span>
-                    <span class="stats-bar__label">Borrowed</span>
+                    <span class="stats-bar__label">Booked</span>
                 </div>
                 <div class="stats-bar__divider"></div>
                 <div class="stats-bar__item stats-bar__item--info">
@@ -670,50 +898,72 @@
             </div>
 
             <FeatureToolbar
-                onAdd={showAddInput}
+                onAdd={libraryView === 'list' ? showAddInput : null}
                 addLabel="Add Item"
-                onImport={() => (showImportModal = true)}
+                onImport={libraryView === 'list' ? () => (showImportModal = true) : null}
                 importLabel="Import"
                 bind:searchQuery={filters.searchQuery}
                 searchPlaceholder="Search library…"
                 bind:showFederated={filters.showFederated}
                 bind:showHolograms={filters.showHolograms}
+                viewMode={libraryView}
+                viewModes={[
+                    { value: 'list', label: 'List', icon: List },
+                    { value: 'calendar', label: 'Calendar', icon: Calendar }
+                ]}
+                on:viewChange={(e) => (libraryView = e.detail as 'list' | 'calendar')}
             >
                 <svelte:fragment slot="filters">
-                    <div class="filter-tabs">
-                        <button
-                            on:click={() => (filters.activeFilter = 'all')}
-                            class="filter-tabs__btn {filters.activeFilter === 'all' ? 'filter-tabs__btn--active' : ''}"
-                        >All</button>
-                        <button
-                            on:click={() => (filters.activeFilter = 'available')}
-                            class="filter-tabs__btn {filters.activeFilter === 'available' ? 'filter-tabs__btn--active' : ''}"
-                        >Available</button>
-                        <button
-                            on:click={() => (filters.activeFilter = 'borrowed')}
-                            class="filter-tabs__btn {filters.activeFilter === 'borrowed' ? 'filter-tabs__btn--active' : ''}"
-                        >Borrowed</button>
-                        <button
-                            on:click={() => (filters.activeFilter = 'mine')}
-                            class="filter-tabs__btn {filters.activeFilter === 'mine' ? 'filter-tabs__btn--active' : ''}"
-                        >Mine</button>
-                    </div>
+                    {#if libraryView === 'list'}
+                        <div class="filter-tabs">
+                            <button
+                                on:click={() => (filters.activeFilter = 'all')}
+                                class="filter-tabs__btn {filters.activeFilter === 'all' ? 'filter-tabs__btn--active' : ''}"
+                            >All</button>
+                            <button
+                                on:click={() => (filters.activeFilter = 'available')}
+                                class="filter-tabs__btn {filters.activeFilter === 'available' ? 'filter-tabs__btn--active' : ''}"
+                            >Available</button>
+                            <button
+                                on:click={() => (filters.activeFilter = 'borrowed')}
+                                class="filter-tabs__btn {filters.activeFilter === 'borrowed' ? 'filter-tabs__btn--active' : ''}"
+                            >Booked</button>
+                            <button
+                                on:click={() => (filters.activeFilter = 'mine')}
+                                class="filter-tabs__btn {filters.activeFilter === 'mine' ? 'filter-tabs__btn--active' : ''}"
+                            >Mine</button>
+                        </div>
+                    {/if}
                 </svelte:fragment>
             </FeatureToolbar>
 
+            {#if libraryView === 'calendar'}
+                <CalendarComponent
+                    customItems={borrowedAsTasks}
+                    readOnly
+                    embedded
+                    onTaskClick={handleCalendarTaskClick}
+                />
+            {/if}
+
             <!-- Library Items -->
+            {#if libraryView === 'list'}
             <div class="space-y-3">
                 {#each filteredItems as [key, item]}
+                    {@const itemColor = getItemColor(item.id)}
+                    {@const itemBookings = getDisplayBookings(item)}
+                    {@const activeBooking = getActiveBooking(item)}
+                    {@const booked = activeBooking !== null}
                     <div id={key} class="w-full">
                         <div
                             class="p-4 rounded-xl transition-all duration-300 border hover:shadow-md transform hover:scale-[1.005] cursor-pointer
-                                {!item.borrowed ? 'bg-gray-700 hover:bg-gray-600 hover:border-gray-500' : ''}
-                                {!item._hologram?.isHologram && !item.borrowed ? 'border-transparent' : ''}
-                                {item.borrowed && !isOverdue(item.returnBy) ? 'bg-amber-900/30 border-amber-600/50' : ''}
-                                {item.borrowed && isOverdue(item.returnBy) ? 'bg-red-900/30 border-red-600/50' : ''}
+                                {!booked ? 'bg-gray-700 hover:bg-gray-600 hover:border-gray-500' : ''}
+                                {!item._hologram?.isHologram && !booked ? 'border-transparent' : ''}
+                                {booked && !isOverdue(activeBooking?.end ?? null) ? 'bg-amber-900/30 border-amber-600/50' : ''}
+                                {booked && isOverdue(activeBooking?.end ?? null) ? 'bg-red-900/30 border-red-600/50' : ''}
                                 {item._hologram?.isHologram ? 'opacity-75 border-2' : ''}
-                                {item._hologram?.isHologram && !item.borrowed ? 'border-indigo-500' : ''}"
-                            style="{item._hologram?.isHologram ? 'box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 20px rgba(99, 102, 241, 0.1);' : ''}"
+                                {item._hologram?.isHologram && !booked ? 'border-indigo-500' : ''}"
+                            style="border-left: 4px solid {itemColor};{item._hologram?.isHologram ? ' box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 20px rgba(99, 102, 241, 0.1);' : ''}"
                             on:click={() => openItemDetail(item)}
                             on:keydown={(e) => e.key === 'Enter' && openItemDetail(item)}
                             role="button"
@@ -724,16 +974,16 @@
                                 <div class="flex items-center gap-3 flex-1 min-w-0">
                                     <!-- Item Icon -->
                                     <div class="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center
-                                        {!item.borrowed ? 'bg-black/20' : ''}
-                                        {item.borrowed && !isOverdue(item.returnBy) ? 'bg-amber-600/20' : ''}
-                                        {item.borrowed && isOverdue(item.returnBy) ? 'bg-red-600/20' : ''}">
+                                        {!booked ? 'bg-black/20' : ''}
+                                        {booked && !isOverdue(activeBooking?.end ?? null) ? 'bg-amber-600/20' : ''}
+                                        {booked && isOverdue(activeBooking?.end ?? null) ? 'bg-red-600/20' : ''}">
                                         <span class="text-xl">{getItemIcon(item)}</span>
                                     </div>
 
                                     <!-- Main Content -->
                                     <div class="flex-1 min-w-0">
                                         <div class="flex items-center gap-2 mb-1 flex-wrap">
-                                            <h3 class="text-base font-bold truncate text-white">
+                                            <h3 class="text-base font-bold text-white break-words">
                                                 {item.id}
                                             </h3>
                                             {#if item.value > 0}
@@ -751,39 +1001,45 @@
                                             {/if}
                                         </div>
                                         <div class="text-sm text-gray-400">
-                                            {#if item.borrowed}
-                                                <span class="flex items-center gap-2">
-                                                    {#if isOverdue(item.returnBy)}
-                                                        <span class="text-red-400">🔴 Overdue</span>
-                                                    {:else}
-                                                        <span class="text-amber-400">🔄 Borrowed</span>
-                                                    {/if}
-                                                    <span>by {item.borrowerInitials || item.borrower}</span>
-                                                    {#if item.returnBy}
-                                                        <span>• Return: {formatReturnDate(item.returnBy)}</span>
-                                                    {/if}
-                                                </span>
-                                            {:else}
+                                            {#if !booked}
                                                 <span class="text-emerald-400">✓ Available</span>
                                                 {#if item.createdByUsername}
                                                     <span> • Owner: {item.createdByUsername}</span>
                                                 {/if}
                                             {/if}
                                         </div>
+                                        {#if itemBookings.length > 0}
+                                            <ul class="mt-2 space-y-1">
+                                                {#each itemBookings as booking (booking.id)}
+                                                    {@const active = isBookingActive(booking)}
+                                                    {@const overdue = active && isOverdue(booking.end)}
+                                                    <li class="text-xs flex items-center justify-between gap-2 px-2 py-1 rounded
+                                                        {active && !overdue ? 'bg-amber-900/30 text-amber-200' : ''}
+                                                        {overdue ? 'bg-red-900/30 text-red-200' : ''}
+                                                        {!active ? 'bg-gray-700/40 text-gray-300' : ''}">
+                                                        <span class="font-medium truncate">{booking.borrower || '—'}</span>
+                                                        <span class="whitespace-nowrap text-gray-300">
+                                                            {formatReturnDate(booking.start)} → {formatReturnDate(booking.end)}
+                                                            {#if overdue}<span class="ml-1 text-red-300">• overdue</span>{/if}
+                                                        </span>
+                                                    </li>
+                                                {/each}
+                                            </ul>
+                                        {/if}
                                     </div>
                                 </div>
 
                                 <!-- Right Side - Action Button -->
                                 <div class="flex items-center gap-2 flex-shrink-0">
-                                    {#if !item.borrowed}
+                                    {#if !booked}
                                         <button
                                             on:click|stopPropagation={() => openBorrowModal(item)}
                                             class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
-                                            aria-label="Borrow {item.id}"
+                                            aria-label="Book {item.id}"
                                         >
-                                            Borrow
+                                            Book
                                         </button>
-                                    {:else if item.borrowerId === currentUserId || item.borrower === currentUsername}
+                                    {:else if activeBooking && (activeBooking.borrowerId === currentUserId || activeBooking.borrower === currentUsername)}
                                         <button
                                             on:click|stopPropagation={() => handleReturn(item)}
                                             class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors"
@@ -809,7 +1065,7 @@
                             {:else if activeFilter === 'available'}
                                 No available items
                             {:else if activeFilter === 'borrowed'}
-                                No borrowed items
+                                No booked items
                             {:else}
                                 You haven't added any items
                             {/if}
@@ -818,9 +1074,9 @@
                             {#if activeFilter === 'all' || activeFilter === 'mine'}
                                 Share tools, books, or equipment with your community
                             {:else if activeFilter === 'available'}
-                                All items are currently borrowed
+                                All items are currently booked
                             {:else}
-                                No items are currently on loan
+                                No items are currently booked
                             {/if}
                         </p>
                         {#if activeFilter === 'all' || activeFilter === 'mine'}
@@ -834,6 +1090,7 @@
                     </div>
                 {/if}
             </div>
+            {/if}
         </div>
     </div>
 </div>
@@ -969,7 +1226,7 @@
                 <div class="flex items-center justify-between mb-6">
                     <h3 id="borrow-title" class="text-white text-xl font-bold flex items-center gap-2">
                         <span class="text-2xl">{getItemIcon(borrowingItem)}</span>
-                        Borrow {borrowingItem.id}
+                        Book {borrowingItem.id}
                     </h3>
                     <button
                         on:click={() => { showBorrowModal = false; borrowingItem = null; }}
@@ -985,7 +1242,7 @@
                 {#if borrowingItem.value > 0}
                     <div class="mb-4 p-3 bg-emerald-900/30 border border-emerald-600/30 rounded-lg">
                         <p class="text-emerald-300 text-sm">
-                            <span class="font-medium">💳 Borrowing cost:</span> {borrowingItem.value} credits
+                            <span class="font-medium">💳 Booking cost:</span> {borrowingItem.value} credits
                         </p>
                     </div>
                 {/if}
@@ -993,7 +1250,7 @@
                 <div class="mb-4">
                     <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
                         <input type="checkbox" bind:checked={borrowNow} class="accent-indigo-500" />
-                        <span>Borrow starting now</span>
+                        <span>Book starting now</span>
                     </label>
                 </div>
 
@@ -1141,11 +1398,18 @@
                         type="button"
                         on:click={handleBorrow}
                         class="btn btn--primary"
-                        disabled={!selectedReturnDate || !selectedStartDate}
+                        disabled={!selectedReturnDate || !selectedStartDate || !!bookingConflict}
                     >
-                        Confirm Borrow
+                        Confirm Booking
                     </button>
                 </div>
+                {#if bookingConflict}
+                    <p class="mt-3 text-sm text-red-300 bg-red-900/30 border border-red-600/40 rounded-lg p-2">
+                        ⚠️ Conflicts with {bookingConflict.borrower || 'an existing booking'}
+                        ({formatReturnDate(bookingConflict.start)} → {formatReturnDate(bookingConflict.end)}).
+                        Pick a different period.
+                    </p>
+                {/if}
             </div>
         </div>
     </div>
@@ -1153,6 +1417,9 @@
 
 <!-- Item Detail Modal -->
 {#if showItemDetail && selectedItem}
+    {@const detailBookings = getDisplayBookings(selectedItem)}
+    {@const detailActive = getActiveBooking(selectedItem)}
+    {@const detailBooked = detailActive !== null}
     <div
         class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
         on:click|self={() => { showItemDetail = false; selectedItem = null; }}
@@ -1167,7 +1434,7 @@
         >
             <div class="p-6">
                 <div class="flex items-center justify-between mb-6">
-                    <h3 id="item-detail-title" class="text-white text-xl font-bold flex items-center gap-2">
+                    <h3 id="item-detail-title" class="text-white text-xl font-bold flex items-center gap-2 break-words">
                         <span class="text-2xl">{getItemIcon(selectedItem)}</span>
                         {selectedItem.id}
                     </h3>
@@ -1184,21 +1451,41 @@
 
                 <div class="space-y-4">
                     <!-- Status -->
-                    <div class="p-4 rounded-xl {selectedItem.borrowed ? (isOverdue(selectedItem.returnBy) ? 'bg-red-900/30 border border-red-600/30' : 'bg-amber-900/30 border border-amber-600/30') : 'bg-emerald-900/30 border border-emerald-600/30'}">
-                        {#if selectedItem.borrowed}
+                    <div class="p-4 rounded-xl {detailBooked ? (isOverdue(detailActive?.end ?? null) ? 'bg-red-900/30 border border-red-600/30' : 'bg-amber-900/30 border border-amber-600/30') : 'bg-emerald-900/30 border border-emerald-600/30'}">
+                        {#if detailBooked && detailActive}
                             <div class="flex items-center gap-2 mb-2">
-                                {#if isOverdue(selectedItem.returnBy)}
+                                {#if isOverdue(detailActive.end)}
                                     <span class="text-red-400 font-medium">🔴 Overdue</span>
                                 {:else}
-                                    <span class="text-amber-400 font-medium">🔄 Currently Borrowed</span>
+                                    <span class="text-amber-400 font-medium">🔄 Currently Booked</span>
                                 {/if}
                             </div>
-                            <p class="text-gray-300 text-sm">Borrowed by: <span class="text-white">{selectedItem.borrower || selectedItem.borrowerInitials}</span></p>
-                            <p class="text-gray-300 text-sm">Return by: <span class="text-white">{formatReturnDate(selectedItem.returnBy)}</span></p>
+                            <p class="text-gray-300 text-sm">Booked by: <span class="text-white">{detailActive.borrower}</span></p>
+                            <p class="text-gray-300 text-sm">From: <span class="text-white">{formatReturnDate(detailActive.start)}</span></p>
+                            <p class="text-gray-300 text-sm">Until: <span class="text-white">{formatReturnDate(detailActive.end)}</span></p>
                         {:else}
-                            <p class="text-emerald-400 font-medium">✓ Available for borrowing</p>
+                            <p class="text-emerald-400 font-medium">✓ Available for booking</p>
                         {/if}
                     </div>
+
+                    <!-- All bookings -->
+                    {#if detailBookings.length > 0}
+                        <div class="p-3 rounded-xl bg-gray-700/50 border border-gray-600/40">
+                            <div class="text-xs text-gray-400 font-medium uppercase mb-2">Bookings</div>
+                            <ul class="space-y-1">
+                                {#each detailBookings as booking (booking.id)}
+                                    {@const active = isBookingActive(booking)}
+                                    <li class="flex items-center justify-between gap-2 text-sm
+                                        {active ? 'text-amber-200' : 'text-gray-300'}">
+                                        <span class="truncate">{booking.borrower || '—'}</span>
+                                        <span class="whitespace-nowrap">
+                                            {formatReturnDate(booking.start)} → {formatReturnDate(booking.end)}
+                                        </span>
+                                    </li>
+                                {/each}
+                            </ul>
+                        </div>
+                    {/if}
 
                     <!-- Details -->
                     <div class="space-y-3">
@@ -1233,7 +1520,7 @@
 
                 <div class="flex justify-between gap-3 pt-6">
                     <div>
-                        {#if selectedItem.createdBy === currentUserId && !selectedItem.borrowed}
+                        {#if selectedItem.createdBy === currentUserId && detailBookings.length === 0}
                             <button
                                 type="button"
                                 on:click={() => handleDelete(selectedItem.id)}
@@ -1251,15 +1538,14 @@
                         >
                             Close
                         </button>
-                        {#if !selectedItem.borrowed}
-                            <button
-                                type="button"
-                                on:click={() => { showItemDetail = false; openBorrowModal(selectedItem); }}
-                                class="btn btn--primary"
-                            >
-                                Borrow
-                            </button>
-                        {:else if selectedItem.borrowerId === currentUserId || selectedItem.borrower === currentUsername}
+                        <button
+                            type="button"
+                            on:click={() => { const it = selectedItem!; showItemDetail = false; openBorrowModal(it); }}
+                            class="btn btn--primary"
+                        >
+                            Book
+                        </button>
+                        {#if detailActive && (detailActive.borrowerId === currentUserId || detailActive.borrower === currentUsername)}
                             <button
                                 type="button"
                                 on:click={() => handleReturn(selectedItem)}

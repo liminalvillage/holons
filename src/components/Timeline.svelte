@@ -396,8 +396,8 @@
                 {#each day.items as item, i (item.key)}
                     <button
                         type="button"
-                        class="absolute w-2 h-2 rounded-sm -translate-x-1/2 pointer-events-auto group hover:scale-150 transition-transform {TASK_SQUARE_COLOR[item.status]}"
-                        style="top: calc(20% + {i * 10}px);"
+                        class="absolute w-2 h-2 rounded-sm -translate-x-1/2 pointer-events-auto group hover:scale-150 transition-transform {item.task.color ? '' : TASK_SQUARE_COLOR[item.status]}"
+                        style="top: calc(20% + {i * 10}px);{item.task.color ? ` background-color: ${item.task.color};` : ''}"
                         on:click|stopPropagation={() => dispatch('taskClick', { key: item.key, task: item.task })}
                         aria-label={item.task.title || 'Untitled task'}
                     >

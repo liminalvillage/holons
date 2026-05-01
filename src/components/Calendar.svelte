@@ -19,6 +19,15 @@
     }
     const dispatch = createEventDispatcher<CalendarEvents>();
 
+    // External-data mode (e.g. Library borrows). When customItems is non-null
+    // the component skips its own holosphere subscription and runs read-only.
+    export let customItems: Record<string, any> | null = null;
+    export let readOnly: boolean = false;
+    export let customTitle: string | null = null;
+    export let onTaskClick: ((key: string, task: any) => void) | null = null;
+    // Hide TitleBar + FeatureToolbar for embedded use (host renders its own).
+    export let embedded: boolean = false;
+
     const holosphere = getContext("holosphere") as HoloSphere;
 
     // Holon name for TitleBar
@@ -557,7 +566,7 @@
             .filter(task => new Date(task.when).toDateString() === dateStr)
             .map(task => ({
                 ...task,
-                color: '#6366f1',
+                color: task.color || '#6366f1',
                 isHolonEvent: true
             }));
 
@@ -669,6 +678,7 @@
     }
 
     async function loadTasks() {
+        if (customItems !== null) return; // External-data mode: caller owns the items.
         if (!holosphere || !$ID) return;
 
         // First, load initial data (subscription only gets updates, not existing data)
@@ -824,6 +834,10 @@
         .map(([key, task]) => ({ key, ...task }));
 
     function handleTaskClick(key: string, task: any) {
+        if (onTaskClick) {
+            onTaskClick(key, task);
+            return;
+        }
         // For expanded recurring-task instances, open the base series but remember which
         // occurrence was clicked so "Mark Complete" can target just that one.
         const originalKey = resolveOriginalKey(key, task);
@@ -834,6 +848,11 @@
             task: originalTask,
             occurrenceWhen: isInstance ? task.when : undefined,
         };
+    }
+
+    // Sync external items (e.g. library borrows) into the internal tasks map.
+    $: if (customItems !== null) {
+        tasks = { ...customItems };
     }
 
     function closeTaskModal(event?: CustomEvent<{ deleted?: boolean; questId?: string }>) {
@@ -847,6 +866,7 @@
     }
 
     async function addNewEvent() {
+        if (readOnly) return;
         if (!$ID) return;
         const now = selectedDate || new Date();
         const startDate = new Date(now);
@@ -870,6 +890,7 @@
     }
 
     async function addNewTask() {
+        if (readOnly) return;
         if (!$ID) return;
 
         const newTask = {
@@ -891,6 +912,10 @@
 
     // Drag and drop handlers
     function handleDragStart(event: DragEvent, key: string, task: any) {
+        if (readOnly) {
+            event.preventDefault?.();
+            return;
+        }
         if (!event.dataTransfer) return;
 
         // For recurring-instance rows, drag moves the underlying base series.
@@ -1954,16 +1979,18 @@
 </script>
 
 <div class="space-y-4">
-    <TitleBar {holonName} title="Calendar" />
+    {#if !embedded}
+        <TitleBar {holonName} title={customTitle ?? 'Calendar'} />
 
-    <FeatureToolbar
-        onAdd={addNewEvent}
-        addLabel="Add Event"
-        bind:searchQuery={filters.searchQuery}
-        searchPlaceholder="Search events…"
-        bind:showFederated={filters.showFederated}
-        bind:showHolograms={filters.showHolograms}
-    />
+        <FeatureToolbar
+            onAdd={readOnly ? null : addNewEvent}
+            addLabel="Add Event"
+            bind:searchQuery={filters.searchQuery}
+            searchPlaceholder="Search events…"
+            bind:showFederated={filters.showFederated}
+            bind:showHolograms={filters.showHolograms}
+        />
+    {/if}
 
     <Timeline
         currentDate={currentDate}
@@ -2310,7 +2337,7 @@
                                 role="button"
                                 tabindex="0"
                                 title={task.title || 'Untitled'}
-                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}"
                             >
                                 <div class="font-bold truncate leading-tight">
                                     {#if totalColumns > 2 && task.title.length > 15}
@@ -2466,7 +2493,7 @@
                         role="button"
                         tabindex="0"
                         title={task.title || 'Untitled'}
-                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};{task.color ? ` background-color: ${task.color};` : ''}"
                     >
                         <div class="font-bold truncate">{task.title}</div>
                         <div class="text-xs opacity-75">
