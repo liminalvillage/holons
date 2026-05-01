@@ -869,6 +869,26 @@
         selectedTask = { id: newEvent.id, task: newEvent };
     }
 
+    async function addNewTask() {
+        if (!$ID) return;
+
+        const newTask = {
+            id: `task-${Date.now()}`,
+            title: 'New Task',
+            type: 'task',
+            status: 'ongoing',
+            participants: [],
+            appreciation: []
+        };
+
+        await holosphere.put($ID, 'quests', newTask);
+        if (!panelOpen) {
+            panelOpen = true;
+            try { localStorage.setItem(PANEL_OPEN_KEY, '1'); } catch {}
+        }
+        selectedTask = { id: newTask.id, task: newTask };
+    }
+
     // Drag and drop handlers
     function handleDragStart(event: DragEvent, key: string, task: any) {
         if (!event.dataTransfer) return;
@@ -2061,13 +2081,13 @@
     {/if}
 
     <!-- Unassigned tasks panel + calendar in flex layout -->
-    <div class="flex gap-2">
+    <div class="flex gap-2 items-stretch">
     <!-- Unassigned tasks drawer -->
-    {#if unassignedTasks.length > 0 && !panelOpen}
+    {#if !panelOpen}
         <!-- Collapsed rail: click to open -->
         <button
             type="button"
-            class="shrink-0 self-stretch w-8 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex flex-col items-center justify-start py-2 gap-2"
+            class="shrink-0 self-stretch w-8 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex flex-col items-center justify-start py-2 gap-2 sticky top-2 h-[calc(100vh-180px)]"
             onclick={togglePanel}
             aria-label="Open unscheduled tasks drawer"
             title="Unscheduled tasks ({unassignedTasks.length})"
@@ -2075,12 +2095,12 @@
             <span class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-indigo-500 text-white text-[10px] font-semibold">{unassignedTasks.length}</span>
             <span class="text-gray-400 text-[10px] font-medium uppercase tracking-wider [writing-mode:vertical-rl] rotate-180">Unscheduled</span>
         </button>
-    {:else if unassignedTasks.length > 0 && panelOpen}
+    {:else}
         <div
-            class="shrink-0 bg-gray-800 rounded-lg max-h-[calc(100vh-200px)] overflow-y-auto relative flex flex-col"
+            class="shrink-0 bg-gray-800 rounded-lg relative flex flex-col sticky top-2 self-start h-[calc(100vh-180px)]"
             style="width: {panelWidth}px;"
         >
-            <div class="sticky top-0 bg-gray-800 flex items-center justify-between px-2 pt-2 pb-1">
+            <div class="bg-gray-800 flex items-center justify-between px-2 pt-2 pb-1 rounded-t-lg shrink-0">
                 <div class="text-xs text-gray-400 font-medium uppercase">Unscheduled ({unassignedTasks.length})</div>
                 <button
                     type="button"
@@ -2094,7 +2114,7 @@
                     </svg>
                 </button>
             </div>
-            <div class="px-2 pb-2">
+            <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
                 {#each unassignedTasks as task (task.key)}
                     <div
                         class="text-xs p-2 mb-1 rounded bg-gray-700 text-white cursor-move hover:bg-indigo-600 transition-colors"
@@ -2113,7 +2133,19 @@
                         {/if}
                     </div>
                 {/each}
+                {#if unassignedTasks.length === 0}
+                    <div class="text-xs text-gray-500 text-center py-4">No unscheduled tasks</div>
+                {/if}
             </div>
+            <button
+                type="button"
+                class="shrink-0 mx-2 mb-2 mt-1 px-2 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium flex items-center justify-center gap-1 transition-colors"
+                onclick={addNewTask}
+                title="Add task"
+            >
+                <Plus size="14" />
+                Add Task
+            </button>
         </div>
         <div
             class="w-1 shrink-0 self-stretch cursor-col-resize bg-transparent hover:bg-indigo-500/50 transition-colors touch-none"
