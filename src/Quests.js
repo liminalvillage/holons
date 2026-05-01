@@ -2351,19 +2351,22 @@ export default class Quests {
         const interactingUserId = ctx.callbackQuery.from.id;
 
         try {
-            const parts = originalQuestIdParts.split('_');
+            // Callback format: view_original_quest_<holonId>_<questId>
+            // Holon IDs are Telegram chat IDs (no underscores), but quest IDs from
+            // harvest contain underscores (e.g. "1714510123456_abc123def"). Split
+            // on the FIRST underscore so the whole rest is the quest id.
+            const firstSep = originalQuestIdParts.indexOf('_');
             let originalQuestholonId, actualOriginalQuestId;
 
-            if (parts.length >= 2) {
-                actualOriginalQuestId = parts.pop();
-                originalQuestholonId = parts.pop();
-                
-                // Validate IDs
+            if (firstSep > 0 && firstSep < originalQuestIdParts.length - 1) {
+                originalQuestholonId = originalQuestIdParts.slice(0, firstSep);
+                actualOriginalQuestId = originalQuestIdParts.slice(firstSep + 1);
+
                 if (!originalQuestholonId || originalQuestholonId === 'undefined' || originalQuestholonId === 'null') {
                     await ctx.answerCbQuery('Error: Invalid quest source.');
                     return;
                 }
-                
+
                 if (!actualOriginalQuestId || actualOriginalQuestId === 'undefined' || actualOriginalQuestId === 'null') {
                     await ctx.answerCbQuery('Error: Invalid quest identifier.');
                     return;
