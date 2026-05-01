@@ -20,19 +20,14 @@ import LibraryIcon from './icons/LibraryIcon.svelte';
 
 export const data = [
 	{
-		title: 'Dashboard',
-		icon: DashboardIcon,
-		link: '/dashboard'
+		title: 'Schedule',
+		icon: CreditsIcon,
+		link: '/calendar'
 	},
 	{
 		title: 'Tasks',
 		icon: ArchivesIcon,
 		link: '/tasks'
-	},
-	{
-		title: 'Schedule',
-		icon: CreditsIcon,
-		link: '/calendar'
 	},
 	{
 		title: 'Expenses',
@@ -93,6 +88,11 @@ export const data = [
 		title: 'Database',
 		icon: DatabaseIcon,
 		link: '/db'
+	},
+	{
+		title: 'Statistics',
+		icon: DashboardIcon,
+		link: '/statistics'
 	}
 	// {
 	// 	title: 'Documentation',

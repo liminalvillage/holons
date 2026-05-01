@@ -1,9 +1,24 @@
 <script lang="ts">
-  import Dashboard from '../../../components/Dashboard.svelte';
+  import Calendar from '../../../components/Calendar.svelte';
+  import { page } from '$app/stores';
+  import { ID } from '../../../dashboard/store';
+  import { onMount } from 'svelte';
+
+  $: if ($page.params.id && $page.params.id !== $ID) {
+    ID.set($page.params.id);
+  }
+
+  onMount(() => {
+    if ($page.params.id) {
+      ID.set($page.params.id);
+    }
+  });
 </script>
 
 <svelte:head>
-  <title>Dashboard</title>
+  <title>Schedule</title>
 </svelte:head>
 
-<Dashboard />
+<div class="p-0">
+  <Calendar />
+</div>

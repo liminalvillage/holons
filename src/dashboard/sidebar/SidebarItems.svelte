@@ -43,11 +43,12 @@
 		if (currentPath === itemPath) {
 			isActive = true;
 		}
-		// Handle dashboard as default route
-		else if (item.link === '/dashboard' && currentPath === '/' + holonId) {
+		// Schedule (calendar) is the default landing view: highlight it on
+		// the holon root and the legacy /dashboard path.
+		else if (item.link === '/calendar' && (currentPath === '/' + holonId || currentPath === '/' + holonId + '/dashboard')) {
 			isActive = true;
 		}
-		// Handle nested routes (e.g., /dashboard/ should match /dashboard)
+		// Handle nested routes (e.g., /calendar/ should match /calendar)
         else if (!isStandaloneRoute && currentPath.startsWith(itemPath + '/')) {
 			isActive = true;
 		}

@@ -238,10 +238,13 @@
 			// New users (Create flow) go to their own holon unless on a special route (e.g. /qr)
 			// Returning users can respect the URL if they're viewing another holon
 			if (isGenuinelyNewUser) {
-				ID.set(userPublicKey);
-				// Redirect new users to their personal holon dashboard
-				console.log('New user - redirecting to personal holon:', userPublicKey);
-				goto(`/${userPublicKey}/dashboard`);
+				ID.set(holonIdInUrl ?? userPublicKey);
+				if (holonIdInUrl) {
+					console.log('New user - respecting holon ID from URL:', holonIdInUrl);
+				} else {
+					console.log('New user - redirecting to personal holon:', userPublicKey);
+					goto(`/${userPublicKey}/dashboard`);
+				}
 			} else if (holonIdInUrl) {
 				// Returning user - respect the holon ID in the URL
 				ID.set(holonIdInUrl);
