@@ -16,8 +16,8 @@
 
 
 	// Browser panel state (replaces sidebar for holon browsing)
-	// Default open on desktop, closed on mobile
-	let browserOpen = browser ? window.innerWidth >= 1024 : true;
+	// Hidden by default — users open it via the topbar menu button.
+	let browserOpen = false;
 
 	// Open browser panel
 	function openBrowser() {
@@ -180,7 +180,9 @@
 	/* Main content area */
 	.app-layout__content {
 		flex: 1;
-		overflow: auto;
+		min-width: 0;
+		overflow-y: auto;
+		overflow-x: hidden;
 		padding: var(--spacing-2, 0.5rem);
 		padding-bottom: var(--spacing-8, 2rem);
 	}
@@ -212,11 +214,13 @@
 	:global(html) {
 		/* Firefox */
 		scrollbar-width: none;
+		overflow-x: hidden;
 	}
 
 	:global(body) {
 		/* Firefox */
 		scrollbar-width: none;
+		overflow-x: hidden;
 	}
 
 	/* Webkit browsers (Chrome, Safari, Edge) */

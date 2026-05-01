@@ -36,6 +36,13 @@
 	let isTelegramWebApp = false;
 	let existingTelegramMapping: { publicKey: string; holonName: string } | null = null;
 
+	// Telegram Login Widget (web users — not Mini App)
+	const TELEGRAM_BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'HolonsBot';
+	let telegramWidgetContainer: HTMLDivElement | null = null;
+	let telegramWidgetLoaded = false;
+	let telegramWidgetError = '';
+	let telegramWidgetMounted = false;
+
 	// Holosphere service key from .env (for Telegram mapping lookups)
 	const HOLOSPHERE_PRIVATE_KEY = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
 
@@ -119,61 +126,110 @@
 			// Returning user - key exists, proceed to app
 			setTimeout(() => dispatch('authenticated', { publicKey: state.publicKey, mode: 'private' }), 300);
 		} else if (telegramUser) {
-			// Telegram user (Mini App or widget) - auto-login seamlessly
-			isProcessing = true;
-			try {
-				existingTelegramMapping = await checkTelegramMapping(telegramUser.id);
-				console.log('Existing mapping found:', existingTelegramMapping);
-			} catch (err) {
-				console.error('Error checking telegram mapping:', err);
-			}
-
-			if (existingTelegramMapping) {
-				// User has existing mapping - auto-login to their holon
-				console.log('Telegram: Auto-login to existing holon:', existingTelegramMapping.holonName);
-				isProcessing = false;
-				setTimeout(() => {
-					dispatch('authenticated', {
-						publicKey: existingTelegramMapping!.publicKey,
-						holonName: existingTelegramMapping!.holonName,
-						telegramUserId: telegramUser.id,
-						mode: 'telegram-mapped'
-					});
-				}, 300);
-			} else {
-				// New Telegram user - auto-generate key silently and proceed
-				console.log('Telegram: New user, auto-generating identity for', telegramUser.first_name);
-				try {
-					const name = telegramUser.username
-						? `@${telegramUser.username}'s Holon`
-						: `${telegramUser.first_name}'s Holon`;
-
-					const result = await nostrStore.generateKey();
-					if (result) {
-						isProcessing = false;
-						dispatch('authenticated', {
-							publicKey: result.publicKey,
-							holonName: name,
-							telegramUserId: telegramUser.id,
-							mode: 'private'
-						});
-					} else {
-						isProcessing = false;
-						view = 'welcome';
-					}
-				} catch (err) {
-					console.error('Telegram auto-create failed:', err);
-					isProcessing = false;
-					view = 'welcome';
-				}
-			}
+			// Telegram user (Mini App) - auto-login seamlessly
+			await handleTelegramUser(telegramUser);
 		} else {
-			// No key, no telegram - show welcome screen
+			// No key, no telegram - show welcome screen (widget loads via reactive block)
 			setTimeout(() => {
 				view = 'welcome';
 			}, 500);
 		}
 	});
+
+	// Shared flow: take a Telegram user (from Mini App or Login Widget) and
+	// either restore the mapped identity or generate a new one.
+	async function handleTelegramUser(user: any) {
+		telegramUser = user;
+		isProcessing = true;
+		try {
+			existingTelegramMapping = await checkTelegramMapping(user.id);
+			console.log('Existing mapping found:', existingTelegramMapping);
+		} catch (err) {
+			console.error('Error checking telegram mapping:', err);
+		}
+
+		if (existingTelegramMapping) {
+			console.log('Telegram: Auto-login to existing holon:', existingTelegramMapping.holonName);
+			isProcessing = false;
+			setTimeout(() => {
+				dispatch('authenticated', {
+					publicKey: existingTelegramMapping!.publicKey,
+					holonName: existingTelegramMapping!.holonName,
+					telegramUserId: user.id,
+					mode: 'telegram-mapped'
+				});
+			}, 300);
+		} else {
+			console.log('Telegram: New user, auto-generating identity for', user.first_name);
+			try {
+				const name = user.username
+					? `@${user.username}'s Holon`
+					: `${user.first_name}'s Holon`;
+
+				const result = await nostrStore.generateKey();
+				if (result) {
+					isProcessing = false;
+					dispatch('authenticated', {
+						publicKey: result.publicKey,
+						holonName: name,
+						telegramUserId: user.id,
+						mode: 'private'
+					});
+				} else {
+					isProcessing = false;
+					view = 'welcome';
+				}
+			} catch (err) {
+				console.error('Telegram auto-create failed:', err);
+				isProcessing = false;
+				view = 'welcome';
+			}
+		}
+	}
+
+	// Mount the Telegram Login Widget into the welcome view (web users only).
+	function mountTelegramWidget() {
+		if (telegramWidgetMounted || !telegramWidgetContainer) return;
+		telegramWidgetMounted = true;
+		telegramWidgetError = '';
+
+		try {
+			(window as any).onTelegramAuth = (user: any) => {
+				try {
+					console.log('Telegram widget login:', user);
+					telegramStore.loginWithWidget(user);
+					handleTelegramUser(user);
+				} catch (err) {
+					console.error('Error handling Telegram widget login:', err);
+					telegramWidgetError = 'Login succeeded but processing failed.';
+				}
+			};
+
+			const script = document.createElement('script');
+			script.src = 'https://telegram.org/js/telegram-widget.js?22';
+			script.async = true;
+			script.setAttribute('data-telegram-login', TELEGRAM_BOT_USERNAME);
+			script.setAttribute('data-size', 'large');
+			script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+			script.setAttribute('data-request-access', 'write');
+			script.onload = () => {
+				telegramWidgetLoaded = true;
+			};
+			script.onerror = () => {
+				telegramWidgetError = 'Failed to load the Telegram Login Widget.';
+				telegramWidgetLoaded = false;
+			};
+			telegramWidgetContainer.appendChild(script);
+		} catch (err) {
+			console.error('Failed to initialize Telegram Login Widget:', err);
+			telegramWidgetError = 'Failed to initialize the Telegram Login Widget.';
+		}
+	}
+
+	// Re-mount the widget whenever the welcome view becomes visible to a non-Mini-App user.
+	$: if (view === 'welcome' && !isTelegramWebApp && telegramWidgetContainer && !telegramWidgetMounted) {
+		mountTelegramWidget();
+	}
 
 	// Handle Telegram create new identity
 	async function handleTelegramCreate() {
@@ -369,40 +425,67 @@
 			</div>
 
 			<h1 class="title">Welcome to Holons</h1>
-			<p class="subtitle">Your decentralized collaboration space</p>
+			<p class="subtitle">Sign in with Telegram to get started</p>
 
-			<!-- Options -->
-			<div class="options">
-				<button
-					class="option-button primary"
-					on:click={() => view = 'create'}
-				>
-					<div class="option-icon">
-						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-						</svg>
-					</div>
-					<div class="option-text">
-						<span class="option-title">Create New Holon</span>
-						<span class="option-desc">Start fresh with a new identity</span>
-					</div>
-				</button>
+			{#if isProcessing}
+				<div class="widget-loading">
+					<svg class="spinner" viewBox="0 0 24 24">
+						<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70" />
+					</svg>
+					<span>Signing you in…</span>
+				</div>
+			{:else}
+				<!-- Telegram Login Widget (primary) -->
+				<div class="telegram-login-section">
+					{#if !telegramWidgetLoaded && !telegramWidgetError}
+						<div class="widget-loading">
+							<svg class="spinner" viewBox="0 0 24 24">
+								<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70" />
+							</svg>
+							<span>Loading Telegram login…</span>
+						</div>
+					{/if}
+					<div bind:this={telegramWidgetContainer} class="telegram-widget-container"></div>
+					{#if telegramWidgetError}
+						<p class="error-message" transition:slide>{telegramWidgetError}</p>
+					{/if}
+				</div>
 
-				<button
-					class="option-button secondary"
-					on:click={() => view = 'restore'}
-				>
-					<div class="option-icon">
-						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-						</svg>
-					</div>
-					<div class="option-text">
-						<span class="option-title">Restore Existing</span>
-						<span class="option-desc">Import your private key</span>
-					</div>
-				</button>
-			</div>
+				<div class="divider"><span>or</span></div>
+
+				<!-- Secondary options -->
+				<div class="options">
+					<button
+						class="option-button secondary"
+						on:click={() => view = 'create'}
+					>
+						<div class="option-icon">
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+							</svg>
+						</div>
+						<div class="option-text">
+							<span class="option-title">Create New Holon</span>
+							<span class="option-desc">Start fresh with a new identity</span>
+						</div>
+					</button>
+
+					<button
+						class="option-button secondary"
+						on:click={() => view = 'restore'}
+					>
+						<div class="option-icon">
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+							</svg>
+						</div>
+						<div class="option-text">
+							<span class="option-title">Restore Existing</span>
+							<span class="option-desc">Import your private key</span>
+						</div>
+					</button>
+				</div>
+			{/if}
 
 		</div>
 
@@ -1183,6 +1266,51 @@
 		color: #fcd34d;
 		font-size: 0.85rem;
 		line-height: 1.4;
+	}
+
+	/* Telegram Login Widget (welcome view) */
+	.telegram-login-section {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 56px;
+		margin-bottom: 1rem;
+	}
+
+	.telegram-widget-container {
+		display: flex;
+		justify-content: center;
+		width: 100%;
+	}
+
+	.widget-loading {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		color: #94a3b8;
+		font-size: 0.875rem;
+		padding: 0.75rem 0;
+	}
+
+	.divider {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		color: #64748b;
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		margin: 1rem 0;
+	}
+
+	.divider::before,
+	.divider::after {
+		content: '';
+		flex: 1;
+		height: 1px;
+		background: rgba(100, 116, 139, 0.3);
 	}
 
 </style>

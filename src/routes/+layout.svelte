@@ -497,15 +497,28 @@
 		if (privateKey) {
 			await initHoloSphere(privateKey);
 
-			// For telegram-mapped sessions, override the ID to the user's public key
+			// For telegram-mapped sessions, set the user's public key in the holon
+			// list but respect any holon ID in the URL — visiting /[someoneElsesId]
+			// after Telegram login should land on that holon, not bounce to your own.
 			if (isTelegramMappedSession && telegramMappedPublicKey) {
-				ID.set(telegramMappedPublicKey);
-				// Add the holon to visited list
 				if (browser) {
 					addVisitedHolon(null, telegramMappedPublicKey, holonName || 'My Holon', 'personal');
 				}
-				// Navigate directly to the user's holon
-				goto(`/${telegramMappedPublicKey}/dashboard`);
+
+				const currentPath = $page.url.pathname;
+				const pathParts = currentPath.split('/').filter(Boolean);
+				const holonIdInUrl = pathParts.length > 0 &&
+					!['federated', 'navigator', 'global', 'sdgs', 'qr', 'demo', 'badges-demo'].includes(pathParts[0])
+					? pathParts[0]
+					: null;
+
+				if (holonIdInUrl) {
+					ID.set(holonIdInUrl);
+					console.log('Telegram-mapped session - respecting holon ID from URL:', holonIdInUrl);
+				} else {
+					ID.set(telegramMappedPublicKey);
+					goto(`/${telegramMappedPublicKey}/dashboard`);
+				}
 			}
 		} else {
 			console.error('No private key available for initialization');
