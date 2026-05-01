@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, type ComponentType } from 'svelte';
-	import { Plus, Search, Globe, Eye } from 'svelte-feathers';
+	import { Plus, Search, Globe, Eye, Download } from 'svelte-feathers';
 	import ToggleChip from './ToggleChip.svelte';
 
 	type ViewMode = { value: string; icon?: ComponentType; label: string };
@@ -9,6 +9,11 @@
 	export let onAdd: (() => void) | null = null;
 	export let addLabel: string = 'Add';
 	export let addDisabled: boolean = false;
+
+	// Import button — hidden if onImport is null. Sits next to the Add button.
+	export let onImport: (() => void) | null = null;
+	export let importLabel: string = 'Import';
+	export let importDisabled: boolean = false;
 
 	// Search input — hidden if undefined (pass an empty string to show it).
 	export let searchQuery: string | undefined = undefined;
@@ -26,6 +31,7 @@
 
 	const dispatch = createEventDispatcher<{
 		add: void;
+		import: void;
 		search: string;
 		viewChange: string;
 		federatedChange: boolean;
@@ -35,6 +41,11 @@
 	function handleAdd() {
 		if (onAdd) onAdd();
 		dispatch('add');
+	}
+
+	function handleImport() {
+		if (onImport) onImport();
+		dispatch('import');
 	}
 
 	function handleSearchInput(event: Event) {
@@ -71,6 +82,19 @@
 			>
 				<svelte:component this={Plus} size="16" />
 				<span class="feature-toolbar__add-label">{addLabel}</span>
+			</button>
+		{/if}
+
+		{#if onImport}
+			<button
+				type="button"
+				class="import-btn"
+				on:click={handleImport}
+				disabled={importDisabled}
+				aria-label={importLabel}
+				title={importLabel}
+			>
+				<svelte:component this={Download} size="16" />
 			</button>
 		{/if}
 
@@ -142,22 +166,63 @@
 <style>
 	.feature-toolbar {
 		padding: 0.5rem 0;
+		max-width: 100%;
 	}
 
-	/* Collapse the Add label on narrow viewports; the + icon + title carry the meaning. */
+	/* Allow the inner sections to wrap so nothing forces horizontal scroll. */
+	.feature-toolbar :global(.controls-row__left),
+	.feature-toolbar :global(.controls-row__right) {
+		flex-wrap: wrap;
+		min-width: 0;
+	}
+
+	/* Collapse the Add label on narrow viewports; the icon + title carry the meaning. */
 	@media (max-width: 640px) {
 		.feature-toolbar__add-label {
 			display: none;
 		}
 	}
 
+	.import-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		padding: 0;
+		background: #374151;
+		border: 1px solid #4b5563;
+		border-radius: 0.5rem;
+		color: #e5e7eb;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+	}
+
+	.import-btn:hover:not(:disabled) {
+		background: #4b5563;
+		color: #fff;
+	}
+
+	.import-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
 	.feature-toolbar__search {
 		position: relative;
 		display: flex;
 		align-items: center;
-		flex: 1;
-		min-width: 10rem;
+		flex: 1 1 12rem;
+		min-width: 8rem;
 		max-width: 20rem;
+	}
+
+	@media (max-width: 640px) {
+		.feature-toolbar__search {
+			flex-basis: 100%;
+			max-width: none;
+		}
 	}
 
 	.feature-toolbar__search-icon {

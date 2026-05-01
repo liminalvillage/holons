@@ -519,8 +519,7 @@
 		try {
 			if (navigationPath.length === 0) {
 				// At root level, show available holons and global data
-				// Use holosphere to fetch global registry
-				const registry = await holosphere.getAll('global', 'holons_registry');
+				const registry = await holosphere.getAllGlobal('holons_registry');
 				if (registry && typeof registry === 'object') {
 					for (const [key, value] of Object.entries(registry)) {
 						if (key && !key.startsWith('_')) {

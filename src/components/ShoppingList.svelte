@@ -8,6 +8,7 @@
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
     import Modal from "./shared/Modal.svelte";
     import ItemCard from "./shared/ItemCard.svelte";
+    import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { ShoppingCart, Trash2, RefreshCw } from 'svelte-feathers';
     import { notifyWriteDenied } from "../lib/stores/writeNotifications";
     import { loadFilters, saveFilters } from "$lib/util/persistedFilters";
@@ -231,6 +232,33 @@
         if (!holonId) return '';
         return $nameMap[holonId] ?? holonId.slice(0, 8);
     }
+
+    let showImportModal = false;
+
+    async function handleImport(event: CustomEvent<any[]>) {
+        if (!holonID) return;
+        const items = event.detail;
+        try {
+            for (let i = 0; i < items.length; i++) {
+                const raw = items[i] ?? {};
+                const text = String(raw.text ?? raw.title ?? raw.name ?? raw.description ?? '').trim();
+                if (!text) continue;
+                const newItem: ShoppingItem = {
+                    id: raw.id ?? `${Date.now()}-${i}`,
+                    text,
+                    checked: Boolean(raw.checked) || false
+                };
+                await holosphere.put(holonID, "shopping", newItem);
+            }
+            showImportModal = false;
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to import shopping items:", error);
+            }
+        }
+    }
 </script>
 
 <div class="space-y-4">
@@ -260,6 +288,8 @@
             <FeatureToolbar
                 onAdd={showAddInput}
                 addLabel="Add Item"
+                onImport={() => (showImportModal = true)}
+                importLabel="Import"
                 bind:searchQuery={filters.searchQuery}
                 searchPlaceholder="Search items…"
                 bind:showFederated={filters.showFederated}
@@ -375,3 +405,17 @@
         </div>
     </form>
 </Modal>
+
+<GenericImportModal
+    bind:open={showImportModal}
+    title="Import Shopping Items"
+    itemNoun="items"
+    helpText="Paste a JSON array, or one item per line. Required: text."
+    sampleJson={`[
+  { "text": "Milk" },
+  { "text": "Bread", "checked": false },
+  { "text": "Apples" }
+]`}
+    on:import={handleImport}
+    on:close={() => (showImportModal = false)}
+/>

@@ -25,16 +25,6 @@ interface PendingQuery {
 	timestamp: number;
 }
 
-// Track unresolved holograms for diagnostics
-interface UnresolvedHologram {
-	id: string;
-	target?: string;
-	holonId: string;
-	lens: string;
-	timestamp: number;
-	reason: string;
-}
-
 // Cache TTL in milliseconds (5 minutes)
 const CACHE_TTL = 5 * 60 * 1000;
 
@@ -79,10 +69,6 @@ class QueryManager {
 	private subscribers: Map<string, Set<(data: any[]) => void>> = new Map();
 	private holosphere: HoloSphere | null = null;
 
-	// Track unresolved holograms for diagnostics (max 100 entries)
-	private unresolvedHolograms: UnresolvedHologram[] = [];
-	private readonly MAX_UNRESOLVED_HISTORY = 100;
-
 	/**
 	 * Initialize the query manager with a HoloSphere instance
 	 */
@@ -97,122 +83,10 @@ class QueryManager {
 		return `${holonId}:${lens}`;
 	}
 
-	/**
-	 * Check if item is valid (not deleted, not an unresolved hologram)
-	 * @param item - The item to validate
-	 * @param context - Optional context for better diagnostics (holonId, lens)
-	 */
-	private isValidItem(item: any, context?: { holonId?: string; lens?: string }): boolean {
+	private isValidItem(item: any): boolean {
 		if (!item || !item.id) return false;
 		if (item._deleted) return false;
-		if (item.hologram === true) {
-			// Log unresolved holograms - these should have been resolved by HoloSphere
-			// This usually indicates: missing capability, network issue, or permission denied
-			const reason = this.diagnoseHologramFailure(item);
-
-			console.warn('[QueryManager] ⚠️ Unresolved hologram filtered:', {
-				id: item.id,
-				target: item.target,
-				holonId: context?.holonId || 'unknown',
-				lens: context?.lens || 'unknown',
-				hasCapability: !!item.capability,
-				capabilityType: item.capability?.type,
-				reason
-			});
-
-			// Track for diagnostics
-			this.trackUnresolvedHologram({
-				id: item.id,
-				target: item.target,
-				holonId: context?.holonId || 'unknown',
-				lens: context?.lens || 'unknown',
-				timestamp: Date.now(),
-				reason
-			});
-
-			return false;
-		}
 		return true;
-	}
-
-	/**
-	 * Diagnose why a hologram might have failed to resolve
-	 */
-	private diagnoseHologramFailure(item: any): string {
-		if (!item.capability) {
-			return 'Missing capability - no access token to resolve hologram';
-		}
-		if (!item.target) {
-			return 'Missing target - hologram has no source reference';
-		}
-
-		// Check for capability structure issues
-		const cap = item.capability;
-		if (typeof cap === 'string') {
-			// Token is a string - check basic structure
-			if (!cap.includes('.')) {
-				return 'Invalid capability format - missing signature (should be base64.signature)';
-			}
-		} else if (typeof cap === 'object') {
-			// Check if capability token is wrapped
-			if (cap.token && !cap.token.includes('.')) {
-				return 'Invalid capability format - token missing signature';
-			}
-		}
-
-		// Check authorPubKey presence (required for issuer verification)
-		if (!item.authorPubKey && !item.target?.authorPubKey) {
-			return 'Missing authorPubKey - cannot verify capability issuer matches data author';
-		}
-
-		// If we have both capability and target, resolution likely failed due to:
-		// - Issuer mismatch (capability signed by different key than claimed issuer)
-		// - Network issue fetching source data
-		// - Permission denied at source
-		return 'Resolution failed - possible issuer/signature mismatch, network issue, or permission denied';
-	}
-
-	/**
-	 * Track unresolved hologram for diagnostics
-	 */
-	private trackUnresolvedHologram(hologram: UnresolvedHologram): void {
-		this.unresolvedHolograms.push(hologram);
-		// Keep only the most recent entries
-		if (this.unresolvedHolograms.length > this.MAX_UNRESOLVED_HISTORY) {
-			this.unresolvedHolograms = this.unresolvedHolograms.slice(-this.MAX_UNRESOLVED_HISTORY);
-		}
-	}
-
-	/**
-	 * Get unresolved holograms for debugging
-	 * Can be called from browser console: queryManager.getUnresolvedHolograms()
-	 */
-	getUnresolvedHolograms(): UnresolvedHologram[] {
-		return [...this.unresolvedHolograms];
-	}
-
-	/**
-	 * Get summary of unresolved holograms by holon
-	 */
-	getUnresolvedSummary(): Record<string, { count: number; lenses: string[] }> {
-		const summary: Record<string, { count: number; lenses: string[] }> = {};
-		for (const hologram of this.unresolvedHolograms) {
-			if (!summary[hologram.holonId]) {
-				summary[hologram.holonId] = { count: 0, lenses: [] };
-			}
-			summary[hologram.holonId].count++;
-			if (!summary[hologram.holonId].lenses.includes(hologram.lens)) {
-				summary[hologram.holonId].lenses.push(hologram.lens);
-			}
-		}
-		return summary;
-	}
-
-	/**
-	 * Clear unresolved hologram history
-	 */
-	clearUnresolvedHistory(): void {
-		this.unresolvedHolograms = [];
 	}
 
 	/**
@@ -278,9 +152,8 @@ class QueryManager {
 			const dataMap = new Map<string, any>();
 			const items = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data) : []);
 
-			const context = { holonId, lens };
 			for (const item of items) {
-				if (this.isValidItem(item, context)) {
+				if (this.isValidItem(item)) {
 					dataMap.set(item.id, item);
 				}
 			}
@@ -322,10 +195,9 @@ class QueryManager {
 		// Set up holosphere subscription if not already active
 		let entry = this.cache.get(key);
 		if (!entry?.subscription) {
-			const context = { holonId, lens };
 			// holosphere.subscribe returns synchronously in the current implementation
 			const subscription = this.holosphere.subscribe(holonId, lens, (item: any) => {
-				if (this.isValidItem(item, context)) {
+				if (this.isValidItem(item)) {
 					this.handleUpdate(key, item);
 				}
 			}) as unknown as { unsubscribe: () => void };
@@ -444,9 +316,7 @@ class QueryManager {
 			cacheSize: this.cache.size,
 			pendingQueries: this.pendingQueries.size,
 			activeSubscriptions: Array.from(this.cache.values()).filter(e => e.subscription).length,
-			subscriberCount: Array.from(this.subscribers.values()).reduce((sum, set) => sum + set.size, 0),
-			unresolvedHologramCount: this.unresolvedHolograms.length,
-			unresolvedSummary: this.getUnresolvedSummary()
+			subscriberCount: Array.from(this.subscribers.values()).reduce((sum, set) => sum + set.size, 0)
 		};
 	}
 }

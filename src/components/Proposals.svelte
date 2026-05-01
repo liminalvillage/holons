@@ -6,6 +6,7 @@
     import FeatureToolbar from './shared/FeatureToolbar.svelte';
     import Modal from './shared/Modal.svelte';
     import ItemCard from './shared/ItemCard.svelte';
+    import GenericImportModal from './shared/GenericImportModal.svelte';
     import { nameMap, resolveHologramSource, extractHolonIdFromSoul } from '$lib/stores/nameResolver';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
@@ -170,6 +171,21 @@
         }
     }
 
+    let showImportModal = false;
+
+    function handleImport(event: CustomEvent<any[]>) {
+        if (!currentHolonID) return;
+        const items = event.detail;
+        for (const raw of items) {
+            const item = raw ?? {};
+            const title = String(item.title ?? item.name ?? item.text ?? '').trim();
+            const description = String(item.description ?? item.body ?? '').trim();
+            if (!title) continue;
+            addProposal(title, description || title);
+        }
+        showImportModal = false;
+    }
+
     function hologramSource(p: Proposal): string {
         const soul = p._hologram?.soul;
         if (!soul) return p._hologram?.sourceHolon ?? '';
@@ -188,6 +204,8 @@
     <FeatureToolbar
         onAdd={() => (showAddDialog = true)}
         addLabel="Add Proposal"
+        onImport={() => (showImportModal = true)}
+        importLabel="Import"
         bind:searchQuery={filters.searchQuery}
         searchPlaceholder="Search proposals…"
         bind:showFederated={filters.showFederated}
@@ -290,3 +308,21 @@
         </div>
     </form>
 </Modal>
+
+<GenericImportModal
+    bind:open={showImportModal}
+    title="Import Proposals"
+    itemNoun="proposals"
+    helpText="Paste a JSON array of proposals or one proposal per line. Required: title."
+    sampleJson={`[
+  {
+    "title": "Adopt new meeting cadence",
+    "description": "Switch from weekly to bi-weekly all-hands."
+  },
+  {
+    "title": "Open-source the design library"
+  }
+]`}
+    on:import={handleImport}
+    on:close={() => (showImportModal = false)}
+/>

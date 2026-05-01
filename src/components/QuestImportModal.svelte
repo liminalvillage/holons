@@ -53,6 +53,36 @@
 	let clipboardContent = '';
 	let clipboardFormat: 'json' | 'text' = 'json';
 
+	// Concrete example shown under "Example JSON" so users see the expected shape.
+	const sampleJson = `[
+  {
+    "title": "Project planning meeting",
+    "description": "Kick-off with stakeholders",
+    "category": "Planning",
+    "status": "ongoing",
+    "type": "task"
+  },
+  {
+    "title": "Weekly team sync",
+    "type": "event",
+    "status": "recurring",
+    "category": "Meetings"
+  },
+  {
+    "title": "Research market trends",
+    "description": "Competitor analysis and opportunity sizing",
+    "type": "quest",
+    "status": "ongoing",
+    "category": "Research"
+  }
+]`;
+
+	function useSampleJson() {
+		clipboardFormat = 'json';
+		clipboardContent = sampleJson;
+		parseClipboardContent();
+	}
+
 	// Sample quest library - you can expand this with more quests
 	const questLibrary = [
 		{
@@ -102,6 +132,36 @@
 			category: 'Client',
 			status: 'ongoing' as const,
 			type: 'quest' as const,
+			participants: [],
+			appreciation: []
+		},
+		{
+			id: 'sample-6',
+			title: 'Onboarding Checklist',
+			description: 'Walk a new member through accounts, repos, and team rituals',
+			category: 'Onboarding',
+			status: 'ongoing' as const,
+			type: 'task' as const,
+			participants: [],
+			appreciation: []
+		},
+		{
+			id: 'sample-7',
+			title: 'Quarterly Retrospective',
+			description: 'Reflect on the past quarter and capture lessons learned',
+			category: 'Meetings',
+			status: 'recurring' as const,
+			type: 'event' as const,
+			participants: [],
+			appreciation: []
+		},
+		{
+			id: 'sample-8',
+			title: 'Bug Triage',
+			description: 'Review the open bug queue and assign priorities',
+			category: 'Engineering',
+			status: 'recurring' as const,
+			type: 'task' as const,
 			participants: [],
 			appreciation: []
 		}
@@ -572,7 +632,23 @@
 						<h4 class="text-white font-medium mb-3">
 							{clipboardFormat === 'json' ? 'Paste JSON Content' : 'Paste Simple Text'}
 						</h4>
-						
+
+						{#if clipboardFormat === 'json'}
+							<details class="quest-sample mb-4">
+								<summary class="quest-sample__summary">
+									<span>Example JSON</span>
+									<button
+										type="button"
+										class="quest-sample__use"
+										on:click|stopPropagation|preventDefault={useSampleJson}
+									>
+										Use sample
+									</button>
+								</summary>
+								<pre class="quest-sample__code">{sampleJson}</pre>
+							</details>
+						{/if}
+
 						{#if clipboardFormat === 'text'}
 							<div class="bg-blue-500/20 border border-blue-500/50 rounded-lg p-3 mb-4">
 								<div class="text-blue-300 text-sm">
@@ -743,6 +819,68 @@
 </div>
 
 <style>
+	.quest-sample {
+		background: #111827;
+		border: 1px solid #374151;
+		border-radius: 0.5rem;
+		overflow: hidden;
+	}
+
+	.quest-sample__summary {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.8125rem;
+		color: #d1d5db;
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.quest-sample__summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.quest-sample__summary::before {
+		content: '▸';
+		color: #6b7280;
+		font-size: 0.75rem;
+		display: inline-block;
+		transition: transform 150ms ease;
+	}
+
+	.quest-sample[open] .quest-sample__summary::before {
+		transform: rotate(90deg);
+	}
+
+	.quest-sample__use {
+		margin-left: auto;
+		padding: 0.25rem 0.625rem;
+		background: #374151;
+		border: 1px solid #4b5563;
+		border-radius: 0.375rem;
+		color: #e5e7eb;
+		font-size: 0.75rem;
+		cursor: pointer;
+	}
+
+	.quest-sample__use:hover {
+		background: #4b5563;
+	}
+
+	.quest-sample__code {
+		margin: 0;
+		padding: 0.625rem 0.75rem;
+		background: #0b1220;
+		color: #e5e7eb;
+		font-family: ui-monospace, SFMono-Regular, monospace;
+		font-size: 0.75rem;
+		line-height: 1.45;
+		white-space: pre;
+		overflow-x: auto;
+		border-top: 1px solid #374151;
+	}
+
 	/* Custom scrollbar for webkit browsers */
 	::-webkit-scrollbar {
 		width: 6px;

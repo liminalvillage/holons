@@ -15,6 +15,7 @@
 	import StatCard from "./shared/StatCard.svelte";
 	import StatGrid from "./shared/StatGrid.svelte";
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import GenericImportModal from "./shared/GenericImportModal.svelte";
 	import { Users, UserCheck, UserX, Plus, Calendar, List, Grid } from 'svelte-feathers';
 	import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
@@ -499,6 +500,35 @@
 			}
 		}
 	}
+
+	let showImportModal = false;
+
+	async function handleImport(event) {
+		if (!activeHolonId) return;
+		const items = event.detail;
+		try {
+			for (let i = 0; i < items.length; i++) {
+				const raw = items[i] ?? {};
+				const title = String(raw.title ?? raw.name ?? raw.text ?? '').trim();
+				if (!title) continue;
+				const newRole = {
+					id: raw.id ?? `role-${Date.now()}-${i}`,
+					title,
+					description: raw.description ?? '',
+					participants: Array.isArray(raw.participants) ? raw.participants : [],
+					created_at: new Date().toISOString()
+				};
+				await holosphere.put(activeHolonId, 'roles', newRole);
+			}
+			showImportModal = false;
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error importing roles:', error);
+			}
+		}
+	}
 </script>
 
 <div class="space-y-4">
@@ -526,6 +556,8 @@
 		<FeatureToolbar
 			onAdd={addNewRole}
 			addLabel="Add Role"
+			onImport={() => (showImportModal = true)}
+			importLabel="Import"
 			bind:searchQuery={filters.searchQuery}
 			searchPlaceholder="Search roles…"
 			bind:viewMode={filters.viewMode}
@@ -763,6 +795,25 @@
 		on:dismiss={() => notification = null}
 	/>
 {/if}
+
+<GenericImportModal
+	bind:open={showImportModal}
+	title="Import Roles"
+	itemNoun="roles"
+	helpText="Paste a JSON array of roles or one role title per line. Required: title."
+	sampleJson={`[
+  {
+    "title": "Facilitator",
+    "description": "Runs the weekly council meeting.",
+    "participants": []
+  },
+  {
+    "title": "Note Taker"
+  }
+]`}
+	on:import={handleImport}
+	on:close={() => (showImportModal = false)}
+/>
 
 <style>
 	.space-y-3 > :not([hidden]) ~ :not([hidden]) {

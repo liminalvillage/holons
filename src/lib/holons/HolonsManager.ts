@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import EventEmitter from 'eventemitter3';
 import { ethers } from 'ethers';
 import type { HoloSphere } from 'holosphere';
 import { HolonsContract, type HolonBundle, type HolonMember, type TokenBalance, type HolonType, type FlowConfig } from './HolonsContract.js';

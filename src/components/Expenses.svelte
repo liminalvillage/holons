@@ -7,6 +7,8 @@
 	import { resolveImage } from "../utils/imageServer";
 	import { Plus } from 'svelte-feathers';
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+	import GenericImportModal from "./shared/GenericImportModal.svelte";
+	import { notifyWriteDenied } from "../lib/stores/writeNotifications";
 	import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
 	interface Expense {
@@ -311,6 +313,42 @@
 		await holosphere.put(holonID, 'expenses', expense);
 		showAddExpense = false;
 	}
+
+	let showImportModal = false;
+
+	async function handleImport(event: CustomEvent<any[]>) {
+		if (!holonID) return;
+		const items = event.detail;
+		const fallbackPayer = realUsers[0]?.id?.toString() || '';
+		const allParticipants = users.map(u => u.id.toString());
+		try {
+			for (let i = 0; i < items.length; i++) {
+				const raw = items[i] ?? {};
+				const description = String(raw.description ?? raw.title ?? raw.name ?? raw.text ?? '').trim();
+				const amount = Number(raw.amount ?? raw.value ?? raw.cost ?? 0);
+				if (!description || !Number.isFinite(amount) || amount <= 0) continue;
+				const expense: Expense = {
+					id: raw.id ?? `expense-${Date.now()}-${i}`,
+					amount,
+					currency: String(raw.currency ?? selectedCurrency).toLowerCase() || selectedCurrency,
+					description,
+					paidBy: String(raw.paidBy ?? fallbackPayer),
+					splitWith: Array.isArray(raw.splitWith) && raw.splitWith.length > 0
+						? raw.splitWith.map(String)
+						: allParticipants,
+					date: raw.date ?? new Date().toISOString()
+				};
+				await holosphere.put(holonID, 'expenses', expense);
+			}
+			showImportModal = false;
+		} catch (error: any) {
+			if (error?.name === 'AuthorizationError') {
+				notifyWriteDenied('Unable to save - no write permission for this holon');
+			} else {
+				console.error('Error importing expenses:', error);
+			}
+		}
+	}
 </script>
 
 <div class="expenses-container">
@@ -321,6 +359,8 @@
 	<FeatureToolbar
 		onAdd={openAddExpense}
 		addLabel="Add Expense"
+		onImport={() => (showImportModal = true)}
+		importLabel="Import"
 		bind:searchQuery={filters.searchQuery}
 		searchPlaceholder="Search expenses…"
 		bind:showFederated={filters.showFederated}
@@ -556,6 +596,29 @@
 		</div>
 	</div>
 {/if}
+
+<GenericImportModal
+	bind:open={showImportModal}
+	title="Import Expenses"
+	itemNoun="expenses"
+	helpText="Paste a JSON array of expenses or one description per line. Required: description, amount."
+	sampleJson={`[
+  {
+    "description": "Groceries",
+    "amount": 42.50,
+    "currency": "usd",
+    "paidBy": "user-id-1",
+    "splitWith": ["user-id-1", "user-id-2"],
+    "date": "2026-04-30T12:00:00.000Z"
+  },
+  {
+    "description": "Coffee run",
+    "amount": 8.75
+  }
+]`}
+	on:import={handleImport}
+	on:close={() => (showImportModal = false)}
+/>
 
 <style>
 	.expenses-container {

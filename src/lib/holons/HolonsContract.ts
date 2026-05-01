@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import type { EventEmitter } from 'events';
+import type EventEmitter from 'eventemitter3';
 import {
   CONTRACT_ABIS,
   CONTRACT_ADDRESSES,

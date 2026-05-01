@@ -23,7 +23,7 @@
 	import TitleBar from "./shared/TitleBar.svelte";
 	import FeatureToolbar from "./shared/FeatureToolbar.svelte";
 	import ToggleChip from "./shared/ToggleChip.svelte";
-	import { CheckSquare, Calendar as CalendarIcon, Plus, List, Grid, Columns, Upload } from 'svelte-feathers';
+	import { CheckSquare, Calendar as CalendarIcon, Plus, List, Grid, Columns } from 'svelte-feathers';
 	import {
 		calculateTaskCompletionScores,
 		getActionScore,
@@ -1790,6 +1790,8 @@
 				<FeatureToolbar
 					onAdd={showDialog}
 					addLabel="Add Task"
+					onImport={() => (showImportModal = true)}
+					importLabel="Import"
 					viewMode={viewMode}
 					on:viewChange={(e) => (viewMode = e.detail as 'list' | 'canvas' | 'kanban')}
 					viewModes={[
@@ -1840,17 +1842,6 @@
 						</button>
 
 						<ToggleChip bind:checked={showCompleted} label="Completed" />
-					</svelte:fragment>
-
-					<svelte:fragment slot="actions">
-						<button
-							onclick={() => (showImportModal = true)}
-							class="icon-btn"
-							aria-label="Import quests"
-							title="Import quests"
-						>
-							<Upload size="14" />
-						</button>
 					</svelte:fragment>
 				</FeatureToolbar>
 

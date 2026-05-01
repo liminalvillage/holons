@@ -52,13 +52,15 @@
     interface FederationInfo {
         id: string;
         name: string;
-        federation: string[];
-        notify: string[];
+        federated: string[];
+        inbound: string[];
+        outbound: string[];
         lensConfig?: Record<string, {
-            federate: string[];
-            notify: string[];
+            inbound: string[];
+            outbound: string[];
             timestamp: number;
         }>;
+        partnerNames?: Record<string, string>;
         timestamp: number;
     }
 
@@ -66,7 +68,7 @@
         id: string;
         name: string;
         bidirectional: boolean;
-        lensConfig: { federate: string[]; notify: string[] };
+        lensConfig: { inbound: string[]; outbound: string[] };
     }
 
     let currentHolonId = '';
@@ -113,9 +115,12 @@
     async function subscribeFederationChanges() {
         if (!holosphere || !currentHolonId) return;
         try {
-            federationSubscription = await holosphere.subscribe(
-                currentHolonId,
+            // Federation lives in the global `federation` table keyed by holon ID,
+            // not the per-holon `federation` lens — must use subscribeGlobal so the
+            // initial cache hit AND subsequent updates both refresh the UI.
+            federationSubscription = await holosphere.subscribeGlobal(
                 'federation',
+                currentHolonId,
                 async () => loadFederationData()
             );
         } catch (err) {
@@ -136,27 +141,28 @@
 
             const seen = new Set<string>();
             const result: FederatedHolon[] = [];
+            const inboundSet  = new Set(federationInfo.inbound  || []);
+            const outboundSet = new Set(federationInfo.outbound || []);
 
-            const pushHolon = async (holonId: string, bidirectional: boolean) => {
+            const pushHolon = async (holonId: string) => {
                 if (seen.has(holonId)) return;
                 seen.add(holonId);
-                const lensConfig = federationInfo!.lensConfig?.[holonId] ?? { federate: [], notify: [] };
-                let name = holonId;
+                const cfg = federationInfo!.lensConfig?.[holonId] ?? { inbound: [], outbound: [] };
+                const lensConfig = { inbound: cfg.inbound ?? [], outbound: cfg.outbound ?? [] };
+                const bidirectional = inboundSet.has(holonId) && outboundSet.has(holonId);
+                let name = federationInfo!.partnerNames?.[holonId] ?? holonId;
                 try {
                     name = await forceRefreshHolonName(holosphere, holonId);
                 } catch {
-                    /* fall back to id */
+                    /* fall back to id / partnerName */
                 }
                 result.push({ id: holonId, name, bidirectional, lensConfig });
                 resolveName(holonId);
             };
 
-            for (const id of federationInfo.federation || []) {
-                const bidirectional = federationInfo.notify?.includes(id) || false;
-                await pushHolon(id, bidirectional);
-            }
-            for (const id of federationInfo.notify || []) {
-                await pushHolon(id, false);
+            // `federated` is the canonical partner list; iterate it to render one card per partner.
+            for (const id of federationInfo.federated || []) {
+                await pushHolon(id);
             }
 
             federatedHolons = result;
@@ -185,7 +191,7 @@
         try {
             const ok = await holosphere.federate(
                 currentHolonId, target, null, null, true,
-                { federate: [], notify: [] }
+                { inbound: [], outbound: [] }
             );
             if (ok) {
                 showAddDialog = false;
@@ -222,13 +228,13 @@
         }
     }
 
-    async function updateLensConfig(holonId: string, federate: string[], notify: string[]) {
+    async function updateLensConfig(holonId: string, inbound: string[], outbound: string[]) {
         if (!holosphere || !currentHolonId) return;
         saving = true;
         try {
             const ok = await holosphere.federate(
                 currentHolonId, holonId, null, null, true,
-                { federate, notify }
+                { inbound, outbound }
             );
             if (ok) {
                 await new Promise(r => setTimeout(r, 300));
@@ -242,22 +248,22 @@
         }
     }
 
-    async function toggleInbound(holon: FederatedHolon, lens: string) {
+    async function toggleInboundLens(holon: FederatedHolon, lens: string) {
         if (saving) return;
-        const isOn = hasLens(lens, holon.lensConfig.federate);
+        const isOn = hasLens(lens, holon.lensConfig.inbound);
         const next = isOn
-            ? holon.lensConfig.federate.filter(l => normalizeLens(l) !== normalizeLens(lens))
-            : [...holon.lensConfig.federate, normalizeLens(lens)];
-        await updateLensConfig(holon.id, next, holon.lensConfig.notify);
+            ? holon.lensConfig.inbound.filter(l => normalizeLens(l) !== normalizeLens(lens))
+            : [...holon.lensConfig.inbound, normalizeLens(lens)];
+        await updateLensConfig(holon.id, next, holon.lensConfig.outbound);
     }
 
-    async function toggleOutbound(holon: FederatedHolon, lens: string) {
+    async function toggleOutboundLens(holon: FederatedHolon, lens: string) {
         if (saving) return;
-        const isOn = hasLens(lens, holon.lensConfig.notify);
+        const isOn = hasLens(lens, holon.lensConfig.outbound);
         const next = isOn
-            ? holon.lensConfig.notify.filter(l => normalizeLens(l) !== normalizeLens(lens))
-            : [...holon.lensConfig.notify, normalizeLens(lens)];
-        await updateLensConfig(holon.id, holon.lensConfig.federate, next);
+            ? holon.lensConfig.outbound.filter(l => normalizeLens(l) !== normalizeLens(lens))
+            : [...holon.lensConfig.outbound, normalizeLens(lens)];
+        await updateLensConfig(holon.id, holon.lensConfig.inbound, next);
     }
 
     async function repairLensConfigs() {
@@ -265,7 +271,7 @@
         let dirty = false;
         for (let i = 0; i < federatedHolons.length; i++) {
             const h = federatedHolons[i];
-            if (!h.lensConfig.federate.length && !h.lensConfig.notify.length) {
+            if (!h.lensConfig.inbound.length && !h.lensConfig.outbound.length) {
                 try {
                     const refreshed = await holosphere.getFederatedConfig(currentHolonId, h.id);
                     if (refreshed) {
@@ -316,8 +322,8 @@
 
     $: totalFederations = federatedHolons.length;
     $: activeLenses = federatedHolons.reduce((acc, h) => {
-        h.lensConfig.federate.forEach(l => acc.add(normalizeLens(l)));
-        h.lensConfig.notify.forEach(l => acc.add(normalizeLens(l)));
+        h.lensConfig.inbound.forEach(l => acc.add(normalizeLens(l)));
+        h.lensConfig.outbound.forEach(l => acc.add(normalizeLens(l)));
         return acc;
     }, new Set<string>()).size;
 </script>
@@ -425,8 +431,8 @@
                                 </span>
                             </div>
                             {#each ALL_LENSES as lens}
-                                {@const isIn = hasLens(lens, holon.lensConfig.federate)}
-                                {@const isOut = hasLens(lens, holon.lensConfig.notify)}
+                                {@const isIn = hasLens(lens, holon.lensConfig.inbound)}
+                                {@const isOut = hasLens(lens, holon.lensConfig.outbound)}
                                 <div class="lens-row">
                                     <span class="lens-row__name">
                                         <span class="lens-row__icon">{lensIcon(lens)}</span>
@@ -437,7 +443,7 @@
                                         class="toggle"
                                         class:toggle--on={isIn}
                                         class:toggle--in={isIn}
-                                        on:click={() => toggleInbound(holon, lens)}
+                                        on:click={() => toggleInboundLens(holon, lens)}
                                         disabled={saving}
                                         aria-pressed={isIn}
                                         aria-label="{isIn ? 'Disable' : 'Enable'} inbound {lens}"
@@ -450,7 +456,7 @@
                                         class="toggle"
                                         class:toggle--on={isOut}
                                         class:toggle--out={isOut}
-                                        on:click={() => toggleOutbound(holon, lens)}
+                                        on:click={() => toggleOutboundLens(holon, lens)}
                                         disabled={saving}
                                         aria-pressed={isOut}
                                         aria-label="{isOut ? 'Disable' : 'Enable'} outbound {lens}"

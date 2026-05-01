@@ -173,7 +173,7 @@
                 console.log("Registry empty or sparse, checking communities lens...");
 
                 try {
-                    const communities = await holosphere.getAll('global', 'communities');
+                    const communities = await holosphere.getAllGlobal('communities');
                     if (communities && typeof communities === 'object') {
                         Object.keys(communities).forEach(key => {
                             if (key && !key.startsWith('_')) {

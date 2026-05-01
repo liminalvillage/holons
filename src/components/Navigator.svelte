@@ -805,8 +805,7 @@
             const holonIds = new Set<string>();
 
             try {
-                // Try to get holons from global registry using 'global' as holonId
-                const registry = await holosphere.getAll('global', 'holons_registry');
+                const registry = await holosphere.getAllGlobal('holons_registry');
                 if (registry && typeof registry === 'object') {
                     Object.keys(registry).forEach(key => {
                         if (key && !key.startsWith('_')) {
@@ -815,8 +814,9 @@
                     });
                 }
 
-                // Also try to get from communities lens
-                const communities = await holosphere.getAll('global', 'communities');
+                // Legacy fallback for installs that still have data in the
+                // `communities` global table (no current code writes to it).
+                const communities = await holosphere.getAllGlobal('communities');
                 if (communities && typeof communities === 'object') {
                     Object.keys(communities).forEach(key => {
                         if (key && !key.startsWith('_')) {

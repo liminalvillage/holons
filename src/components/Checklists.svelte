@@ -7,6 +7,7 @@
     import type { HoloSphere } from "holosphere";
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+    import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { nameMap, resolvedName, resolveName } from '$lib/stores/nameResolver';
     import { CheckSquareIcon as CheckSquare } from 'svelte-feather-icons';
     import { Plus } from 'svelte-feathers';
@@ -347,6 +348,48 @@
         showInput = true;
     }
 
+    let showImportModal = false;
+
+    async function handleImport(event: CustomEvent<any[]>) {
+        if (!holonID) return;
+        const items = event.detail;
+        try {
+            for (const raw of items) {
+                const src = raw ?? {};
+                const id = String(src.id ?? src.title ?? src.name ?? src.text ?? '').trim();
+                if (!id) continue;
+
+                const rawItems = Array.isArray(src.items) ? src.items : [];
+                const checklistItems: ChecklistItem[] = rawItems
+                    .map((it: any) => {
+                        if (typeof it === 'string') return { text: it, checked: false };
+                        if (it && typeof it === 'object') {
+                            const text = String(it.text ?? it.title ?? it.name ?? '').trim();
+                            if (!text) return null;
+                            return { text, checked: Boolean(it.checked) };
+                        }
+                        return null;
+                    })
+                    .filter(Boolean) as ChecklistItem[];
+
+                const newChecklist: Checklist = {
+                    id,
+                    items: checklistItems,
+                    creator: "Dashboard User",
+                    created: new Date()
+                };
+                await holosphere.put(holonID, "checklists", newChecklist);
+            }
+            showImportModal = false;
+        } catch (error: any) {
+            if (error?.name === 'AuthorizationError') {
+                notifyWriteDenied('Unable to save - no write permission for this holon');
+            } else {
+                console.error("Failed to import checklists:", error);
+            }
+        }
+    }
+
     async function handleAdd(): Promise<void> {
         if (!inputText.trim() || !holonID) return;
 
@@ -672,6 +715,8 @@
                     <FeatureToolbar
                         onAdd={(filters.activeFilter === 'all' || filters.activeFilter === 'standalone') ? (() => showAddInput(true)) : null}
                         addLabel="Add Checklist"
+                        onImport={(filters.activeFilter === 'all' || filters.activeFilter === 'standalone') ? (() => (showImportModal = true)) : null}
+                        importLabel="Import"
                         bind:searchQuery={filters.searchQuery}
                         searchPlaceholder="Search checklists…"
                         bind:showFederated={filters.showFederated}
@@ -900,3 +945,26 @@
         </div>
     </div>
 {/if}
+
+<GenericImportModal
+    bind:open={showImportModal}
+    title="Import Checklists"
+    itemNoun="checklists"
+    helpText="Paste a JSON array of checklists or one list name per line. Required: id (becomes the list title). Items can be plain strings or objects with text and checked."
+    sampleJson={`[
+  {
+    "id": "Morning Routine",
+    "items": [
+      "Make bed",
+      "Drink water",
+      { "text": "Stretch", "checked": false }
+    ]
+  },
+  {
+    "id": "Travel Packing",
+    "items": ["Passport", "Charger", "Toothbrush"]
+  }
+]`}
+    on:import={handleImport}
+    on:close={() => (showImportModal = false)}
+/>

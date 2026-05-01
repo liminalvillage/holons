@@ -6,6 +6,7 @@
     import { awaitName, resolveHologramSource, nameMap } from "$lib/stores/nameResolver";
     import TitleBar from "./shared/TitleBar.svelte";
     import FeatureToolbar from "./shared/FeatureToolbar.svelte";
+    import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { Package, Plus, Calendar } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
 
@@ -508,6 +509,44 @@
         today.setHours(0, 0, 0, 0);
         return returnDate < today;
     }
+
+    let showImportModal = false;
+
+    async function handleImport(event: CustomEvent<any[]>) {
+        if (!holonID) return;
+        const items = event.detail;
+        try {
+            for (const raw of items) {
+                const src = raw ?? {};
+                const id = String(src.id ?? src.name ?? src.title ?? src.text ?? '').trim();
+                if (!id || store[id]) continue;
+                const itemType = src.type && Object.values(LIBRARY_TYPES).includes(src.type)
+                    ? src.type
+                    : detectItemType(id);
+                const newItem: LibraryItem = {
+                    id,
+                    type: itemType,
+                    borrowed: false,
+                    borrower: null,
+                    borrowerId: null,
+                    borrowerInitials: null,
+                    borrowedAt: null,
+                    returnBy: null,
+                    createdBy: currentUserId,
+                    createdByUsername: currentUsername,
+                    category: String(src.category ?? 'Uncategorized'),
+                    description: String(src.description ?? ''),
+                    value: Number(src.value ?? 0) || 0,
+                    created: new Date().toISOString()
+                };
+                store = { ...store, [newItem.id]: newItem };
+                await holosphere.put(holonID, "library", newItem);
+            }
+            showImportModal = false;
+        } catch (err) {
+            console.error("Failed to import library items", err);
+        }
+    }
 </script>
 
 <div class="space-y-4">
@@ -543,6 +582,8 @@
             <FeatureToolbar
                 onAdd={showAddInput}
                 addLabel="Add Item"
+                onImport={() => (showImportModal = true)}
+                importLabel="Import"
                 bind:searchQuery={filters.searchQuery}
                 searchPlaceholder="Search library…"
                 bind:showFederated={filters.showFederated}
@@ -1069,4 +1110,27 @@
         </div>
     </div>
 {/if}
+
+<GenericImportModal
+    bind:open={showImportModal}
+    title="Import Library Items"
+    itemNoun="items"
+    helpText="Paste a JSON array of items or one name per line. Required: name. Type is auto-detected if omitted."
+    sampleJson={`[
+  {
+    "name": "Cordless Drill",
+    "type": "tool",
+    "category": "Power Tools",
+    "description": "18V, 2 batteries",
+    "value": 120
+  },
+  {
+    "name": "The Pragmatic Programmer",
+    "type": "book",
+    "category": "Software"
+  }
+]`}
+    on:import={handleImport}
+    on:close={() => (showImportModal = false)}
+/>
 
