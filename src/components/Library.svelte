@@ -9,6 +9,8 @@
     import GenericImportModal from "./shared/GenericImportModal.svelte";
     import { Package, Plus, Calendar } from 'svelte-feathers';
     import { loadFilters, saveFilters } from '$lib/util/persistedFilters';
+    import { telegramStore } from '$lib/stores/telegram';
+    import { nostrPublicKey } from '$lib/stores/nostr';
 
     // Library item types
     const LIBRARY_TYPES = {
@@ -107,8 +109,46 @@
     // Borrow modal state
     let showBorrowModal = false;
     let borrowingItem: LibraryItem | null = null;
+    let selectedStartDate: string = "";
     let selectedReturnDate: string = "";
     let currentMonth = new Date();
+    let startCalendarMonth = new Date();
+    // Default = "borrowing now" — start date is today and the calendar is hidden.
+    let borrowNow: boolean = true;
+
+    // Resolve the active borrower from Telegram (preferred) → Nostr → legacy
+    // localStorage. Built fresh on each borrow so re-logins are picked up.
+    function resolveBorrowerIdentity(): { id: string; username: string; initials: string } {
+        const telegramUser = telegramStore.getState().user;
+        if (telegramUser) {
+            const username = telegramUser.username
+                || [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(' ').trim()
+                || `tg-${telegramUser.id}`;
+            const initialsSource = telegramUser.first_name || telegramUser.username || `${telegramUser.id}`;
+            return {
+                id: String(telegramUser.id),
+                username,
+                initials: (initialsSource.charAt(0) || '?').toUpperCase()
+            };
+        }
+
+        const nostrPub = $nostrPublicKey;
+        if (nostrPub) {
+            return {
+                id: nostrPub,
+                username: `${nostrPub.slice(0, 8)}…`,
+                initials: (nostrPub.charAt(0) || '?').toUpperCase()
+            };
+        }
+
+        const id = currentUserId || '';
+        const username = currentUsername || '';
+        return {
+            id,
+            username,
+            initials: (username.charAt(0) || '?').toUpperCase()
+        };
+    }
 
     // Item detail modal state
     let showItemDetail = false;
@@ -324,24 +364,36 @@
 
     function openBorrowModal(item: LibraryItem) {
         borrowingItem = item;
+        borrowNow = true;
+        selectedStartDate = formatDate(new Date());
         selectedReturnDate = "";
         currentMonth = new Date();
+        startCalendarMonth = new Date();
         showBorrowModal = true;
     }
 
-    async function handleBorrow() {
-        if (!borrowingItem || !selectedReturnDate || !holonID) return;
+    // Keep the start date pinned to today while "borrow now" is on; the user
+    // toggles it off to switch to the start-date calendar.
+    $: if (borrowNow) {
+        selectedStartDate = formatDate(new Date());
+    }
 
-        const firstName = currentUsername.charAt(0).toUpperCase();
-        const initials = firstName || '?';
+    async function handleBorrow() {
+        if (!borrowingItem || !selectedReturnDate || !selectedStartDate || !holonID) return;
+
+        const borrower = resolveBorrowerIdentity();
+
+        // Treat the start date as midnight local time, then store as ISO so it
+        // round-trips with the same calendar day other UIs render.
+        const startDateIso = new Date(`${selectedStartDate}T00:00:00`).toISOString();
 
         const updatedItem: LibraryItem = {
             ...borrowingItem,
             borrowed: true,
-            borrower: currentUsername,
-            borrowerId: currentUserId,
-            borrowerInitials: initials,
-            borrowedAt: new Date().toISOString(),
+            borrower: borrower.username,
+            borrowerId: borrower.id,
+            borrowerInitials: borrower.initials,
+            borrowedAt: startDateIso,
             returnBy: selectedReturnDate
         };
 
@@ -361,8 +413,15 @@
     async function handleReturn(item: LibraryItem) {
         if (!holonID) return;
 
-        // Check if current user is the borrower
-        if (item.borrowerId !== currentUserId && item.borrower !== currentUsername) {
+        // Check if current user is the borrower (matches Telegram/Nostr identity
+        // or the legacy localStorage fallback).
+        const borrower = resolveBorrowerIdentity();
+        const isBorrower =
+            item.borrowerId === borrower.id ||
+            item.borrower === borrower.username ||
+            item.borrowerId === currentUserId ||
+            item.borrower === currentUsername;
+        if (!isBorrower) {
             alert(`Only ${item.borrower || 'the borrower'} can return this item.`);
             return;
         }
@@ -443,16 +502,34 @@
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     }
 
-    function isDateSelectable(year: number, month: number, day: number): boolean {
+    function isReturnDateSelectable(year: number, month: number, day: number): boolean {
         const date = new Date(year, month, day);
+        date.setHours(0, 0, 0, 0);
+
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        return date >= today;
+
+        // Return must be today-or-later, and never before the chosen start.
+        if (date < today) return false;
+        if (selectedStartDate) {
+            const start = new Date(`${selectedStartDate}T00:00:00`);
+            start.setHours(0, 0, 0, 0);
+            if (date < start) return false;
+        }
+        return true;
     }
 
-    function selectDate(year: number, month: number, day: number) {
-        if (isDateSelectable(year, month, day)) {
+    function selectReturnDate(year: number, month: number, day: number) {
+        if (isReturnDateSelectable(year, month, day)) {
             selectedReturnDate = formatDate(new Date(year, month, day));
+        }
+    }
+
+    function selectStartDate(year: number, month: number, day: number) {
+        selectedStartDate = formatDate(new Date(year, month, day));
+        // Drop a return date that's now earlier than the new start.
+        if (selectedReturnDate && new Date(`${selectedReturnDate}T00:00:00`) < new Date(`${selectedStartDate}T00:00:00`)) {
+            selectedReturnDate = "";
         }
     }
 
@@ -464,33 +541,46 @@
         currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
     }
 
-    $: calendarDays = (() => {
+    function prevStartMonth() {
+        startCalendarMonth = new Date(startCalendarMonth.getFullYear(), startCalendarMonth.getMonth() - 1, 1);
+    }
+
+    function nextStartMonth() {
+        startCalendarMonth = new Date(startCalendarMonth.getFullYear(), startCalendarMonth.getMonth() + 1, 1);
+    }
+
+    function buildCalendarDays(
+        month: Date,
+        selectedDate: string,
+        isSelectable: (y: number, m: number, d: number) => boolean
+    ) {
         const days: { day: number; selectable: boolean; isToday: boolean; isSelected: boolean }[] = [];
-        const daysInMonth = getDaysInMonth(currentMonth);
-        const firstDay = getFirstDayOfMonth(currentMonth);
+        const daysInMonth = getDaysInMonth(month);
+        const firstDay = getFirstDayOfMonth(month);
         const today = new Date();
 
-        // Empty cells for days before first of month
         for (let i = 0; i < firstDay; i++) {
             days.push({ day: 0, selectable: false, isToday: false, isSelected: false });
         }
 
-        // Days of the month
         for (let day = 1; day <= daysInMonth; day++) {
-            const dateStr = formatDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day));
+            const dateStr = formatDate(new Date(month.getFullYear(), month.getMonth(), day));
             const isToday = today.getDate() === day &&
-                           today.getMonth() === currentMonth.getMonth() &&
-                           today.getFullYear() === currentMonth.getFullYear();
+                           today.getMonth() === month.getMonth() &&
+                           today.getFullYear() === month.getFullYear();
             days.push({
                 day,
-                selectable: isDateSelectable(currentMonth.getFullYear(), currentMonth.getMonth(), day),
+                selectable: isSelectable(month.getFullYear(), month.getMonth(), day),
                 isToday,
-                isSelected: dateStr === selectedReturnDate
+                isSelected: dateStr === selectedDate
             });
         }
 
         return days;
-    })();
+    }
+
+    $: calendarDays = buildCalendarDays(currentMonth, selectedReturnDate, isReturnDateSelectable);
+    $: startCalendarDays = buildCalendarDays(startCalendarMonth, selectedStartDate, () => true);
 
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                         'July', 'August', 'September', 'October', 'November', 'December'];
@@ -901,6 +991,80 @@
                 {/if}
 
                 <div class="mb-4">
+                    <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+                        <input type="checkbox" bind:checked={borrowNow} class="accent-indigo-500" />
+                        <span>Borrow starting now</span>
+                    </label>
+                </div>
+
+                {#if !borrowNow}
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-300 mb-3">Select start date:</label>
+
+                        <!-- Start-date calendar -->
+                        <div class="bg-gray-700/50 rounded-xl p-4">
+                            <!-- Month Navigation -->
+                            <div class="flex items-center justify-between mb-4">
+                                <button
+                                    on:click={prevStartMonth}
+                                    class="p-2 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                    </svg>
+                                </button>
+                                <span class="text-white font-medium">
+                                    {monthNames[startCalendarMonth.getMonth()]} {startCalendarMonth.getFullYear()}
+                                </span>
+                                <button
+                                    on:click={nextStartMonth}
+                                    class="p-2 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 hover:text-white"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- Day Names -->
+                            <div class="grid grid-cols-7 gap-1 mb-2">
+                                {#each dayNames as day}
+                                    <div class="text-center text-xs text-gray-400 font-medium py-1">{day}</div>
+                                {/each}
+                            </div>
+
+                            <!-- Calendar Days -->
+                            <div class="grid grid-cols-7 gap-1">
+                                {#each startCalendarDays as { day, selectable, isToday, isSelected }}
+                                    {#if day === 0}
+                                        <div class="h-9"></div>
+                                    {:else}
+                                        <button
+                                            type="button"
+                                            disabled={!selectable}
+                                            on:click={() => selectStartDate(startCalendarMonth.getFullYear(), startCalendarMonth.getMonth(), day)}
+                                            class="h-9 rounded-lg text-sm font-medium transition-all duration-200
+                                                {isSelected ? 'bg-indigo-600 text-white' : ''}
+                                                {isToday && !isSelected ? 'bg-gray-600 text-white ring-2 ring-indigo-400' : ''}
+                                                {selectable && !isSelected && !isToday ? 'hover:bg-gray-600 text-gray-200' : ''}
+                                                {!selectable ? 'text-gray-600 cursor-not-allowed' : ''}"
+                                        >
+                                            {day}
+                                        </button>
+                                    {/if}
+                                {/each}
+                            </div>
+                        </div>
+
+                        {#if selectedStartDate}
+                            <p class="mt-3 text-center text-indigo-300 font-medium">
+                                Starts: {formatReturnDate(selectedStartDate)}
+                            </p>
+                        {/if}
+                    </div>
+                {/if}
+
+                <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-300 mb-3">Select return date:</label>
 
                     <!-- Calendar -->
@@ -944,7 +1108,7 @@
                                     <button
                                         type="button"
                                         disabled={!selectable}
-                                        on:click={() => selectDate(currentMonth.getFullYear(), currentMonth.getMonth(), day)}
+                                        on:click={() => selectReturnDate(currentMonth.getFullYear(), currentMonth.getMonth(), day)}
                                         class="h-9 rounded-lg text-sm font-medium transition-all duration-200
                                             {isSelected ? 'bg-indigo-600 text-white' : ''}
                                             {isToday && !isSelected ? 'bg-gray-600 text-white ring-2 ring-indigo-400' : ''}
@@ -977,7 +1141,7 @@
                         type="button"
                         on:click={handleBorrow}
                         class="btn btn--primary"
-                        disabled={!selectedReturnDate}
+                        disabled={!selectedReturnDate || !selectedStartDate}
                     >
                         Confirm Borrow
                     </button>
