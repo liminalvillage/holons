@@ -54,11 +54,16 @@
 	async function initializeUserHolon(privateKey: string) {
 		if (!holosphere || !holosphere.client?.publicKey) return;
 
-		// For telegram-mapped sessions, use the mapped public key instead of service key
-		const userPublicKey = isTelegramMappedSession && telegramMappedPublicKey
-			? telegramMappedPublicKey
-			: holosphere.client.publicKey;
-		console.log('Initializing user holon with ID:', userPublicKey, 'telegram-mapped:', isTelegramMappedSession);
+		// Telegram users are namespaced by their Telegram user id, so the URL and
+		// holon storage key reflect who they are (e.g. /12345678/...) rather
+		// than the underlying Nostr signing key. Falls back to the mapped Nostr
+		// pubkey for legacy sessions or to client.publicKey for plain Nostr.
+		const userPublicKey = pendingTelegramUserId
+			? String(pendingTelegramUserId)
+			: isTelegramMappedSession && telegramMappedPublicKey
+				? telegramMappedPublicKey
+				: holosphere.client.publicKey;
+		console.log('Initializing user holon with ID:', userPublicKey, 'telegram-mapped:', isTelegramMappedSession, 'telegramUserId:', pendingTelegramUserId);
 
 		try {
 			// Check if holon settings already exist with retry logic
@@ -497,12 +502,17 @@
 		if (privateKey) {
 			await initHoloSphere(privateKey);
 
-			// For telegram-mapped sessions, set the user's public key in the holon
-			// list but respect any holon ID in the URL — visiting /[someoneElsesId]
-			// after Telegram login should land on that holon, not bounce to your own.
+			// For telegram-mapped sessions, set the user's holon id (preferring
+			// the Telegram user id when available) but respect any holon ID in
+			// the URL — visiting /[someoneElsesId] after Telegram login should
+			// land on that holon, not bounce to your own.
 			if (isTelegramMappedSession && telegramMappedPublicKey) {
+				const homeHolonId = pendingTelegramUserId
+					? String(pendingTelegramUserId)
+					: telegramMappedPublicKey;
+
 				if (browser) {
-					addVisitedHolon(null, telegramMappedPublicKey, holonName || 'My Holon', 'personal');
+					addVisitedHolon(null, homeHolonId, holonName || 'My Holon', 'personal');
 				}
 
 				const currentPath = $page.url.pathname;
@@ -516,8 +526,8 @@
 					ID.set(holonIdInUrl);
 					console.log('Telegram-mapped session - respecting holon ID from URL:', holonIdInUrl);
 				} else {
-					ID.set(telegramMappedPublicKey);
-					goto(`/${telegramMappedPublicKey}/dashboard`);
+					ID.set(homeHolonId);
+					goto(`/${homeHolonId}/dashboard`);
 				}
 			}
 		} else {
