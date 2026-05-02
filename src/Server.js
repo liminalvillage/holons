@@ -10,6 +10,7 @@ import axios from 'axios';
 import https from 'https';
 import crypto from 'crypto';
 import { log } from '../utils/logger.js';
+import Quests from './Quests.js';
 
 /**
  * Express server for serving static files, avatars, and images.
@@ -601,7 +602,14 @@ class Server {
       return;
     }
 
-    const messageId = Number(questId);
+    // Quest IDs from harvest are opaque strings, so we can't blindly do
+    // Number(questId). Resolve the real Telegram message_id via the quest's
+    // active holograms (or, for legacy bot-native quests, via a numeric id).
+    const messageId = Quests.resolveTelegramMessageId(quest, holon);
+    if (messageId == null) {
+      log.info(`refresh: no Telegram message for quest ${questId} in holon ${holon}; skipping`);
+      return;
+    }
     const fakeCtx = { telegram: this.bot.telegram };
     const markupConfig = quests.markup(quest, language);
     await quests.updateQuestMessage(fakeCtx, quest, holon, messageId, language, markupConfig);

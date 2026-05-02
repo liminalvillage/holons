@@ -47,6 +47,74 @@ export default class Quests {
         return quest?.holon ?? quest?.chat ?? null;
     }
 
+    // Parse callback data of the form `<prefix><holonId>_<questId>`. Holon IDs
+    // are Telegram chat IDs (digits + optional leading `-`, no underscores), so
+    // the holon is everything before the first `_`. Quest IDs from harvest can
+    // contain `_` (e.g. `"1714510123456_abc123def"`), so the rest is the quest
+    // id verbatim. Pass `prefix` when the handler runs through a generic
+    // dispatcher that doesn't set ctx.match for the inner action.
+    static parseQuestIds(ctx, prefix = null) {
+        const data = ctx.callbackQuery?.data ?? '';
+        const suffix = (typeof prefix === 'string' && data.startsWith(prefix))
+            ? data.slice(prefix.length)
+            : (ctx.match?.[1] ?? '');
+        const sep = suffix.indexOf('_');
+        if (sep < 0) return { holonId: suffix, questId: '' };
+        return {
+            holonId: suffix.slice(0, sep),
+            questId: suffix.slice(sep + 1),
+        };
+    }
+
+    // Same as parseQuestIds but for `<prefix><holonId>_<questId>_<tail>` where
+    // <tail> is a known short token without `_` (e.g. a frequency word).
+    static parseQuestIdsWithTail(ctx, prefix = null) {
+        const data = ctx.callbackQuery?.data ?? '';
+        const suffix = (typeof prefix === 'string' && data.startsWith(prefix))
+            ? data.slice(prefix.length)
+            : (ctx.match?.[1] ?? '');
+        const last = suffix.lastIndexOf('_');
+        if (last < 0) return { holonId: '', questId: '', tail: suffix };
+        const tail = suffix.slice(last + 1);
+        const head = suffix.slice(0, last);
+        const first = head.indexOf('_');
+        if (first < 0) return { holonId: head, questId: '', tail };
+        return {
+            holonId: head.slice(0, first),
+            questId: head.slice(first + 1),
+            tail,
+        };
+    }
+
+    // Resolve the Telegram message_id that represents this quest in the given
+    // holon. Returns null when no Telegram representation exists (e.g. a quest
+    // created in harvest that has never been rendered as a Telegram hologram).
+    //
+    // quest.id is an opaque identifier — it equals the Telegram message_id only
+    // for legacy bot-native quests created via /task, where the bot assigns
+    // quest.id = sent.message_id. Harvest quests use string IDs that look
+    // nothing like message_ids, so any code that needs to call editMessage*,
+    // deleteMessage, pinChatMessage, etc. must go through this resolver.
+    static resolveTelegramMessageId(quest, holonId) {
+        if (!quest || holonId == null) return null;
+        const target = String(holonId);
+        const entry = (quest.activeHolograms || []).find(h =>
+            String(h.holonId) === target &&
+            (!h.platform || h.platform === 'telegram')
+        );
+        if (entry?.messageId != null) {
+            const n = Number(entry.messageId);
+            return Number.isFinite(n) ? n : null;
+        }
+        // Legacy bot-native quests: quest.id is the Telegram message_id of the
+        // original message in the home holon.
+        if (target === String(Quests.getQuestHolon(quest))) {
+            const id = String(quest.id ?? '');
+            if (/^-?\d+$/.test(id)) return Number(id);
+        }
+        return null;
+    }
+
     /**
      * Creates a new Quests instance and registers all quest commands and actions.
      * @constructor
@@ -374,7 +442,7 @@ export default class Quests {
     }
 
     async handleParticipation(ctx, action) {
-        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: messageId } = Quests.parseQuestIds(ctx);
         const sender = ctx.callbackQuery.from;
 
         log.info(`handleParticipation called - action: ${action}, holonId: ${holonId}, messageId: ${messageId}, user: ${sender.id}`);
@@ -440,7 +508,7 @@ export default class Quests {
     }
 
     async cancel(ctx) {
-        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: messageId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
         const holonDB = await this.getHolonDB(holonId);
 
@@ -487,12 +555,20 @@ export default class Quests {
         }
 
         await holonDB.delete(holonId, 'quests', messageId);
-        await ctx.telegram.unpinChatMessage(holonId, messageId).catch(() => {});
-        await ctx.deleteMessage(messageId).catch(() => {});
+        // unpin/delete need real Telegram message_ids — resolve from the quest's
+        // active holograms (handles harvest quests where messageId is a string).
+        const mainTgId = Quests.resolveTelegramMessageId(quest, holonId);
+        if (mainTgId != null) {
+            await ctx.telegram.unpinChatMessage(holonId, mainTgId).catch(() => {});
+            await ctx.telegram.deleteMessage(holonId, mainTgId).catch(() => {});
+        } else {
+            // Fall back to deleting the message that was clicked.
+            await ctx.deleteMessage().catch(() => {});
+        }
     }
 
     async complete(ctx) {
-        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: messageId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
         const holonDB = await this.getHolonDB(holonId);
         const quest = await holonDB.get(holonId, 'quests', messageId);
@@ -549,7 +625,7 @@ export default class Quests {
     }
 
     async stop(ctx) {
-        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: messageId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
         const holonDB = await this.getHolonDB(holonId);
         const quest = await holonDB.get(holonId, 'quests', messageId);
@@ -578,7 +654,7 @@ export default class Quests {
     }
 
     async schedule(ctx) {
-        const [, , , questID] = ctx.callbackQuery.data.split('_');
+        const { questId: questID } = Quests.parseQuestIds(ctx);
         const holonId = ctx.callbackQuery.message.chat.id;
         const holonDB = await this.getHolonDB(holonId);
 
@@ -612,7 +688,7 @@ export default class Quests {
     }
 
     async handleTimeTracking(ctx, amount, isAdding) {
-        const [, , , holonId, messageId] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: messageId } = Quests.parseQuestIds(ctx);
         const sender = ctx.callbackQuery.from;
 
         log.info(`handleTimeTracking called - amount: ${amount}, isAdding: ${isAdding}, holonId: ${holonId}, messageId: ${messageId}, user: ${sender.id}`);
@@ -672,7 +748,7 @@ export default class Quests {
 
     // UI Methods
     async showMoreActions(ctx) {
-        const [,, holonId, questID] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: questID } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
         const holonDB = await this.getHolonDB(holonId);
         const quest = await holonDB.get(holonId, 'quests', questID);
@@ -688,7 +764,7 @@ export default class Quests {
     }
 
     async hideMoreActions(ctx) {
-        const [,, holonId, questID] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: questID } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
         const holonDB = await this.getHolonDB(holonId);
         const quest = await holonDB.get(holonId, 'quests', questID);
@@ -983,14 +1059,19 @@ export default class Quests {
             }
         }
 
-        const mainMessageKey = `${questHolon}_${quest.id}`;
-
-        // 2. Update the main Telegram message
-        try {
-            await ctx.telegram.getChat(questHolon);
-            await this.updateQuestMessage(ctx, quest, questHolon, quest.id, language, markupConfig);
-            updatedMessages.add(mainMessageKey);
-        } catch {}
+        // 2. Update the main Telegram message (if one exists). For legacy
+        // bot-native quests this is the message in questHolon with id ===
+        // quest.id; for harvest quests the home holon may have no Telegram
+        // representation at all, in which case we skip and just update the
+        // hologram messages tracked in activeHolograms.
+        const mainMessageId = Quests.resolveTelegramMessageId(quest, questHolon);
+        if (mainMessageId != null) {
+            try {
+                await ctx.telegram.getChat(questHolon);
+                await this.updateQuestMessage(ctx, quest, questHolon, mainMessageId, language, markupConfig);
+                updatedMessages.add(`${questHolon}_${mainMessageId}`);
+            } catch {}
+        }
 
         // 3. ONE unified save - triggers auto-propagation to federated holons
         try {
@@ -1530,7 +1611,7 @@ export default class Quests {
         }
     }
     async publish(ctx) {
-        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: messageId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
         const holonDB = await this.getHolonDB(holonId);
         const quest = await holonDB.get(holonId, 'quests', messageId);
@@ -1569,7 +1650,7 @@ export default class Quests {
         }
     }
     async broadcast(ctx) {
-        const [, , holonId, messageId] = ctx.callbackQuery.data.split('_');
+        const { holonId, questId: messageId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
         const quest = await this.db.get(holonId, 'quests', messageId);
 
@@ -1624,7 +1705,7 @@ export default class Quests {
     }
     async handleChecklistButton(ctx) {
         const holonId = ctx.callbackQuery.message.chat.id;
-        const messageId = ctx.callbackQuery.data.split('_')[3]; // This is the quest.id
+        const { questId: messageId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
 
         try {
@@ -1712,7 +1793,7 @@ export default class Quests {
     }
     async handleDescription(ctx) {
         const holonId = ctx.callbackQuery.message.chat.id;
-        const messageId = ctx.callbackQuery.data.split('_')[3];
+        const { questId: messageId } = Quests.parseQuestIds(ctx);
 
         try {
             const quest = await this.db.get(holonId, 'quests', messageId);
@@ -1744,12 +1825,8 @@ export default class Quests {
         }
     }
     async handleDependenciesButton(ctx) {
-        const callbackData = ctx.callbackQuery.data;
-        const dataParts = callbackData.split('_');
-
-        // Parse callback data: dependencies_quest_{holonId}_{questId}
-        const holonId = dataParts[2];
-        const questId = dataParts[3];
+        // Callback: dependencies_quest_<holonId>_<questId>
+        const { holonId, questId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
 
         try {
@@ -1917,10 +1994,9 @@ export default class Quests {
         }
     }
     async backFromDependencies(ctx) {
-        const parts = ctx.callbackQuery.data.split('_');
-        // Parse callback data: back_from_dependencies_{holonId}_{questId}
-        const holonId = parts[3];
-        const questId = parts[4];
+        // Callback: back_from_dependencies_<holonId>_<questId>
+        // Dispatched from generic /back_(.+)/ handler — pass explicit prefix.
+        const { holonId, questId } = Quests.parseQuestIds(ctx, 'back_from_dependencies_');
         const language = await this.getLanguage(holonId);
 
         try {
@@ -1939,11 +2015,8 @@ export default class Quests {
         }
     }
     async handleRecurringButton(ctx) {
-        const callbackData = ctx.callbackQuery.data;
-        const dataParts = callbackData.split('_');
-
-        const holonId = dataParts[2];
-        const questId = dataParts[3];
+        // Callback: recurring_quest_<holonId>_<questId>
+        const { holonId, questId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
 
         try {
@@ -2014,9 +2087,8 @@ export default class Quests {
         }
     }
     async handleStopRecurring(ctx) {
-        const parts = ctx.callbackQuery.data.split('_');
-        const holonId = parts[2];
-        const questId = parts[3];
+        // Callback: stop_recurring_<holonId>_<questId>
+        const { holonId, questId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
 
         try {
@@ -2048,12 +2120,8 @@ export default class Quests {
         }
     }
     async handleParticipantsButton(ctx) {
-        const callbackData = ctx.callbackQuery.data;
-        const dataParts = callbackData.split('_');
-
-        // Parse callback data: participants_quest_{holonId}_{questId}
-        const holonId = dataParts[2];
-        const questId = dataParts[3];
+        // Callback: participants_quest_<holonId>_<questId>
+        const { holonId, questId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
 
         try {
@@ -2212,10 +2280,9 @@ export default class Quests {
         }
     }
     async backFromParticipants(ctx) {
-        const parts = ctx.callbackQuery.data.split('_');
-        // Parse callback data: back_from_participants_{holonId}_{questId}
-        const holonId = parts[3];
-        const questId = parts[4];
+        // Callback: back_from_participants_<holonId>_<questId>
+        // Dispatched from generic /back_(.+)/ handler — pass explicit prefix.
+        const { holonId, questId } = Quests.parseQuestIds(ctx, 'back_from_participants_');
         const language = await this.getLanguage(holonId);
 
         try {
@@ -2781,10 +2848,9 @@ export default class Quests {
         }
     }
     async handleSetRecurring(ctx) {
-        const parts = ctx.callbackQuery.data.split('_');
-        const holonId = parts[2];
-        const questId = parts[3];
-        const frequency = parts[4];
+        // Callback: set_recurring_<holonId>_<questId>_<frequency>
+        // <frequency> is a known short word (daily/weekly/...) with no `_`.
+        const { holonId, questId, tail: frequency } = Quests.parseQuestIdsWithTail(ctx);
         const language = await this.getLanguage(holonId);
 
         try {
@@ -2847,9 +2913,8 @@ export default class Quests {
     }
 
     async handleBackFromRecurring(ctx) {
-        const parts = ctx.callbackQuery.data.split('_');
-        const holonId = parts[3];
-        const questId = parts[4];
+        // Callback: back_from_recurring_<holonId>_<questId>
+        const { holonId, questId } = Quests.parseQuestIds(ctx);
         const language = await this.getLanguage(holonId);
 
         try {
