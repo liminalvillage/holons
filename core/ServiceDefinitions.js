@@ -145,6 +145,42 @@ export const serviceDefinitions = {
       const holosphere = new HoloSphere(appname, false, null, {
         peers: ['https://gun.holons.io/gun'],
       });
+      // Inspect the local radisk file at startup so we can see what survived
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const radDir = path.resolve(process.cwd(), 'holosphere');
+        let stat = null, files = [];
+        try {
+          stat = fs.statSync(radDir);
+          files = fs.readdirSync(radDir).map(name => {
+            try {
+              const s = fs.statSync(path.join(radDir, name));
+              return { name, size: s.size, mtime: s.mtime.toISOString() };
+            } catch { return { name, error: 'stat-failed' }; }
+          });
+        } catch (e) {
+          stat = { missing: true, error: e.message };
+        }
+        console.log('[QUEST_PERSIST_DEBUG] BOOT', {
+          appname,
+          isDevelopment: config.isDevelopment,
+          cwd: process.cwd(),
+          radiskFile: './holosphere',
+          radiskExists: !!stat && !stat.missing,
+          radiskFiles: files,
+          pid: process.pid,
+        });
+      } catch (e) {
+        console.log('[QUEST_PERSIST_DEBUG] BOOT', {
+          appname,
+          isDevelopment: config.isDevelopment,
+          cwd: process.cwd(),
+          radiskFile: './holosphere',
+          inspectError: e.message,
+          pid: process.pid,
+        });
+      }
 
       const keyManager = {
         masterHolosphere: holosphere,

@@ -668,7 +668,16 @@ class UI {
     const isTopic = ctx.message.is_topic_message;
     const threadId = isTopic ? ctx.message.message_thread_id : null;
 
+    console.log('[QUEST_PERSIST_DEBUG] questboard.read', {
+      holonId: holonId.toString(),
+      appname: this.db.holosphere.appname,
+    });
     let quests = await this.db.holosphere.getAll(holonId.toString(), 'quests')
+    console.log('[QUEST_PERSIST_DEBUG] questboard.getAll', {
+      holonId: holonId.toString(),
+      count: Array.isArray(quests) ? quests.length : 'not-array',
+      ids: Array.isArray(quests) ? quests.slice(0, 10).map(q => ({ id: q?.id, type: q?.type, status: q?.status, title: (q?.title || '').slice(0, 30) })) : 'n/a',
+    });
 
       // Ensure we have a valid array before filtering
       if (!Array.isArray(quests)) {

@@ -325,7 +325,26 @@ export default class Quests {
         }
 
         const holonDB = await this.getHolonDB(holonId);
-        await holonDB.put(holonId, 'quests', quest);
+        console.log('[QUEST_PERSIST_DEBUG] put', {
+            holonId, holonIdType: typeof holonId,
+            questId: quest.id, questIdType: typeof quest.id,
+            appname: holonDB.appname,
+            title: quest.title,
+        });
+        const putResult = await holonDB.put(holonId, 'quests', quest).catch(e => ({ error: e.message }));
+        console.log('[QUEST_PERSIST_DEBUG] put.result', putResult);
+        // Immediate read-back to verify what's in the graph right after write
+        try {
+            const verify = await holonDB.getAll(holonId.toString(), 'quests');
+            console.log('[QUEST_PERSIST_DEBUG] verify.getAll', {
+                holonId: holonId.toString(),
+                count: Array.isArray(verify) ? verify.length : 'n/a',
+                ids: Array.isArray(verify) ? verify.slice(0, 5).map(q => q?.id) : 'n/a',
+                hasJustWritten: Array.isArray(verify) && verify.some(q => q?.id == quest.id),
+            });
+        } catch (e) {
+            console.log('[QUEST_PERSIST_DEBUG] verify.error', e.message);
+        }
 
         // Update buttons and pin message
         const questHolon = Quests.getQuestHolon(quest);
