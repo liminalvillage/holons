@@ -1059,12 +1059,13 @@ export default class Quests {
             }
         }
 
-        // 2. Update the main Telegram message (if one exists). For legacy
-        // bot-native quests this is the message in questHolon with id ===
-        // quest.id; for harvest quests the home holon may have no Telegram
-        // representation at all, in which case we skip and just update the
-        // hologram messages tracked in activeHolograms.
-        const mainMessageId = Quests.resolveTelegramMessageId(quest, questHolon);
+        // 2. Update the main Telegram message. For legacy bot-native quests
+        // it lives at (questHolon, quest.id); for harvest quests (string
+        // quest.id) we may need to bootstrap one — same hologram mechanism,
+        // just rooted in the home holon. ensureMainTelegramMessage returns
+        // the resolved/created message_id, or null if we have no chat to
+        // send to.
+        const mainMessageId = await this.ensureMainTelegramMessage(quest, questHolon, language, markupConfig);
         if (mainMessageId != null) {
             try {
                 await ctx.telegram.getChat(questHolon);
@@ -2581,6 +2582,66 @@ export default class Quests {
             await ctx.answerCbQuery('Error displaying quest details.');
         }
     }
+    // Ensure the quest has a "main" Telegram message in its home holon, creating
+    // one if necessary. Quests created in harvest live in holosphere with
+    // string ids and have no Telegram representation until the bot renders one;
+    // we reuse the activeHolograms tracking (the same mechanism used for
+    // hologram copies in other chats) so every code path that reaches for a
+    // Telegram message_id finds it via Quests.resolveTelegramMessageId.
+    //
+    // Returns the resolved Telegram message_id, or null if creation failed
+    // (e.g. the bot isn't a member of the home holon chat).
+    async ensureMainTelegramMessage(quest, questHolon, language, markupConfig) {
+        if (!quest || !questHolon) return null;
+
+        const existing = Quests.resolveTelegramMessageId(quest, questHolon);
+        if (existing != null) return existing;
+
+        try {
+            const message = await this.createMessage(quest, language);
+            const markup = markupConfig || this.markup(quest, language);
+
+            let sent;
+            if (quest.picture && (quest.picture.startsWith('http') || quest.picture.startsWith('AgAC'))) {
+                try {
+                    sent = await this.bot.telegram.sendPhoto(questHolon, quest.picture, {
+                        caption: this.truncateCaption(message),
+                        ...markup,
+                    });
+                } catch {
+                    sent = await this.bot.telegram.sendMessage(questHolon, message, markup);
+                }
+            } else {
+                sent = await this.bot.telegram.sendMessage(questHolon, message, markup);
+            }
+
+            if (!Array.isArray(quest.activeHolograms)) quest.activeHolograms = [];
+            quest.activeHolograms.push({
+                platform: 'telegram',
+                holonId: questHolon,
+                messageId: sent.message_id,
+            });
+
+            // Persist immediately — callers (refreshQuestMessage, etc.) may
+            // not save the quest themselves, and we don't want to lose track
+            // of the message we just sent.
+            try {
+                const holonDB = await this.getHolonDB(questHolon);
+                await holonDB.put(questHolon, 'quests', quest);
+            } catch (persistErr) {
+                log.warn(`ensureMainTelegramMessage: created message ${sent.message_id} but failed to persist activeHolograms: ${persistErr?.message || persistErr}`);
+            }
+
+            // Match the bot's normal /task creation flow.
+            this.bot.telegram.pinChatMessage(questHolon, sent.message_id, { disable_notification: true }).catch(() => {});
+
+            return sent.message_id;
+        } catch (err) {
+            log.warn(`ensureMainTelegramMessage: failed for quest ${quest.id} in holon ${questHolon}: ${err?.message || err}`);
+            return null;
+        }
+    }
+
     async ensureTelegramHologramMessage(ctx, quest, userId, language) {
         const questHolon = Quests.getQuestHolon(quest);
         if (!quest?.id || !questHolon || !userId) return;

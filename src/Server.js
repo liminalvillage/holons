@@ -603,15 +603,18 @@ class Server {
     }
 
     // Quest IDs from harvest are opaque strings, so we can't blindly do
-    // Number(questId). Resolve the real Telegram message_id via the quest's
-    // active holograms (or, for legacy bot-native quests, via a numeric id).
-    const messageId = Quests.resolveTelegramMessageId(quest, holon);
+    // Number(questId). ensureMainTelegramMessage resolves the message_id via
+    // activeHolograms (legacy bot-native quests fall through to a numeric
+    // quest.id) — and creates a fresh Telegram message in the home holon if
+    // none exists yet. That makes /refresh/quest the canonical way for
+    // harvest to bootstrap a Telegram representation for a brand-new task.
+    const markupConfig = quests.markup(quest, language);
+    const messageId = await quests.ensureMainTelegramMessage(quest, holon, language, markupConfig);
     if (messageId == null) {
-      log.info(`refresh: no Telegram message for quest ${questId} in holon ${holon}; skipping`);
+      log.info(`refresh: could not create or resolve Telegram message for quest ${questId} in holon ${holon}`);
       return;
     }
     const fakeCtx = { telegram: this.bot.telegram };
-    const markupConfig = quests.markup(quest, language);
     await quests.updateQuestMessage(fakeCtx, quest, holon, messageId, language, markupConfig);
   }
 
