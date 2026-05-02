@@ -10,7 +10,6 @@ import axios from 'axios';
 import https from 'https';
 import crypto from 'crypto';
 import { log } from '../utils/logger.js';
-import Quests from './Quests.js';
 
 /**
  * Express server for serving static files, avatars, and images.
@@ -573,6 +572,15 @@ class Server {
       this.scheduleRefresh('expense', String(chatId), String(expenseId));
       res.status(202).json({ scheduled: true });
     });
+
+    app.post('/refresh/event', (req, res) => {
+      const { chatId, eventId } = req.body || {};
+      if (!chatId || eventId === undefined || eventId === null) {
+        return res.status(400).json({ error: 'chatId and eventId required' });
+      }
+      this.scheduleRefresh('event', String(chatId), String(eventId));
+      res.status(202).json({ scheduled: true });
+    });
   }
 
   scheduleRefresh(kind, holon, id) {
@@ -583,6 +591,7 @@ class Server {
       try {
         if (kind === 'quest') await this.refreshQuestMessage(holon, id);
         else if (kind === 'expense') await this.refreshExpenseMessage(holon, id);
+        else if (kind === 'event') await this.refreshEventMessage(holon, id);
       } catch (err) {
         log.warn(`refresh ${kind} ${holon}/${id} failed: ${err?.message || err}`);
       }
@@ -616,6 +625,27 @@ class Server {
     }
     const fakeCtx = { telegram: this.bot.telegram };
     await quests.updateQuestMessage(fakeCtx, quest, holon, messageId, language, markupConfig);
+  }
+
+  async refreshEventMessage(holon, eventId) {
+    const { events, settings, database } = this.services;
+    if (!events || !database) throw new Error('events/database service not available');
+
+    const language = (await settings?.getLanguage(holon).catch(() => null)) || 'en';
+    const event = await database.get(holon, 'events', eventId);
+    if (!event) {
+      log.info(`refresh: event ${eventId} not found in holon ${holon}`);
+      return;
+    }
+
+    const markupConfig = events.markup(event, language);
+    const messageId = await events.ensureMainTelegramMessage(event, holon, language, markupConfig);
+    if (messageId == null) {
+      log.info(`refresh: could not create or resolve Telegram message for event ${eventId} in holon ${holon}`);
+      return;
+    }
+    const fakeCtx = { telegram: this.bot.telegram };
+    await events.updateEventMessage(fakeCtx, event, holon, messageId, language, markupConfig);
   }
 
   async refreshExpenseMessage(holon, expenseId) {

@@ -35,6 +35,78 @@ export default class Events {
         return event?.holon ?? event?.chat ?? null;
     }
 
+    // Resolve the Telegram message_id that represents this event in the given
+    // holon. Mirrors Quests.resolveTelegramMessageId — see that doc for context.
+    static resolveTelegramMessageId(event, holonId) {
+        if (!event || holonId == null) return null;
+        const target = String(holonId);
+        const sources = [
+            ...(event.activeHolograms || []),
+            ...(event._meta?.activeHolograms || []),
+        ];
+        const entry = sources.find(h =>
+            String(h.holonId) === target &&
+            (!h.platform || h.platform === 'telegram')
+        );
+        if (entry?.messageId != null) {
+            const n = Number(entry.messageId);
+            return Number.isFinite(n) ? n : null;
+        }
+        if (target === String(Events.getEventHolon(event))) {
+            const id = String(event.id ?? '');
+            if (/^-?\d+$/.test(id)) return Number(id);
+        }
+        return null;
+    }
+
+    // Bootstrap a Telegram message for an event if one doesn't exist yet.
+    // Same pattern as Quests.ensureMainTelegramMessage.
+    async ensureMainTelegramMessage(event, eventHolon, language, markupConfig) {
+        if (!event || !eventHolon) return null;
+
+        const existing = Events.resolveTelegramMessageId(event, eventHolon);
+        if (existing != null) return existing;
+
+        try {
+            const message = await this.ui?.createEventMessage(event, language) || await this.createMessage(event, language);
+            const markup = markupConfig || this.markup(event, language);
+
+            let sent;
+            if (event.picture && (event.picture.startsWith('http') || event.picture.startsWith('AgAC'))) {
+                try {
+                    sent = await this.bot.telegram.sendPhoto(eventHolon, event.picture, {
+                        caption: this.truncateCaption(message),
+                        ...markup,
+                    });
+                } catch {
+                    sent = await this.bot.telegram.sendMessage(eventHolon, message, markup);
+                }
+            } else {
+                sent = await this.bot.telegram.sendMessage(eventHolon, message, markup);
+            }
+
+            if (!Array.isArray(event.activeHolograms)) event.activeHolograms = [];
+            event.activeHolograms.push({
+                platform: 'telegram',
+                holonId: eventHolon,
+                messageId: sent.message_id,
+            });
+
+            try {
+                await this.db.put(String(eventHolon), 'events', event);
+            } catch (persistErr) {
+                log.warn(`Events.ensureMainTelegramMessage: created ${sent.message_id} but failed to persist: ${persistErr?.message || persistErr}`);
+            }
+
+            this.bot.telegram.pinChatMessage(eventHolon, sent.message_id, { disable_notification: true }).catch(() => {});
+
+            return sent.message_id;
+        } catch (err) {
+            log.warn(`Events.ensureMainTelegramMessage: failed for event ${event.id} in holon ${eventHolon}: ${err?.message || err}`);
+            return null;
+        }
+    }
+
     /**
      * Creates a new Events instance and registers all event commands and actions.
      * @constructor
