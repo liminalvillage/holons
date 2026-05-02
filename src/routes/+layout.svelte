@@ -415,6 +415,34 @@
 			console.log("HoloSphere Public Key:", holosphere.client.publicKey);
 		}
 
+		// Notify holonsbot on every put so the bot can bootstrap (or refresh)
+		// the Telegram message for the touched entity. The bot's /refresh/<kind>
+		// endpoints are idempotent — first call creates the message in the home
+		// holon and stores its message_id in activeHolograms; subsequent calls
+		// edit it. No-op if VITE_BOT_API_URL isn't configured.
+		const botApiUrl = import.meta.env.VITE_BOT_API_URL;
+		if (botApiUrl) {
+			const REFRESH_LENSES: Record<string, string> = {
+				quests: 'quest',
+				expenses: 'expense',
+				events: 'event',
+			};
+			const origPut = holosphere.put.bind(holosphere);
+			(holosphere as any).put = async (holonId: string, lens: string, data: any, opts?: any) => {
+				const result = await origPut(holonId, lens, data, opts);
+				const kind = REFRESH_LENSES[lens];
+				const id = data?.id;
+				if (kind && id != null) {
+					fetch(`${botApiUrl}/refresh/${kind}`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ chatId: holonId, [`${kind}Id`]: id }),
+					}).catch(() => {});
+				}
+				return result;
+			};
+		}
+
 		// Update the global store (this can be called from async callbacks)
 		holosphereStore.set(holosphere);
 
