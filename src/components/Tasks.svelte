@@ -463,8 +463,10 @@
 
 	// Add this helper function after the existing functions
 	function generateId() {
-		// Use timestamp + random suffix to prevent ID collisions on rapid creates
-		return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+		// Base36 timestamp + tiny random tail. No `_` so the bot's callback_data
+		// underscore-separator parsing stays unambiguous; includes letters so the
+		// id is never confused with a numeric Telegram message_id.
+		return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 	}
 
 	// Modify handleAddTask to use a default 'Dashboard User' initiator if user data fetch fails or returns no data, instead of throwing an error.
